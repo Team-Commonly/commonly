@@ -27,12 +27,19 @@ jest.mock('../../../models/User', () => ({
   findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ entitlements: { pro: false }, isBot: false }) }) })),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
-jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn() }));
+jest.mock('../../../services/agentMessageService', () => ({
+  postMessage: jest.fn(),
+  // The real sentinel rules, so a NO_REPLY reads as silent.
+  sanitizeAgentContent: (content) => jest.requireActual('../../../services/agentMessageService').sanitizeAgentContent(content),
+}));
 jest.mock('../../../services/messageClaimService', () => ({
   claim: jest.fn().mockResolvedValue({ claimed: true, expiresAt: new Date() }),
   release: jest.fn().mockResolvedValue({ released: true }),
 }));
-jest.mock('../../../services/messageClaimHandoffService', () => ({ handOff: jest.fn().mockResolvedValue(undefined) }));
+jest.mock('../../../services/messageClaimHandoffService', () => ({
+  handOff: jest.fn().mockResolvedValue(undefined),
+  release: jest.fn().mockResolvedValue({ released: true }),
+}));
 jest.mock('../../../models/pg/Message', () => ({ findByPodId: jest.fn().mockResolvedValue([]) }));
 jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
   podHasOutsiderWritableGrant: jest.fn().mockResolvedValue(false),
@@ -58,6 +65,7 @@ jest.mock('../../../models/Message', () => {
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const AgentMessageService = require('../../../services/agentMessageService');
+const ClaimHandoff = require('../../../services/messageClaimHandoffService');
 const { runAgent, HOSTED_RUN_FAILED_LINE } = require('../../../services/nativeRuntimeService');
 
 const POD = '507f1f77bcf86cd799439011';
@@ -279,6 +287,34 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBe(false);
       // Bridged, so not even the fixed line goes out.
       expect(posted()).toEqual([]);
+    });
+
+    // CodeRabbit on 67496fac9: a decline is not a held-back reply. In a bridged
+    // pod it must still end as a decline, so the wake goes on to another agent.
+    test('a NO_REPLY after a page read in a bridged pod stays a decline, handed on', async () => {
+      mockBridged.mockImplementation(async () => mockGetPage.mock.calls.length > 0);
+      AgentMessageService.postMessage.mockResolvedValue({ skipped: true });
+      chatReplies = [toolCalls(fetchCall('c1', CLEAN_URL)), reply('NO_REPLY'), neverAsked];
+
+      // A hosted install never takes a message.posted wake; a native one does.
+      const result = await runAgent({
+        podId: POD,
+        agentName: 'analyst',
+        instanceId: 'default',
+        displayName: 'Analyst',
+        installedBy: OWNER,
+        config: { runtime: { runtimeType: 'native' }, tools: ['commonly_fetch_url', 'commonly_post_message'] },
+      }, {
+        type: 'message.posted',
+        eventId: '507f1f77bcf86cd799439014',
+        payload: { content: `anyone read ${CLEAN_URL}?`, userId: OWNER, messageId: 'msg-2', senderIsHuman: true },
+      });
+
+      expect(mockGetPage).toHaveBeenCalledWith(CLEAN_URL);
+      expect(mockBridged).toHaveBeenCalled();
+      expect(result.status).toBe('succeeded');
+      expect(savedRun.errorKind).toBeUndefined();
+      expect(ClaimHandoff.release).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'declined' }));
     });
 
     test('a post refused in that call ends the run, with no second call', async () => {

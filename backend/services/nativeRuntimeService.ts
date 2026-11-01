@@ -2617,9 +2617,11 @@ export async function runAgent(
 
       const textOut = typeof msg.content === 'string' ? msg.content.trim() : '';
       // The fallback post is a post like any other: after an external result,
-      // re-read the bridge before letting it through.
+      // re-read the bridge before letting it through. A silent reply (NO_REPLY)
+      // is a decline, not a held-back answer: it would post nothing anyway.
       const fallbackBlocked = Boolean(textOut && !postedViaTool
-        && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow());
+        && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow()
+        && require('./agentMessageService').sanitizeAgentContent(textOut));
       // Held back, the reply never reached the person: the run failed, so it
       // is not metered and its digest is not settled as answered.
       if (fallbackBlocked) {

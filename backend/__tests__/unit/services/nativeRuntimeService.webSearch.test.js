@@ -22,7 +22,10 @@ jest.mock('../../../models/User', () => ({
   })),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
-jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
+jest.mock('../../../services/agentMessageService', () => ({
+  postMessage: jest.fn().mockResolvedValue({ success: true }),
+  sanitizeAgentContent: jest.fn((content) => content),
+}));
 const mockProposeAction = jest.fn();
 jest.mock('../../../services/approvalActionService', () => ({
   proposeAction: (...args) => mockProposeAction(...args),
