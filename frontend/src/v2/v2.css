@@ -3571,31 +3571,17 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-msg__mention {
-  background: transparent;
+  background: color-mix(in srgb, var(--v2-accent) 10%, transparent);
   color: var(--v2-accent-text);
-  padding: 1px 5px;
-  border-radius: 5px;
+  padding: 0 4px;
+  border-radius: var(--v2-r-6);
   font-weight: 500;
   white-space: nowrap;
 }
 
-/* A mention is a tinted system signal, not a separate card or accent rail. */
-.v2-msg--mention {
-  background: var(--v2-surface-hover);
-  border-radius: var(--v2-radius-sm);
-  padding: 8px 10px 8px 10px;
-}
-
-/* The wash bleeds one padding past the row on BOTH sides so the mention
-   TEXT sits exactly on the shared grid like every other row (
-   2026-08-23 — mentions sat off-grid while messages aligned; the old
-   bleed was -12px against 10px padding, 2px off). The bleed lands inside
-   the pane's 24px gutter. 0-2-0 beats the `> *` width rule regardless of
-   source order. */
-.v2-chat__messages > .v2-msg--mention {
-  width: calc(100% + 20px);
-  margin-inline: -10px;
-}
+/* A message that mentions you gets no row highlight: the tint lives on the
+   @handle chip only (D224). The class stays as a hook for tests and selectors. */
+.v2-msg--mention { background: none; }
 
 .v2-msg__content ul,
 .v2-msg__content ol {
@@ -8288,22 +8274,24 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 .v2-settings__section .v2-billing__badge {
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  border-color: var(--v2-border);
+  /* The artboard reads the plan as plain text in the row's value, not a chip. */
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--v2-text-primary);
-  font-family: var(--v2-font-mono);
-  font-size: 12px;
-  font-weight: 500;
+  font-family: var(--v2-font);
+  font-size: 13.5px;
+  font-weight: 600;
   letter-spacing: 0;
-  line-height: 16px;
+  line-height: 18px;
   text-transform: none;
 }
 
 .v2-settings__section .v2-billing__badge--pro {
-  background: var(--v2-accent);
-  border-color: var(--v2-accent);
-  color: var(--v2-on-ink);
+  background: transparent;
+  border-color: transparent;
+  color: var(--v2-text-primary);
 }
 
 .v2-settings__section .v2-devices__item {
@@ -13341,7 +13329,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-root button.v2-thread-replies__follow--on { color: var(--v2-accent-text); }
 
 /* Mention token: wash + cobalt (ux-lead 64476 (7)); the row tint stays. */
-.v2-thread .v2-msg__mention { background: #e8ecfb; color: var(--v2-accent-text); border-radius: 3px; padding: 0 4px; }
 
 /* Transcript avatars are two-tone squares (ux-lead 64476 (1)): human tint +
    #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
@@ -13818,7 +13805,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-board__owner-line { display: flex; align-items: center; gap: 6px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-secondary); }
 .v2-board__owner-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 .v2-board__owner-dot--live { background: var(--v2-status-live); }
-.v2-board__owner-dot--not-claimed { border: 1px dashed var(--v2-status-pending); }
 .v2-board__owner-dot--expired { border: 1px solid var(--v2-status-idle); background: none; }
 .v2-board__card--done { border-color: var(--v2-border-soft); }
 .v2-board__card--done .v2-board__card-title { color: var(--v2-text-secondary); }
@@ -13856,6 +13842,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-board__watcher-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .v2-board__watcher { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; max-width: 100%; padding: 0 8px 0 4px; border: 1px solid var(--v2-border-soft); border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }
 .v2-board .v2-board__member-avatar { width: 20px; height: 20px; min-width: 20px; border-radius: 4px; }
+.v2-board .v2-board__card-avatar { width: 20px; height: 20px; min-width: 20px; border-radius: 6px; }
 .v2-board__watcher-hint, .v2-board__field small { margin: 8px 0 0; font-size: 12px; line-height: 16px; color: var(--v2-text-muted); }
 .v2-board__create-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 12px; }
 .v2-board__field input, .v2-board__field select { min-height: 40px; border-radius: 4px; }
@@ -13979,8 +13966,10 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-board__card-main { display: grid; gap: 4px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; min-width: 0; color: inherit; font: inherit; }
 .v2-board__card-kicker > :not(.v2-board__owner-line):not(.v2-board__card-spacer) { flex: none; }
 .v2-board__card-kicker { display: flex; align-items: center; gap: 6px; min-width: 0; font: 500 11px/16px var(--v2-font-mono); }
+/* The frame fixes the id row at 16px; its 20px avatar overflows it instead of growing the card. */
+.v2-board__card-kicker, .v2-board__card-kicker .v2-board__owner-line { height: 16px; }
 .v2-board__card-spacer { flex: 1 1 auto; }
-.v2-board__card-kicker .v2-board__owner-line { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
+.v2-board__card-kicker .v2-board__owner-line { min-width: 0; flex: 0 1 auto; overflow: visible; white-space: nowrap; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
 .v2-board__card-title {
   font: 500 13px/18px var(--v2-font); display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;

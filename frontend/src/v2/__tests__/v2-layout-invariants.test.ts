@@ -1011,13 +1011,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(composer).toContain('className="v2p-b v2p-b-g v2p-ib v2-composer__plus"');
     // Nothing in the column may escape the shared edge (2026-08-23:
     // mentions and threads sat off-grid while messages aligned).
-    // Mentions: the wash bleed must equal the padding (the old -12px against
-    // 10px padding put mention TEXT 2px off-grid), widening the wash by one
-    // padding per side into the pane gutter.
-    expect(ruleBody(v2, '.v2-chat__messages > .v2-msg--mention'))
-      .toContain('margin-inline: -10px');
-    expect(ruleBody(v2, '.v2-chat__messages > .v2-msg--mention'))
-      .toContain('width: calc(100% + 20px)');
+    // Mentions: no row wash and no bleed (D224); the tint is on the chip only.
+    expect(v2).not.toContain('.v2-chat__messages > .v2-msg--mention');
     // Threads (ux-lead 64476 (2)): the ROOT now renders inside the block, so
     // the block itself is a full-width child like any message and the INDENT
     // moved to the inner wrap (chip + rail at the text column, 36px avatar +
@@ -1331,9 +1326,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(billingPanel).not.toContain('free in beta');
     expect(billingPanel).not.toContain('included during beta');
     const badge = ruleBody(v2, '.v2-settings__section .v2-billing__badge');
-    expect(badge).toContain('background: var(--v2-surface)');
-    expect(badge).toContain('font-family: var(--v2-font-mono)');
-    expect(ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro')).toContain('background: var(--v2-accent)');
+    expect(badge).toContain('background: transparent');
+    expect(badge).toContain('border: 0');
+    expect(badge).toContain('padding: 0');
+    const proBadge = ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro');
+    expect(proBadge).toContain('background: transparent');
+    expect(proBadge).toContain('color: var(--v2-text-primary)');
   });
 
   test('Settings flattens connected apps and folds Developer Tips under the form', () => {
@@ -1347,14 +1345,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
   });
 
-  test('mention treatment is a neutral wash, never a message rail', () => {
+  test('mention treatment is a tight chip on the handle, never a row wash or rail', () => {
     // Accent rails made otherwise ordinary cards look like generic callouts.
     // Message rows retain a neutral semantic wash, while quote edges stay
     // neutral structural affordances.
     expect(v2).not.toMatch(/border-left:\s*[^;]*var\(--v2-accent\)/);
-    const mention = ruleBody(v2, '.v2-msg--mention');
-    expect(mention).toContain('background: var(--v2-surface-hover)');
-    expect(mention).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(v2, '.v2-msg--mention')).toContain('background: none');
+    const chip = ruleBody(v2, '.v2-msg__mention');
+    expect(chip).toContain('background: color-mix(in srgb, var(--v2-accent) 10%, transparent)');
+    expect(chip).toContain('padding: 0 4px');
   });
 
   test('quote edges share the same neutral 3px structural weight', () => {
@@ -1511,7 +1510,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(threadMessages).toContain('v2-thread-block__inner');
     expect(threadMessages).toContain('const collapsed = !openRoots.has(item.rootId)');
     expect(v2).not.toContain('.v2-thread-card__reply');
-    expect(ruleBody(v2, '.v2-thread .v2-msg__mention')).toContain('background: #e8ecfb');
+    // Thread mentions use the one chip rule; a 0,2,0 override here once beat it (D224).
+    expect(v2).not.toContain('.v2-thread .v2-msg__mention');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-agent')).toContain('var(--v2-accent)');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-human')).toContain('background: #f2f4f7');
   });
@@ -5159,9 +5159,8 @@ describe('task priority and lease signals (TASK-443)', () => {
     }
     expect(offenders).toEqual([]);
   });
-  test('live, unclaimed and expired ownership retain distinct dots', () => {
+  test('live and expired ownership retain distinct dots', () => {
     expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-status-live)');
-    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-status-pending)');
     const expired = ruleBody(css, '.v2-board__owner-dot--expired');
     expect(expired).toContain('border: 1px solid var(--v2-status-idle)');
     expect(expired).toContain('background: none');
