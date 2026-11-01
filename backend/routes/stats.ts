@@ -78,7 +78,7 @@ router.get('/public', statsPublicLimit, async (_req: unknown, res: { json: (d: u
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
-const { markByoCommandCopied, markSurface } = require('../services/onboardingMarks');
+const { markByoCommandCopied, markByoCopyType, markByoSetup, markSurface } = require('../services/onboardingMarks');
 // eslint-disable-next-line global-require
 const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line global-require
@@ -91,6 +91,8 @@ const BYO_STEPS = new Set([
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
   'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown',
 ]);
+// Steps that copy a setup command; each carries the copy type the page sent.
+const COPY_STEPS = new Set(['mcp-command-copied', 'cli-command-copied', 'daemon-command-copied', 'token-copied']);
 // Onboarding surfaces: each step also sets its write-once onboarding mark.
 const SURFACE_STEPS: Record<string, string> = {
   'invite-card-shown': 'inviteCardShownAt',
@@ -114,6 +116,13 @@ router.post('/byo-step', rateLimit({
     // the copied command, which contains a runtime token.
     markByoCommandCopied(req.userId, step === 'mcp-command-copied' ? 'mcp' : 'cli');
   }
+  if (COPY_STEPS.has(step)) {
+    // The copy type is a fixed name the page sends; the service refuses anything else.
+    markByoCopyType(req.userId, req.body?.copyType);
+  }
+  // The setup the result page showed. The service validates both fields and
+  // writes nothing for a missing or malformed value.
+  markByoSetup(req.userId, { setupOs: req.body?.setupOs, listenerAvailable: req.body?.listenerAvailable });
   if (SURFACE_STEPS[step]) markSurface(req.userId, SURFACE_STEPS[step]);
   await recordByoEvent(req.userId, step as any, {
     ...(step === 'mcp-command-copied' ? { commandType: 'mcp' } : {}),

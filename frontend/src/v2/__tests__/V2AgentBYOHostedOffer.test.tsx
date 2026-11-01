@@ -91,7 +91,7 @@ test('exit intent offers immediately; manual copy dismisses permanently', async 
 test('button copy suppresses the offer beyond the Copied label', async () => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: jest.fn().mockResolvedValue(undefined) } });
   await issue(); await act(async () => fireEvent.click(screen.getByTestId('byo-listen').querySelector('button.v2-byo__copy'))); await tick(60000); expect(offer()).not.toBeInTheDocument();
-  expect(axios.post).toHaveBeenCalledWith('/api/stats/byo-step', { step: 'cli-command-copied' }, expect.anything());
+  expect(axios.post).toHaveBeenCalledWith('/api/stats/byo-step', expect.objectContaining({ step: 'cli-command-copied', copyType: 'listen' }), expect.anything());
 });
 test('hosting errors preserve the command and a retryable offer', async () => {
   await issue(); axios.post.mockImplementation((url) => url === '/api/registry/install' ? Promise.reject({ response: { data: { code: 'hosted_cap_reached', cap: 1 } } }) : Promise.resolve({ data: {} }));
@@ -102,7 +102,7 @@ test('page entry is recorded once under StrictMode; command rendering is separat
   render(<StrictMode><AuthContext.Provider value={authValue}><MemoryRouter><V2AgentBYO /></MemoryRouter></AuthContext.Provider></StrictMode>);
   await screen.findByTestId('byo-mode-byo'); fireEvent.click(screen.getByTestId('byo-mode-byo'));
   await waitFor(() => expect(screen.getByRole('button', { name: /get my connect command/i })).toBeEnabled()); fireEvent.click(screen.getByRole('button', { name: /get my connect command/i })); await screen.findByText(/your connect command for/i);
-  expect(axios.post.mock.calls.filter(([url]) => url === '/api/stats/byo-step').map(([, body]) => body)).toEqual([{ step: 'page-viewed' }, { step: 'hosted-offer-shown' }, { step: 'seat-created' }]);
+  expect(axios.post.mock.calls.filter(([url]) => url === '/api/stats/byo-step').map(([, body]) => body)).toEqual([{ step: 'page-viewed' }, { step: 'hosted-offer-shown' }, { step: 'seat-created', setupOs: 'mac', listenerAvailable: true }]);
 });
 test('a failed clipboard write leaves the fallback available', async () => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: jest.fn().mockRejectedValue(new Error('Denied')) } });
