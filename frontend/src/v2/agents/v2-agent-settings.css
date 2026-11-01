@@ -1,8 +1,13 @@
 .v2-agent-settings {
+  width: 100%;
+  color: var(--v2-text-primary);
+}
+
+/* The page head spans the shell; only the body sits in the 960px column. */
+.v2-agent-settings__column {
   width: min(100%, 960px);
   margin: 0 auto;
   padding: 24px;
-  color: var(--v2-text-primary);
 }
 
 .v2-agent-settings__state { padding: 32px; color: var(--v2-text-secondary); }
