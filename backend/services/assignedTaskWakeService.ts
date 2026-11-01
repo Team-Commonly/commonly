@@ -31,7 +31,7 @@ type Row = {
 };
 type RowState = {
   _id: string; lastWakeAt?: Date | null; lastWakeEventId?: unknown; countedEventId?: unknown;
-  failures?: number; stoppedAt?: Date | null;
+  failures?: number; stoppedAt?: Date | null; lastVerdict?: string | null;
 };
 type WakeEvent = { _id: unknown; status?: string; delivery?: { outcome?: string; reason?: string | null } };
 
@@ -86,6 +86,18 @@ const updatedSince = (row: Row, since: Date): unknown[] => (row.updates || [])
   .filter((update) => update.createdAt && new Date(update.createdAt) > since)
   .map((update) => update.authorId);
 
+// F42: every API change to a row (a note, status, reassignment, dep, title)
+// records its author, while the kernel's own lease notes record none. So an
+// authored update from anyone but this seat is the change a completed run has
+// not seen yet.
+const changedByOthersSince = (row: Row, since: Date, principalId: string): boolean => updatedSince(row, since)
+  .some((authorId) => Boolean(authorId) && String(authorId) !== principalId);
+
+// The last wake on this row is counted, and its run completed: it saw the row.
+const seenByCompletedRun = (state: RowState): boolean => Boolean(state.lastWakeAt)
+  && state.lastVerdict === 'succeeded'
+  && String(state.countedEventId ?? '') === String(state.lastWakeEventId ?? '');
+
 // A person posted in the pod, or created or updated any row in it, after `since`.
 async function humanActedInPodSince(podId: unknown, since: Date): Promise<boolean> {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -130,11 +142,12 @@ async function countOutcomes(states: RowState[]): Promise<void> {
     // eslint-disable-next-line no-await-in-loop
     const counted = await AgentTaskRowWakeState.updateOne(
       { _id: state._id, countedEventId: state.countedEventId ?? null },
-      { $set: { countedEventId: state.lastWakeEventId, failures } },
+      { $set: { countedEventId: state.lastWakeEventId, failures, lastVerdict: verdict } },
     );
     if (counted.modifiedCount) {
       state.countedEventId = state.lastWakeEventId;
       state.failures = failures;
+      state.lastVerdict = verdict;
     }
   }
 }
@@ -165,8 +178,10 @@ async function stopRow(row: Row, state: RowState, install: Installation, princip
 
 // The rows that may wake this seat now. A row the agent created for itself
 // wakes it once, then again only after a person acts in the pod. Any other
-// row wakes it until STOP_AFTER_FAILURES consecutive runs fail; a person
-// updating the row, or a run that succeeds, starts the count again.
+// row wakes it once, then again after a completed run only when someone else
+// has updated it since. A run that fails is retried until STOP_AFTER_FAILURES
+// consecutive runs fail; a person updating the row, or a run that succeeds,
+// starts the count again.
 async function wakeableRows(
   owned: Row[], install: Installation, principalId: string, seat: string, now: Date,
 ): Promise<Row[]> {
@@ -209,6 +224,10 @@ async function wakeableRows(
       // eslint-disable-next-line no-await-in-loop
       await stopRow(row, state, install, principalId, now);
       logSkip(install, [row], 'stopped', now);
+      continue;
+    }
+    if (seenByCompletedRun(state) && !changedByOthersSince(row, new Date(state.lastWakeAt as Date), principalId)) {
+      logSkip(install, [row], 'unchanged', now);
       continue;
     }
     wakeable.push(row);

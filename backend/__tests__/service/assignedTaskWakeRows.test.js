@@ -32,9 +32,10 @@ const eventRow = (extra) => ({
 async function settle(outcome, minutes) {
   const { _id } = await AgentEventService.enqueue.mock.results.at(-1).value;
   const when = at(minutes);
-  const delivery = outcome === 'failed'
-    ? { outcome: 'error', updatedAt: when }
-    : { outcome: 'no_action', reasonRecorded: true, updatedAt: when };
+  const delivery = {
+    failed: { outcome: 'error', updatedAt: when },
+    neutral: { outcome: 'no_action', reason: 'consecutive_run_cap', reasonRecorded: true, updatedAt: when },
+  }[outcome] || { outcome: 'no_action', reasonRecorded: true, updatedAt: when };
   await AgentEvent.collection.insertOne(eventRow({
     _id, status: outcome === 'failed' ? 'failed' : 'acked', delivery, createdAt: when, updatedAt: when,
   }));
@@ -45,6 +46,9 @@ const say = (userId, minutes) => Message.collection.insertOne({
   podId, userId, content: 'hello', messageType: 'text', createdAt: at(minutes),
 });
 const row = () => Task.findOne({ podId }).lean();
+const note = (authorId, minutes, author = 'someone') => Task.updateOne({ podId }, { $push: { updates: {
+  text: 'a note', author, authorId: authorId === null ? null : String(authorId), createdAt: at(minutes),
+} } });
 
 beforeAll(setupMongoDb);
 afterAll(closeMongoDb);
@@ -212,12 +216,54 @@ describe('a row the agent created for itself', () => {
 describe('a row a person created or assigned', () => {
   beforeEach(() => Task.create({ podId, taskNum: 1, taskId: 'TASK-1', title: 'Do the assigned work', assignee: 'forge' }));
 
-  it('keeps waking on the normal cadence while runs succeed', async () => {
+  // F42: 304 of 327 repeat wakes on 11-01 found the row as the agent's last
+  // completed run left it, apart from the kernel's lease notes. A completed run
+  // has seen the row; it wakes again only for a change someone else made.
+  it('wakes once, then stays quiet while nothing on it changes', async () => {
     expect(await wakes(0)).toBe(1);
     await settle('succeeded', 1);
+    expect(await wakes(31)).toBe(0);
+    expect(await wakes(240)).toBe(0);
+  });
+
+  it("is not re-armed by the kernel's lease notes or the agent's own updates", async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await note(null, 10, 'kernel-sweep');
+    await note(agent._id, 12, 'forge');
+    expect(await wakes(31)).toBe(0);
+  });
+
+  it('wakes again for an update a person made, once', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await note(person._id, 10, 'row-owner');
     expect(await wakes(31)).toBe(1);
     await settle('succeeded', 32);
-    expect(await wakes(62)).toBe(1);
+    expect(await wakes(62)).toBe(0);
+  });
+
+  it('wakes again for an update another agent made', async () => {
+    const other = await User.create({
+      username: 'other-bot', email: 'other-bot@example.test', password: 'test-password', isBot: true, botType: 'agent',
+    });
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await note(other._id, 10, 'other-bot');
+    expect(await wakes(31)).toBe(1);
+  });
+
+  it('is not re-armed by a pod message alone', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await say(person._id, 10);
+    expect(await wakes(31)).toBe(0);
+  });
+
+  it('wakes again after a run that ended for its own reason, since that run did not see the row', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('neutral', 1);
+    expect(await wakes(31)).toBe(1);
   });
 
   it('stops after three failed runs in a row, and says so once on the row', async () => {
@@ -283,10 +329,15 @@ describe('a row a person created or assigned', () => {
   });
 
   it('counts only consecutive failures: a successful run resets the count', async () => {
+    const other = await User.create({
+      username: 'other-bot', email: 'other-bot@example.test', password: 'test-password', isBot: true, botType: 'agent',
+    });
     const outcomes = ['failed', 'failed', 'succeeded', 'failed', 'failed'];
     for (const [step, outcome] of outcomes.entries()) {
       expect(await wakes(step * 31)).toBe(1); // eslint-disable-line no-await-in-loop
       await settle(outcome, step * 31 + 1); // eslint-disable-line no-await-in-loop
+      // A succeeded run has seen the row (F42): another agent's update brings the next wake.
+      if (outcome === 'succeeded') await note(other._id, step * 31 + 2, 'other-bot'); // eslint-disable-line no-await-in-loop
     }
     expect(await wakes(outcomes.length * 31)).toBe(1);
   });
