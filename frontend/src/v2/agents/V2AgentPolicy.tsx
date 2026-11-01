@@ -123,8 +123,8 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
   );
   const hasQuota = installation?.runtime?.runtimeType === 'hosted' || installation?.runtime?.runtimeType === 'native';
 
-  return <section className="v2-agent-settings-page__group" aria-labelledby="agent-policy-title">
-    <h2 id="agent-policy-title" className="gtitle"><V2AgentSettingsIcon name="rule" />{t('agentPolicy.title')}</h2>
+  // Lives in the How it runs disclosure; the section is named, not headed.
+  return <section className="v2-agent-settings-page__policy" aria-label={t('agentPolicy.title')}>
     {(canSetTrust || hasQuota) && <div className="list">
       {canSetTrust && <div className="lrow v2-agent-settings-page__stack">
         <span className="lb" id="agent-policy-trust"><V2AgentSettingsIcon name="lock" />{t('agentPolicy.repoAccess')}</span>

@@ -308,7 +308,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="agents/:agentName/:instanceId"
-                  element={feature('Agent settings', <V2AgentSettingsPage />, false, false)}
+                  element={feature('Agent settings', <V2AgentSettingsPage />, false, false, 'v2-feature--agent-settings')}
                 />
                 <Route
                   path="agents/:agentName/:instanceId/memory"

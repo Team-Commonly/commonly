@@ -220,11 +220,27 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(header).toContain('align-items: flex-start');
   });
 
-  test('agent Settings phone rows keep the value cell visible under the label', () => {
+  test('agent Settings phone rows keep the value cell visible, beside the label on one line', () => {
     const surface = read('../agents/v2-agent-settings-surface.css');
     const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));
-    expect(ruleBody(phone, '.v2-agent-settings-page .lrow .vl')).toContain('grid-row: 2');
-    expect(ruleBody(phone, '.v2-agent-settings-page .lrow .ac')).toContain('grid-row: 1 / span 2');
+    // Three columns: label, value, action. The value keeps its own cell and wraps inside it.
+    expect(ruleBody(phone, '.v2-agent-settings-page .lrow')).toContain('grid-template-columns: max-content minmax(0, 1fr) auto');
+    const value = ruleBody(phone, '.v2-agent-settings-page .lrow .vl');
+    expect(value).not.toContain('display: none');
+    expect(value).not.toContain('grid-row');
+    expect(value).toContain('justify-content: flex-end');
+  });
+  test('a text action folds to a 44px icon button on phone so the value keeps the row', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));
+    expect(ruleBody(phone, '.v2-agent-settings-page .lrow .ac .b.v2-agent-settings-page__textbtn')).toContain('width: 44px');
+    expect(ruleBody(phone, '.v2-agent-settings-page__textbtn-label')).toContain('display: none');
+    // Its name survives the hidden label.
+    expect(read('../agents/V2AgentListingRow.tsx')).toMatch(/v2-agent-settings-page__textbtn"[^>]*\n?[^>]*aria-label=\{t\('agentSettings.viewPublicProfile'\)\}/);
+  });
+  test('the lifted page drops the old phone inset; its body pads itself', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    expect(surface).toContain('.v2-agent-settings.v2-agent-settings-page { padding: 0; }');
   });
 
   test('agent Settings buttons retain their chrome over the v2 button reset', () => {
@@ -273,6 +289,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(toggle).toContain('min-width: 44px');
     expect(toggle).toContain('min-height: 44px');
     expect(selectorRuleBody(targets, '.v2-agent-settings-page .ph .seg > a')).toContain('height: 44px');
+  });
+
+  test('agent Settings phone bar, full-width tabs and row panels keep their targets', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    // The 52px phone bar's back and talk buttons, and the tab row under it, are 44px targets.
+    expect(ruleBody(surface, '.v2-agent-settings-page .mtop')).toContain('height: 52px');
+    const bar = ruleBody(surface, '.v2-agent-settings-page .mtop .b.ib');
+    expect(bar).toContain('width: 44px');
+    expect(bar).toContain('height: 44px');
+    expect(ruleBody(surface, '.v2-agent-settings-page .seg--full > a, .v2-agent-settings-page .seg--full > button')).toContain('height: 44px');
+    // The Skills panel stays mounted while closed; its own display must not override [hidden].
+    expect(ruleBody(surface, '.v2-agent-settings-page__panel[hidden]')).toContain('display: none');
+    expect(surface).toContain('.v2-agent-settings-page__panel--pad:not([hidden])');
   });
 
   test('agent Control reconnect remains an ink action with a focus edge', () => {
@@ -5203,6 +5232,14 @@ describe('GitHub gig card fits the chat column', () => {
 
 describe('agent settings surface (D223 lift)', () => {
   const css = read('../agents/v2-agent-settings-surface.css');
+  test('the feature-page wrapper does not inset or cap it (v2-feature--agent-settings opt-out)', () => {
+    expect(ruleBody(css, '.v2-feature--agent-settings > .v2-feature__body')).toContain('padding: 0');
+    const legacy = ruleBody(css, '.v2-feature--agent-settings .v2-feature__legacy');
+    expect(legacy).toContain('max-width: none');
+    expect(legacy).toContain('margin: 0');
+    expect(ruleBody(css, '.v2-feature--agent-settings .v2-agent-settings-page .pbody')).toContain('overflow-y: auto');
+    expect(read('../V2App.tsx')).toContain("<V2AgentSettingsPage />, false, false, 'v2-feature--agent-settings')");
+  });
   test('the Save action keeps a visible surface over the v2 button reset', () => {
     expect(ruleBody(css, '.v2-agent-settings-page .b-s')).toContain('background: linear-gradient');
   });
@@ -5239,7 +5276,7 @@ describe('agent settings surface (D223 lift)', () => {
     expect(ruleBody(css, '.v2-agent-settings-page details.disc > summary .lb svg.i')).toContain('width: 16px');
     expect(ruleBody(css, '.v2-agent-settings-page .b svg.i, .v2-agent-settings-page .ib svg.i')).toContain('flex: none');
     expect(ruleBody(css, '.v2-agent-settings-page .lrow')).toContain('grid-template-columns: 180px minmax(0, 1fr) auto');
-    expect(css).toContain('.v2-agent-settings-page .lrow { grid-template-columns: minmax(0, 1fr) auto;');
+    expect(css).toContain('.v2-agent-settings-page .lrow { grid-template-columns: max-content minmax(0, 1fr) auto;');
     expect(css).toContain('.v2-agent-settings-page .ph { flex-wrap: wrap;');
   });
 });

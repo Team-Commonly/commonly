@@ -1,13 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2Avatar from '../components/V2Avatar';
-import V2AgentRuntimeGrants, { Runtime } from '../components/V2AgentRuntimeGrants';
+import V2AgentRuntimeBody, { Runtime, V2AgentConnectorsRow, describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AgentControlLoader } from '../components/V2AgentControlSection';
-import { AgentConnection } from '../utils/agentConnection';
+import { AgentConnection, connectionLabel } from '../utils/agentConnection';
+import { usePhone } from '../connectors/usePhone';
+import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import { useAgentSettings } from './useAgentSettings';
-import V2AgentIdentitySection from './V2AgentIdentitySection';
+import { useTalkToAgent } from './useTalkToAgent';
+import V2AgentNameRow from './V2AgentNameRow';
+import V2AgentListingRow from './V2AgentListingRow';
+import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import V2AgentWakePods from './V2AgentWakePods';
 import V2AgentPolicy from './V2AgentPolicy';
 import V2AgentSkills from '../components/V2AgentSkills';
@@ -31,6 +36,9 @@ const dateLabel = (value: string | null | undefined, t: (key: string) => string)
   return Number.isNaN(date.getTime()) ? t('agentSettings.unknown') : date.toLocaleString();
 };
 
+// The owner memory index the Memory tab reads; only its counts are used here.
+interface MemoryIndex { sections?: Array<{ updatedAt?: string | null; notes?: unknown[] }> }
+
 const errorLabel = (error: unknown, fallback: string): string => (
   (error as { response?: { data?: { error?: string } } })?.response?.data?.error
   || (error instanceof Error && error.message)
@@ -50,15 +58,31 @@ const V2AgentSettingsPage: React.FC = () => {
   const [pendingAction, setPendingAction] = useState<'replace' | string | null>(null);
   const [busy, setBusy] = useState(false);
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
-  const [connectionState, setConnectionState] = useState<AgentConnection['state'] | null>(null);
+  const [connection, setConnection] = useState<AgentConnection | null>(null);
+  const connectionState = connection?.state ?? null;
+  const [keyOpen, setKeyOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [skillCount, setSkillCount] = useState<number | null | undefined>(undefined);
+  const [runsNeedAttention, setRunsNeedAttention] = useState(false);
+  const runsRef = useRef<HTMLDetailsElement>(null);
+  // Open How it runs when its body starts needing action, and leave closing to the person,
+  // so a fix (a successful move) doesn't snap shut over its own confirmation.
+  useEffect(() => {
+    if (runsNeedAttention && runsRef.current) runsRef.current.open = true;
+  }, [runsNeedAttention]);
+  const [memory, setMemory] = useState<{ notes: number; updatedAt: string | null } | null>(null);
+  const navigate = useNavigate();
+  // The same width the page's one-line phone rows start at.
+  const phone = usePhone('(max-width: 600px)');
+  const { talkTo, opening: openingRoom, failed: roomFailed } = useTalkToAgent(agentName, instanceId);
   const [connectionRefreshNonce, setConnectionRefreshNonce] = useState(0);
   const identityKey = `${agentName}:${instanceId}:${podId || ''}`;
   const currentIdentity = useRef(identityKey);
   currentIdentity.current = identityKey;
   const disconnected = connectionState === 'revoked' || connectionState === 'stale';
 
-  const onConnectionState = useCallback((state: AgentConnection['state'] | null) => {
-    setConnectionState(state);
+  const onConnectionState = useCallback((state: AgentConnection['state'] | null, next?: AgentConnection | null) => {
+    setConnection(next ?? null);
     if (state === 'revoked' || state === 'stale') setPendingAction(null);
   }, []);
 
@@ -82,7 +106,11 @@ const V2AgentSettingsPage: React.FC = () => {
     setOneTimeKey(null);
     setPendingAction(null);
     setBusy(false);
-    setConnectionState(null);
+    setConnection(null);
+    setKeyOpen(false);
+    setSkillsOpen(false);
+    setSkillCount(undefined);
+    setRunsNeedAttention(false);
     if (access && podId) {
       void fetchKeys().then((rows) => {
         if (active) {
@@ -130,6 +158,24 @@ const V2AgentSettingsPage: React.FC = () => {
       document.removeEventListener('visibilitychange', refreshKeys);
     };
   }, [access, podId, fetchKeys]);
+
+  // The Memory row's summary, from the same owner/admin index the Memory tab reads.
+  // A viewer without identity-wide key access is not the owner, so it is not asked.
+  const memoryReady = keysReadyFor === identityKey && !keysForbidden;
+  useEffect(() => {
+    setMemory(null);
+    if (!memoryReady) return undefined;
+    let active = true;
+    void axios.get<MemoryIndex>(`/api/agent-memory/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId || 'default')}`)
+      .then(({ data }) => {
+        if (!active || !Array.isArray(data?.sections)) return;
+        const notes = data.sections.reduce((count, section) => count + (Array.isArray(section.notes) ? section.notes.length : 0), 0);
+        const updatedAt = data.sections.map((section) => section.updatedAt).filter((value): value is string => Boolean(value)).sort().pop() ?? null;
+        setMemory({ notes, updatedAt });
+      })
+      .catch(() => { /* A refused or failed read leaves the row without a summary. */ });
+    return () => { active = false; };
+  }, [memoryReady, agentName, instanceId]);
 
   const replaceKey = async () => {
     if (!access || !podId || pendingAction !== 'replace' || busy || installation?.runtime?.runtimeType === 'wrapper') return;
@@ -253,46 +299,101 @@ const V2AgentSettingsPage: React.FC = () => {
     </li>
   );
 
+  const displayName = access.displayName || agentName;
+  const newestUse = activeKeys.map((key) => key.lastUsedAt).filter((value): value is string => Boolean(value)).sort().pop();
+  // The key panel stays open whenever it holds something the owner must see or answer.
+  const keyPanelOpen = keyOpen || Boolean(oneTimeKey || pendingAction || error);
+  // A failed skills read opens its panel, where the error is.
+  const skillsShown = skillsOpen || skillCount === null;
+  const runtimeDetails = describeRuntime(runtime);
+  const runtimeSummary = [runtimeDetails.adapter || runtime.adapter || runtime.runtimeType, runtime.model].filter(Boolean).join(' · ');
+  const processState = runtime.processConnected === true ? 'connected' : runtime.processConnected === false ? 'disconnected' : 'notReported';
+  const memoryHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`;
+  const talkLabel = t('agentProfile.hero.talkTo', { name: displayName });
+  const talkButton = (
+    <button type="button" className="b b-s ib" title={talkLabel} aria-label={talkLabel} disabled={openingRoom} onClick={() => { void talkTo(); }}>
+      <V2AgentSettingsIcon name="chat" />
+    </button>
+  );
+  const status = (
+    <div className="st">
+      {connection && <span className={`dot${disconnected ? ' dot--off' : connection.state === 'connected' ? '' : ' dot--idle'}`} aria-hidden="true" />}
+      {[connection && connectionLabel(connection, t), t('agentSettings.podCount', { count: access.pods.length })].filter(Boolean).join(' · ')}
+    </div>
+  );
+  const tabs = (
+    <nav className={`seg${phone ? ' seg--full' : ''}`} aria-label={t('agentSettings.tabs')}>
+      <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
+      <Link to={memoryHref}>{t('agentSettings.memory', { defaultValue: 'Memory' })}</Link>
+      <button type="button" aria-current="page">{t('agentSettings.settings')}</button>
+    </nav>
+  );
+
   return (
     <main className="v2-agent-settings v2-agent-settings-page">
-      <header className="ph">
-        <V2Avatar name={access.displayName || agentName} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
-        <div className="ahead">
-          <h1>{access.displayName || agentName}</h1>
-          <div className="st">{t('agentProfile.hero.activeInPods', { count: access.pods.length })}</div>
-        </div>
-        <span className="sp" />
-        <nav className="seg" aria-label={t('agentSettings.tabs')}>
-          <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
-          <Link to={`/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`}>{t('agentSettings.memory', { defaultValue: 'Memory' })}</Link>
-          <button type="button" aria-current="page">{t('agentSettings.settings')}</button>
-        </nav>
-      </header>
+      {phone ? (
+        <header className="mtop">
+          <button type="button" className="b b-g ib" title={t('agentSettings.yourTeam')} aria-label={t('agentSettings.yourTeam')} onClick={() => navigate('/v2/agents')}>
+            <V2AgentSettingsIcon name="back" />
+          </button>
+          <V2Avatar name={displayName} size="sm" kind="agent" seed={`${agentName}:${instanceId}`} />
+          <h1 className="tt2">{displayName}</h1>
+          {talkButton}
+        </header>
+      ) : (
+        <header className="ph">
+          <V2Avatar name={displayName} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
+          <div className="ahead">
+            <h1>{displayName}</h1>
+            {status}
+          </div>
+          <span className="sp" />
+          {tabs}
+          <span className="sp" />
+          {talkButton}
+        </header>
+      )}
       <div className="pbody">
         <div className="v2-agent-settings-page__col">
+          {phone && <>{tabs}<div className="v2-agent-settings-page__phonestatus">{status}</div></>}
+          {roomFailed && <p role="alert" className="v2-agent-settings__error">{t('agentProfile.hero.openRoomFailed')}</p>}
           <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
-          <h2 className="gtitle">{t('agentSettings.identityAccess')}</h2>
-          <div className="list">
-            <AgentControlLoader agentName={agentName} instanceId={instanceId}
-              refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
-            <div className="lrow">
-              <span className="lb"><span className={`dot${keysForbidden || disconnected ? ' dot--off' : ''}`} aria-hidden="true" /><svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 9.2-9.2M17 6l3 3M15 8l2 2" /></svg>{t('agentSettings.key')}</span>
-              <span className="vl">{keysForbidden ? t('agentSettings.keyUnavailable') : activeKeys.length ? t('agentSettings.keyActive') : t('agentSettings.noActiveKeys')}</span>
-              <span className="ac">
-                {keysForbidden ? null : installation?.runtime?.runtimeType === 'wrapper' ? (
-                  <span>{t('agentSettings.wrapperReconnect')}</span>
-                ) : !disconnected && (
-                  <button type="button" className="b b-g b-sm" onClick={() => setPendingAction('replace')} disabled={busy}>
-                    {t('agentSettings.regenerate')}
-                  </button>
-                )}
-              </span>
-            </div>
-            <div className="v2-agent-settings-page__keypanel">
+          <section className="v2-agent-settings-page__group" aria-labelledby="agent-identity-access">
+            <h2 id="agent-identity-access" className="gtitle"><V2AgentSettingsIcon name="id" />{t('agentSettings.identityAccess')}</h2>
+            <div className="list">
+              {installation && <V2AgentNameRow key={`name:${agentName}:${instanceId}`} installation={installation} update={update} />}
+              <div className="lrow">
+                <span className="lb"><V2AgentSettingsIcon name="key" />{t('agentSettings.runtimeKey')}</span>
+                <span className="vl">
+                  {keysForbidden ? t('agentSettings.keyUnavailable') : <>
+                    <span className={`dot${disconnected || !activeKeys.length ? ' dot--off' : ''}`} aria-hidden="true" />
+                    {activeKeys.length ? t('agentSettings.keyActive') : t('agentSettings.noActiveKeys')}
+                    {newestUse && <span className="mo">{t('agentSettings.keyUsed', { when: localizeRelativeTime(newestUse, t, { pastEvent: true }) })}</span>}
+                  </>}
+                </span>
+                <span className="ac">
+                  {!keysForbidden && (
+                    <button type="button" className="b b-g ib b-sm" title={t('agentSettings.keyActions')} aria-label={t('agentSettings.keyActions')}
+                      aria-expanded={keyPanelOpen} aria-controls="agent-key-panel" onClick={() => setKeyOpen((value) => !value)}>
+                      <V2AgentSettingsIcon name="more" />
+                    </button>
+                  )}
+                </span>
+              </div>
+              {keyPanelOpen && <div id="agent-key-panel" className="v2-agent-settings-page__keypanel">
                 {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
+                {!keysForbidden && (installation?.runtime?.runtimeType === 'wrapper' ? (
+                  <p className="v2-agent-settings-page__live">{t('agentSettings.wrapperReconnect')}</p>
+                ) : !disconnected && (
+                  <div className="v2-agent-settings-page__actions">
+                    <button type="button" className="b b-s b-sm" onClick={() => setPendingAction('replace')} disabled={busy}>
+                      {t('agentSettings.regenerate')}
+                    </button>
+                  </div>
+                ))}
                 {pendingAction === 'replace' && !keysForbidden && (
                   <div className="v2-agent-settings__confirm" data-testid="agent-key-replace-confirmation">
-                    <p>{t('agentByo.rekey.warning', { name: access.displayName || agentName })}</p>
+                    <p>{t('agentByo.rekey.warning', { name: displayName })}</p>
                     <div className="v2-agent-settings__actions">
                       <button type="button" disabled={busy} onClick={replaceKey}>{t('agentByo.rekey.replace')}</button>
                       <button type="button" disabled={busy} onClick={() => setPendingAction(null)}>{t('agentByo.rekey.cancel')}</button>
@@ -316,34 +417,70 @@ const V2AgentSettingsPage: React.FC = () => {
                     </details>}
                   </>
                 )}
+              </div>}
+              <AgentControlLoader agentName={agentName} instanceId={instanceId} hideWhenConnected
+                refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
+              <V2AgentListingRow key={`listing:${agentName}:${instanceId}`} agentName={installation?.name || agentName} instanceId={installation?.instanceId || instanceId} />
+              <V2AgentConnectorsRow key={`grants:${agentName}:${instanceId}`} name={agentName} instanceId={instanceId} />
+              <div className="lrow">
+                <span className="lb"><V2AgentSettingsIcon name="brain" />{t('agentSettings.memory', { defaultValue: 'Memory' })}</span>
+                <span className="vl">
+                  {memory && <>
+                    {t('agentSettings.memoryNotes', { count: memory.notes })}
+                    {memory.updatedAt && <span className="mo">{t('agentSettings.memorySaved', { when: localizeRelativeTime(memory.updatedAt, t, { pastEvent: true }) })}</span>}
+                  </>}
+                </span>
+                <span className="ac">
+                  <Link className="b b-g ib b-sm" to={memoryHref} aria-label={t('agentSettings.openMemory')} title={t('agentSettings.openMemory')}>
+                    <V2AgentSettingsIcon name="chevr" />
+                  </Link>
+                </span>
+              </div>
+              <div className="lrow">
+                <span className="lb"><V2AgentSettingsIcon name="grid" />{t('agentSkills.title')}</span>
+                <span className="vl">
+                  {typeof skillCount === 'number' && (skillCount > 0
+                    ? t('agentSettings.skillCount', { count: skillCount })
+                    : <span className="mu">{t('agentSettings.none')}</span>)}
+                </span>
+                <span className="ac">
+                  <button type="button" className="b b-g ib b-sm v2-agent-settings-page__toggle" title={t('agentSkills.title')} aria-label={t('agentSkills.title')}
+                    aria-expanded={skillsShown} aria-controls="agent-skills-panel" onClick={() => setSkillsOpen((value) => !value)}>
+                    <V2AgentSettingsIcon name="chev" />
+                  </button>
+                </span>
+              </div>
+              {/* Mounted while closed, so the row can count what the panel loads. */}
+              <div id="agent-skills-panel" className="v2-agent-settings-page__panel v2-agent-settings-page__panel--pad" hidden={!skillsShown}>
+                <V2AgentSkills podId={podId} podName={access.pods.find((pod) => pod.id === podId)?.name || podId}
+                  agentName={agentName} instanceId={instanceId} onCount={setSkillCount} />
+              </div>
+              {/* Opens by itself when the machine placement needs a move or failed. */}
+              <details className="disc" data-testid="agent-how-it-runs" ref={runsRef}>
+                <summary>
+                  <span className="lb"><V2AgentSettingsIcon name="cpu" />{t('agentManage.controls.title')}</span>
+                  <span className="vl">{runtimeSummary || t('agentManage.controls.notReported')}
+                    <span className="mo">{t(`agentManage.controls.${processState}`)}</span>
+                  </span>
+                  <V2AgentSettingsIcon name="chev" className="chev" />
+                </summary>
+                <div className="dbody v2-agent-settings-page__runsbody">
+                  <V2AgentRuntimeBody
+                    key={`runtime:${agentName}:${instanceId}`}
+                    name={agentName}
+                    instanceId={instanceId}
+                    runtime={runtime}
+                    onNeedsAttention={setRunsNeedAttention}
+                    onSaveRuntime={runtimeEditable ? async (changes) => {
+                      await updateRuntime(changes);
+                    } : undefined}
+                  />
+                  <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
+                    installation={installation} update={update} />
+                </div>
+              </details>
             </div>
-            <div className="lrow">
-              <span className="lb"><svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" /></svg>{t('agentSettings.memory', { defaultValue: 'Memory' })}</span>
-              <span className="vl" />
-              <span className="ac">
-                <Link className="b b-g ib b-sm" to={`/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`}
-                  aria-label={t('agentSettings.openMemory')}
-                  title={t('agentSettings.openMemory')}>
-                  <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
-                </Link>
-              </span>
-            </div>
-          </div>
-        {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
-        <V2AgentRuntimeGrants
-          key={`runtime:${agentName}:${instanceId}`}
-          name={agentName}
-          instanceId={instanceId}
-          runtime={runtime}
-          onSaveRuntime={runtimeEditable ? async (changes) => {
-            await updateRuntime(changes);
-          } : undefined}
-        />
-        <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
-          installation={installation} update={update} />
-        <div className="v2-agent-settings__section">
-          <V2AgentSkills podId={podId} podName={access?.pods.find((pod) => pod.id === podId)?.name || podId} agentName={agentName} instanceId={instanceId} />
-        </div>
+          </section>
         </div>
       </div>
     </main>

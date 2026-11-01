@@ -1,12 +1,12 @@
 // @ts-nocheck
-// The registry-entry owner's controls in the agent identity section (TASK-419
+// The registry-entry owner's controls in the agent settings Listing row (TASK-419
 // part 2, UI). The GET names the publisher; only that user sees the rename and
 // retire controls. The server re-checks ownership on every PATCH.
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
-import V2AgentIdentitySection from '../agents/V2AgentIdentitySection';
+import V2AgentListingRow from '../agents/V2AgentListingRow';
 import { AuthContext } from '../../context/AuthContext';
 import i18n, { i18nReady } from '../../i18n';
 
@@ -14,13 +14,6 @@ jest.mock('../../utils/axiosConfig', () => ({
   __esModule: true,
   default: { get: jest.fn(), patch: jest.fn() },
 }));
-
-const installation = {
-  name: 'scout',
-  instanceId: 'scout-1',
-  displayName: 'Scout',
-  profile: null,
-};
 
 const entry = (publisherId, status = 'active') => ({
   data: { status, registry: 'public', verified: true, displayName: 'Scout Agent', publisher: { userId: publisherId } },
@@ -30,15 +23,17 @@ const renderSection = (viewerId) => {
   render(
     <AuthContext.Provider value={{ currentUser: { _id: viewerId, username: 'maya' }, user: { _id: viewerId } }}>
       <MemoryRouter>
-        <V2AgentIdentitySection installation={installation} update={jest.fn()} />
+        <div className="list"><V2AgentListingRow agentName="scout" instanceId="scout-1" /></div>
       </MemoryRouter>
     </AuthContext.Provider>,
   );
 };
 
 const retireButton = () => screen.queryByRole('button', { name: 'Retire listing' });
+// The owner controls sit behind the row's Manage listing toggle.
+const openOwnerControls = async () => fireEvent.click(await screen.findByRole('button', { name: 'Manage listing' }));
 
-describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', () => {
+describe('V2AgentListingRow — registry entry owner controls (TASK-419)', () => {
   beforeAll(async () => {
     await i18nReady;
     await i18n.changeLanguage('en');
@@ -58,10 +53,19 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
     // waiting for it makes the absence check run after the owner data lands.
     await screen.findByText('Published');
     expect(retireButton()).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Manage listing' })).toBeNull();
+    // The public profile link is for every viewer.
+    expect(screen.getByRole('link', { name: 'View public profile' })).toHaveAttribute('href', '/v2/agent/scout/scout-1');
     cleanup();
 
     axios.get.mockResolvedValue(entry('owner-1'));
     renderSection('owner-1');
+    const toggle = await screen.findByRole('button', { name: 'Manage listing' });
+    // Closed by default: the owner controls appear only once the toggle opens them.
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(retireButton()).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(await screen.findByRole('button', { name: 'Retire listing' })).toBeInTheDocument();
   });
 
@@ -69,6 +73,7 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
     axios.get.mockResolvedValue(entry('owner-1'));
     axios.patch.mockResolvedValue({ data: { agentName: 'scout', displayName: 'Scout Agent', status: 'unpublished' } });
     renderSection('owner-1');
+    await openOwnerControls();
     fireEvent.click(await screen.findByRole('button', { name: 'Retire listing' }));
 
     await waitFor(() => expect(axios.patch).toHaveBeenCalledTimes(1));
@@ -83,6 +88,7 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
     axios.patch.mockResolvedValue({ data: { agentName: 'scout', displayName: 'Scout Agent', status: 'unpublished' } });
     renderSection('owner-1');
     await screen.findByText('Published');
+    await openOwnerControls();
     fireEvent.click(await screen.findByRole('button', { name: 'Retire listing' }));
 
     // Without the fix the status line keeps "Published" after the entry is retired.
@@ -95,6 +101,7 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
     axios.patch.mockResolvedValue({ data: { agentName: 'scout', displayName: 'Scout Agent', status: 'active' } });
     renderSection('owner-1');
     await screen.findByText('Not published');
+    await openOwnerControls();
     fireEvent.click(await screen.findByRole('button', { name: 'Restore listing' }));
 
     expect(await screen.findByText('Published')).toBeInTheDocument();
@@ -104,6 +111,7 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
     axios.get.mockResolvedValue(entry('owner-1'));
     axios.patch.mockResolvedValue({ data: {} });
     renderSection('owner-1');
+    await openOwnerControls();
     const input = await screen.findByDisplayValue('Scout Agent');
     fireEvent.change(input, { target: { value: '  Scout Pro  ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save listing name' }));
@@ -118,6 +126,7 @@ describe('V2AgentIdentitySection — registry entry owner controls (TASK-419)', 
     axios.get.mockResolvedValue(entry('owner-1'));
     axios.patch.mockRejectedValue(new Error('500'));
     renderSection('owner-1');
+    await openOwnerControls();
     fireEvent.click(await screen.findByRole('button', { name: 'Retire listing' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't update this listing. Try again.");

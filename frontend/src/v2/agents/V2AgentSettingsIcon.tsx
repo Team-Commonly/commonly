@@ -19,6 +19,13 @@ const PATHS = {
   plug: <path d="M12 22v-5M9 8V2M15 8V2M18 8v5a6 6 0 0 1-12 0V8z" />,
   key: <><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 9.2-9.2M17 6l3 3M15 8l2 2" /></>,
   rule: <><path d="M4 19.5V5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-1.5zM4 19.5A2 2 0 0 1 6 18h12" /><path d="M9 8h5" /></>,
+  pencil: <path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4" />,
+  more: <><circle cx="5" cy="12" r="1.2" /><circle cx="12" cy="12" r="1.2" /><circle cx="19" cy="12" r="1.2" /></>,
+  chevr: <path d="m9 18 6-6-6-6" />,
+  grid: <><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></>,
+  chat: <path d="M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12z" />,
+  back: <path d="M19 12H5M12 19l-7-7 7-7" />,
+  plus: <path d="M12 5v14M5 12h14" />,
   id: <><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="9" cy="12" r="2.4" /><path d="M14 10h4M14 14h3" /></>,
 };
 

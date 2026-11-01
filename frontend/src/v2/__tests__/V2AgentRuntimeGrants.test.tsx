@@ -1,7 +1,8 @@
 // @ts-nocheck
 import React from 'react';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import V2AgentRuntimeGrants, { describeRuntime } from '../components/V2AgentRuntimeGrants';
+import { MemoryRouter } from 'react-router-dom';
+import V2AgentRuntimeBody, { V2AgentConnectorsRow, describeRuntime } from '../components/V2AgentRuntimeGrants';
 import { AuthContext } from '../../context/AuthContext';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 
@@ -28,11 +29,19 @@ const response = {
   }],
 };
 
+// The settings page renders the two halves apart: the Connectors row in the
+// Identity & access list, the runtime body inside How it runs.
 const renderSection = (runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet' }) => render(
   <AuthContext.Provider value={authValue}>
-    <V2AgentRuntimeGrants name="nib" instanceId="default" runtime={{ managed: true, inventory: ['claude', 'codex'].map((harness) => ({ harness, installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] })), ...runtime }} onSaveRuntime={saveRuntime} />
+    <MemoryRouter>
+      <div className="list"><V2AgentConnectorsRow name="nib" instanceId="default" /></div>
+      <V2AgentRuntimeBody name="nib" instanceId="default" runtime={{ managed: true, inventory: ['claude', 'codex'].map((harness) => ({ harness, installed: true, version: '1', models: null, efforts: ['low', 'medium', 'high', 'xhigh'] })), ...runtime }} onSaveRuntime={saveRuntime} />
+    </MemoryRouter>
   </AuthContext.Provider>,
 );
+// The grants list sits behind the Connectors row's toggle.
+const openGrants = () => fireEvent.click(screen.getByRole('button', { name: 'Connector grants' }));
+const grantsRegion = () => screen.getByRole('region', { name: 'Connector grants' });
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -71,6 +80,30 @@ test('revoked Runtime row offers an active computer and moves in one request', a
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/agent-binding/move',
     { agentName: 'nib', instanceId: 'default', machineId: 'new', fromMachineId: 'old' }, expect.anything()));
   expect(axios.post).toHaveBeenCalledTimes(1);
+});
+
+test('a revoked machine tells the page the body needs attention; a healthy one does not', async () => {
+  const runtime = { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet', managed: true };
+  const renderBody = (onNeedsAttention) => render(
+    <AuthContext.Provider value={authValue}><MemoryRouter>
+      <V2AgentRuntimeBody name="nib" instanceId="default" runtime={runtime} onNeedsAttention={onNeedsAttention} />
+    </MemoryRouter></AuthContext.Provider>,
+  );
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: true,
+      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+  const revoked = jest.fn();
+  const { unmount } = renderBody(revoked);
+  await waitFor(() => expect(revoked).toHaveBeenLastCalledWith(true));
+  unmount();
+
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: 'old', requestedMachineId: null, boundMachineRevoked: false,
+      activeMachines: [{ machineId: 'old', name: 'Old Mac' }] } : response }));
+  const healthy = jest.fn();
+  renderBody(healthy);
+  expect(await screen.findByText(/Old Mac/)).toBeInTheDocument();
+  expect(healthy).not.toHaveBeenCalledWith(true);
 });
 
 test('two computers with one name are told apart by when each was added', async () => {
@@ -128,6 +161,7 @@ test('shows this agent grant and requires a second click to revoke through the e
   renderSection();
   expect(await screen.findByText('changes apply on the next spawn')).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Claude Code 1' })).toBeInTheDocument();
+  openGrants();
   expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   expect(axios.post).not.toHaveBeenCalled();
@@ -143,7 +177,7 @@ test('model changes delegate to the shared settings hook; a single CLI has no ed
   await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ adapter: 'claude', model: 'opus' }));
   expect(axios.post).not.toHaveBeenCalled();
 
-  rerender(<AuthContext.Provider value={authValue}><V2AgentRuntimeGrants name="other" instanceId="default" runtime={{ runtimeType: 'webhook', host: 'byo', adapter: 'hermes' }} onSaveRuntime={saveRuntime} /></AuthContext.Provider>);
+  rerender(<AuthContext.Provider value={authValue}><MemoryRouter><V2AgentRuntimeBody name="other" instanceId="default" runtime={{ runtimeType: 'webhook', host: 'byo', adapter: 'hermes' }} onSaveRuntime={saveRuntime} /></MemoryRouter></AuthContext.Provider>);
   expect(await screen.findByText('read only · this seat runs from the cli')).toBeInTheDocument();
   expect(screen.getByLabelText('model')).toBeDisabled();
 });
@@ -168,17 +202,18 @@ test('a failed runtime save reports next to the editor', async () => {
   renderSection();
   fireEvent.change(screen.getByLabelText('model'), { target: { value: 'opus' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
-  const runtimeSection = screen.getByRole('heading', { name: 'How it runs' }).closest('section');
+  const runtimeSection = screen.getByRole('region', { name: 'How it runs' });
   expect(await within(runtimeSection).findByRole('alert')).toHaveTextContent('Could not save runtime settings.');
 });
 
 test('a successful revoke stays ended if the grant reload fails', async () => {
   renderSection();
+  openGrants();
   await screen.findByText(/Work · Granted by Owner/);
   axios.get.mockRejectedValue(new Error('reload failed'));
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
-  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  const grantsSection = grantsRegion();
   expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not load connector grants.');
   expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
 });
@@ -186,6 +221,7 @@ test('a successful revoke stays ended if the grant reload fails', async () => {
 test('does not offer revoke when the server says this viewer cannot revoke', async () => {
   axios.get.mockResolvedValue({ data: { ...response, grants: [{ ...response.grants[0], canRevoke: false }] } });
   renderSection();
+  openGrants();
   expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
 });
@@ -198,7 +234,8 @@ test('a failed grant load is one row with Try again, which reloads the list', as
     return Promise.resolve({ data: response });
   });
   renderSection();
-  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  // A failed load opens the list by itself, so the alert and Try again are in view.
+  const grantsSection = await screen.findByRole('region', { name: 'Connector grants' });
   expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not load connector grants.');
   fail = false;
   fireEvent.click(within(grantsSection).getByRole('button', { name: 'Try again' }));
@@ -209,10 +246,11 @@ test('a failed grant load is one row with Try again, which reloads the list', as
 test('a failed revoke says so above the rows, keeps the grant revocable and offers no reload', async () => {
   axios.post.mockRejectedValue(new Error('denied'));
   renderSection();
+  openGrants();
   await screen.findByText(/Work · Granted by Owner/);
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
-  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  const grantsSection = grantsRegion();
   expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not revoke the grant.');
   expect(within(grantsSection).queryByRole('button', { name: 'Try again' })).toBeNull();
   expect(within(grantsSection).getByRole('button', { name: 'Yes, revoke it' })).toBeEnabled();
@@ -224,6 +262,7 @@ test('the inline confirm swaps back to Revoke on Cancel, and the title counts ac
     : { grants: [...response.grants, { ...response.grants[0], grantId: 'grant-2', connector: 'sentry', revokedAt: '2026-10-20T00:00:00Z' }] } }));
   renderSection();
   expect(await screen.findByText('1 active · 1 ended')).toBeInTheDocument();
+  openGrants();
   expect(screen.getAllByRole('button', { name: 'Revoke' })).toHaveLength(1);
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
@@ -238,16 +277,32 @@ test('names a grant by its connector brand, not its id', async () => {
     ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
     : { grants: [{ ...response.grants[0], connector: 'github', tools: ['github.list_issues'] }] } }));
   renderSection();
+  openGrants();
   expect(await screen.findByText('GitHub')).toBeInTheDocument();
 });
 
-test('Connector grants is one heading, named by its title and not its count', async () => {
+test('Connectors is a row with no heading of its own; its grants list is closed until the toggle opens it', async () => {
   renderSection();
   await screen.findByText('1 active');
-  const headings = screen.getAllByRole('heading').filter((node) => node.textContent.includes('Connector grants'));
-  expect(headings).toHaveLength(1);
-  expect(headings[0]).toHaveClass('gtitle');
-  expect(screen.getByRole('heading', { name: 'Connector grants' })).toBe(headings[0]);
+  expect(screen.queryAllByRole('heading').filter((node) => node.textContent.includes('Connector grants'))).toHaveLength(0);
+  const toggle = screen.getByRole('button', { name: 'Connector grants' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('region', { name: 'Connector grants' })).toBeNull();
+  expect(screen.queryByText(/Work · Granted by Owner/)).toBeNull();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(within(grantsRegion()).getByText(/Work · Granted by Owner/)).toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(screen.queryByRole('region', { name: 'Connector grants' })).toBeNull();
+});
+
+test('an agent without grants reads None, and the grant link goes to the Connectors page', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
+    : { grants: [] } }));
+  renderSection();
+  expect(await screen.findByText('None')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Grant a connector' })).toHaveAttribute('href', '/v2/connectors');
 });
 
 test('each grant shows its tools as text, so two grants for one connector are told apart', async () => {
@@ -255,6 +310,7 @@ test('each grant shows its tools as text, so two grants for one connector are to
     ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
     : { grants: [response.grants[0], { ...response.grants[0], grantId: 'grant-2', tools: ['linear.create_issue', 'linear.update_issue'] }] } }));
   renderSection();
+  openGrants();
   expect(await screen.findByText('linear.list_issues')).toBeVisible();
   expect(screen.getByText('linear.create_issue, linear.update_issue')).toBeVisible();
 });
@@ -262,8 +318,9 @@ test('each grant shows its tools as text, so two grants for one connector are to
 test('a revoke error clears on Cancel and when a new confirm opens', async () => {
   axios.post.mockRejectedValue(new Error('denied'));
   renderSection();
+  openGrants();
   await screen.findByText(/Work · Granted by Owner/);
-  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  const grantsSection = grantsRegion();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
   expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not revoke the grant.');
@@ -277,8 +334,9 @@ test('opening another grant\'s confirm clears the last revoke error', async () =
     ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
     : { grants: [response.grants[0], { ...response.grants[0], grantId: 'grant-2', connector: 'sentry', tools: ['sentry.list_issues'] }] } }));
   renderSection();
+  openGrants();
   await screen.findByText('sentry.list_issues');
-  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  const grantsSection = grantsRegion();
   fireEvent.click(screen.getAllByRole('button', { name: 'Revoke' })[0]);
   fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
   expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not revoke the grant.');

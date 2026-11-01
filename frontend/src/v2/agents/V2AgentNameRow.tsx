@@ -1,8 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import axios from '../../utils/axiosConfig';
-import { useAuth } from '../../context/AuthContext';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import type { AgentSettingsInstallation, AgentSettingsPatch } from './useAgentSettings';
 
@@ -30,24 +27,13 @@ const asPersona = (value: unknown): PersonaFields => {
   };
 };
 
-interface ListingData {
-  status?: string; registry?: string; ephemeral?: boolean; verified?: boolean;
-  displayName?: string; publisher?: { userId?: string };
-}
-
-// One mapper for the GET and for the PATCH answer, so the status line can't drift from the entry.
-const listingStatusKey = (data: ListingData): string => {
-  if (data.ephemeral || data.registry === 'private' || data.status === 'unpublished') return 'listingNotPublished';
-  if (data.status === 'pending-review') return 'listingInReview';
-  if (data.status === 'deprecated') return 'listingDeprecated';
-  if (data.status === 'active') return data.verified ? 'listingPublished' : 'listingNotInCatalog';
-  return 'listingNotPublished';
-};
-
-const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
+// The Identity & access list's Name row. Rename opens the name (and, for
+// OpenClaw, persona) form below the row, inside the list.
+const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
   const { t } = useTranslation();
   const profile = installation.profile;
   const supportsPersona = installation.name.toLowerCase() === 'openclaw';
+  const [open, setOpen] = useState(false);
   const [displayName, setDisplayName] = useState(installation.displayName || '');
   const [persona, setPersona] = useState<PersonaFields>(() => asPersona(profile?.persona));
   const personaChanged = supportsPersona && Object.entries(asPersona(profile?.persona))
@@ -55,31 +41,6 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [listingStatus, setListingStatus] = useState('listingLoading');
-  // Registry owner controls (TASK-419 part 2). The GET names the publisher;
-  // the server re-checks ownership on every PATCH.
-  const { currentUser } = useAuth();
-  const [listing, setListing] = useState<ListingData | null>(null);
-  const [listingName, setListingName] = useState('');
-  const [listingBusy, setListingBusy] = useState(false);
-  const [listingError, setListingError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    setListingStatus('listingLoading');
-    void axios.get<ListingData>(`/api/registry/agents/${encodeURIComponent(installation.name)}`)
-      .then(({ data }) => {
-        if (!active) return;
-        setListing(data);
-        setListingName(data.displayName || '');
-        setListingStatus(listingStatusKey(data));
-      }).catch((requestError) => {
-        if (!active) return;
-        const status = (requestError as { response?: { status?: number } })?.response?.status;
-        setListingStatus(status === 404 ? 'listingNotPublished' : 'listingUnavailable');
-      });
-    return () => { active = false; };
-  }, [installation.name]);
 
   useEffect(() => {
     setDisplayName(installation.displayName || '');
@@ -129,25 +90,6 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
     }
   };
 
-  const entryOwnerId = listing?.publisher?.userId ? String(listing.publisher.userId) : null;
-  const ownsListing = Boolean(currentUser?._id) && entryOwnerId === String(currentUser._id);
-  const retired = listing?.status === 'unpublished';
-  const saveListing = async (patch: { displayName?: string; retired?: boolean }) => {
-    setListingBusy(true);
-    setListingError(null);
-    try {
-      const { data } = await axios.patch<ListingData>(`/api/registry/agents/${encodeURIComponent(installation.name)}/owned-entry`, patch);
-      // The PATCH answer carries the new status; verified and registry are not in it, so keep the GET's.
-      const next = { ...listing, ...data };
-      setListing(next);
-      setListingName(next.displayName || '');
-      setListingStatus(listingStatusKey(next));
-    } catch {
-      setListingError(t('agentSettings.ownedFailed'));
-    } finally {
-      setListingBusy(false);
-    }
-  };
   // Errors are stored as keys so the name refusals can sit under the field and the rest beside Save.
   const nameError = error === 'agentSettings.identityNameError' || error === 'agentSettings.identityNameTakenError';
   const alertRow = (text: string) => <span role="alert" className="v2-agent-settings-page__note">
@@ -155,9 +97,19 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
   </span>;
   const specialtyCount = commaList(persona.specialties).length;
   const boundaryCount = commaList(persona.boundaries).length;
-  return <section className="v2-agent-settings-page__group" aria-labelledby="agent-identity-title">
-    <h2 id="agent-identity-title" className="gtitle"><V2AgentSettingsIcon name="id" />{t('agentSettings.identityTitle')}</h2>
-    <div className="list">
+  const formId = `agent-identity-form-${installation.instanceId}`;
+  return <>
+    <div className="lrow">
+      <span className="lb"><V2AgentSettingsIcon name="user" />{t('agentSettings.name')}</span>
+      <span className="vl">{installation.displayName || installation.instanceId}</span>
+      <span className="ac">
+        <button type="button" className="b b-g ib b-sm" title={t('agentSettings.rename')} aria-label={t('agentSettings.rename')}
+          aria-expanded={open} aria-controls={formId} onClick={() => setOpen((value) => !value)}>
+          <V2AgentSettingsIcon name="pencil" />
+        </button>
+      </span>
+    </div>
+    {open && <div id={formId} className="v2-agent-settings-page__panel">
       <form className="v2-agent-settings-page__form" onSubmit={save} noValidate>
         <div className="lrow v2-agent-settings-page__stack">
           <label className="lb" htmlFor="agent-identity-name"><V2AgentSettingsIcon name="user" />{t('agentSettings.displayName')}</label>
@@ -221,38 +173,8 @@ const V2AgentIdentitySection: React.FC<Props> = ({ installation, update }) => {
           <span className="ac" />
         </div>
       </form>
-      <details className="disc">
-        <summary>
-          <span className="lb"><V2AgentSettingsIcon name="store" />{t('agentSettings.listingTitle')}</span>
-          <span className="vl"><span role="status">{t(`agentSettings.${listingStatus}`)}</span>
-            {ownsListing && <span className="mo">{t('agentSettings.ownedTitle')}</span>}
-          </span>
-          <V2AgentSettingsIcon name="chev" className="chev" />
-        </summary>
-        <div className="dbody">
-          {ownsListing && <label className="v2-agent-settings-page__pair"><span className="mu">{t('agentSettings.ownedName')}</span>
-            <span className="field">
-              <input value={listingName} maxLength={80} disabled={listingBusy} onChange={(event) => setListingName(event.target.value)} />
-            </span>
-          </label>}
-          <div className="v2-agent-settings-page__actions">
-            {ownsListing && <>
-              <button type="button" className="b b-s b-sm" disabled={listingBusy || !listingName.trim()} onClick={() => saveListing({ displayName: listingName.trim() })}>
-                {t('agentSettings.ownedSave')}
-              </button>
-              <button type="button" className="b b-g b-sm" disabled={listingBusy} onClick={() => saveListing({ retired: !retired })}>
-                {retired ? t('agentSettings.ownedRestore') : t('agentSettings.ownedRetire')}
-              </button>
-            </>}
-            <Link className="b b-g b-sm" to={`/v2/agent/${encodeURIComponent(installation.name)}/${encodeURIComponent(installation.instanceId)}`}>
-              {t('agentSettings.viewPublicProfile')}<V2AgentSettingsIcon name="out" />
-            </Link>
-          </div>
-          {listingError && alertRow(listingError)}
-        </div>
-      </details>
-    </div>
-  </section>;
+    </div>}
+  </>;
 };
 
-export default V2AgentIdentitySection;
+export default V2AgentNameRow;
