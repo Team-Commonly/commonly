@@ -19,6 +19,13 @@ const {
 } = require('../../../services/hostedMcpToolDefinitions');
 const { AIRTABLE_ENTRY } = require('../../../integrations/hostedMcp/airtable');
 
+// The runtime cache hands each fresh assessment to the drift alert (F48). The
+// alert's own behaviour is pinned in hostedMcpDriftAlertService.test.js.
+const mockAlertOnHostedMcpDrift = jest.fn();
+jest.mock('../../../services/hostedMcpDriftAlertService', () => ({
+  alertOnHostedMcpDrift: (...args) => mockAlertOnHostedMcpDrift(...args),
+}));
+
 const ENTRY = {
   id: 'linear',
   title: 'Linear',
@@ -167,6 +174,34 @@ describe('hosted-MCP tool definitions', () => {
     } finally {
       warning.mockRestore();
     }
+  });
+
+  it('hands a fresh assessment to the drift alert', async () => {
+    mockAlertOnHostedMcpDrift.mockClear();
+    const fetcher = jest.fn(async (_url, init) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      const body = JSON.parse(init.body);
+      if (body.method === 'initialize') {
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: {
+          protocolVersion: '2025-11-25', capabilities: { tools: {} }, serverInfo: { name: 'fake', version: '1' },
+        } }), { headers: { 'content-type': 'application/json', 'mcp-session-id': 's-1' } });
+      }
+      if (body.method === 'notifications/initialized') return new Response(null, { status: 202 });
+      if (body.method === 'tools/list') {
+        return jsonResponse({ jsonrpc: '2.0', id: body.id, result: {
+          tools: [{ name: 'list_issues', inputSchema: { type: 'object', properties: { limit: { type: 'string' } } } }],
+        } });
+      }
+      throw new Error(`unexpected ${body.method}`);
+    });
+    const deps = makeDeps();
+    deps.fetcher = fetcher;
+    deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
+    const outcome = await deps.driftCache.assess({ connectionId: ROW_ID }, ENTRY);
+
+    expect(mockAlertOnHostedMcpDrift).toHaveBeenCalledTimes(1);
+    expect(mockAlertOnHostedMcpDrift).toHaveBeenCalledWith({ connectionId: ROW_ID }, ENTRY, outcome.tools);
+    expect(outcome.tools.find((tool) => tool.name === 'list_issues').verdict).toBe('tool_drift');
   });
 
   it('opens a fresh session after the vendor expires one before tools/list', async () => {

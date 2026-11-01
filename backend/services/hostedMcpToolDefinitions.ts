@@ -31,6 +31,7 @@ import {
   type HostedMcpUpstreamTool,
 } from './hostedMcpEntryService';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
+import { alertOnHostedMcpDrift } from './hostedMcpDriftAlertService';
 import type { HostedMcpRow } from './hostedMcpCredentialService';
 import type { ToolConnection, ToolDefinition } from './toolBrokerService';
 
@@ -480,6 +481,7 @@ export const createHostedMcpRuntimeDriftCache = (
   entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
 ): HostedMcpDriftCache => createHostedMcpDriftCache({
   listUpstreamTools: ({ connectionId }) => listUpstreamTools(connectionId, deps, entries),
+  onAssessed: alertOnHostedMcpDrift,
 });
 
 const productionDriftCache = createHostedMcpRuntimeDriftCache({
