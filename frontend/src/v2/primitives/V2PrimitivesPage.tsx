@@ -83,17 +83,17 @@ const V2PrimitivesPage: React.FC = () => (
           </div>
 
           <div className="v2p-gtitle">tiles, popover</div>
-          <div className="v2p-cols">
+          <div className="v2p-tiles">
             <button type="button" className="v2p-tile">
               <span className="tn">Settings</span>
             </button>
             <button type="button" className="v2p-tile add">
               <span className="tn">Add</span>
             </button>
-            <div className="v2p-pop" role="note" aria-label="Popover example">
-              <div className="v2p-pop-h">Popover title</div>
-              <p>Shown inline here. On the live pages it floats over its anchor.</p>
-            </div>
+          </div>
+          <div className="v2p-pop" role="note" aria-label="Popover example">
+            <div className="v2p-pop-h">Popover title</div>
+            <p>Shown inline here. On the live pages it floats over its anchor.</p>
           </div>
         </div>
 

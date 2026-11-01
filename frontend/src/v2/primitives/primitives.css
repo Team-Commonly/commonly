@@ -317,8 +317,10 @@
 }
 .v2p-tile:hover { box-shadow: 0 0 0 1px var(--v2-border), var(--v2-key-inset), 0 12px 22px -12px rgba(16, 24, 40, 0.28); }
 .v2p-tile:focus-visible { box-shadow: 0 0 0 2px var(--v2-accent); }
+.v2p-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .v2p-tile .tn { font: 600 13px/1.2 var(--v2-font); color: var(--v2-ink-2); }
 .v2p-tile.add { background: transparent; box-shadow: none; border: 1.5px dashed var(--v2-border); color: var(--v2-text-muted); }
+.v2p-tile.add:focus-visible { box-shadow: 0 0 0 2px var(--v2-accent); }
 .v2p-tile.add .tn { color: var(--v2-text-muted); font-weight: 500; }
 
 /* ---- 390 (the artboard's phone frame): the rail goes, rows stack, the drawer

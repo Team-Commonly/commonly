@@ -49,6 +49,10 @@ describe('D223 primitives', () => {
     expect(screen.getByText('Popover title')).toBeInTheDocument();
   });
 
+  test('the dashed Add tile keeps a visible keyboard focus ring', () => {
+    expect(css).toMatch(/\.v2p-tile\.add:focus-visible\s*\{[^}]*box-shadow:[^;]*--v2-accent/);
+  });
+
   test('the showcase pane scrolls, so the long page is not clipped', () => {
     expect(css).toMatch(/\.v2p-pane--scroll\s*\{[^}]*overflow-y:\s*auto/);
     render(<V2PrimitivesPage />);
