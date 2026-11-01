@@ -403,7 +403,10 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         const grantCount = grantPodCounts.get(instanceKey);
         const payload = basePayload && {
           ...basePayload,
-          mention: mentions.mentionHandleForUser(mentionMap, user),
+          // Routing reads the install, so a missing bot row still has a handle.
+          mention: mentions.mentionHandleForUser(mentionMap, user || {
+            isBot: true, botMetadata: { agentName: i.agentName, instanceId: i.instanceId || 'default' },
+          }),
           runtimeNarrowedByMultipleGrantPods: (grantCount?.grantPods ?? 0) >= 2,
           // A seat in one pod loses nothing; one granted pod out of several
           // means it can post only there.

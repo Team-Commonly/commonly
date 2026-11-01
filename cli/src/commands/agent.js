@@ -593,7 +593,10 @@ const listAgents = async (opts, deps) => {
 export const resolveLogsSeat = async (client, podId, typed, instanceId) => {
   // Activity is stored under the bare agentName, never an @ spelling.
   const bare = String(typed).trim().replace(/^@/, '');
-  if (instanceId) return { agentName: bare, instanceId };
+  const isHandle = String(typed).trim().startsWith('@');
+  // A plain name with an explicit instance is used as given. An @handle still
+  // needs the roster: activity is stored under the agentName, not the handle.
+  if (instanceId && !isHandle) return { agentName: bare, instanceId };
   const want = bare.toLowerCase();
   let agents;
   try {
@@ -602,15 +605,22 @@ export const resolveLogsSeat = async (client, podId, typed, instanceId) => {
     // The default instance is still worth reading when the roster isn't.
     return {
       agentName: bare,
-      instanceId: 'default',
-      note: `The pod roster couldn't be read (${err.message}), so instance default was read for '${bare}'.`,
+      instanceId: instanceId || 'default',
+      note: `The pod roster couldn't be read (${err.message}), so instance ${instanceId || 'default'} was read for '${bare}'.`,
     };
   }
   const seatOf = (inst) => ({ agentName: inst.name || inst.agentName, instanceId: inst.instanceId || 'default' });
   // An @handle routes to one seat, so it wins over another seat's instance of the same name.
-  if (String(typed).trim().startsWith('@')) {
+  if (isHandle) {
     const byHandle = agents.filter((inst) => typeof inst.mention === 'string' && inst.mention.toLowerCase() === want);
-    if (byHandle.length === 1) return seatOf(byHandle[0]);
+    if (byHandle.length === 1) return instanceId ? { ...seatOf(byHandle[0]), instanceId } : seatOf(byHandle[0]);
+    if (instanceId) {
+      return {
+        agentName: bare,
+        instanceId,
+        note: `'${typed}' is not a handle in this pod's roster, so agent name '${bare}' was read at instance ${instanceId}.`,
+      };
+    }
   }
   const named = (inst) => [inst.mention, inst.name || inst.agentName, inst.instanceId !== 'default' && inst.instanceId]
     .some((n) => typeof n === 'string' && n.toLowerCase() === want);

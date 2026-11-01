@@ -76,3 +76,17 @@ test('a mention map that fails to load leaves every row in place, with no handle
     warn.mockRestore();
   }
 });
+
+test('an active install whose bot row is missing still carries its routed handle', async () => {
+  const pod = await Pod.create({
+    name: 'Roster pod', type: 'chat', createdBy: mockOwner.id, members: [mockOwner.id],
+  });
+  await AgentInstallation.create({
+    agentName: 'cto-walk-1016', instanceId: 'cto-walk', podId: pod._id, installedBy: mockOwner.id, status: 'active', version: '1.0.0',
+  });
+
+  const res = await request(app).get(`/api/registry/pods/${pod._id}/agents`).expect(200);
+
+  // Mention routing reads the install, so the roster names the same handle.
+  expect(res.body.agents.map((a) => [a.instanceId, a.mention])).toEqual([['cto-walk', 'cto-walk-1016-cto-walk']]);
+});

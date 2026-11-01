@@ -32,6 +32,22 @@ describe('resolveLogsSeat', () => {
     expect(client.get).not.toHaveBeenCalled();
   });
 
+  test('an @handle with an explicit --instance-id reads that seat\'s agentName at the given instance', async () => {
+    const client = roster([walk, pixel]);
+    await expect(resolveLogsSeat(client, 'pod-1', '@cto-walk-1016-cto-walk', 'other'))
+      .resolves.toEqual({ agentName: 'cto-walk-1016', instanceId: 'other' });
+    expect(client.get).toHaveBeenCalledTimes(1);
+  });
+
+  test('an @handle the roster lacks, with --instance-id, says so instead of reading silently', async () => {
+    const seat = await resolveLogsSeat(roster([walk]), 'pod-1', '@nobody', 'x');
+    expect(seat).toEqual({
+      agentName: 'nobody',
+      instanceId: 'x',
+      note: "'@nobody' is not a handle in this pod's roster, so agent name 'nobody' was read at instance x.",
+    });
+  });
+
   test('an agentName two seats share names the instances to choose from', async () => {
     // Each pair is what to pass back: the agentName and its instance.
     await expect(resolveLogsSeat(roster([pixel, nova]), 'pod-1', 'openclaw'))
