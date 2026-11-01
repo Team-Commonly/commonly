@@ -250,7 +250,7 @@ const V2PodBoard: React.FC = () => {
   }, [api, podId, detailSaving, t]);
 
   const claimHolderName = useCallback((task: BoardTask): string => {
-    const member = podMembers.find((item) => memberId(item) === task.claimedBy);
+    const member = podMembers.find((item) => memberId(item) === task.claimedBy || item.username === task.claimedBy);
     if (member) return memberLabel(member);
     // The claim route records the claimant's User id and resolved author on
     // the update. Match identity rather than the wording of the update text.

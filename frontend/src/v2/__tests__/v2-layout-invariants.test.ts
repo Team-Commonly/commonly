@@ -5139,9 +5139,8 @@ describe('task priority and lease signals (TASK-443)', () => {
     expect(ruleBody(css, '.v2-board__card--blocked')).toContain('box-shadow: inset 3px 0 0 var(--v2-status-blocked-edge)');
     expect(ruleBody(css, '.v2-board__col--blocked .v2-board__col-name')).toContain('color: var(--v2-status-blocked)');
   });
-  test('live, unclaimed and expired ownership retain distinct dots', () => {
+  test('live and expired ownership retain distinct dots', () => {
     expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-status-live)');
-    expect(ruleBody(css, '.v2-board__owner-dot--not-claimed')).toContain('border: 1px dashed var(--v2-status-pending)');
     const expired = ruleBody(css, '.v2-board__owner-dot--expired');
     expect(expired).toContain('border: 1px solid var(--v2-status-idle)');
     expect(expired).toContain('background: none');

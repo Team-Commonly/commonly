@@ -1597,13 +1597,9 @@
       "defaultPriority": "默认"
     },
     "owner": {
-      "left": "{{holder}} · <minutes>剩余{{minutes}}分钟</minutes>",
       "leaseShort": "{{minutes}}分钟",
       "expiredShort": "已到期",
-      "claimedShort": "已认领",
-      "assigned": "{{assignee}} · 尚未认领",
-      "expired": "认领已到期 · {{holder}}",
-      "claimed": "{{holder}} · 已认领"
+      "claimedShort": "已认领"
     },
     "filter": {
       "label": "筛选",
