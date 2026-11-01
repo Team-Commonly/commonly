@@ -427,6 +427,13 @@
 
 .v2-thread .v2-pod-header__stack .v2-avatar + .v2-avatar { margin-left: -6px; }
 
+/* A 1:1 room (d215 dm frame): the agent's 28px face, the name, then its chips beside the name rather
+   than across the header; the spacer falls after the chips, so the panel toggle keeps the right edge. */
+.v2-pod-header__avatar { display: inline-flex; flex: none; align-self: center; }
+.v2-thread .v2-pod-header__avatar .v2-avatar { width: 28px; height: 28px; border-radius: var(--v2-r-7, 7px); }
+.v2-pod-header--direct .v2-thread__title { flex: 0 1 auto; }
+.v2-pod-header--direct .v2-pod-header__meta { margin-right: auto; }
+
 .v2-pod-header__more { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
 
 /* D215: the board is a chip, a board glyph and the count. */

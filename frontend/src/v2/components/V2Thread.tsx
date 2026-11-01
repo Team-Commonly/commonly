@@ -1954,9 +1954,22 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   return (
     <main className="v2-pane v2-pane--main">
       <div className="v2-chat v2-thread">
-        <header className="v2-thread__header v2-pod-header">
+        <header className={`v2-thread__header v2-pod-header${isDirectPod ? ' v2-pod-header--direct' : ''}`}>
           <div className="v2-thread__header-row">
             {mobileNavButton}
+            {/* A room with one agent leads with that agent's face (d215 dm frame). The name follows, so the
+                face is decoration to a screen reader. */}
+            {isAgentRoom && botMembers.length === 1 && (
+              <span className="v2-pod-header__avatar" aria-hidden="true" data-testid="agent-room-header-avatar">
+                <V2Avatar
+                  name={botMembers[0]?.botMetadata?.displayName || botMembers[0]?.username || ''}
+                  src={botMembers[0]?.profilePicture || undefined}
+                  tone="flat"
+                  kind="agent"
+                  seed={botMembers[0]?._id || botMembers[0]?.username || undefined}
+                />
+              </span>
+            )}
             <div className="v2-thread__title">
               <div className="v2-thread__title-line">
                 {renaming ? (
