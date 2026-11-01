@@ -42,6 +42,7 @@ const {
   killStallSurvivors, isModelProgressLine, describeFirstOutputWatch,
 } = await import('../src/lib/first-output-watchdog.js');
 const { claudeResultText, claudeFailureTail } = await import('../src/lib/adapters/claude.js');
+const { OWN_PROCESS_GROUP } = await import('@commonlyai/seats/process-group');
 const watchStream = (args) => watchFirstOutput({ ...args, modelStream: true });
 const { classifySpawnFailure, spawnRetryPolicy, SPAWN_FAILURE_CLASS } = await import('../src/lib/spawn-retry.js');
 
@@ -312,6 +313,56 @@ describe('a turn frozen with SIGSTOP', () => {
       if (child && child.exitCode === null && child.signalCode === null) {
         try { process.kill(child.pid, 'SIGKILL'); } catch { /* gone */ }
       }
+      if (saved === undefined) delete process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+      else process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = saved;
+    }
+  }, 20_000);
+
+  // Supervised, the turn leads its own group, and a freeze stops its tools too.
+  // A stopped descendant must run its own SIGTERM handler: once the root exits,
+  // the survivor sweep SIGKILLs anything left, so a root-only SIGCONT still
+  // ends the turn fast but never lets the descendant clean up.
+  test('continues a stopped descendant in its group, so it handles SIGTERM itself', async () => {
+    const WINDOW_MS = 1_500;
+    const GRACE_MS = 8_000;
+    const mark = path.join(sessionsTmpDir, `descendant-term-${process.pid}`);
+    fs.rmSync(mark, { force: true });
+    const saved = process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+    process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = String(WINDOW_MS);
+    let child = null;
+    let grandchild = 0;
+    try {
+      const outcome = await claude.spawn('hello', {
+        environment: { model: 'test-model' },
+        [OWN_PROCESS_GROUP]: true,
+        _spawnImpl: (_cmd, _args, options) => {
+          const grand = `process.on('SIGTERM', () => { require('fs').writeFileSync(${JSON.stringify(mark)}, 'term'); process.exit(143); });`
+            + " process.stderr.write('ready ' + process.pid + '\\n'); setInterval(() => {}, 1000);";
+          const root = "process.on('SIGTERM', () => process.exit(143));"
+            + ` require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grand)}], { stdio: ['ignore', 'ignore', 'inherit'] });`
+            + ' setInterval(() => {}, 1000);';
+          child = realSpawn(process.execPath, ['-e', root], { ...options, cwd: sessionsTmpDir });
+          child.stderr.once('data', (chunk) => {
+            grandchild = Number(/ready (\d+)/.exec(String(chunk))?.[1]) || 0;
+            if (grandchild) process.kill(grandchild, 'SIGSTOP');
+            process.kill(child.pid, 'SIGSTOP');
+          });
+          return child;
+        },
+        _lockProbe: async () => false,
+        _stallKillGraceMs: GRACE_MS,
+        env: { ...process.env, HOME: sessionsTmpDir },
+        cwd: sessionsTmpDir,
+      }).then(() => null, (error) => error);
+
+      expect(outcome?.code).toBe('spawn_stalled');
+      expect(grandchild).toBeGreaterThan(0);
+      expect(fs.readFileSync(mark, 'utf8')).toBe('term');
+    } finally {
+      for (const pid of [grandchild, child?.pid]) {
+        if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
+      }
+      fs.rmSync(mark, { force: true });
       if (saved === undefined) delete process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
       else process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = saved;
     }
