@@ -33,7 +33,8 @@ export const isRunBot = (member, agentName, { scout = true } = {}) => {
 export const recoverRunPods = async ({ api, token, userId, podName, podIds }) => {
   try {
     const list = await api('GET', '/api/pods', { token });
-    if (list.status !== 200) return false;
+    // A 200 whose body is not a pod list is unreadable, not an empty list.
+    if (list.status !== 200 || !(Array.isArray(list.data) || Array.isArray(list.data?.pods))) return false;
     const pods = ids(list.data);
     for (const p of pods) {
       if (p.name === podName && ownerOf(p) === String(userId) && !podIds.includes(String(p._id))) {

@@ -271,3 +271,11 @@ test('recoverRunPods reports failure when the list cannot be read, so the name i
   assert.equal(ok, false);
   assert.deepEqual(podIds, []);
 });
+
+test('recoverRunPods treats a 200 that is not a pod list as unresolved', async () => {
+  const backend = fakeBackend({ pods: [] });
+  const garbage = async (method, path) => (method === 'GET' && path === '/api/pods' ? { status: 200, data: { error: 'nope' } } : backend.api(method, path));
+  const podIds = [];
+  const ok = await recoverRunPods({ api: garbage, token: 'tok', userId: USER, podName: 'walk-x workspace', podIds });
+  assert.equal(ok, false);
+});

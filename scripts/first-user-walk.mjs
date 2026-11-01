@@ -155,7 +155,7 @@ const cleanup = async (token, password) => {
     manifest.botIds = [...new Set([...manifest.botIds, ...result.botIds])];
     manifest.status = result.ok && manifest.survivors.length === 0 ? 'clean' : 'needs-admin-purge';
   } catch (error) {
-    manifest.survivors = [`cleanup error: ${error.message}`];
+    manifest.survivors = [`cleanup error: ${error.message}`, ...unresolvedSurvivors()];
     manifest.status = 'needs-admin-purge';
   }
   writeManifest();
@@ -235,7 +235,9 @@ const main = async () => {
         throw error;
       }
       const created = r.data?.pod || r.data;
-      if (r.status < 300 && !created?._id) await recover();
+      // Any reply without a created pod may still have committed one, including a
+      // 4xx or 5xx, so the outcome is checked by name rather than trusted.
+      if (!(r.status < 300 && created?._id)) await recover();
       expect(r.status < 300 && created?._id, `pod create ${r.status}: ${JSON.stringify(r.data)}`);
       manifest.podIds.push(String(created._id));
       writeManifest();
