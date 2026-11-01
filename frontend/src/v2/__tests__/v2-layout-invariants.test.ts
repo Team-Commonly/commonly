@@ -460,13 +460,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }');
     // The glyph half: inactive tabs take the artboard's placeholder grey.
     const phone = blockContaining(v2, '@media (max-width: 760px)', '.v2-mobile-tabs__label {');
-    expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item', { within: phone })).toContain('color: var(--v2-text-placeholder)');
+    // Icons are controls, so they take the rail's 3:1 grey, not the artboard's placeholder.
+    expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item', { within: phone })).toContain('color: var(--v2-rail-icon)');
     // D223 ruling: the artboard's sans family at the 12px sans floor.
     expect(ruleBody(v2, '.v2-mobile-tabs__label', { within: phone })).toContain('font: 500 12px/14px var(--v2-font)');
   });
 
-  test('rail glyphs at rest are the artboard placeholder grey in both themes (D223 ruling)', () => {
-    expect(v2).toContain('--v2-rail-icon: #98a2b3;');
+  test('rail glyphs at rest are the nearest grey to the artboard that clears 3:1 (D223 ruling)', () => {
+    // The artboard's #98a2b3 measures 2.34:1 on the light shell; #848c9b is 3.07:1.
+    expect(v2).toContain('--v2-rail-icon: #848c9b;');
     expect(v2.match(/--v2-rail-icon: #5f6979;/g) || []).toHaveLength(2);
   });
 

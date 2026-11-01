@@ -32,10 +32,10 @@ body.modern-ui.v2-canvas {
   /* TASK-701: inactive rail glyphs, join-radio outlines (3:1 on white and
      #f2f4f7) and the neutral selected pod row. Dark values sit in both dark
      sets below. */
-  /* D223 ruling (Cofounder, 11-01): the rail glyph is the artboard's --ph,
-     exactly, which puts it below the 3:1 above (2.34:1 on #f2f4f7); the
-     active glyph and the hover labels carry the rail's meaning. */
-  --v2-rail-icon: #98a2b3;
+  /* D223 ruling (Cofounder, 11-01): the artboard's --ph (#98a2b3) measures
+     2.34:1 on #f2f4f7, under the 3:1 above, so this is the nearest grey that
+     passes: 3.07:1 on #f2f4f7, 3.38:1 on white. */
+  --v2-rail-icon: #848c9b;
   --v2-control-outline: #667085;
   /* D223 (TASK-735): the artboard's .pod.on in both themes, a neutral tint
      row whose mark alone turns cobalt. */
@@ -12801,7 +12801,9 @@ body.modern-ui.v2-canvas {
     gap: 3px;
     padding: 0 6px;
     background: transparent;
-    color: var(--v2-text-placeholder);
+    /* Icons are controls: the rail's 3:1 grey, not the artboard's 2.58:1
+       placeholder (D223 standing rule, 11-01). The label sets its own colour. */
+    color: var(--v2-rail-icon);
   }
 
   .v2-root button.v2-mobile-tabs__item--active,
