@@ -10867,6 +10867,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-root:lang(zh) .v2-login__title,
 .v2-root:lang(zh) .v2-feature__title,
 .v2-root:lang(zh) .v2-feature__header .v2-feature__title,
+.v2-root:lang(zh) .v2-agent-settings > .v2-page-head h1,
+.v2-root:lang(zh) .v2-agent-settings > .v2-agent-memory__head .v2-agent-memory__ident h1,
 .v2-root:lang(zh) .v2-settings__label,
 .v2-root:lang(zh) .v2-settings__account-name,
 .v2-root:lang(zh) .v2-settings__section .v2-billing__title,
