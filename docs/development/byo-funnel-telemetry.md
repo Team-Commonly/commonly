@@ -5,10 +5,12 @@ The endpoint stores `userId`, `step`, and server time in `byo_telemetry`.
 Commands, keys, names, and clipboard contents are never sent.
 
 Setup OS and listener eligibility (TASK-714) are not stored in `byo_telemetry`.
-`seat-created` and the copy steps also send `setupOs`, `listenerAvailable` and a
-`copyType`, and the server writes those to the person's User row instead:
-`users.onboarding.byoSetupOs` (`mac`, `linux`, `windows` or `other`),
-`users.onboarding.byoListenerEligible`, and one write-once first-copy mark per
+`seat-created` and every step also send `setupOs` and `listenerAvailable`, the
+copy steps add a `copyType`, and the server writes those to the person's User
+row instead: `users.onboarding.byoSetupOs` (`mac`, `linux`, `windows` or
+`other`) and `users.onboarding.byoListenerEligible`, both written once (the
+first request with a valid OS and a boolean wins; a later OS is ignored), and
+one write-once first-copy mark per
 type (`byoListenCopiedAt`, `byoMcpClaudeCopiedAt`, `byoMcpCursorCopiedAt`,
 `byoDaemonCopiedAt`, `byoTokenCopiedAt`). A query for "which OS did they set up
 on" reads the User row. The `byo_telemetry` rows only answer "did they reach
