@@ -28,6 +28,7 @@ const {
 const {
   extractToken, filterItems, nextCursorFrom, parseCursor, formatCursor,
   formatItemLine, createScrubber, retryDelayMs, DEFAULT_BACKOFF_MS, MAX_BACKOFF_MS,
+  createInboxRequest, InboxRequestError,
 } = await import('../src/lib/inbox.js');
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-inbox-'));
@@ -1087,5 +1088,50 @@ describe('item line and pure helpers', () => {
     inbox.configureOutput({ writeOut: (text) => printed.push(text) });
     inbox.outputHelp();
     expect(printed.join('')).toContain('There is no fallback to the saved login');
+  });
+});
+
+// TASK-338: the inbox's own fetch gets the same hard timeout as every other CAP
+// request, and a timeout, from the fetch or from the body read, reads as an
+// unanswered request rather than a bare DOMException.
+describe('a request that is never answered', () => {
+  // The limits below are the defaults; an operator's own override must not leak in.
+  const savedTimeout = process.env.COMMONLY_CAP_TIMEOUT_MS;
+  beforeEach(() => { delete process.env.COMMONLY_CAP_TIMEOUT_MS; });
+  afterAll(() => {
+    if (savedTimeout !== undefined) process.env.COMMONLY_CAP_TIMEOUT_MS = savedTimeout;
+  });
+  const timeoutError = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  const request = (fetchImpl) => createInboxRequest({
+    baseUrl: 'https://example.test', token: 'cm_agent_x', tokenFile: '/tmp/t', fetchImpl,
+  });
+
+  test('sends a timeout signal with every request', async () => {
+    const fetchImpl = stubFetch({ '/api/activity/decision-queue': jsonRes({ items: [] }) });
+    await request(fetchImpl)('/api/activity/decision-queue');
+    expect(fetchImpl.calls[0].init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test('a fetch that times out becomes an InboxRequestError with no status', async () => {
+    const err = await request(jest.fn(async () => { throw timeoutError(); }))('/api/activity/decision-queue')
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(InboxRequestError);
+    expect(err.status).toBeNull();
+    expect(err.message).toBe('GET /api/activity/decision-queue got no answer in 30s');
+  });
+
+  test('so does a body read that times out', async () => {
+    const fetchImpl = jest.fn(async () => ({ ok: true, status: 200, text: async () => { throw timeoutError(); } }));
+    const err = await request(fetchImpl)('/api/activity/decision-queue', { method: 'POST', body: {} })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(InboxRequestError);
+    expect(err.status).toBeNull();
+    expect(err.message).toBe('POST /api/activity/decision-queue got no answer in 60s');
+  });
+
+  test('any other fetch failure passes through unchanged', async () => {
+    const boom = new TypeError('fetch failed');
+    const err = await request(jest.fn(async () => { throw boom; }))('/api/x').catch((e) => e);
+    expect(err).toBe(boom);
   });
 });

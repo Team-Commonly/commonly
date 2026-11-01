@@ -55,6 +55,7 @@ import {
 import { catchUpBeforeTurn } from '../lib/pod-catch-up.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
+import { createPollLiveness, formatStall, resolvePollLivenessMs } from '../lib/poll-liveness.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
 import { compileServerSkills } from '../lib/server-skills.js';
@@ -1561,6 +1562,14 @@ export const performRun = ({
   // ~/.commonly/state/turns/<agent>.jsonl once delivery settles. Off, the spawn
   // path is the plain adapter call it has always been, and nothing is written.
   superviseRuns,
+  // TASK-338. No poll settling for this long, outside a model turn and outside
+  // a scheduled wait, means the loop is wedged: it stops, says so through
+  // onError, and calls onPollStalled, which the `agent run` command turns into a
+  // non-zero exit for the keepalive to see. Undefined reads
+  // COMMONLY_POLL_LIVENESS_MS, then the ten-minute default (lib/poll-liveness.js).
+  pollLivenessMs,
+  pollLivenessCheckMs,
+  onPollStalled,
 }) => {
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
@@ -1664,6 +1673,26 @@ export const performRun = ({
   const MAX_AUTH_ERRORS = 3;
   let consecutivePollFailures = 0;
   let consecutiveSpawnFailures = 0;
+  let pollStalled = false;
+  const pollLiveness = createPollLiveness({
+    limitMs: resolvePollLivenessMs(pollLivenessMs),
+    checkEveryMs: pollLivenessCheckMs,
+    onStall: ({ stalledMs }) => {
+      // A loop that already stopped itself (auth, a superseded delivery) is
+      // draining, not wedged.
+      if (!running) return;
+      pollStalled = true;
+      running = false;
+      pollLiveness.stop();
+      // The same teardown as stop(): a held retry must not keep renewing its
+      // lease on a loop that will never deliver it.
+      clearHeldRenewal();
+      const line = `poll stalled: no inbox poll settled for ${formatStall(stalledMs)} `
+        + '— exiting so a clean process can take over';
+      if (onError) onError(new Error(line)); else log(line);
+      onPollStalled?.({ stalledMs });
+    },
+  });
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
@@ -3168,6 +3197,13 @@ export const performRun = ({
     }
   };
 
+  // A model turn is not a stall, however long it runs: the liveness clock
+  // stops for it and restarts when it ends.
+  const duringTurn = async (turn) => {
+    pollLiveness.pause();
+    try { return await turn(); } finally { pollLiveness.arm(); }
+  };
+
   const tick = async () => {
     if (!running) return;
     let nextPollDelayMs = intervalMs;
@@ -3181,10 +3217,19 @@ export const performRun = ({
       // do not reintroduce a mixed-pod `limit: 10` here.
       // TASK-317: name this CLI for the chat chip. The server keeps it as a
       // display-only label (runtime.reportedCli) and never as a binding.
-      const { events = [], inboxCount } = await client.get('/api/agents/runtime/events', {
+      // The liveness clock runs from here until the next scheduled wait, paused
+      // only while a model turn runs (lib/poll-liveness.js).
+      pollLiveness.arm();
+      const page = await client.get('/api/agents/runtime/events', {
         agentName, instanceId, limit: batchLimit,
         ...(adapter?.name ? { reportedCli: adapter.name } : {}),
       });
+      pollLiveness.arm();
+      // A stall fired while this request hung: the loop has already given up on
+      // it. A plain stop() falls through instead, to the group loop's own
+      // `running` check, which leaves the page's rows to requeue as it always has.
+      if (pollStalled) return;
+      const { events = [], inboxCount } = page;
       consecutiveAuthErrors = 0;
       consecutivePollFailures = 0;
       // A deployed CLI can briefly run against an older server that still
@@ -3298,10 +3343,10 @@ export const performRun = ({
           let batch;
           try {
             // The person's item leads the prompt; the greeting rides along.
-            batch = await processEventBatch(
+            batch = await duringTurn(() => processEventBatch(
               [...group].sort((a, b) => inboxPriority(a) - inboxPriority(b)),
               pageInboxCount,
-            );
+            ));
           } catch (err) {
             await scheduleBatchRetry(err, group);
             break;
@@ -3358,7 +3403,7 @@ export const performRun = ({
         } else {
           const eventWillSpawn = Boolean(extractPrompt(event) && (event.podId || podId));
           try {
-            result = await processEvent(event);
+            result = await duringTurn(() => processEvent(event));
           } catch (err) {
             if (isContentRefusal(err)) {
               // A refused private item is acked without a pod notice: it has no
@@ -3506,6 +3551,8 @@ export const performRun = ({
     // before the next inbox read, independent of the idle polling cadence. A
     // retry scheduled in the same tick keeps its own delay: the failure report
     // names it, and a sibling's completed turn must not shorten the backoff.
+    // A wait the loop schedules itself always ends, so it is not a stall.
+    pollLiveness.pause();
     if (running) setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
   };
 
@@ -3513,6 +3560,7 @@ export const performRun = ({
   return {
     stop: () => {
       running = false;
+      pollLiveness.stop();
       clearHeldRenewal();
     },
   };
@@ -3897,6 +3945,8 @@ Docs:
         onError: (err) => {
           console.error(`[poll error] ${err.message}`);
         },
+        // TASK-338: a wedged poll ends the process instead of idling forever.
+        onPollStalled: () => process.exit(1),
       });
 
       // Graceful shutdown
@@ -4269,6 +4319,9 @@ Docs:
         // collapsed the duplication. The conclusion survived the premise; the
         // sentence did not, and nothing in the diff pointed at it.)
         onError: (err) => console.error(`${stamp()} [${name}] ${err.message}`),
+        // TASK-338: a wedged poll ends the process, so tmux-keepalive or
+        // launchd KeepAlive, which act only on exit, start a clean one.
+        onPollStalled: () => process.exit(1),
       });
 
       // SIGTERM is the daemon's idle-boundary handoff signal. `stop()` stops
