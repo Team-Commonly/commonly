@@ -169,9 +169,10 @@ describe('V2Thread teaching empty states', () => {
     renderChat(makeAgentRoom());
     const empty = document.querySelector('.v2-empty.v2-empty--room');
     expect(empty).not.toBeNull();
-    const first = empty.firstElementChild;
-    expect(first).toHaveClass('v2-avatar', 'v2-empty__avatar');
-    expect(first.nextElementSibling).toHaveTextContent('Say hi to Aria');
+    const face = empty.firstElementChild;
+    expect(face).toHaveAttribute('aria-hidden', 'true');
+    expect(face.firstElementChild).toHaveClass('v2-avatar', 'v2-empty__avatar');
+    expect(face.nextElementSibling).toHaveTextContent('Say hi to Aria');
   });
 
   test('an observer of an agent DM sees a read-only chip and note, and no composer', () => {

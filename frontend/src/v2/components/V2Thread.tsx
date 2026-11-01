@@ -2138,14 +2138,16 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                         || t('common.agent');
                       return (
                         <>
-                          <V2Avatar
-                            className="v2-empty__avatar"
-                            name={agentName}
-                            src={botMembers[0]?.profilePicture || undefined}
-                            tone="flat"
-                            kind="agent"
-                            seed={botMembers[0]?._id || rawUsername || undefined}
-                          />
+                          <span className="v2-empty__face" aria-hidden="true">
+                            <V2Avatar
+                              className="v2-empty__avatar"
+                              name={agentName}
+                              src={botMembers[0]?.profilePicture || undefined}
+                              tone="flat"
+                              kind="agent"
+                              seed={botMembers[0]?._id || rawUsername || undefined}
+                            />
+                          </span>
                           <div className="v2-empty__title">{t('podChat.empty.agentRoomTitle', { agentName })}</div>
                           <div className="v2-empty__text">
                             {t('podChat.empty.agentRoomText')}

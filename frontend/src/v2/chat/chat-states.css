@@ -660,6 +660,7 @@
   box-shadow: 0 0 0 2px var(--v2-surface);
 }
 
+.v2-empty__face,
 .v2-empty__stack {
   display: inline-flex;
 }
