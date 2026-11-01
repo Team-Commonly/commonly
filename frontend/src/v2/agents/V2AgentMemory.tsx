@@ -147,7 +147,7 @@ const V2AgentMemory: React.FC = () => {
   const settingsHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
 
   return (
-    <main className="v2-agent-settings">
+    <main className="v2-agent-settings v2-agent-memory-page">
       <header className="v2-agent-memory__head">
         <V2Avatar name={head?.displayName || agentName} src={head?.profilePicture} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
         <div className="v2-agent-memory__ident">
@@ -160,6 +160,7 @@ const V2AgentMemory: React.FC = () => {
           <Link to={settingsHref}>{t('agentSettings.settings')}</Link>
         </nav>
       </header>
+      <div className="v2-agent-memory-page__body">
       {state === 'ready' && index ? null : <MemoryShell loading={state === 'loading'} message={state === 'denied' ? t('agentProfile.memory.none', { defaultValue: 'No memory recorded yet.' }) : ''} loadingLabel={t('common.loading', { defaultValue: 'Loading…' })} query={query} setQuery={setQuery} searchLabel={t('agentProfile.memory.search', { defaultValue: 'Search memory' })} navLabel={t('agentSettings.memory', { defaultValue: 'Memory' })} />}
       {state === 'ready' && index && (() => {
         const needle = query.trim().toLowerCase();
@@ -243,6 +244,7 @@ const V2AgentMemory: React.FC = () => {
           </div>
         );
       })()}
+      </div>
     </main>
   );
 };

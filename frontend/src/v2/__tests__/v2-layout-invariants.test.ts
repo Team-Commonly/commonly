@@ -1251,7 +1251,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('Settings is one screen: grouped cards, no jump nav', () => {
     expect(settingsPage).not.toContain('v2-settings__nav');
-    expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 640px)');
+    expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 760px)');
     expect(ruleBody(v2, '.v2-settings__edit--closed')).toContain('display: none');
     expect(ruleBody(v2, '.v2-settings__group,\n.v2-settings__fold')).toContain('overflow: hidden');
     expect(ruleBody(v2, '.v2-settings__row > .v2-settings__row-value')).toContain('min-width: 0');
@@ -5098,6 +5098,12 @@ describe('agent Memory tab (TASK-690 slice 1 and 2)', () => {
     expect(ruleBody(css, '.v2-agent-memory')).toContain('display: grid');
     expect(ruleBody(css, '.v2-agent-memory', { within: desktop })).toContain('grid-template-columns: 200px minmax(0, 1fr)');
   });
+  test('the page spans the pane instead of a centred column', () => {
+    const page = ruleBody(css, '.v2-agent-memory-page');
+    expect(page).toContain('width: 100%');
+    expect(page).toContain('max-width: none');
+    expect(page).toContain('align-self: stretch');
+  });
   test('phone hides the group nav and makes the groups collapsible', () => {
     expect(ruleBody(css, '.v2-agent-memory__nav ul', { within: phone })).toContain('display: none');
     expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: phone })).toContain('cursor: pointer');
@@ -5380,5 +5386,8 @@ describe('pod board column scroll (TASK-698)', () => {
     // Phones get the tab bar back: scope to the TASK-687 mobile block.
     const mobile = css.slice(css.indexOf('/* TASK-687 / D223'));
     expect(mobile).toMatch(/@media \(max-width: 760px\) \{[\s\S]*\.v2-board__tabs \{ display: flex;/);
+    // The phone tabs are the frame's segment: a tinted track with a raised active key.
+    expect(mobile).toMatch(/\.v2-board__tabs \{ display: flex; margin: 12px 12px 0; padding: 2px;/);
+    expect(mobile).toMatch(/button\.v2-board__tab\.is-active \{ background: var\(--v2-surface\)/);
   });
 });

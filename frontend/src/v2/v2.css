@@ -7801,15 +7801,6 @@ body.modern-ui.v2-canvas {
   padding-top: 40px;
 }
 
-.v2-settings__title {
-  margin: 0;
-  color: var(--v2-text-primary);
-  font-family: var(--v2-font-display);
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-}
 
 .v2-settings__section { min-width: 0; }
 
@@ -7904,7 +7895,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   display: flex;
   flex-direction: column;
   gap: 20px;
-  width: min(100%, 640px);
+  width: min(100%, 760px);
+  min-width: 0;
   margin: 0 auto;
 }
 
@@ -8499,12 +8491,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
     display: block;
     padding-top: 24px;
   }
-
-  .v2-settings__title {
-    margin-bottom: 24px;
-    font-size: 28px;
-  }
-
 
   .v2-settings__token-value {
     grid-template-columns: 1fr 1fr;
@@ -10895,7 +10881,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-root:lang(zh) .v2-feature__header .v2-feature__title,
 .v2-root:lang(zh) .v2-agent-settings > .v2-page-head h1,
 .v2-root:lang(zh) .v2-agent-settings > .v2-agent-memory__head .v2-agent-memory__ident h1,
-.v2-root:lang(zh) .v2-settings__title,
 .v2-root:lang(zh) .v2-settings__label,
 .v2-root:lang(zh) .v2-settings__account-name,
 .v2-root:lang(zh) .v2-settings__section .v2-billing__title,
@@ -14032,19 +14017,20 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   .v2-board__head > .v2-board__icon-btn { order: 3; }
   .v2-board__search { order: 3; flex: 1 1 0; min-width: 0; width: auto; }
   .v2-board__head > .v2-board__new { order: 4; margin-left: 0; }
-  .v2-board__filters { padding: 8px 12px 0; }
+  .v2-board__filters { padding: 10px 12px 0; }
   /* The frame's phone board has no focus strip; the goal lives on desktop. */
   .v2-board__focus { display: none; }
   .v2-board__new-label { display: none; }
-  .v2-board__tabs { display: flex; gap: 4px; padding: 8px 12px 0; overflow-x: auto; }
+  /* The frame's phone tabs are a segment: a tinted track with a raised active key. */
+  .v2-board__tabs { display: flex; margin: 12px 12px 0; padding: 2px; gap: 2px; border-radius: var(--v2-r-9); background: var(--v2-surface-tint); box-shadow: inset 0 0 0 1px var(--v2-border); overflow-x: auto; }
   .v2-root button.v2-board__tab {
-    flex: 1 1 0; display: inline-flex; justify-content: center; gap: 4px; height: 32px; align-items: center;
-    padding: 0 8px; border: 0; border-radius: var(--v2-r-8); background: transparent; cursor: pointer;
-    font: 500 12px/16px var(--v2-font); color: var(--v2-text-secondary); white-space: nowrap;
+    flex: 1 1 0; display: inline-flex; justify-content: center; gap: 6px; height: 28px; align-items: center;
+    padding: 0 10px; border: 0; border-radius: 7px; background: transparent; cursor: pointer;
+    font: 500 12.5px/1 var(--v2-font); color: var(--v2-text-secondary); white-space: nowrap;
   }
-  .v2-root button.v2-board__tab.is-active { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+  .v2-root button.v2-board__tab.is-active { background: var(--v2-surface); color: var(--v2-text-primary); font-weight: 600; box-shadow: 0 0 0 1px var(--v2-border), 0 1px 2px rgba(16, 24, 40, 0.08); }
   .v2-board__tab-count { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
-  .v2-board__columns, .v2-board__columns.is-showdone { display: block; padding: 8px 12px 0; overflow-y: auto; flex: 1; min-height: 0; }
+  .v2-board__columns, .v2-board__columns.is-showdone { display: block; padding: 10px 12px 0; overflow-y: auto; flex: 1; min-height: 0; }
   .v2-board__col, .v2-board__columns.is-showdone .v2-board__col--done { display: none; }
   .v2-board__col.is-active, .v2-board__columns .v2-board__col--done.is-active { display: flex; background: transparent; box-shadow: none; }
   .v2-board__col.is-active .v2-board__col-head { display: none; }
@@ -14086,14 +14072,12 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   .v2-feature__header .v2-page-head__meta { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .v2-feature__body { padding: 12px 12px 16px; }
   .v2-settings__layout { padding-top: 0; }
-  .v2-settings__title {
-    display: flex;
-    align-items: center;
-    min-height: 52px;
-    margin: -12px -12px 12px;
-    padding: 0 12px;
-    border-bottom: 1px solid var(--v2-border-soft);
-    font: 800 21px/1 var(--v2-font-display);
-    letter-spacing: -0.03em;
-  }
 }
+
+/* D223 (TASK-688): the artboard's 64px head spans the pane edge to edge and only the
+   body below it scrolls, so the settings route drops the feature body padding and the
+   legacy wrapper's max-width, the same way connectors does. */
+.v2-feature--settings > .v2-feature__body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.v2-feature--settings .v2-feature__legacy { flex: 1 1 auto; width: 100%; max-width: none; min-height: 0; margin: 0; display: flex; flex-direction: column; }
+.v2-feature--settings .v2-settings { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; width: 100%; }
+.v2-feature--settings .v2-settings__layout { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 24px; }
