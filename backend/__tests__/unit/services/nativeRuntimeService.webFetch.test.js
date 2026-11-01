@@ -25,6 +25,7 @@ jest.mock('../../../models/Pod', () => ({
 }));
 jest.mock('../../../models/AgentRun', () => ({ create: jest.fn(), countDocuments: jest.fn() }));
 const mockTaskCreate = jest.fn();
+const mockCanonicalAssignee = jest.fn(async (_podId, typed) => typed);
 jest.mock('../../../models/Task', () => ({
   countDocuments: jest.fn().mockResolvedValue(0),
   create: (...args) => mockTaskCreate(...args),
@@ -42,6 +43,8 @@ jest.mock('../../../models/User', () => ({
   findById: jest.fn((id) => ({ select: () => ({ lean: () => Promise.resolve(mockUsersById[String(id)] ?? null) }) })),
 }));
 jest.mock('../../../services/agentTypingService', () => ({ emitAgentTypingStart: jest.fn(), emitAgentTypingStop: jest.fn() }));
+// The resolver reads real pod members; it is covered in tasks.assignee-handle.test.js.
+jest.mock('../../../services/taskAssigneeService', () => ({ canonicalAssignee: (...args) => mockCanonicalAssignee(...args) }));
 jest.mock('../../../services/agentMessageService', () => ({ postMessage: jest.fn().mockResolvedValue({ success: true }) }));
 jest.mock('../../../services/messageClaimService', () => ({
   claim: jest.fn().mockResolvedValue({ claimed: true, expiresAt: new Date() }),
@@ -547,6 +550,20 @@ describe('native turn with commonly_fetch_url', () => {
 
     expect(mockTaskCreate).toHaveBeenCalledWith(expect.objectContaining({ title: 'Ship it', assignee: 'nova' }));
     expect(toolMessages(1)[0].content).not.toMatch(/assign by handle/);
+  });
+
+  test('commonly_create_task stores the board name the resolver gives for an agent handle (F45)', async () => {
+    mockTaskCreate.mockClear();
+    mockTaskCreate.mockResolvedValue({ taskId: 'N-1', toObject: () => ({}) });
+    mockCanonicalAssignee.mockImplementationOnce(async (_podId, typed) => (typed === '@cto-walk-1016-cto-walk' ? 'cto-walk' : typed));
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_create_task', { title: 'Ship it', assignee: '@cto-walk-1016-cto-walk' })))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention());
+
+    expect(mockCanonicalAssignee).toHaveBeenCalledWith(install().podId, '@cto-walk-1016-cto-walk');
+    expect(mockTaskCreate).toHaveBeenCalledWith(expect.objectContaining({ assignee: 'cto-walk' }));
   });
 
   test('commonly_create_task refuses a display-name assignee before it writes a row (TASK-354)', async () => {

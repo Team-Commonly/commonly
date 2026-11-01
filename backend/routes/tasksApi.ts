@@ -31,6 +31,8 @@ const { recordTaskAttention, resolveTaskAttention } = require('../services/atten
 // eslint-disable-next-line global-require
 const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
 // eslint-disable-next-line global-require
+const { canonicalAssignee } = require('../services/taskAssigneeService');
+// eslint-disable-next-line global-require
 const { isRecordEnabled, isRecordReader, requestActor } = require('../services/recordService');
 // eslint-disable-next-line global-require
 const { recordTaskTransition } = require('../services/taskRecordService');
@@ -309,7 +311,7 @@ router.post('/:podId', rateLimit({
     const title = titleInput === undefined ? undefined : toSingleLineTitle(String(titleInput));
     const assigneeParsed = assigneeInput === undefined ? undefined : parseAssignee(String(assigneeInput));
     if (assigneeParsed?.error) return res.status(400).json({ error: assigneeParsed.error });
-    const assignee = assigneeParsed?.value ?? undefined;
+    const typedAssignee = assigneeParsed?.value ?? undefined;
     const dep = depInput === undefined ? undefined : String(depInput);
     const parentTask = parentTaskInput === undefined ? undefined : String(parentTaskInput);
     const source = sourceInput === undefined ? undefined : String(sourceInput);
@@ -318,6 +320,8 @@ router.post('/:podId', rateLimit({
     if (!title) return res.status(400).json({ error: 'title is required' });
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
+    // Resolved only for a member: an agent named by any of its names is stored by its board name.
+    const assignee = (await canonicalAssignee(podId || '', typedAssignee)) ?? undefined;
     if (sourceRef) {
       // A create's identity is the (sourceRef, title) PAIR: the ref says where
       // the ask came from, the title says which ask it is. Keying on the ref
@@ -1190,6 +1194,9 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     // (TASK-669), and the edit names the claim it overrode.
     const lease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
     if (lease.refusal) return res.status(409).json(lease.refusal);
+    if (typeof fieldUpdates.assignee === 'string') {
+      fieldUpdates.assignee = await canonicalAssignee(podId || '', fieldUpdates.assignee);
+    }
     // A PATCH to done on a row that is already done is not a second completion. It keeps
     // the original completedAt and fires no close side effects; the other fields in the
     // same PATCH still apply. The write filter below makes the transition itself atomic.

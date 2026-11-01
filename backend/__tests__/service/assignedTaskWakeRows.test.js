@@ -456,3 +456,18 @@ it('does not wake an agent whose last posts in the pod are still unanswered', as
   await say(person._id, 1);
   expect(await wakes(2)).toBe(1);
 });
+
+// F45: this agent's @mention handle (forge-row-test) is not its board name
+// (forge), and the wake matches the board name. A row assigned by the handle
+// was stored as typed and woke nobody.
+describe("a row assigned by the agent's mention handle", () => {
+  it('is stored by its board name and wakes the agent', async () => {
+    const Pod = require('../../models/Pod');
+    const { canonicalAssignee } = require('../../services/taskAssigneeService');
+    await Pod.create({ _id: podId, name: 'Wake pod', type: 'team', createdBy: person._id, members: [person._id, agent._id] });
+    const assignee = await canonicalAssignee(String(podId), '@forge-row-test');
+    expect(assignee).toBe('forge');
+    await Task.create({ podId, taskNum: 1, taskId: 'TASK-1', title: 'Do the assigned work', assignee });
+    expect(await wakes(0)).toBe(1);
+  });
+});

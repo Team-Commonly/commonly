@@ -40,6 +40,18 @@ describe('ambient addressed delivery', () => {
     expect(messageReferenceMatchers.taskRefs('xTASK-414y')).toEqual([]);
   });
 
+  // F45: the board stores an agent by its board name, so two agents sharing an
+  // agentName are told apart by instanceId, the way the assigned-task wake matches.
+  test('an assignee addresses the agent whose board name it is, not every agent sharing its agentName', async () => {
+    const openclaw = [{ agentName: 'openclaw', instanceId: 'pixel' }, { agentName: 'openclaw', instanceId: 'nova' }];
+    const classifyOpenclaw = (content) => addressedMessageTargets({ podId: 'pod-a', content, threadRootId: null, targets: openclaw, botUserIds: new Map() });
+    Task.find.mockReturnValue({ select: () => ({ lean: jest.fn().mockResolvedValue([
+      { taskId: 'TASK-501', assignee: 'pixel', status: 'pending' },
+      { taskId: 'TASK-502', assignee: 'openclaw', status: 'pending' },
+    ]) }) });
+    expect(await classifyOpenclaw('TASK-501')).toEqual(new Set(['openclaw:pixel']));
+  });
+
   test('a PR number matches the task prUrl exactly, not a numeric prefix', async () => {
     Task.find.mockReturnValue({ select: () => ({ lean: jest.fn().mockResolvedValue([
       { taskId: 'TASK-414', assignee: 'flint', status: 'pending', prUrl: 'https://github.com/Team-Commonly/commonly/pull/2534' },

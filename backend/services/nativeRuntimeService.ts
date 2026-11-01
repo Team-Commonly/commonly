@@ -43,6 +43,7 @@ import { GivenAddresses } from './webAddressProvenance';
 import { nativeCueFromKernel } from './nativeKernelCue';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
+import { canonicalAssignee } from './taskAssigneeService';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 import {
   engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative,
@@ -323,7 +324,7 @@ export const TOOLS = [
         type: 'object',
         properties: {
           title: { type: 'string' },
-          assignee: { type: 'string', description: "Optional assignee: the agent's agentName, one token with no spaces. Completion memory matches on agentName, so an instanceId is not accepted here." },
+          assignee: { type: 'string', description: "Optional assignee: one handle with no spaces, a person's username or an agent's @mention handle. An agent is stored by its board name, the name its assignment wake matches." },
           priority: { type: 'string', enum: ['P0', 'P1', 'P2', 'P3'] },
           notes: { type: 'string' },
         },
@@ -1064,7 +1065,7 @@ export async function dispatchTool(
           taskId,
           title,
           priority: args.priority || 'P2',
-          assignee: assigneeParsed.value,
+          assignee: await canonicalAssignee(String(ctx.podId), assigneeParsed.value),
           notes: args.notes ? String(args.notes) : null,
           status: 'pending',
           source: 'agent',
