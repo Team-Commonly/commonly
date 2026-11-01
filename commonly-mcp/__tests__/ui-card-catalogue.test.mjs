@@ -58,6 +58,6 @@ describe('commonly_get_ui_card_catalogue', () => {
   it('points the post tool at the catalogue tool and keeps the tuple inline', () => {
     const payloadDescription = byName.commonly_post_message.inputSchema.properties.payload.description;
     expect(payloadDescription).toContain('commonly_get_ui_card_catalogue');
-    expect(payloadDescription).toMatch(/sha256:/);
+    expect(payloadDescription).toContain(backendConfig('uiCardCatalogueRevision.json').catalogHash);
   });
 });
