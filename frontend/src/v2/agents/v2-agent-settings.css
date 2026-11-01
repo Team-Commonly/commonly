@@ -102,6 +102,8 @@
 .v2-agent-settings__reveal button { justify-self: start; }
 
 @media (max-width: 760px) {
+  /* Same selector as the base rule above, so the phone target wins by order. */
+  .v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold) { min-height: 44px; }
   .v2-agent-settings { padding: 16px; }
   .v2-agent-settings__section-head { flex-direction: column; align-items: flex-start; }
   .v2-agent-settings__key-meta { display: grid; gap: 4px; }

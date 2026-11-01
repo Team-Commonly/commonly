@@ -234,6 +234,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');
   });
 
+  test('agent Settings controls reach 44px at phone width', () => {
+    const phone = mediaBlockContaining(agentSettings, '.v2-agent-settings__key-meta');
+    expect(selectorRuleBody(phone, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)'))
+      .toContain('min-height: 44px');
+    const surface = mediaAt(read('../agents/v2-agent-settings-surface.css'), '@media (max-width: 760px)');
+    expect(selectorRuleBody(surface, '.v2-agent-settings-page .lrow .ac .b {')).toContain('height: 44px');
+    expect(selectorRuleBody(surface, '.v2-agent-settings-page .lrow .ac .b.ib')).toContain('width: 44px');
+    const fold = selectorRuleBody(surface, '.v2-agent-settings-page .v2-agent-wake-pods__fold');
+    expect(fold).toContain('width: 44px');
+    expect(fold).toContain('height: 44px');
+    expect(selectorRuleBody(surface, '.v2-agent-settings-page .wt td:first-child a')).toContain('min-height: 44px');
+  });
+
   test('agent Control reconnect remains an ink action with a focus edge', () => {
     const action = ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action');
     expect(action).toContain('background: var(--v2-ink)');

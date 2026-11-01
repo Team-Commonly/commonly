@@ -281,4 +281,9 @@
   .v2-agent-settings-page__group .b, .v2-agent-settings-page__group .b-sm { height: 44px; }
   .v2-agent-settings-page__group .sel, .v2-agent-settings-page__group .field:not(.field--area) { --box-h: 44px; height: var(--box-h); }
   .v2-agent-settings-page__group .seg > label { height: 44px; }
+  /* The Wake table and Identity & access rows, lifted earlier, take the same targets. */
+  .v2-agent-settings-page .lrow .ac .b { height: 44px; }
+  .v2-agent-settings-page .lrow .ac .b.ib { width: 44px; }
+  .v2-agent-settings-page .v2-agent-wake-pods__fold { width: 44px; height: 44px; }
+  .v2-agent-settings-page .wt td:first-child a { display: inline-flex; align-items: center; min-height: 44px; }
 }
