@@ -27,8 +27,8 @@ import { readV2Css } from '../__testkit__/v2Css';
  */
 // v2.css plus the surface files lifted out of it (D223): the chat sheets V2App
 // loads, and the per-surface sheets their components import (R04 BYO, S4 board,
-// R05 Connect).
-const CSS = [readV2Css(), ...['../components/V2AgentBYO.css', '../components/V2PodBoard.css', '../components/V2ConnectPage.css']
+// R05 Connect, R06 Your team).
+const CSS = [readV2Css(), ...['../components/V2AgentBYO.css', '../components/V2PodBoard.css', '../components/V2ConnectPage.css', '../components/V2YourTeamPage.css']
   .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))]
   .join('\n');
 

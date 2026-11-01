@@ -174,6 +174,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const byoCss = read('../components/V2AgentBYO.css');
   // R05 lifted the Connect page onto the d215 frame (V2ConnectPage.css).
   const connectCss = read('../components/V2ConnectPage.css');
+  // R06 lifted the Your team page onto the d215 frame (V2YourTeamPage.css).
+  const teamCss = read('../components/V2YourTeamPage.css');
   const landing = read('../landing/v2-landing.css');
   const podChat = read('../components/V2Thread.tsx');
   const podsSidebar = read('../components/V2PodsSidebar.tsx');
@@ -310,15 +312,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
     // Direction C: the name sits in its own column of the card head; the
     // crush guard is min-width 0 on the name and the head, not a flex basis.
-    const rule = ruleBody(v2, '.v2-team-card__name');
+    const rule = ruleBody(teamCss, '.v2-team .v2-team-card__name');
     expect(rule).toContain('min-width: 0');
-    expect(ruleBody(v2, '.v2-team-card__head')).toContain('min-width: 0');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__head')).toContain('min-width: 0');
+    // ruleBody reads the first, desktop rule; no phone override may undo it.
+    for (const phone of [...teamCss.matchAll(/@media \(max-width: 760px\) \{[\s\S]*?\n\}/g)].map((m) => m[0])) {
+      expect(phone).not.toMatch(/v2-team-card__name[^{]*\{[^}]*(nowrap|min-width: auto|flex-shrink: 0)/);
+    }
   });
 
   test('Your Team card name WRAPS — a primary identifier never one-line-ellipsizes (craft audit rule 1)', () => {
     // At 1440px half the fleet's names truncated ("Commonly…", "Pod Summ…").
     // The name wraps to two lines; single-line nowrap+ellipsis was the defect.
-    const rule = ruleBody(v2, '.v2-team-card__name');
+    const rule = ruleBody(teamCss, '.v2-team .v2-team-card__name');
     expect(rule).toContain('white-space: normal');
     expect(rule).toContain('-webkit-line-clamp: 2');
     expect(rule).not.toContain('white-space: nowrap');
@@ -652,7 +658,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {
     // The chip shipped in violation of the ratified rule; the craft audit
     // (finding 2) removed it. This pins the removal against reintroduction.
-    expect(v2).not.toContain('.v2-team-card__runtime {');
+    expect(v2).not.toContain('.v2-team-card__runtime');
+    expect(teamCss).not.toContain('.v2-team-card__runtime');
   });
 
   test('touch inputs are 16px — iOS auto-zoom never fires and never strands the page zoomed', () => {
@@ -1102,8 +1109,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Direction C: three equal columns that can shrink to zero, and ONE column
     // at ≤760 — the same guarantee (a column never wider than its container)
     // expressed on the new grid.
-    expect(ruleBody(v2, '.v2-team__grid')).toContain('repeat(3, minmax(0, 1fr))');
-    expect(ruleBody(v2, '.v2-team__grid', { within: teamPhoneBlock(v2) })).toContain('repeat(1, minmax(0, 1fr))');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__grid')).toContain('repeat(3, minmax(0, 1fr))');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__grid', { within: teamPhoneBlock(teamCss) })).toContain('repeat(1, minmax(0, 1fr))');
   });
 
   test('the agent profile page overrides the app-shell overflow too (sibling invariant)', () => {
@@ -1181,7 +1188,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // (2026-07-05 mobile smoke; same crush family as the #568 chip bug).
     // Direction C: the action row is its own flex row under the body and wraps;
     // it never shares a line with the name.
-    expect(ruleBody(v2, '.v2-team-card__actions')).toContain('flex-wrap: wrap');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__actions')).toContain('flex-wrap: wrap');
   });
 
   test('the a2a-DM system card overrides the two-column message grid', () => {
@@ -1562,38 +1569,46 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('Your Team (direction C): three-column card grid, state-coloured marks, cobalt ring for needs-you, ink Hire, no green, old tiers gone', () => {
-    const grid = ruleBody(v2, '.v2-team__grid');
+    const grid = ruleBody(teamCss, '.v2-team .v2-team__grid');
     expect(grid).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
     expect(grid).toContain('gap: 12px');
-    expect(ruleBody(v2, '.v2-team-card--needsYou')).toContain('border: 2px solid var(--v2-accent)');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--needsYou')).toContain('var(--v2-accent)');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--working')).toContain('var(--v2-text-primary)');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--idle')).toContain('var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-root button.v2-team__hire')).toContain('background: var(--v2-ink)');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: var(--v2-ink)');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__talk')).toContain('border: 1px solid var(--v2-border)');
-    expect(ruleBody(v2, '.v2-team-card__status')).toContain('var(--v2-font-mono)');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card--needsYou')).toContain('border: 2px solid var(--v2-accent)');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark--needsYou')).toContain('var(--v2-accent)');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark--working')).toContain('var(--v2-text-primary)');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark--idle')).toContain('var(--v2-border-soft)');
+    // R06: Hire and Answer share the frame's ink key, the fill gradient
+    // (--v2-fill-*) with on-fill text, the same key as BYO's submit and
+    // Connect's CTA; Talk (and Bring your own) is the bordered plain key.
+    const ink = selectorRuleBody(teamCss, '\n.v2-team .v2-team__hire, .v2-team .v2-team-card__answer {');
+    expect(ink).toContain('background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
+    expect(ink).toContain('color: var(--v2-on-fill)');
+    const plain = selectorRuleBody(teamCss, '\n.v2-team .v2-team__byo, .v2-team .v2-team-card__talk {');
+    expect(plain).toContain('border: 1px solid var(--v2-key-edge)');
+    expect(plain).not.toContain('var(--v2-fill-');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__status')).toContain('var(--v2-font-mono)');
     // ux-lead 66246: the ask wraps, the command wraps at mono 14, the name is display-18,
     // the mark is 600, and the title stacks over its meta on a phone.
-    expect(ruleBody(v2, '.v2-team-card__status--needsYou')).toContain('white-space: normal');
-    expect(ruleBody(v2, '.v2-team-card__command')).toContain('white-space: pre-wrap');
-    expect(ruleBody(v2, '.v2-team-card__command')).toContain('14px/20px');
-    expect(ruleBody(v2, '.v2-team-card__name')).toContain('font: 700 18px/1.2 var(--v2-font-display)');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__mark')).toContain('font: 600 12px/1');
-    const teamAvatar = ruleBody(v2, '.v2-root button.v2-team-card__mark .v2-avatar');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__status--needsYou')).toContain('white-space: normal');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__command')).toContain('white-space: pre-wrap');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__command')).toContain('14px/20px');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__name')).toContain('font: 700 18px/1.2 var(--v2-font-display)');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark')).toContain('font: 600 12px/1');
+    const teamAvatar = ruleBody(teamCss, '.v2-team .v2-team-card__mark .v2-avatar');
     expect(teamAvatar).toContain('width: 100%');
     expect(teamAvatar).toContain('height: 100%');
     expect(teamAvatar).toContain('border-radius: inherit');
     // Read the rule inside the team's phone block — a `[\s\S]*?` regex across
     // the sheet passed with the rule deleted (sprint-review at 58fb4147).
-    const teamPhone = teamPhoneBlock(v2);
-    expect(ruleBody(v2, '.v2-team__heading', { within: teamPhone })).toContain('flex-direction: column');
-    expect(ruleBody(v2, '.v2-team__grid', { within: teamPhone })).toContain('repeat(1, minmax(0, 1fr))');
+    const teamPhone = teamPhoneBlock(teamCss);
+    expect(ruleBody(teamCss, '.v2-team .v2-team__heading', { within: teamPhone })).toContain('flex-direction: column');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__grid', { within: teamPhone })).toContain('repeat(1, minmax(0, 1fr))');
     // The retired surfaces: feature rows, standard cards with icon buttons, quiet rows, green dot.
-    expect(v2).not.toContain('.v2-team-feature ');
-    expect(v2).not.toContain('.v2-team-quiet');
-    expect(v2).not.toContain('v2-team-feature__dot');
-    expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-team__grid \{[\s\S]*?repeat\(1, minmax\(0, 1fr\)\)/);
+    for (const css of [v2, teamCss]) {
+      expect(css).not.toContain('.v2-team-feature ');
+      expect(css).not.toContain('.v2-team-quiet');
+      expect(css).not.toContain('v2-team-feature__dot');
+    }
+    expect(teamCss).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-team__grid \{[\s\S]*?repeat\(1, minmax\(0, 1fr\)\)/);
   });
 
   test('history: a mono edge line that loads on scroll and a Jump-to-latest pill', () => {
@@ -2446,7 +2461,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
     expect(v2).toContain('--v2-fs-feature: 17px');
     expect(ds).toContain('--c-fs-feature: 17px');
-    expect(v2).toContain('var(--v2-fs-feature)');
+    // Its one consumer, the empty team's title, left v2.css with the Your team
+    // lift (R06); the step is still defined here and used there.
+    expect(read('../components/V2YourTeamPage.css')).toContain('font: 700 var(--v2-fs-feature)/1.2');
   });
 
   it('v2.css braces balance — an unclosed block silently swallows every later rule', () => {
@@ -2463,8 +2480,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   it('team card on a phone: one column, so the name column never one-chars (spec §5, #568 class, re-pinned on direction C)', () => {
     // The featured row is gone; the same guarantee on the card grid is one
     // column at ≤760 and a card head whose name column can shrink.
-    expect(ruleBody(v2, '.v2-team__grid', { within: teamPhoneBlock(v2) })).toContain('repeat(1, minmax(0, 1fr))');
-    expect(ruleBody(v2, '.v2-team-card__title')).toContain('min-width: 0');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__grid', { within: teamPhoneBlock(teamCss) })).toContain('repeat(1, minmax(0, 1fr))');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__title')).toContain('min-width: 0');
   });
 
   it('platform tint tokens stay in v2.css and tokens.css, while Signal rows use the cobalt mark', () => {
@@ -5435,10 +5452,10 @@ describe('v2 board on a phone (TASK-576)', () => {
   });
 
   test('hosted meter track keeps its flex width and clips the fill inside the card', () => {
-    const v2 = readV2Css();
-    expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('flex: 1');
-    expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('min-width: 0');
-    expect(ruleBody(v2, '.v2-team-card__meter-track')).toContain('overflow: hidden');
+    const teamCss = read('../components/V2YourTeamPage.css');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__meter-track')).toContain('flex: 1');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__meter-track')).toContain('min-width: 0');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__meter-track')).toContain('overflow: hidden');
   });
 
   test('character avatars keep their hairline ring rule (TASK-679, load-bearing)', () => {
@@ -5590,6 +5607,78 @@ describe('Connect lifted from the d215 frame (R05)', () => {
     for (const sel of negative) {
       expect(ruleBody(connectCss, `.v2-root:lang(zh) ${sel}`)).toContain('letter-spacing: 0');
     }
+  });
+});
+
+describe('Your team lifted from the d215 frame (R06)', () => {
+  const v2 = read('../v2.css');
+  const teamCss = read('../components/V2YourTeamPage.css');
+  const team = read('../components/V2YourTeamPage.tsx');
+
+  test('the page imports its own sheet and v2.css carries no Your team rule', () => {
+    expect(team).toContain("import './V2YourTeamPage.css';");
+    // `v2-team__`, `v2-team-card` and the bare root; `v2-teammate` is
+    // V2BringTeammate's own surface (V2BringTeammate.css), not this page's.
+    expect(v2).not.toMatch(/\.v2-team(__|-card|[\s,{:.])/);
+  });
+
+  // The keys and the avatar mark paint a box-shadow. Class-only selectors
+  // (0,2,0) leave `.v2-root button:focus-visible` (0,2,1) free to paint the
+  // focus ring over it; a `button.` prefix would tie it and, loading later,
+  // erase the ring.
+  test('the keyed controls stay class-only so the shared focus ring outranks their shadow', () => {
+    expect(teamCss).not.toMatch(/button\.v2-team(__byo|__hire|-card__answer|-card__talk|-card__mark)/);
+    expect(selectorRuleBody(teamCss, '\n.v2-team .v2-team__byo, .v2-team .v2-team-card__talk {')).toContain('box-shadow: var(--v2-key-inset)');
+  });
+
+  test('on a phone, every drawn act and the avatar mark are 44px', () => {
+    const phone = mediaBlockContaining(teamCss, '.v2-team .v2-team__grid');
+    expect(selectorRuleBody(phone, '.v2-team .v2-team__byo, .v2-team .v2-team__hire, ')).toContain('height: 44px');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark', { within: phone })).toContain('width: 44px');
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark', { within: phone })).toContain('height: 44px');
+  });
+
+  // Deviation from the frame: the two text links (Have an invitation code?,
+  // 20px; Connected agents, 16px) are not drawn. On a phone an invisible ring
+  // 14px above and below makes each hit area at least 44px.
+  test('on a phone, the text links gain a 44px hit ring', () => {
+    expect(ruleBody(teamCss, '.v2-team button.v2-team__link')).toContain('position: relative');
+    const phone = mediaBlockContaining(teamCss, '.v2-team button.v2-team__link::after');
+    const ring = ruleBody(teamCss, '.v2-team button.v2-team__link::after', { within: phone });
+    expect(ring).toContain('content: ""');
+    expect(ring).toContain('position: absolute');
+    expect(ring).toContain('inset: -14px 0');
+  });
+
+  // Undrawn controls in the phone block that follows the base rules: the code
+  // input matches its 44px buttons, and the Connected agents ring (14px below
+  // the link) clears the first chip row.
+  test('on a phone, the code input is 44px and the internal ring clears the chips', () => {
+    const phone = mediaBlockContaining(teamCss, '.v2-team .v2-team__redeem-input');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__redeem-input', { within: phone })).toContain('height: 44px');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__internal', { within: phone })).toContain('gap: 14px');
+    // The override must come after the base rules or the base wins.
+    expect(teamCss.indexOf(phone)).toBeGreaterThan(teamCss.indexOf('.v2-team .v2-team__redeem-input {'));
+    expect(teamCss.indexOf(phone)).toBeGreaterThan(teamCss.indexOf('.v2-team .v2-team__internal {'));
+  });
+
+  // The v2.css :lang(zh) reset (TASK-055) scans only v2.css, so the entries
+  // that left it with this page are held here: every negative-tracking
+  // selector in the sheet has a zh reset in the same sheet.
+  test('zh-CN: every negative-tracking Your team title is reset under :lang(zh)', () => {
+    const negative = [...teamCss.matchAll(/\n([^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)]
+      .flatMap((m) => m[1].split(',').map((sel) => sel.trim()))
+      .filter(Boolean);
+    expect(negative).toEqual([
+      '.v2-team .v2-team__title',
+      '.v2-team .v2-team-card__name',
+      '.v2-team .v2-team__empty-title',
+    ]);
+    const start = teamCss.indexOf('.v2-root:lang(zh) .v2-team .v2-team__title');
+    expect(start).toBeGreaterThan(-1);
+    const reset = teamCss.slice(start, teamCss.indexOf('}', start));
+    expect(reset).toContain('letter-spacing: 0');
+    for (const sel of negative) expect(reset).toContain(`.v2-root:lang(zh) ${sel}`);
   });
 });
 
