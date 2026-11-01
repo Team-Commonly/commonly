@@ -192,6 +192,14 @@
   border-top: 1px solid var(--v2-border-soft);
 }
 .v2p-lrow:first-child { border-top: 0; }
+/* Disclosure row, lifted from d215 (details.disc, lines 322-326 and the 390 rule at 504). */
+details.v2p-disc { border-top: 1px solid var(--v2-border-soft); }
+details.v2p-disc > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; align-items: center; gap: 14px; min-height: 52px; padding: 8px 14px 8px 16px; }
+details.v2p-disc > summary::-webkit-details-marker { display: none; }
+details.v2p-disc > summary .chev { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--v2-text-placeholder); transition: transform 160ms; }
+details.v2p-disc[open] > summary .chev { transform: rotate(180deg); }
+details.v2p-disc > summary .lb { font-size: 13px; font-weight: 600; color: var(--v2-text-primary); display: flex; align-items: center; gap: 8px; }
+details.v2p-disc > summary .vl { font-size: 13.5px; color: var(--v2-ink-2); min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .v2p-lrow .lb { font-size: 13px; font-weight: 600; color: var(--v2-text-primary); display: flex; align-items: center; gap: 8px; }
 .v2p-lrow .vl { font-size: 13.5px; color: var(--v2-ink-2); min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .v2p-lrow .vl .mo { font-size: 12px; color: var(--v2-text-muted); }
@@ -340,6 +348,7 @@
   .v2p-ph h1 { font-size: 20px; white-space: normal; }
   .v2p-body { padding: 16px 14px; }
   .v2p-lrow { grid-template-columns: minmax(0, 1fr); min-height: 48px; padding: 8px 12px; }
+  details.v2p-disc > summary { grid-template-columns: minmax(0, 1fr) auto auto; min-height: 48px; padding: 8px 12px; }
   .v2p-drawer:not(.v2p-drawer--inline) { width: 100%; border-radius: 0; }
   .v2p-cols { grid-template-columns: minmax(0, 1fr); }
   .v2p-tile { height: 104px; }

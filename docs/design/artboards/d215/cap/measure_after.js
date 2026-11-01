@@ -18,9 +18,10 @@ const fs = require('fs');
 const HERE = __dirname;
 const TARGETS = path.join(HERE, '..', 'targets.json');
 
-const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff', 'connect'];
-// byo-handoff is drawn but can't be captured on prod: reaching it issues a real key.
-const PROD_SURFACES = SURFACES.filter(s => s !== 'byo-handoff');
+const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff', 'firstrun-welcome', 'firstrun-waiting', 'firstrun-connected', 'firstrun-error', 'connect'];
+// byo-handoff is drawn but can't be captured on prod: reaching it issues a real key. The first-run
+// dialog is a latch-gated overlay, and the Scout welcome only exists in a brand-new pod, so neither is measured on prod.
+const PROD_SURFACES = SURFACES.filter(s => s !== 'byo-handoff' && !s.startsWith('firstrun-'));
 const VIEWPORTS = ['1440', '390'];
 const EXPECTED = SURFACES.flatMap(s => VIEWPORTS.map(v => `${s}-${v}`));
 
