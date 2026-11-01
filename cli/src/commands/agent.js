@@ -598,9 +598,19 @@ export const resolveLogsSeat = async (client, podId, typed, instanceId) => {
     .some((n) => typeof n === 'string' && n.toLowerCase() === want);
   const hits = agents.filter(named);
   if (hits.length > 1) {
-    throw new Error(`${hits.length} seats are named '${typed}' here: ${hits.map((h) => h.instanceId).join(', ')}. Pass --instance-id.`);
+    const pairs = hits.map((h) => `${h.name || h.agentName}/${h.instanceId}`).join(', ');
+    throw new Error(`${hits.length} seats are named '${typed}' here: ${pairs}. `
+      + `Run: commonly agent logs <agentName> --pod ${podId} --instance-id <instance>`);
   }
-  if (hits.length === 0) return { agentName: typed, instanceId: 'default' };
+  if (hits.length === 0) {
+    // A typo must not read like an idle seat, so say what was read instead.
+    const handles = agents.map((inst) => inst.mention).filter(Boolean).map((m) => `@${m}`).join(', ');
+    return {
+      agentName: typed,
+      instanceId: 'default',
+      note: `'${typed}' is not in this pod's roster, so instance default was read.${handles ? ` Seats here: ${handles}` : ''}`,
+    };
+  }
   return { agentName: hits[0].name || hits[0].agentName, instanceId: hits[0].instanceId || 'default' };
 };
 
@@ -4546,6 +4556,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
       const printActivity = async () => {
         const seat = await resolveLogsSeat(client, opts.pod, name, opts.instanceId);
+        if (seat.note) console.error(seat.note);
         const { events = [], runs = [] } = await client.get('/api/agents/seat-activity', {
           podId: opts.pod,
           agentName: seat.agentName,

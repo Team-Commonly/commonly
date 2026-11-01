@@ -76,6 +76,17 @@ describe('runAgentList', () => {
     expect(second).not.toMatch(/@|undefined/);
   });
 
+  test('without --pod the columns are unchanged: no HANDLE', async () => {
+    const { log, deps } = fakeDeps(async () => ({
+      installations: [{ agentName: 'cto-walk-1016', instanceId: 'cto-walk', mention: 'x', status: 'active', runtimeType: 'native' }],
+    }));
+
+    expect(await runAgentList({}, deps)).toBe(0);
+    const [header, , row] = log.mock.calls.map((c) => c[0]);
+    expect(header).toMatch(/^NAME\s+INSTANCE\s+RUNTIME/);
+    expect(row).toMatch(/^cto-walk-1016\s+cto-walk\s+native/);
+  });
+
   test('a non-member 403 on --pod exits 1 with one Failed line', async () => {
     const { log, error, deps } = fakeDeps(async () => {
       throw httpError(403, 'Access denied');

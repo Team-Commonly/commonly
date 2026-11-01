@@ -80,7 +80,9 @@ jest.mock('../../../models/Pod', () => ({
 jest.mock('../../../models/User', () => ({
   findById: jest.fn((id) => ({
     select: jest.fn(() => ({
-      lean: jest.fn().mockResolvedValue({ username: String(id) === 'bbbbbbbbbbbbbbbbbbbbbbbb' ? 'cto-walk-1016-cto-walk' : 'tester' }),
+      lean: String(id) === 'cccccccccccccccccccccccc'
+        ? jest.fn().mockRejectedValue(new Error('user lookup down'))
+        : jest.fn().mockResolvedValue({ username: String(id) === 'bbbbbbbbbbbbbbbbbbbbbbbb' ? 'cto-walk-1016-cto-walk' : 'tester' }),
     })),
   })),
 }));
@@ -396,6 +398,13 @@ describe('the row\'s creator may act over a peer\'s live lease (TASK-669)', () =
 
     expect((await act()).status).toBe(200);
     expect((await updateTexts()).at(-1)).toMatch(note);
+  });
+
+  it('a failed claimant lookup never refuses the override; the note keeps the id', async () => {
+    await leasedByPeer({ claimedBy: 'cccccccccccccccccccccccc', ...createdBy('lead-seat') });
+
+    expect((await complete('lead-seat')).status).toBe(200);
+    expect((await updateTexts()).at(-1)).toMatch(/\(overrode cccccccccccccccccccccccc's live claim\)$/);
   });
 
   it('releases a row a peer holds by moving it to pending, and the next seat is not refused', async () => {

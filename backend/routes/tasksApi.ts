@@ -577,8 +577,13 @@ type LeaseCheck = { refusal: Record<string, unknown> | null; overridesHolder: st
 // override note names a person or agent by the handle someone can @mention.
 const claimantLabel = async (claimedBy: string): Promise<string> => {
   if (!/^[a-f\d]{24}$/i.test(claimedBy)) return claimedBy;
-  const user = await User.findById(claimedBy).select('username').lean() as { username?: string } | null;
-  return user?.username || claimedBy;
+  try {
+    const user = await User.findById(claimedBy).select('username').lean() as { username?: string } | null;
+    return user?.username || claimedBy;
+  } catch {
+    // The label is cosmetic: an override is never refused over it.
+    return claimedBy;
+  }
 };
 
 // The refusal every conflicting write path shares, so the two cannot drift into
