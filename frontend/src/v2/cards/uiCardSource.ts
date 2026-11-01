@@ -2,23 +2,49 @@ import { createParser, parseExpression, split, tokenize, walkAST } from '@openui
 import type { ElementNode, LibraryJSONSchema } from '@openuidev/lang-core';
 import Ajv from 'ajv';
 import catalogue from './uiCardCatalogue.json';
+import revision from './uiCardCatalogueRevision.json';
+import catalogueRev2 from './uiCardCatalogue.rev2.json';
+import revisionRev2 from './uiCardCatalogueRevision.rev2.json';
 
 import { cardHref } from './cardLinks';
 export { cardHref } from './cardLinks';
-const helpers = new Set(['Step', 'File', 'Pair', 'Col']);
-const names = new Set(Object.keys(catalogue.properties));
-const parser = createParser(catalogue as LibraryJSONSchema);
-const validate = new Ajv({ strict: false }).compile({
-  $defs: Object.fromEntries(Object.entries(catalogue.$defs).map(([name, props]) => [name, {
-    type: 'object', properties: { type: { const: 'element' }, typeName: { const: name }, props,
-      partial: { type: 'boolean' }, hasDynamicProps: { type: 'boolean' }, statementId: { type: 'string' } },
-    required: ['type', 'typeName', 'props'], additionalProperties: false,
-  }])),
-  anyOf: [...names].filter(name => !helpers.has(name)).map(name => ({ $ref: `#/$defs/${name}` })),
-});
+const notRoot = new Set(['Step', 'File', 'Pair', 'Col', 'Source']);
+
+/** One reader per stored revision. Revision 2 only adds the server-stamped Source. */
+export interface CardRevision {
+  catalogId: string; catalogRev: number; catalogHash: string;
+  grammar: LibraryJSONSchema & { $defs: Record<string, { properties: Record<string, unknown> }> };
+  names: Set<string>;
+  parser: ReturnType<typeof createParser>;
+  validate: ReturnType<Ajv['compile']>;
+}
+const reader = (grammar: typeof catalogueRev2, pin: typeof revision): CardRevision => {
+  const names = new Set(Object.keys(grammar.properties));
+  return {
+    ...pin, grammar: grammar as CardRevision['grammar'], names,
+    parser: createParser(grammar as LibraryJSONSchema),
+    validate: new Ajv({ strict: false }).compile({
+      $defs: Object.fromEntries(Object.entries(grammar.$defs).map(([name, props]) => [name, {
+        type: 'object', properties: { type: { const: 'element' }, typeName: { const: name }, props,
+          partial: { type: 'boolean' }, hasDynamicProps: { type: 'boolean' }, statementId: { type: 'string' } },
+        required: ['type', 'typeName', 'props'], additionalProperties: false,
+      }])),
+      anyOf: [...names].filter(name => !notRoot.has(name)).map(name => ({ $ref: `#/$defs/${name}` })),
+    }),
+  };
+};
+export const CARD_REVISIONS: readonly CardRevision[] = [
+  reader(catalogue as typeof catalogueRev2, revision), reader(catalogueRev2, revisionRev2),
+];
+/** The reader for a stored payload's exact tuple, or undefined: unknown revisions never mount. */
+export function cardRevision(payload: { catalogId?: unknown; catalogRev?: unknown; catalogHash?: unknown } | null | undefined) {
+  return CARD_REVISIONS.find(r => payload?.catalogId === r.catalogId && payload?.catalogRev === r.catalogRev
+    && payload?.catalogHash === r.catalogHash);
+}
 
 /** Stored cards are complete static documents. Never mount a rejected source. */
-export function parseCard(source: unknown): ElementNode | null {
+export function parseCard(source: unknown, rev: CardRevision = CARD_REVISIONS[0]): ElementNode | null {
+  const { names, parser, validate } = rev;
   if (typeof source !== 'string' || new TextEncoder().encode(source).length > 32 * 1024) return null;
   try {
     // The forgiving lexer drops characters such as # outside quoted prose.
@@ -86,8 +112,9 @@ export function parseCard(source: unknown): ElementNode | null {
     if (!r.root || r.meta.incomplete || r.meta.errors.length || r.meta.unresolved.length
       || r.queryStatements.length || r.mutationStatements.length || Object.keys(r.stateDeclarations).length
       || !validate(r.root)) return null;
-    let buttons = 0; let primary = 0;
+    let buttons = 0; let primary = 0; let sources = 0;
     const inspect = (node: ElementNode) => {
+      if (node.typeName === 'Source') sources++;
       if (node.typeName === 'Link') {
         if (node.props.as !== 'text') buttons++;
         if (node.props.as === 'primary') primary++;
@@ -102,6 +129,9 @@ export function parseCard(source: unknown): ElementNode | null {
     };
     inspect(r.root);
     if (buttons > 2 || primary > 1) return null;
+    // As on the server: at most one Source, and only on the top-level Card.
+    const topSources = r.root.typeName === 'Card' ? (r.root.props.children as ElementNode[]).filter(n => n.typeName === 'Source').length : 0;
+    if (sources > 1 || sources !== topSources) return null;
     return r.root;
   } catch { return null; }
 }

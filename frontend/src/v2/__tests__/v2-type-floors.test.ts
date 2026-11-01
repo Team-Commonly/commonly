@@ -26,8 +26,9 @@ import { readV2Css } from '../__testkit__/v2Css';
  * longer violates). Target is an empty list.
  */
 // v2.css plus the surface files lifted out of it (D223): the chat sheets V2App
-// loads, and the per-surface sheets their components import (R04 moved BYO's).
-const CSS = [readV2Css(), fs.readFileSync(path.join(__dirname, '../components/V2AgentBYO.css'), 'utf8')]
+// loads, and the per-surface sheets their components import (R04 BYO, S4 board).
+const CSS = [readV2Css(), ...['../components/V2AgentBYO.css', '../components/V2PodBoard.css']
+  .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))]
   .join('\n');
 
 const MONO_FLOOR = 11;
@@ -152,8 +153,6 @@ const ALLOWLIST: string[] = [
   // unassigned
   '.v2-approval__badge', // 10.5px — mono-below-floor
   '.v2-approval__time', // 11.5px — no-mono-family
-  '.v2-board__card-id', // 10.5px — no-mono-family
-  '.v2-board__detail-update-author', // 11.5px — no-mono-family
   '.v2-connect__number', // 11.0px — no-mono-family
   '.v2-filter-count', // 11.0px — no-mono-family
   '.v2-invite-card__meta', // 11.0px — no-mono-family

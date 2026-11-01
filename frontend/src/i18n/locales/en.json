@@ -1516,6 +1516,10 @@
     "title": "Board",
     "backToChat": "Back to chat",
     "newTask": "New task",
+    "addTo": "Add to {{column}}",
+    "card": {
+      "needs": "Needs {{dep}}"
+    },
     "taskCount_one": "{{count}} task",
     "taskCount_other": "{{count}} tasks",
     "focus": {
@@ -1595,7 +1599,9 @@
       "saveError": "Could not save this change. Try again.",
       "statusLabel": "Status",
       "showEarlierUpdates": "Show {{count}} earlier updates",
-      "hideEarlierUpdates": "Hide earlier updates"
+      "hideEarlierUpdates": "Hide earlier updates",
+      "depends": "Depends on",
+      "noDeps": "None"
     },
     "form": {
       "title": "Title",
@@ -2627,6 +2633,7 @@
     "disconnected": "Disconnected {{label}}.",
     "reviewProviderAccess": "Review access at {{label}}",
     "removedReviewProvider": "Connection removed. Review its access at {{label}}.",
+    "removedStillListed": "Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.",
     "openProviderSettings": "Open provider settings",
     "noConnection": "install the GitHub App first · an admin does this once",
     "noSeats": "no agent in this pod yet",

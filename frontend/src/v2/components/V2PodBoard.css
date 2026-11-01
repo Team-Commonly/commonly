@@ -1,0 +1,719 @@
+/* Task board (/v2/pods/:podId/board), lifted from the d215 frame (S4):
+   docs/design/artboards/d215/index.html, section s-board, frames "board" at
+   1440 and 390, with the frame's CSS (its board block plus the keys, segment,
+   chip, dot and avatar primitives it uses). The rules in the first two parts
+   are the frame's own values; only the tokens are translated to --v2-* (so
+   light, dark and auto switch together), the frame's class names are drawn in
+   the board's existing v2-board__* names, and the frame's `.app.m` rules sit in
+   the board's 760px phone query. Scoped to .v2-feature--board, the route's
+   wrapper. Part 3 carries the states the frame doesn't draw, unchanged.
+
+   Token map: --sf surface, --p bg-subtle, --t surface-tint, --d border-soft,
+   --b border, --mu text-muted, --se text-secondary, --ph text-placeholder,
+   --ink text-primary, --fill-a/-b/-edge fill-a/-b/-edge, --on-fill on-fill,
+   --c accent, --c-text accent-text, --c-soft accent-soft, --key-a/-b/-edge
+   key-a/-b/-edge, --sh-key key-inset, --sh-pop shadow-pop, --av-ring av-ring,
+   --f-display font-display, --f-body font, --f-mono font-mono. */
+
+/* ── 1. The 1440 frame ─────────────────────────────────────────────────── */
+
+.v2-feature--board .v2-board { background: var(--v2-surface); }
+
+/* keys (.b, .b-g, .b-p, .b-s, .b-sm, .ib) */
+.v2-feature--board .v2-board__key { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); cursor: pointer; white-space: nowrap; transition: transform 120ms, background 160ms, box-shadow 140ms; }
+.v2-feature--board .v2-board__key svg { width: 16px; height: 16px; flex: none; }
+.v2-feature--board .v2-board__key:active { transform: translateY(1px); }
+.v2-feature--board .v2-board__key:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent); }
+.v2-feature--board .v2-board__key--ink { color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(16, 24, 40, 0.18), 0 4px 10px -3px rgba(16, 24, 40, 0.28); }
+.v2-feature--board .v2-board__key--soft { color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
+.v2-feature--board .v2-board__key--ghost { color: var(--v2-text-secondary); background: transparent; border: 1px solid transparent; }
+.v2-feature--board .v2-board__key--ghost:hover { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+.v2-feature--board .v2-board__key--ink:hover { background: var(--v2-ink-hover); }
+.v2-feature--board .v2-board__key--soft:hover { background: var(--v2-key-b); }
+.v2-feature--board .v2-board__key--sm { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; }
+.v2-feature--board .v2-board__key--icon { width: 32px; padding: 0; height: 32px; border-radius: 8px; }
+.v2-feature--board .v2-board__key--icon.v2-board__key--sm { width: 28px; height: 28px; }
+.v2-feature--board .v2-board__key--icon svg { width: 17px; height: 17px; }
+
+/* header (.ph, .disp, .meta, .bfilters, .chip) */
+.v2-feature--board .v2-board__head { flex: none; height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 20px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-feature--board .v2-board__title-wrap { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.v2-feature--board .v2-board__title { margin: 0; min-width: 0; font: 700 18px/20px var(--v2-font-display); letter-spacing: -0.025em; color: var(--v2-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-feature--board .v2-board__subtitle { font: 500 12px/1 var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
+.v2-feature--board .v2-board__tools,
+.v2-feature--board .v2-board__filters { display: flex; gap: 6px; align-items: center; }
+.v2-feature--board .v2-board__chip { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border: 0; border-radius: 7px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-secondary); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); white-space: nowrap; cursor: pointer; }
+.v2-feature--board .v2-board__chip svg { width: 13px; height: 13px; }
+.v2-feature--board .v2-board__chip.is-on { color: var(--v2-accent-text); box-shadow: inset 0 0 0 1px var(--v2-accent); background: var(--v2-accent-soft); }
+/* Exception: the chip's inset ring outranks the shell's focus ring, so it is restated. */
+.v2-feature--board .v2-board__chip:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+
+/* focus strip (.focus) */
+.v2-feature--board .v2-board__focus { margin: 14px 24px 0; padding: 0; border: 0; background: transparent; flex: none; }
+.v2-feature--board .v2-board__focus-strip { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; border-radius: 10px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); font-size: 13px; color: var(--v2-ink-2); cursor: pointer; }
+.v2-feature--board .v2-board__focus-icon { width: 18px; height: 18px; flex: none; }
+.v2-feature--board .v2-board__focus-strip .v2-board__focus-title { flex: 0 1 auto; min-width: 0; margin: 0 auto 0 0; font: 600 13px/20px var(--v2-font); color: var(--v2-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-feature--board .v2-board__focus-strip .v2-board__focus-eyebrow,
+.v2-feature--board .v2-board__focus-progress { font: 400 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
+.v2-feature--board .v2-board__focus-chevron { color: var(--v2-text-placeholder); width: 15px; height: 15px; flex: none; }
+
+/* columns (.cols, .col, .chd, .dot, .cbody) */
+.v2-feature--board .v2-board__columns { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 120px; gap: 10px; padding: 12px 24px 0; }
+.v2-feature--board .v2-board__col { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: 12px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); overflow: hidden; }
+.v2-feature--board .v2-board__col-head { flex: none; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; font-weight: 600; font-size: 13px; }
+.v2-feature--board .v2-board__col-head svg { width: 15px; height: 15px; }
+.v2-feature--board .v2-board__col-count { margin-right: auto; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-feature--board .v2-board__col-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--v2-accent); flex: none; position: relative; display: inline-block; }
+.v2-feature--board .v2-board__col-dot--pending { background: transparent; box-shadow: inset 0 0 0 1.5px var(--v2-text-placeholder); }
+/* #3179: Blocked shows through its red dot and name, never through the card. */
+.v2-feature--board .v2-board__col-dot--blocked { background: var(--v2-status-blocked); }
+.v2-board__col--blocked .v2-board__col-name { color: var(--v2-status-blocked); }
+.v2-feature--board .v2-board__col-dot--claimed::after,
+.v2-feature--board .v2-board__owner-dot--live::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--v2-accent); opacity: 0; animation: v2-board-pulse 1.6s ease-out infinite; }
+@keyframes v2-board-pulse { 0% { transform: scale(0.5); opacity: 0.55; } 100% { transform: scale(1.4); opacity: 0; } }
+/* The frame scrolls inside each column; its static mock clips. */
+.v2-feature--board .v2-board__col-body { flex: 1; min-height: 0; padding: 0 8px 8px; display: grid; grid-auto-rows: max-content; gap: 6px; align-content: start; overflow-y: auto; }
+
+/* cards (.tc, .top1, .tt, .pr, .lease, .av--20, .picked, .hv) */
+.v2-feature--board .v2-board__card { position: relative; display: grid; gap: 4px; padding: 8px 10px 9px; border: 0; border-radius: 9px; background: var(--v2-surface); box-shadow: 0 0 0 1px var(--v2-border-soft), 0 1px 2px rgba(16, 24, 40, 0.04); }
+.v2-feature--board .v2-board__card.is-picked { box-shadow: 0 0 0 2px var(--v2-accent); }
+.v2-feature--board .v2-board__card-main { display: grid; gap: 4px; width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.v2-feature--board .v2-board__card-kicker { display: flex; align-items: center; gap: 6px; height: 16px; min-width: 0; font: 500 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-feature--board .v2-board__card-kicker > * { flex: none; }
+.v2-feature--board .v2-board__card-kicker > .v2-board__card-spacer { flex: 1 1 auto; }
+.v2-feature--board .v2-board__card-title { font-size: 13px; font-weight: 400; line-height: 18px; color: var(--v2-text-primary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* Priority keeps its 11px and its P0/P2 colours (Sam's B-lite ruling, the 11px mono floor,
+   and P2 contrast): the frame's .pr is 10px with --ph P2 text and an ink P0. */
+.v2-feature--board .v2-board__priority { display: inline-grid; place-items: center; height: 16px; padding: 0 4px; border: 0; border-radius: 4px; font: 600 11px/1 var(--v2-font-mono); color: var(--v2-prio-ink); box-shadow: inset 0 0 0 1px var(--v2-prio-edge); background: none; }
+.v2-feature--board .v2-board__priority--p0 { background: var(--v2-prio-p0-bg); box-shadow: none; color: var(--v2-prio-p0-fg); }
+.v2-feature--board .v2-board__priority--p2 { box-shadow: none; color: var(--v2-prio-p2-fg); }
+.v2-feature--board .v2-board__owner-line { display: inline-flex; align-items: center; gap: 5px; height: 16px; overflow: visible; white-space: nowrap; color: var(--v2-accent-text); }
+.v2-feature--board .v2-board__owner-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; position: relative; display: inline-block; }
+.v2-feature--board .v2-board__owner-dot--live { background: var(--v2-status-live); }
+.v2-feature--board .v2-board__card-avatar { width: 20px; height: 20px; min-width: 20px; border-radius: 6px; box-shadow: 0 0 0 1px var(--v2-av-ring); }
+/* The frame's hollow "Not claimed" ring is --ph; it is the card's only open-task mark, so it takes --mu. */
+.v2-feature--board .v2-board__unclaimed { width: 7px; height: 7px; border-radius: 50%; flex: none; display: inline-block; box-shadow: inset 0 0 0 1.5px var(--v2-text-muted); }
+.v2-feature--board .v2-board__blocked-mark { display: inline-flex; }
+.v2-feature--board .v2-board__blocked-mark svg { width: 13px; height: 13px; }
+.v2-feature--board .v2-board__card-actions { position: absolute; right: 6px; top: 6px; display: none; gap: 2px; padding: 2px; border-radius: 8px; background: var(--v2-surface); box-shadow: var(--v2-shadow-pop); }
+.v2-feature--board .v2-board__card-actions .v2-board__key--icon { width: 24px; height: 24px; border-radius: 6px; }
+.v2-feature--board .v2-board__card-actions .v2-board__key--icon svg { width: 14px; height: 14px; }
+/* The hover bar sits over the id row's right end, like the owner line below. */
+.v2-board__card:hover .v2-board__unclaimed, .v2-board__card:focus-within .v2-board__unclaimed,
+.v2-board__card:hover .v2-board__blocked-mark, .v2-board__card:focus-within .v2-board__blocked-mark { visibility: hidden; }
+
+/* done rail (.donecol) */
+.v2-feature--board .v2-board__donecol { min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 10px; gap: 6px; text-align: center; border-radius: 12px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); overflow: hidden; }
+.v2-feature--board .v2-board__donecol-label { flex: none; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0; font-weight: 600; font-size: 13px; color: var(--v2-text-primary); }
+.v2-feature--board .v2-board__donecol-label svg { width: 15px; height: 15px; }
+.v2-feature--board .v2-board__donecol-count { font: 600 22px/20px var(--v2-font-mono); color: var(--v2-text-primary); }
+
+/* drawer (.drawer, .dh, .db, .seg, .kv, .upd, .showmore). The overlay stays for
+   click-out and the focus trap; on desktop it is transparent, as drawn. */
+@media (min-width: 761px) {
+  .v2-feature--board .v2-board__overlay--drawer { background: transparent; }
+}
+.v2-feature--board .v2-board__overlay--drawer { align-items: stretch; justify-content: flex-end; padding: 0; }
+.v2-feature--board .v2-modal.v2-board__drawer { width: 400px; max-width: 100%; height: 100%; max-height: none; border: 0; border-radius: 14px 0 0 14px; background: var(--v2-surface); box-shadow: var(--v2-shadow-pop); display: flex; flex-direction: column; }
+.v2-feature--board .v2-board__drawer-head { flex: none; height: 64px; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 20px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-feature--board .v2-board__drawer-head .v2-board__card-spacer { flex: 1; }
+.v2-feature--board .v2-board__drawer-id { font: 400 12px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-feature--board .v2-board__drawer-body { padding: 18px 20px; display: grid; gap: 14px; align-content: start; }
+.v2-feature--board .v2-board__drawer-title { margin: 0; font: 700 19px/1.25 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); overflow-wrap: anywhere; }
+.v2-feature--board .v2-board__detail-meta { margin: 0; }
+.v2-feature--board .v2-board__status-segment { display: inline-flex; max-width: 100%; gap: 2px; padding: 2px; border: 0; border-radius: 9px; background: var(--v2-surface-tint); box-shadow: inset 0 0 0 1px var(--v2-border-soft); flex: none; overflow: visible; }
+.v2-feature--board .v2-board__status-option { box-sizing: border-box; cursor: pointer; height: 28px; min-height: 0; padding: 0 10px; border: 0; border-radius: 7px; display: inline-flex; align-items: center; gap: 6px; font: 500 12.5px/1 var(--v2-font); color: var(--v2-text-secondary); background: transparent; white-space: nowrap; }
+.v2-feature--board .v2-board__status-option[aria-checked="true"] { background: var(--v2-surface); color: var(--v2-text-primary); font-weight: 600; box-shadow: 0 0 0 1px var(--v2-key-edge), 0 1px 2px rgba(16, 24, 40, 0.08); }
+.v2-feature--board .v2-board__ownership { margin: 0; display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px 10px; align-items: center; font-size: 13px; border: 0; border-radius: 0; }
+.v2-feature--board .v2-board__ownership dt { margin: 0; padding: 0; min-height: 0; border: 0; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-feature--board .v2-board__ownership dd { margin: 0; padding: 0; min-height: 0; border: 0; display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.v2-feature--board .v2-board__dep { font: 500 12.5px/1 var(--v2-font-mono); color: var(--v2-text-primary); background: var(--v2-surface-tint); border-radius: 6px; padding: 2px 5px; box-shadow: inset 0 0 0 1px var(--v2-border-soft); white-space: nowrap; }
+.v2-feature--board .v2-board__detail-updates { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.v2-feature--board .v2-board__ownership .v2-board__member-avatar,
+.v2-feature--board .v2-board__detail-updates .v2-board__member-avatar { border-radius: 6px; box-shadow: 0 0 0 1px var(--v2-av-ring); }
+.v2-feature--board .v2-board__detail-updates li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; padding: 0; border: 0; font-size: 12.5px; color: var(--v2-text-secondary); line-height: 1.45; }
+.v2-feature--board .v2-board__detail-updates .v2-avatar { width: 20px; height: 20px; min-width: 20px; border-radius: 6px; }
+.v2-feature--board .v2-board__update-time { font: 400 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-feature--board .v2-board__updates-toggle { justify-self: start; display: inline-flex; align-items: center; gap: 5px; height: 24px; min-height: 0; margin-top: 6px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; font: 500 12px/1 var(--v2-font); color: var(--v2-text-secondary); box-shadow: inset 0 0 0 1px var(--v2-border-soft); background: var(--v2-surface); text-decoration: none; cursor: pointer; }
+.v2-feature--board .v2-board__updates-toggle svg { width: 14px; height: 14px; transition: transform 160ms; }
+.v2-feature--board .v2-board__updates-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.v2-feature--board .v2-board__updates-toggle:focus-visible { box-shadow: 0 0 0 2px var(--v2-accent); }
+
+/* zh-CN: no negative tracking on CJK (TASK-055). */
+.v2-root:lang(zh) .v2-feature--board .v2-board__title,
+.v2-root:lang(zh) .v2-feature--board .v2-board__drawer-title { letter-spacing: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-feature--board .v2-board__col-dot--claimed::after,
+  .v2-feature--board .v2-board__owner-dot--live::after { animation: none; }
+}
+
+/* ── 2. The 390 frame (.mtop, .tt2, .mbody2, .seg) ─────────────────────── */
+
+@media (max-width: 760px) {
+  .v2-feature--board .v2-board { background: var(--v2-bg-subtle); }
+  .v2-feature--board .v2-board__head { height: 52px; gap: 8px; padding: 0 10px 0 12px; background: var(--v2-surface); }
+  .v2-feature--board .v2-board__title { font: 700 16px/1.1 var(--v2-font-display); letter-spacing: -0.02em; }
+  /* The drawn track (12px below the bar, 2px around 28px tabs) is painted by ::before,
+     so the box can reach up into the 12px gap: a scroller clips its children's hit areas. */
+  .v2-feature--board .v2-board__tabs { position: relative; display: inline-flex; align-self: flex-start; max-width: calc(100% - 24px); margin: 0 12px; gap: 2px; padding: 14px 2px 2px; overflow-x: auto; flex: none; }
+  .v2-feature--board .v2-board__tabs::before { content: ''; position: absolute; top: 12px; right: 0; bottom: 0; left: 0; border-radius: 9px; background: var(--v2-surface-tint); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+  .v2-feature--board .v2-board__tab { position: relative; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; cursor: pointer; font: 500 12.5px/1 var(--v2-font); color: var(--v2-text-secondary); white-space: nowrap; }
+  .v2-feature--board .v2-board__tab.is-active { background: var(--v2-surface); color: var(--v2-text-primary); font-weight: 600; box-shadow: 0 0 0 1px var(--v2-key-edge), 0 1px 2px rgba(16, 24, 40, 0.08); }
+  .v2-feature--board .v2-board__tab:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+  .v2-feature--board .v2-board__tab-count { font: 400 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+  /* Exception: 44px phone hit areas on the frame's 32px top-bar keys and 24px chips
+     (chat precedent). The key's 1px border sits inside, so the inset is -7px. */
+  .v2-feature--board .v2-board__head > .v2-board__key { position: relative; z-index: 1; }
+  .v2-feature--board .v2-board__head > .v2-board__key::after { content: ''; position: absolute; inset: -7px; }
+  /* The 28px tabs reach 44px up into the gap (14px) and down to the track's edge (2px),
+     where the chips' areas begin. Search and New task sit 12px apart so their areas meet, never overlap. */
+  .v2-feature--board .v2-board__tab::after { content: ''; position: absolute; top: -14px; right: 0; bottom: -2px; left: 0; }
+  .v2-feature--board .v2-board__head > .v2-board__new { margin-left: 4px; }
+  /* The drawer's only close control on a phone: 28px key, 1px border inside. */
+  .v2-feature--board .v2-board__drawer-close { position: relative; }
+  .v2-feature--board .v2-board__drawer-close::after { content: ''; position: absolute; inset: -9px; }
+  .v2-feature--board .v2-board__chip::after { content: ''; position: absolute; top: -10px; bottom: -10px; left: 50%; width: max(100%, 44px); transform: translateX(-50%); }
+}
+
+/* ── 3. Not drawn in the frame yet: kept as it was ─────────────────────── */
+/* Moved from v2.css with their selectors and values unchanged: the route's
+   scroll glue, the open focus panel, the focus editor, the create dialog, the
+   empty column, the expanded Done column, search, the hover and focus-visible
+   states, disabled controls, the expired lease, the drawer's priority select,
+   ownership values, watchers, notes and links, and the phone sheet. */
+
+.v2-board {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--v2-bg-subtle);
+}
+
+/* TASK-698: the board fills the pane and the columns scroll inside it. The feature
+   body was the scroller and its legacy wrapper had auto height, so `height: 100%`
+   and the column `max-height: 100%` resolved to nothing and the page grew to
+   ~77,000px (85.5× at 1440, 97.9× at 390, measured by ux-lead at 12f608b71).
+   Scoped to the board route so other feature pages keep their scroll. */
+.v2-feature--board .v2-feature__body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* margin auto stops a flex item stretching, so the board sized to its 1240px
+   max-content width and ran off a 390px phone. An explicit width keeps it full
+   width on a phone, and the auto margin still centres it on desktop. */
+.v2-feature--board .v2-feature__legacy {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+.v2-feature--board .v2-board {
+  flex: 1 1 auto;
+  height: auto;
+}
+.v2-feature--board .v2-feature__legacy { max-width: none; }
+.v2-feature--board > .v2-feature__body { padding: 0; }
+
+.v2-root button.v2-board__focus-edit,
+.v2-root button.v2-board__focus-clear {
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 7px;
+  padding: 5px 11px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-board__focus-edit:hover,
+.v2-root button.v2-board__focus-clear:hover {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
+
+.v2-board__focus-muted,
+.v2-board__focus-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  color: var(--v2-text-muted);
+  font-size: 13px;
+}
+
+.v2-board__focus-error { color: var(--v2-danger, #b42318); }
+
+.v2-root button.v2-board__focus-retry,
+.v2-root button.v2-board__focus-review-latest {
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 7px;
+  padding: 4px 10px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-board__focus-retry:hover,
+.v2-root button.v2-board__focus-review-latest:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-board__focus-review-latest:disabled {
+  color: var(--v2-text-muted);
+  cursor: default;
+}
+
+.v2-board__focus-scope {
+  margin: 0;
+  color: var(--v2-text-secondary);
+  font-size: 14px;
+  line-height: 20px;
+  white-space: pre-wrap;
+}
+
+.v2-board__focus-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.v2-board__focus-meta strong { color: var(--v2-text-secondary); }
+
+.v2-board__focus-tasks {
+  margin: 12px 0 0;
+  padding-left: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+}
+
+.v2-board__focus-tasks li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v2-board__focus-task-position {
+  flex: 0 0 20px;
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  text-align: right;
+}
+
+.v2-root button.v2-board__focus-task-link {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  color: var(--v2-accent-text);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.v2-board__focus-task-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.v2-root button.v2-board__focus-task-link:hover { text-decoration: underline; }
+
+.v2-board__focus-task-id {
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  flex: 0 0 auto;
+}
+
+.v2-board__focus-task-status {
+  color: var(--v2-text-muted);
+  font-size: 12px;
+}
+
+.v2-board__focus-task-meta {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.v2-board__focus-task--unavailable { color: var(--v2-text-muted); font-style: italic; }
+
+.v2-board__focus-editor { width: min(640px, calc(100vw - 28px)); }
+
+.v2-board__focus-editor .v2-modal__close {
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.v2-board__field textarea,
+.v2-board__field select {
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--v2-text-primary);
+  background: var(--v2-bg);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+.v2-board__field textarea:focus,
+.v2-board__field select:focus { outline: none; border-color: var(--v2-accent); box-shadow: var(--v2-focus-ring); }
+
+.v2-board__focus-task-picker {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+}
+
+.v2-board__focus-task-option {
+  display: flex;
+  align-items: flex-start;
+  flex: 0 0 auto;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--v2-text-secondary);
+  font-size: 12.5px;
+}
+.v2-board__focus-task-option input { flex: 0 0 auto; margin-top: 4px; }
+.v2-board__focus-task-option > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.v2-board__focus-selected {
+  margin: -3px 0 12px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+}
+
+.v2-board__focus-selected li { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.v2-board__focus-selected li:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.v2-board__focus-selected li > span.v2-board__focus-position {
+  flex: 0 0 20px;
+  color: var(--v2-text-muted);
+  font-family: var(--v2-font-mono);
+  text-align: right;
+}
+.v2-board__focus-selected li > span.v2-board__focus-task-label {
+  flex: 1 1 calc(100% - 25px);
+  min-width: 0;
+}
+.v2-root .v2-board__focus-selected button {
+  min-height: 32px;
+  border: 1px solid var(--v2-border);
+  border-radius: 7px;
+  padding: 5px 10px;
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  cursor: pointer;
+  font-size: 12px;
+}
+.v2-board__focus-selected button:hover:not(:disabled) {
+  border-color: var(--v2-border-strong);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-hover);
+}
+.v2-board__focus-selected button:disabled { color: var(--v2-text-muted); cursor: default; }
+.v2-board__focus-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+/* The frame draws an update's face only; its author's name stays for screen readers. */
+.v2-board__update-author {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.v2-board__focus-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+
+.v2-root button.v2-board__focus-save {
+  min-height: 32px;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  color: var(--v2-on-ink);
+  background: var(--v2-ink);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.v2-root button.v2-board__focus-save:not(:disabled):hover { background: var(--v2-ink-hover); }
+.v2-root button.v2-board__focus-save:disabled { opacity: 0.55; cursor: default; }
+
+.v2-board__focus-conflict {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.v2-board__focus-conflict h3 {
+  margin: 0 0 6px;
+  color: var(--v2-text-primary);
+  font-size: 12px;
+}
+
+.v2-board__focus-conflict p { margin: 4px 0; }
+.v2-board__focus-conflict ol { margin: 6px 0 0; padding-left: 20px; }
+.v2-board__focus-conflict .v2-board__focus-review-latest { margin-top: 8px; }
+
+.v2-board__col-empty {
+  font-size: 13px;
+  color: var(--v2-text-muted);
+  padding: 14px 6px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.v2-board__detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.v2-board__detail-pr {
+  font-size: 12.5px;
+  color: var(--v2-accent-text);
+  font-weight: 500;
+}
+
+.v2-board__detail-notes {
+  font-size: 13.5px;
+  color: var(--v2-text-secondary);
+  margin: 0 0 12px;
+  white-space: pre-wrap;
+}
+
+.v2-board__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.v2-board__field span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--v2-text-secondary);
+}
+
+.v2-board__field input {
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13.5px;
+  color: var(--v2-text-primary);
+  background: var(--v2-bg);
+}
+
+.v2-board__field input:focus {
+  outline: none;
+  border-color: var(--v2-accent);
+  box-shadow: var(--v2-focus-ring);
+}
+
+.v2-root button.v2-board__create-submit {
+  border: none;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.v2-root button.v2-board__create-submit:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.v2-root button.v2-board__create-submit:not(:disabled):hover {
+  background: var(--v2-accent-strong);
+}
+
+@media (max-width: 760px) {
+  .v2-root button.v2-board__focus-edit,
+  .v2-root button.v2-board__focus-clear,
+  .v2-root button.v2-board__focus-retry,
+  .v2-root button.v2-board__focus-review-latest,
+  .v2-root .v2-board__focus-selected button {
+    min-height: 44px;
+  }
+
+  .v2-board__focus-editor .v2-modal__close,
+  .v2-board__focus-editor .v2-board__field input,
+  .v2-board__focus-editor .v2-board__field textarea,
+  .v2-board__focus-editor .v2-board__field select,
+  .v2-root .v2-board__focus-editor button.v2-board__focus-save,
+  .v2-board__focus-task-option {
+    min-height: 44px;
+  }
+
+  .v2-board__focus-task-option {
+    height: auto;
+    align-items: flex-start;
+    padding: 8px 0;
+  }
+}
+
+.v2-board__owner-dot--expired { border: 1px solid var(--v2-status-idle); background: none; }
+.v2-board__card--done { border-color: var(--v2-border-soft); }
+.v2-board__card--done .v2-board__card-title { color: var(--v2-text-secondary); }
+.v2-board__overlay { background: var(--v2-scrim); align-items: flex-start; padding-top: 72px; }
+.v2-board .v2-modal { border-radius: 6px; box-shadow: none; }
+.v2-board__detail { width: min(560px, 100%); max-height: calc(100dvh - 96px); }
+.v2-board__grab { display: none; }
+.v2-root button.v2-board__status-option:disabled { cursor: default; }
+.v2-board__ownership select { min-height: 32px; max-width: 100%; padding: 0 34px 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-bg); color: var(--v2-text-primary); font: 500 13px/20px var(--v2-font-mono); }
+.v2-board__empty-owner, .v2-board__ownership .v2-board__lease-value { font: 500 12px/16px var(--v2-font-mono); }
+.v2-board__empty-owner { color: var(--v2-text-muted); }
+.v2-board__watchers-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.v2-board__watchers-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.v2-board__watchers-count { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-root button.v2-board__follow { margin-left: auto; min-height: 32px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-bg); color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; }
+.v2-root button.v2-board__follow[aria-pressed="true"] { color: var(--v2-text-primary); }
+.v2-board__watcher-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.v2-board__watcher { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; max-width: 100%; padding: 0 8px 0 4px; border: 1px solid var(--v2-border-soft); border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }
+.v2-board .v2-board__member-avatar { width: 20px; height: 20px; min-width: 20px; border-radius: 4px; }
+.v2-board__watcher-hint, .v2-board__field small { margin: 8px 0 0; font-size: 12px; line-height: 16px; color: var(--v2-text-muted); }
+.v2-board__create-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 12px; }
+.v2-board__field input, .v2-board__field select { min-height: 40px; border-radius: 4px; }
+.v2-board__field select { font: 500 13px/20px var(--v2-font-mono); }
+@media (max-width: 760px) {
+  .v2-board .v2-board__detail { position: absolute; inset: 44px 0 0; width: 100%; max-height: none; border-radius: 6px 6px 0 0; }
+  .v2-feature--board .v2-modal.v2-board__drawer { width: 100%; height: auto; border-radius: 6px 6px 0 0; }
+  .v2-root button.v2-board__status-option { min-height: 44px; padding: 0 14px; }
+  .v2-root button.v2-board__updates-toggle { min-height: 44px; }
+  .v2-board__grab { display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--v2-border-soft); margin: 8px auto 0; flex-shrink: 0; }
+  .v2-board__ownership { grid-template-columns: 104px minmax(0, 1fr); }
+  .v2-board__ownership select, .v2-root button.v2-board__follow { min-height: 44px; }
+  .v2-board__create-row { grid-template-columns: minmax(0, 1fr); }
+  .v2-board__field input, .v2-board__field select { min-height: 44px; }
+}
+
+.v2-root button.v2-board__create-submit { background: var(--v2-text-primary); border-color: var(--v2-text-primary); color: var(--v2-bg); border-radius: 4px; }
+.v2-root button.v2-board__create-submit:not(:disabled):hover { background: var(--v2-text-secondary); border-color: var(--v2-text-secondary); }
+
+.v2-board__search {
+  height: 32px; width: 180px; padding: 0 10px; border-radius: var(--v2-r-8); font-size: 13px;
+  border: 1px solid var(--v2-border); background: var(--v2-bg); color: var(--v2-text-primary);
+}
+
+.v2-board__focus > summary { list-style: none; }
+.v2-board__focus > summary::-webkit-details-marker { display: none; }
+.v2-root button.v2-board__focus-edit { white-space: nowrap; flex: none; }
+.v2-board__focus-chevron { transition: transform 0.15s; }
+.v2-board__focus[open] .v2-board__focus-chevron { transform: rotate(180deg); }
+.v2-board__focus[open] > :not(summary) { margin-left: 12px; margin-right: 12px; }
+.v2-board__focus[open] { max-height: 40vh; overflow-y: auto; }
+.v2-board__focus:not([open]) > :not(summary) { display: none; }
+
+.v2-board__tabs { display: none; }
+.v2-feature--board .v2-board__columns.is-showdone { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.v2-feature--board .v2-board__col--done { display: none; }
+.v2-board__columns.is-showdone .v2-board__col--done { display: flex; }
+.v2-feature--board .v2-board__columns.is-showdone .v2-board__donecol { display: none; }
+.v2-feature--board .v2-board__col-dot--done { background: var(--v2-success); }
+.v2-root button.v2-board__col-add {
+  width: 24px; height: 24px; display: inline-grid; place-items: center; padding: 0 6px; border: 0;
+  background: transparent; color: var(--v2-text-secondary); border-radius: var(--v2-r-6); cursor: pointer; font-size: 12px;
+}
+.v2-root button.v2-board__col-add:hover { background: var(--v2-surface-hover); }
+.v2-root button.v2-board__col-hide { width: auto; }
+.v2-board__col-empty { padding: 12px 4px; font-size: 12px; color: var(--v2-text-tertiary); }
+
+.v2-board__card:hover .v2-board__card-actions,
+.v2-board__card:focus-within .v2-board__card-actions { display: flex; }
+
+@media (max-width: 760px) {
+  .v2-board__subtitle { display: none; }
+  .v2-board__head > .v2-board__back { order: 1; }
+  .v2-board__title-wrap { order: 2; flex: 1 1 0; min-width: 0; }
+  .v2-board__head > .v2-board__icon-btn { order: 3; }
+  .v2-board__search { order: 3; flex: 1 1 0; min-width: 0; width: auto; }
+  .v2-board__head > .v2-board__new { order: 4; margin-left: 0; }
+  .v2-board__filters { padding: 10px 12px 0; }
+  /* Exception: 8px between chips (frame 6px). The P0 chip is narrower than 44px,
+     so its area reaches 7px past each edge; 8px keeps it off Mine and Unclaimed. */
+  .v2-feature--board .v2-board__filters { gap: 8px; }
+  /* The frame's phone board has no focus strip; the goal lives on desktop. */
+  .v2-board__focus { display: none; }
+  .v2-feature--board .v2-board__columns, .v2-feature--board .v2-board__columns.is-showdone { display: block; padding: 10px 12px 0; overflow-y: auto; flex: 1; min-height: 0; }
+  .v2-feature--board .v2-board__col, .v2-board__columns.is-showdone .v2-board__col--done { display: none; }
+  .v2-feature--board .v2-board__col.is-active, .v2-feature--board .v2-board__columns .v2-board__col--done.is-active { display: flex; background: transparent; box-shadow: none; }
+  .v2-board__col.is-active .v2-board__col-head { display: none; }
+  .v2-feature--board .v2-board__col-body { padding: 0; }
+  .v2-feature--board .v2-board__donecol { display: none; }
+  /* Two-line cards like the frame; the drawer's status segment moves a task on touch. */
+  .v2-board__card-actions, .v2-board__card:hover .v2-board__card-actions, .v2-board__card:focus-within .v2-board__card-actions { display: none; }
+}
+
+/* The action bar sits on the id row, so it never covers the title; the owner line yields to it. */
+.v2-board__card:hover .v2-board__owner-line, .v2-board__card:focus-within .v2-board__owner-line { visibility: hidden; }
+.v2-root button.v2-board__card-main:focus-visible {
+  outline: 2px solid var(--v2-accent); outline-offset: 2px; box-shadow: none;
+}

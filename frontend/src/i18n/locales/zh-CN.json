@@ -1509,6 +1509,10 @@
     "title": "看板",
     "backToChat": "返回聊天",
     "newTask": "新建任务",
+    "addTo": "添加到{{column}}",
+    "card": {
+      "needs": "依赖 {{dep}}"
+    },
     "taskCount_other": "{{count}}个任务",
     "focus": {
       "eyebrow": "Pod 方向",
@@ -1587,7 +1591,9 @@
       "saveError": "未能保存更改，请重试。",
       "statusLabel": "状态",
       "showEarlierUpdates": "显示{{count}}条更早的更新",
-      "hideEarlierUpdates": "隐藏更早的更新"
+      "hideEarlierUpdates": "隐藏更早的更新",
+      "depends": "依赖",
+      "noDeps": "无"
     },
     "form": {
       "title": "标题",
@@ -2630,6 +2636,7 @@
     "disconnected": "已断开 {{label}}。",
     "reviewProviderAccess": "查看 {{label}} 的授权",
     "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",
+    "removedStillListed": "已在此处断开 {{label}}，但 {{label}} 仍显示 Commonly，请到那里一并移除。",
     "openProviderSettings": "打开服务提供方设置",
     "noConnection": "请先安装 GitHub App · 管理员只需安装一次",
     "noSeats": "此 Pod 中还没有智能体",

@@ -127,18 +127,30 @@ export type RemovalResult =
     grantsRevoked: number;
     /** The entry's page, always: where a person revokes by hand, or confirms a revoke took (§3). */
     revokeAt: string;
+    /**
+     * Whether the vendor revoked the authorization, in this call or an earlier
+     * one (the mark). False means the vendor was never told: a page-only entry,
+     * no token left to send, or a client that no longer matches. The person
+     * still has to remove the app at `revokeAt`, and the page must say so.
+     */
+    providerRevoked: boolean;
   }
   | {
     removed: false;
     /**
      * `provider_revoke_failed` — step 3 did not take, the row keeps its
      * references and a retry still holds the token to send.
-     * `provider_revoked_removal_incomplete` — step 3 TOOK and steps 4 or 5
-     * failed; the retry finds the mark, skips the vendor, and finishes.
+     * `provider_revoked_removal_incomplete` — step 3 is behind us and steps 4
+     * or 5 failed; the retry finds the mark, skips the vendor, and finishes.
+     * "Behind us" includes a step 3 that never called the vendor (a page-only
+     * entry), so the name does not say the vendor revoked: `providerRevoked`
+     * does.
      */
     code: 'provider_revoke_failed' | 'provider_revoked_removal_incomplete';
     message: string;
     grantsRevoked: number;
+    /** On `provider_revoked_removal_incomplete` only: as on success. */
+    providerRevoked?: boolean;
     /** Present whenever the entry is known, so a person can act on the refusal itself (§10.5). */
     revokeAt?: string;
   };
@@ -328,6 +340,7 @@ export const removeConnection = async (options: {
   // A retry after a completed provider revoke must not call the vendor again:
   // the material may be half-swept, and the token is already dead.
   const alreadyRevokedAtVendor = Boolean(connection?.config?.[PROVIDER_REVOKED_MARK]);
+  let providerRevoked = alreadyRevokedAtVendor;
 
   if (entry && target?.endpoint && !alreadyRevokedAtVendor) {
     // The row records which client minted this pair; the instance's current
@@ -435,7 +448,10 @@ export const removeConnection = async (options: {
 
         // The provider revoke took. Record it BEFORE any material goes, so a
         // crash here leaves a row the retry finishes by skipping the vendor.
-        if (clientMatches) await deps.markProviderRevoked(id, deps.now());
+        if (clientMatches) {
+          await deps.markProviderRevoked(id, deps.now());
+          providerRevoked = true;
+        }
       }
     }
   }
@@ -453,10 +469,11 @@ export const removeConnection = async (options: {
       message: (error as { message?: string })?.message || 'removal incomplete after the provider revoke',
       grantsRevoked,
       revokeAt: revokePage,
+      providerRevoked,
     };
   }
 
-  return { removed: true, grantsRevoked, revokeAt: revokePage };
+  return { removed: true, grantsRevoked, revokeAt: revokePage, providerRevoked };
 };
 
 module.exports = {
