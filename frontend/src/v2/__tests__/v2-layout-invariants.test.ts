@@ -5335,4 +5335,18 @@ describe('pod board column scroll (TASK-698)', () => {
     expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip-path:\s*inset\(50%\)/);
     expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*28px/);
   });
+
+  test('the board keeps three columns plus a 120px done rail, and tabs only on phones (TASK-687)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
+    expect(css).toMatch(/\.v2-board__columns \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\) 120px/);
+    expect(css).toMatch(/\.v2-board__tabs \{ display: none; \}/);
+    // Card actions stay on the id row (off the title); card buttons keep a visible focus ring.
+    expect(css).toMatch(/\.v2-board__card-actions \{\s*position: absolute; right: 6px; top: 4px;/);
+    expect(css).toMatch(/button\.v2-board__card-main:focus-visible[^{]*\{[^}]*outline: 2px solid/);
+    // The column body is the scroller; the page itself does not scroll.
+    expect(css).toMatch(/\.v2-board__col-body \{[^}]*overflow-y: auto;[^}]*flex: 1;[^}]*min-height: 0;/);
+    // Phones get the tab bar back: scope to the TASK-687 mobile block.
+    const mobile = css.slice(css.indexOf('/* TASK-687 / D223'));
+    expect(mobile).toMatch(/@media \(max-width: 760px\) \{[\s\S]*\.v2-board__tabs \{ display: flex;/);
+  });
 });
