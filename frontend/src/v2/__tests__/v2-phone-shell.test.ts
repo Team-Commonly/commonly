@@ -15,6 +15,18 @@ describe('D223 phone shell', () => {
     expect(phone).toMatch(/\.v2-feature__header\s+\.v2-feature__title\s*\{[^}]*font:\s*800 21px\/1 var\(--v2-font-display\)/);
   });
 
+  test('the title clips to one line, and the whole block stays inside the 760px query', () => {
+    const title = phone.match(/\.v2-feature__header\s+\.v2-feature__title\s*\{([^}]*)\}/);
+    expect(title).not.toBeNull();
+    expect(title![1]).toContain('white-space: nowrap');
+    expect(title![1]).toContain('overflow: hidden');
+    expect(title![1]).toContain('text-overflow: ellipsis');
+    const mediaAt = phone.indexOf('@media (max-width: 760px)');
+    expect(mediaAt).toBeGreaterThan(-1);
+    expect(phone.indexOf('.v2-feature__header {')).toBeGreaterThan(mediaAt);
+    expect(phone.indexOf('.v2-feature__header .v2-feature__title')).toBeGreaterThan(mediaAt);
+  });
+
   test('the page body is one tight column and settings leads with the same bar', () => {
     expect(phone).toMatch(/\.v2-feature__body\s*\{[^}]*padding:\s*12px 12px 16px/);
     expect(phone).toMatch(/\.v2-settings__title\s*\{[^}]*min-height:\s*52px/);
