@@ -4262,3 +4262,14 @@ The frontend type `V2Message` (`frontend/src/v2/hooks/useV2PodDetail.ts`) declar
 **Repair:** #3148 indexes the Threads panel's roots by both ids, and its rows keep the exposed `id`, the one the `#message-<id>` anchor uses. `frontend/src/v2/utils/threadView.ts` still matches roots by `m.id` alone (`idOf`). It is the same gap and has not been fixed.
 
 **Lesson:** a field missing from a consumer's type says nothing about the payload. To claim a field is absent, read the producer: here the backend formatter, not the frontend interface.
+
+## 90. A claude seat's stall window is not the seats supervisor's `stallMs` (2026-11-01, cto)
+
+*Origin: SRE's forced-stall walk on rivet. A claude child was frozen with SIGSTOP as its turn began, and the cancel came 191 s later. That was read as "the 120 s stall window, about 60% late".*
+
+Two different things went into that 191 s, and neither was a 120 s window. First, the watchdog that fired was the claude adapter's first-output watchdog, whose window is `COMMONLY_FIRST_OUTPUT_WINDOW_MS`, default 180 s. Rivet's own log says so: `claude produced no output in 180s`. The `stallMs: 120_000` in `packages/seats/src/supervisor.js` is that package's default. The CLI overrides it per adapter (`STALL_DEFAULTS_MS` in `cli/src/lib/supervised-turn.js`), and for claude it is off by default: only `COMMONLY_SUPERVISE_STALL_MS_CLAUDE` or `COMMONLY_SUPERVISE_STALL_MS` above 0 turns it on, and then on a supervised run it can end a turn before the first-output window. Second, the extra 10 s was the kill grace. Claude handles SIGTERM, and a stopped process holds a signal it handles until it is continued, so the SIGTERM never ran and SIGKILL came 10 s later. That is 180 + 10 + about 1 s of teardown.
+
+**Repair:** the fix sends SIGCONT right after the SIGTERM, so a stopped turn acts on it at once. A test freezes a real child that handles SIGTERM and asserts the cancel lands at the window, not the window plus the grace. A claude seat now logs the window it actually runs under at boot, and `docs/cli/README.md` lists `COMMONLY_FIRST_OUTPUT_WINDOW_MS`.
+
+**Lesson:** a default in a shared package is not the value its consumer runs. Read the consumer's override, or the log line that names the number, before measuring against it.
+

@@ -77,6 +77,17 @@ export const physicalPath = (dir) => {
 // How long a stalled spawn gets to exit after SIGTERM before SIGKILL.
 export const STALL_KILL_GRACE_MS = 10_000;
 
+// The boot line for a claude seat. This watchdog is the stall guard a claude
+// turn runs: the seats supervisor's stall window is off for claude
+// (STALL_DEFAULTS_MS in supervised-turn.js), and its package default of 120 s
+// was once read as this one's (the G6 walk, 2026-11-01).
+export const describeFirstOutputWatch = (env = process.env) => {
+  const windowMs = firstOutputWindowMs(env);
+  if (!windowMs) return 'first-output watchdog OFF for claude (COMMONLY_FIRST_OUTPUT_WINDOW_MS=0)';
+  return `first-output watchdog ON for claude: a turn with no model output in ${windowMs}ms is killed `
+    + `(SIGTERM, then SIGKILL ${STALL_KILL_GRACE_MS}ms later if it is still alive)`;
+};
+
 /**
  * SIGKILL each snapshotted descendant of a stalled spawn that is still alive
  * once the spawn itself has exited. Its parent may have exited, so it may now
