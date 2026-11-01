@@ -331,16 +331,17 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  // The one line under an entry's name that says what is left to do before it
-  // works: connect your own account, ask an admin, or the modes it grants.
-  // A Linear connection made before write access cannot write until it is
-  // disconnected and connected again; the server refuses writes on it.
+  // A Linear connection made before write access lacks the write scope, so the
+  // server refuses to grant it write mode until it is connected again. The page
+  // cannot see a connection's scope, so the note is conditional and always shown.
   const renderLinearWriteNote = (entry: ToolCatalogEntry) => (
     entry.connectionType === 'hosted-mcp' && entry.entryId === 'linear' && entry.connections.length > 0
       ? <p className="v2-cx-note" role="note">{t('tools.linearWriteReconnect')}</p>
       : null
   );
 
+  // The one line under an entry's name that says what is left to do before it
+  // works: connect your own account, ask an admin, or the modes it grants.
   const renderEntryNote = (entry: ToolCatalogEntry) => {
     const isHosted = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId);
     const canConnectHosted = Boolean(isHosted) && entry.available && entry.connections.length === 0;

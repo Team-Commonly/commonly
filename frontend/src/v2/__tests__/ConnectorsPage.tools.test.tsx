@@ -1404,8 +1404,8 @@ describe('Linear write reconnect note', () => {
     renderPage();
     const drawer = await openTool('Linear');
     const note = within(drawer).getByRole('note');
-    expect(note).toHaveTextContent(language === 'en' ? 'disconnected and connected again to enable writes' : '先断开再重新连接');
-    expect(note).toHaveTextContent(language === 'en' ? 'Each write requires your approval' : '每次写入都需要你批准');
+    expect(note).toHaveTextContent(language === 'en' ? 'disconnect it and connect it again to turn on writes' : '先断开再重新连接');
+    expect(note).toHaveTextContent(language === 'en' ? 'Each write asks for your approval first' : '每次写入都需要你批准');
   });
 
   it('a connected Linear with no grant shows it once in the popover, before Add', async () => {
@@ -1413,7 +1413,7 @@ describe('Linear write reconnect note', () => {
     renderPage();
     const pop = await openToolPopover('Linear');
     expect(within(pop).getAllByRole('note')).toHaveLength(1);
-    expect(within(pop).getByRole('note')).toHaveTextContent('disconnected and connected again to enable writes');
+    expect(within(pop).getByRole('note')).toHaveTextContent('disconnect it and connect it again to turn on writes');
   });
 
   it('a Linear drawer with only an ended grant shows it once, in the offer', async () => {
@@ -1429,5 +1429,13 @@ describe('Linear write reconnect note', () => {
     renderPage();
     const drawer = await openTool('GitHub');
     expect(within(drawer).queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('another connected hosted connector does not carry it', async () => {
+    const atlassian = { ...linearEntry, installableId: 'atlassian', entryId: 'atlassian', label: 'Atlassian', connections: [{ connectionId: 'conn-atl', owner: '', repo: '' }] };
+    mockTools({ entries: [atlassian], grants: [] });
+    renderPage();
+    const pop = await openToolPopover('Atlassian');
+    expect(within(pop).queryByRole('note')).not.toBeInTheDocument();
   });
 });
