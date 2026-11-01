@@ -5058,6 +5058,25 @@ describe('agent Identity editor', () => {
   });
 });
 
+describe('agent Memory tab (TASK-690 slice 1 and 2)', () => {
+  const css = read('../agents/v2-agent-settings.css');
+  const desktop = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory');
+  const phone = blockContaining(css, '@media (max-width: 767px)', '.v2-agent-memory__nav ul');
+  test('desktop keeps the group nav beside the notes at 200px', () => {
+    expect(ruleBody(css, '.v2-agent-memory')).toContain('display: grid');
+    expect(ruleBody(css, '.v2-agent-memory', { within: desktop })).toContain('grid-template-columns: 200px minmax(0, 1fr)');
+  });
+  test('phone hides the group nav and makes the groups collapsible', () => {
+    expect(ruleBody(css, '.v2-agent-memory__nav ul', { within: phone })).toContain('display: none');
+    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: phone })).toContain('cursor: pointer');
+  });
+  test('desktop group titles do not take pointer input, and the chevron is phone-only', () => {
+    const titles = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory__gtitle');
+    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: titles })).toContain('pointer-events: none');
+    expect(ruleBody(css, '.v2-agent-memory__chev')).toContain('display: none');
+  });
+});
+
 describe('task priority and lease signals (TASK-443)', () => {
   const css = read('../v2.css');
   test('priority remains a monochrome text badge', () => {
