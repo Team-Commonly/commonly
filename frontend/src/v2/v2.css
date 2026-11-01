@@ -14058,7 +14058,7 @@ body.modern-ui.v2-canvas {
   -webkit-box-orient: vertical; overflow: hidden;
 }
 .v2-board__card-actions {
-  position: absolute; right: 6px; bottom: 6px; display: none; gap: 4px; padding: 2px;
+  position: absolute; right: 6px; top: 4px; display: none; gap: 4px; padding: 2px;
   background: var(--v2-surface); border-radius: var(--v2-r-8); box-shadow: var(--v2-shadow-pane);
 }
 .v2-board__card:hover .v2-board__card-actions,
@@ -14105,4 +14105,9 @@ body.modern-ui.v2-canvas {
   .v2-board__card-actions, .v2-board__card:hover .v2-board__card-actions, .v2-board__card:focus-within .v2-board__card-actions { display: none; }
 }
 
-.v2-root button.v2-board__card-main, .v2-root button.v2-board__card-main:hover { background: none; box-shadow: none; }
+.v2-root button.v2-board__card-main, .v2-root button.v2-board__card-main:hover { background: none; }
+/* The action bar sits on the id row, so it never covers the title; the owner line yields to it. */
+.v2-board__card:hover .v2-board__owner-line, .v2-board__card:focus-within .v2-board__owner-line { visibility: hidden; }
+.v2-root button.v2-board__card-main:focus-visible, .v2-root button.v2-board__card-move:focus-visible {
+  outline: 2px solid var(--v2-accent); outline-offset: 2px; box-shadow: none;
+}
