@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import Pod from '../models/Pod';
 import Integration from '../models/Integration';
 import RoomGrant, { IRoomGrant, RoomGrantWriteMode } from '../models/RoomGrant';
@@ -16,6 +16,7 @@ import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpTool
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from './outsiderGrantPodEligibility';
 import { recordBrokerCall } from './brokerRecordService';
+import { parseSeatPushArgs, pushSeatBranch, SeatPushError } from './seatGithubPush';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
@@ -61,8 +62,9 @@ export interface GithubToolDefinition extends ToolDefinitionBase {
   prepareApproval?: (
     args: Record<string, unknown>,
     connection: GithubToolConnection,
+    agentUserId: string,
   ) => Promise<Record<string, unknown>>;
-  call: (args: Record<string, unknown>, connection: GithubToolConnection) => Promise<unknown>;
+  call: (args: Record<string, unknown>, connection: GithubToolConnection, agentUserId?: string) => Promise<unknown>;
 }
 
 /**
@@ -86,6 +88,8 @@ export type ToolDefinition = GithubToolDefinition | HostedToolDefinition;
 export interface BrokerCallInput {
   grantId: string;
   agentUserId: string;
+  /** Middleware-derived token hash; never a request-body field. */
+  agentTokenHash?: string;
   agentName?: string;
   instanceId?: string;
   tool: string;
@@ -141,6 +145,15 @@ const pullView = (pull: Record<string, unknown>): Record<string, unknown> => ({
   head: pull.head && typeof pull.head === 'object'
     ? String((pull.head as Record<string, unknown>).ref || '') : undefined,
 });
+
+const assertOwnedSeatBranch = (head: unknown, agentUserId: string): void => {
+  const prefix = `seat/${agentUserId}/`;
+  if (typeof head !== 'string' || !agentUserId || !head.startsWith(prefix)
+    || head.length > 200 || head.split('/').some((part) => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(part)
+      || part.includes('..') || part.endsWith('.lock') || part.endsWith('.'))) {
+    throw new RoomGrantError('branch_not_owned_by_seat', 'PR head must belong to the authenticated seat', 403);
+  }
+};
 
 const objectArgs = (args: unknown): Record<string, unknown> => {
   if (!args || typeof args !== 'object' || Array.isArray(args)) {
@@ -308,6 +321,154 @@ const getPullRequest: GithubToolDefinition = {
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
     return pullView(pull as Record<string, unknown>);
+  },
+};
+
+const createPullRequest: GithubToolDefinition = {
+  name: 'github.create_pull_request',
+  description: 'Open a pull request in the connected GitHub repository.',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
+  receipt: [{ field: 'number', kind: 'positive-integer' }],
+  inputSchema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', minLength: 1, maxLength: 256 },
+      head: { type: 'string', minLength: 1, maxLength: 200 },
+      base: { type: 'string', minLength: 1, maxLength: 200 },
+      body: { type: 'string', maxLength: 65536 },
+      draft: { type: 'boolean' },
+    },
+    required: ['title', 'head', 'base'],
+    additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection, agentUserId) {
+    assertOwnedSeatBranch(rawArgs.head, agentUserId);
+    return pinConnectionRepository(rawArgs, connection);
+  },
+  async call(rawArgs, connection, agentUserId) {
+    assertNoUnknown(rawArgs, ['title', 'head', 'base', 'body', 'draft']);
+    const title = nonEmptyString(rawArgs.title, 'title');
+    const head = nonEmptyString(rawArgs.head, 'head');
+    assertOwnedSeatBranch(head, agentUserId || '');
+    const base = nonEmptyString(rawArgs.base, 'base');
+    if (title.length > 256 || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(head)
+      || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(base)) {
+      throw new RoomGrantError('invalid_tool_args', 'title or branch is invalid', 400);
+    }
+    if (rawArgs.body !== undefined && (typeof rawArgs.body !== 'string' || rawArgs.body.length > 65536)) {
+      throw new RoomGrantError('invalid_tool_args', 'body must be a string of at most 65536 characters', 400);
+    }
+    if (rawArgs.draft !== undefined && typeof rawArgs.draft !== 'boolean') {
+      throw new RoomGrantError('invalid_tool_args', 'draft must be boolean', 400);
+    }
+    const pull = await GitHubAppService.createPullRequest({
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
+      forceApp: true,
+      title,
+      head,
+      base,
+      body: rawArgs.body as string | undefined,
+      draft: rawArgs.draft as boolean | undefined,
+    });
+    return pullView(pull as Record<string, unknown>);
+  },
+};
+
+const pushSeatBranchDefinition: GithubToolDefinition = {
+  name: 'github.push_branch',
+  description: 'Push one fast-forward seat branch to the connected GitHub repository.',
+  requiredWriteMode: 'write',
+  connectionType: 'github-app',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      ref: { type: 'string', maxLength: 220 },
+      baseOid: { type: 'string', pattern: '^[0-9a-f]{40}$' },
+      newOid: { type: 'string', pattern: '^[0-9a-f]{40}$' },
+      bundle: { type: 'string', maxLength: 8388612 },
+    },
+    required: ['ref', 'baseOid', 'newOid', 'bundle'],
+    additionalProperties: false,
+  },
+  async call(args, connection, agentUserId) {
+    if (!agentUserId) throw new RoomGrantError('agent_identity_required', 'seat identity is required', 403);
+    parseSeatPushArgs(args, agentUserId);
+    return pushSeatBranch(args, connection, agentUserId);
+  },
+};
+
+const commentPullRequest: GithubToolDefinition = {
+  name: 'github.comment_on_pull_request',
+  description: 'Add a plain conversation comment to a pull request in the connected GitHub repository.',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pullNumber: { type: 'integer', minimum: 1 },
+      body: { type: 'string', minLength: 1, maxLength: 65536 },
+    },
+    required: ['pullNumber', 'body'],
+    additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
+  },
+  async call(rawArgs, connection) {
+    assertNoUnknown(rawArgs, ['pullNumber', 'body']);
+    const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
+    const body = nonEmptyString(rawArgs.body, 'body');
+    if (body.length > 65536) throw new RoomGrantError('invalid_tool_args', 'body is too long', 400);
+    const comment = await GitHubAppService.addIssueComment({
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
+      forceApp: true,
+      issueNumber: pullNumber,
+      body,
+    }) as Record<string, unknown>;
+    return { id: comment.id, url: comment.html_url, pullNumber };
+  },
+};
+
+const reviewPullRequestComment: GithubToolDefinition = {
+  name: 'github.review_pull_request_comment',
+  description: 'Submit a comment-only review of a pull request in the connected GitHub repository.',
+  requiredWriteMode: 'write-with-confirm',
+  connectionType: 'github-app',
+  irreversible: true,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      pullNumber: { type: 'integer', minimum: 1 },
+      body: { type: 'string', minLength: 1, maxLength: 65536 },
+    },
+    required: ['pullNumber', 'body'],
+    additionalProperties: false,
+  },
+  async prepareApproval(rawArgs, connection) {
+    return pinConnectionRepository(rawArgs, connection);
+  },
+  async call(rawArgs, connection) {
+    assertNoUnknown(rawArgs, ['pullNumber', 'body']);
+    const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
+    const body = nonEmptyString(rawArgs.body, 'body');
+    if (body.length > 65536) throw new RoomGrantError('invalid_tool_args', 'body is too long', 400);
+    const review = await GitHubAppService.createPullReview({
+      owner: connection.owner,
+      repo: connection.repo,
+      installationId: connection.installationId,
+      forceApp: true,
+      pullNumber,
+      event: 'COMMENT',
+      body,
+    }) as Record<string, unknown>;
+    return { id: review.id, url: review.html_url, pullNumber };
   },
 };
 
@@ -533,6 +694,10 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
   [listIssues.name]: listIssues,
   [getIssue.name]: getIssue,
   [getPullRequest.name]: getPullRequest,
+  [createPullRequest.name]: createPullRequest,
+  [pushSeatBranchDefinition.name]: pushSeatBranchDefinition,
+  [commentPullRequest.name]: commentPullRequest,
+  [reviewPullRequestComment.name]: reviewPullRequestComment,
   [listPullRequestFiles.name]: listPullRequestFiles,
   [createIssue.name]: createIssue,
   [commentIssue.name]: commentIssue,
@@ -1016,11 +1181,12 @@ const runDefinition = (
   definition: ToolDefinition,
   args: Record<string, unknown>,
   connection: ToolConnection,
+  agentUserId: string,
 ): Promise<unknown> => {
   const provider = providerConnection(connection);
   return definition.connectionType === 'hosted-mcp'
     ? definition.call(args, asHostedConnection(provider))
-    : definition.call(args, asGithubConnection(provider));
+    : definition.call(args, asGithubConnection(provider), agentUserId);
 };
 
 /**
@@ -1033,10 +1199,11 @@ const prepareApprovalFor = (
   definition: ToolDefinition,
   args: Record<string, unknown>,
   connection: ToolConnection,
+  agentUserId: string,
 ): Promise<Record<string, unknown>> => {
   if (definition.connectionType === 'hosted-mcp') return Promise.resolve(args);
   if (!definition.prepareApproval) return Promise.resolve(args);
-  return definition.prepareApproval(args, asGithubConnection(providerConnection(connection)));
+  return definition.prepareApproval(args, asGithubConnection(providerConnection(connection)), agentUserId);
 };
 
 /** The definition a tool name resolves to: the seeded GitHub record, or a hosted catalogue entry. */
@@ -1062,6 +1229,7 @@ const stripVendorDiagnostics = (error: unknown): void => {
 };
 
 export const executionErrorOutcome = (error: unknown): 'refused' | 'failed' | 'pending_approval' => {
+  if (error instanceof SeatPushError) return error.statusCode < 500 ? 'refused' : 'failed';
   if (error instanceof HostedMcpCredentialError) {
     return error.code === 'reconnect_required' || error.code === 'connection_mismatch' ? 'refused' : 'failed';
   }
@@ -1116,6 +1284,7 @@ const recordCall = async (
      * their id on the error (see `refusedCredentialOwner`).
      */
     credentialOwnerId?: string;
+    providerRepo?: string;
     vendorStatus?: number;
     vendorError?: string;
   },
@@ -1135,6 +1304,11 @@ const recordCall = async (
     reason,
     vendorStatus: overrides?.vendorStatus,
     vendorError: overrides?.vendorError?.split(/[\r\n]/, 1)[0].slice(0, 200),
+    providerRepo: overrides?.providerRepo,
+    providerRef: input.tool === 'github.push_branch'
+      && typeof (input.args as { ref?: unknown })?.ref === 'string'
+      && /^refs\/heads\/[A-Za-z0-9._/-]{1,220}$/.test((input.args as { ref: string }).ref)
+      ? (input.args as { ref: string }).ref : undefined,
     approvalId: overrides?.approvalId,
     durationMs: Math.max(0, Date.now() - startedAt),
   });
@@ -1187,6 +1361,7 @@ const recordExecutionResult = async (
     approvalId?: string;
     args?: unknown;
     credentialOwnerId?: string;
+    providerRepo?: string;
   },
 ): Promise<{ callId: string; outcome: 'ok' | 'failed' }> => {
   const upstreamToolError = isToolErrorResult(result);
@@ -1217,6 +1392,18 @@ const budgetEntriesFor = async (
   });
 };
 
+/** Mandatory push budget shared by HTTP, MCP, and approved execution. */
+const seatPushBudgetEntries = (input: Pick<BrokerCallInput, 'grantId' | 'agentUserId' | 'agentTokenHash'>) => {
+  const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+  const entry = (key: string) => ({ grantId: `host-gh:push:${key}`, calls: 2, windowMs: 60_000 });
+  return [
+    entry(`seat:${digest(input.agentUserId)}`),
+    entry(`grant:${digest(input.grantId)}`),
+    ...(input.agentTokenHash && /^[a-f0-9]{64}$/.test(input.agentTokenHash)
+      ? [entry(`token:${input.agentTokenHash}`)] : []),
+  ];
+};
+
 /**
  * Execute one brokered tool call. The only identity accepted here is the
  * middleware-derived agentUserId; a request argument with that name is never
@@ -1231,6 +1418,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   // before anything resolves leaves it unset — except an owner refusal, which
   // names the owner on the error and is preferred by the catch.
   let credentialOwnerId: string | undefined;
+  let providerRepo: string | undefined;
 
   try {
     grant = await loadGrantForAgent({ grantId: input.grantId, agentUserId: input.agentUserId });
@@ -1250,6 +1438,9 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
 
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
+    if (input.tool === 'github.push_branch' && connection.type === 'github-app') {
+      providerRepo = `${connection.owner}/${connection.repo}`;
+    }
     if (definition.connectionType === 'hosted-mcp') {
       await definition.assess(asHostedConnection(connection));
     }
@@ -1257,6 +1448,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     // Validate the shape before reserving a budget slot; malformed requests
     // are refusals, not spendable calls.
     const parsedArgs = objectArgs(input.args);
+    if (input.tool === 'github.push_branch') parseSeatPushArgs(parsedArgs, input.agentUserId);
     if (definition.connectionType === 'hosted-mcp') {
       // The pinned schema is the authority for top-level argument names. A
       // vendor may accept new parameters before the catalogue is reviewed;
@@ -1280,7 +1472,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       const callId = `tool_call_${randomUUID()}`;
       // No guard on `prepareApproval`: the helper answers for both members, and
       // a hosted tool's arguments are simply its own.
-      const canonicalArgs = await prepareApprovalFor(definition, parsedArgs, connection);
+      const canonicalArgs = await prepareApprovalFor(definition, parsedArgs, connection, input.agentUserId);
       let proposal: { ok: boolean; approvalId?: string } | undefined;
       try {
         const approvalPodId = await resolveApprovalPodId(
@@ -1374,18 +1566,22 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     }
 
     const budgetEntries = await budgetEntriesFor(grant);
+    if (input.tool === 'github.push_branch') budgetEntries.push(...seatPushBudgetEntries(input));
     if (budgetEntries.length > 0) {
       const reserved = await reserveBudgetLineage(budgetEntries);
-      if (!reserved) throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
+      if (!reserved) throw new RoomGrantError(
+        input.tool === 'github.push_branch' ? 'host_github_push_rate_limited' : 'budget_exhausted',
+        'grant call budget is exhausted', input.tool === 'github.push_branch' ? 429 : 403,
+      );
     }
 
-    const result = await runDefinition(definition, parsedArgs, connection);
+    const result = await runDefinition(definition, parsedArgs, connection, input.agentUserId);
     const recorded = await recordExecutionResult(
       input,
       grant,
       result,
       startedAt,
-      { credentialOwnerId },
+      { credentialOwnerId, providerRepo },
     );
     return {
       ...recorded,
@@ -1404,6 +1600,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       ? String(error.details?.callId || '')
       : await recordCall(input, grant, outcome, startedAt, reason, {
         credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+        providerRepo,
         vendorStatus: error instanceof RoomGrantError && typeof error.details?.vendorStatus === 'number'
           ? error.details.vendorStatus : undefined,
         vendorError: error instanceof RoomGrantError && typeof error.details?.vendorError === 'string'
@@ -1473,11 +1670,16 @@ export const executeApprovedToolCall = async (
     const executionArgs = definition.connectionType === 'github-app'
       ? providerArgsFromApprovedEnvelope(input.args, asGithubConnection(connection))
       : input.args;
+    if (input.tool === 'github.push_branch') parseSeatPushArgs(executionArgs, input.agentUserId);
     const budgetEntries = await budgetEntriesFor(grant);
+    if (input.tool === 'github.push_branch') budgetEntries.push(...seatPushBudgetEntries(input));
     if (budgetEntries.length > 0 && !await reserveBudgetLineage(budgetEntries)) {
-      throw new RoomGrantError('budget_exhausted', 'grant call budget is exhausted', 403);
+      throw new RoomGrantError(
+        input.tool === 'github.push_branch' ? 'host_github_push_rate_limited' : 'budget_exhausted',
+        'grant call budget is exhausted', input.tool === 'github.push_branch' ? 429 : 403,
+      );
     }
-    const result = await runDefinition(definition, executionArgs, connection);
+    const result = await runDefinition(definition, executionArgs, connection, input.agentUserId);
     const recorded = await recordExecutionResult(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
       grant,

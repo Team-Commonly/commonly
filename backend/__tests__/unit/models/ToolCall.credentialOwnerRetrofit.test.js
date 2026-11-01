@@ -33,6 +33,10 @@ describe('the trail schema retrofit', () => {
     const statements = pool.query.mock.calls.map(([sql]) => String(sql));
     expect(statements.some((sql) => /ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS credential_owner_id/.test(sql)))
       .toBe(true);
+    expect(statements.some((sql) => /ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS provider_repo/.test(sql)))
+      .toBe(true);
+    expect(statements.some((sql) => /ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS provider_ref/.test(sql)))
+      .toBe(true);
     const insert = statements.find((sql) => /INSERT INTO tool_calls/.test(sql));
     expect(insert).toMatch(/credential_owner_id/);
     // The value is bound, not interpolated: an owner id is data.

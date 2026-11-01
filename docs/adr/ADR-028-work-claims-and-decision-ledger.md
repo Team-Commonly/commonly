@@ -640,6 +640,106 @@ cannot be tied to the acts they authorised records intent, not accountability.
 install (the removed route's own note argues the latter). That is a build decision with a real cost
 difference and it should be ratified, not assumed — added as ratification point 7.
 
+#### Shared-host Codex seat application (TASK-284, 2026-10-23)
+
+Connector chose a broker for private Codex seats on the shared Mac (decision
+`6adbc2b48522fc8abce606e5`). This settles the **host-seat path only**; it does
+not settle D13's general per-user App question. The old measurement above is
+time-stamped: the current `toolBrokerService` already resolves a connected
+GitHub App row from a room grant, calls `GitHubAppService` with `forceApp`, checks
+the grant again on each call, and writes `ToolCall` records. Reuse that backend
+boundary instead of adding a second host-held GitHub credential.
+
+The local daemon owns one broker socket per running seat. It creates the socket
+outside the Codex sandbox and passes only its path to a confined `gh` shim; the
+shim has no fallback to the host's real `gh`. The daemon binds the socket to its
+own `(agent user, installation, runtime token)` tuple, never to a seat name or
+grant ID supplied by the shim. It forwards a structured request to the backend
+with that runtime token; `agentRuntimeAuth` must reject a revoked or expired
+token, and the broker must resolve an active room grant, its target pod and its
+connected GitHub App row on **every** operation. The shim and Codex shell never
+receive the runtime token, the App token, the operator's `gh` config, or a
+Keychain handle. A removed seat, grant, connection, or pod membership refuses
+the next request. No generic URL, repository, method, header, or `gh api`
+passthrough is part of this interface.
+
+Each listener lives under a daemon-owned directory that the seat cannot read,
+write, enumerate, or replace. The executable shims live in a distinct
+per-spawn, seat-visible directory supplied by the trusted launcher; that
+directory contains no socket or credential. The launcher must allow that shim
+directory through the filesystem profile while continuing to deny the listener
+directory. The Codex permission profile sets
+`features.network_proxy = true` and
+`network.unix_sockets.<exact seat path> = "allow"`, leaves
+`dangerously_allow_all_unix_sockets = false`, and has no sibling socket entry;
+its filesystem rules deny the daemon directory and control/config paths. It
+cannot write or rebind its own endpoint. The [Codex permission reference](https://learn.chatgpt.com/docs/permissions)
+documents this exact-path Unix socket allowlist. The proxy feature is
+load-bearing: a local macOS `codex sandbox` probe connected to a sibling socket
+when the feature was off, despite the allowlist, and refused it with `EPERM`
+when the feature was on. The two-seat attack test below must repeat that proof
+in the real adapter. A path's
+secrecy and same-UID Unix permissions are not authentication. The daemon derives
+the tuple from trusted launch state and binds a fresh, unguessable listener
+generation to the running child; stopping or replacing that child closes and
+unlinks the old listener before a successor is admitted. If the native profile
+cannot enforce this exact-path separation, the host-seat broker must refuse to
+start. The acceptance walk uses two real confined, same-UID seats: A can use its
+own socket, but A cannot connect to B's **known** path before any backend call;
+repeat after B restarts and against its stale endpoint.
+
+The initial command grammar is exact: `pr create`, `pr view`, `pr comment`,
+`pr review --comment`, and `issue comment`. The backend checks the grant's
+read/write mode and the connection's pinned owner/repo, validates command
+arguments, and returns bounded response fields. `pr review --approve` and
+`--request-changes`, `pr merge/close`, issue close, branch deletion, arbitrary
+API calls, and unknown flags refuse before any GitHub call. This is an
+allowlist, not a set of denials layered on the present `seat-gh-guard` (which
+explicitly says it is not a security boundary). The existing App tool broker
+may supply operations it already implements; missing PR operations must be
+added there with the same grant and audit checks, never through `routes/github`'s
+legacy `anyAuth` path.
+
+Git push is a separate bounded bundle channel on the same socket. The seat's
+`git-remote-commonly` helper implements Git's push-only remote-helper protocol:
+it makes an incremental bundle against a local base commit, then sends one
+branch update to the daemon. The daemon forwards it with the seat's runtime
+token; the backend alone holds the GitHub App token. This avoids tunneling an
+interactive Git wire protocol through the grant route. It is registered
+as `github.push_branch` in the broker catalogue, and goes through the same
+exact-tool, active-grant, pinned-repository and audit checks as the CLI channel.
+`read` grants refuse. `write-with-confirm` grants refuse push until a later
+implementation can park immutable repo/ref/old-OID/new-OID/pack-digest inputs,
+then revalidate them after approval; no provider write occurs on that path now.
+Only an explicit `github.push_branch` tool on an autonomous `write` grant can
+push. A grant for issue comments never implies push authority.
+
+The backend accepts one bounded bundle request, checks its single advertised
+head and prerequisite against objects fetched from the pinned provider repo,
+and requires exactly one update to the
+authenticated seat's `refs/heads/seat/<agentUserId>/` prefix. It refuses
+deletion, tags, second refs, protected branches, malformed framing and any
+client-supplied repo/prefix override. The backend reads the old OID from the
+provider's current ref (or zero for a fresh branch). It unbundles into a fresh
+backend-owned bare object store with no inherited Git config or hooks, checks
+connectivity, and verifies the old commit is an ancestor of the new commit
+when the branch already exists; it refuses when ancestry cannot be established.
+A fresh branch instead uses an absence lease. A trusted server-side push uses
+a compare-and-swap lease on the provider's old OID, so a concurrent ref move
+fails. The client has no control over this lease or fast-forward check: the
+remote-helper protocol carries a force indicator, but it is untrusted. The App
+token stays only in the backend-to-GitHub request; the child never receives a
+credential helper that returns it. Acceptance covers fresh branch and existing
+fast-forward success, and divergent update with correct old OID, stale old OID,
+second ref, deletion, tag and another seat's prefix refusal.
+
+The backend records a `ToolCall` receipt containing seat, grant, repo,
+operation, branch/ref, argument digest, outcome and time; never token or pack
+bytes. Apply per-runtime-token and per-grant limits (30 reads, 10 writes, 2
+pushes per minute) before the provider call, with a bounded request body.
+Refusals and upstream failures retain distinct codes. A real staging walk must
+branch, test, push and open a PR through this path before TASK-280 can roll out.
+
 ---
 
 ## Sequencing and acceptance (Sam, 2026-08-31 — pod 61474)
