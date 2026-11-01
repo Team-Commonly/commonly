@@ -194,8 +194,8 @@ body.modern-ui.v2-canvas {
   --v2-shadow-pop: 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28);
   --v2-av-ring: rgba(16, 24, 40, 0.07);
   --v2-scrim: rgba(16, 24, 40, 0.18);
-  --v2-font-display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
   --v2-r-6: 6px;
+  --v2-r-7: 7px;
   --v2-r-8: 8px;
   --v2-r-9: 9px;
   --v2-r-10: 10px;

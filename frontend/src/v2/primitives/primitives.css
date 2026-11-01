@@ -1,0 +1,255 @@
+/* TASK-730 (D223) shared primitives, lifted from the d215 artboard's product
+   CSS (docs/design/artboards/d215/index.html, `.app` block). Class names carry
+   a v2p- prefix so they cannot collide with the existing v2 chip, dot, pane and
+   button rules. Colours and shape come only from the --v2-* tokens in v2.css;
+   the artboard's short names map as: --sf surface, --t surface-tint, --d
+   border-soft, --b border, --mu text-muted, --se text-secondary, --ph
+   text-placeholder, --ink text-primary, --ink2 ink-2, --g page-bg, --c accent.
+   Pinned by __tests__/v2Primitives.test.tsx. */
+
+/* ---- page wrapper for the showcase route ---- */
+.v2p-root { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+
+/* ---- keys (buttons) ---- */
+.v2p-b {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 13px;
+  border-radius: var(--v2-r-10);
+  font: 600 13px/1 var(--v2-font);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 120ms, background 160ms, box-shadow 140ms;
+}
+.v2p-b svg.i { width: 16px; height: 16px; }
+.v2p-b:active { transform: translateY(1px); }
+.v2p-b:focus-visible { box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent); }
+.v2p-b-p {
+  color: var(--v2-on-fill);
+  background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b));
+  border: 1px solid var(--v2-fill-edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(16, 24, 40, 0.18), 0 4px 10px -3px rgba(16, 24, 40, 0.28);
+}
+.v2p-b-c {
+  color: var(--v2-on-accent);
+  background: linear-gradient(180deg, var(--v2-accent-fill-a), var(--v2-accent-fill-b));
+  border: 1px solid var(--v2-accent-fill-b);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 4px 10px -3px rgba(29, 63, 209, 0.32);
+}
+.v2p-b-s {
+  color: var(--v2-text-primary);
+  background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b));
+  border: 1px solid var(--v2-key-edge);
+  box-shadow: var(--v2-key-inset);
+}
+.v2p-b-g { color: var(--v2-text-secondary); background: transparent; border: 1px solid transparent; }
+.v2p-b-g:hover { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+.v2p-b-sm { height: 28px; padding: 0 10px; border-radius: var(--v2-r-8); font-size: 12.5px; }
+.v2p-ib { width: 32px; height: 32px; padding: 0; border-radius: var(--v2-r-8); }
+.v2p-ib.v2p-b-sm { width: 28px; height: 28px; }
+.v2p-ib svg.i { width: 17px; height: 17px; }
+
+/* ---- segmented control ---- */
+.v2p-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--v2-r-9);
+  background: var(--v2-surface-tint);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  flex: none;
+}
+.v2p-seg button {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--v2-r-7);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 12.5px/1 var(--v2-font);
+  color: var(--v2-text-secondary);
+  white-space: nowrap;
+}
+.v2p-seg button .mo { font-size: 11px; color: var(--v2-text-muted); }
+.v2p-seg button.on {
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--v2-key-edge), 0 1px 2px rgba(16, 24, 40, 0.08);
+}
+.v2p-seg--sm button { height: 24px; padding: 0 8px; font-size: 12px; }
+
+/* ---- chips, badges, dots, toggles ---- */
+.v2p-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--v2-r-7);
+  font: 500 11.5px/1 var(--v2-font-mono);
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  white-space: nowrap;
+}
+.v2p-chip svg.i { width: 13px; height: 13px; }
+.v2p-chip.on { color: var(--v2-accent-text); box-shadow: inset 0 0 0 1px var(--v2-accent); background: var(--v2-accent-soft); }
+.v2p-chip--btn { cursor: pointer; }
+.v2p-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: var(--v2-r-8);
+  background: var(--v2-accent);
+  color: #fff;
+  font: 600 9.5px/15px var(--v2-font-mono);
+}
+.v2p-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--v2-accent); flex: none; display: inline-block; }
+.v2p-dot--idle { background: var(--v2-text-placeholder); }
+.v2p-dot--off { background: transparent; box-shadow: inset 0 0 0 1.5px var(--v2-text-placeholder); }
+.v2p-tg { width: 30px; height: 18px; border-radius: 9px; background: var(--v2-border); position: relative; flex: none; }
+.v2p-tg::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--v2-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.v2p-tg.on { background: var(--v2-accent); }
+.v2p-tg.on::after { left: 14px; background: #fff; }
+
+/* ---- shell and header ---- */
+.v2p-sh { display: grid; gap: 12px; padding: 12px; height: 100%; background: var(--v2-page-bg); }
+.v2p-sh--page { grid-template-columns: 56px minmax(0, 1fr); }
+.v2p-pane {
+  background: var(--v2-surface);
+  border-radius: var(--v2-r-14);
+  box-shadow: var(--v2-shadow-pane);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.v2p-ph {
+  flex: none;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px 0 28px;
+  border-bottom: 1px solid var(--v2-border-soft);
+}
+.v2p-ph h1 {
+  font: 800 24px/1 var(--v2-font-display);
+  letter-spacing: -0.03em;
+  margin: 0;
+  white-space: nowrap;
+}
+.v2p-ph .meta { font: 500 12px/1 var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
+.v2p-ph .sp { flex: 1; }
+.v2p-body { padding: 24px 28px; display: grid; gap: 14px; align-content: start; }
+
+/* ---- grouped rows ---- */
+.v2p-list {
+  border-radius: var(--v2-r-12);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  background: var(--v2-surface);
+}
+.v2p-lrow {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 52px;
+  padding: 8px 14px 8px 16px;
+  border-top: 1px solid var(--v2-border-soft);
+}
+.v2p-lrow:first-child { border-top: 0; }
+.v2p-lrow .lb { font-size: 13px; font-weight: 600; color: var(--v2-text-primary); display: flex; align-items: center; gap: 8px; }
+.v2p-lrow .vl { font-size: 13.5px; color: var(--v2-ink-2); min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.v2p-lrow .vl .mo { font-size: 12px; color: var(--v2-text-muted); }
+.v2p-lrow .ac { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+.v2p-gtitle {
+  font: 500 11.5px/1 var(--v2-font-mono);
+  color: var(--v2-text-muted);
+  margin: 18px 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v2p-gtitle:first-child { margin-top: 0; }
+
+/* ---- card ---- */
+.v2p-tc {
+  background: var(--v2-surface);
+  border-radius: var(--v2-r-9);
+  box-shadow: 0 0 0 1px var(--v2-border-soft), 0 1px 2px rgba(16, 24, 40, 0.04);
+  padding: 8px 10px 9px;
+  display: grid;
+  gap: 4px;
+  position: relative;
+}
+.v2p-tc .top1 { display: flex; align-items: center; gap: 6px; font: 500 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); height: 16px; }
+.v2p-tc .top1 .sp { flex: 1; }
+.v2p-tc .tt {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--v2-text-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.v2p-tc.picked { box-shadow: 0 0 0 2px var(--v2-accent); }
+
+/* ---- drawer ---- */
+.v2p-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 400px;
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pop);
+  border-radius: var(--v2-r-14) 0 0 var(--v2-r-14);
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+}
+/* The showcase shows the drawer in flow, so it never covers the rows above it.
+   The live drawer keeps the absolute overlay above. */
+.v2p-drawer--inline { position: static; width: auto; border-radius: var(--v2-r-14); margin: 0 28px 24px; box-shadow: var(--v2-shadow-pane); }
+.v2p-drawer .dh { height: 64px; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 20px; border-bottom: 1px solid var(--v2-border-soft); }
+.v2p-drawer .db { padding: 18px 20px; display: grid; gap: 14px; align-content: start; }
+.v2p-drawer h2 { font: 700 19px/1.25 var(--v2-font-display); letter-spacing: -0.02em; margin: 0; }
+
+/* ---- 390 (the artboard's phone frame): the rail goes, rows stack, the drawer
+   becomes a full sheet, and the header wraps instead of overflowing ---- */
+@media (max-width: 480px) {
+  .v2p-sh--page { grid-template-columns: minmax(0, 1fr); padding: 0; gap: 0; }
+  .v2p-rail { display: none; }
+  .v2p-pane { border-radius: 0; box-shadow: none; overflow: auto; }
+  .v2p-ph { height: auto; min-height: 52px; flex-wrap: wrap; padding: 10px 14px; row-gap: 8px; }
+  .v2p-ph h1 { font-size: 20px; white-space: normal; }
+  .v2p-body { padding: 16px 14px; }
+  .v2p-lrow { grid-template-columns: minmax(0, 1fr); min-height: 48px; padding: 8px 12px; }
+  .v2p-drawer:not(.v2p-drawer--inline) { width: 100%; border-radius: 0; }
+}

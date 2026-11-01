@@ -25,6 +25,8 @@ import { applyV2Theme, getV2Theme } from './utils/theme';
 // whole route table, so a chunk in flight shows the same <V2Boot/> the auth
 // check already shows.
 const V2Login = React.lazy(() => import('./components/V2Login'));
+// TASK-730 (D223): the shared primitives rendered alone, for frame checks.
+const V2PrimitivesPage = React.lazy(() => import('./primitives/V2PrimitivesPage'));
 const V2Register = React.lazy(() => import('./components/V2Register'));
 const V2OAuthComplete = React.lazy(() => import('./components/V2OAuthComplete'));
 const V2ForgotPassword = React.lazy(() => import('./components/V2ForgotPassword'));
@@ -218,6 +220,7 @@ const V2App: React.FC = () => {
           <Route path="agent/:agentName/:instanceId" element={<V2AgentProfile />} />
           <Route path="use-cases/:useCaseId" element={<V2UseCaseRedirect />} />
           <Route path="login" element={<V2Login />} />
+          <Route path="_primitives" element={<V2PrimitivesPage />} />
           <Route path="register" element={<V2Register />} />
           <Route path="register/invite-required" element={<RegistrationInviteRequired />} />
           <Route path="oauth/complete" element={<V2OAuthComplete />} />
