@@ -596,6 +596,19 @@ const isSeatCaller = (req: AuthReq): boolean => Boolean(req.agentUser || req.use
 
 type LeaseCheck = { refusal: Record<string, unknown> | null; overridesHolder: string | null };
 
+// A claim made with a runtime token is keyed by the claimant's user id. The
+// override note names a person or agent by the handle someone can @mention.
+const claimantLabel = async (claimedBy: string): Promise<string> => {
+  if (!/^[a-f\d]{24}$/i.test(claimedBy)) return claimedBy;
+  try {
+    const user = await User.findById(claimedBy).select('username').lean() as { username?: string } | null;
+    return user?.username || claimedBy;
+  } catch {
+    // The label is cosmetic: an override is never refused over it.
+    return claimedBy;
+  }
+};
+
 // The refusal every conflicting write path shares, so the two cannot drift into
 // disagreeing about what a live lease is, and so the body has one shape: the fields
 // `claim` already returns on a lost race, which is what tells a refused writer who
@@ -622,7 +635,7 @@ const leaseCheckForWrite = async (
   // The creator is the stamp the create route wrote, never inferred from `updates`:
   // on a native row the first claim or note would otherwise make its author the creator.
   if (creatorOverride && userId && current?.createdByUserId === String(userId)) {
-    return { refusal: null, overridesHolder: holder.claimedBy };
+    return { refusal: null, overridesHolder: await claimantLabel(String(holder.claimedBy)) };
   }
   return {
     refusal: {

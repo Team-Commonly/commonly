@@ -560,7 +560,12 @@ const listAgents = async (opts, deps) => {
       return 0;
     }
 
-    log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
+    // The pod roster also names the handle a person types to reach each agent
+    // (F44). It is printed whole: a cut handle reaches nobody.
+    const handleOf = (inst) => (inst.mention ? `@${inst.mention}` : '');
+    const handleWidth = opts.pod ? Math.max(6, ...rows.map((inst) => handleOf(inst).length)) : 0;
+    const handleCol = (s) => (opts.pod ? `${col(s, handleWidth)} ` : '');
+    log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${handleCol('HANDLE')}${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
     log('─'.repeat(80));
     rows.forEach((inst) => {
       // The pod roster names the agent `name`; the admin route uses `agentName`.
@@ -569,7 +574,7 @@ const listAgents = async (opts, deps) => {
       const host = inst.config?.runtime?.host || inst.runtime?.host || '';
       const seen = inst.lastActiveAt || inst.usage?.lastUsedAt || inst.connection?.lastSeenAt;
       const lastSeen = seen ? new Date(seen).toLocaleString() : 'never';
-      log(`${col(displayName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
+      log(`${col(displayName, 16)} ${col(inst.instanceId, 10)} ${handleCol(handleOf(inst))}${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
     });
     return 0;
   } catch (err) {
@@ -577,6 +582,64 @@ const listAgents = async (opts, deps) => {
     if (err.status === 403 && !opts.pod) error('Listing every install needs a global admin. Pass --pod <podId> to list one pod you belong to.');
     return 1;
   }
+};
+
+/**
+ * The seat `agent logs <name> --pod` reads (F44). An agent has three names: its
+ * agentName, its instance, and the handle its @mentions route to. Any of them
+ * finds it in the pod roster, so a seat whose instance isn't "default" no longer
+ * reads as idle. An explicit --instance-id is used as given.
+ */
+export const resolveLogsSeat = async (client, podId, typed, instanceId) => {
+  // Activity is stored under the bare agentName, never an @ spelling.
+  const bare = String(typed).trim().replace(/^@/, '');
+  const isHandle = String(typed).trim().startsWith('@');
+  // A plain name with an explicit instance is used as given. An @handle still
+  // needs the roster: activity is stored under the agentName, not the handle.
+  if (instanceId && !isHandle) return { agentName: bare, instanceId };
+  const want = bare.toLowerCase();
+  let agents;
+  try {
+    ({ agents = [] } = await client.get(`/api/registry/pods/${encodeURIComponent(podId)}/agents`));
+  } catch (err) {
+    // The default instance is still worth reading when the roster isn't.
+    return {
+      agentName: bare,
+      instanceId: instanceId || 'default',
+      note: `The pod roster couldn't be read (${err.message}), so instance ${instanceId || 'default'} was read for '${bare}'.`,
+    };
+  }
+  const seatOf = (inst) => ({ agentName: inst.name || inst.agentName, instanceId: inst.instanceId || 'default' });
+  // An @handle routes to one seat, so it wins over another seat's instance of the same name.
+  if (isHandle) {
+    const byHandle = agents.filter((inst) => typeof inst.mention === 'string' && inst.mention.toLowerCase() === want);
+    if (byHandle.length === 1) return instanceId ? { ...seatOf(byHandle[0]), instanceId } : seatOf(byHandle[0]);
+    if (instanceId) {
+      return {
+        agentName: bare,
+        instanceId,
+        note: `'${typed}' is not a handle in this pod's roster, so agent name '${bare}' was read at instance ${instanceId}.`,
+      };
+    }
+  }
+  const named = (inst) => [inst.mention, inst.name || inst.agentName, inst.instanceId !== 'default' && inst.instanceId]
+    .some((n) => typeof n === 'string' && n.toLowerCase() === want);
+  const hits = agents.filter(named);
+  if (hits.length > 1) {
+    const pairs = hits.map((h) => `${h.name || h.agentName}/${h.instanceId}`).join(', ');
+    throw new Error(`${hits.length} seats are named '${typed}' here: ${pairs}. `
+      + `Run: commonly agent logs <agentName> --pod ${podId} --instance-id <instance>`);
+  }
+  if (hits.length === 0) {
+    // A typo must not read like an idle seat, so say what was read instead.
+    const handles = agents.map((inst) => inst.mention).filter(Boolean).map((m) => `@${m}`).join(', ');
+    return {
+      agentName: bare,
+      instanceId: 'default',
+      note: `'${typed}' is not in this pod's roster, so instance default was read.${handles ? ` Seats here: ${handles}` : ''}`,
+    };
+  }
+  return seatOf(hits[0]);
 };
 
 /**
@@ -4466,7 +4529,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .command('logs <name>')
     .description("Show a seat's recent log: local daemon log, or server activity with --pod")
     .option('--pod <podId>', 'Read server-side events and runs for a pod you belong to')
-    .option('--instance-id <id>', 'Seat instance ID', 'default')
+    .option('--instance-id <id>', 'Seat instance ID (with --pod, found from the name when omitted)')
     .option('--follow', 'Continue printing new output', false)
     .option('--lines <n>', 'Number of trailing local lines to show', '50')
     .option('--instance <url>', 'Target Commonly instance (with --pod)')
@@ -4520,10 +4583,12 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
       if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
       const printActivity = async () => {
+        const seat = await resolveLogsSeat(client, opts.pod, name, opts.instanceId);
+        if (seat.note) console.error(seat.note);
         const { events = [], runs = [] } = await client.get('/api/agents/seat-activity', {
           podId: opts.pod,
-          agentName: name,
-          instanceId: opts.instanceId,
+          agentName: seat.agentName,
+          instanceId: seat.instanceId,
         });
         events.forEach((e) => {
           const ts = new Date(e.createdAt).toTimeString().slice(0, 8);
