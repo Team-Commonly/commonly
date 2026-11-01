@@ -121,6 +121,10 @@ const ConnectorsPage: React.FC = () => {
     orphanGroups.set(key, [...(orphanGroups.get(key) || []), grant]);
   });
   const orphanGroup = orphanKey ? orphanGroups.get(orphanKey) || null : null;
+  // A group the search (or a revoke) took away closes for good, so clearing the
+  // search never reopens a drawer nobody clicked.
+  const orphanKeyGone = Boolean(orphanKey) && !orphanGroup;
+  useEffect(() => { if (orphanKeyGone) setOrphanKey(null); }, [orphanKeyGone]);
   const toolHasDrawer = (entry: ToolCatalogEntry): boolean => grantsOf(entry).length > 0 || hiddenOf(entry).length > 0;
 
   // ---- what is open ----

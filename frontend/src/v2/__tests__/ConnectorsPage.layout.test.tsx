@@ -325,6 +325,31 @@ describe('Connectors page: the tile surface', () => {
     expect(tileNode('Atlassian')).toHaveAttribute('aria-pressed', 'true');
   });
 
+  // A search that hides an open group closes its drawer for good: clearing the
+  // search must not reopen a drawer nobody clicked (CodeRabbit on #3207).
+  it('a search that hides an open orphan group drops the selection, so clearing it reopens nothing', async () => {
+    const iso = (ms) => new Date(Date.now() + ms).toISOString();
+    const orphan = (grantId, podId) => ({
+      grantId, installationId: `inst-${grantId}`, target: { kind: 'pod', id: podId }, tools: ['atlassian.getJiraIssue'],
+      connector: { id: 'atlassian', label: 'Atlassian' },
+      writeMode: 'read', budget: null, effectiveAudience: [], expiresAt: iso(86_400_000), revokedAt: null, revokedBy: null,
+      parentGrantId: null, rootGrantId: null, createdAt: iso(-3_600_000), grantedBy: 'u1',
+    });
+    const twoPods = [...pods, { _id: 'p2', name: 'Ops Room', type: 'chat', members: [] }];
+    mockApi({ installables: [tool('github', 'GitHub')], pods: twoPods, grants: [orphan('g-a1', 'p1'), orphan('g-a2', 'p2')] });
+    renderPage();
+
+    fireEvent.click(await findTile('Atlassian'));
+    await findDrawer(/Atlassian/);
+    const search = screen.getByRole('searchbox', { name: 'Search' });
+    fireEvent.change(search, { target: { value: 'github' } });
+    await waitFor(() => expect(document.querySelector('section.v2-cx-drawer[aria-label="Atlassian"]')).toBeNull());
+    fireEvent.change(search, { target: { value: '' } });
+    await findTile('Atlassian');
+    expect(document.querySelector('section.v2-cx-drawer[aria-label="Atlassian"]')).toBeNull();
+    expect(tileNode('Atlassian')).toHaveAttribute('aria-pressed', 'false');
+  });
+
   it('names a grant whose entry is gone by the connector the server reads from its tools (TASK-753)', async () => {
     const iso = (ms) => new Date(Date.now() + ms).toISOString();
     // A hidden entry is absent from the catalogue, so no row covers this grant;
