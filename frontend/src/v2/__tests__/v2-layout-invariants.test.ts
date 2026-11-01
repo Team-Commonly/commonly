@@ -5380,5 +5380,8 @@ describe('pod board column scroll (TASK-698)', () => {
     // Phones get the tab bar back: scope to the TASK-687 mobile block.
     const mobile = css.slice(css.indexOf('/* TASK-687 / D223'));
     expect(mobile).toMatch(/@media \(max-width: 760px\) \{[\s\S]*\.v2-board__tabs \{ display: flex;/);
+    // The phone tabs are the frame's segment: a tinted track with a raised active key.
+    expect(mobile).toMatch(/\.v2-board__tabs \{ display: flex; margin: 12px 12px 0; padding: 2px;/);
+    expect(mobile).toMatch(/button\.v2-board__tab\.is-active \{ background: var\(--v2-surface\)/);
   });
 });
