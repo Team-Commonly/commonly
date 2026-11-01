@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../context/AuthContext';
 import V2AgentSettingsIcon from './V2AgentSettingsIcon';
+import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 
 interface Props {
   agentName: string;
@@ -35,7 +36,8 @@ const V2AgentListingRow: React.FC<Props> = ({ agentName, instanceId }) => {
   const [listingName, setListingName] = useState('');
   const [listingBusy, setListingBusy] = useState(false);
   const [listingError, setListingError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  // A failed save opens the panel where its message is.
+  const [open, setOpen] = useOpensOnDemand(listingError);
 
   useEffect(() => {
     let active = true;
@@ -74,7 +76,7 @@ const V2AgentListingRow: React.FC<Props> = ({ agentName, instanceId }) => {
     }
   };
   const panelId = `agent-listing-owner-${instanceId}`;
-  const panelOpen = ownsListing && (open || Boolean(listingError));
+  const panelOpen = ownsListing && open;
   return <>
     <div className="lrow">
       <span className="lb"><V2AgentSettingsIcon name="store" />{t('agentSettings.listingTitle')}</span>

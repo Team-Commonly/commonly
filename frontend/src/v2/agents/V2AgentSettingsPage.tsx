@@ -7,6 +7,7 @@ import V2AgentRuntimeBody, { Runtime, V2AgentConnectorsRow, describeRuntime } fr
 import { AgentControlLoader } from '../components/V2AgentControlSection';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import { usePhone } from '../connectors/usePhone';
+import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import { useAgentSettings } from './useAgentSettings';
 import { useTalkToAgent } from './useTalkToAgent';
@@ -60,9 +61,20 @@ const V2AgentSettingsPage: React.FC = () => {
   const [oneTimeKey, setOneTimeKey] = useState<string | null>(null);
   const [connection, setConnection] = useState<AgentConnection | null>(null);
   const connectionState = connection?.state ?? null;
-  const [keyOpen, setKeyOpen] = useState(false);
-  const [skillsOpen, setSkillsOpen] = useState(false);
+  // The key panel opens by itself for anything the owner must see or answer; a failed skills read opens
+  // its panel, where the error is. Either way the row's toggle keeps working.
+  const [keyOpen, setKeyOpen] = useOpensOnDemand(oneTimeKey, pendingAction, error);
+  const keyToggleRef = useRef<HTMLButtonElement>(null);
+  // Set by Done; the toggle is disabled until the key clears, so focus moves after that render.
+  const refocusKeyToggle = useRef(false);
+  useEffect(() => {
+    if (oneTimeKey || !refocusKeyToggle.current) return;
+    refocusKeyToggle.current = false;
+    keyToggleRef.current?.focus();
+  }, [oneTimeKey]);
+  // undefined while the skills panel loads, null if its read failed.
   const [skillCount, setSkillCount] = useState<number | null | undefined>(undefined);
+  const [skillsOpen, setSkillsOpen] = useOpensOnDemand(skillCount === null);
   const [runsNeedAttention, setRunsNeedAttention] = useState(false);
   const runsRef = useRef<HTMLDetailsElement>(null);
   // Open How it runs when its body starts needing action, and leave closing to the person,
@@ -301,10 +313,6 @@ const V2AgentSettingsPage: React.FC = () => {
 
   const displayName = access.displayName || agentName;
   const newestUse = activeKeys.map((key) => key.lastUsedAt).filter((value): value is string => Boolean(value)).sort().pop();
-  // The key panel stays open whenever it holds something the owner must see or answer.
-  const keyPanelOpen = keyOpen || Boolean(oneTimeKey || pendingAction || error);
-  // A failed skills read opens its panel, where the error is.
-  const skillsShown = skillsOpen || skillCount === null;
   const runtimeDetails = describeRuntime(runtime);
   const runtimeSummary = [runtimeDetails.adapter || runtime.adapter || runtime.runtimeType, runtime.model].filter(Boolean).join(' · ');
   const processState = runtime.processConnected === true ? 'connected' : runtime.processConnected === false ? 'disconnected' : 'notReported';
@@ -374,13 +382,15 @@ const V2AgentSettingsPage: React.FC = () => {
                 <span className="ac">
                   {!keysForbidden && (
                     <button type="button" className="b b-g ib b-sm" title={t('agentSettings.keyActions')} aria-label={t('agentSettings.keyActions')}
-                      aria-expanded={keyPanelOpen} aria-controls="agent-key-panel" onClick={() => setKeyOpen((value) => !value)}>
+                      ref={keyToggleRef} aria-expanded={keyOpen} aria-controls="agent-key-panel"
+                      // A key shown only once can't be folded away; Done is the way out of it.
+                      disabled={Boolean(oneTimeKey)} onClick={() => setKeyOpen((value) => !value)}>
                       <V2AgentSettingsIcon name="more" />
                     </button>
                   )}
                 </span>
               </div>
-              {keyPanelOpen && <div id="agent-key-panel" className="v2-agent-settings-page__keypanel">
+              {keyOpen && <div id="agent-key-panel" className="v2-agent-settings-page__keypanel">
                 {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
                 {!keysForbidden && (installation?.runtime?.runtimeType === 'wrapper' ? (
                   <p className="v2-agent-settings-page__live">{t('agentSettings.wrapperReconnect')}</p>
@@ -404,7 +414,12 @@ const V2AgentSettingsPage: React.FC = () => {
                   <div className="v2-agent-settings__reveal">
                     <strong>{t('agentSettings.copyNow')}</strong>
                     <code data-testid="agent-one-time-key">{oneTimeKey}</code>
-                    <button type="button" onClick={() => setOneTimeKey(null)}>{t('agentSettings.done')}</button>
+                    <button type="button" onClick={() => {
+                      // The key is gone once dismissed, so the panel closes and focus returns to its toggle.
+                      refocusKeyToggle.current = true;
+                      setOneTimeKey(null);
+                      setKeyOpen(false);
+                    }}>{t('agentSettings.done')}</button>
                   </div>
                 )}
                 {!keysForbidden && (
@@ -445,13 +460,13 @@ const V2AgentSettingsPage: React.FC = () => {
                 </span>
                 <span className="ac">
                   <button type="button" className="b b-g ib b-sm v2-agent-settings-page__toggle" title={t('agentSkills.title')} aria-label={t('agentSkills.title')}
-                    aria-expanded={skillsShown} aria-controls="agent-skills-panel" onClick={() => setSkillsOpen((value) => !value)}>
+                    aria-expanded={skillsOpen} aria-controls="agent-skills-panel" onClick={() => setSkillsOpen((value) => !value)}>
                     <V2AgentSettingsIcon name="chev" />
                   </button>
                 </span>
               </div>
               {/* Mounted while closed, so the row can count what the panel loads. */}
-              <div id="agent-skills-panel" className="v2-agent-settings-page__panel v2-agent-settings-page__panel--pad" hidden={!skillsShown}>
+              <div id="agent-skills-panel" className="v2-agent-settings-page__panel v2-agent-settings-page__panel--pad" hidden={!skillsOpen}>
                 <V2AgentSkills podId={podId} podName={access.pods.find((pod) => pod.id === podId)?.name || podId}
                   agentName={agentName} instanceId={instanceId} onCount={setSkillCount} />
               </div>
