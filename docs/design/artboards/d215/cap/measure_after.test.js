@@ -29,7 +29,7 @@ test('--only with an unknown surface throws', () => {
 
 test('the committed targets.json passes its own validation', () => {
   const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
-  assert.strictEqual(Object.keys(t).length, 44);
+  assert.strictEqual(Object.keys(t).length, 50);
   validateTargets(t);
 });
 
@@ -39,7 +39,7 @@ test('an empty or partial measurement is refused', () => {
   const partial = { ...t }; delete partial['board-390'];
   assert.throws(() => validateTargets(partial), /missing board-390/);
   assert.throws(() => validateTargets({ ...t, 'chat-1440': { helperWords: NaN, innerRatio: 2 } }), /invalid chat-1440/);
-  assert.strictEqual(EXPECTED.length, 44);
+  assert.strictEqual(EXPECTED.length, 50);
 });
 
 // A page whose SPA shell answers 200 and then redirects to `landsOn`. Its metrics would score

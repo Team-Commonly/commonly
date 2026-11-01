@@ -174,5 +174,29 @@
  "taskrecord-error-390": {
   "helperWords": 0,
   "innerRatio": 1
+ },
+ "runtrace-done-1440": {
+  "helperWords": 57,
+  "innerRatio": 1
+ },
+ "runtrace-live-1440": {
+  "helperWords": 61,
+  "innerRatio": 1
+ },
+ "runtrace-error-1440": {
+  "helperWords": 0,
+  "innerRatio": 1
+ },
+ "runtrace-done-390": {
+  "helperWords": 40,
+  "innerRatio": 1
+ },
+ "runtrace-live-390": {
+  "helperWords": 61,
+  "innerRatio": 1
+ },
+ "runtrace-error-390": {
+  "helperWords": 0,
+  "innerRatio": 1
  }
 }
