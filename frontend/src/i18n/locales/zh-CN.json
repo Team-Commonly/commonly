@@ -561,6 +561,9 @@
     "systemActions": {
       "taskClaimedVerb": "认领了"
     },
+    "claimRun": {
+      "label": "{{count}}次认领 · {{first}} 至 {{last}}"
+    },
     "starts": {
       "label": "开始方式",
       "openByo": "去接入自己的智能体",

@@ -561,6 +561,9 @@
     "systemActions": {
       "taskClaimedVerb": "claimed"
     },
+    "claimRun": {
+      "label": "{{count}} claims · {{first}} to {{last}}"
+    },
     "starts": {
       "label": "Ways to start",
       "openByo": "Open Bring your own",

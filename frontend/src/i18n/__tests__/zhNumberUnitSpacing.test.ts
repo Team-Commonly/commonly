@@ -38,7 +38,7 @@ const NUMERAL_PLACEHOLDERS = [
 // shell proves either way.
 const OPAQUE_PLACEHOLDERS = [
   'age', 'by', 'pod', 'email', 'provider', 'podName', 'creator', 'date', 'agentName',
-  'name', 'second', 'first', 'handle', 'author', 'affiliations', 'username', 'code',
+  'name', 'second', 'first', 'last', 'handle', 'author', 'affiliations', 'username', 'code',
   'label', 'taskId', 'agent', 'machine', 'time', 'section', 'platform', 'projects',
   'connector', 'user', 'workspace', 'channel', 'tool', 'tools', 'member', 'agents', 'os',
   // common.aboutPage receives a page title, currently Latin, not a count.
@@ -52,6 +52,8 @@ const OPAQUE_PLACEHOLDERS = [
   'id',
   // podChat.deliveryHintOthers names the agent that was woken.
   'woken',
+  // podChat.claimRun.label names the first and last task of a claim run (Latin task ids).
+  'last',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number
