@@ -289,6 +289,16 @@ describe('Connectors page: the tile surface', () => {
     expect(screen.queryByRole('dialog', { name: 'GitHub' })).toBeNull();
   });
 
+  it('does not refetch in a loop while the pod list cannot load', async () => {
+    mockCatalog([tool('github', 'GitHub')], { pods: new Error('pods down') });
+    renderPage();
+
+    await findTile('GitHub');
+    await new Promise((resolve) => { setTimeout(resolve, 300); });
+    const grantCalls = axios.get.mock.calls.filter(([url]) => url === '/api/grants').length;
+    expect(grantCalls).toBeLessThanOrEqual(2);
+  });
+
   it('keeps the header count steady while searching', async () => {
     mockCatalog([channel('telegram', 'Telegram'), liveSlack, tool('github', 'GitHub'), tool('linear', 'Linear')]);
     renderPage();

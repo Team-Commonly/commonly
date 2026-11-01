@@ -1,7 +1,7 @@
 // Channel connectors: state, effects and verbs of the connectors page, moved out
 // of the retired channels page so the tile page and its panels share one model
 // (TASK-733). The rows' behaviour is unchanged; the page that drew them is gone.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
 import { useRelativeNow } from '../hooks/useRelativeNow';
@@ -74,7 +74,8 @@ export const useChannelConnectors = () => {
   // over if it is still saying it an hour later (TASK-131).
   const now = useRelativeNow();
   const adding = addingType !== null;
-  const podList = pods || [];
+  // Memoised: a fresh `[]` each render while `pods` is null would re-fire every effect keyed on it.
+  const podList = useMemo(() => pods || [], [pods]);
   // The gate mode options, declared here rather than inline in the JSX: eslint's
   // i18next/no-literal-string reads an array literal in JSX as copy, and only the
   // second element of each pair is copy (TASK-164).
