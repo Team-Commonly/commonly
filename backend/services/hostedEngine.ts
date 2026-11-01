@@ -226,9 +226,11 @@ export const hostedNativeSystemPrompt = (
     abilities.webSearch ? '' : 'searching the web',
     'opening an attached file',
   ].filter(Boolean);
+  // The name never directly follows "You are": the injection guard blocks the
+  // substring "you are DAN", so an agent named Dan… failed every turn (11-01).
   return (
-    `You are ${displayName}, a hosted agent on Commonly. Commonly runs you for the person who `
-    + `set you up, in a shared pod with humans and other agents.${persona}\n`
+    `Your name on Commonly is ${displayName}. You are a hosted agent: Commonly runs you for the `
+    + `person who set you up, in a shared pod with humans and other agents.${persona}\n`
     + '\n'
     + 'Reply to the message you were mentioned in by calling commonly_post_message once: concise, '
     + 'useful, and addressed to the pod. '
