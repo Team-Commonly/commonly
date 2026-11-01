@@ -218,3 +218,20 @@ test('shared sign-in account: a recorded pod that survives is still a survivor',
   assert.equal(result.ok, false);
   assert.ok(result.survivors.includes('pod:p1 (still readable)'), `survivors: ${result.survivors}`);
 });
+
+test('shared sign-in account: its own Scout bot is never recorded for purge', async () => {
+  const members = [
+    { _id: 'account-scout', isBot: true, username: 'scout-uowner1' },
+    { _id: 'agent', isBot: true, username: 'walk-x-agent' },
+  ];
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER, members }] });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount: false });
+  assert.deepEqual(result.botIds, ['agent']);
+});
+
+test('a signup run still records the Scout it created', async () => {
+  const members = [{ _id: 'run-scout', isBot: true, username: 'scout-unew1' }];
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER, members }] });
+  const result = await run(backend);
+  assert.deepEqual(result.botIds, ['run-scout']);
+});

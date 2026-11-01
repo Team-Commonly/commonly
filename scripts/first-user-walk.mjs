@@ -186,7 +186,8 @@ const main = async () => {
 
     token = await runStep('login', async () => {
       const r = await api('POST', '/api/auth/login', { body: { email, password } });
-      expect(r.status === 200 && r.data?.token, `login ${r.status}: ${JSON.stringify(r.data)}`);
+      // Status and error code only: a body could echo the shared email into the log.
+      expect(r.status === 200 && r.data?.token, `login ${r.status}${r.data?.code ? ` ${r.data.code}` : ''}`);
       expect(r.data.user?.role !== 'admin', 'walk account is admin; the walk is meaningless');
       manifest.userId = String(r.data.user?._id || r.data.user?.id || '');
       expect(manifest.userId, 'login returned no user id');
@@ -210,8 +211,22 @@ const main = async () => {
     });
 
     const pod = await runStep('first-pod', async () => {
-      const r = await api('POST', '/api/pods', { token, body: { name: `${username} workspace`, type: 'team' } });
+      const podName = `${username} workspace`;
+      const r = await api('POST', '/api/pods', { token, body: { name: podName, type: 'team' } });
       const created = r.data?.pod || r.data;
+      if (r.status < 300 && !created?._id) {
+        // The create may have landed without an id in the reply. Record any pod
+        // this run made, matched by its unique name, before the step fails, so
+        // cleanup still removes it.
+        const list = await api('GET', '/api/pods', { token });
+        const pods = Array.isArray(list.data) ? list.data : (list.data?.pods || []);
+        for (const p of pods) {
+          if (p.name === podName && ownerOf(p) === manifest.userId && !manifest.podIds.includes(String(p._id))) {
+            manifest.podIds.push(String(p._id));
+          }
+        }
+        writeManifest();
+      }
       expect(r.status < 300 && created?._id, `pod create ${r.status}: ${JSON.stringify(r.data)}`);
       manifest.podIds.push(String(created._id));
       writeManifest();

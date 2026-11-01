@@ -18,3 +18,13 @@ test('no COMMONLY_WALK_EMAIL signs up a fresh account, on any target', () => {
 test('the shared sign-in account is refused on prod', () => {
   assert.throws(() => chooseWalkMode({ base: PROD, env: { COMMONLY_WALK_EMAIL: 'walk@commonly.me' } }), /staging only/);
 });
+
+test('a host that merely contains "staging" never receives the shared account', () => {
+  for (const base of ['https://staging.attacker.example', 'https://api-staging.commonly.me.attacker.example', 'https://evil-staging.example']) {
+    assert.throws(() => chooseWalkMode({ base, env: { COMMONLY_WALK_EMAIL: 'walk@commonly.me' } }), /staging API over https/, base);
+  }
+});
+
+test('the shared sign-in account is refused over plain http, even on the staging host', () => {
+  assert.throws(() => chooseWalkMode({ base: 'http://api-staging.commonly.me', env: { COMMONLY_WALK_EMAIL: 'walk@commonly.me' } }), /over https/);
+});
