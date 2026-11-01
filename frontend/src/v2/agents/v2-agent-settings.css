@@ -139,7 +139,9 @@
     border-bottom: 1px solid var(--v2-border-soft);
   }
   .v2-agent-settings > .v2-page-head h1,
-  .v2-agent-memory__ident h1 {
+  .v2-agent-settings > .v2-agent-memory__head .v2-agent-memory__ident { min-width: 0; }
+  .v2-agent-settings > .v2-agent-memory__head .v2-agent-memory__seg { flex: none; margin-top: 0; }
+  .v2-agent-settings > .v2-agent-memory__head .v2-agent-memory__ident h1 {
     margin: 0; font: 800 21px/1 var(--v2-font-display); letter-spacing: -0.03em;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }

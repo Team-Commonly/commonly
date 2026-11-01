@@ -45,4 +45,11 @@ describe('D223 phone shell', () => {
     const at = agentCss.indexOf('D223 (TASK-730)');
     expect(agentCss.slice(0, at).lastIndexOf('@media')).toBe(agentCss.lastIndexOf('@media (max-width: 760px)', at));
   });
+
+  test('the memory bar lets the name shrink and drops the tab nav margin so it stays 52px', () => {
+    const agentCss = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
+    const tail = agentCss.slice(agentCss.indexOf('D223 (TASK-730)'));
+    expect(tail).toMatch(/__ident\s*\{\s*min-width:\s*0/);
+    expect(tail).toMatch(/__seg\s*\{[^}]*margin-top:\s*0/);
+  });
 });
