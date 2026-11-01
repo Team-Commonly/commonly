@@ -5041,6 +5041,12 @@ describe('agent Wake and Pods controls', () => {
     expect(remove).toContain('background: var(--v2-surface)');
     expect(remove).toContain('border: 1px solid var(--v2-border)');
   });
+
+  test('message-wake segment wraps its options instead of overflowing the row', () => {
+    const segment = ruleBody(css, '.v2-agent-wake-pods__segment');
+    expect(segment).toContain('display: flex');
+    expect(segment).toContain('flex-wrap: wrap');
+  });
 });
 
 describe('agent runtime and grants fit the Settings column', () => {
