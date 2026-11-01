@@ -134,7 +134,6 @@ const ALLOWLIST: string[] = [
   '.v2-root button.v2-chat__new-pod-copy', // 11.0px — no-mono-family
   // PR3 selectors meet the floor; no remaining allowances.
   // PR4
-  '.v2-billing__badge', // 11.0px — no-mono-family
   // TASK-166 took `.v2-byo__mode-kicker` (10.0px, no family) and
   // `.v2-byo__preview-label` (11.0px, no family) to mono 500 11px, so both
   // entries left this burn-down list rather than being updated in place.
@@ -193,7 +192,7 @@ describe('v2 type floors (ruling h)', () => {
     // `--v2-fs-label: 11px` is consumed by rules that declare no literal size.
     // If substitution regressed, those rules would silently drop out of scope.
     expect(CSS).toMatch(/--v2-fs-label:\s*11px/);
-    expect(CSS).toContain('font-size: var(--v2-fs-label)');
+    expect(CSS + fs.readFileSync(path.join(__dirname, '../components/V2SettingsPage.css'), 'utf8')).toContain('font-size: var(--v2-fs-label)');
   });
 
   test('a rule inside an @media block is keyed to its own selector', () => {

@@ -54,11 +54,13 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
     const summary = loading ? 'Loading…' : error ? 'Couldn’t load' : live.length === 0 ? 'None'
       : `${live.length} CLI device${live.length === 1 ? '' : 's'}${lastUsed ? ` · used ${(() => { const when = new Date(lastUsed as string); return when.toDateString() === new Date().toDateString() ? when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : when.toLocaleDateString([], { month: 'short', day: 'numeric' }); })()}` : ''}`;
     return (
-      <details className="v2-settings__fold">
-        <summary className="v2-settings__row v2-settings__summary">
-          <svg className="v2-settings__icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16v10H4zM2 20h20" /></svg>
-          <span className="v2-settings__row-label">Devices</span>
-          <span className="v2-settings__row-value">{summary}</span>
+      <details className="v2p-disc">
+        <summary>
+          <span className="lb">
+            <svg className="v2-settings__icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16v10H4zM2 20h20" /></svg>
+            Devices
+          </span>
+          <span className={error ? 'vl v2-settings__vl--error' : 'vl'}>{summary}</span>
           <svg className="v2-settings__icon v2-settings__chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
         </summary>
         <div className="v2-settings__fold-body">{renderPanel()}</div>

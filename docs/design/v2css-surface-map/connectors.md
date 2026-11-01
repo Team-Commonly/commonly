@@ -1,0 +1,195 @@
+# v2.css map: Connectors
+
+Generated 2026-11-01 from v2.css at main `323595193`, with live DOM read on prod `9460865ab`. Method and caveats: [README](README.md).
+
+- **Goes with the lift:** 141 selectors used only by this surface (138 in 119 whole rules, about 195 lines; 3 sit in a rule shared with other selectors, so trim them from its list).
+- **Shared, stays:** 37 selectors this surface uses that another surface also uses.
+- 137 of the surface-only selectors were never matched on prod in the states walked; they are classed by source references alone. Check those before deleting.
+
+## Goes with the lift (surface-only)
+
+Line numbers are v2.css at `323595193`; they shift as earlier lines change, so search by selector.
+
+- L10863–10903 `.v2-root:lang(zh) .v2-tools__count strong` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 39 selectors
+- L10863–10903 `.v2-root:lang(zh) .v2-connector-row__name` — not seen live; rule lists 39 selectors
+- L10863–10903 `.v2-root:lang(zh) .v2-connector-aside__card h2` — not seen live; rule lists 39 selectors
+- L10914–10918 `.v2-root:lang(zh) .v2-connector-gates__title` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L10914–10918 `.v2-root:lang(zh) .v2-tools__field > span:first-child` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L10914–10918 `.v2-root:lang(zh) .v2-tools__field > legend` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L10969 `.v2-connectors__loading` — not seen live
+- L10971–10989 `.v2-connector-row` — not seen live; pinned by v2-layout-invariants.test.ts
+- L10990 `.v2-connector-row:last-child` — not seen live
+- L10991 `.v2-connector-row--selected` — not seen live
+- L10992–11006 `.v2-root button.v2-connector-row__selection` — not seen live
+- L11007 `.v2-connector-row__name` — not seen live
+- L11008 `.v2-connector-row__dot` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11009 `.v2-connector-row__glyph` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11010 `.v2-connector-row__glyph svg` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11013 `.v2-connector-row__dot--live` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11014 `.v2-connector-row--dead .v2-connector-row__dot` — not seen live
+- L11015 `.v2-connector-row__dot--empty` — not seen live
+- L11016 `.v2-connector-row__dot--pulse` — not seen live
+- L11022 `.v2-connector-row__dot--pulse` in `@media (prefers-reduced-motion: reduce)` — not seen live
+- L11024 `.v2-connector-row__details` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11026 `.v2-connector-row__details strong` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11027 `.v2-connector-row__detail` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11029 `.v2-connector-row__detail` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11031 `.v2-connector-row__kicker` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11033 `.v2-connector-row__kicker-mode` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11040–11052 `.v2-root button.v2-connector-row__action` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11040–11052 `.v2-root a.v2-connector-row__action` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11060–11061 `.v2-root button.v2-connector-row__action:hover:not(:disabled):not(.v2-connector-row__action--secondary)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11060–11061 `.v2-root a.v2-connector-row__action:hover:not(.v2-connector-row__action--secondary)` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11062 `.v2-root button.v2-connector-row__action:disabled` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11063–11064 `.v2-root button.v2-connector-row__action--secondary` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11063–11064 `.v2-root a.v2-connector-row__action--secondary` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11065–11066 `.v2-root button.v2-connector-row__action--secondary:hover` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11065–11066 `.v2-root a.v2-connector-row__action--secondary:hover` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11069 `.v2-root button.v2-connector-row__action--icon` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11070 `.v2-root button.v2-connector-row__action--icon svg` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11077 `.v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11078 `.v2-root button.v2-connector-aside__icon svg` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11079–11089 `.v2-root button.v2-connectors__create` — not seen live; rule lists 2 selectors
+- L11079–11089 `.v2-root button.v2-connector-aside__primary` — not seen live; rule lists 2 selectors
+- L11090–11091 `.v2-root button.v2-connectors__create:hover:not(:disabled)` — not seen live; rule lists 2 selectors
+- L11090–11091 `.v2-root button.v2-connector-aside__primary:hover:not(:disabled)` — not seen live; rule lists 2 selectors
+- L11092–11093 `.v2-root button.v2-connectors__create:disabled` — not seen live; rule lists 2 selectors
+- L11092–11093 `.v2-root button.v2-connector-aside__primary:disabled` — not seen live; rule lists 2 selectors
+- L11094 `.v2-connectors__new-row` — not seen live
+- L11095 `.v2-connectors__new-row--aside` — not seen live
+- L11096 `.v2-connectors__new-row--aside .v2-connectors__select` — not seen live
+- L11097 `.v2-connectors__empty-pods` — not seen live
+- L11098 `.v2-connectors__empty-pods p` — not seen live
+- L11099 `.v2-connectors__empty-pods > .v2-connectors__create` — not seen live
+- L11100 `.v2-connectors__providers` — not seen live
+- L11101 `.v2-root button.v2-connectors__provider` — not seen live
+- L11102 `.v2-root button.v2-connectors__provider:last-child` — not seen live
+- L11103 `.v2-root button.v2-connectors__provider--selected` — not seen live
+- L11104 `.v2-connectors__select` — not seen live
+- L11106 `.v2-connectors__aside` — not seen live
+- L11107 `.v2-connector-aside__step` — not seen live; rule lists 2 selectors
+- L11107 `.v2-connector-aside__card` — not seen live; rule lists 2 selectors
+- L11108 `.v2-connector-aside__step p` — not seen live; rule lists 2 selectors
+- L11108 `.v2-connector-aside__card p` — not seen live; rule lists 2 selectors
+- L11109 `.v2-connector-aside__eyebrow` — not seen live
+- L11110 `.v2-connector-aside__card h2` — not seen live
+- L11111 `.v2-connector-aside__actions` — not seen live; rule lists 2 selectors
+- L11111 `.v2-connector-aside__controls` — not seen live; rule lists 2 selectors
+- L11112–11121 `.v2-root button.v2-connector-aside__secondary` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11122 `.v2-root button.v2-connector-aside__secondary:hover` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11123–11124 `.v2-connector-aside__card > .v2-connector-aside__secondary` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11123–11124 `.v2-connector-aside__card > .v2-connector-aside__primary` — not seen live; rule lists 2 selectors
+- L11125 `.v2-connector-aside__relay` — not seen live
+- L11126 `.v2-connector-aside__relay input` — not seen live
+- L11127 `.v2-connector-aside__mode` — not seen live
+- L11128 `.v2-root button.v2-connector-aside__mode-opt` — not seen live
+- L11129 `.v2-root button.v2-connector-aside__mode-opt:last-child` — not seen live
+- L11130 `.v2-root button.v2-connector-aside__mode-opt--on` — not seen live
+- L11131 `.v2-connector-code` — not seen live
+- L11132 `.v2-connector-code code` — not seen live
+- L11133 `.v2-root button.v2-connector-code__copy` — not seen live
+- L11134 `.v2-connector-row__refusal` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11135–11136 `.v2-connector-row__refusal a` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11135–11136 `.v2-connector-aside__refusal a` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11138 `.v2-connector-aside__note` — not seen live
+- L11141 `.v2-connector-aside__refusal` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11144 `.v2-connector-gates` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11145 `.v2-connector-gates__title` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11146 `.v2-connector-gates__empty` — not seen live
+- L11147 `.v2-connector-gate` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11148 `.v2-connector-gate:last-child` — not seen live
+- L11149 `.v2-connector-gate__row` — not seen live
+- L11150 `.v2-root button.v2-connector-gate__name` — not seen live
+- L11151 `.v2-connector-gate__mark` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11153 `.v2-connector-gate__pod` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11154 `.v2-connector-gate__tag` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11155 `.v2-connector-gate__since` — not seen live
+- L11156 `.v2-connector-gate__since--off` — not seen live
+- L11159 `.v2-connector-gate__switch` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11160 `.v2-connector-gate__switch:disabled` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11161 `.v2-connector-gate__more` — not seen live
+- L11162 `.v2-connector-gate__lead` — not seen live
+- L11163 `.v2-tools__facts` — not seen live
+- L11164 `.v2-tools__facts dt` — not seen live
+- L11165 `.v2-tools__facts dt:first-child` — not seen live
+- L11166 `.v2-tools__facts dd` — not seen live
+- L11168 `.v2-tools__facts dd code` — not seen live
+- L11169 `.v2-tools__counts` — not seen live
+- L11170 `.v2-tools__count` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11171 `.v2-tools__count strong` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11172 `.v2-tools__count span` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11173 `.v2-tools__trail` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11174 `.v2-tools__trail-line` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11175 `.v2-tools__trail-line > span:first-child` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11176 `.v2-tools__trail-when` — not seen live
+- L11177–11178 `.v2-tools__mode` — not seen live; rule lists 2 selectors
+- L11177–11178 `.v2-tools__outcome` — not seen live; rule lists 2 selectors
+- L11179 `.v2-tools__form` — not seen live
+- L11180 `.v2-tools__field` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11181 `.v2-tools__field > span:first-child` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11181 `.v2-tools__field > legend` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11182 `.v2-tools__input` — not seen live
+- L11183 `.v2-tools__input:focus-visible` — not seen live
+- L11184 `.v2-tools__agents` — not seen live
+- L11185 `.v2-tools__hint` — not seen live
+- L11186 `.v2-tools__hint code` — not seen live
+- L11188 `.v2-connector-row` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11189 `.v2-root button.v2-connector-row__selection` in `@media (max-width: 760px)` — not seen live
+- L11190 `.v2-root button.v2-connector-row__selection .v2-connector-row__name` in `@media (max-width: 760px)` — not seen live
+- L11191 `.v2-root button.v2-connector-row__selection .v2-connector-row__details` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11200 `.v2-root button.v2-connector-row__action` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11200 `.v2-root a.v2-connector-row__action` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11204 `.v2-connector-row` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11205 `.v2-root button.v2-connector-row__selection` in `@media (max-width: 760px)` — not seen live
+- L11206 `.v2-connector-row__kicker-mode` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11207 `.v2-root button.v2-connector-row__action--icon` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11208 `.v2-root button.v2-connector-row__action:not(.v2-connector-row__action--icon)` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11208 `.v2-root a.v2-connector-row__action` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11210–11211 `.v2-connector-row:has(.v2-connector-row__action--icon) .v2-root button.v2-connector-row__selection` in `@media (max-width: 760px)` — not seen live; rule lists 2 selectors
+- L11210–11211 `.v2-root .v2-connector-row:has(.v2-connector-row__action--icon) button.v2-connector-row__selection` in `@media (max-width: 760px)` — not seen live; rule lists 2 selectors
+- L11212 `.v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11213 `.v2-connectors__new-row` in `@media (max-width: 760px)` — not seen live
+- L11214 `.v2-connectors__providers` in `@media (max-width: 760px)` — not seen live
+- L11215 `.v2-connector-gate__more` in `@media (max-width: 760px)` — not seen live
+
+## Shared, stays
+
+Each line names the other surfaces that use the selector. It can go only when the last of them lifts.
+
+- L395 `.v2-root *` — also agentSettings, board, chat, legacy, memory, other, settings, shell, sidebar
+- L395 `.v2-root *::before` — also agentSettings, board, chat, legacy, memory, other, settings, shell, sidebar
+- L395 `.v2-root *::after` — also agentSettings, board, chat, legacy, memory, other, settings, shell, sidebar
+- L405 `.v2-root *::-webkit-scrollbar` — also agentSettings, board, chat, legacy, memory, other, settings, shell, sidebar
+- L409 `.v2-root *::-webkit-scrollbar-track` — also agentSettings, board, chat, legacy, memory, other, settings, shell, sidebar
+- L412 `.v2-root *::-webkit-scrollbar-thumb` — also agentSettings, board, chat, legacy, memory, other, settings, shell, sidebar
+- L418 `.v2-root *::-webkit-scrollbar-thumb:hover` — also agentSettings, board, chat, legacy, memory, other, settings, shell, sidebar
+- L423 `.v2-root *::-webkit-scrollbar-corner` — also agentSettings, board, chat, legacy, memory, other, settings, shell, sidebar
+- L427 `.v2-root *` — also agentSettings, board, chat, legacy, memory, other, settings, shell, sidebar
+- L432 `.v2-root :where(button:not(.MuiButtonBase-root))` — also agentSettings, board, chat, legacy, other, settings, shell, sidebar
+- L441 `.v2-root input` — also agentSettings, chat, legacy, memory, other, settings, shell, sidebar
+- L614 `.v2-root button:focus-visible` — also agentSettings, board, chat, legacy, other, settings, shell, sidebar
+- L614 `.v2-root input:focus-visible` — also agentSettings, chat, legacy, memory, other, settings, shell, sidebar
+- L650 `.v2-authenticated-shell__content .v2-pane` — also agentSettings, board, chat, memory, other, settings, sidebar
+- L745 `.v2-pane` — also agentSettings, board, chat, memory, other, settings, sidebar
+- L764 `.v2-pane--main` — also agentSettings, board, chat, memory, other, settings
+- L773 `.v2-authenticated-shell .v2-pane--main` — also agentSettings, board, chat, memory, other, settings
+- L5518 `.v2-feature` — also agentSettings, board, memory, other, settings, shell
+- L5613 `.v2-feature__body` — also agentSettings, board, memory, other, settings
+- L5620 `.v2-feature__legacy` — also agentSettings, board, memory, other, settings
+- L6094 `.v2-pane--main` in `@media (max-width: 760px)` — also agentSettings, board, chat, memory, other, settings
+- L6094 `.v2-authenticated-shell .v2-pane--main` in `@media (max-width: 760px)` — also agentSettings, board, chat, memory, other, settings
+- L6362 `.v2-feature--byo > .v2-feature__body` — also other
+- L7557 `.v2-root input` in `@media (hover: none), (pointer: coarse)` — also agentSettings, chat, legacy, memory, other, settings, shell, sidebar
+- L8548 `.v2-feature--board .v2-feature__body` — also board, other
+- L9218 `.v2-feature--board > .v2-feature__body` in `@media (max-width: 760px)` — also board, other
+- L11269 `.v2-shell .v2-pane` — also agentSettings, board, chat, memory, other, settings, sidebar
+- L11274 `.v2-shell .v2-pane--main` — also agentSettings, board, chat, memory, other, settings
+- L11294 `.v2-shell .v2-pane` in `@media (max-width: 760px)` — also agentSettings, board, chat, memory, other, settings, sidebar
+- L11309 `.v2-authenticated-shell__content .v2-shell .v2-pane` in `@media (max-width: 760px)` — also agentSettings, board, chat, memory, other, settings, sidebar
+- L11946 `.v2-pane--main` in `@media (max-width: 760px)` — also agentSettings, board, chat, memory, other, settings
+- L12648 `.v2-feature` in `@media (max-width: 760px)` — also agentSettings, board, memory, other, settings, shell
+- L13442 `.v2-feature--activity > .v2-feature__body` — also other
+- L13744 `.v2-feature--artifacts > .v2-feature__body` — also other
+- L13905 `.v2-feature--board > .v2-feature__body` — also board, other
+- L14071 `.v2-feature__body` in `@media (max-width: 760px)` — also agentSettings, board, memory, other, settings
+- L14078 `.v2-feature--settings > .v2-feature__body` — also other

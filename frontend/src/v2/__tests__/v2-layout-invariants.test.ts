@@ -27,6 +27,8 @@ const read = (rel: string): string =>
 // The task board's own sheet (S4, lifted from the d215 frame). Its rules left
 // v2.css in the same change, so every board guard reads this file.
 const boardCss = read('../components/V2PodBoard.css');
+// Settings keeps its own sheet, lifted from the d215 frame (TASK-688).
+const ss = read('../components/V2SettingsPage.css');
 
 // The team's phone block: the `@media (max-width: 760px)` block that carries
 // `.v2-team__grid`, wherever it sits in the sheet — not the last one.
@@ -1243,11 +1245,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('<AppsManagement variant="settings" showIntegrations={false} />');
     expect(settingsPage).toContain('to="/v2/connectors"');
     expect(settingsPage).toContain('<summary>Developer apps</summary>');
-    expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
+    expect(settingsPage).toContain('<V2BillingPanel />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 44px');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(ss, '.v2-settings__avatar')).toContain('width: 44px');
+    expect(ruleBody(ss, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(ss, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
     expect(avatar).toContain("borderRadius: 'inherit'");
     expect(v2App).toMatch(/path="settings\/devices"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toMatch(/path="profile"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
@@ -1256,12 +1258,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(app).toContain('<Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />');
   });
 
+  test('Settings errors never sit inside the value column the phone hides', () => {
+    const devicesPanel = read('../components/V2DevicesPanel.tsx');
+    // billing error is its own line under the row, not a child of .vl
+    expect(billingPanel).toMatch(/<\/span>\s*\{error && <span className="v2-settings__error v2-settings__error--row"/);
+    expect(billingPanel).not.toMatch(/<span className="vl">[^]*v2-settings__error[^]*<\/span>\s*<span className="ac">/);
+    expect(ruleBody(ss, '.v2-settings__error--row')).toContain('grid-column: 1 / -1');
+    // devices: a load failure keeps its summary visible at 390
+    expect(devicesPanel).toContain("'vl v2-settings__vl--error'");
+    expect(ss).toMatch(/\.v2-settings \.v2p-disc > summary \.v2-settings__vl--error \{ display: flex/);
+  });
+
   test('Settings is one screen: grouped cards, no jump nav', () => {
     expect(settingsPage).not.toContain('v2-settings__nav');
-    expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 760px)');
-    expect(ruleBody(v2, '.v2-settings__edit--closed')).toContain('display: none');
-    expect(ruleBody(v2, '.v2-settings__group,\n.v2-settings__fold')).toContain('overflow: hidden');
-    expect(ruleBody(v2, '.v2-settings__row > .v2-settings__row-value')).toContain('min-width: 0');
+    expect(ruleBody(ss, '.v2-settings__content')).toContain('width: min(100%, 760px)');
+    expect(ruleBody(ss, '.v2-settings__edit--closed')).toContain('display: none');
   });
 
   test('Settings saves a display name while allowing handle changes and exposing the email change affordance', () => {
@@ -1277,42 +1288,33 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('type="button">Change</button>');
     expect(settingsPage).not.toContain('Email changes go through re-verification; ask us for now.');
     expect(settingsPage).not.toContain('v2-settings__nav-note');
-    expect(ruleBody(v2, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-    expect(ruleBody(v2, '.v2-settings__account-fields > label')).toContain('align-content: start');
-    expect(ruleBody(v2, '.v2-settings__account-fields > .v2-settings__account-email')).toContain('grid-column: 1 / -1');
-    expect(ruleBody(v2, '.v2-settings__account-fields input')).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__email-control')).toContain('display: flex');
-    const accountForm = ruleBody(v2, '.v2-settings form.v2-settings__account');
+    expect(ruleBody(ss, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(ss, '.v2-settings__account-fields > label')).toContain('align-content: start');
+    expect(ruleBody(ss, '.v2-settings__account-fields > .v2-settings__account-email')).toContain('grid-column: 1 / -1');
+    expect(ruleBody(ss, '.v2-settings__account-fields input')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(ss, '.v2-settings__email-control')).toContain('display: flex');
+    const accountForm = ruleBody(ss, '.v2-settings form.v2-settings__account');
     expect(accountForm).toContain('padding: 0');
     expect(accountForm).toContain('background: transparent');
     expect(accountForm).toContain('box-shadow: none');
   });
 
   test('Settings avatar controls keep the account face square and the crop step usable on phones', () => {
-    const avatar = ruleBody(v2, '.v2-settings__avatar');
+    const avatar = ruleBody(ss, '.v2-settings__avatar');
     expect(avatar).toContain('width: 44px');
     expect(avatar).toContain('height: 44px');
     expect(avatar).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
+    expect(ruleBody(ss, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
     expect(avatarCropDialog).toContain('className="v2-root v2-modal__overlay v2-settings__avatar-overlay"');
     expect(avatarCropDialog).toContain('className="v2-modal v2-settings__avatar-dialog"');
-    expect(ruleBody(v2, '.v2-settings__avatar-crop-stage')).toContain('aspect-ratio: 392 / 260');
-    expect(ruleBody(v2, '.v2-settings__avatar-crop-frame')).toContain('border: 1px solid var(--v2-surface)');
-    expect(ruleBody(v2, '.v2-settings__avatar-crop-dim span')).toContain('background: rgba(16, 24, 40, 0.55)');
-    expect(ruleBody(v2, '.v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-thumb')).toContain('width: 16px');
-    expect(ruleBody(v2, '.v2-root .v2-settings__avatar-dialog-actions button')).toContain('min-width: 112px');
-    const ariaDisabledStyle = selectorRuleBody(
-      v2,
-      '.v2-root button.v2-settings__primary[aria-disabled="true"]',
-    );
-    expect(ariaDisabledStyle).toContain('cursor: default');
-    expect(ariaDisabledStyle).toContain('opacity: 0.55');
-    expect(v2).toContain('.v2-root button.v2-settings__primary:hover:not(:disabled):not([aria-disabled="true"])');
-    expect(v2).toContain('.v2-root button.v2-settings__secondary:hover:not(:disabled):not([aria-disabled="true"])');
-
-    const phone = blockContaining(v2, '@media (max-width: 680px)', '.v2-settings__avatar-actions');
+    expect(ruleBody(ss, '.v2-settings__avatar-crop-stage')).toContain('aspect-ratio: 392 / 260');
+    expect(ruleBody(ss, '.v2-settings__avatar-crop-frame')).toContain('border: 1px solid var(--v2-surface)');
+    expect(ruleBody(ss, '.v2-settings__avatar-crop-dim span')).toContain('background: rgba(16, 24, 40, 0.55)');
+    expect(ruleBody(ss, '.v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-thumb')).toContain('width: 16px');
+    expect(ruleBody(ss, '.v2-root .v2-settings__avatar-dialog-actions button')).toContain('min-width: 112px');
+    const phone = blockContaining(ss, '@media (max-width: 680px)', '.v2-settings__avatar-actions');
     expect(ruleBody(phone, '.v2-settings__avatar-actions', { within: phone })).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-    expect(ruleBody(phone, '.v2-root .v2-settings__avatar-actions button.v2-settings__secondary', { within: phone })).toContain('min-height: 44px');
+    expect(ruleBody(phone, '.v2-settings__avatar-actions .v2p-b', { within: phone })).toContain('min-height: 44px');
     expect(ruleBody(phone, '.v2-settings__avatar-footer', { within: phone })).toContain('flex-direction: column');
     expect(ruleBody(phone, '.v2-root .v2-settings__avatar-dialog-actions button', { within: phone })).toContain('min-height: 44px');
 
@@ -1337,13 +1339,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(billingPanel).toContain("t(isPro ? 'billing.manage' : 'billing.upgrade')");
     expect(billingPanel).not.toContain('free in beta');
     expect(billingPanel).not.toContain('included during beta');
-    const badge = ruleBody(v2, '.v2-settings__section .v2-billing__badge');
-    expect(badge).toContain('background: transparent');
-    expect(badge).toContain('border: 0');
-    expect(badge).toContain('padding: 0');
-    const proBadge = ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro');
-    expect(proBadge).toContain('background: transparent');
-    expect(proBadge).toContain('color: var(--v2-text-primary)');
+    // The frame reads the plan as plain text in the row value, not a chip.
+    expect(billingPanel).toContain('<span className="v2-settings__plan">');
+    expect(billingPanel).not.toContain('v2-billing__badge');
   });
 
   test('Settings flattens connected apps and folds Developer Tips under the form', () => {
@@ -1353,8 +1351,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(appsManagement).toContain('className="apps-management__developer-tips"');
     expect(appsManagement).toContain('{!isSettingsVariant && (');
     expect(appsManagement).toContain('? <Box className={className}>{children}</Box>');
-    expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__section + .apps-management__section')).toContain('border-top: 1px solid var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__section + .apps-management__section')).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
   });
 
   test('mention treatment is a tight chip on the handle, never a row wash or rail', () => {
@@ -2658,18 +2656,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       }
     });
 
-    test('Needs-you rows: every open ask wears the 2px cobalt ring, no shadow, no dividers (66390)', () => {
+    test('Needs-you rows: open asks sit on a 1px neutral border, no shadow, no dividers (66390; ring moved to focus, TASK-748)', () => {
       const row = ruleBody(v2, '.v2-activity__queue-row');
-      expect(row).toContain('border: 2px solid var(--v2-accent)');
+      expect(row).toContain('border: 1px solid var(--v2-border)');
       expect(row).toContain('border-radius: var(--v2-radius)');
       expect(v2).not.toContain('.v2-activity__queue-row + .v2-activity__queue-row');
       const hover = ruleBody(v2, '.v2-activity__queue-row:hover');
       const declarations = hover.slice(hover.indexOf('{') + 1).split(';').map((d) => d.trim()).filter(Boolean);
       expect(declarations.length).toBeGreaterThan(0);
       for (const declaration of declarations) expect(declaration).toMatch(/^background/);
-      // A pending decision or approval is a ring like every other ask — never a lift.
+      // A pending decision or approval wears the same neutral border as every other ask — never a lift.
       const pending = ruleBody(v2, '.v2-activity__queue-row--decision,\n.v2-activity__queue-row--approval');
-      expect(pending).toContain('border-color: var(--v2-accent)');
+      expect(pending).toContain('border-color: var(--v2-border)');
       expect(pending).toContain('box-shadow: none');
       expect(cssVariable(v2Root, '--v2-shadow-pending')).toBe(cssVariable(tokens, '--c-shadow-pending'));
       // A ruled decision settles to a flat bordered row.
@@ -2705,8 +2703,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain('shortPodName(item.podName)');
       expect(lastRuleBody(v2, '.v2-activity__queue-kind')).toContain('500 11px/16px var(--v2-font-mono)');
       expect(lastRuleBody(v2, '.v2-activity__queue-kind')).toContain('text-transform: lowercase');
-      // Every open ask rings 2px cobalt in the LAST rule too (66400 fix 1); settled and day-zero rows are flat.
-      expect(lastRuleBody(v2, '.v2-activity__queue-row')).toContain('border: 2px solid var(--v2-accent)');
+      // Open asks sit on a 1px neutral border (slop tell 2); the cobalt ring belongs to the focused row only.
+      expect(lastRuleBody(v2, '.v2-activity__queue-row')).toContain('border: 1px solid var(--v2-border)');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row')).not.toContain('var(--v2-accent)');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row--approval')).toContain('border-color: var(--v2-border)');
+      expect(v2).toContain('.v2-activity__queue-row--approval:focus-within { border-color: var(--v2-accent); box-shadow: 0 0 0 1px var(--v2-accent); }');
       expect(lastRuleBody(v2, '.v2-activity__queue-row--decision')).toContain('box-shadow: none');
       expect(v2).toContain('.v2-activity__queue-row--settled,\n.v2-activity__queue-row--onboarding { padding: 12px; border: 1px solid var(--v2-border); }');
       // Day zero (66658/66666): Get started is its own card above Needs you; a step is not an ask.
@@ -5087,28 +5088,35 @@ describe('agent Identity editor', () => {
   });
 });
 
-describe('agent Memory tab (TASK-690 slice 1 and 2)', () => {
-  const css = read('../agents/v2-agent-settings.css');
-  const desktop = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory');
-  const phone = blockContaining(css, '@media (max-width: 767px)', '.v2-agent-memory__nav ul');
+describe('agent Memory tab (TASK-732 lift of d215 #s-memory)', () => {
+  const css = read('../agents/V2AgentMemory.css');
+  const desktop = blockContaining(css, '@media (min-width: 768px)', '.v2m-grp > summary');
+  const phone = blockContaining(css, '@media (max-width: 767px)', '.v2m-mnav ul');
   test('desktop keeps the group nav beside the notes at 200px', () => {
-    expect(ruleBody(css, '.v2-agent-memory')).toContain('display: grid');
-    expect(ruleBody(css, '.v2-agent-memory', { within: desktop })).toContain('grid-template-columns: 200px minmax(0, 1fr)');
+    expect(ruleBody(css, '.v2m-mem')).toContain('grid-template-columns: 200px minmax(0, 1fr)');
   });
   test('the page spans the pane instead of a centred column', () => {
-    const page = ruleBody(css, '.v2-agent-memory-page');
+    const page = ruleBody(css, '.v2m-page');
     expect(page).toContain('width: 100%');
-    expect(page).toContain('max-width: none');
     expect(page).toContain('align-self: stretch');
+    expect(page).not.toContain('max-width');
   });
-  test('phone hides the group nav and makes the groups collapsible', () => {
-    expect(ruleBody(css, '.v2-agent-memory__nav ul', { within: phone })).toContain('display: none');
-    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: phone })).toContain('cursor: pointer');
+  test('the header is the frame agent bar: 76px tall, 28px left padding', () => {
+    const ph = ruleBody(css, '.v2m-page .v2p-ph');
+    expect(ph).toContain('height: 76px');
+    expect(ph).toContain('padding-left: 28px');
+  });
+  test('phone hides the group nav and makes the groups collapsible rows', () => {
+    expect(ruleBody(css, '.v2m-mnav ul', { within: phone })).toContain('display: none');
+    expect(ruleBody(css, '.v2m-grp > summary', { within: phone })).toContain('cursor: pointer');
+    expect(ruleBody(css, '.v2m-gtitle', { within: phone })).toContain('height: 44px');
   });
   test('desktop group titles do not take pointer input, and the chevron is phone-only', () => {
-    const titles = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory__gtitle');
-    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: titles })).toContain('pointer-events: none');
-    expect(ruleBody(css, '.v2-agent-memory__chev')).toContain('display: none');
+    expect(ruleBody(css, '.v2m-grp > summary', { within: desktop })).toContain('pointer-events: none');
+    expect(ruleBody(css, '.v2m-gtitle .v2m-chev')).toContain('display: none');
+  });
+  test('the old memory rules are gone from the agent settings sheet', () => {
+    expect(read('../agents/v2-agent-settings.css')).not.toContain('v2-agent-memory');
   });
 });
 

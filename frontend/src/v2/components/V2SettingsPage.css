@@ -1,0 +1,626 @@
+/* Settings (/v2/settings), lifted from the d215 artboard (TASK-688): the frame's grouped
+   rows (v2p-gtitle, v2p-list, v2p-lrow), disclosure rows and 760px column. The editors,
+   the avatar crop and the device list below are controls the frame does not draw. */
+.v2-settings { width: 100%; color: var(--v2-text-primary); }
+.v2-settings__layout { min-width: 0; }
+.v2-settings__content { width: min(100%, 760px); min-width: 0; margin: 0 auto; display: grid; gap: 0; }
+.v2-settings__section { min-width: 0; }
+.v2-settings__section + .v2-settings__section > .v2p-gtitle { margin-top: 18px; }
+.v2-settings__icon { flex: 0 0 auto; color: var(--v2-text-tertiary); }
+.v2-settings .v2p-lrow .mu { color: var(--v2-text-muted); }
+.v2-settings__mail { font: 500 12.5px/1 var(--v2-font-mono); color: var(--v2-text-secondary); overflow-wrap: anywhere; }
+.v2-settings__photo-btn { padding: 0; height: auto; }
+.v2-settings__account-copy { display: grid; gap: 2px; min-width: 0; }
+.v2-settings__account-name { font-size: 14px; }
+.v2-settings__meta { font: 500 11.5px/1.3 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-settings__link { color: inherit; text-decoration: none; }
+.v2-settings__link:hover { background: var(--v2-surface-hover); }
+.v2-settings__link:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: -2px; }
+.v2-settings__edit { padding: 12px 16px 14px; border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__edit--closed { display: none; }
+.v2-settings__token-detail { padding: 0 16px 12px; }
+.v2-settings__actions-list { margin-top: 14px; }
+.v2-settings__developer-disclosure { margin: 0; padding: 12px 16px; border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__developer-disclosure > summary { color: var(--v2-text-primary); cursor: pointer; font: 600 13px/18px var(--v2-font); }
+.v2-settings__developer-disclosure[open] > summary { margin-bottom: 16px; }
+
+/* disclosure rows: the frame's details.disc */
+.v2p-disc { border-top: 1px solid var(--v2-border-soft); }
+.v2p-disc:first-child, .v2-settings__actions-list > .v2p-disc { border-top: 0; }
+.v2p-disc > summary {
+  list-style: none; cursor: pointer; display: grid; grid-template-columns: 180px minmax(0, 1fr) auto;
+  align-items: center; gap: 14px; min-height: 52px; padding: 8px 14px 8px 16px;
+}
+.v2p-disc > summary::-webkit-details-marker { display: none; }
+.v2p-disc > summary .lb { font-size: 13px; font-weight: 600; color: var(--v2-text-primary); display: flex; align-items: center; gap: 8px; }
+.v2p-disc > summary .vl { font-size: 13.5px; color: var(--v2-ink-2); min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.v2p-disc > summary > svg:last-child { color: var(--v2-text-placeholder); transition: transform 160ms; }
+.v2p-disc[open] > summary > svg:last-child { transform: rotate(180deg); }
+.v2p-disc:focus-within > summary:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: -2px; }
+.v2-settings__fold-body { padding: 12px 16px 14px; border-top: 1px solid var(--v2-border-soft); display: flex; flex-direction: column; gap: 12px; }
+
+/* the frame's 390 rows: one label column, the action at the end, values dropped */
+@media (max-width: 480px) {
+  .v2-settings .v2p-lrow { grid-template-columns: minmax(0, 1fr) auto; min-height: 48px; padding: 8px 12px; }
+  .v2-settings .v2p-lrow .lb, .v2-settings .v2p-disc > summary .lb { font-weight: 500; }
+  .v2-settings .v2p-lrow .vl { display: none; }
+  .v2-settings .v2p-disc > summary { grid-template-columns: minmax(0, 1fr) auto auto; min-height: 48px; padding: 8px 12px; }
+  .v2-settings .v2p-disc > summary .vl { display: none; }
+  .v2-settings .v2p-disc > summary .v2-settings__vl--error { display: flex; grid-column: 1 / -1; order: 3; }
+  .v2-settings__edit, .v2-settings__token-detail, .v2-settings__fold-body { padding-left: 12px; padding-right: 12px; }
+}
+
+.v2-settings__account-row { min-height: 64px; }
+
+.v2-settings__avatar {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border: 0;
+  border-radius: var(--v2-radius-sm);
+  font-size: 12px;
+}
+
+.v2-settings__avatar img {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--v2-radius-sm);
+}
+
+.v2-settings__account-copy {
+  min-width: 0;
+}
+
+.v2-settings__account {
+  min-width: 0;
+}
+
+.v2-settings__avatar-file-input {
+  display: none;
+}
+
+.v2-settings__avatar-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.v2-settings__avatar-description {
+  margin: 12px 0 0;
+  color: var(--v2-text-secondary);
+  font-size: var(--v2-fs-body);
+  line-height: var(--v2-lh-body);
+}
+
+.v2-settings__avatar-overlay {
+  z-index: 1000;
+  background: rgba(16, 24, 40, 0.55);
+}
+
+.v2-settings__avatar-dialog {
+  width: min(560px, 100%);
+}
+
+.v2-settings__avatar-crop-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 392 / 260;
+  overflow: hidden;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface-tint);
+}
+
+.v2-settings__avatar-crop {
+  display: block;
+  position: relative;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.v2-settings__avatar-crop:active {
+  cursor: grabbing;
+}
+
+.v2-settings__avatar-crop-dim {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+}
+
+.v2-settings__avatar-crop-dim span {
+  position: absolute;
+  display: block;
+  background: rgba(16, 24, 40, 0.55);
+}
+
+.v2-settings__avatar-crop-dim-top {
+  inset: 0 0 auto;
+  height: 21%;
+}
+
+.v2-settings__avatar-crop-dim-right {
+  inset: 21% 0 21% auto;
+  width: 30.765%;
+}
+
+.v2-settings__avatar-crop-dim-bottom {
+  inset: auto 0 0;
+  height: 21%;
+}
+
+.v2-settings__avatar-crop-dim-left {
+  inset: 21% auto 21% 0;
+  width: 30.765%;
+}
+
+.v2-settings__avatar-crop-frame {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  width: 38.47%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--v2-surface);
+  pointer-events: none;
+}
+
+.v2-settings__avatar-crop-loading {
+  margin: -8px 0 0;
+  color: var(--v2-text-tertiary);
+  font-size: var(--v2-fs-meta);
+}
+
+.v2-settings__avatar-zoom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  color: var(--v2-text-secondary);
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-label);
+  line-height: var(--v2-lh-label);
+  text-transform: uppercase;
+}
+
+.v2-root .v2-settings__avatar-zoom input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--v2-ink) 0 var(--avatar-zoom-progress),
+    var(--v2-border-soft) var(--avatar-zoom-progress) 100%
+  );
+}
+
+.v2-root .v2-settings__avatar-zoom input[type="range"]::-moz-range-track {
+  height: 2px;
+  border: 0;
+  background: var(--v2-border-soft);
+}
+
+.v2-root .v2-settings__avatar-zoom input[type="range"]::-moz-range-progress {
+  height: 2px;
+  background: var(--v2-ink);
+}
+
+.v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -7px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-ink);
+}
+
+.v2-root .v2-settings__avatar-zoom input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-ink);
+}
+
+.v2-root .v2-settings__avatar-zoom input[type="range"]:focus-visible {
+  outline: 2px solid var(--v2-accent);
+  outline-offset: 4px;
+}
+
+.v2-settings__avatar-footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.v2-settings__avatar-previews {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.v2-settings__avatar-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--v2-text-tertiary);
+  font-size: 12px;
+  line-height: var(--v2-lh-label);
+}
+
+.v2-settings__avatar-preview-image {
+  display: block;
+  max-width: 64px;
+  max-height: 64px;
+  object-fit: cover;
+  border-radius: var(--v2-radius-sm);
+}
+
+.v2-settings__avatar-preview-image--64 { width: 64px; height: 64px; }
+.v2-settings__avatar-preview-image--32 { width: 32px; height: 32px; }
+.v2-settings__avatar-preview-image--22 { width: 22px; height: 22px; }
+
+.v2-settings__avatar-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.v2-root .v2-settings__avatar-dialog-actions button {
+  min-width: 112px;
+}
+
+/* Neutralize App.css's bare auth-form shell: Settings owns this form's
+ * surface and spacing, so it must stay flat inside its section. */
+.v2-settings form.v2-settings__account {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.v2-settings__account-name {
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-settings__account-type,
+.v2-settings__meta {
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
+}
+
+/* Administration (admin-only): two bordered link rows, ink label + muted detail. */
+.v2-settings__admin-links { display: flex; flex-direction: column; gap: 8px; }
+.v2-settings__admin-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  color: var(--v2-text-primary);
+  text-decoration: none;
+}
+.v2-settings__admin-link:hover { background: var(--v2-surface-hover); }
+.v2-settings__admin-link-label { font: 600 13px/18px var(--v2-font); }
+.v2-settings__admin-link-detail { font-size: 12px; color: var(--v2-text-muted); text-align: right; }
+
+.v2-settings__account-type {
+  margin-left: auto;
+  text-transform: lowercase;
+}
+
+.v2-settings__account-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.v2-settings__account-fields label,
+.v2-settings__account-email {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
+}
+
+.v2-settings__account-fields > label {
+  align-content: start;
+}
+
+.v2-settings__account-fields > .v2-settings__account-email {
+  grid-column: 1 / -1;
+}
+
+.v2-settings__account-fields input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-settings__account-fields input:focus {
+  outline: none;
+  border-color: var(--v2-accent);
+  box-shadow: var(--v2-focus-ring);
+}
+
+.v2-settings__account-fields input[readonly] {
+  color: var(--v2-text-secondary);
+  cursor: default;
+}
+
+.v2-settings__email-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v2-settings__email-control input {
+  min-width: 0;
+}
+
+.v2-settings__email-control .v2p-b {
+  align-self: stretch;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.v2-settings__username-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v2-settings__username-control input {
+  min-width: 0;
+}
+
+.v2-settings__username-control .v2p-b {
+  align-self: stretch;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.v2-settings__field-help {
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-settings__section .v2-devices {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* The frame reads the plan as plain text in the row's value. */
+.v2-settings__plan { font-weight: 600; color: var(--v2-text-primary); }
+.v2-settings__error { color: var(--v2-text-primary); font-size: 12.5px; }
+/* errors are a state the frame doesn't draw: they sit on their own line and stay visible at 390 */
+.v2-settings__error--row { grid-column: 1 / -1; }
+
+.v2-settings__section .v2-devices__item {
+  border-radius: var(--v2-radius-sm);
+}
+
+.v2-settings__section .v2-devices__empty {
+  padding: 0;
+  background: transparent;
+}
+
+.v2-settings__token-value {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.v2-settings__token-value code {
+  overflow: hidden;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius-sm);
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-settings__token-meta {
+  margin: 8px 0 0;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font);
+  font-size: var(--v2-fs-body);
+  line-height: var(--v2-lh-body);
+}
+
+.v2-settings__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.v2-settings__message {
+  margin: 0 0 12px;
+  color: var(--v2-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.v2-settings__message--error {
+  color: var(--v2-text-primary);
+}
+
+/* Settings owns the connected-apps controls without inheriting the legacy
+ * page chrome: its section label is the only page-level heading. */
+.v2-settings .apps-management--settings {
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font);
+}
+
+.v2-settings .apps-management--settings .MuiCardContent-root {
+  padding: 0;
+}
+
+.v2-settings .apps-management--settings .MuiCardActions-root {
+  padding: 8px 0 0;
+}
+
+.v2-settings .apps-management--settings .apps-management__section + .apps-management__section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--v2-border-soft);
+}
+
+.v2-settings .apps-management--settings .apps-management__integration {
+  height: 100%;
+  padding: 12px;
+  border: 1px solid var(--v2-border);
+}
+
+.v2-settings .apps-management--settings .apps-management__developer-tips {
+  margin: 14px 0 0;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  font-size: var(--v2-fs-meta);
+  line-height: var(--v2-lh-meta);
+}
+
+.v2-settings .apps-management--settings .MuiTypography-root,
+.v2-settings .apps-management--settings .MuiInputBase-input,
+.v2-settings .apps-management--settings .MuiInputLabel-root,
+.v2-settings .apps-management--settings .MuiButton-root {
+  font-family: inherit;
+}
+
+.v2-settings .apps-management--settings .MuiSvgIcon-colorPrimary,
+.v2-settings .apps-management--settings .MuiButton-textPrimary {
+  color: var(--v2-ink);
+}
+
+/* Cobalt remains a mark; buttons that commit a change are ink. */
+.v2-settings .apps-management--settings .MuiButton-containedPrimary {
+  border: 1px solid var(--v2-ink);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-ink);
+  color: var(--v2-on-ink);
+}
+
+.v2-settings .apps-management--settings .MuiButton-containedPrimary:hover {
+  border-color: var(--v2-ink-hover);
+  background: var(--v2-ink-hover);
+}
+
+@media (max-width: 560px) {
+  .v2-settings .v2-devices__heading {
+    display: flex;
+    align-items: flex-start;
+  }
+
+  .v2-settings .v2-devices__heading > button {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .v2-settings__layout {
+    display: block;
+    padding-top: 24px;
+  }
+
+  .v2-settings__token-value {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .v2-settings__account-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .v2-settings__avatar-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .v2-settings__avatar-actions .v2p-b {
+    min-height: 44px;
+  }
+
+  .v2-settings__avatar-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .v2-settings__avatar-dialog-actions {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .v2-root .v2-settings__avatar-dialog-actions button {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .v2-settings__token-value code {
+    grid-column: 1 / -1;
+  }
+}
+
+
+/* D223 (TASK-688): the artboard's 64px head spans the pane edge to edge and only the
+   body below it scrolls, so the settings route drops the feature body padding and the
+   legacy wrapper's max-width, the same way connectors does. */
+.v2-feature--settings > .v2-feature__body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.v2-feature--settings .v2-feature__legacy { flex: 1 1 auto; width: 100%; max-width: none; min-height: 0; margin: 0; display: flex; flex-direction: column; }
+.v2-feature--settings .v2-settings { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; width: 100%; }
+.v2-feature--settings .v2-settings__layout { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-top: 24px; }
