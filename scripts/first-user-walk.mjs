@@ -59,6 +59,12 @@ const NOT_COVERED = 'Bring your own connect step is not implemented yet';
 
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
+// A step can decline to run rather than fail. runStep records a SkipStep as
+// result 'skipped' and does not rethrow, so the run continues and stays
+// incomplete rather than going red. Used when the hosted runtime worker is not
+// configured on this instance (staging before its worker is deployed).
+class SkipStep extends Error { constructor(message) { super(message); this.skip = true; } }
+
 /**
  * One walk run. Every dependency is injectable so the production path can be
  * exercised under test without the network or the clock.
@@ -143,11 +149,25 @@ export const runWalk = async ({
       log(`PASS ${name} (${now() - started} ms)`);
       return value;
     } catch (caught) {
+      if (caught instanceof SkipStep) {
+        const reason = redact(caught.message);
+        results.push({ name, result: 'skipped', ms: now() - started, reason });
+        log(`SKIP ${name} (${now() - started} ms): ${reason}`);
+        return undefined;
+      }
       const reason = redact(caught.message);
       results.push({ name, result: 'fail', ms: now() - started, reason });
       error(`FAIL ${name} (${now() - started} ms): ${reason}`);
       throw caught;
     }
+  };
+
+  // Record a downstream step as skipped without running it — used when an
+  // earlier skipped step means this one cannot run (hosted-reply needs the
+  // provision that hosted-install skipped).
+  const skipStep = (name, reason) => {
+    results.push({ name, result: 'skipped', ms: 0, reason });
+    log(`SKIP ${name}: ${reason}`);
   };
 
   // Per-run manifest: ids only, outside the repo, for SRE's admin purge of what
@@ -324,6 +344,7 @@ export const runWalk = async ({
         return created;
       });
 
+      let hostedSkipped = false;
       await runStep('hosted-install', async () => {
         manifest.agentName = agentName;
         writeManifest();
@@ -333,10 +354,17 @@ export const runWalk = async ({
         });
         expect(r.status < 400, `install ${r.status}: ${JSON.stringify(r.data)}`);
         const p = await api('POST', '/api/hosted/provision', { token, body: { agentName } });
+        // No hosted worker on this instance (staging before its worker is deployed):
+        // the backend returns 503 hosted_runtime_unconfigured. That is a missing
+        // worker, not a product defect, so the hosted steps are SKIPPED rather
+        // than failed — once the staging worker is live the 503 becomes a 200 and
+        // they run for real.
+        if (p.status === 503) { hostedSkipped = true; throw new SkipStep('no staging worker (hosted_runtime_unconfigured)'); }
         expect(p.status === 200 && p.data?.provisioned, `provision ${p.status}: ${JSON.stringify(p.data)}`);
       });
 
-      await runStep('hosted-reply', async () => {
+      if (hostedSkipped) skipStep('hosted-reply', 'no staging worker (hosted_runtime_unconfigured)');
+      else await runStep('hosted-reply', async () => {
         const m = await api('POST', `/api/messages/${pod._id}`, {
           token,
           body: { content: `@${agentName} walk check: reply with one short sentence containing KINGFISHER.` },

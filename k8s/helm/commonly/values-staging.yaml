@@ -204,6 +204,13 @@ backend:
     # and accepting a staging consent would have sent a staging authorization code to prod.
     # Caught on the staging Atlassian walk 2026-10-23.
     backendUrl: "https://api-staging.commonly.me"
+    # ADR-023 W2 hosted runtime, staging worker (added 2026-11-01). Setting this
+    # renders the hosted-runtime ExternalSecret (templates/secrets/hosted-runtime.yaml),
+    # which pulls commonly-staging-hosted-runtime-admin-token from staging SM, so the
+    # backend stops returning 503 hosted_runtime_unconfigured on provision. The worker
+    # is the separate `commonly-agent-runtime-staging` Cloudflare env (wrangler.toml);
+    # until it is deployed the first-user-walk skips the hosted steps rather than failing.
+    hostedRuntimeUrl: "https://commonly-agent-runtime-staging.commonlyai.workers.dev"
   # Staging backend runs on the SPOT pool at a fraction of prod's requests, so it fits
   # the nodes we already have (spot-pool sits at single-digit % CPU) without growing a
   # pool. Prod backend stays on dev-pool because it holds session state a spot
