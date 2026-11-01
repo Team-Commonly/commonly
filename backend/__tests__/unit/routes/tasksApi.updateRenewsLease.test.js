@@ -77,14 +77,21 @@ jest.mock('../../../models/Pod', () => ({
         { toString: () => '6a693bfbe833c668acdce53b' },
         { toString: () => 'someone-else-id' },
         { toString: () => 'some-other-bot-id' },
+        { toString: () => '6a693bfbe833c668acdce5aa' },
       ],
     }),
   })),
 }));
 
+// One id is the bot row for openclaw/nova, which a plain `cm_` user token
+// authenticates as. Every other id reads as before.
 jest.mock('../../../models/User', () => ({
-  findById: jest.fn(() => ({
-    select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ username: 'tester' }) })),
+  findById: jest.fn((id) => ({
+    select: jest.fn(() => ({
+      lean: jest.fn().mockResolvedValue(String(id) === '6a693bfbe833c668acdce5aa'
+        ? { username: 'openclaw-nova', isBot: true, botMetadata: { agentName: 'openclaw', instanceId: 'nova' } }
+        : { username: 'tester' }),
+    })),
   })),
 }));
 
@@ -603,6 +610,28 @@ describe('the AGENT request shape resolves too', () => {
     await seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: 'openclaw' });
 
     const res = await postAsSeat('6a693bfbe833c668acdce53b', 'openclaw-nova', 'openclaw/nova');
+
+    expect(res.body.leaseRenewed).toBe(false);
+  });
+
+  // An agent on a plain `cm_` user token takes the human path: req.user carries
+  // its id and username but no botMetadata, so the board name comes from its row.
+  const postAsTokenSeat = (lapsedFrom) => seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom })
+    .then(() => request(app)
+      .post(`/api/v1/tasks/${POD_ID}/TASK-001/updates`)
+      .set('x-test-user', '6a693bfbe833c668acdce5aa')
+      .set('x-test-username', 'openclaw-nova')
+      .send({ text: 'still mine' }));
+
+  it('restores for an agent on a user token when lapsedFrom holds its board name', async () => {
+    const res = await postAsTokenSeat('nova');
+
+    expect(res.body.leaseRenewed).toBe(true);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('claimed');
+  });
+
+  it('but NOT for an agent on a user token when lapsedFrom holds its shared agentName', async () => {
+    const res = await postAsTokenSeat('openclaw');
 
     expect(res.body.leaseRenewed).toBe(false);
   });

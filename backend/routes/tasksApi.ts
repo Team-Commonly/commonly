@@ -200,6 +200,19 @@ async function resolveAuthor(req: AuthReq): Promise<string> {
   return 'unknown';
 }
 
+// The caller's board name, or undefined for a person (F45). A `cm_agent_`
+// token arrives with req.agentUser.botMetadata. An agent on a plain `cm_` user
+// token takes the human path, whose req.user carries neither isBot nor
+// botMetadata, so its own row is read.
+async function callerBoardName(req: AuthReq, userId: unknown): Promise<string | undefined> {
+  const meta = req.agentUser?.botMetadata;
+  if (meta?.agentName) return boardNameOf(meta);
+  if (!userId || !mongoose.isValidObjectId(String(userId))) return undefined;
+  const row = await User.findById(userId).select('isBot botMetadata').lean() as
+    { isBot?: boolean; botMetadata?: { agentName?: string; instanceId?: string } } | null;
+  return row?.isBot && row.botMetadata?.agentName ? boardNameOf(row.botMetadata) : undefined;
+}
+
 function resolveAgentInstanceId(req: AuthReq): string | null {
   if (!req.user?.isBot) return null;
   return req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName || null;
@@ -1070,7 +1083,8 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
       userId?.toString(),
       req.user?.username,
       req.agentUser?.username,
-      req.agentUser?.botMetadata?.agentName ? boardNameOf(req.agentUser.botMetadata) : undefined,
+      // Read only when a restore is possible: it can cost a lookup.
+      task ? undefined : await callerBoardName(req, userId),
     ].filter((v): v is string => typeof v === 'string' && v.length > 0);
 
     if (!task && identities.length) {
