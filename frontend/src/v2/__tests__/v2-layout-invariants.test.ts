@@ -729,6 +729,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The read-only note replaces the composer, so on a phone it clears the
     // fixed 54px tab bar as the composer does.
     expect(mediaBlockContaining(v2, '.v2-chat__readonly { margin')).toContain('.v2-chat__readonly { margin: 4px 12px 66px; }');
+    // A 1:1 room's empty state draws the agent at the frame's 32px (two
+    // agents at 36px), out-ranking the 28px base avatar inside the thread.
+    const face = ruleBody(v2, '.v2-thread .v2-empty--room .v2-avatar');
+    expect(face).toContain('width: 32px');
+    expect(face).toContain('height: 32px');
+    expect(ruleBody(v2, '.v2-thread .v2-empty__stack .v2-avatar')).toContain('width: 36px');
   });
 
   test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {

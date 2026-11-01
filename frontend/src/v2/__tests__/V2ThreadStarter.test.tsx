@@ -148,6 +148,33 @@ describe('V2Thread teaching empty states', () => {
     expect(screen.queryByText('read only')).not.toBeInTheDocument();
   });
 
+  test("a 1:1 room names its agent's runtime before DM at full width; the phone head keeps DM alone", () => {
+    renderChat(makeAgentRoom({
+      agents: [{ agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', runtime: { adapter: 'claude' } }],
+    }));
+
+    const meta = document.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
+    expect([...meta.querySelectorAll('.v2-pod-header__chip')].map((chip) => chip.textContent)).toEqual(['claude', 'DM']);
+    const compact = document.querySelector('.v2-pod-header__meta--compact');
+    expect([...compact.querySelectorAll('.v2-pod-header__chip')].map((chip) => chip.textContent)).toEqual(['DM']);
+  });
+
+  test('a 1:1 room whose runtime is unknown shows DM alone', () => {
+    renderChat(makeAgentRoom());
+    const meta = document.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
+    expect([...meta.querySelectorAll('.v2-pod-header__chip')].map((chip) => chip.textContent)).toEqual(['DM']);
+  });
+
+  test("an empty 1:1 room shows the agent's face above the greeting", () => {
+    renderChat(makeAgentRoom());
+    const empty = document.querySelector('.v2-empty.v2-empty--room');
+    expect(empty).not.toBeNull();
+    const face = empty.firstElementChild;
+    expect(face).toHaveAttribute('aria-hidden', 'true');
+    expect(face.firstElementChild).toHaveClass('v2-avatar', 'v2-empty__avatar');
+    expect(face.nextElementSibling).toHaveTextContent('Say hi to Aria');
+  });
+
   test('an observer of an agent DM sees a read-only chip and note, and no composer', () => {
     renderChat(makeDetail({
       pod: { _id: 'agent-dm-1', name: 'Aria and Pixel', type: 'agent-dm' },
@@ -181,6 +208,8 @@ describe('V2Thread teaching empty states', () => {
 
     expect(screen.getByText("Aria and Pixel haven't talked yet")).toBeInTheDocument();
     expect(screen.getByText("They'll DM each other when one of them needs the other's help.")).toBeInTheDocument();
+    // Both faces sit above the line (d215 .rempty .stack).
+    expect(document.querySelectorAll('.v2-empty--room .v2-empty__stack .v2-avatar')).toHaveLength(2);
   });
 });
 

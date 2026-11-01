@@ -4039,7 +4039,8 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
 .v2-root:lang(zh) .v2-activity__title,
-.v2-root:lang(zh) .v2-activity__section h2 {
+.v2-root:lang(zh) .v2-activity__section h2,
+.v2-root:lang(zh) .v2-empty--room .v2-empty__title {
   letter-spacing: 0;
 }
 
