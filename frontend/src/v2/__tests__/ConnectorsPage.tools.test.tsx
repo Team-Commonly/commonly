@@ -679,7 +679,7 @@ describe('Connectors page: tools', () => {
       expect(within(aside).queryByText(/Revoked by/)).not.toBeInTheDocument();
     });
 
-    it('two connections of one entry offer no Disconnect, since a grant does not name its connection', async () => {
+    it('two connections the server does not describe offer no Disconnect, since neither can be named', async () => {
       const two = { ...atlassian, connections: [...atlassian.connections, { connectionId: 'conn-atl-2', owner: 'me', repo: 'atlassian' }] };
       mockTools({ entries: [two], grants: [] });
       renderPage();
@@ -687,6 +687,56 @@ describe('Connectors page: tools', () => {
       const popover = await openToolPopover('Atlassian');
       expect(within(popover).getByRole('button', { name: 'Add' })).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Disconnect/ })).not.toBeInTheDocument();
+    });
+
+    // TASK-330: one sign-in row plus operator-key rows bound per agent. The
+    // server describes each row, so each gets its own named Disconnect.
+    const twoNamed = {
+      ...atlassian,
+      connections: [
+        { connectionId: 'conn-atl', owner: '', repo: '', connectedAt: '2026-10-30T12:00:00Z' },
+        { connectionId: 'conn-atl-key', owner: '', repo: '', agentId: scout.userId, connectedAt: '2026-10-31T12:00:00Z' },
+      ],
+    };
+
+    it('two described connections each offer a named Disconnect that drops only that connection', async () => {
+      mockTools({ entries: [twoNamed], grants: [] });
+      axios.delete.mockResolvedValue({ data: { message: 'ok' } });
+      renderPage();
+
+      const popover = await openToolPopover('Atlassian');
+      expect(within(popover).getByText('Signed in · Oct 30')).toBeInTheDocument();
+      expect(within(popover).getByText('Key · Scout · Oct 31')).toBeInTheDocument();
+      fireEvent.click(within(popover).getByRole('button', { name: 'Disconnect Atlassian: Key · Scout · Oct 31' }));
+      expect(within(popover).getAllByRole('button', { name: 'Yes, disconnect' })).toHaveLength(1);
+      expect(within(popover).getByRole('button', { name: 'Disconnect Atlassian: Signed in · Oct 30' })).toBeInTheDocument();
+      fireEvent.click(within(popover).getByRole('button', { name: 'Yes, disconnect' }));
+      await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-atl-key', expect.any(Object)));
+      expect(axios.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('dropping one of two connections leaves the grant to the re-read, not marked revoked in place', async () => {
+      mockTools({ entries: [twoNamed], grants: [grantAtl] });
+      axios.delete.mockResolvedValue({ data: { message: 'ok' } });
+      renderPage();
+
+      const { aside } = await openRow('Atlassian', 'View Atlassian in Launch pod');
+      fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian: Signed in · Oct 30' }));
+      fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
+      await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-atl', expect.any(Object)));
+      const card = await screen.findByRole('complementary', { name: 'Grant details' });
+      // A grant does not name its connection, so only the server can say it ended.
+      expect(within(card).queryByText(/Revoked by/)).not.toBeInTheDocument();
+      expect(within(card).getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+    });
+
+    it('a key connection whose agent is not on any roster is named by key and date', async () => {
+      const unknownAgent = { ...twoNamed, connections: [twoNamed.connections[0], { ...twoNamed.connections[1], agentId: 'someone-else' }] };
+      mockTools({ entries: [unknownAgent], grants: [] });
+      renderPage();
+
+      const popover = await openToolPopover('Atlassian');
+      expect(within(popover).getByText('Key · Oct 31')).toBeInTheDocument();
     });
 
     it('GitHub (the instance App connection) never offers Disconnect', async () => {

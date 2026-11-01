@@ -505,8 +505,9 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
       setConfirmDisconnect(null);
       setDisconnectedHere((current) => [...current, connectionId]);
       // The removal revokes every grant on the connection, so the page says so
-      // now rather than waiting on a re-read that may fail.
-      const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
+      // now rather than waiting on a re-read that may fail. A grant does not say
+      // which connection it was minted on, so with several only the re-read can.
+      const ended = entry.connections.length > 1 ? [] : (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
       setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
       setRemovedHiddenNotice({
         label: entry.label,
@@ -523,7 +524,7 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
       const partial = response?.status === 502
         && (response.data?.code === 'provider_revoke_failed' || response.data?.code === 'provider_revoked_removal_incomplete');
       if (partial) {
-        const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
+        const ended = entry.connections.length > 1 ? [] : (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
         setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
         setConfirmDisconnect(null);
         setDisconnectedHere((current) => [...current, connectionId]);

@@ -2728,7 +2728,11 @@
     "trailError": "Could not read the trail.",
     "viewGrant": "View {{tool}} in {{pod}}",
     "listSeparator": ", ",
-    "sentenceSeparator": " "
+    "sentenceSeparator": " ",
+    "connectionSeparator": " · ",
+    "connectionSignedIn": "Signed in",
+    "connectionKey": "Key",
+    "disconnectConnectionLabel": "Disconnect {{label}}: {{connection}}"
   },
   "agentManage": {
     "runtime": {

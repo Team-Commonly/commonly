@@ -76,7 +76,18 @@ export interface ToolCatalogEntry {
   unavailableReason?: string;
   broker?: { id: string };
   tools: Array<{ name: string; description?: string; requiredWriteMode: GrantWriteMode; irreversible: boolean }>;
-  connections: Array<{ connectionId: string; owner: string; repo: string }>;
+  connections: ToolConnection[];
+}
+
+/** A hosted row also says when it was made and, for an operator key, its agent,
+ *  so two of them can be told apart. */
+export interface ToolConnection {
+  connectionId: string;
+  owner: string;
+  repo: string;
+  connectedAt?: string;
+  /** The bot User a key row is bound to; absent on the OAuth sign-in. */
+  agentId?: string;
 }
 
 export interface HiddenToolConnection {
