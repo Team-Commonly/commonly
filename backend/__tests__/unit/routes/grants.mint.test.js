@@ -476,6 +476,12 @@ describe('task-bound mint', () => {
     expect(res.body.error).toBe('invalid_task_binding');
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
+  test('the route leaves a bound grant to mintGrant, so the record gets one line', async () => {
+    mockRecordGrantIssued.mockClear();
+    const res = await mint({ binding: { taskId: 'TASK-1', podId: POD } });
+    expect(res.status).toBe(201);
+    expect(mockRecordGrantIssued).not.toHaveBeenCalled();
+  });
   test('rejects a closed task', async () => {
     await Task.updateOne({ podId: POD, taskId: 'TASK-1' }, { $set: { status: 'done' } });
     const res = await mint({ binding: { taskId: 'TASK-1', podId: POD } });
