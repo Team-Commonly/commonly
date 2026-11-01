@@ -49,6 +49,37 @@ describe('v2 appearance preference (D216)', () => {
     expect(decls(explicit![1])).toContain('--v2-focus-ring: 0 0 0 2px var(--v2-bg), 0 0 0 4px #8aa2ff');
   });
 
+  test('setV2Theme crossfades inside a view transition when the browser has one', () => {
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+    const startViewTransition = jest.fn((cb: () => void) => cb());
+    doc.startViewTransition = startViewTransition as unknown as Document['startViewTransition'];
+    try {
+      setV2Theme('dark');
+      expect(startViewTransition).toHaveBeenCalledTimes(1);
+      expect(document.documentElement.getAttribute('data-v2-theme')).toBe('dark');
+    } finally {
+      delete doc.startViewTransition;
+    }
+  });
+
+  test('setV2Theme switches at once under reduced motion and without the API', () => {
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+    const startViewTransition = jest.fn((cb: () => void) => cb());
+    doc.startViewTransition = startViewTransition as unknown as Document['startViewTransition'];
+    const original = window.matchMedia;
+    window.matchMedia = jest.fn().mockImplementation((q: string) => ({ matches: q.includes('reduce'), media: q })) as unknown as typeof window.matchMedia;
+    try {
+      setV2Theme('light');
+      expect(startViewTransition).not.toHaveBeenCalled();
+      expect(document.documentElement.getAttribute('data-v2-theme')).toBe('light');
+    } finally {
+      window.matchMedia = original;
+      delete doc.startViewTransition;
+    }
+    setV2Theme('dark');
+    expect(document.documentElement.getAttribute('data-v2-theme')).toBe('dark');
+  });
+
   test('index.html applies a stored Light or Dark choice before first paint (code-gate HOLD, rhea)', () => {
     const html = fs.readFileSync(path.join(__dirname, '../../../../index.html'), 'utf8');
     const head = html.slice(0, html.indexOf('</head>'));

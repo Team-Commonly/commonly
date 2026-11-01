@@ -1,4 +1,17 @@
 /*
+ * Motion tokens (D220). One curve and three durations, on :root so portals and
+ * the view-transition pseudo-elements can read them. Enters take --v2-dur,
+ * exits and closing take --v2-dur-fast, anything that travels takes --v2-dur-slow.
+ * Animate transform and opacity only; folds are the one height exception.
+ */
+:root {
+  --v2-dur-fast: 120ms;
+  --v2-dur: 200ms;
+  --v2-dur-slow: 320ms;
+  --v2-ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/*
  * V2 design tokens + base styles. All v2 styles are scoped under .v2-root
  * so the existing app's global CSS does not bleed in (and vice versa).
  */
@@ -5516,4 +5529,53 @@ body.modern-ui.v2-canvas {
   }
   .v2-feature__header .v2-page-head__meta { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .v2-feature__body { padding: 12px 12px 16px; }
+}
+
+/* ---------- Motion (D220) ---------- */
+
+/* Theme switch: utils/theme.ts makes the change inside document.startViewTransition,
+   and the root snapshots crossfade once. No per-element colour transitions. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--v2-dur);
+  animation-timing-function: var(--v2-ease);
+}
+
+/* Folds: every <details> body opens over --v2-dur and closes over --v2-dur-fast, by
+   size, with no measured pixel height. Browsers without interpolate-size or
+   ::details-content open and close at once. The clip margin keeps focus rings. */
+.v2-root details {
+  interpolate-size: allow-keywords;
+}
+.v2-root details::details-content {
+  block-size: 0;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+  opacity: 0;
+  transition:
+    block-size var(--v2-dur-fast) var(--v2-ease),
+    opacity var(--v2-dur-fast) var(--v2-ease),
+    content-visibility var(--v2-dur-fast) var(--v2-ease) allow-discrete;
+}
+.v2-root details[open]::details-content {
+  block-size: auto;
+  opacity: 1;
+  transition-duration: var(--v2-dur);
+}
+
+/* One reduced-motion switch, global rather than scoped to .v2-root, so it reaches
+   portals too. Every moment lands in its end state at once. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation: none !important;
+  }
 }
