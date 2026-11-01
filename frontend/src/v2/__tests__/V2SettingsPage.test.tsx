@@ -221,6 +221,26 @@ describe('V2SettingsPage', () => {
     expect(document.getElementById('v2-settings-profile-edit')).toHaveClass('v2-settings__edit--closed');
   });
 
+  test('Change photo opens the profile editor', () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    const photo = screen.getByRole('button', { name: 'Change photo' });
+    expect(photo).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(photo);
+    expect(photo).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById('v2-settings-profile-edit')).not.toHaveClass('v2-settings__edit--closed');
+  });
+
+  test('the avatar and token actions render as the primitive keys the 44px phone rule sizes', () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    for (const name of ['Regenerate', 'Upload photo']) {
+      expect(screen.getByRole('button', { name })).toHaveClass('v2p-b');
+    }
+  });
+
   test('generates and reveals a new API token without leaving Settings', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_user_secret', createdAt: TOKEN_CREATED_AT } });
