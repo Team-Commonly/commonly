@@ -2348,6 +2348,31 @@ class AgentMessageService {
     Object.defineProperty(normalized, 'readSource', { value: 'mongo' });
     return normalized;
   }
+
+  /**
+   * Adds `mention` (the @handle mention routing resolves for the author) to
+   * each message. A message's `username` is the display label, and for bots
+   * `userId.username` is that label too, so the handle has to come from the
+   * author's User row. One query per page, not per message.
+   */
+  static async withMentionHandles<T extends { userId?: { _id?: unknown } | null }>(
+    messages: T[],
+  ): Promise<Array<T & { mention: string }>> {
+    const ids = Array.from(new Set(messages
+      .map((m) => String(m?.userId?._id ?? ''))
+      .filter((id) => /^[a-f0-9]{24}$/i.test(id))));
+    const handleById = new Map<string, string>();
+    if (ids.length) {
+      const users = await User.find({ _id: { $in: ids } }).select('_id username').lean();
+      (users as Array<{ _id: unknown; username?: string }>).forEach((user) => {
+        handleById.set(String(user._id), user.username || '');
+      });
+    }
+    return messages.map((m) => ({
+      ...m,
+      mention: handleById.get(String(m?.userId?._id ?? '')) || '',
+    }));
+  }
 }
 
 module.exports = AgentMessageService;

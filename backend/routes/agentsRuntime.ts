@@ -1989,7 +1989,10 @@ router.get('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (re
       );
     }
 
-    return res.json({ messages: page, hasMore });
+    // `mention`: the @handle routing resolves for the author, so a reply can
+    // address them without guessing from the display name in `username`.
+    const withMention = await AgentMessageService.withMentionHandles(page);
+    return res.json({ messages: withMention, hasMore });
   } catch (error: any) {
     console.error('Error fetching pod messages:', error);
     return res.status(500).json({ message: 'Failed to fetch messages' });

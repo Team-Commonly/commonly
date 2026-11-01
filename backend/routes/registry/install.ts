@@ -871,14 +871,17 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
 
-    // The mention handle is the instanceId (what the UI dropdown inserts),
-    // NOT the registry agentName — a BYO user is told their agent's *name*
-    // is e.g. "sam-agent" but the way to mention it is "@scout". Said in the
-    // intro, or in a hosted agent's own greeting, so nobody has to guess (GH
-    // smoke finding 2026-07-05).
-    const handle = normalizedInstanceId && normalizedInstanceId !== 'default'
-      ? normalizedInstanceId
-      : safeAgentName;
+    // The mention handle is the agent's username, NOT the registry agentName:
+    // a BYO user is told their agent's *name* is e.g. "sam-agent" but the way
+    // to mention it is "@scout". Said in the intro, or in a hosted agent's own
+    // greeting, so nobody has to guess (GH smoke finding 2026-07-05).
+    // The handle is the username mention routing resolves: buildMentionMap
+    // always maps `buildAgentUsername(agentType, instanceId)`, so the intro
+    // and the routing cannot disagree. The instanceId alone is not that key.
+    const handle = AgentIdentityService.buildAgentUsername(
+      safeAgentName,
+      normalizedInstanceId || 'default',
+    );
     // A hosted agent on the native engine answers its first contact in the
     // same minute, in its own voice. Its greeting is then the one post the
     // room gets: the template intro beside it was a second post before anyone

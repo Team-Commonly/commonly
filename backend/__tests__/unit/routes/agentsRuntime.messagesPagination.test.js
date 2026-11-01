@@ -26,6 +26,7 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 jest.mock('../../../services/agentMessageService', () => ({
   getRecentMessages: jest.fn(),
+  withMentionHandles: jest.fn(async (messages) => messages),
 }));
 jest.mock('../../../services/agentSendFreshness', () => ({
   readStart: jest.fn(async () => ({ at: new Date() })),
