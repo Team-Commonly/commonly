@@ -39,7 +39,7 @@ const fakeChild = ({ stdout = '', code = 0 } = {}) => {
   return proc;
 };
 
-const makeSpawnImpl = ({ code = 0 } = {}) => {
+const makeSpawnImpl = ({ code = 0, stdout = 'ok' } = {}) => {
   const calls = [];
   const impl = (cmd, args, opts) => {
     const configIndex = args.indexOf('--mcp-config');
@@ -56,10 +56,16 @@ const makeSpawnImpl = ({ code = 0 } = {}) => {
       configMode: configPath ? fs.statSync(configPath).mode & 0o777 : null,
       configDirMode: configPath ? fs.statSync(path.dirname(configPath)).mode & 0o777 : null,
     });
-    return fakeChild({ stdout: 'ok', code });
+    return fakeChild({ stdout, code });
   };
   return { impl, calls };
 };
+
+// A public seat's turn posts only on a stream whose init shows Commonly connected (TASK-256).
+const COMMONLY_CONNECTED = [
+  { type: 'system', subtype: 'init', mcp_servers: [{ name: 'commonly', status: 'connected' }] },
+  { type: 'result', subtype: 'success', is_error: false, result: 'ok' },
+].map((event) => JSON.stringify(event)).join('\n');
 
 describe('claude adapter — ctx.environment', () => {
   let cwd;
@@ -636,7 +642,7 @@ describe('claude adapter — ctx.environment', () => {
     fs.writeFileSync(path.join(home, 'current'), '0.3.13\n');
     fs.writeFileSync(path.join(home, '.warm.lock'), 'warming\n');
     const prior = process.env.COMMONLY_MCP_HOME;
-    const { impl, calls } = makeSpawnImpl();
+    const { impl, calls } = makeSpawnImpl({ stdout: COMMONLY_CONNECTED });
     try {
       process.env.COMMONLY_MCP_HOME = home;
       Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -1762,5 +1768,114 @@ describe('claude adapter — a workspace seat\'s git tool', () => {
     expect(calls[0].config.mcpServers.workspace_git).toBeUndefined();
     expect(calls[0].args[1]).not.toContain(fs.realpathSync(path.dirname(serverPath)));
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('git was not found'));
+  });
+});
+
+// TASK-256: a public seat posts only when its own stream shows the Commonly MCP
+// working. The stream shapes are the ones Claude Code 2.1.314 wrote against a
+// stub MCP server: `mcp_servers[].status` in init, and a failed call as a
+// `tool_result` with `is_error: true` whose content is the server's text.
+describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () => {
+  const COMMONLY_MCP = [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }];
+  const stream = (...events) => events.map((event) => JSON.stringify(event)).join('\n');
+  const init = (status) => ({ type: 'system', subtype: 'init', mcp_servers: [{ name: 'commonly', status }] });
+  const call = (id, name) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input: {} }] } });
+  const failed = (id, content) => ({
+    type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content }] },
+  });
+  const result = (text) => ({ type: 'result', subtype: 'success', is_error: false, result: text });
+  const API_503 = JSON.stringify({ status: 503, body: '<html>503 Service Unavailable</html>', message: 'HTTP 503' });
+  const API_404 = JSON.stringify({ status: 404, body: { error: 'Pod not found' }, message: 'Pod not found' });
+
+  let cwd;
+  let home;
+  let publicState;
+  let prior;
+  const originalPlatform = process.platform;
+  beforeEach(() => {
+    cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-witness-'));
+    publicState = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+    home = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-mcp-home-'));
+    const pkgDir = path.join(home, '0.3.13', 'node_modules', '@commonlyai', 'mcp');
+    fs.mkdirSync(path.join(pkgDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(pkgDir, 'package.json'), JSON.stringify({
+      name: '@commonlyai/mcp', version: '0.3.13', bin: { 'commonly-mcp': 'src/index.js' },
+    }));
+    fs.writeFileSync(path.join(pkgDir, 'src', 'index.js'), '');
+    fs.writeFileSync(path.join(home, 'current'), '0.3.13\n');
+    prior = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = home;
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    spawnSync.mockImplementation((cmd) => (cmd === 'which'
+      ? { status: 0, stdout: '/usr/bin/true\n' } : { status: 0, stdout: '' }));
+  });
+  afterEach(() => {
+    if (prior === undefined) delete process.env.COMMONLY_MCP_HOME;
+    else process.env.COMMONLY_MCP_HOME = prior;
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    spawnSync.mockReset();
+    for (const dir of [cwd, publicState, home]) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const turn = (stdout, { trust = 'public', mcp = COMMONLY_MCP } = {}) => {
+    const { impl } = makeSpawnImpl({ stdout });
+    return claude.spawn('hi', {
+      agentName: 'public-test', cwd,
+      env: { PATH: process.env.PATH, USER: 'safe-user', LOGNAME: 'safe-user' },
+      environment: { model: 'test-model', ...(trust ? { sandbox: { mode: 'workspace', trust } } : {}), mcp },
+      _publicClaudeState: publicState,
+      _spawnImpl: impl,
+    });
+  };
+
+  test('posts when init shows Commonly connected and no Commonly call failed', async () => {
+    await expect(turn(stream(init('connected'), result('Here you go.')))).resolves.toMatchObject({ text: 'Here you go.' });
+  });
+
+  test.each([
+    ['the server failed to start', stream(init('failed'), result('HELLO')), /status failed/],
+    ['the stream carries no init event', stream(result('HELLO')), /no init event/],
+    ['the output is plain text', 'HELLO', /no init event/],
+  ])('withholds the turn when %s', async (_label, stdout, reason) => {
+    const outcome = turn(stdout);
+    await expect(outcome).rejects.toMatchObject({ code: 'public_mcp_not_ready' });
+    await expect(outcome).rejects.toThrow(reason);
+  });
+
+  test.each([
+    ['an API 503', API_503],
+    ['a transport error with no status', 'MCP error -32000: Connection closed'],
+    ['an empty error', ''],
+    ['an error as text parts', [{ type: 'text', text: API_503 }]],
+  ])('withholds the turn when a Commonly call fails with %s', async (_label, content) => {
+    const stdout = stream(init('connected'), call('t1', 'mcp__commonly__list_pods'), failed('t1', content), result('Every call is failing.'));
+    await expect(turn(stdout)).rejects.toMatchObject({ code: 'public_tool_failed' });
+  });
+
+  test('posts an answer to a refusal the person can be told about (a 404)', async () => {
+    const stdout = stream(init('connected'), call('t1', 'mcp__commonly__read_context'), failed('t1', API_404), result('I cannot see that pod.'));
+    await expect(turn(stdout)).resolves.toMatchObject({ text: 'I cannot see that pod.' });
+  });
+
+  test("ignores another server's failed call", async () => {
+    const stdout = stream(init('connected'), call('t1', 'mcp__other__lookup'), failed('t1', API_503), result('Done.'));
+    await expect(turn(stdout)).resolves.toMatchObject({ text: 'Done.' });
+  });
+
+  // As in the OpenCode check: only the shipped server's error contract is known,
+  // so a server run some other way is not judged by it.
+  test('a seat that does not run the shipped Commonly MCP is not witnessed', async () => {
+    const mcp = [{ name: 'commonly', transport: 'stdio', command: ['commonly-mcp'] }];
+    await expect(turn(stream(init('failed'), result('HELLO')), { mcp })).resolves.toMatchObject({ text: 'HELLO' });
+  });
+
+  // A record still carrying `internal` is read as public (environment.js), so it is witnessed.
+  test('a legacy internal-trust seat is witnessed as public', async () => {
+    await expect(turn(stream(init('failed'), result('HELLO')), { trust: 'internal' }))
+      .rejects.toMatchObject({ code: 'public_mcp_not_ready' });
+  });
+
+  test.each([['a workspace seat', 'workspace'], ['an unconfined seat', null]])('%s is not witnessed', async (_label, trust) => {
+    await expect(turn(stream(init('failed'), result('HELLO')), { trust })).resolves.toMatchObject({ text: 'HELLO' });
   });
 });
