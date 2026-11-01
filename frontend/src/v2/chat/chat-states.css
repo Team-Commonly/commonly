@@ -352,6 +352,21 @@
   padding: 0 12px 10px 38px;
   display: grid;
   gap: 4px;
+  /* Every away agent is listed; a long list scrolls inside the line. */
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.v2-chat__agents-away-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .v2-chat__agent-room-status--wait {

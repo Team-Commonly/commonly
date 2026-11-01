@@ -139,6 +139,32 @@ describe('group pod agent liveness', () => {
     expect(screen.getAllByTestId('pod-agent-liveness')).toHaveLength(3);
   });
 
+  test('five agents away count every one and list every one, past the old three-row cap', async () => {
+    mockStates(['Flint', 'Swift', 'Dart', 'Echo', 'Kite'].map((name) => ({
+      agentName: name.toLowerCase(), instanceId: 'default', displayName: name, state: 'gone-dark', lastUsedAt: HOURS_AGO_3, isOwner: false,
+    })));
+    renderChat(makeDetail());
+
+    const away = await screen.findByTestId('pod-agents-away');
+    expect(away.querySelector('summary')).toHaveTextContent("Flint, Swift and 3 others aren't answering right now");
+    const rows = screen.getAllByTestId('pod-agent-liveness');
+    expect(rows).toHaveLength(5);
+    expect(rows[4]).toHaveTextContent('Kite last checked');
+  });
+
+  test('the away line is announced from a live region outside the summary', async () => {
+    mockStates(['Flint', 'Swift'].map((name) => ({
+      agentName: name.toLowerCase(), instanceId: 'default', displayName: name, state: 'gone-dark', lastUsedAt: HOURS_AGO_3, isOwner: false,
+    })));
+    renderChat(makeDetail());
+
+    const away = await screen.findByTestId('pod-agents-away');
+    const live = screen.getByRole('status');
+    expect(live).toHaveTextContent("Flint and Swift aren't answering right now");
+    expect(away.contains(live)).toBe(false);
+    expect(away.querySelector('summary [role="status"]')).toBeNull();
+  });
+
   test('a 1:1 agent room keeps its own row and never doubles it', async () => {
     mockStates([{ agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: true }]);
     renderChat(makeDetail({
