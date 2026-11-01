@@ -70,5 +70,13 @@
  "byo-handoff-390": {
   "helperWords": 106,
   "innerRatio": 1.52
+ },
+ "connect-1440": {
+  "helperWords": 20,
+  "innerRatio": 1.08
+ },
+ "connect-390": {
+  "helperWords": 20,
+  "innerRatio": 1.77
  }
 }

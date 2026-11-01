@@ -18,7 +18,7 @@ const fs = require('fs');
 const HERE = __dirname;
 const TARGETS = path.join(HERE, '..', 'targets.json');
 
-const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff'];
+const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff', 'connect'];
 // byo-handoff is drawn but can't be captured on prod: reaching it issues a real key.
 const PROD_SURFACES = SURFACES.filter(s => s !== 'byo-handoff');
 const VIEWPORTS = ['1440', '390'];
@@ -164,6 +164,7 @@ async function prod(only) {
     ['board', () => `/v2/pods/${pod}/board`],
     ['connectors', () => '/v2/connectors'],
     ['byo', () => '/v2/agents/byo'],
+    ['connect', () => '/v2/connect'],
     ['chat', () => `/v2/pods/${pod}`],
     ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];
