@@ -273,6 +273,29 @@ describe('Connectors page: the tile surface', () => {
     expect(await screen.findByRole('button', { name: /^Revoke/ })).toBeInTheDocument();
   });
 
+  it('names a grant whose entry is gone by the connector the server reads from its tools (TASK-753)', async () => {
+    const iso = (ms) => new Date(Date.now() + ms).toISOString();
+    // A hidden entry is absent from the catalogue, so no row covers this grant;
+    // the server's `connector` is what still says it is Atlassian.
+    const orphan = {
+      grantId: 'grant_hidden', installationId: 'inst-a', target: { kind: 'pod', id: 'p1' }, tools: ['atlassian.getJiraIssue'],
+      connector: { id: 'atlassian', label: 'Atlassian' },
+      writeMode: 'read', budget: null, effectiveAudience: [], expiresAt: iso(86_400_000), revokedAt: null, revokedBy: null,
+      parentGrantId: null, rootGrantId: null, createdAt: iso(-3_600_000), grantedBy: 'u1',
+    };
+    mockCatalog([tool('github', 'GitHub')], { grants: [orphan] });
+    renderPage();
+
+    await findTile('GitHub');
+    const row = await screen.findByRole('button', { name: /View Atlassian/ });
+    expect(row.querySelector('.v2-connector-row__glyph svg')).not.toBeNull();
+    expect(row).toHaveTextContent('read in testing');
+    expect(screen.queryByRole('button', { name: /View Unknown connector/ })).toBeNull();
+    fireEvent.click(row);
+    expect(await findDrawer(/Atlassian/)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Revoke/ })).toBeInTheDocument();
+  });
+
   it('closes the reveal when its act opens a drawer', async () => {
     mockCatalog([tool('github', 'GitHub')]);
     renderPage();
