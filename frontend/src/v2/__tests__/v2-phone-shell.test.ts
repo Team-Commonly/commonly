@@ -52,7 +52,7 @@ describe('D223 phone shell', () => {
     const phoneBlock = memCss.slice(memCss.indexOf('@media (max-width: 767px)'));
     expect(phoneBlock).toMatch(/\.v2m-page \.v2p-ph\s*\{[^}]*min-height:\s*52px[^}]*flex-wrap:\s*nowrap/);
     expect(phoneBlock).toMatch(/\.v2m-ahead\s*\{\s*min-width:\s*0/);
-    expect(phoneBlock).toMatch(/\.v2m-ahead h1\s*\{[^}]*text-overflow:\s*ellipsis/);
+    expect(phoneBlock).toMatch(/\.v2m-ahead h1\s*\{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*ellipsis/);
     expect(phoneBlock).toMatch(/\.v2p-seg\s*\{[^}]*flex:\s*none/);
   });
 
