@@ -281,6 +281,46 @@ test('a revoke whose reload is forbidden leaves no grant rows or revoke controls
   expect(screen.queryByRole('region', { name: 'Connector grants' })).toBeNull();
 });
 
+test('a pending revoke error and confirm do not survive losing access and getting it back', async () => {
+  // The revoke fails, so its error and the held confirm both stay up. Access
+  // is then lost (a 403 reload) and restored (a clean reload); the list comes
+  // back with neither. A new token recreates the api client, which reruns the
+  // load, the way a session change would.
+  let forbid = false;
+  axios.post.mockRejectedValue(new Error('denied'));
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/agent-binding/placement')) return Promise.resolve({ data: { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] } });
+    if (url.includes('/grants') && forbid) return Promise.reject({ response: { status: 403, data: { error: 'Forbidden' } } });
+    return Promise.resolve({ data: response });
+  });
+  const tree = (token) => (
+    <AuthContext.Provider value={{ ...authValue, token }}>
+      <MemoryRouter>
+        <div className="list"><V2AgentConnectorsRow name="nib" instanceId="default" /></div>
+      </MemoryRouter>
+    </AuthContext.Provider>
+  );
+  const { rerender } = render(tree('jwt-1'));
+  openGrants();
+  await screen.findByText(/Work · Granted by Owner/);
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
+  expect(await within(grantsRegion()).findByRole('alert')).toHaveTextContent('Could not revoke the grant.');
+  expect(screen.getByRole('button', { name: 'Yes, revoke it' })).toBeInTheDocument();
+
+  forbid = true;
+  rerender(tree('jwt-2'));
+  expect(await screen.findByText('Owner and admins only')).toBeInTheDocument();
+
+  forbid = false;
+  rerender(tree('jwt-3'));
+  const grantsSection = await screen.findByRole('region', { name: 'Connector grants' });
+  expect(await within(grantsSection).findByText(/Work · Granted by Owner/)).toBeInTheDocument();
+  expect(within(grantsSection).queryByRole('alert')).toBeNull();
+  expect(within(grantsSection).queryByRole('button', { name: 'Yes, revoke it' })).toBeNull();
+  expect(within(grantsSection).getByRole('button', { name: 'Revoke' })).toBeEnabled();
+});
+
 test('a failed grant load opens the list, and its toggle still closes it', async () => {
   axios.get.mockImplementation((url) => {
     if (url.includes('/agent-binding/placement')) return Promise.resolve({ data: { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] } });
