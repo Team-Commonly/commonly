@@ -53,8 +53,8 @@ const makeRes = () => {
   return res;
 };
 
-const runAuth = async (rawToken) => {
-  const req = { header: (h) => (h === 'Authorization' ? `Bearer ${rawToken}` : undefined) };
+const runAuth = async (rawToken, route) => {
+  const req = { header: (h) => (h === 'Authorization' ? `Bearer ${rawToken}` : undefined), ...route };
   const res = makeRes();
   let nexted = false;
   await agentRuntimeAuth(req, res, () => { nexted = true; });
@@ -206,6 +206,49 @@ describe('per-spawn child credentials (TASK-094)', () => {
 
     expect(nexted).toBe(true);
     expect(req.agentAuthorizedPodIds).toContain(String(podId));
+  });
+
+  it('a minted child and its seat keep own-state calls while two grant pods refuse outward and pod writes', async () => {
+    const { raw, bot, seat } = await makeSeat();
+    const { AgentInstallation } = require('../../../models/AgentRegistry');
+    const installation = await AgentInstallation.findOne({ agentName: 'testbot', instanceId: 'default' });
+    const otherPodId = new mongoose.Types.ObjectId();
+    await AgentInstallation.create({
+      agentName: 'testbot', instanceId: 'default', podId: otherPodId,
+      version: '1.0.0', installedBy: bot._id,
+    });
+    const grantPolicy = require('../../../services/nativeOutsiderGrantPolicy');
+    const spy = jest.spyOn(grantPolicy, 'podsWithOutsiderWritableGrants')
+      .mockResolvedValue(new Set([String(installation.podId), String(otherPodId)]));
+    const outward = { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/agent-dm' }, params: {} };
+    const podWrite = { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/pods/:podId/messages' }, params: { podId: String(installation.podId) } };
+    const ownAck = { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/events/:id/ack' }, params: { id: 'event-1' } };
+    try {
+      const express = require('express');
+      const request = require('supertest');
+      const app = express();
+      app.use(express.json());
+      app.use('/api/agents/runtime/spawn-credentials', require('../../../routes/spawnCredentials'));
+      const minted = await request(app).post('/api/agents/runtime/spawn-credentials')
+        .set('Authorization', `Bearer ${raw}`).send({ spawnId: 'spawn-narrowed' });
+      expect(minted.status).toBe(201);
+      const child = await AgentCredential.findById(minted.body.credentialId);
+      expect(child.scopes).toEqual(['spawn']);
+      expect(String(child.parentId)).toBe(String(seat._id));
+      for (const token of [raw, minted.body.token]) {
+        expect((await runAuth(token, ownAck)).nexted).toBe(true);
+        for (const route of [outward, podWrite]) {
+          const { res, nexted } = await runAuth(token, route);
+          expect(nexted).toBe(false);
+          expect(res.statusCode).toBe(403);
+          expect(res.body.code).toBe('outsider_grant_runtime_narrowed');
+        }
+      }
+      expect(spy).toHaveBeenCalledTimes(7);
+    } finally { spy.mockRestore(); }
   });
 
   it('the negative control: a credential row with an agentUserId but no spawn scope is NOT an authentication path', async () => {
