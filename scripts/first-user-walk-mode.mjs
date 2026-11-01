@@ -12,15 +12,17 @@ const PROD_HOSTS = new Set(['api.commonly.me']);
 // the account's fate here and nowhere else. The password is always COMMONLY_WALK_PASSWORD.
 export const chooseWalkMode = ({ base, env }) => {
   const url = new URL(base);
+  // A trailing dot names the same host but would slip past the exact-host checks below.
+  const host = url.hostname.replace(/\.$/, '');
   const email = env.COMMONLY_WALK_EMAIL || '';
   // Checked before the prod branch: over plain http the signup path would send the password in cleartext.
-  if (PROD_HOSTS.has(url.hostname) && url.protocol !== 'https:') throw new Error('prod walk requires https; refusing before any request');
-  if (url.protocol === 'https:' && PROD_HOSTS.has(url.hostname)) {
+  if (PROD_HOSTS.has(host) && url.protocol !== 'https:') throw new Error('prod walk requires https; refusing before any request');
+  if (url.protocol === 'https:' && PROD_HOSTS.has(host)) {
     if (!email) throw new Error('prod has no walk signup: set COMMONLY_WALK_EMAIL to an existing test account');
     return { mode: 'signin-prod', email, deleteAccount: false };
   }
   if (!email) return { mode: 'signup', deleteAccount: true };
-  if (url.protocol !== 'https:' || !STAGING_HOSTS.has(url.hostname)) {
+  if (url.protocol !== 'https:' || !STAGING_HOSTS.has(host)) {
     throw new Error('COMMONLY_WALK_EMAIL is set but the target is not the staging API over https; the shared sign-in account exists on staging only');
   }
   return { mode: 'signin', email, deleteAccount: false };

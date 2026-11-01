@@ -35,11 +35,14 @@ COMMONLY_WALK_PASSWORD="<its password>" \
 - The manifest records `"mode": "signin-prod"`. The result file has no
   `signup` or `signup-workspace` steps.
 
-### Signup (staging and other targets with no account given)
+### Signup (non-prod targets with no account given)
+
+Prod never signs up. A prod base without `COMMONLY_WALK_EMAIL` is refused before
+any request, so this form is for other targets only:
 
 ```bash
 COMMONLY_WALK_PASSWORD="$(openssl rand -base64 24)" \
-  node scripts/first-user-walk.mjs --base https://api.commonly.me
+  node scripts/first-user-walk.mjs --base https://api-dev.example.test
 ```
 
 - Generate a fresh password per run. The script reads it from the environment
@@ -64,8 +67,10 @@ COMMONLY_WALK_EMAIL=<shared walk account> COMMONLY_WALK_PASSWORD=<its password> 
 - The run signs in and never signs up. It removes only the pods, seats and
   agents it created, and it never deletes the shared account.
 - `COMMONLY_WALK_EMAIL` aimed at any host other than staging is refused before
-  the walk starts, so the shared account cannot be used on prod.
-- The manifest records `"mode": "signin"` for these runs.
+  the walk starts. Prod uses the same variable name, so keep staging credentials
+  out of a shell that runs the walk against prod.
+- The manifest records `"mode": "signin"` for these runs. Prod runs record
+  `"mode": "signin-prod"`.
 
 ## Cleanup is part of the run
 
@@ -107,7 +112,7 @@ Write is atomic (temp file, then rename), so a reader never sees a half file.
   "schema": 1,
   "sha": "<deployed sha from WALK_SHA, or null when the scheduler did not set it>",
   "startedAt": "...", "finishedAt": "...",
-  "base": "https://api.commonly.me", "mode": "signup",
+  "base": "https://api.commonly.me", "mode": "signin-prod",
   "walk": "walk-<stamp>",
   "overall": "pass | fail | incomplete",
   "exitCode": 0,
@@ -122,7 +127,7 @@ Write is atomic (temp file, then rename), so a reader never sees a half file.
   (Bring your own connect). Today every full run is `incomplete`, never `pass`,
   until that step is built. Roll back on `fail` only; treat `incomplete` as
   not-green but not as a regression.
-- `mode` is `signup` or `signin`, or `not-chosen` when the run was refused before a mode was accepted (no request was made).
+- `mode` is `signup`, `signin` (staging) or `signin-prod`, or `not-chosen` when the run was refused before a mode was accepted (no request was made).
 - `cleanup.status` is `not-run` (and `ok` null) when the run stopped before cleanup could start, for example a refused mode.
 - The file holds no password, token or email. A `needs-admin-purge` cleanup
   points SRE at the manifest in `~/.commonly/state/walk-706/`.

@@ -23,7 +23,7 @@ const SHARED_EMAIL = 'walk-shared@commonly.test';
 const fakeBackend = ({
   preview = 200, create = 'ok', password = PASSWORD, echoRegister = false, seeded = false,
 } = {}) => {
-  const state = { accountExists: seeded, pods: [], lastAgent: null, calls: [] };
+  const state = { accountExists: seeded, pods: [], lastAgent: null, calls: [], loginEmails: [] };
   const reply = (status, data) => ({ status, json: async () => data });
   const fetchImpl = async (url, init = {}) => {
     const u = new URL(url);
@@ -40,6 +40,7 @@ const fakeBackend = ({
       return reply(201, {});
     }
     if (method === 'POST' && p === '/api/auth/login') {
+      state.loginEmails.push(body.email);
       if (state.accountExists && body.password === password) {
         return reply(200, { token: TOKEN, user: { _id: USER_ID, role: 'user' } });
       }
@@ -216,6 +217,21 @@ test('prod signs in to the existing test account: no signup, the six covered ste
   assert.equal(state.accountExists, true);
   assert.equal(state.pods.length, 0);
   assert.equal(result.cleanup.ok, true);
+  // The run signs in with the env email, and that email never reaches the result or manifest.
+  assert.deepEqual(state.loginEmails, ['walk-test@commonly.test']);
+  assert.equal(readFileSync(dirsFor.resultPath, 'utf8').includes('walk-test@commonly.test'), false);
+  const [manifestFile] = readdirSync(dirsFor.stateDir);
+  assert.equal(readFileSync(path.join(dirsFor.stateDir, manifestFile), 'utf8').includes('walk-test@commonly.test'), false);
+});
+
+test('a trailing dot on the prod host is still prod: refused without an account, never signed up', async () => {
+  const dirsFor = dirs();
+  const { fetchImpl, state } = fakeBackend();
+  const { exitCode } = await run(fetchImpl, dirsFor, { base: 'https://api.commonly.me.' });
+
+  assert.equal(exitCode, 1);
+  assert.equal(state.calls.includes('POST /api/auth/register'), false);
+  assert.equal(state.calls.length, 0);
 });
 
 test('prod without an existing test account is refused before any request', async () => {
