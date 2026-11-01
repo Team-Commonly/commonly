@@ -389,15 +389,18 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
         message: 'a hosted-mcp grant cannot hold write mode; use write-with-confirm',
       });
     }
-    // Linear's earlier tokens carry read/openid only. Approval cannot upgrade
-    // that vendor authorization; require a reconnect before minting this mode.
-    if (hosted && connection.config?.entryId === 'linear' && body.writeMode === 'write-with-confirm'
-      && !(typeof connection.config?.grantedScope === 'string' ? connection.config.grantedScope : '')
-        .split(/\s+/).includes('write')) {
-      return res.status(403).json({
-        error: 'write_scope_required',
-        message: 'reconnect Linear to enable writes before granting write-with-confirm',
-      });
+    // Approval cannot add a scope the vendor never granted, so a connection
+    // made before its entry gained writes must reconnect before this mode.
+    if (hosted && body.writeMode === 'write-with-confirm') {
+      const scopedEntry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, String(connection.config?.entryId || ''));
+      const writeScope = scopedEntry && 'writeScope' in scopedEntry ? scopedEntry.writeScope : undefined;
+      const grantedScope = connection.config?.grantedScope;
+      if (writeScope && !(typeof grantedScope === 'string' ? grantedScope : '').split(/\s+/).includes(writeScope)) {
+        return res.status(403).json({
+          error: 'write_scope_required',
+          message: `reconnect ${scopedEntry?.title || 'this connection'} to enable writes before granting write-with-confirm`,
+        });
+      }
     }
 
     const target = body.target;

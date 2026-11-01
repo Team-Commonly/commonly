@@ -33,6 +33,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     "write",
     "openid",
   ],
+  writeScope: "write",
   revoke: {
     page: "https://linear.app/settings/account/security",
   },
@@ -951,7 +952,7 @@ export const LINEAR_ENTRY: HostedMcpEntry = {
     {
       name: "save_issue",
       upstreamName: "save_issue",
-      description: "Create or edit a Linear issue. Assignee \"me\" means the connection owner; delegate assigns work to an agent installed in that Linear workspace.",
+      description: "Create or edit a Linear issue. Assignee \"me\" means the connection owner; delegate hands the issue to an agent installed in that Linear workspace, which may start working on it.",
       class: "write",
       inputSchema: {
         type: "object",

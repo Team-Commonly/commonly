@@ -107,6 +107,9 @@ export interface HostedMcpOAuthEntry extends HostedMcpEntryCommon {
   /** Entry-pinned exception when an AS omits its token auth-method list. */
   tokenEndpointAuthMethod?: 'client_secret_basic' | 'client_secret_post';
   scopes: string[];
+  /** The scope a token needs for this entry's write tools. A connection whose
+   * granted scope lacks it cannot be granted write-with-confirm. */
+  writeScope?: string;
   /** Only the vendor-specific authorization parameters supported by this code. */
   authorizationParams?: {
     access_type?: string;

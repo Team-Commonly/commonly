@@ -939,6 +939,10 @@ describe('the shipped catalogue cannot land half-wired', () => {
     const [entry] = HOSTED_MCP_ENTRIES;
     expect(capture.server).toBe(entry.resource);
     expect(capture.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
+    // Its writes need `write` on the token, so an older read-only connection
+    // cannot be granted them until it reconnects.
+    expect(entry.writeScope).toBe('write');
+    expect(entry.scopes).toContain(entry.writeScope);
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
     const excludedByPinRuling = new Set(['get_attachment', 'extract_images', 'prepare_attachment_upload',
       'create_attachment_from_upload', 'create_attachment', 'create_issue_label']);

@@ -267,7 +267,7 @@ const pinned = (over) => ({
 
 const ENTRY = {
   id: 'linear', title: 'Linear', resource: 'https://mcp.linear.app/mcp',
-  issuer: 'https://mcp.linear.app', client: 'cimd', scopes: ['read'],
+  issuer: 'https://mcp.linear.app', client: 'cimd', scopes: ['read'], writeScope: 'write',
   revoke: 'https://mcp.linear.app/token', tools: [pinned({})],
 };
 
@@ -413,6 +413,22 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
     expect(await RoomGrant.countDocuments({})).toBe(0);
     const read = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'read' }));
     expect(read.status).toBe(201);
+  });
+
+  test('any entry that declares a write scope needs it on the connection; one that declares none does not', async () => {
+    const acmeMint = () => hostedMint({ tools: ['acme.list_tickets'], writeMode: 'write-with-confirm' });
+    Integration.findById.mockResolvedValue(hostedRow({ entryId: 'acme', grantedScope: 'tickets:read' }));
+    const scoped = { ...OTHER_ENTRY, writeScope: 'tickets:write' };
+    const refused = await withCatalog([scoped], acmeMint);
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ error: 'write_scope_required' });
+    expect(refused.body.message).toMatch(/Acme/);
+
+    Integration.findById.mockResolvedValue(hostedRow({ entryId: 'acme', grantedScope: 'tickets:read tickets:write' }));
+    expect((await withCatalog([scoped], acmeMint)).status).toBe(201);
+    await RoomGrant.deleteMany({});
+    Integration.findById.mockResolvedValue(hostedRow({ entryId: 'acme', grantedScope: '' }));
+    expect((await withCatalog([{ ...OTHER_ENTRY, writeScope: undefined }], acmeMint)).status).toBe(201);
   });
 
   test('a github-app write grant is refused by the CTO pod-eligibility ruling', async () => {
