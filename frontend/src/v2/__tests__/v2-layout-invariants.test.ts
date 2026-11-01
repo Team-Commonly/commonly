@@ -657,6 +657,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The copy key is a 44px target on a phone (an exception to the 32px desktop key).
     const phone = mediaBlockContaining(v2, '.v2-root button.v2-chat__agent-room-copy { width: 44px');
     expect(phone).toContain('.v2-root button.v2-chat__agent-room-copy { width: 44px; height: 44px; }');
+    // The read-only note replaces the composer, so on a phone it clears the
+    // fixed 54px tab bar as the composer does.
+    expect(mediaBlockContaining(v2, '.v2-chat__readonly { margin')).toContain('.v2-chat__readonly { margin: 4px 12px 66px; }');
   });
 
   test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {

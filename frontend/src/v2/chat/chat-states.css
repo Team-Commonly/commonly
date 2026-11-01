@@ -625,8 +625,11 @@
   color: var(--v2-text-secondary);
 }
 
+/* The frame's 12px below the note, plus the fixed 54px phone tab bar, which
+   the composer clears the same way (an exception to the lifted frame, whose
+   tab bar is in flow). */
 @media (max-width: 760px) {
-  .v2-chat__readonly { margin: 4px 12px 12px; }
+  .v2-chat__readonly { margin: 4px 12px 66px; }
 }
 
 /* GitHub PR preview card. Rendered below a message body when the content
