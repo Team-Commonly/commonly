@@ -232,18 +232,26 @@ describe('hosted-mcp connect: start', () => {
       .toBeLessThan(dcr.ensureDcrClient.mock.invocationCallOrder[1]);
   });
 
-  it('starts with the current DCR client when asking about the last one fails', async () => {
+  it('logs a failed ask about the last DCR client and starts with the current one', async () => {
     FIXTURE_ENTRY.client = 'dcr';
     dcr.ensureDcrClient.mockResolvedValue({ clientId: 'registered-1' });
-    Integration.findOne.mockImplementationOnce(() => { throw new Error('mongo unavailable'); });
-    expect((await start()).status).toBe(200);
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      Integration.findOne.mockImplementationOnce(() => { throw new Error('mongo unavailable'); });
+      expect((await start()).status).toBe(200);
 
-    Integration.findOne.mockReturnValueOnce({
-      select: () => ({ lean: async () => ({ config: { pendingAuth: { clientId: 'registered-1' } } }) }),
-    });
-    dcr.retireDcrClientIfUnknown.mockRejectedValueOnce(new Error('vendor unreachable'));
-    expect((await start()).status).toBe(200);
-    expect(dcr.ensureDcrClient).toHaveBeenCalledTimes(2);
+      Integration.findOne.mockReturnValueOnce({
+        select: () => ({ lean: async () => ({ config: { pendingAuth: { clientId: 'registered-1' } } }) }),
+      });
+      dcr.retireDcrClientIfUnknown.mockRejectedValueOnce(new Error('mongo unavailable'));
+      expect((await start()).status).toBe(200);
+      expect(dcr.ensureDcrClient).toHaveBeenCalledTimes(2);
+      const asks = logged.mock.calls.filter(([line]) => line === '[hosted-mcp] DCR client ask failed');
+      expect(asks).toHaveLength(2);
+      expect(JSON.parse(asks[0][1])).toEqual({ entryId: 'linear', error: 'Error' });
+    } finally {
+      logged.mockRestore();
+    }
   });
   it('sends the member to the vendor with the entry\'s own resource and a fresh state', async () => {
     const res = await start();

@@ -571,15 +571,54 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       expect(await Model.findOne({ current: true })).toMatchObject({ clientId: 'registered-2' });
     });
 
-    test('never throws, so a broken ask never fails the start it runs in', async () => {
+    test('a store failure reaches the caller, before or after the ask', async () => {
       const fetch = vendor([], () => answer(401, { error: 'invalid_client' }));
       await ensureDcrClient(entry, metadata, callback, fetch);
       const claim = jest.spyOn(Model, 'findOneAndUpdate').mockRejectedValueOnce(new Error('mongo unavailable'));
       try {
-        await expect(retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after())).resolves.toBe(false);
+        await expect(retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after()))
+          .rejects.toThrow('mongo unavailable');
       } finally {
         claim.mockRestore();
       }
+      const retire = jest.spyOn(Model, 'updateOne').mockRejectedValueOnce(new Error('mongo unavailable'));
+      try {
+        await expect(retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after(1)))
+          .rejects.toThrow('mongo unavailable');
+      } finally {
+        retire.mockRestore();
+      }
+      expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: true });
+    });
+
+    test('a confidential client is asked with its own secret, and not at all once that is gone', async () => {
+      const confidentialMetadata = { ...metadata, token_endpoint_auth_methods_supported: ['client_secret_basic'] };
+      const sent = [];
+      const fetch = jest.fn(async (url, init) => {
+        if (url === metadata.registration_endpoint) {
+          return answer(201, {
+            client_id: 'conf-1',
+            client_secret: 'issued-secret-1',
+            token_endpoint_auth_method: 'client_secret_basic',
+            redirect_uris: [callback],
+            client_secret_expires_at: 0,
+          });
+        }
+        sent.push({ headers: init.headers, body: new URLSearchParams(String(init.body)) });
+        return answer(400, { error: 'invalid_grant' });
+      });
+      await ensureDcrClient(entry, confidentialMetadata, callback, fetch);
+      const now = after();
+
+      expect(await retireDcrClientIfUnknown(entry, confidentialMetadata, 'conf-1', fetch, now)).toBe(false);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].headers.Authorization).toBe(`Basic ${Buffer.from('conf-1:issued-secret-1').toString('base64')}`);
+      expect(sent[0].body.get('client_secret')).toBeNull();
+
+      await ConnectorSecret.deleteMany({});
+      const later = new Date(now.getTime() + DCR_ASK_INTERVAL_MS);
+      expect(await retireDcrClientIfUnknown(entry, confidentialMetadata, 'conf-1', fetch, later)).toBe(false);
+      expect(sent).toHaveLength(1);
     });
 
     test('an admin can retire an entry\'s current client by hand', async () => {

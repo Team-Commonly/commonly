@@ -355,7 +355,8 @@ export const retireCurrentDcrClient = async (
  * can then cost at most one registration an interval, not one a retry. If the
  * vendor no longer knows it, it is retired, and this start registers a new one.
  * A member who closed the tab or declined consent costs one ask. True when the
- * client was retired; never throws.
+ * client was retired. A vendor that can't be reached is an unclear answer; a
+ * store failure is thrown, for the caller to report.
  */
 export const retireDcrClientIfUnknown = async (
   entry: HostedMcpOAuthEntry,
@@ -365,24 +366,21 @@ export const retireDcrClientIfUnknown = async (
   now: Date = new Date(),
 ): Promise<boolean> => {
   if (entry.client !== 'dcr' || !clientId) return false;
-  try {
-    const claimed = await HostedMcpDcrRegistration.findOneAndUpdate(
-      {
-        ...currentFilter(entry),
-        clientId,
-        refusedAt: null,
-        createdAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) },
-        $or: [{ askedAt: null }, { askedAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) } }],
-      },
-      { $set: { askedAt: now } },
-      { new: true },
-    );
-    // ensureDcrClient replaces a client whose secret can't be read on its own.
-    const client = claimed ? await clientFromRow(claimed) : null;
-    if (!claimed || !client) return false;
-    const answer = await askVendorAboutDcrClient(entry, metadata, client, claimed.redirectUri, fetchImpl);
-    return answer === 'unknown_client' && retireCurrentDcrClient(entry, clientId, now);
-  } catch {
-    return false;
-  }
+  const claimed = await HostedMcpDcrRegistration.findOneAndUpdate(
+    {
+      ...currentFilter(entry),
+      clientId,
+      refusedAt: null,
+      createdAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) },
+      $or: [{ askedAt: null }, { askedAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) } }],
+    },
+    { $set: { askedAt: now } },
+    { new: true },
+  );
+  // ensureDcrClient replaces a client whose secret can't be read on its own.
+  const client = claimed ? await clientFromRow(claimed) : null;
+  if (!claimed || !client) return false;
+  const answer = await askVendorAboutDcrClient(entry, metadata, client, claimed.redirectUri, fetchImpl);
+  if (answer !== 'unknown_client') return false;
+  return retireCurrentDcrClient(entry, clientId, now);
 };
