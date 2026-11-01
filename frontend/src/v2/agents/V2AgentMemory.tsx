@@ -115,6 +115,7 @@ const V2AgentMemory: React.FC = () => {
   const [index, setIndex] = useState<MemoryIndex | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'denied'>('loading');
   const [query, setQuery] = useState('');
+  const [activeGroup, setActiveGroup] = useState<GroupId | null>(null);
   const [openingRoom, setOpeningRoom] = useState(false);
   const [roomError, setRoomError] = useState(false);
   // Public header facts (name, avatar, pod count). Readable by any viewer, so the
@@ -213,13 +214,15 @@ const V2AgentMemory: React.FC = () => {
               .filter((sec) => sec.notes.length > 0),
           }));
         const firstShown = groups.find((g) => g.sections.length > 0)?.id;
+        // The frame marks one nav item as current: the one clicked, else the first with notes.
+        const current = groups.find((g) => g.id === activeGroup && g.sections.length > 0)?.id ?? firstShown;
         return (
           <div className="v2m-mem">
             <nav className="v2m-mnav" aria-label={memoryLabel}>
               <ul>
                 {groups.map((group) => (
                   <li key={group.id}>
-                    <a href={`#memory-group-${group.id}`}>
+                    <a href={`#memory-group-${group.id}`} className={group.id === current ? 'on' : undefined} aria-current={group.id === current ? 'true' : undefined} onClick={() => setActiveGroup(group.id)}>
                       <MemIcon name={GROUP_ICON[group.id]} />
                       {group.label}
                       <span className="mo">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>

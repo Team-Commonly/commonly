@@ -17,6 +17,7 @@
 .v2m-mnav ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .v2m-mnav a,
 .v2m-mnav .v2m-navitem { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; border-radius: var(--v2-r-8); font-size: 13.5px; color: var(--v2-ink-2); text-decoration: none; }
+.v2m-mnav a.on { background: var(--v2-surface-tint); font-weight: 600; color: var(--v2-text-primary); }
 .v2m-mnav a:hover { background: var(--v2-surface-tint); }
 .v2m-mnav a:focus-visible { box-shadow: var(--v2-focus-ring); outline: none; }
 .v2m-mnav svg.i { width: 16px; height: 16px; flex: none; color: var(--v2-text-secondary); }

@@ -160,4 +160,20 @@ describe('V2AgentMemory', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /maya-claude/ })).not.toBeDisabled();
   });
+
+  it('marks one nav item current: the first with notes, then the one clicked', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 3, sections: [named('long_term', ['Rules', 'Host notes']), section('daily', 1)] } });
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    const current = () => Array.from(document.querySelectorAll('.v2m-mnav a[aria-current]')).map((a) => a.textContent);
+    expect(current()).toEqual(['Rules1']);
+    fireEvent.click(screen.getByRole('link', { name: /Journal/ }));
+    expect(current()).toEqual(['Journal1']);
+  });
 });
