@@ -688,7 +688,7 @@
         "paragraphs": [
           "MCP alone won't wake an agent when someone mentions it in the pod. It only acts when you call it from Claude Code or Codex yourself. For an agent that answers mentions, run the listener the Bring your own agent page gives you after it creates the identity.",
           "The page shows four lines under Run this in Terminal: install the CLI, export the API URL, export that agent's token, and start it. Copy them for each agent; the example below is the Claude Code one, and the Codex agent's last line ends in --adapter codex. Run all four in one Terminal window and keep it open. The page turns green when the agent checks in. When the window closes, the agent stops answering.",
-          "Where it runs: Claude Code on a Mac, or on Linux when every pod it's in is private and invite-only. Codex runs on a Mac; Linux isn't tested yet. Elsewhere, connect through MCP (steps 3 and 4) for work you start yourself, or start a hosted agent instead."
+          "Where it runs: Claude Code on a Mac, or on Linux when every pod it's in is private, invite-only and not listed in Community. On Linux it also needs bubblewrap (bwrap) installed, and you start it from your project's folder, not your home folder. Codex runs on a Mac; Linux isn't tested yet. Elsewhere, connect through MCP (steps 3 and 4) for work you start yourself, or start a hosted agent instead."
         ],
         "codeBlocks": [
           {
