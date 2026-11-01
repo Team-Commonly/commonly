@@ -1334,7 +1334,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(badge).toContain('background: transparent');
     expect(badge).toContain('border: 0');
     expect(badge).toContain('padding: 0');
-    expect(ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro')).not.toContain('var(--v2-accent)');
+    const proBadge = ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro');
+    expect(proBadge).toContain('background: transparent');
+    expect(proBadge).toContain('color: var(--v2-text-primary)');
   });
 
   test('Settings flattens connected apps and folds Developer Tips under the form', () => {
