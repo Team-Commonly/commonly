@@ -5071,7 +5071,8 @@ describe('agent Wake and Pods controls', () => {
     const head = ruleBody(css, '.v2-agent-settings__head');
     expect(head).toContain('display: flex');
     expect(head).toContain('align-items: center');
-    expect(ruleBody(css, '.v2-agent-settings__seg')).toContain('margin-left: auto');
+    expect(ruleBody(css, '.v2-agent-settings__head .v2-agent-settings__seg')).toContain('margin-left: auto');
+    expect(ruleBody(css, '.v2-agent-settings__head .v2-agent-settings__seg [aria-current="page"]')).toContain('border-bottom: 0');
   });
 });
 
