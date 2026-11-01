@@ -171,6 +171,7 @@ export const HOSTED_NATIVE_TOOLS: readonly string[] = [
   'commonly_post_message',
   'commonly_create_task',
   'commonly_list_tasks',
+  'commonly_claim_task',
   'commonly_web_search',
   'commonly_run_code',
   'commonly_fetch_url',

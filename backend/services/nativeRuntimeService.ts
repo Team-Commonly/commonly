@@ -354,6 +354,23 @@ export const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'commonly_claim_task',
+      description:
+        'Claim a task on this pod\'s board as yourself, so it is yours to work on for the next 30 minutes; '
+        + 'claim it again to keep it. A connector granted for one task can be used only while you hold that '
+        + 'task\'s claim. If someone else holds a live claim, this fails and says who and until when.',
+      parameters: {
+        type: 'object',
+        properties: {
+          taskId: { type: 'string', description: 'The task id commonly_list_tasks shows, for example TASK-012.' },
+        },
+        required: ['taskId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'commonly_propose_action',
       description:
         'Propose an action that needs the workspace owner\'s approval. Posts an '
@@ -1223,6 +1240,32 @@ export async function dispatchTool(
           taskId: row.taskId, title: row.title, priority: row.priority || 'P2', status: row.status, assignee: row.assignee || null,
         }));
         return { content: { status: which, total, tasks } };
+      }
+
+      case 'commonly_claim_task': {
+        const taskId = String(args.taskId || '').trim();
+        if (!taskId) return { content: { ok: false, error: 'taskId is required' }, error: 'missing_task_id' };
+        // Claimed as this run's own bot User, read from the database and gated on
+        // pod membership, never from anything the model wrote: claimedByUserId is
+        // the authority a task-bound grant checks (TASK-340).
+        const seatUserId = await resolveSeatUserId(String(ctx.podId), ctx.agentName, ctx.instanceId);
+        const User = require('../models/User');
+        const bot = seatUserId
+          ? await User.findById(seatUserId).select('_id username profilePicture isBot botMetadata').lean()
+          : null;
+        if (!bot?.isBot) {
+          return { content: { ok: false, error: 'This agent is not a member of this pod.' }, error: 'not_a_member' };
+        }
+        const { claimTaskAs, claimantOf } = require('../routes/tasksApi');
+        const result = await claimTaskAs(String(ctx.podId), taskId, await claimantOf({ userId: seatUserId, user: bot }));
+        if ('body' in result) {
+          const error = result.status === 409 ? 'task_already_claimed' : 'claim_refused';
+          return { content: { ok: false, ...result.body }, error };
+        }
+        const claimed = result.task as { taskId?: unknown; status?: unknown; claimExpiresAt?: unknown };
+        return {
+          content: { ok: true, taskId: String(claimed.taskId), status: claimed.status, claimExpiresAt: claimed.claimExpiresAt },
+        };
       }
 
       case 'commonly_agent_status': {
@@ -2118,10 +2161,10 @@ export async function runAgent(
   // verdict here — the natural thing to do when someone notices a Mongo read
   // per tool call — would silently reopen that window for the rest of the run.
   const seatUserId = await resolveSeatUserId(podId, agentName, instanceId);
-  let broker: HostedBrokerProjection = { tools: [], dispatch: new Map() };
-  if (seatUserId) {
+  const assembleBroker = async (): Promise<HostedBrokerProjection> => {
+    if (!seatUserId) return { tools: [], dispatch: new Map() };
     try {
-      broker = await hostedBrokerToolsForRun({ identityId: seatUserId, podId });
+      return await hostedBrokerToolsForRun({ identityId: seatUserId, podId });
     } catch (error) {
       // Fail closed: no broker tools for this run, and the run itself carries
       // on. A projection failure may not become a silent capability.
@@ -2129,8 +2172,10 @@ export async function runAgent(
         `[native-runtime] ${agentName}:${instanceId} grant broker assembly failed:`,
         (error as Error).message,
       );
+      return { tools: [], dispatch: new Map() };
     }
-  }
+  };
+  let broker: HostedBrokerProjection = await assembleBroker();
 
   // A guard stop after the turn read the web is most often a page, not the
   // person. So the turn keeps where each web result sits (its tool-call round
@@ -2402,6 +2447,10 @@ export async function runAgent(
           else if (offeredToolNames.has(toolName) || narrowedAway || webTaintedAway) {
             result = await dispatchTool(toolName, parsedArgs, dispatchCtx);
           } else result = { content: { ok: false, error: notOffered }, error: notOffered };
+          // A claim can make a task-bound grant usable (TASK-340), so the projection is
+          // read again and its tools are offered from the next round. This is the
+          // same once-per-assembly read as above, and every call is still re-checked.
+          if (toolName === 'commonly_claim_task' && !result.error) broker = await assembleBroker();
           const elapsed = Date.now() - toolStart;
           turn.toolCalls.push({
             name: toolName,

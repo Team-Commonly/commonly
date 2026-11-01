@@ -137,7 +137,7 @@ const mention = {
 };
 
 const BASE_TOOLS = [
-  'commonly_create_task', 'commonly_fetch_url', 'commonly_list_tasks', 'commonly_offer_local_agent',
+  'commonly_claim_task', 'commonly_create_task', 'commonly_fetch_url', 'commonly_list_tasks', 'commonly_offer_local_agent',
   'commonly_post_message', 'commonly_read_context', 'commonly_read_memory', 'commonly_write_memory',
 ];
 const call = (id, name, args) => ({ id, type: 'function', function: { name, arguments: JSON.stringify(args) } });
