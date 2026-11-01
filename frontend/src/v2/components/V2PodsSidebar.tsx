@@ -194,6 +194,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     pods, loading, error, createPod, refresh: refreshPods,
   } = podsState || ownPodsState;
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const searchToggleRef = useRef<HTMLButtonElement | null>(null);
   const [query, setQuery] = useState('');
   // The phone page folds search behind an icon in its title bar (D223).
   const [searchOpen, setSearchOpen] = useState(false);
@@ -243,6 +244,9 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
+        // The phone page renders the field only once its search is open;
+        // opening it lets the field's autoFocus take the focus.
+        setSearchOpen(true);
         searchRef.current?.focus();
         searchRef.current?.select();
       }
@@ -487,11 +491,18 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           <div className="v2-pods__bar">
             <h1 className="v2-pods__page-title">{t('podsSidebar.workspace.listTitle')}</h1>
             <button
+              ref={searchToggleRef}
               type="button"
               className="v2-icon-button v2-pods__search-open"
               onClick={() => {
-                setSearchOpen((open) => !open);
-                if (searchOpen) setQuery('');
+                if (showSearch) {
+                  // Closing removes the field that held focus; keep it here.
+                  setSearchOpen(false);
+                  setQuery('');
+                  searchToggleRef.current?.focus();
+                } else {
+                  setSearchOpen(true);
+                }
               }}
               aria-label={t('podsSidebar.workspace.search')}
               title={t('podsSidebar.workspace.search')}
