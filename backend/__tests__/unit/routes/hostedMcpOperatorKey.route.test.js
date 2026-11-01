@@ -9,14 +9,16 @@
 const express = require('express');
 const request = require('supertest');
 
-jest.mock('../../../models/Integration', () => ({ findOneAndUpdate: jest.fn(), updateOne: jest.fn() }));
+jest.mock('../../../models/Integration', () => ({ findOneAndUpdate: jest.fn(), updateOne: jest.fn(), exists: jest.fn() }));
 jest.mock('../../../models/User', () => ({ findOne: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { find: jest.fn() } }));
 jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
-jest.mock('../../../services/connectorSecrets', () => ({ put: jest.fn() }));
+jest.mock('../../../services/connectorSecrets', () => ({ put: jest.fn(), revoke: jest.fn() }));
+jest.mock('../../../services/roomGrantService', () => ({ revokeConnectionGrants: jest.fn() }));
 jest.mock('../../../services/hostedMcpToolDefinitions', () => ({
   guardedFetch: jest.fn(),
   listHostedMcpTools: jest.fn(),
+  forgetHostedMcpDrift: jest.fn(),
 }));
 
 const Integration = require('../../../models/Integration');
@@ -24,7 +26,8 @@ const User = require('../../../models/User');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
 const Pod = require('../../../models/Pod');
 const connectorSecrets = require('../../../services/connectorSecrets');
-const { listHostedMcpTools } = require('../../../services/hostedMcpToolDefinitions');
+const { listHostedMcpTools, forgetHostedMcpDrift } = require('../../../services/hostedMcpToolDefinitions');
+const { revokeConnectionGrants } = require('../../../services/roomGrantService');
 const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 const { submitOperatorKey } = require('../../../routes/hostedMcpOperatorKey');
 
@@ -86,7 +89,8 @@ beforeEach(() => {
   Pod.find.mockImplementation(() => ({ select: () => ({ lean: async () => dmPods }) }));
   listHostedMcpTools.mockResolvedValue([{ name: 'list_jobs' }]);
   Integration.findOneAndUpdate.mockResolvedValue({ _id: ROW_ID, config: { authGeneration: 1 } });
-  Integration.updateOne.mockResolvedValue({ acknowledged: true });
+  Integration.updateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
+  Integration.exists.mockResolvedValue({ _id: ROW_ID });
   connectorSecrets.put.mockResolvedValue('secret-ref-1');
 });
 afterEach(() => {
@@ -198,9 +202,58 @@ describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
     );
     expect(connectorSecrets.put).toHaveBeenCalledWith(ROW_ID, expect.anything(), KEY, expect.any(Number));
     expect(Integration.updateOne).toHaveBeenCalledWith(
-      { _id: ROW_ID },
+      { _id: ROW_ID, 'config.authGeneration': 1 },
       { $set: { status: 'connected', 'config.credentialRef': 'secret-ref-1' } },
     );
+    // A first paste has no grants to end.
+    expect(revokeConnectionGrants).not.toHaveBeenCalled();
+  });
+
+  // Both F07 reviewers: fetch strips header whitespace, so a key pasted with a
+  // newline authenticates while the stored copy no longer matches what the
+  // vendor echoes, and redaction (an exact match) lets it through.
+  test('a key pasted with surrounding whitespace is stored as the trimmed value the probe proved', async () => {
+    const res = await submit({ key: `  ${KEY}\n` });
+    expect(res.status).toBe(201);
+    expect(listHostedMcpTools).toHaveBeenCalledWith(expect.anything(), KEY, expect.anything());
+    expect(connectorSecrets.put).toHaveBeenCalledWith(ROW_ID, expect.anything(), KEY, expect.any(Number));
+  });
+
+  // A grant was decided against the key that was connected then; a pasted key
+  // cannot prove it is the same account, so a re-paste ends them, as the OAuth
+  // callback does for a subject it cannot compare (hostedMcpConnect.ts).
+  test('a re-paste on an existing row revokes its grants and forgets its drift before storing the new key', async () => {
+    const existing = { _id: ROW_ID, config: { authGeneration: 2 } };
+    Integration.findOneAndUpdate.mockResolvedValue(existing);
+    const res = await submit();
+    expect(res.status).toBe(201);
+    expect(revokeConnectionGrants).toHaveBeenCalledWith({ connection: existing, revokedBy: OWNER });
+    expect(forgetHostedMcpDrift).toHaveBeenCalledWith(ROW_ID);
+    expect(revokeConnectionGrants.mock.invocationCallOrder[0])
+      .toBeLessThan(connectorSecrets.put.mock.invocationCallOrder[0]);
+  });
+
+  test('a paste clears the row\'s revocation, error and provider-revoked mark', async () => {
+    await submit();
+    const [, update] = Integration.findOneAndUpdate.mock.calls[0];
+    expect(update.$set).toEqual(expect.objectContaining({ revokedAt: null, errorMessage: null }));
+    expect(update.$unset).toEqual({ 'config.providerRevokedAt': '' });
+  });
+
+  test('a row removed while the key was being saved: the new secret is revoked and the paste refused', async () => {
+    Integration.updateOne.mockResolvedValue({ acknowledged: true, matchedCount: 0 });
+    Integration.exists.mockResolvedValue(null);
+    const res = await submit();
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'connection_changed', message: 'the connection changed while the key was saved; paste it again' });
+    expect(connectorSecrets.revoke).toHaveBeenCalledWith('secret-ref-1');
+  });
+
+  test('a newer paste that won the row keeps its secret: the older paste is refused without revoking it', async () => {
+    Integration.updateOne.mockResolvedValue({ acknowledged: true, matchedCount: 0 });
+    const res = await submit();
+    expect(res.status).toBe(409);
+    expect(connectorSecrets.revoke).not.toHaveBeenCalled();
   });
 
   test('the key appears in no response, no row write, and no thrown error text', async () => {

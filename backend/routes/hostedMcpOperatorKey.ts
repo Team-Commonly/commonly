@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
 import { isHostedMcpEntryHidden } from '../integrations/hostedMcp/visibility';
 import { refusedOperatorKeyScopes, validateOperatorKey } from '../services/hostedMcpOperatorKeyIntake';
-import { guardedFetch } from '../services/hostedMcpToolDefinitions';
+import { forgetHostedMcpDrift, guardedFetch } from '../services/hostedMcpToolDefinitions';
 import { secretWriteGeneration } from '../services/hostedMcpSecretGeneration';
 import { ownsRuntimeIdentity } from '../services/runtimeIdentityOwnership';
 
@@ -10,6 +10,7 @@ const Integration = require('../models/Integration');
 const User = require('../models/User');
 const connectorSecrets = require('../services/connectorSecrets');
 const { HOSTED_MCP_ACCESS_TOKEN } = require('../services/connectorSecretKinds');
+const { revokeConnectionGrants } = require('../services/roomGrantService');
 
 type OperatorKeyRequest = Request & { user?: { id?: string } };
 
@@ -69,7 +70,10 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
     });
   }
 
-  const key = typeof body.key === 'string' ? body.key : '';
+  // Trimmed once, here: fetch strips header whitespace, so a pasted newline
+  // would still authenticate while the stored copy no longer matched what a
+  // vendor echoes, and the result redaction is an exact match.
+  const key = typeof body.key === 'string' ? body.key.trim() : '';
   const intake = await validateOperatorKey({
     entry,
     key,
@@ -88,7 +92,11 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
     { type: 'hosted-mcp', createdBy: userId, 'config.entryId': entry.id, 'config.agentId': agentId },
     {
       $inc: { 'config.authGeneration': 1 },
-      $set: { status: 'pending', 'config.intake': 'operator_key' },
+      // A paste is a fresh connection: whatever a half-finished removal left on
+      // the row (its revocation, error, provider-revoked mark) is not about
+      // this key, and a surviving mark would let the next removal skip a step.
+      $set: { status: 'pending', 'config.intake': 'operator_key', revokedAt: null, errorMessage: null },
+      $unset: { 'config.providerRevokedAt': '' },
       $setOnInsert: {
         type: 'hosted-mcp',
         scope: 'user',
@@ -99,7 +107,15 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
-  const writeGeneration = secretWriteGeneration(row.config?.authGeneration ?? 0, 0);
+  const generation = row.config?.authGeneration ?? 0;
+  if (generation > 1) {
+    // A grant was decided against the key connected then, and a pasted key
+    // cannot prove it is the same account, so a re-paste ends them, as the OAuth
+    // callback does for a subject it cannot compare (hostedMcpConnect.ts).
+    await revokeConnectionGrants({ connection: row, revokedBy: userId });
+    forgetHostedMcpDrift(String(row._id));
+  }
+  const writeGeneration = secretWriteGeneration(generation, 0);
   let credentialRef: string;
   try {
     credentialRef = await connectorSecrets.put(String(row._id), HOSTED_MCP_ACCESS_TOKEN, key, writeGeneration);
@@ -107,10 +123,20 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
     // Fixed copy only: the store's error text stays out of the response.
     return res.status(500).json({ error: 'key_store_failed', message: 'the key could not be stored; try again' });
   }
-  await Integration.updateOne(
-    { _id: row._id },
+  const published = await Integration.updateOne(
+    { _id: row._id, 'config.authGeneration': generation },
     { $set: { status: 'connected', 'config.credentialRef': credentialRef } },
   );
+  if (published?.matchedCount === 0) {
+    // A removal deleted the row mid-paste, or a newer paste took it. Only the
+    // first leaves this secret with nothing pointing at it; a newer paste wrote
+    // the same ref, so it is left alone.
+    if (!(await Integration.exists({ _id: row._id }))) await connectorSecrets.revoke(credentialRef);
+    return res.status(409).json({
+      error: 'connection_changed',
+      message: 'the connection changed while the key was saved; paste it again',
+    });
+  }
 
   return res.status(201).json({
     integrationId: String(row._id),
