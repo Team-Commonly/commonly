@@ -340,14 +340,19 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     setReplyTarget(m);
     composerInputRef.current?.focus();
   }, []);
+  // Read through a ref so the callback stays the same object while messages
+  // arrive: every message row receives it, and a new one each time would
+  // re-render the whole transcript for one new message.
+  const messagesRef = useRef(messages);
+  useLayoutEffect(() => { messagesRef.current = messages; }, [messages]);
   const aimAtMessageThread = useCallback((m: import('../hooks/useV2PodDetail').V2Message) => {
     // The action is available on every visible message, including replies.
     // Explicit roots may not themselves be inside a thread (#1128), so a
     // reply joins its existing root while a standalone message starts one.
     const rootId = String(m.thread_root_id ?? m.id);
-    const root = messages.find((candidate) => String(candidate.id) === rootId);
+    const root = messagesRef.current.find((candidate) => String(candidate.id) === rootId);
     aimAtThread(rootId, String(root?.content || m.content || ''));
-  }, [aimAtThread, messages]);
+  }, [aimAtThread]);
 
   // Memoized: it was called in the render body, so every keystroke in the
   // composer re-folded the whole message list. @sprint-review on #1150.
