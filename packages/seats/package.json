@@ -17,6 +17,6 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test $([ -z \"$CI\" ] && echo --test-concurrency=4) \"test/**/*.test.js\""
   }
 }
