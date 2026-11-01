@@ -230,7 +230,10 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
       setGrants(next.grants || []);
     } catch (requestError) {
       if ((requestError as { response?: { status?: number } })?.response?.status === 403) {
+        // Nothing from an earlier load or a revoke in flight may outlive access.
         setGrants([]);
+        setRevokeError('');
+        setConfirmGrantId(null);
         setGrantsPrivate(true);
       } else setLoadError(t('agentManage.grants.loadError', { defaultValue: 'Could not load connector grants.' }));
     } finally {

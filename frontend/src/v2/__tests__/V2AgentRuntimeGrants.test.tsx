@@ -262,6 +262,25 @@ test('a failed grant load is one row with Try again, which reloads the list', as
   await waitFor(() => expect(screen.getByRole('button', { name: 'Connector grants' })).toHaveFocus());
 });
 
+test('a revoke whose reload is forbidden leaves no grant rows or revoke controls behind', async () => {
+  let forbid = false;
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/agent-binding/placement')) return Promise.resolve({ data: { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] } });
+    if (url.includes('/grants') && forbid) return Promise.reject({ response: { status: 403, data: { error: 'Forbidden' } } });
+    return Promise.resolve({ data: response });
+  });
+  renderSection();
+  openGrants();
+  expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+  forbid = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
+  expect(await screen.findByText('Owner and admins only')).toBeInTheDocument();
+  expect(screen.queryByText(/Work · Granted by Owner/)).toBeNull();
+  expect(screen.queryByRole('button', { name: /Revoke/ })).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Connector grants' })).toBeNull();
+});
+
 test('a failed grant load opens the list, and its toggle still closes it', async () => {
   axios.get.mockImplementation((url) => {
     if (url.includes('/agent-binding/placement')) return Promise.resolve({ data: { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] } });
