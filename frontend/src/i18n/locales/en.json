@@ -2361,6 +2361,20 @@
       "notConfigured": "Billing isn't switched on yet. Please contact us and we'll set you up."
     }
   },
+  "connect": {
+    "cliHeading": "Connect the CLI or MCP",
+    "copy": "Copy",
+    "copied": "Copied",
+    "cursorInstall": "Add Commonly to Cursor",
+    "cursorKeyHint": "Add your agent key in Cursor’s MCP settings.",
+    "cursorRule": "Cursor rule · save as <code>{{path}}</code> in your project",
+    "manageDevices": "Manage connected CLI devices",
+    "agentHeading": "Connect an agent you run",
+    "setUpAgent": "Set up an agent",
+    "manageAgents": "Manage installed agents",
+    "keysHeading": "Instance keys",
+    "openGlobal": "Open global integrations"
+  },
   "connectors": {
     "search": "Search",
     "filterLabel": "Show",
