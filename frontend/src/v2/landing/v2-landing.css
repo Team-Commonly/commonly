@@ -83,12 +83,11 @@
   align-items: center;
   justify-content: space-between;
   height: 72px;
-  background: color-mix(in srgb, var(--v2-bg) 86%, transparent);
-  backdrop-filter: saturate(180%) blur(12px);
+  background: var(--v2-bg);
   border-bottom: 1px solid var(--v2-border-soft);
 }
 /* One element, two states. While the cobalt band is under the bar the bar is
-   cobalt too — #1d3fd1, a white hairline, no blur — so the band reads as one
+   cobalt too — #1d3fd1, a white hairline — so the band reads as one
    block from the top of the page; past the band's bottom edge it is the white
    bar above. The class is set once by an IntersectionObserver on the band (see
    V2LandingPage), and the class starts ON so first paint is the band state and
@@ -98,7 +97,6 @@
      translucent white text is tuned on #1d3fd1 and drops below AA on dark
      --v2-accent-fill (#3d5ef2). */
   background: #1d3fd1;
-  backdrop-filter: none;
   border-bottom-color: rgba(255, 255, 255, 0.22);
 }
 .v2-landing__brand { display: flex; align-items: center; gap: 8px; }
