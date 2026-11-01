@@ -7,6 +7,8 @@ import { UseV2PodDetailResult, V2Agent } from '../hooks/useV2PodDetail';
 import { useV2Api } from '../hooks/useV2Api';
 import { V2AttentionItem } from '../hooks/useV2PodAttention';
 import V2Lightbox from './V2Lightbox';
+import V2Segmented from './V2Segmented';
+import { ShellGlyph, ShellGlyphName } from '../icons/glyphs';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { buildAgentUsername, rawAgentName } from '../utils/threadAgentIdentity';
 
@@ -48,6 +50,26 @@ const isWorkingTask = (task: TaskItem): boolean => (
 );
 
 
+// D215 (TASK-691): the panel folds. Each group is one 44px row at rest and
+// opens on demand; what a person opened stays open for the session.
+export type InspectorGroup = 'needs-you' | 'agents' | 'files' | 'join';
+export const INSPECTOR_OPEN_KEY = 'v2:inspector.openGroups';
+const readOpenGroups = (): Set<InspectorGroup> => {
+  try {
+    const raw = sessionStorage.getItem(INSPECTOR_OPEN_KEY);
+    return new Set(raw ? (JSON.parse(raw) as InspectorGroup[]) : []);
+  } catch {
+    return new Set();
+  }
+};
+const writeOpenGroups = (groups: Set<InspectorGroup>) => {
+  try {
+    sessionStorage.setItem(INSPECTOR_OPEN_KEY, JSON.stringify([...groups]));
+  } catch {
+    // Session storage unavailable: the panel simply opens folded next time.
+  }
+};
+
 const labelForAgent = (agent: V2Agent, fallback: string): string => {
   // The roster's displayName already went through resolveAgentDisplayLabel on
   // the backend for agents with a User row. This chain stops there on purpose:
@@ -60,12 +82,6 @@ const labelForAgent = (agent: V2Agent, fallback: string): string => {
   const profileLabel = profileName === (agent.agentName || '') ? '' : profileName;
   return agent.displayName || profileLabel || fallback;
 };
-
-// Pods often carry a longer descriptive title, while the compact inspector
-// heading uses the room's short leading name (for example, “Sharpen”).
-const shortRoomName = (name: string): string => (
-  name.trim().split(/\s*[·—–:|]\s*/)[0].trim() || name.trim()
-);
 
 const matchesAgent = (agent: V2Agent, value?: string): boolean => {
   const candidate = (value || '').trim().toLowerCase();
@@ -111,6 +127,15 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   const [joinPolicy, setJoinPolicy] = useState<'open' | 'invite-only'>('open');
   const [policyBusy, setPolicyBusy] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
+  const [openGroups, setOpenGroups] = useState<Set<InspectorGroup>>(() => readOpenGroups());
+  const toggleGroup = (group: InspectorGroup) => {
+    setOpenGroups((current) => {
+      const next = new Set(current);
+      if (next.has(group)) next.delete(group); else next.add(group);
+      writeOpenGroups(next);
+      return next;
+    });
+  };
   useEffect(() => {
     setJoinPolicy(pod?.joinPolicy === 'invite-only' ? 'invite-only' : 'open');
     setPolicyError(null);
@@ -184,17 +209,80 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
     ? t('inspector.workspace.nothingWorking', { agents: workingAgents.join(' and '), count: workingAgents.length })
     : t('inspector.workspace.nothingOpen');
 
+  const needsYouTotal = attentionCount ?? attention.length;
+
+  const renderGroup = (
+    group: InspectorGroup,
+    icon: ShellGlyphName,
+    label: string,
+    count: number | null,
+    content: React.ReactNode,
+    extra?: React.ReactNode,
+  ) => {
+    const open = openGroups.has(group);
+    const headId = `workspace-inspector-${group}`;
+    return (
+      <section className={`v2-workspace-inspector__card v2-workspace-inspector__group${open ? ' v2-workspace-inspector__group--open' : ''}`} aria-labelledby={headId}>
+        <h2 className="v2-workspace-inspector__label">
+          <button
+            type="button"
+            id={headId}
+            className="v2-workspace-inspector__fold"
+            aria-expanded={open}
+            aria-controls={`${headId}-body`}
+            onClick={() => toggleGroup(group)}
+          >
+            <span className="v2-workspace-inspector__fold-icon"><ShellGlyph name={icon} /></span>
+            <span className="v2-workspace-inspector__fold-label">{label}</span>
+            {count !== null && count > 0 && <span className="v2-workspace-inspector__fold-count">{count}</span>}
+            {extra}
+            <span className="v2-workspace-inspector__fold-chevron"><ShellGlyph name="chevron" /></span>
+          </button>
+        </h2>
+        {open && <div id={`${headId}-body`} className="v2-workspace-inspector__group-body">{content}</div>}
+      </section>
+    );
+  };
+
   return (
     <aside className="v2-pane v2-pane--inspector" aria-label={t('inspector.workspace.ariaLabel')}>
       <div className="v2-workspace-inspector">
-        {onClose && (
-          <button type="button" className="v2-workspace-inspector__close" onClick={onClose} aria-label={t('inspector.workspace.close')}>
-            <CloseIcon fontSize="small" />
+        {/* D215: "members · manage" left the footer for two icon buttons here. */}
+        <div className="v2-workspace-inspector__head">
+          {onOpenInvite && (
+            <button
+              type="button"
+              className="v2-icon-button v2-workspace-inspector__head-button"
+              onClick={onOpenInvite}
+              aria-label={t('inspector.workspace.members')}
+              title={t('inspector.workspace.members')}
+            >
+              <ShellGlyph name="people" />
+            </button>
+          )}
+          <button
+            type="button"
+            className="v2-icon-button v2-workspace-inspector__head-button"
+            onClick={() => navigate('/v2/agents')}
+            aria-label={t('inspector.workspace.manage')}
+            title={t('inspector.workspace.manage')}
+          >
+            <ShellGlyph name="gear" />
           </button>
-        )}
+          {onClose && (
+            <button
+              type="button"
+              className="v2-workspace-inspector__close"
+              onClick={onClose}
+              aria-label={t('inspector.workspace.close')}
+              title={t('inspector.workspace.close')}
+            >
+              <CloseIcon fontSize="small" />
+            </button>
+          )}
+        </div>
 
-        <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-needs-you">
-          <h2 id="workspace-inspector-needs-you" className="v2-workspace-inspector__label">{t('inspector.workspace.needsYou')}</h2>
+        {renderGroup('needs-you', 'inbox', t('inspector.workspace.needsYou'), needsYouTotal, (
           <div className="v2-workspace-inspector__rows">
             {attentionCount === 0 && <p className="v2-workspace-inspector__empty">{emptyAttentionCopy}</p>}
             {attentionCount !== null && attentionCount > 0 && (
@@ -213,12 +301,9 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               </button>
             ))}
           </div>
-        </section>
+        ))}
 
-        <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-agents">
-          <h2 id="workspace-inspector-agents" className="v2-workspace-inspector__label">
-            {t('inspector.workspace.agentsIn', { pod: shortRoomName(pod.name).toLowerCase() })}
-          </h2>
+        {renderGroup('agents', 'agents', t('inspector.workspace.agents'), agents.length, (
           <div className="v2-workspace-inspector__rows">
             {agents.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noAgents')}</p>}
             {agents.map((agent) => {
@@ -252,13 +337,28 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               );
             })}
           </div>
-        </section>
+        ), agents.length > 0 && (
+          <span className="v2-workspace-inspector__fold-stack" aria-hidden="true">
+            {agents.slice(0, 6).map((agent) => {
+              // The same face as the open row below: the member's picture wins.
+              const username = buildAgentUsername(rawAgentName(agent), agent.instanceId);
+              const member = detail.members.find((row) => row.username?.toLowerCase() === username);
+              return (
+                <V2Avatar
+                  key={`${agent.agentName}:${agent.instanceId || 'default'}`}
+                  className="v2-workspace-inspector__fold-avatar"
+                  name={labelForAgent(agent, t('common.agent'))}
+                  src={member ? (member.profilePicture || undefined) : (agent.profilePicture || undefined)}
+                  size="sm"
+                  kind="agent"
+                  seed={member?._id || agent.userId || `${agent.agentName}:${agent.instanceId || 'default'}`}
+                />
+              );
+            })}
+          </span>
+        ))}
 
-
-        <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-files">
-          <h2 id="workspace-inspector-files" className="v2-workspace-inspector__label">
-            {t('inspector.workspace.filesIn', { pod: shortRoomName(pod.name).toLowerCase() })}
-          </h2>
+        {renderGroup('files', 'file', t('inspector.workspace.files'), filesTotal, (
           <div className="v2-workspace-inspector__rows">
             {files.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noFiles')}</p>}
             {files.map((file) => (
@@ -278,32 +378,27 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               </button>
             )}
           </div>
-        </section>
+        ))}
 
-        {isOwner && !['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && (
-          <section className="v2-workspace-inspector__card" aria-labelledby="workspace-inspector-pod-settings">
-            <h2 id="workspace-inspector-pod-settings" className="v2-workspace-inspector__label">{t('inspector.workspace.podSettings')}</h2>
-            <fieldset className="v2-pod-join-settings" disabled={policyBusy}>
-              <legend>{t('podsSidebar.create.whoCanJoin')}</legend>
-              <label>
-                <input type="radio" name={`pod-${pod._id}-join-policy`} checked={joinPolicy === 'open'} onChange={() => { void changeJoinPolicy('open'); }} />
-                <span>{t('podsSidebar.create.teamOption')}</span>
-              </label>
-              <label>
-                <input type="radio" name={`pod-${pod._id}-join-policy`} checked={joinPolicy === 'invite-only'} onChange={() => { void changeJoinPolicy('invite-only'); }} />
-                <span>{t('podsSidebar.create.privateOption')}</span>
-              </label>
-            </fieldset>
+        {isOwner && !['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && renderGroup('join', 'lock', t('podsSidebar.create.whoCanJoin'), null, (
+          <div className="v2-pod-join-settings">
+            {/* D215: two exclusive values read better side by side than as radios. */}
+            <V2Segmented
+              ariaLabel={t('podsSidebar.create.whoCanJoin')}
+              value={joinPolicy}
+              disabled={policyBusy}
+              onChange={(next) => { void changeJoinPolicy(next); }}
+              options={[
+                { value: 'open', label: t('inspector.workspace.joinOpen'), ariaLabel: t('podsSidebar.create.teamOption') },
+                { value: 'invite-only', label: t('podsSidebar.create.privateOption') },
+              ]}
+            />
             {joinPolicy === 'open' && <p className="v2-pods__join-policy-hint">{t('podsSidebar.create.teamDescription')}</p>}
             {policyError && <p className="v2-pod-join-settings__error" role="alert">{policyError}</p>}
-          </section>
-        )}
+          </div>
+        ))}
 
         {lightbox && <V2Lightbox images={[{ src: `/api/uploads/${lightbox.fileName}`, name: lightbox.name }]} index={0} onClose={() => setLightbox(null)} />}
-        <footer className="v2-workspace-inspector__foot">
-          {onOpenInvite && <button type="button" onClick={onOpenInvite}>{t('inspector.workspace.members')}</button>}
-          <button type="button" onClick={() => navigate('/v2/agents')}>{t('inspector.workspace.manage')}</button>
-        </footer>
       </div>
     </aside>
   );

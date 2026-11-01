@@ -837,6 +837,52 @@ test('a hosted connector shows vendor setup guidance before connect', async () =
   expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
 });
 
+// TASK-290: GitHub's App user token reaches only the repositories the App is
+// installed on, so the page that picks them sits beside Connect and stays
+// after connecting, while the person decides what to grant.
+test('a hosted connector links to where the person chooses its reach, before and after connecting', async () => {
+  const accessPage = 'https://github.com/apps/commonly-connect/installations/new';
+  mockApi([{ ...linearEntry, connections: [], accessPage }]);
+  const first = renderTools();
+  const before = await screen.findByRole('link', { name: 'Choose what Linear can reach' });
+  expect(before).toHaveAttribute('href', accessPage);
+  expect(before).toHaveAttribute('target', '_blank');
+  expect(before).toHaveAttribute('rel', 'noopener noreferrer');
+  expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
+  first.unmount();
+
+  mockApi([{ ...linearEntry, accessPage }]);
+  renderTools();
+  expect(await screen.findByRole('link', { name: 'Choose what Linear can reach' })).toHaveAttribute('href', accessPage);
+  expect(screen.queryByRole('button', { name: 'Connect' })).toBeNull();
+});
+
+// A live grant takes the entry off the offer list, so the page moves to the
+// grant's details. Only the granter, who owns the connection, is sent there.
+test('a live hosted grant keeps the reach link on its details for the granter only', async () => {
+  const accessPage = 'https://github.com/apps/commonly-connect/installations/new';
+  const entry = { ...linearEntry, accessPage };
+  mockTwoEntries({ catalog: [entry], grants: { p1: [grantLinear], p2: [] } });
+  const first = renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'View Linear in Launch pod' }));
+  const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+  expect(within(aside).getByRole('link', { name: 'Choose what Linear can reach' })).toHaveAttribute('href', accessPage);
+  first.unmount();
+
+  mockTwoEntries({ catalog: [entry], grants: { p1: [{ ...grantLinear, grantedBy: 'u2' }], p2: [] } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'View Linear in Launch pod' }));
+  const other = await screen.findByRole('complementary', { name: 'Grant details' });
+  expect(within(other).queryByRole('link', { name: /can reach/ })).toBeNull();
+});
+
+test('a hosted connector without an access page offers no reach link', async () => {
+  mockApi([{ ...linearEntry, connections: [] }]);
+  renderTools();
+  expect(await screen.findByRole('button', { name: 'Connect' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /can reach/ })).toBeNull();
+});
+
 test('a hidden hosted entry has no offering while its existing connection can be removed', async () => {
   mockApi([]);
   const prior = axios.get.getMockImplementation();
@@ -1022,6 +1068,31 @@ test('a Tools row shows the zh-CN catalog copy, and an unmapped entry keeps the 
     renderTools();
     expect(await screen.findByText('你自己的 Linear 工作空间中的议题、项目、周期和发布。')).toBeInTheDocument();
     expect(screen.getByText('Acme server copy.')).toBeInTheDocument();
+  } finally {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  }
+});
+
+test('the open grant form reads in zh-CN, not English', async () => {
+  await i18nReady;
+  await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  try {
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+      if (url === '/api/grants') return Promise.resolve({ data: { grants: [grantRevoked] } });
+      if (url === '/api/registry/pods/p1/agents') return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
+      if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [] } });
+      if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'g', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+      return Promise.reject(new Error(`unmocked ${url}`));
+    });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: /^添加$|^Add$/ }));
+    const form = await screen.findByRole('complementary');
+    expect(within(form).getByText('无需确认')).toBeInTheDocument();
+    expect(within(form).queryByText('nothing asks first')).toBeNull();
+    expect(within(form).queryByText('read and write, ask first')).toBeNull();
+    // No English button left in the zh-CN form.
+    expect(within(form).queryByRole('button', { name: 'Grant' })).toBeNull();
   } finally {
     await act(async () => { await i18n.changeLanguage('en'); });
   }

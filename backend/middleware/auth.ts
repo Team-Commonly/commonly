@@ -1,8 +1,9 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import User from '../models/User';
+import { INSTANCE_ACCESS_ERROR } from '../services/instanceAccessPolicy';
 import { hashDeviceCredential } from '../services/deviceAuthorizationService';
-import { loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
+import { isAccountInstanceRestricted, loadSessionAccount, sessionRefusal } from '../services/sessionAccountService';
 
 // User.lastActive was only ever set at account creation, which made every
 // activity-based metric (returned D1/D7 in /api/admin/analytics/funnel,
@@ -51,7 +52,7 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       // bearers share its public cm_ prefix but are stored only as a hash so a
       // database read cannot impersonate a CLI session.
       let user: any = await User.findOne({ apiToken: token }).select(
-        '_id username email role apiTokenScopes apiTokenCreatedAt banned accountDeletionRequestedAt',
+        '_id username email role isBot verified apiTokenScopes apiTokenCreatedAt banned accountDeletionRequestedAt',
       );
 
       let isDeviceToken = false;
@@ -66,13 +67,20 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
               revokedAt: { $in: [null] },
             },
           },
-        }).select('_id username email role banned accountDeletionRequestedAt');
+        }).select('_id username email role isBot verified banned accountDeletionRequestedAt');
         isDeviceToken = Boolean(user);
       }
 
       if (!user) return res.status(401).json({ msg: 'Invalid API token' });
       if ((user as unknown as { banned?: boolean }).banned) {
         return res.status(403).json({ msg: 'This account has been suspended.' });
+      }
+
+      // The sign-in list is for people. Agent rows carry an address on the
+      // agents domain and hold cm_ user tokens by design (REST/MCP access);
+      // their access is gated by installation, not by this list.
+      if (!user.isBot && isAccountInstanceRestricted(user.email, user.verified)) {
+        return res.status(403).json({ code: 'INSTANCE_ACCESS_RESTRICTED', msg: INSTANCE_ACCESS_ERROR });
       }
 
       if (user.accountDeletionRequestedAt) {
@@ -130,6 +138,9 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
       return res.status(403).json({
         msg: 'Agent accounts authenticate with their runtime token, not a browser session.',
       });
+    }
+    if (refusal === 'restricted') {
+      return res.status(403).json({ code: 'INSTANCE_ACCESS_RESTRICTED', msg: INSTANCE_ACCESS_ERROR });
     }
     if (refusal === 'revoked') return res.status(401).json({ msg: 'Session has been revoked' });
 

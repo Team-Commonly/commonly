@@ -29,11 +29,15 @@ import { GRANT_BROKER_AUTHORIZATION } from './seatEnvironmentProjection';
 import { allToolDefinitions, executionErrorOutcome } from './toolBrokerService';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
+import { assertGrantUsable, RoomGrantError } from './roomGrantService';
+import type { RoomGrantTaskBinding } from '../models/RoomGrant';
 
 export type GrantTarget = { kind?: unknown; id?: unknown };
 
 export interface LiveGrant {
   grantId: string;
+  binding?: RoomGrantTaskBinding;
+  taskEpoch?: number;
   target: GrantTarget;
   audience?: unknown[];
   tools?: unknown[];
@@ -100,7 +104,7 @@ export const selectLiveGrantsForIdentities = async (
     revokedAt: null,
     expiresAt: { $gt: new Date() },
     audience: { $in: ids },
-  }).select('grantId target audience tools writeMode').lean() as LiveGrant[];
+  }).select('grantId target audience tools writeMode binding taskEpoch expiresAt revokedAt parentGrantId').lean() as LiveGrant[];
   if (!grants.length) return output;
 
   const pods = scopedPodIds.length
@@ -114,7 +118,7 @@ export const selectLiveGrantsForIdentities = async (
   );
 
   for (const id of ids) {
-    const selected = grants.filter((grant) => {
+    const candidates = grants.filter((grant) => {
       const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
       if (!grantId) return false;
       const inAudience = (grant.audience || []).map(String).includes(id);
@@ -127,6 +131,20 @@ export const selectLiveGrantsForIdentities = async (
       }
       return false;
     });
+    const selected: LiveGrant[] = [];
+    for (const grant of candidates) {
+      if (grant.binding) {
+        try {
+          // Same authority as list/call; no task context supplied by the model.
+          await assertGrantUsable({ grant: grant as unknown as Record<string, unknown>, agentUserId: id,
+            currentMemberIds: grant.target.kind === 'pod' ? [...(podMembers.get(String(grant.target.id)) || [])] : [id] });
+        } catch (error) {
+          if (error instanceof RoomGrantError) continue;
+          throw error;
+        }
+      }
+      selected.push(grant);
+    }
     if (selected.length) output.set(id, selected);
   }
   return output;

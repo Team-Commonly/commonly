@@ -54,6 +54,7 @@ import {
 import {
   buildByoHandoffPayload,
   defaultByoHandoffName,
+  availableByoHandoffName,
   type ByoHandoffAdapter,
 } from './byoHandoffService';
 import { appendLongTermMemory } from './agentMemoryService';
@@ -124,6 +125,17 @@ const NATIVE_RUNTIME_GUARDRAILS = (
 // How a guardrail rejection reads in a chat call's error body.
 const GUARDRAIL_REJECTION = /guardrail|moderation|prompt-injection/i;
 const GUARD_CHECK_TIMEOUT_MS = 10_000;
+// The free-name walk is advisory; past this it gives up and the default name posts.
+const BYO_NAME_LOOKUP_TIMEOUT_MS = 3_000;
+// Rejects if `work` has not settled in time, so a hung registry read cannot
+// keep the handoff card from posting.
+const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('name lookup timed out')), ms);
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+};
 
 // A web result the guard stops on its own is replaced with this before the
 // turn's one extra round. It names no rule and repeats nothing from the result.
@@ -934,7 +946,7 @@ export async function dispatchTool(
         const agentName = args.name
           ? String(args.name)
           : defaultByoHandoffName(owner?.username, adapter);
-        const payload = buildByoHandoffPayload({
+        let payload = buildByoHandoffPayload({
           adapter,
           os: args.os,
           podId: ctx.podId,
@@ -944,6 +956,24 @@ export async function dispatchTool(
         });
         if ('error' in payload) {
           return { content: { ok: false, error: payload.error }, error: 'handoff_invalid' };
+        }
+        if (!args.name) {
+          // Fail toward posting: if the lookup fails or every candidate is taken,
+          // keep the default name. Attach still enforces ownership on that name.
+          try {
+            const { AgentRegistry } = require('../models/AgentRegistry');
+            const availableName = await withDeadline(availableByoHandoffName(
+              payload.agentName,
+              async (name) => Boolean(await AgentRegistry.exists({ agentName: name })),
+            ), BYO_NAME_LOOKUP_TIMEOUT_MS);
+            const availablePayload = buildByoHandoffPayload({
+              adapter, os: args.os, podId: ctx.podId, agentName: availableName,
+              memoryFrom: ctx.agentName, memoryInstance: ctx.instanceId || 'default',
+            });
+            if (!('error' in availablePayload)) payload = availablePayload;
+          } catch (err) {
+            console.warn('[byo-handoff] free-name lookup failed; posting default name', (err as Error).message);
+          }
         }
         const AgentMessageService = require('./agentMessageService');
         const result = await AgentMessageService.postMessage({

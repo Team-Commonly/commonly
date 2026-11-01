@@ -116,6 +116,27 @@ describe('V2SettingsPage', () => {
     expect(languageRadioLabels()).toEqual(LANGUAGE_REGISTRY.map(({ label }) => label));
   });
 
+  test('Look carries the language as a segment that switches the app language', async () => {
+    await i18nReady;
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    const look = screen.getByRole('region', { name: 'Look' });
+    const language = within(look).getByRole('radiogroup', { name: 'Language' });
+    expect(language).toHaveClass('v2-seg');
+    expect(within(language).getByRole('radio', { name: 'English' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(look).getByRole('radiogroup', { name: 'Appearance' })).toHaveClass('v2-seg');
+
+    await act(async () => { fireEvent.click(within(language).getByRole('radio', { name: '中文' })); });
+    expect(i18n.resolvedLanguage).toBe('zh-CN');
+    // The labels follow the new language, and the segment shows the choice.
+    const zhLanguage = within(screen.getByRole('region', { name: 'Look' })).getByRole('radiogroup', { name: '语言' });
+    expect(within(zhLanguage).getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'true');
+
+    await act(async () => { fireEvent.click(within(zhLanguage).getByRole('radio', { name: 'English' })); });
+    expect(i18n.resolvedLanguage).toBe('en');
+  });
+
   test('keeps every folded settings concern visible on one page', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();
@@ -128,7 +149,7 @@ describe('V2SettingsPage', () => {
       { id: 'devices', title: 'Devices' },
       { id: 'api-token', title: 'API token' },
       { id: 'connected-apps', title: 'Connected apps' },
-      { id: 'language', title: 'Language' },
+      { id: 'look', title: 'Look' },
     ]) {
       expect(screen.getByRole('heading', { name: section.title })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: section.title })).toHaveAttribute('href', `#v2-settings-${section.id}`);
@@ -138,19 +159,36 @@ describe('V2SettingsPage', () => {
     expect(screen.getByText('Device controls')).toBeInTheDocument();
     expect(screen.getByText('Plan controls')).toHaveAttribute('data-show-heading', 'false');
     expect(screen.getByText('Device controls')).toHaveAttribute('data-show-heading', 'false');
-    expect(screen.getByText('Connected app controls')).toBeInTheDocument();
+    // Developer apps stay hidden unless REACT_APP_DEVELOPER_APPS=true (TASK-674).
+    expect(screen.queryByText('Connected app controls')).not.toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveClass('v2-settings__avatar');
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('src', '/uploads/lily.png');
     expect(screen.getByRole('img', { name: 'lily avatar' })).toHaveAttribute('data-kind', 'human');
-    expect(screen.getByText('Connected app controls')).toHaveAttribute('data-variant', 'settings');
-    expect(screen.getByText('Connected app controls')).toHaveAttribute('data-show-integrations', 'false');
     expect(screen.getByRole('link', { name: /Connectors/ })).toHaveAttribute('href', '/v2/connectors');
-    expect(screen.getByText('Developer apps').closest('details')).not.toHaveAttribute('open');
+    expect(screen.queryByText('Developer apps')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload photo' })).toBeInTheDocument();
     expect(screen.getByText('Regenerate for another, or upload a photo.')).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'English' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: '中文' })).toBeInTheDocument();
+  });
+
+  test('shows Developer apps only when REACT_APP_DEVELOPER_APPS is exactly true', () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    const previous = process.env.REACT_APP_DEVELOPER_APPS;
+    try {
+      process.env.REACT_APP_DEVELOPER_APPS = 'yes';
+      const off = renderSettings();
+      expect(screen.queryByText('Developer apps')).not.toBeInTheDocument();
+      off.unmount();
+
+      process.env.REACT_APP_DEVELOPER_APPS = 'true';
+      renderSettings();
+      expect(screen.getByText('Developer apps')).toBeInTheDocument();
+    } finally {
+      if (previous === undefined) delete process.env.REACT_APP_DEVELOPER_APPS;
+      else process.env.REACT_APP_DEVELOPER_APPS = previous;
+    }
   });
 
   test('uses a left navigation column to target Settings sections', () => {
@@ -322,11 +360,11 @@ describe('V2SettingsPage', () => {
     expect(regenerateButton).toHaveFocus();
   });
 
-  test('keeps the no-face explanation for Paper and shortens it for a picked face or photo', () => {
+  test('shows the same short avatar hint for Paper and for a picked face', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     const { rerender } = renderSettings({ ...auth.currentUser, profilePicture: 'default' });
 
-    expect(screen.getByText('No face and no skin tone until you choose one. Regenerate for another, or upload a photo.'))
+    expect(screen.getByText('Regenerate for another, or upload a photo.'))
       .toBeInTheDocument();
 
     rerender(
@@ -334,7 +372,7 @@ describe('V2SettingsPage', () => {
         <MemoryRouter><div className="v2-root"><V2SettingsPage /></div></MemoryRouter>
       </AuthContext.Provider>,
     );
-    expect(screen.getByText('No face and no skin tone until you choose one. Regenerate for another, or upload a photo.'))
+    expect(screen.getByText('Regenerate for another, or upload a photo.'))
       .toBeInTheDocument();
 
     rerender(
@@ -343,8 +381,6 @@ describe('V2SettingsPage', () => {
       </AuthContext.Provider>,
     );
     expect(screen.getByText('Regenerate for another, or upload a photo.')).toBeInTheDocument();
-    expect(screen.queryByText('No face and no skin tone until you choose one. Regenerate for another, or upload a photo.'))
-      .not.toBeInTheDocument();
   });
 
   test('Regenerate reports a profile save error without losing the current avatar', async () => {

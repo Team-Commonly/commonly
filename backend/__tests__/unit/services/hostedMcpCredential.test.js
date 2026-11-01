@@ -275,6 +275,23 @@ describe('the fast path', () => {
     expect(body.get('refresh_token')).toBe('old-refresh');
   });
 
+  test('a refresh refused with HTTP 200 and an error body ends the connection, not a retry', async () => {
+    // GitHub answers a revoked or expired refresh token with 200 {"error":"bad_refresh_token"}.
+    const metadata = {
+      issuer: ENTRY.issuer,
+      authorization_endpoint: `${ENTRY.issuer}/authorize`,
+      token_endpoint: `${ENTRY.issuer}/token`,
+    };
+    const fetchImpl = jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => metadata })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ error: 'bad_refresh_token' }) });
+    const error = await refusal(refreshTokenAtVendor({
+      entry: ENTRY, clientId: 'c1', refreshToken: 'old-refresh',
+    }, fetchImpl));
+    expect(error.code).toBe('connection_error');
+    expect(error.retryable).toBeFalsy();
+  });
+
   test('a refused or unknown DCR client requires reconnect before serving any token', async () => {
     const dcrEntry = { ...ENTRY, client: 'dcr' };
     const row = live({ clientId: 'refused-client' });

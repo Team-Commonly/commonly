@@ -15,8 +15,8 @@ describe('timing claims in the copy', () => {
   // at 2.54 s (install 1.83 + provision 0.63); walk 4: 2.47 s.
   // QA report qa-hosted-oob-5, timing table.
   test('click to live says "a few seconds", in both languages', () => {
-    expect(en.agentByo.mode.hostedMeta).toBe('Live in a few seconds · Beta: {{turns}} turns a day');
-    expect(en.agentByo.compact.lead).toBe('Live in a few seconds.');
+    expect(en.agentByo.mode.hostedMeta).toBe('Nothing to install. Live in a few seconds. Beta: {{turns}} turns a day.');
+    expect(en.agentByo.compact.lead).toBe('Live in a few seconds. Beta: {{agents}} hosted agent per account, {{turns}} turns a day.');
     expect(zh.agentByo.mode.hostedMeta).toContain('几秒');
     expect(zh.agentByo.compact.lead).toContain('几秒');
   });

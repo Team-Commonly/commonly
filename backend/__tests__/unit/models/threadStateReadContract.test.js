@@ -55,7 +55,7 @@ jest.mock('../../../services/podWriteAccessService', () => ({
   callerHasPodWriteAccess: async () => true,
 }));
 
-const { createTableFor } = require('../../utils/schemaTable');
+const { applyTable } = require('../../utils/schemaTable');
 const ThreadUserState = require('../../../models/pg/ThreadUserState');
 const { listThreadState } = require('../../../controllers/threadStateController');
 
@@ -74,10 +74,10 @@ beforeAll(async () => {
   // The real dependency chain. thread_user_state -> messages -> pods, and the
   // hand-written fixture had none of it — another thing building from the
   // shipped DDL surfaces rather than hides.
-  await mockPool.query(createTableFor('pods'));
-  await mockPool.query(createTableFor('messages'));
-  await mockPool.query(createTableFor('thread_user_state'));
-  await mockPool.query(createTableFor('migration_records'));
+  await applyTable(mockPool, 'pods');
+  await applyTable(mockPool, 'messages');
+  await applyTable(mockPool, 'thread_user_state');
+  await applyTable(mockPool, 'migration_records');
 });
 // Roots must be real message rows — thread_user_state has a live FK to
 // messages in the shipped schema, which the old hand-written fixture omitted.

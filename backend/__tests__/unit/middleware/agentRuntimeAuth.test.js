@@ -23,12 +23,17 @@ const mockInstallationFind = jest.fn();
 const mockInstallationUpdateOne = jest.fn();
 const mockCompleteStarterTask = jest.fn();
 const mockMarkByoConnectionAttempt = jest.fn();
+const mockRecordByoEvent = jest.fn();
 
 jest.mock('../../../services/starterTaskService', () => ({
   completeConnectAgentStarterTask: (...args) => mockCompleteStarterTask(...args),
 }));
 jest.mock('../../../services/onboardingMarks', () => ({
   markByoConnectionAttempt: (...args) => mockMarkByoConnectionAttempt(...args),
+}));
+jest.mock('../../../services/byoTelemetry', () => ({
+  recordByoEvent: (...args) => mockRecordByoEvent(...args),
+  seatRegisteredKey: () => `seat-registered:${'a'.repeat(64)}`,
 }));
 
 jest.mock('../../../models/User', () => {
@@ -133,6 +138,9 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
       agentLabel: 'codex',
     });
     expect(mockMarkByoConnectionAttempt).toHaveBeenCalledWith('human-a', matchedInstall);
+    // Backend-side seat-registered row, written once for the first use of the token.
+    expect(mockRecordByoEvent).toHaveBeenCalledTimes(1);
+    expect(mockRecordByoEvent).toHaveBeenCalledWith('human-a', 'seat-registered', {}, expect.stringMatching(/^seat-registered:[0-9a-f]{64}$/));
   });
 
   test('does not fire the starter hook when the token was used before (#916)', async () => {
@@ -150,6 +158,7 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
     await agentRuntimeAuth(buildReq('cm_agent_test'), buildRes(), jest.fn());
 
     expect(mockCompleteStarterTask).not.toHaveBeenCalled();
+    expect(mockRecordByoEvent).not.toHaveBeenCalled();
   });
 });
 
@@ -188,6 +197,23 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
       'human-1',
       expect.objectContaining({ podId: expect.anything(), installedBy: 'human-1' }),
     );
+    expect(mockRecordByoEvent).toHaveBeenCalledWith('human-1', 'seat-registered', {}, expect.stringMatching(/^seat-registered:[0-9a-f]{64}$/));
+  });
+
+  test('stamps lastUsedAt but never lastListenedAt — a tool call is not a listener check-in', async () => {
+    mockUserFindOne.mockResolvedValue(buildAgentUser(new Date('2026-08-12T00:00:00Z')));
+    mockInstallationFind.mockReturnValue({
+      lean: async () => [
+        { podId: { toString: () => 'pod-workspace' }, status: 'active' },
+      ],
+    });
+
+    await agentRuntimeAuth(buildReq('cm_agent_test'), buildRes(), jest.fn());
+
+    expect(mockUserUpdateOne).toHaveBeenCalled();
+    const written = JSON.stringify(mockUserUpdateOne.mock.calls);
+    expect(written).toContain('lastUsedAt');
+    expect(written).not.toContain('lastListenedAt');
   });
 
   test('stays silent on every subsequent authentication', async () => {
@@ -201,6 +227,7 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     await agentRuntimeAuth(buildReq('cm_agent_test'), buildRes(), jest.fn());
 
     expect(mockCompleteStarterTask).not.toHaveBeenCalled();
+    expect(mockRecordByoEvent).not.toHaveBeenCalled();
   });
 
   test('returns 401 when token doesnt match any install OR user', async () => {

@@ -5,6 +5,7 @@ import {
   buildByoHandoffCommand,
   buildByoHandoffPayload,
   defaultByoHandoffName,
+  availableByoHandoffName,
 } from '../../../services/byoHandoffService';
 
 describe('byoHandoffService', () => {
@@ -131,5 +132,26 @@ describe('byoHandoffService', () => {
         expect(loginLineFor('mac')).toBe('commonly login');
       }
     });
+  });
+});
+
+describe('availableByoHandoffName', () => {
+  it('preserves an unused base and checks suffixed names at the length limit', async () => {
+    expect(await availableByoHandoffName('sam-claude', async () => false)).toBe('sam-claude');
+    const base = 'a'.repeat(40);
+    const isTaken = jest.fn(async (name) => name === base || name === `${'a'.repeat(38)}-2`);
+    expect(await availableByoHandoffName(base, isTaken)).toBe(`${'a'.repeat(38)}-3`);
+    expect(isTaken).toHaveBeenCalledTimes(3);
+  });
+
+  it('bounds occupied-name lookups and fails rather than suggesting an occupied name', async () => {
+    const isTaken = jest.fn(async () => true);
+    await expect(availableByoHandoffName('sam-claude', isTaken)).rejects.toThrow('Supply a different name');
+    expect(isTaken).toHaveBeenCalledTimes(100);
+  });
+
+  it('propagates lookup failure instead of treating it as availability', async () => {
+    await expect(availableByoHandoffName('sam-claude', async () => { throw new Error('unavailable'); }))
+      .rejects.toThrow('unavailable');
   });
 });

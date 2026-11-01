@@ -20,7 +20,10 @@ interface ConnectedAgent {
 export interface AgentConnectionStatus {
   issued: boolean;
   connected: boolean;
+  /** Latest listener check-in (the events poll or WebSocket), not any token use. */
   lastUsedAt: string | null;
+  /** Latest authenticated use of any kind, e.g. an MCP tool call. Not "listening". */
+  lastToolUseAt?: string | null;
   connectedAgent: ConnectedAgent | null;
 }
 

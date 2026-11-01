@@ -44,7 +44,25 @@ export type StalledConnectCopyEvidence = {
   commandType?: 'mcp' | 'cli' | null;
   /** Token issue time for the current stalled episode. */
   tokenIssuedAt?: Date | string | null;
+  /** OS the Bring your own page detected on the first open (byoOpenedOs). */
+  openedOs?: 'mac' | 'linux' | 'windows' | 'other' | null;
 };
+
+/**
+ * The listener answers @mentions only on a Mac for now (V2AgentBYO's
+ * listenerRunsOn), for a different reason per adapter: Commonly's sandbox
+ * cannot run Claude Code on Linux or Windows, and Codex there is not yet
+ * tested (agentByo.listen.unavailableClaude / unavailableCodex). The server
+ * never learns which adapter the copied command named, so the copy names the
+ * listener, not the CLI, and states only what is true for both: Mac only.
+ *
+ * It hedges, unlike the rest of this file. The page shows the listener command
+ * only on its Mac tab, so a copy from a Linux or Windows browser means the
+ * person picked Mac there: they may have run it on a Mac, or on the machine
+ * they were browsing from. byoOpenedOs is the browser's OS, not where the
+ * command ran, so the sentence is conditional on it.
+ */
+const LISTENER_UNAVAILABLE_OS: Record<string, string> = { linux: 'Linux', windows: 'Windows' };
 
 const copiedAtOffsetSeconds = (evidence: StalledConnectCopyEvidence): number | null => {
   if (!evidence.commandCopiedAt || !evidence.tokenIssuedAt) return null;
@@ -82,9 +100,20 @@ export const composeStalledConnectNudge = ({
     const copiedThing = evidence.commandType === 'mcp'
       ? 'MCP command'
       : evidence.commandType === 'cli' ? 'listener command' : 'command';
+    const unavailableOs = evidence.commandType === 'cli' && evidence.openedOs
+      ? LISTENER_UNAVAILABLE_OS[evidence.openedOs]
+      : undefined;
+    if (unavailableOs) {
+      return `@${installerName} — you copied the listener command `
+        + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
+        + `If you ran it on ${unavailableOs}, that's likely why: the listener answers @mentions `
+        + `only from a Mac for now. `
+        + `Run \`${fixCommand}\` on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
+        + `I'll post here the moment I connect.`;
+    }
     return `@${installerName} — you copied the ${copiedThing} `
       + `${copiedAtDescription(offsetSeconds)}; `
-      + `no connection arrived — here is the one thing to check for your OS: `
+      + `no connection arrived — here is the one thing to check: `
       + `run \`${fixCommand}\` on the machine where I should live.`
       + (evidence.commandType === 'mcp'
         ? ' MCP-only clients can call Commonly, but they do not answer @mentions.'

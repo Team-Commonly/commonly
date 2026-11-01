@@ -198,7 +198,7 @@
   background: var(--v2-accent-deep); border-radius: var(--v2-radius-lg);
   color: rgba(255, 255, 255, 0.85); font-size: 15px;
 }
-.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary { background: #fff; color: var(--v2-accent); border-color: #fff; }
+.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary { background: var(--v2-on-accent, #fff); color: var(--v2-accent-fill, var(--v2-accent)); border-color: var(--v2-on-accent, #fff); }
 .v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary:hover { background: rgba(255,255,255,0.9); }
 
 @media (max-width: 760px) {

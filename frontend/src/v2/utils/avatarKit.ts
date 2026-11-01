@@ -161,12 +161,32 @@ const COLLAR = 'M25 47.2L32 55L39 47.2C36.8 46.6 34.5 46.3 32 46.3C29.5 46.3 27.
 const MUSTACHE = 'M26.5 35.6C28.5 34.2 30.8 34.4 32 35.4C33.2 34.4 35.5 34.2 37.5 35.6C35.6 37.2 33.4 37 32 36.2C30.6 37 28.4 37.2 26.5 35.6Z';
 
 /** The face as a standalone SVG string, drawn back to front. */
+// WCAG relative luminance of a hex skin tone (no '#').
+const relativeLuminance = (hex: string): number => {
+  const lin = [16, 8, 0].map((shift) => {
+    const c = ((parseInt(hex, 16) >> shift) & 255) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+};
+
+// Light skins sit on the pale TASK-679 grounds with almost no contrast and lose
+// their silhouette (Lumen, 1.00–1.25:1). From this luminance up, a darker edge
+// one unit out keeps the face readable. Darker skins render exactly as before.
+const LIGHT_SKIN_LUMINANCE = 0.6;
+
 export const renderFace = (t: FaceTraits): string => {
   const agent = t.kind === 'agent';
   const layers: Array<[string, string]> = [[rect(0, 0, 64, 64), t.background]];
   const back = HAIR_BACK[t.style];
   if (back) layers.push([back, t.hair]);
   layers.push([SHOULDERS, t.shirt]);
+  if (relativeLuminance(t.skin) >= LIGHT_SKIN_LUMINANCE) {
+    layers.push([
+      rect(26.5, 37.5, 11, 11) + ellipse(32, 29, 14.9, 16.9) + circle(18.5, 31, 4.2) + circle(45.5, 31, 4.2),
+      darken(t.skin, 0.78),
+    ]);
+  }
   layers.push([rect(27, 38, 10, 10) + ellipse(32, 29, 14, 16) + circle(18.5, 31, 3.6) + circle(45.5, 31, 3.6), t.skin]);
   layers.push([circle(24, 36, 2.6) + circle(40, 36, 2.6), darken(t.skin, 0.9)]);
   layers.push([HAIR_FRONT[t.style], t.hair]);
@@ -184,20 +204,25 @@ export const renderFace = (t: FaceTraits): string => {
 
 const PAPER_SHOULDERS = 'M8 64C8 51 18 46 32 46C46 46 56 51 56 64Z';
 const PAPER_VEE = 'M27.4 46.5L32 53.6L36.6 46.5Z';
+// Signal grey ramp (TASK-683 ruling, Lily 09:08): the head clears 2:1 on all four
+// warm grounds. The paper figure must not vanish on the artboard's cream tiles.
+export const PAPER_HEAD = '8f99aa';
 
 /** The unpicked human default: a paper figure with no facial or skin cues. */
 export const renderPaper = (t: PaperTraits): string => {
+  // The neckline is a cutout that shows the ground, so it reads on both shirts
+  // (the head colour vanished against the grey shirt; TASK-683, Sable 5722118100).
   const neckline = t.neckline === 'vee'
-    ? `<path d="${PAPER_VEE}" fill="#f9fafb"/>`
+    ? `<path d="${PAPER_VEE}" fill="#${t.background}"/>`
     : t.neckline === 'scoop'
-      ? '<ellipse cx="32" cy="47.2" rx="5.4" ry="3.4" fill="#f9fafb"/>'
+      ? `<ellipse cx="32" cy="47.2" rx="5.4" ry="3.4" fill="#${t.background}"/>`
       : '';
   return [
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">',
     `<path d="M0 0h64v64H0z" fill="#${t.background}"/>`,
     `<path d="${PAPER_SHOULDERS}" fill="#${t.shirt}"/>`,
-    '<rect x="27" y="38" width="10" height="10" fill="#f9fafb"/>',
-    '<ellipse cx="32" cy="29" rx="13" ry="15" fill="#f9fafb"/>',
+    `<rect x="27" y="38" width="10" height="10" fill="#${PAPER_HEAD}"/>`,
+    `<ellipse cx="32" cy="29" rx="13" ry="15" fill="#${PAPER_HEAD}"/>`,
     neckline,
     '</svg>',
   ].join('');

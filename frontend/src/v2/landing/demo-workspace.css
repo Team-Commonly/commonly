@@ -95,8 +95,8 @@
   display: grid;
   place-items: center;
   border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent);
-  color: #ffffff;
+  background: var(--v2-accent-fill, var(--v2-accent));
+  color: var(--v2-on-accent, #ffffff);
   font-family: var(--v2-font-display);
   font-weight: 800;
   font-size: 18px;

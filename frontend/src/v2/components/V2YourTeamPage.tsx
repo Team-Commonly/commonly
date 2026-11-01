@@ -53,6 +53,7 @@ interface AgentInstallationSummary {
   description?: string | null;
   installedBy?: string | null;
   connection?: AgentConnection;
+  fixCommand?: string;
 }
 
 interface TaskRow {
@@ -432,6 +433,9 @@ const V2YourTeamPage: React.FC = () => {
               {(!a.connection || a.connection.state === 'connected') && state !== 'idle' ? ' ' : ''}
               {statusText}
             </div>
+            {a.connection?.state === 'never' && a.fixCommand && (
+              <code className="v2-team-card__fix" data-testid="team-card-fix-command">{a.fixCommand}</code>
+            )}
           </div>
           {where && (
             <span

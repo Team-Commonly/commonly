@@ -73,6 +73,9 @@ describe('i18n configuration', () => {
       const key = `connectors.catalogDescriptions.${id}`;
       expect(i18n.exists(key, { lng: 'zh-CN' })).toBe(true);
       expect(i18n.exists(key, { lng: 'en' })).toBe(false);
+      // Existence alone passes for an empty string or a copied English line, so
+      // each value must be non-empty Chinese text.
+      expect(i18n.t(key, { lng: 'zh-CN' })).toMatch(/[\u4e00-\u9fff]/);
     });
   });
 
@@ -133,8 +136,8 @@ describe('i18n configuration', () => {
   });
 
   it('uses a Chinese comma in the BYO machine hint', () => {
-    const hint = i18n.t('agentByo.mode.machineHint', { lng: 'zh-CN' });
-    expect(hint).toBe('在你已添加的电脑上运行，你的文件、你的 CLI');
+    const hint = i18n.t('agentByo.mode.machineMeta', { lng: 'zh-CN' });
+    expect(hint).toBe('在你已添加的电脑上运行，用你的文件和 CLI。需要那台电脑运行 Commonly 守护进程。');
     expect(hint).not.toContain('—');
   });
 });
