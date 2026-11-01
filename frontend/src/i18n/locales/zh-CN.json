@@ -2340,7 +2340,7 @@
     "cursorKeyHint": "在 Cursor 的 MCP 设置里填入你的智能体密钥。",
     "cursorRule": "Cursor 规则 · 在项目中保存为 <code>{{path}}</code>",
     "manageDevices": "管理已连接的 CLI 设备",
-    "agentHeading": "接入你自己运行的智能体",
+    "agentHeading": "接入你自己的智能体",
     "setUpAgent": "接入智能体",
     "manageAgents": "管理已安装的智能体",
     "keysHeading": "实例密钥",

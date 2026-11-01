@@ -76,7 +76,8 @@ describe('V2ConnectPage', () => {
     const { container } = renderConnect();
     const card = container.querySelector('.v2-connect__rule');
     expect(card).not.toBeNull();
-    expect(card.textContent).toContain(CURSOR_PROJECT_RULE_PATH);
+    expect(card.querySelector('.v2-connect__code-head code')).toHaveTextContent(CURSOR_PROJECT_RULE_PATH);
+    expect(card.querySelector('.v2-connect__code-head > span')).toHaveTextContent(`Cursor rule · save as ${CURSOR_PROJECT_RULE_PATH} in your project`);
     expect(card.querySelector('pre').textContent).toBe(CURSOR_PROJECT_RULE);
     fireEvent.click(card.querySelector('button.v2-connect__copy'));
     await waitFor(() => expect(clipboard.writeText).toHaveBeenCalledWith(CURSOR_PROJECT_RULE));
@@ -156,7 +157,7 @@ describe('V2ConnectPage in zh-CN', () => {
     const chrome = [...container.querySelectorAll('h2, a, button, .v2-connect__cursor span, .v2-connect__code-head > span')]
       .map((el) => el.textContent.trim());
     expect(chrome).toEqual(expect.arrayContaining([
-      '连接 CLI 或 MCP', '添加到 Cursor', '管理已连接的 CLI 设备', '接入你自己运行的智能体',
+      '连接 CLI 或 MCP', '添加到 Cursor', '管理已连接的 CLI 设备', '接入你自己的智能体',
       '接入智能体', '管理已安装的智能体', '实例密钥', '打开全局集成', '复制',
     ]));
     expect(container.querySelector('.v2-connect__rule code')).toHaveTextContent(CURSOR_PROJECT_RULE_PATH);
