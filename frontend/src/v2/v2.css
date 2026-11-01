@@ -14070,11 +14070,11 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   .v2-feature__header {
     display: flex;
     align-items: center;
-    height: 52px;
+    min-height: 52px;
     padding: 0 10px 0 12px;
     gap: 8px;
   }
-  .v2-feature__header .v2-page-head__identity { flex-wrap: nowrap; align-items: center; gap: 8px; }
+  .v2-feature__header .v2-page-head__identity { align-items: center; gap: 8px; }
   .v2-feature__header .v2-feature__title {
     font: 800 21px/1 var(--v2-font-display);
     letter-spacing: -0.03em;
@@ -14088,8 +14088,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   .v2-settings__title {
     display: flex;
     align-items: center;
-    height: 52px;
-    margin: 0 -12px 12px;
+    min-height: 52px;
+    margin: -12px -12px 12px;
     padding: 0 12px;
     border-bottom: 1px solid var(--v2-border-soft);
     font: 800 21px/1 var(--v2-font-display);
