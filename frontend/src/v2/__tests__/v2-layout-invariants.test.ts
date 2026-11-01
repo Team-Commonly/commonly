@@ -235,16 +235,41 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('agent Settings controls reach 44px at phone width', () => {
+    // Same selector as the base button rule, so it wins only by coming after it.
+    const base = '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)';
     const phone = mediaBlockContaining(agentSettings, '.v2-agent-settings__key-meta');
-    expect(selectorRuleBody(phone, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)'))
-      .toContain('min-height: 44px');
-    const surface = mediaAt(read('../agents/v2-agent-settings-surface.css'), '@media (max-width: 760px)');
-    expect(selectorRuleBody(surface, '.v2-agent-settings-page .lrow .ac .b {')).toContain('height: 44px');
-    expect(selectorRuleBody(surface, '.v2-agent-settings-page .lrow .ac .b.ib')).toContain('width: 44px');
-    const fold = selectorRuleBody(surface, '.v2-agent-settings-page .v2-agent-wake-pods__fold');
+    expect(selectorRuleBody(phone, base)).toContain('min-height: 44px');
+    expect(agentSettings.indexOf(phone)).toBeGreaterThan(agentSettings.indexOf(base + ' {'));
+
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    const stack = blockContaining(surface, '@media (max-width: 760px)', '.wt td:not(:first-child) { display: none; }');
+    const targets = blockContaining(surface, '@media (max-width: 760px)', '.v2-agent-settings-page .lrow .ac .b {');
+    expect(stack).not.toBe('');
+    // The thead hides at the same width, or a long pod name widens the stacked table past the page.
+    expect(blockContaining(surface, '@media (max-width: 760px)', '.wt thead { display: none; }')).not.toBe('');
+    // The fold's 28px lives in the stack block; the 44px override has to come after it.
+    expect(surface.indexOf(targets)).toBeGreaterThan(surface.indexOf(stack));
+    expect(selectorRuleBody(targets, '.v2-agent-settings-page .lrow .ac .b {')).toContain('height: 44px');
+    expect(selectorRuleBody(targets, '.v2-agent-settings-page .lrow .ac .b.ib')).toContain('width: 44px');
+    const fold = selectorRuleBody(targets, '.v2-agent-settings-page .v2-agent-wake-pods__fold');
     expect(fold).toContain('width: 44px');
     expect(fold).toContain('height: 44px');
-    expect(selectorRuleBody(surface, '.v2-agent-settings-page .wt td:first-child a')).toContain('min-height: 44px');
+    // The pod link keeps a text box (not inline-flex) so a long name still ends in an ellipsis.
+    const link = selectorRuleBody(targets, '.v2-agent-settings-page .wt td:first-child a');
+    expect(link).toContain('display: block');
+    expect(link).toContain('padding-block: 12px');
+    expect(link).toContain('line-height: 20px');
+    expect(link).toContain('text-overflow: ellipsis');
+    const option = selectorRuleBody(targets, '.v2-agent-settings-page .wt .seg > label');
+    expect(option).toContain('height: 44px');
+    expect(option).toContain('min-width: 44px');
+    expect(selectorRuleBody(targets, '.v2-agent-settings-page .wt .sel')).toContain('--box-h: 44px');
+    expect(selectorRuleBody(targets, '.v2-agent-settings-page .wt .b {')).toContain('height: 44px');
+    expect(selectorRuleBody(targets, '.v2-agent-settings-page .wt .b.ib')).toContain('width: 44px');
+    const toggle = selectorRuleBody(targets, '.v2-agent-settings-page .v2-agent-wake-pods__toggle');
+    expect(toggle).toContain('min-width: 44px');
+    expect(toggle).toContain('min-height: 44px');
+    expect(selectorRuleBody(targets, '.v2-agent-settings-page .ph .seg > a')).toContain('height: 44px');
   });
 
   test('agent Control reconnect remains an ink action with a focus edge', () => {
