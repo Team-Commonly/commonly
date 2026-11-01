@@ -234,6 +234,14 @@ const buildMentionMap = (
 
     // Always allow explicit instance references
     map.set(`${agentName}-${instanceId}`.toLowerCase(), { agentName, instanceId });
+    // The canonical username: the handle the platform shows for this agent in
+    // members and message authors, and the one the intro advertises. When it
+    // is the bare agentName (default or same-as-type instance) the single-
+    // install rule below governs it, so it is not added here.
+    const canonical = buildAgentUsername(agentName, instanceId);
+    if (canonical !== agentName.toLowerCase()) {
+      map.set(canonical, { agentName, instanceId });
+    }
     map.set(instanceId.toLowerCase(), { agentName, instanceId });
     if (displaySlug) {
       map.set(displaySlug, { agentName, instanceId });

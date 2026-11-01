@@ -875,9 +875,10 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // a BYO user is told their agent's *name* is e.g. "sam-agent" but the way
     // to mention it is "@scout". Said in the intro, or in a hosted agent's own
     // greeting, so nobody has to guess (GH smoke finding 2026-07-05).
-    // The handle is the username mention routing resolves: buildMentionMap
-    // always maps `buildAgentUsername(agentType, instanceId)`, so the intro
-    // and the routing cannot disagree. The instanceId alone is not that key.
+    // The handle is the canonical username: buildMentionMap routes it (see
+    // agentMentionService), and it is the name members and authors carry in
+    // get_context and get_messages. The bare instanceId also routes, but it is
+    // not the name the platform shows, so the intro does not advertise it.
     const handle = AgentIdentityService.buildAgentUsername(
       safeAgentName,
       normalizedInstanceId || 'default',

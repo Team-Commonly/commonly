@@ -28,3 +28,18 @@ describe('mention handle routes', () => {
     expect(AgentIdentityService.buildAgentUsername('codex', 'swe-dogfood')).not.toBe('rivet');
   });
 });
+
+describe('bare agentName stays governed by the single-install rule', () => {
+  test('a default-instance install routes its bare name only when it is the only install', () => {
+    const solo = buildMentionMap([{ agentName: 'codex', instanceId: 'default' }], []);
+    expect(AgentIdentityService.buildAgentUsername('codex', 'default')).toBe('codex');
+    expect(solo.map.get('codex')).toEqual({ agentName: 'codex', instanceId: 'default' });
+
+    const pair = buildMentionMap([
+      { agentName: 'codex', instanceId: 'default', displayName: 'Default codex' },
+      { agentName: 'codex', instanceId: 'swe-dogfood', displayName: 'Rivet' },
+    ], []);
+    expect(pair.map.has('codex')).toBe(false);
+    expect(pair.map.get('codex-swe-dogfood')).toEqual({ agentName: 'codex', instanceId: 'swe-dogfood' });
+  });
+});
