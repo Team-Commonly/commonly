@@ -2891,8 +2891,8 @@
     "messageWakeShort_mentions": "仅提及",
     "messageWakeShort_human": "人",
     "messageWakeShort_all": "全部",
-    "turnsUsed": "{{used}} / {{cap}} 次/天",
-    "turnsUsedNoCap": "{{used}} 次/天 · 上限不可用"
+    "turnsUsed": "{{used}} / {{cap}}次/天",
+    "turnsUsedNoCap": "{{used}}次/天 · 上限不可用"
   },
   "agentPolicy": {
     "title": "策略",

@@ -205,6 +205,19 @@ describe('per-agent Wake and Pods settings', () => {
     expect(updatePod).not.toHaveBeenCalled();
   });
 
+  it('totals heartbeat turns across pods, counting an Off pod as zero', async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 2, podCount: 3, installations: [
+      { podId: 'pod-a', podName: 'Alpha', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60 },
+      { podId: 'pod-b', podName: 'Beta', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 30 },
+      { podId: 'pod-c', podName: 'Gamma', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 30 },
+    ] } });
+    renderSettings();
+    expect(await screen.findByText('72 / 30 turns a day')).toBeInTheDocument();
+  });
+
   it('states the daily turn count clearly when the cap is unavailable', async () => {
     client.get.mockResolvedValue({ data: { activePodCount: 1, podCount: 1, installations: [{
         podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
