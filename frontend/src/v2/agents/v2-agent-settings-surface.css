@@ -297,3 +297,28 @@
   .v2-agent-settings-page .v2-agent-wake-pods__toggle { min-width: 44px; min-height: 44px; align-items: center; }
   .v2-agent-settings-page .ph .seg > a, .v2-agent-settings-page .ph .seg > button { height: 44px; }
 }
+
+/* One Identity & access list: each row's panel opens below it, inside the list. */
+.v2-agent-settings-page__panel { border-top: 1px solid var(--d); }
+.v2-agent-settings-page__panel[hidden] { display: none; }
+.v2-agent-settings-page__panel--pad:not([hidden]) { padding: 12px 16px; display: grid; gap: 10px; }
+.v2-agent-settings-page__toggle svg.i { transition: transform 160ms; }
+.v2-agent-settings-page__toggle[aria-expanded="true"] svg.i { transform: rotate(180deg); }
+/* How it runs holds whole lists, so its body drops the value-column indent. */
+.v2-agent-settings-page .dbody.v2-agent-settings-page__runsbody { padding: 0 16px 14px; gap: 12px; }
+.v2-agent-settings-page .v2-agent-skills__head { justify-content: flex-end; }
+.v2-agent-settings-page .v2-agent-skills__head:empty { display: none; }
+
+/* Phone (frame 390): a 52px bar with back, avatar and name; the tabs as a full-width row under it. */
+.v2-agent-settings-page .mtop { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 8px; border-bottom: 1px solid var(--d); box-sizing: border-box; }
+.v2-agent-settings-page .mtop .v2-avatar { flex: none; }
+.v2-agent-settings-page .mtop .tt2 { flex: 1; min-width: 0; margin: 0; font: 700 16px/1.2 var(--f-display); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-agent-settings-page .mtop .b.ib { width: 44px; height: 44px; }
+.v2-agent-settings-page .seg.seg--full { display: flex; width: 100%; box-sizing: border-box; }
+.v2-agent-settings-page .seg--full > a, .v2-agent-settings-page .seg--full > button { flex: 1; justify-content: center; height: 44px; }
+.v2-agent-settings-page__phonestatus .st { display: flex; align-items: center; gap: 6px; margin: 12px 4px 0; font: 500 11.5px/1 var(--f-mono); color: var(--mu); }
+@media (max-width: 760px) {
+  .v2-agent-settings-page .pbody { padding: 12px 16px; }
+  .v2-root .v2-agent-settings-page .v2-agent-skills button { min-height: 44px; }
+  .v2-agent-settings-page .v2-agent-settings-page__panel--pad:not([hidden]) { padding: 10px 12px; }
+}

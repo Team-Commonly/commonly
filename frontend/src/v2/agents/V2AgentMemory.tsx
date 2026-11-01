@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import V2Avatar from '../components/V2Avatar';
 import { usePhone } from '../connectors/usePhone';
+import { useTalkToAgent } from './useTalkToAgent';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import '../primitives/primitives.css';
 import './V2AgentMemory.css';
@@ -153,8 +154,7 @@ const V2AgentMemory: React.FC = () => {
   const [state, setState] = useState<'loading' | 'ready' | 'private' | 'failed'>('loading');
   const [query, setQuery] = useState('');
   const [activeGroup, setActiveGroup] = useState<GroupId | null>(null);
-  const [openingRoom, setOpeningRoom] = useState(false);
-  const [roomError, setRoomError] = useState(false);
+  const { talkTo, opening: openingRoom, failed: roomError } = useTalkToAgent(agentName, instanceId);
   // Public header facts (name, avatar, pod count). Readable by any viewer, so the
   // shell renders the same for owners, admins and everyone else.
   const [head, setHead] = useState<{ displayName: string; profilePicture?: string; pods: number } | null>(null);
@@ -185,22 +185,6 @@ const V2AgentMemory: React.FC = () => {
       });
     return () => { cancelled = true; };
   }, [agentName, instanceId]);
-
-  // Same idempotent room endpoint as the profile and Your Team entry points:
-  // returns the existing DM or opens one.
-  const talkTo = async () => {
-    setOpeningRoom(true);
-    setRoomError(false);
-    try {
-      const res = await axios.post<{ room?: { _id?: string } }>('/api/agents/runtime/room', { agentName, instanceId: instanceId || 'default' });
-      const roomId = res.data?.room?._id;
-      if (!roomId) throw new Error('Agent room not returned');
-      navigate(`/v2/pods/${roomId}`);
-    } catch {
-      setRoomError(true);
-      setOpeningRoom(false);
-    }
-  };
 
   const profileHref = `/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;
   const settingsHref = `/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`;

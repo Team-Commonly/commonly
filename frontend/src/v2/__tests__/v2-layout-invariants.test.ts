@@ -275,6 +275,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(selectorRuleBody(targets, '.v2-agent-settings-page .ph .seg > a')).toContain('height: 44px');
   });
 
+  test('agent Settings phone bar, full-width tabs and row panels keep their targets', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    // The 52px phone bar's back and talk buttons, and the tab row under it, are 44px targets.
+    expect(ruleBody(surface, '.v2-agent-settings-page .mtop')).toContain('height: 52px');
+    const bar = ruleBody(surface, '.v2-agent-settings-page .mtop .b.ib');
+    expect(bar).toContain('width: 44px');
+    expect(bar).toContain('height: 44px');
+    expect(ruleBody(surface, '.v2-agent-settings-page .seg--full > a, .v2-agent-settings-page .seg--full > button')).toContain('height: 44px');
+    // The Skills panel stays mounted while closed; its own display must not override [hidden].
+    expect(ruleBody(surface, '.v2-agent-settings-page__panel[hidden]')).toContain('display: none');
+    expect(surface).toContain('.v2-agent-settings-page__panel--pad:not([hidden])');
+  });
+
   test('agent Control reconnect remains an ink action with a focus edge', () => {
     const action = ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action');
     expect(action).toContain('background: var(--v2-ink)');

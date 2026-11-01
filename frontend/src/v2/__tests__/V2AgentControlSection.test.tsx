@@ -64,7 +64,7 @@ it('loads connection state from an installer-owned pod', async () => {
     .toHaveAttribute('href', '/v2/agents/byo?pod=owned-pod&name=local&instanceId=default&reconnect=1&mode=machine');
   expect(api.get).toHaveBeenCalledWith('/api/registry/agents/local/manage-settings',
     { params: { instanceId: 'default' } });
-  expect(onConnectionState).toHaveBeenCalledWith('revoked');
+  expect(onConnectionState).toHaveBeenCalledWith('revoked', { state: 'revoked', lastSeenAt: null });
 });
 
 it('refreshes the header after a key change and drops the old connected state', async () => {
@@ -127,4 +127,37 @@ it('uses unavailable only when the roster has no connection signal', async () =>
   });
   render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" /></MemoryRouter>);
   await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Connection status unavailable'));
+});
+
+describe('hideWhenConnected (Settings reports a healthy connection in its header)', () => {
+  const showHidden = (state: 'revoked' | 'connected', runtimeType = 'webhook') => render(
+    <MemoryRouter><V2AgentControlSection agentName="local" instanceId="default" podId="pod-1" runtimeType={runtimeType}
+      hideWhenConnected connection={{ state, lastSeenAt: null }} /></MemoryRouter>,
+  );
+
+  it('renders nothing for a connected webhook agent', () => {
+    showHidden('connected');
+    expect(screen.queryByTestId('agent-control-section')).toBeNull();
+  });
+
+  it('keeps the row for a revoked agent, with its Reconnect action', () => {
+    showHidden('revoked');
+    expect(screen.getByTestId('agent-control-section')).toHaveTextContent('Disconnected: key revoked');
+    expect(screen.getByRole('link', { name: 'Reconnect' })).toBeInTheDocument();
+  });
+
+  it('keeps a connected wrapper row, whose machine-key regeneration lives only there', () => {
+    showHidden('connected', 'wrapper');
+    expect(screen.getByRole('link', { name: 'Regenerate key' })).toBeInTheDocument();
+  });
+
+  it('shows nothing while the first read is in flight, and the unavailable alert after a failure', async () => {
+    api.get.mockImplementation(() => new Promise(() => {}));
+    const view = render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" hideWhenConnected /></MemoryRouter>);
+    expect(screen.queryByTestId('agent-control-section')).toBeNull();
+    view.unmount();
+    api.get.mockImplementation(() => Promise.reject(new Error('offline')));
+    render(<MemoryRouter><AgentControlLoader agentName="local" instanceId="default" hideWhenConnected /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Connection status unavailable'));
+  });
 });

@@ -8,7 +8,11 @@ interface SkillLoad { at: string; mounted: string[]; conflicted: string[]; statu
 interface SkillsResponse { items: SkillItem[]; canEdit: boolean; skillLoad: SkillLoad | null }
 interface CatalogItem extends SkillItem { content?: string; license?: string | { name?: string } }
 
-interface Props { podId: string; podName: string; agentName: string; instanceId: string }
+interface Props {
+  podId: string; podName: string; agentName: string; instanceId: string;
+  /** The installed-skill count once loaded, null on a failed load. */
+  onCount?: (count: number | null) => void;
+}
 
 const requestError = (error: unknown, fallback: string): string => (
   (error as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback
@@ -23,7 +27,7 @@ const loadLabel = (skill: SkillItem, load: SkillLoad | null, t: (key: string) =>
   return t('agentSkills.notLoaded');
 };
 
-const V2AgentSkills: React.FC<Props> = ({ podId, podName, agentName, instanceId }) => {
+const V2AgentSkills: React.FC<Props> = ({ podId, podName, agentName, instanceId, onCount }) => {
   const { t } = useTranslation();
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [skillLoad, setSkillLoad] = useState<SkillLoad | null>(null);
@@ -35,6 +39,10 @@ const V2AgentSkills: React.FC<Props> = ({ podId, podName, agentName, instanceId 
   const [busy, setBusy] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading) onCount?.(error && !skills.length ? null : skills.length);
+  }, [loading, error, skills.length, onCount]);
 
   const refresh = useCallback(async () => {
     const response = await axios.get<SkillsResponse>(`/api/skills/pods/${encodeURIComponent(podId)}/imported`, {
@@ -122,9 +130,9 @@ const V2AgentSkills: React.FC<Props> = ({ podId, podName, agentName, instanceId 
   const available = catalog.filter((item) => !installed.has(item.name.toLowerCase()));
 
   return (
-    <section className="v2-agent-skills" aria-labelledby="v2-agent-skills-heading">
+    // The Skills row above names this panel in the settings list, so it has no heading of its own.
+    <section className="v2-agent-skills" aria-label={t('agentSkills.title')}>
       <div className="v2-agent-skills__head">
-        <h2 id="v2-agent-skills-heading">{t('agentSkills.title')}</h2>
         {canEdit && <button type="button" onClick={() => { setCatalogOpen(!catalogOpen); setError(null); }}>{t(catalogOpen ? 'agentSkills.closeCatalog' : 'agentSkills.addSkill')}</button>}
       </div>
       <p className="v2-agent-skills__pod">{t('agentSkills.pod')} · {podName}</p>

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import V2AgentSettingsPage from '../agents/V2AgentSettingsPage';
 import { AuthContext } from '../../context/AuthContext';
@@ -27,6 +27,10 @@ const renderPage = (path = '/v2/agents/maya-claude/default') => render(
     </MemoryRouter>
   </AuthContext.Provider>,
 );
+
+// Row panels in the Identity & access list are closed until their toggle opens them.
+const openKeys = async () => fireEvent.click(await screen.findByRole('button', { name: 'Key actions' }));
+const openRename = async () => fireEvent.click(await screen.findByRole('button', { name: 'Rename' }));
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -78,6 +82,7 @@ test('wrapper key replacement cannot bypass the daemon reconnect flow', async ()
     return Promise.resolve({ data: [] });
   });
   renderPage();
+  await openKeys();
   await screen.findByText("Replace this computer's key from Control.");
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
@@ -104,6 +109,7 @@ test('revoked webhook key has one Reconnect action in Control', async () => {
   renderPage();
   expect(await screen.findByRole('link', { name: 'Reconnect' }))
     .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=maya-claude&instanceId=default&reconnect=1');
+  await openKeys();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).toBeNull();
 });
 
@@ -127,6 +133,7 @@ test('connected nondefault wrapper regenerates from Control without a second Key
   renderPage('/v2/agents/maya-claude/second');
   expect(await screen.findByRole('link', { name: 'Regenerate key' }))
     .toHaveAttribute('href', '/v2/agents/byo?pod=pod-1&name=maya-claude&instanceId=second&reconnect=1&mode=machine');
+  await openKeys();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).toBeNull();
 });
 
@@ -149,6 +156,7 @@ test('identity edits go through the shared installation PATCH with the exact ins
   });
   axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage();
+  await openRename();
   const save = await screen.findByRole('button', { name: 'Save identity' });
   expect(save).toBeDisabled();
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
@@ -179,6 +187,7 @@ test('OpenClaw identity keeps the live Persona editor and saves its changes', as
   });
   axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage('/v2/agents/openclaw/scout');
+  await openRename();
   expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
   fireEvent.change(screen.getByRole('textbox', { name: 'Persona notes' }), { target: { value: 'Keep detail' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
@@ -206,6 +215,7 @@ test('OpenClaw name-only edits leave Persona out of the PATCH', async () => {
   });
   axios.patch.mockResolvedValue({ data: { success: true } });
   renderPage('/v2/agents/openclaw/scout');
+  await openRename();
   expect(await screen.findByRole('group', { name: 'Persona' })).toBeInTheDocument();
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout 2' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
@@ -222,6 +232,7 @@ test.each([
 ])('identity refusal %i uses localized UI copy', async (status, expectedMessage) => {
   axios.patch.mockRejectedValue({ response: { status, data: { error: 'Raw English server text' } } });
   renderPage();
+  await openRename();
   await screen.findByRole('button', { name: 'Save identity' });
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
@@ -234,6 +245,7 @@ test('a taken display name has its own refusal, separate from the writable-pods 
     code: 'agent_display_name_taken', error: 'Raw English server text',
   } } });
   renderPage();
+  await openRename();
   await screen.findByRole('button', { name: 'Save identity' });
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Scout (Cody)' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
@@ -246,6 +258,7 @@ test('a partial rename tells the installer to retry Save', async () => {
     status: 503, data: { code: 'identity_projection_retryable', error: 'Raw server text' },
   } });
   renderPage();
+  await openRename();
   await screen.findByRole('button', { name: 'Save identity' });
   fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Maya 2' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save identity' }));
@@ -265,6 +278,7 @@ test('nondefault wrapper instances never link to a default-instance reconnect', 
     return Promise.resolve({ data: [] });
   });
   renderPage('/v2/agents/maya-claude/second');
+  await openKeys();
   await screen.findByText("Replace this computer's key from Control.");
   expect(screen.queryByRole('link', { name: 'Reconnect to regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
@@ -273,6 +287,7 @@ test('nondefault wrapper instances never link to a default-instance reconnect', 
 test('regeneration waits for the explicit running-key replacement confirmation', async () => {
   axios.post.mockResolvedValue({ data: { token: 'cm_agent_once' } });
   renderPage();
+  await openKeys();
   await screen.findByText('Runtime key · Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   expect(axios.post).not.toHaveBeenCalled();
@@ -315,12 +330,13 @@ test('an in-flight replacement never reveals its key on another agent page', asy
       </MemoryRouter>
     </AuthContext.Provider>,
   );
+  await openKeys();
   await screen.findByText('Runtime key · Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole('button', { name: 'Next agent' }));
-  await screen.findByText('Other agent');
+  await screen.findByRole('heading', { name: 'Other agent' });
   await act(async () => { finishPost({ data: { token: 'cm_agent_old_identity' } }); });
   expect(screen.queryByTestId('agent-one-time-key')).not.toBeInTheDocument();
   expect(screen.queryByText('cm_agent_old_identity')).not.toBeInTheDocument();
@@ -346,8 +362,10 @@ test('a partial installation owner cannot see identity-wide key controls', async
     return Promise.reject({ response: { status: 403, data: { message: 'Access denied' } } });
   });
   renderPage();
-  expect(await screen.findByRole('heading', { name: 'Policy' })).toBeInTheDocument();
+  expect(await screen.findByRole('region', { name: 'Policy' })).toBeInTheDocument();
   expect(await screen.findByText('Key management is unavailable for this agent. Ask an admin for access.')).toBeInTheDocument();
+  // No key panel to open: the row offers no Key actions.
+  expect(screen.queryByRole('button', { name: 'Key actions' })).toBeNull();
   expect(screen.getByRole('columnheader', { name: 'Pods' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByText('Laptop')).not.toBeInTheDocument();
@@ -357,6 +375,7 @@ test('a partial installation owner cannot see identity-wide key controls', async
 test('revocation uses the credential id only after confirmation', async () => {
   axios.delete.mockResolvedValue({ data: { revoked: 1 } });
   renderPage();
+  await openKeys();
   await screen.findByText('Runtime key · Laptop');
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
   expect(axios.delete).not.toHaveBeenCalled();
@@ -375,6 +394,7 @@ test('shows active keys first and keeps revoked history collapsed', async () => 
     ] }) : defaultGet(url, options)
   ));
   renderPage();
+  await openKeys();
   expect(await screen.findByText("Runtime key · Sam's MacBook")).toBeInTheDocument();
   const disclosure = screen.getByText('1 revoked');
   expect(disclosure.closest('details')).not.toHaveAttribute('open');
@@ -392,6 +412,7 @@ test('a revoked-only key list has a useful empty state and accessible history', 
   ));
   renderPage();
   expect(await screen.findByText('No active keys.')).toBeInTheDocument();
+  await openKeys();
   expect(screen.getByText('1 revoked').closest('details')).not.toHaveAttribute('open');
 });
 
@@ -411,6 +432,7 @@ test('selects an installation the owner can manage without exposing a foreign po
   });
   axios.post.mockResolvedValue({ data: { token: 'cm_agent_once' } });
   renderPage();
+  await openKeys();
   await screen.findByRole('button', { name: 'Regenerate key' });
   await waitFor(() => expect(axios.get).toHaveBeenCalledWith(
     '/api/skills/pods/owned/imported',
@@ -421,12 +443,11 @@ test('selects an installation the owner can manage without exposing a foreign po
   );
   expect(screen.getByText('Pod · My pod')).toBeInTheDocument();
   expect(screen.queryByText('Pod · Other pod')).not.toBeInTheDocument();
-  expect(screen.getByText('Key', { selector: '.lb' }).compareDocumentPosition(
-    screen.getByRole('heading', { name: 'Skills' }),
-  ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(screen.getByRole('heading', { name: /^Wake/ }).compareDocumentPosition(
-    screen.getByRole('heading', { name: 'Skills' }),
-  ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const skillsRow = screen.getByText('Skills', { selector: '.lb' });
+  expect(screen.getByText('Runtime key', { selector: '.lb' }).compareDocumentPosition(skillsRow)
+    & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole('heading', { name: /^Wake/ }).compareDocumentPosition(skillsRow)
+    & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
   fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
@@ -453,21 +474,20 @@ test('runtime editor writes environment controls through the shared settings hoo
   renderPage();
   const model = await screen.findByLabelText('model');
   await screen.findByRole('heading', { name: /^Wake/ });
-  await screen.findByRole('heading', { name: 'Policy' });
-  await screen.findByRole('heading', { name: 'Skills' });
+  await screen.findByRole('region', { name: 'Policy' });
   // Headings and row labels, in document order. The Wake title carries its tooltip text, so match it by prefix.
-  const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2, .v2-agent-settings .lb'))
+  const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2, .v2-agent-settings-page__group > .list > .lrow > .lb, .v2-agent-settings-page__group > .list > details > summary > .lb'))
     .map((node) => node.textContent.trim());
-  const at = (label) => sections.findIndex((text) => (label === 'Wake' ? text.startsWith('Wake') : text === label));
-  expect(sections).toEqual(expect.arrayContaining(['Identity', 'Policy', 'Skills']));
-  // D215 artboard: Wake first, then Identity & access (Key, Identity).
-  expect(at('Wake')).toBeLessThan(at('Key'));
-  expect(at('Key')).toBeLessThan(at('Identity'));
-  expect(at('Identity')).toBeLessThan(at('How it runs'));
-  expect(at('Wake')).toBeLessThan(at('How it runs'));
-  expect(at('How it runs')).toBeLessThan(at('Connector grants'));
-  expect(at('Connector grants')).toBeLessThan(at('Policy'));
-  expect(at('Policy')).toBeLessThan(at('Skills'));
+  // D215 artboard: Wake, then ONE Identity & access list in the frame's row order. This roster
+  // read carries no connection signal, so the Connection row stays to say so.
+  expect(sections.filter((text) => !text.startsWith('Wake'))).toEqual([
+    'Identity & access', 'Name', 'Runtime key', 'Connection', 'Marketplace listing', 'Connectors', 'Memory', 'Skills', 'How it runs',
+  ]);
+  expect(sections[0].startsWith('Wake')).toBe(true);
+  // None of the old section headings remain.
+  for (const gone of ['Identity', 'Policy', 'Skills', 'Connector grants', 'How it runs']) {
+    expect(screen.queryByRole('heading', { name: gone })).toBeNull();
+  }
   fireEvent.change(model, { target: { value: 'new-model' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
@@ -596,6 +616,7 @@ test('the key list re-reads while visible, so an outside call updates Last used'
   ));
   const view = renderPage();
   try {
+    await openKeys();
     const before = await screen.findByText(/last used/i);
     const beforeText = before.textContent;
     used = true;
@@ -608,6 +629,7 @@ test('key polling stops on unmount', async () => {
   jest.useFakeTimers();
   const view = renderPage();
   try {
+    await openKeys();
     await screen.findByText(/last used/i);
     view.unmount();
     const calls = axios.get.mock.calls.filter(([url]) => url === '/api/credentials').length;
@@ -650,6 +672,7 @@ test('key polling pauses while hidden and re-reads on focus', async () => {
   const view = renderPage();
   const keyReads = () => axios.get.mock.calls.filter(([url]) => url === '/api/credentials').length;
   try {
+    await openKeys();
     await screen.findByText(/last used/i);
     const hidden = jest.spyOn(document, 'hidden', 'get').mockReturnValue(true);
     const before = keyReads();
@@ -664,6 +687,7 @@ test('key polling pauses while hidden and re-reads on focus', async () => {
 
 test('a name outside 1–80 characters is refused under the field; other refusals sit by Save', async () => {
   renderPage();
+  await openRename();
   const save = await screen.findByRole('button', { name: 'Save identity' });
   const name = screen.getByRole('textbox', { name: 'Display name' });
   fireEvent.change(name, { target: { value: '   ' } });
@@ -679,4 +703,238 @@ test('a name outside 1–80 characters is refused under the field; other refusal
   await screen.findByText("You don't have permission to change this agent's identity.");
   expect(name).not.toHaveAttribute('aria-invalid');
   expect(screen.queryByText('Enter a display name of 1–80 characters.')).toBeNull();
+});
+
+describe('one Identity & access list (d215 frame)', () => {
+  // A connected webhook agent with one active key, a memory index and no skills or grants.
+  const fleet = ({ state = 'connected', memory = 'ok' } = {}) => (url) => {
+    if (url.endsWith('/manage-settings')) return Promise.resolve({ data: {
+      writablePodId: 'pod-1', installations: [{ podId: 'pod-1', podName: 'Workspace', status: 'active' }],
+    } });
+    if (url === '/api/registry/pods/pod-1/agents') return Promise.resolve({ data: { agents: [{
+      name: 'maya-claude', instanceId: 'default', runtime: { runtimeType: 'webhook' },
+      connection: { state, lastSeenAt: null },
+    }] } });
+    if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
+      name: 'maya-claude', instanceId: 'default', displayName: 'Maya', runtime: { runtimeType: 'webhook' },
+    } } });
+    if (url === '/api/registry/agents/maya-claude') return Promise.resolve({ data: { status: 'active', verified: true } });
+    if (url === '/api/agent-memory/maya-claude/default') {
+      if (memory === 'denied') return Promise.reject({ response: { status: 403 } });
+      return Promise.resolve({ data: { viewerRole: 'owner', totalEntries: 3, sections: [
+        { key: 'long_term', label: 'Long-term', kind: 'doc', updatedAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
+          notes: [{ header: 'Rules', snippet: 'a' }, { header: 'How', snippet: 'b' }] },
+        { key: 'daily', label: 'Daily', kind: 'log', updatedAt: null, notes: [{ header: '2026-10-30', snippet: 'c' }] },
+      ] } });
+    }
+    if (url.startsWith('/api/skills/pods/')) return Promise.resolve({ data: { items: [], canEdit: true, skillLoad: null } });
+    if (url.includes('/grants')) return Promise.resolve({ data: { grants: [] } });
+    if (url === '/api/credentials') return Promise.resolve({ data: [{
+      _id: 'tok-1', label: 'Laptop', createdAt: '2026-10-01T00:00:00Z', lastUsedAt: new Date(Date.now() - 5 * 60_000).toISOString(), status: 'active',
+    }] });
+    return Promise.resolve({ data: [] });
+  };
+
+  test('a healthy connection lives in the header, and the Connection row is hidden', async () => {
+    axios.get.mockImplementation(fleet());
+    renderPage();
+    expect(await screen.findByText('Connected · 1 pod')).toBeInTheDocument();
+    expect(document.querySelector('.ph .st .dot')).not.toHaveClass('dot--off');
+    expect(screen.queryByTestId('agent-control-section')).toBeNull();
+    expect(screen.queryByText('Connection', { selector: '.lb' })).toBeNull();
+  });
+
+  test('a revoked connection dims the header dot and shows the Connection row with Reconnect', async () => {
+    axios.get.mockImplementation(fleet({ state: 'revoked' }));
+    renderPage();
+    const row = await screen.findByTestId('agent-control-section');
+    expect(row).toHaveTextContent('Disconnected: key revoked');
+    expect(within(row).getByRole('link', { name: 'Reconnect' })).toHaveAttribute('href', expect.stringContaining('reconnect=1'));
+    expect(document.querySelector('.ph .st .dot')).toHaveClass('dot--off');
+    expect(screen.getByText('Disconnected: key revoked · 1 pod')).toBeInTheDocument();
+  });
+
+  test('the key row reads active with its last use, and Key actions opens the key list (closed by default)', async () => {
+    axios.get.mockImplementation(fleet());
+    renderPage();
+    const toggle = await screen.findByRole('button', { name: 'Key actions' });
+    expect(screen.getByText('used 5m ago')).toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Runtime key · Laptop')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Regenerate key' })).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Runtime key · Laptop')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Regenerate key' })).toBeInTheDocument();
+  });
+
+  test('a one-time key forces the key panel open until it is dismissed', async () => {
+    axios.get.mockImplementation(fleet());
+    axios.post.mockResolvedValue({ data: { token: 'cm_agent_once' } });
+    renderPage();
+    await openKeys();
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
+    fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
+    expect(await screen.findByTestId('agent-one-time-key')).toHaveTextContent('cm_agent_once');
+    const toggle = screen.getByRole('button', { name: 'Key actions' });
+    fireEvent.click(toggle);
+    // Closing the toggle cannot hide a key that is shown only once.
+    expect(screen.getByTestId('agent-one-time-key')).toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByTestId('agent-one-time-key')).toBeNull();
+    expect(screen.queryByText('Runtime key · Laptop')).toBeNull();
+  });
+
+  test('a key error forces the panel open', async () => {
+    axios.get.mockImplementation(fleet());
+    axios.post.mockRejectedValue({ response: { data: { error: 'Replacement refused' } } });
+    renderPage();
+    await openKeys();
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
+    fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
+    expect(await screen.findByText('Replacement refused')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Key actions' }));
+    expect(screen.getByText('Replacement refused')).toBeInTheDocument();
+  });
+
+  test('Rename is closed by default and opens the name form inside the list', async () => {
+    axios.get.mockImplementation(fleet());
+    renderPage();
+    const rename = await screen.findByRole('button', { name: 'Rename' });
+    expect(screen.getByText('Maya', { selector: '.lrow .vl' })).toBeInTheDocument();
+    expect(rename).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('textbox', { name: 'Display name' })).toBeNull();
+    fireEvent.click(rename);
+    expect(rename).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue('Maya');
+    expect(screen.getByRole('button', { name: 'Save identity' }).closest('.list')).toBe(rename.closest('.list'));
+  });
+
+  test('Skills is closed by default; its toggle opens the skills panel', async () => {
+    axios.get.mockImplementation(fleet());
+    renderPage();
+    const toggle = await screen.findByRole('button', { name: 'Skills' });
+    expect(await within(toggle.closest('.lrow')).findByText('None')).toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('region', { name: 'Skills' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add skill' })).toBeNull();
+    fireEvent.click(toggle);
+    expect(screen.getByRole('region', { name: 'Skills' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add skill' })).toBeInTheDocument();
+  });
+
+  test('Connectors reads None, opens its grants list, and links to where grants are made', async () => {
+    axios.get.mockImplementation(fleet());
+    renderPage();
+    const toggle = await screen.findByRole('button', { name: 'Connector grants' });
+    expect(await within(toggle.closest('.lrow')).findByText('None')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Connector grants' })).toBeNull();
+    fireEvent.click(toggle);
+    expect(within(screen.getByRole('region', { name: 'Connector grants' })).getByText('This agent has no connector grants.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Grant a connector' })).toHaveAttribute('href', '/v2/connectors');
+  });
+
+  test('How it runs is a closed disclosure whose summary names the runtime', async () => {
+    axios.get.mockImplementation(fleet());
+    renderPage();
+    const disc = await screen.findByTestId('agent-how-it-runs');
+    expect(disc).not.toHaveAttribute('open');
+    expect(disc.querySelector('summary')).toHaveTextContent('webhook');
+    expect(within(disc).getByRole('region', { name: 'Policy' })).toBeInTheDocument();
+    expect(within(disc).getByRole('region', { name: 'How it runs' })).toBeInTheDocument();
+  });
+
+  test('Memory counts notes the way the Memory tab does, and says nothing when refused', async () => {
+    axios.get.mockImplementation(fleet());
+    const view = renderPage();
+    expect(await screen.findByText('3 notes')).toBeInTheDocument();
+    expect(screen.getByText('saved 2h ago')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open memory' })).toHaveAttribute('href', '/v2/agents/maya-claude/default/memory');
+    view.unmount();
+
+    axios.get.mockImplementation(fleet({ memory: 'denied' }));
+    renderPage();
+    await screen.findByRole('link', { name: 'Open memory' });
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/agent-memory/maya-claude/default'));
+    expect(screen.queryByText(/notes?$/)).toBeNull();
+    expect(screen.queryByText(/^saved /)).toBeNull();
+  });
+
+  test('no dead buttons: every list control either toggles a panel or links somewhere, and there is no More', async () => {
+    axios.get.mockImplementation(fleet());
+    renderPage();
+    await screen.findByRole('button', { name: 'Key actions' });
+    expect(screen.queryByRole('button', { name: 'More' })).toBeNull();
+    const list = document.querySelector('.v2-agent-settings-page__group > .list');
+    const controls = Array.from(list.querySelectorAll(':scope > .lrow > .ac > button, :scope > .lrow > .ac > a'));
+    expect(controls.length).toBeGreaterThanOrEqual(6);
+    for (const control of controls) {
+      if (control.tagName === 'A') {
+        expect(control.getAttribute('href')).toMatch(/^\/v2\//);
+      } else {
+        expect(control).toHaveAttribute('aria-controls');
+        expect(control).toHaveAttribute('aria-expanded', 'false');
+        fireEvent.click(control);
+        expect(control).toHaveAttribute('aria-expanded', 'true');
+        expect(document.getElementById(control.getAttribute('aria-controls'))).not.toBeNull();
+        expect(document.getElementById(control.getAttribute('aria-controls'))).not.toHaveAttribute('hidden');
+      }
+    }
+  });
+
+  test('Talk to opens the agent room from the header', async () => {
+    axios.get.mockImplementation(fleet());
+    axios.post.mockResolvedValue({ data: { room: { _id: 'room-1' } } });
+    render(
+      <AuthContext.Provider value={authValue}>
+        <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+          <Routes>
+            <Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} />
+            <Route path="/v2/pods/:id" element={<div>room opened</div>} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Talk to Maya' }));
+    expect(await screen.findByText('room opened')).toBeInTheDocument();
+    expect(axios.post).toHaveBeenCalledWith('/api/agents/runtime/room', { agentName: 'maya-claude', instanceId: 'default' });
+  });
+
+  describe('phone (390)', () => {
+    const realMatchMedia = window.matchMedia;
+    beforeEach(() => {
+      window.matchMedia = jest.fn().mockImplementation((query) => ({
+        matches: query === '(max-width: 767px)', media: query, onchange: null,
+        addEventListener: jest.fn(), removeEventListener: jest.fn(), addListener: jest.fn(), removeListener: jest.fn(),
+      }));
+    });
+    afterEach(() => { window.matchMedia = realMatchMedia; });
+
+    test('a 52px bar with back to Your team, the tabs as their own row, and every row still reachable', async () => {
+      axios.get.mockImplementation(fleet());
+      render(
+        <AuthContext.Provider value={authValue}>
+          <MemoryRouter initialEntries={['/v2/agents/maya-claude/default']}>
+            <Routes>
+              <Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentSettingsPage />} />
+              <Route path="/v2/agents" element={<div>your team</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthContext.Provider>,
+      );
+      await screen.findByRole('button', { name: 'Key actions' });
+      expect(document.querySelector('.mtop')).not.toBeNull();
+      expect(document.querySelector('.ph')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'More' })).toBeNull();
+      const tabs = screen.getByRole('navigation', { name: 'Agent tabs' });
+      expect(tabs.closest('.mtop')).toBeNull();
+      expect(tabs).toHaveClass('seg--full');
+      for (const label of ['Name', 'Runtime key', 'Marketplace listing', 'Connectors', 'Memory', 'Skills', 'How it runs']) {
+        expect(screen.getByText(label, { selector: '.lb' })).toBeInTheDocument();
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Your team' }));
+      expect(await screen.findByText('your team')).toBeInTheDocument();
+    });
+  });
 });
