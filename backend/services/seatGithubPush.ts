@@ -48,7 +48,25 @@ export const parseSeatPushArgs = (raw: Record<string, unknown>, agentUserId: str
   return { ref, baseOid, newOid, bundle };
 };
 
-/** Purely local Git proof after the provider objects have been fetched. */
+const PROTECTED_PATH = (name: string) => {
+  const file = name.replace(/^\n+/, '');
+  return /^\.github(?:\/(?:workflows|actions)(?:\/|$)|$)/i.test(file)
+    || /(?:^|\/)CODEOWNERS$/i.test(file);
+};
+
+const isAncestor = async (
+  git: (args: string[], cwd?: string, failure?: SeatPushError) => Promise<string>,
+  repo: string, ancestor: string, descendant: string,
+): Promise<boolean> => {
+  try {
+    await git(['merge-base', '--is-ancestor', ancestor, descendant], repo);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Git proof after the provider objects have been fetched. */
 export const validateSeatBundle = async (options: {
   git: (args: string[], cwd?: string, failure?: SeatPushError) => Promise<string>;
   repo: string;
@@ -56,10 +74,17 @@ export const validateSeatBundle = async (options: {
   baseOid: string;
   newOid: string;
   oldOid: string;
+  /** The default branch tip just fetched from the provider. */
+  defaultTip: string;
 }): Promise<void> => {
-  const { git, repo, bundlePath, baseOid, newOid, oldOid } = options;
-  await git(['cat-file', '-e', `${baseOid}^{commit}`], repo,
-    new SeatPushError('bundle_base_not_in_provider', 400));
+  const { git, repo, bundlePath, baseOid, newOid, oldOid, defaultTip } = options;
+  // The base must be history the seat could have started from: the default
+  // branch or its own accepted tip. Existence is not enough: this repo fetches
+  // a missing commit on demand, so any commit on any provider ref would exist.
+  if (!(await isAncestor(git, repo, baseOid, defaultTip))
+    && !(oldOid !== ZERO_OID && await isAncestor(git, repo, baseOid, oldOid))) {
+    throw new SeatPushError('bundle_base_not_in_provider', 400);
+  }
   const heads = await git(['bundle', 'list-heads', bundlePath]);
   const advertised = heads.split('\n').filter(Boolean);
   if (advertised.length !== 1 || advertised[0].split(/\s+/, 1)[0] !== newOid) {
@@ -74,20 +99,23 @@ export const validateSeatBundle = async (options: {
     new SeatPushError('non_fast_forward', 409));
   if (oldOid !== ZERO_OID) await git(['merge-base', '--is-ancestor', oldOid, newOid], repo,
     new SeatPushError('non_fast_forward', 409));
-  // Inspect names without rename detection and with NUL separators: a rename,
+  // Names are read without rename detection and with NUL separators: a rename,
   // deletion or newline in a filename must not hide an automation-policy edit.
-  const baseline = oldOid === ZERO_OID ? baseOid : oldOid;
-  const changed = await git(['diff', '--name-only', '-z', '--no-renames', baseline, newOid], repo);
-  // Also refuse an edit reverted later in the same bundle, including merge
-  // resolutions. Every newly introduced commit is part of the pushed history.
+  // Every commit the seat introduces must leave protected paths alone, even one
+  // a later commit puts back. Commits already on the default branch or the
+  // accepted seat tip are not the seat's, and a merge is read only where its
+  // result differs from every parent, so taking the default branch's version
+  // in a merge is not an edit.
   const history = await git(['log', '--format=', '--name-only', '-z', '--no-renames',
-    '--diff-merges=first-parent', `${baseline}..${newOid}`], repo);
-  if (`${changed}\0${history}`.split('\0').some((name) => {
-    const file = name.replace(/^\n+/, '');
-    return /^\.github(?:\/(?:workflows|actions)(?:\/|$)|$)/i.test(file)
-      || /(?:^|\/)CODEOWNERS$/i.test(file);
-  })) {
-    throw new SeatPushError('push_protected_path', 403);
+    '--diff-merges=dense-combined', newOid, `^${defaultTip}`,
+    ...(oldOid !== ZERO_OID ? [`^${oldOid}`] : [])], repo);
+  if (history.split('\0').some(PROTECTED_PATH)) throw new SeatPushError('push_protected_path', 403);
+  // The pushed tree must carry the default branch's protected files exactly. A
+  // comparison with the seat's own base would let it bring back the workflow
+  // files of any earlier commit.
+  const drift = await git(['diff', '--name-only', '-z', '--no-renames', defaultTip, newOid], repo);
+  if (drift.split('\0').some(PROTECTED_PATH)) {
+    throw new SeatPushError('protected_path_behind_default', 409);
   }
 };
 
@@ -125,16 +153,19 @@ export const fetchProviderObjects = async (options: {
   defaultRef: string;
   ref: string;
   oldOid: string;
-}): Promise<void> => {
+}): Promise<string> => {
   const { git, url, defaultRef, ref, oldOid } = options;
   // A filtered fetch needs a named promisor remote.
   await git(['config', 'remote.provider.url', url]);
   await git(['config', 'remote.provider.promisor', 'true']);
   await git(['config', 'extensions.partialClone', 'provider']);
-  await git(['fetch', '--no-tags', '--filter=blob:none', 'provider', defaultRef]);
+  await git(['fetch', '--no-tags', '--filter=blob:none', 'provider', `+${defaultRef}:refs/provider/default`]);
   // A bundle may name the current seat tip as its prerequisite. Fetch that
   // object even if its OID equals baseOid; it need not be on the default branch.
-  if (oldOid !== ZERO_OID) await git(['fetch', '--no-tags', '--filter=blob:none', 'provider', ref]);
+  if (oldOid !== ZERO_OID) {
+    await git(['fetch', '--no-tags', '--filter=blob:none', 'provider', `+${ref}:refs/provider/seat`]);
+  }
+  return git(['rev-parse', '--verify', 'refs/provider/default^{commit}']);
 };
 
 /** All subprocess settings are backend-owned. The bundle controls no Git config, hook or remote. */
@@ -182,9 +213,9 @@ export const pushSeatBranch = async (
     const current = await git(['ls-remote', url, ref]);
     const oldOid = current ? current.split(/\s+/, 1)[0] : ZERO_OID;
     if (!OID.test(oldOid)) throw new SeatPushError('provider_ref_invalid', 502);
-    await fetchProviderObjects({ git, url, defaultRef, ref, oldOid });
+    const defaultTip = await fetchProviderObjects({ git, url, defaultRef, ref, oldOid });
     await writeFile(bundlePath, bytes, { mode: 0o600 });
-    await validateSeatBundle({ git, repo, bundlePath, baseOid, newOid, oldOid });
+    await validateSeatBundle({ git, repo, bundlePath, baseOid, newOid, oldOid, defaultTip });
     // The server, not the child, chooses the compare-and-swap lease. A ref
     // move between ls-remote and this push causes a refusal upstream.
     await pushWithLease({ git, repo, url, ref, oldOid, newOid });

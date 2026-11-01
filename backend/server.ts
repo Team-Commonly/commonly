@@ -212,10 +212,11 @@ app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawError);
 
 // JSON parsing for all other routes
 // The seat push channel carries a bounded incremental Git bundle. Keep its
-// larger parser scoped to this one authenticated route; every other JSON API
-// retains the default body limit.
+// larger parser scoped to this one route, and authenticate the agent before
+// buffering it; every other JSON API retains the default body limit.
 const mcpGrantsRoutes = require('./routes/mcpGrants');
-app.use('/api/mcp/grants/:grantId/push', mcpGrantsRoutes.pushBodyRateLimit,
+const pushAgentAuth = require('./middleware/agentRuntimeAuth');
+app.use('/api/mcp/grants/:grantId/push', mcpGrantsRoutes.pushBodyRateLimit, pushAgentAuth,
   express.json({ limit: '9mb' }));
 app.use(express.json());
 
