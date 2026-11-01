@@ -62,6 +62,22 @@ export const groupSections = (sections: MemorySection[]) => {
   }));
 };
 
+// Frame icons (docs/design/artboards/d215, #s-memory): stroke-only, 1.8 weight.
+const ICON_PATHS: Record<'pin' | 'brain' | 'cal' | 'search' | 'info', React.ReactNode> = {
+  pin: <path d="M12 17v5M8 3h8l-1 6 3 4H6l3-4z" />,
+  brain: <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a2 2 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" />,
+  cal: <><rect x="3" y="5" width="18" height="16" rx="2.5" /><path d="M3 10h18M8 3v4M16 3v4" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
+  info: <><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></>,
+};
+const MemIcon: React.FC<{ name: keyof typeof ICON_PATHS; size?: number }> = ({ name, size = 16 }) => (
+  <svg className="v2-agent-memory__icon" viewBox="0 0 24 24" width={size} height={size} aria-hidden="true"
+    fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    {ICON_PATHS[name]}
+  </svg>
+);
+const GROUP_ICON: Record<GroupId, 'pin' | 'brain' | 'cal'> = { rules: 'pin', how: 'brain', journal: 'cal' };
+
 const V2AgentMemory: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
@@ -120,45 +136,53 @@ const V2AgentMemory: React.FC = () => {
         return (
           <div className="v2-agent-memory">
             <aside className="v2-agent-memory__nav" aria-label={t('agentSettings.memory', { defaultValue: 'Memory' })}>
-              <input
-                type="search"
-                className="v2-agent-memory__search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={t('agentProfile.memory.search', { defaultValue: 'Search memory' })}
-                aria-label={t('agentProfile.memory.search', { defaultValue: 'Search memory' })}
-              />
               <ul>
                 {groups.map((group) => (
                   <li key={group.id}>
                     <a href={`#memory-group-${group.id}`}>
+                      <MemIcon name={GROUP_ICON[group.id]} />
                       {group.label}
-                      <span className="v2-aprofile__count">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>
+                      <span className="v2-agent-memory__count">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>
                     </a>
                   </li>
                 ))}
               </ul>
+              <label className="v2-agent-memory__search">
+                <MemIcon name="search" size={15} />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={t('agentProfile.memory.search', { defaultValue: 'Search memory' })}
+                  aria-label={t('agentProfile.memory.search', { defaultValue: 'Search memory' })}
+                />
+              </label>
             </aside>
             <div className="v2-agent-memory__body">
               {groups.filter((g) => g.sections.length > 0).map((group) => (
                 <section key={group.id} className="v2-agent-memory__group" aria-labelledby={`memory-group-${group.id}`}>
-                  <h2 id={`memory-group-${group.id}`} className="v2-agent-memory__group-title">
+                  <h2 id={`memory-group-${group.id}`} className="v2-agent-memory__gtitle">
+                    <MemIcon name={GROUP_ICON[group.id]} size={13} />
                     {group.label}
-                    <span className="v2-aprofile__count">{group.sections.reduce((n, s) => n + s.notes.length, 0)}</span>
                   </h2>
-                  {group.sections.map((sec) => (
-                    <div key={sec.key} className="v2-agent-memory__sec">
-                      <h3 className="v2-agent-memory__sec-title">{sec.label}</h3>
-                      <ul className="v2-agent-memory__notes">
-                        {sec.notes.map((n, i) => (
-                          <li key={i} className="v2-agent-memory__note">
-                            <span className="v2-agent-memory__note-h">{n.header}</span>
-                            {n.snippet && <span className="v2-agent-memory__note-s">{n.snippet}</span>}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
+                  <ul className="v2-agent-memory__list">
+                    {group.sections.flatMap((sec) => sec.notes).map((n, i) => (
+                      group.id === 'journal' ? (
+                        <li key={i} className="v2-agent-memory__jday">
+                          <span className="v2-agent-memory__jdate">{n.header}</span>
+                          <span>{n.snippet}</span>
+                        </li>
+                      ) : (
+                        <li key={i} className="v2-agent-memory__mnote">
+                          <MemIcon name={GROUP_ICON[group.id]} />
+                          <div>
+                            <div className="v2-agent-memory__tx">{n.header}</div>
+                            {n.snippet && <div className="v2-agent-memory__snip">{n.snippet}</div>}
+                          </div>
+                        </li>
+                      )
+                    ))}
+                  </ul>
                 </section>
               ))}
             </div>
