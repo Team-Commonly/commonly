@@ -31,7 +31,6 @@ jobs:
       HEAD_SHA: ${{ inputs.sha || github.sha }}
       COMMONLY_WALK_EMAIL: ${{ secrets.COMMONLY_WALK_EMAIL }}
       COMMONLY_WALK_PASSWORD: ${{ secrets.COMMONLY_WALK_PASSWORD }}
-      COMMONLY_WALK_STATE_DIR: ${{ runner.temp }}/walk-state
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +44,8 @@ jobs:
       - name: Walk staging
         id: walk
         continue-on-error: true
+        env:
+          COMMONLY_WALK_STATE_DIR: ${{ runner.temp }}/walk-state
         run: |
           set +e
           node scripts/first-user-walk.mjs --base https://api-staging.commonly.me 2>&1 | tee "$RUNNER_TEMP/walk.log"
