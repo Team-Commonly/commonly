@@ -1460,8 +1460,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--needsYou')).toContain('var(--v2-accent)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--working')).toContain('var(--v2-text-primary)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__mark--idle')).toContain('var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-root button.v2-team__hire')).toContain('background: #101828');
-    expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: #101828');
+    expect(ruleBody(v2, '.v2-root button.v2-team__hire')).toContain('background: var(--v2-ink)');
+    expect(ruleBody(v2, '.v2-root button.v2-team-card__answer')).toContain('background: var(--v2-ink)');
     expect(ruleBody(v2, '.v2-root button.v2-team-card__talk')).toContain('border: 1px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-team-card__status')).toContain('var(--v2-font-mono)');
     // ux-lead 66246: the ask wraps, the command wraps at mono 14, the name is display-18,
