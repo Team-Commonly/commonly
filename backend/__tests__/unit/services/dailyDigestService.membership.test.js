@@ -331,19 +331,29 @@ describe('the digest hour', () => {
     expect(DailyDigestService.dueAt({ timezone }, new Date(at))).toBe(due);
   });
 
-  it('a scheduled run takes only the people for whom it is the hour', async () => {
-    const la = await person(new Date(Date.now() - 2 * 86400000));
+  // Fixed instants, never today: "15:01 UTC is 08:00 in Los Angeles" holds only
+  // under PDT, so a test that built 15:01 on the current date went red the day
+  // daylight saving ended (2026-11-01) and would have stayed red until March.
+  it.each([
+    ['in summer, 15:01 UTC is 08:01 PDT: Los Angeles is due', '2026-10-17T15:01:00Z', true],
+    ['in winter, 15:01 UTC is 07:01 PST: Los Angeles is not due', '2026-12-15T15:01:00Z', false],
+    ['in winter, 16:01 UTC is 08:01 PST: Los Angeles is due', '2026-12-15T16:01:00Z', true],
+  ])('a scheduled run takes only the people for whom it is the hour: %s', async (_label, iso, laDue) => {
+    const at = new Date(iso);
+    const twoDaysBefore = new Date(at.getTime() - 2 * 86400000);
+    const la = await person(twoDaysBefore);
     await User.updateOne({ _id: la._id }, { $set: { timezone: 'America/Los_Angeles' } });
-    const nozone = await person(new Date(Date.now() - 2 * 86400000));
+    const nozone = await person(twoDaysBefore);
     const service = new DailyDigestService();
     const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
-    const laEight = new Date(); laEight.setUTCHours(15, 1, 0, 0);
 
-    await service.generateAllDailyDigests({ at: laEight });
+    await service.generateAllDailyDigests({ at });
 
     const called = generate.mock.calls.map(([id]) => String(id));
-    expect(laEight.getUTCHours() === 15 && localHourIsEight(laEight)).toBe(true);
-    expect(called).toContain(String(la._id));
+    expect(localHourIsEight(at)).toBe(laDue);
+    if (laDue) expect(called).toContain(String(la._id));
+    else expect(called).not.toContain(String(la._id));
+    // 06:00 UTC is the no-zone hour, and none of these instants is 06:00 UTC.
     expect(called).not.toContain(String(nozone._id));
   });
 
