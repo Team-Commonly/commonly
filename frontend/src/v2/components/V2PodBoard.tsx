@@ -671,7 +671,7 @@ const V2PodBoard: React.FC = () => {
           onClick={() => navigate(`/v2/pods/${podId}`)}
         >
           <ArrowBackIcon fontSize="small" aria-hidden="true" />
-          {t('board.backToChat')}
+          <span className="v2-board__back-label">{t('board.backToChat')}</span>
         </button>
         <div className="v2-board__title-wrap">
           <h1 className="v2-board__title">{podName || t('board.title')}</h1>

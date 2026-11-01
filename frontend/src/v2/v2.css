@@ -13912,7 +13912,9 @@ body.modern-ui.v2-canvas {
 
 /* TASK-687 / D223 — board rebuilt to the d215 board frame: 40px focus strip,
    three columns + 120px done rail, two-line cards, mobile segment tabs. */
-.v2-board__head { gap: 10px; padding: 10px 24px; flex-wrap: nowrap; }
+.v2-feature--board .v2-feature__legacy { max-width: none; }
+.v2-feature--board > .v2-feature__body { padding: 0; }
+.v2-board__head { gap: 10px; padding: 0 24px; min-height: 64px; flex-wrap: nowrap; }
 .v2-board__title-wrap { flex: 1 1 auto; min-width: 0; }
 .v2-board__filters { display: flex; gap: 6px; }
 .v2-root button.v2-board__chip {
@@ -13935,13 +13937,14 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-board__icon-btn:hover { background: var(--v2-surface-hover); }
 .v2-board__new { min-height: 32px; }
 
-.v2-board__focus { margin: 0; padding: 0; border: 0; background: transparent; }
+.v2-board__focus { margin: 14px 24px 0; padding: 0; border: 0; background: transparent; flex: none; }
 .v2-board__focus > summary { list-style: none; }
 .v2-board__focus > summary::-webkit-details-marker { display: none; }
 .v2-board__focus-strip {
-  display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 24px; cursor: pointer;
-  border-bottom: 1px solid var(--v2-border-soft);
+  display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; cursor: pointer;
+  border-radius: 10px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft);
 }
+.v2-root button.v2-board__focus-edit { white-space: nowrap; flex: none; }
 .v2-board__focus-strip .v2-board__focus-eyebrow { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
 .v2-board__focus-strip .v2-board__focus-title {
   flex: 1 1 auto; min-width: 0; margin: 0; font: 600 13px/18px var(--v2-font);
@@ -13950,7 +13953,7 @@ body.modern-ui.v2-canvas {
 .v2-board__focus-progress { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); white-space: nowrap; }
 .v2-board__focus-chevron { color: var(--v2-text-tertiary); transition: transform 0.15s; }
 .v2-board__focus[open] .v2-board__focus-chevron { transform: rotate(180deg); }
-.v2-board__focus[open] > :not(summary) { margin-left: 24px; margin-right: 24px; }
+.v2-board__focus[open] > :not(summary) { margin-left: 12px; margin-right: 12px; }
 .v2-board__focus[open] { max-height: 40vh; overflow-y: auto; }
 
 .v2-board__tabs { display: none; }
@@ -13979,7 +13982,7 @@ body.modern-ui.v2-canvas {
 }
 .v2-root button.v2-board__col-add:hover { background: var(--v2-surface-hover); }
 .v2-root button.v2-board__col-hide { width: auto; }
-.v2-board__col-body { display: grid; gap: 6px; padding: 0 8px 8px; overflow-y: auto; align-content: start; flex: 1; min-height: 0; }
+.v2-board__col-body { display: grid; grid-auto-rows: max-content; gap: 6px; padding: 0 8px 8px; overflow-y: auto; align-content: start; flex: 1; min-height: 0; }
 .v2-board__col-empty { padding: 12px 4px; font-size: 12px; color: var(--v2-text-tertiary); }
 
 .v2-board__card {
@@ -13988,9 +13991,10 @@ body.modern-ui.v2-canvas {
 }
 .v2-board__card.is-picked { outline: 2px solid var(--v2-accent); outline-offset: -1px; }
 .v2-board__card-main { display: grid; gap: 4px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; min-width: 0; color: inherit; font: inherit; }
+.v2-board__card-kicker > :not(.v2-board__owner-line):not(.v2-board__card-spacer) { flex: none; }
 .v2-board__card-kicker { display: flex; align-items: center; gap: 6px; min-width: 0; font: 500 11px/16px var(--v2-font-mono); }
 .v2-board__card-spacer { flex: 1 1 auto; }
-.v2-board__card-kicker .v2-board__owner-line { min-width: 0; max-width: 55%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
+.v2-board__card-kicker .v2-board__owner-line { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
 .v2-board__card-title {
   font: 500 13px/18px var(--v2-font); display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;
@@ -14003,7 +14007,7 @@ body.modern-ui.v2-canvas {
 .v2-board__card:focus-within .v2-board__card-actions { display: flex; }
 
 .v2-board__donecol {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 10px; gap: 6px;
   border-radius: 12px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft);
 }
 .v2-board__donecol-label { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
@@ -14014,10 +14018,17 @@ body.modern-ui.v2-canvas {
 }
 
 @media (max-width: 760px) {
-  .v2-board__head { padding: 10px 12px; flex-wrap: wrap; }
-  .v2-board__filters { order: 5; width: 100%; }
+  .v2-board__head { padding: 8px 12px; min-height: 52px; gap: 6px; flex-wrap: wrap; }
+  .v2-board__back-label, .v2-board__subtitle { display: none; }
+  .v2-board__head > .v2-board__back { order: 1; }
+  .v2-board__title-wrap { order: 2; }
+  .v2-board__head > .v2-board__icon-btn { order: 3; }
+  .v2-board__search { order: 3; }
+  .v2-board__head > .v2-board__new { order: 4; }
+  .v2-board__filters { order: 5; width: 100%; padding-bottom: 6px; }
+  .v2-board__focus { margin: 10px 12px 0; }
+  .v2-board__focus-strip .v2-board__focus-eyebrow { display: none; }
   .v2-board__new-label { display: none; }
-  .v2-board__focus-strip { padding: 0 12px; }
   .v2-board__tabs { display: flex; gap: 4px; padding: 8px 12px 0; overflow-x: auto; }
   .v2-root button.v2-board__tab {
     flex: 1 1 0; display: inline-flex; justify-content: center; gap: 4px; height: 32px; align-items: center;
@@ -14032,5 +14043,8 @@ body.modern-ui.v2-canvas {
   .v2-board__col.is-active .v2-board__col-head { display: none; }
   .v2-board__col-body { padding: 0; }
   .v2-board__donecol { display: none; }
-  .v2-board__card-actions { position: static; display: flex; box-shadow: none; padding: 0; }
+  /* Two-line cards like the frame; the drawer's status segment moves a task on touch. */
+  .v2-board__card-actions, .v2-board__card:hover .v2-board__card-actions, .v2-board__card:focus-within .v2-board__card-actions { display: none; }
 }
+
+.v2-root button.v2-board__card-main, .v2-root button.v2-board__card-main:hover { background: none; box-shadow: none; }
