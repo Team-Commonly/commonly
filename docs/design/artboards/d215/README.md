@@ -24,4 +24,5 @@ COMMONLY_TOKEN=… D215_POD=<pod id> D215_AGENT=<name>/default node cap/measure_
 ## Caveats
 
 - The artboard and prod modes use different exclusion lists. The artboard mode skips the mock's own control classes, while the prod mode uses the counter that produced the before numbers. Read a near-miss with that in mind.
+- The chat frame carries one open thread (root, one reply, foot keys) since TASK-745. It is the reference for the live `.v2-thread-block`; the helper-word target for chat includes it (38 at 1440, 7 at 390).
 - The chat scroll target (5.32× at 1440, 6.28× at 390) was measured on live history with the fold applied, and the targets file pins it. Chat and board scroll both depend on how much history the chosen pod has, so measure the same pod each time.
