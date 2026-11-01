@@ -322,3 +322,26 @@ describe('classifies the possessive-exhaustion phrase (2026-08-25, third miss)',
     });
   });
 });
+
+// TASK-256: a public seat's withheld turn carries the tool's own error text in
+// its message, so a vendor that says "content_policy_violation", "quota" or
+// "403 forbidden" must not decide the class. The code does: the event stays
+// unacked and is retried, never acked as refused.
+describe('a public witness failure is a runtime failure, whatever its text says', () => {
+  test.each([
+    ['public_tool_failed', '{"status":500,"message":"content_policy_violation"}'],
+    ['public_tool_failed', 'this content was flagged'],
+    ['public_tool_failed', 'insufficient_quota'],
+    ['public_tool_failed', '403 forbidden'],
+    ['public_mcp_not_ready', 'rate limit while connecting'],
+  ])('%s with "%s" classes as runtime', (code, reason) => {
+    const error = new Error(`public seat withheld this turn's reply: Commonly tool x failed (${reason})`);
+    error.code = code;
+    expect(classifySpawnFailure(error)).toBe(SPAWN_FAILURE_CLASS.RUNTIME);
+  });
+
+  test('positive control: the same text without the code still classes as a refusal', () => {
+    expect(classifySpawnFailure(new Error('{"status":500,"message":"content_policy_violation"}')))
+      .toBe(SPAWN_FAILURE_CLASS.CONTENT_REFUSED);
+  });
+});

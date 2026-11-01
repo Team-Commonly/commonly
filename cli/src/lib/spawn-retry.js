@@ -7,6 +7,8 @@
  * retry policy here so every adapter gets the same bounded behavior.
  */
 
+import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-tool-error.js';
+
 export const SPAWN_FAILURE_CLASS = Object.freeze({
   // The provider refused the request's CONTENT. Re-sending the same content
   // can only be refused again, so this class is never retried: the run loop
@@ -120,6 +122,12 @@ const errorText = (error) => [
   .join('\n');
 
 export const classifySpawnFailure = (error) => {
+  // A public seat's withheld turn (TASK-256) quotes the tool's own error, which
+  // is vendor text: the code decides, so the event stays unacked for retry and
+  // is never acked as refused or parked behind a quota cooldown by that text.
+  if (error?.code === PUBLIC_TOOL_FAILED_CODE || error?.code === PUBLIC_MCP_NOT_READY_CODE) {
+    return SPAWN_FAILURE_CLASS.RUNTIME;
+  }
   const text = errorText(error);
   // First: the refusal text carries none of the words below today, but a
   // refusal must never be read as a transient condition and retried.
