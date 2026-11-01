@@ -58,7 +58,9 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
   // kept saying "granted" when the reload came back stale or failed.
   const [revokedHere, setRevokedHere] = useState<Record<string, string>>({});
   const [confirmHiddenRemoval, setConfirmHiddenRemoval] = useState<string | null>(null);
-  const [removedHiddenNotice, setRemovedHiddenNotice] = useState<{ label: string; revokePage: string | null } | null>(null);
+  // `stillListed`: the provider was never told (TASK-339), so its own page
+  // still lists Commonly and the notice must say so.
+  const [removedHiddenNotice, setRemovedHiddenNotice] = useState<{ label: string; revokePage: string | null; stillListed?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joinPolicyFixPodId, setJoinPolicyFixPodId] = useState<string | null>(null);
@@ -478,9 +480,11 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     setBusy(true);
     setError(null);
     try {
-      await api.del(`/api/integrations/${encodeURIComponent(connection.connectionId)}`);
+      const res = await api.del<{ providerRevoked?: boolean }>(`/api/integrations/${encodeURIComponent(connection.connectionId)}`);
       setConfirmHiddenRemoval(null);
-      if (connection.revokePage) setRemovedHiddenNotice({ label: connection.label, revokePage: connection.revokePage });
+      if (connection.revokePage) {
+        setRemovedHiddenNotice({ label: connection.label, revokePage: connection.revokePage, stillListed: res?.providerRevoked === false });
+      }
       await load();
     } catch {
       setError(t('tools.removeConnectionError', { defaultValue: 'Could not remove the connection.' }));
@@ -497,14 +501,18 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     setBusy(true);
     setError(null);
     try {
-      const res = await api.del<{ revokeAt?: string }>(`/api/integrations/${encodeURIComponent(connectionId)}`);
+      const res = await api.del<{ revokeAt?: string; providerRevoked?: boolean }>(`/api/integrations/${encodeURIComponent(connectionId)}`);
       setConfirmDisconnect(null);
       setDisconnectedHere((current) => [...current, connectionId]);
       // The removal revokes every grant on the connection, so the page says so
       // now rather than waiting on a re-read that may fail.
       const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
       setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
-      setRemovedHiddenNotice({ label: entry.label, revokePage: safeProviderRevokePage(res?.revokeAt) ? res.revokeAt : null });
+      setRemovedHiddenNotice({
+        label: entry.label,
+        revokePage: safeProviderRevokePage(res?.revokeAt) ? res.revokeAt : null,
+        stillListed: res?.providerRevoked === false,
+      });
       await load();
     } catch (err) {
       // The route answers 502 with one of these codes when the grants are already
@@ -521,7 +529,13 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
         setDisconnectedHere((current) => [...current, connectionId]);
         await load();
         if (safeProviderRevokePage(response?.data?.revokeAt)) {
-          setRemovedHiddenNotice({ label: entry.label, revokePage: response?.data?.revokeAt as string });
+          // `provider_revoke_failed`: the vendor did not take the revoke, so its
+          // app is still listed. The other code means the revoke took.
+          setRemovedHiddenNotice({
+            label: entry.label,
+            revokePage: response?.data?.revokeAt as string,
+            stillListed: response?.data?.code === 'provider_revoke_failed',
+          });
         } else {
           setError(t('tools.disconnectPartial', { defaultValue: 'Disconnected {{label}} here, but {{label}} did not confirm. Remove Commonly in its connected apps.', label: entry.label }));
         }

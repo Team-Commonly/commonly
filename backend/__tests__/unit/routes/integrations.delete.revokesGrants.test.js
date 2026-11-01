@@ -349,6 +349,9 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
       // the removal is a URL only the entry knows.
       expect(res.status).toBe(200);
       expect(res.body.revokeAt).toBe(page);
+      // TASK-339: the vendor was never told, and the page has to say the app is
+      // still listed there rather than that its access is merely worth a look.
+      expect(res.body.providerRevoked).toBe(false);
       expect(await Integration.findById(connection._id).lean()).toBeNull();
       const grant = await RoomGrant.findOne({ grantId: root.grantId }).lean();
       expect(grant.revokedAt).toBeInstanceOf(Date);
