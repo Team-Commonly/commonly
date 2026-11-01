@@ -98,6 +98,30 @@ describe('D223 Signal tokens in v2.css', () => {
     expect(valueIn(light, 'v2-shadow')).toBe('none');
     expect(valueIn(light, 'v2-shadow-lg')).toBe('none');
   });
+
+  // CSS comments don't nest: the first `*/` ends one. A comment that quotes a
+  // glob like `--v2-radius-*/--v2-shadow-*` ends early, and the browser then
+  // throws away its tail and everything up to the next `;`, which takes the
+  // declaration after it too. The raw text still reads right, so the pins
+  // above can't see it: light --v2-ink-2 was empty in Chromium this way.
+  const asCssReadsIt = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+  test('no comment in v2.css ends early', () => {
+    expect(asCssReadsIt(css)).not.toContain('*/');
+  });
+
+  test('each Signal token opens its own declaration in every set', () => {
+    const swallowed: string[] = [];
+    for (const [label, block] of [['light', light], ['dark', dark], ['media', media]] as const) {
+      const read = asCssReadsIt(block);
+      for (const name of Object.keys(ARTBOARD)) {
+        const at = read.indexOf(`--${name}:`);
+        const before = read.slice(0, at).trimEnd().slice(-1);
+        if (at === -1 || !/[;{]/.test(before)) swallowed.push(`${label} --${name}`);
+      }
+    }
+    expect(swallowed).toEqual([]);
+  });
 });
 
 // TASK-681: three surfaces were hard-coded to light values and vanished in dark.
