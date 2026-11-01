@@ -176,6 +176,36 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     ]);
   });
 
+  it('serves the record in seq pages, and refuses a malformed cursor before any read', async () => {
+    expect((await claim()).status).toBe(200);
+    expect((await request(app).patch(`/api/v1/tasks/${pod._id}/TASK-1`).set(as(AGENT_TOKEN)).send({ status: 'blocked' })).status).toBe(200);
+    expect((await claim()).status).toBe(200);
+    await flushRecordWrites();
+    const asOwner = generateTestToken(owner._id);
+    const whole = await read(asOwner);
+    expect(whole.headers['x-record-next-after']).toBeUndefined();
+
+    const first = await read(asOwner, pod._id, 'TASK-1', '?limit=2');
+    expect(first.status).toBe(200);
+    expect(first.headers['x-record-next-after']).toBe('2');
+    const rest = await read(asOwner, pod._id, 'TASK-1', '?after=2&limit=2');
+    expect(rest.headers['x-record-next-after']).toBeUndefined();
+    // Both pages name the whole chain's head, and together are the whole chain.
+    expect([first, rest].map((page) => [page.headers['x-record-entries'], page.headers['x-record-head']]))
+      .toEqual([['3', whole.headers['x-record-head']], ['3', whole.headers['x-record-head']]]);
+    expect(first.text + rest.text).toBe(whole.text);
+    expect(verifyRecord(first.text + rest.text)).toMatchObject({ ok: true, entries: 3 });
+    const otlp = await read(asOwner, pod._id, 'TASK-1', '?format=otlp&after=2');
+    expect(otlp.status).toBe(200);
+    expect(otlp.headers['x-record-next-after']).toBeUndefined();
+
+    const readChain = jest.spyOn(repository, 'readChain');
+    const bad = ['?after=-1', '?after=1.5', '?after=abc', '?after=1&after=2', '?limit=0', '?limit=1001', '?limit='];
+    const answers = await Promise.all(bad.map((query) => read(asOwner, pod._id, 'TASK-1', query)));
+    expect(answers.map((res) => [res.status, res.body.error])).toEqual(bad.map(() => [400, 'record_bad_cursor']));
+    expect(readChain).not.toHaveBeenCalled();
+  });
+
   it('refuses everyone else before any record byte is read', async () => {
     await claim();
     await flushRecordWrites();
