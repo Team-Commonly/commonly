@@ -7,7 +7,7 @@
 .seg.v2-theme-seg button { all: unset; box-sizing: border-box; cursor: pointer; height: 28px; padding: 0; width: 32px; border-radius: var(--v2-r-7); display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--v2-text-secondary); white-space: nowrap; }
 .seg.v2-theme-seg button[aria-pressed="true"] { background: var(--v2-surface); color: var(--v2-text-primary); box-shadow: 0 0 0 1px var(--v2-key-edge), 0 1px 2px rgba(16, 24, 40, 0.08); }
 .seg.v2-theme-seg button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
-.seg.v2-theme-seg--ic svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.seg.v2-theme-seg--rail { flex-direction: column; margin-bottom: 4px; }
-.seg.v2-theme-seg--rail button { height: 30px; }
+.seg.v2-theme-seg.seg--ic svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.seg.v2-theme-seg.seg--rail { flex-direction: column; margin-bottom: 4px; }
+.seg.v2-theme-seg.seg--rail button { height: 30px; }
 .seg.v2-theme-seg.seg--sm button { width: 28px; height: 24px; }

@@ -1,4 +1,6 @@
 import React from 'react';
+import fs from 'fs';
+import path from 'path';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import V2ThemeSwitch from '../components/V2ThemeSwitch';
 import useV2ThemePref from '../hooks/useV2ThemePref';
@@ -36,6 +38,19 @@ describe('V2ThemeSwitch', () => {
     expect(container.firstElementChild).toHaveClass('seg', 'seg--ic', 'seg--sm');
     rerender(<V2ThemeSwitch />);
     expect(container.firstElementChild).toHaveClass('seg--rail');
+  });
+
+  test('every modifier class the switch renders has a compound rule in its CSS', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../components/v2-theme-switch.css'), 'utf8');
+    const { container, rerender } = render(<V2ThemeSwitch />);
+    const rail = container.firstElementChild as HTMLElement;
+    expect(rail).toHaveClass('seg--ic', 'seg--rail');
+    rerender(<V2ThemeSwitch variant="bar" />);
+    const bar = container.firstElementChild as HTMLElement;
+    expect(bar).toHaveClass('seg--sm');
+    ['seg--ic svg.i', 'seg--rail', 'seg--rail button', 'seg--sm button'].forEach((tail) => {
+      expect(css).toContain(`.seg.v2-theme-seg.${tail}`);
+    });
   });
 
   test('in Auto, an OS light/dark flip moves the switch', () => {
