@@ -20,6 +20,20 @@ jest.mock('../../../services/hostedMcpToolDefinitions', () => ({
   listHostedMcpTools: jest.fn(),
   forgetHostedMcpDrift: jest.fn(),
 }));
+// The route is reached through the production router, and auth and the write
+// limiter are observable, so dropping either from the registration fails a test.
+jest.mock('../../../middleware/auth', () => jest.fn((req, res, next) => {
+  const id = req.get('x-test-user');
+  if (!id) return res.status(401).json({ error: 'unauthorized' });
+  req.user = { id };
+  return next();
+}));
+jest.mock('../../../middleware/integrationRateLimit', () => ({
+  writeIntegrationsRateLimit: jest.fn((_req, _res, next) => next()),
+  listIntegrationsRateLimit: (_req, _res, next) => next(),
+  ingestIngressRateLimit: (_req, _res, next) => next(),
+  ingestIntegrationsRateLimit: (_req, _res, next) => next(),
+}));
 
 const Integration = require('../../../models/Integration');
 const User = require('../../../models/User');
@@ -29,7 +43,9 @@ const connectorSecrets = require('../../../services/connectorSecrets');
 const { listHostedMcpTools, forgetHostedMcpDrift } = require('../../../services/hostedMcpToolDefinitions');
 const { revokeConnectionGrants } = require('../../../services/roomGrantService');
 const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
-const { submitOperatorKey } = require('../../../routes/hostedMcpOperatorKey');
+const auth = require('../../../middleware/auth');
+const { writeIntegrationsRateLimit } = require('../../../middleware/integrationRateLimit');
+const connectRoutes = require('../../../routes/hostedMcpConnect');
 
 const OWNER = 'bbbbbbbbbbbbbbbbbbbbbb01';
 const OTHER = 'bbbbbbbbbbbbbbbbbbbbbb02';
@@ -58,12 +74,7 @@ const KEY_ENTRY = {
 
 const app = express();
 app.use(express.json());
-app.post('/connect/hosted-mcp/:entryId/operator-key', (req, res, next) => {
-  const id = req.get('x-test-user');
-  if (!id) return res.status(401).json({ error: 'unauthorized' });
-  req.user = { id };
-  return next();
-}, submitOperatorKey);
+app.use('/connect/hosted-mcp', connectRoutes);
 
 const submit = (body = {}) => request(app)
   .post('/connect/hosted-mcp/latchkey/operator-key')
@@ -104,6 +115,20 @@ const everyWrittenValue = () => JSON.stringify([
 ]);
 
 describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
+  test('the write limiter runs, then auth, and a caller with no session stops there', async () => {
+    const res = await request(app)
+      .post('/connect/hosted-mcp/latchkey/operator-key')
+      .send({ agentId: AGENT, key: KEY });
+
+    expect(res.status).toBe(401);
+    expect(writeIntegrationsRateLimit).toHaveBeenCalledTimes(1);
+    expect(auth).toHaveBeenCalledTimes(1);
+    expect(writeIntegrationsRateLimit.mock.invocationCallOrder[0]).toBeLessThan(auth.mock.invocationCallOrder[0]);
+    expect(User.findOne).not.toHaveBeenCalled();
+    expect(listHostedMcpTools).not.toHaveBeenCalled();
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
+  });
+
   test('a refused scope among the operator picks is refused before any vendor call or row write', async () => {
     const res = await submit({ scopePicks: ['read', 'jobs:approve'] });
     expect(res.status).toBe(400);
