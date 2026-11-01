@@ -19,6 +19,8 @@ const HERE = __dirname;
 const TARGETS = path.join(HERE, '..', 'targets.json');
 
 const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff'];
+// byo-handoff is drawn but can't be captured on prod: reaching it issues a real key.
+const PROD_SURFACES = SURFACES.filter(s => s !== 'byo-handoff');
 const VIEWPORTS = ['1440', '390'];
 const EXPECTED = SURFACES.flatMap(s => VIEWPORTS.map(v => `${s}-${v}`));
 
@@ -30,9 +32,9 @@ function parseArgs(argv) {
   if (args.length === 1) return { mode: 'prod', only: null };
   if (args[1] !== '--only' || args.length !== 3) throw new Error('prod accepts only "--only a,b"');
   const only = args[2].split(',').map(x => x.trim()).filter(Boolean);
-  const bad = only.filter(x => !SURFACES.includes(x));
+  const bad = only.filter(x => !PROD_SURFACES.includes(x));
   if (!only.length) throw new Error('--only names no surface');
-  if (bad.length) throw new Error(`unknown surface: ${bad.join(', ')}; known: ${SURFACES.join(', ')}`);
+  if (bad.length) throw new Error(`unknown surface: ${bad.join(', ')}; known: ${PROD_SURFACES.join(', ')}`);
   return { mode: 'prod', only };
 }
 
@@ -165,21 +167,23 @@ async function prod(only) {
     ['chat', () => `/v2/pods/${pod}`],
     ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];
-  let miss = 0;
+  let miss = 0, checked = 0;
   for (const [vw, vh, mob, vp] of [[1440, 900, false, '1440'], [390, 844, true, '390']]) {
     const { b, p } = await open(vw, vh, mob);
     for (const surface of SURF) {
       if (only && !only.includes(surface[0])) continue;
       const { key, m, t, ok } = await checkSurface(p, surface, vp, targets);
+      checked++;
       if (!ok) miss++;
       console.log(key.padEnd(20), `words ${m.helperWords}/${t.helperWords}`.padEnd(16), `scroll ${m.innerRatio}/${t.innerRatio}`.padEnd(20), ok ? 'HIT' : 'MISS');
     }
     await b.close();
   }
+  if (!checked) { console.error('no surface was measured'); process.exit(2); }
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { parseArgs, validateTargets, checkSurface, EXPECTED, SURFACES, SIDEBAR_390 };
+module.exports = { parseArgs, validateTargets, checkSurface, EXPECTED, SURFACES, PROD_SURFACES, SIDEBAR_390 };
 
 if (require.main === module) {
   let args;

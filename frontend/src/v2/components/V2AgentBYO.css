@@ -67,6 +67,8 @@
   .v2-feature--byo .v2-byo__input { height: 44px; font-size: 14px; }
   .v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary { align-self: stretch; height: 44px; font-size: 14px; }
   .v2-feature--byo .v2-byo__cta-row { flex-direction: column; align-items: stretch; }
+  /* a column makes the note's 220px flex-basis a height: size it to its text */
+  .v2-feature--byo .v2-byo__cta-row .v2-byo__listen-note { flex: none; }
   .v2-feature--byo .v2-byo__os { display: flex; align-self: stretch; }
   .v2-feature--byo .v2-byo__os .v2-byo__link { flex: 1; justify-content: center; height: 44px; font-size: 14px; }
   .v2-feature--byo .v2-byo__command { padding-right: 14px; }

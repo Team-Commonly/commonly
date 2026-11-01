@@ -20,6 +20,9 @@ test('--only with an unknown surface throws', () => {
   assert.throws(() => parseArgs(argv('prod', '--only', 'unknown')), /unknown surface: unknown/);
   assert.throws(() => parseArgs(argv('prod', '--only', 'chat,nope')), /unknown surface: nope/);
   assert.throws(() => parseArgs(argv('prod', '--only', ',')), /names no surface/);
+  // Drawn, but prod can't reach it without issuing a key: refused rather than a silent zero-check pass.
+  assert.throws(() => parseArgs(argv('prod', '--only', 'byo-handoff')), /unknown surface: byo-handoff/);
+  assert.deepStrictEqual(parseArgs(argv('prod', '--only', 'byo')), { mode: 'prod', only: ['byo'] });
   assert.throws(() => parseArgs(argv('prod', '--only')), /accepts only/);
   assert.deepStrictEqual(parseArgs(argv('prod', '--only', 'chat,board')), { mode: 'prod', only: ['chat', 'board'] });
 });
