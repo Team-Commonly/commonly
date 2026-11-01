@@ -489,6 +489,34 @@ details.disc[open] > summary .chev { transform: rotate(180deg); }
 .app.m .v2-feature--byo .v2-byo__copy { position: static; width: 100%; height: 44px; margin-top: 10px; font-size: 14px; }
 .app.m .v2-feature--byo .v2-byo__more > summary { min-height: 48px; padding: 8px 16px 8px 12px; }
 
+/* connect: the page's own v2-connect__* names, in the connectors family (key-gradient Copy, panel code
+   blocks like BYO's command, mono labels). Scoped to .v2-connect, the page's root. */
+.v2-connect { display: flex; flex-direction: column; gap: 16px; max-width: 960px; margin: 0 auto; }
+.v2-connect .v2-connect__lane { display: flex; flex-direction: column; gap: 14px; padding: 20px; border-radius: 14px; background: var(--sf); box-shadow: inset 0 0 0 1px var(--d); }
+.v2-connect .v2-connect__lane-heading { display: flex; align-items: baseline; gap: 10px; }
+.v2-connect .v2-connect__number { flex: none; font: 500 11.5px/1 var(--f-mono); color: var(--c-text); }
+.v2-connect .v2-connect__lane h2 { margin: 0; font: 800 16px/1.25 var(--f-display); letter-spacing: -0.02em; color: var(--ink); }
+.v2-connect .v2-connect__code-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.v2-connect .v2-connect__code-card { min-width: 0; overflow: hidden; border-radius: 12px; background: var(--p); box-shadow: inset 0 0 0 1px var(--d); }
+.v2-connect .v2-connect__code-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--d); font: 500 11.5px/16px var(--f-mono); color: var(--mu); }
+.v2-connect .v2-connect__code-card pre { margin: 0; padding: 12px 14px; font: 500 12.5px/21px var(--f-mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-connect .v2-connect__copy { all: unset; box-sizing: border-box; cursor: pointer; position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 12px; border-radius: 8px; font: 600 12.5px/1 var(--f-body); color: var(--ink); background: linear-gradient(180deg, var(--key-a), var(--key-b)); border: 1px solid var(--key-edge); box-shadow: var(--sh-key); }
+.v2-connect .v2-connect__rule .v2-connect__code-head span { min-width: 0; }
+.v2-connect .v2-connect__rule .v2-connect__code-head code { font: 500 11.5px/16px var(--f-mono); color: var(--ink); overflow-wrap: anywhere; }
+.v2-connect .v2-connect__cursor { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; font-size: 13px; line-height: 20px; color: var(--se); }
+.v2-connect .v2-connect__link { display: inline-flex; align-items: center; min-height: 32px; font: 600 13px/20px var(--f-body); color: var(--c-text); text-decoration: none; }
+.v2-connect .v2-connect__lane > .v2-connect__link, .v2-connect .v2-connect__lane > .v2-connect__secondary { align-self: flex-start; }
+.v2-connect .v2-connect__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.v2-connect .v2-connect__cta, .v2-connect .v2-connect__secondary { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--f-body); white-space: nowrap; text-decoration: none; cursor: pointer; }
+.v2-connect .v2-connect__cta { color: var(--on-fill); background: linear-gradient(180deg, var(--fill-a), var(--fill-b)); border: 1px solid var(--fill-edge); }
+.v2-connect .v2-connect__secondary { color: var(--ink); background: linear-gradient(180deg, var(--key-a), var(--key-b)); border: 1px solid var(--key-edge); box-shadow: var(--sh-key); }
+.app.m .v2-connect { gap: 10px; }
+.app.m .v2-connect .v2-connect__lane { padding: 16px; }
+.app.m .v2-connect .v2-connect__code-grid { grid-template-columns: minmax(0, 1fr); }
+.app.m .v2-connect .v2-connect__link { min-height: 44px; }
+.app.m .v2-connect .v2-connect__actions { flex-direction: column; }
+.app.m .v2-connect .v2-connect__cta, .app.m .v2-connect .v2-connect__lane > .v2-connect__secondary, .app.m .v2-connect .v2-connect__secondary { align-self: stretch; height: 44px; font-size: 14px; }
+
 /* your team: the page's own v2-team__* / v2-team-card__* names, in the connectors family (14px bordered
    cards, the ink key and the plain key, mono status and pod chips). Scoped to .v2-team, the page's root. */
 .v2-team { display: flex; flex-direction: column; gap: 20px; max-width: 1100px; margin: 0 auto; }
@@ -708,7 +736,7 @@ details.disc[open] > summary .chev { transform: rotate(180deg); }
   <li><svg viewBox="0 0 24 24"><use href="#i-grid"/></svg><b>One screen first</b><span>Repeated blocks become a table; rare settings collapse.</span></li>
 </ol>
 <nav class="toc" aria-label="Surfaces">
-  <a href="#s-sidebar">Sidebar controls</a><a href="#s-chat">Pod chat</a><a href="#s-board">Task board</a><a href="#s-memory">Memory</a><a href="#s-agent">Agent settings</a><a href="#s-settings">Settings</a><a href="#s-connectors">Connectors</a><a href="#s-byo">Bring your own</a><a href="#s-team">Your team</a><a href="#s-firstrun">First run</a><a href="#s-dark">Dark mode</a>
+  <a href="#s-sidebar">Sidebar controls</a><a href="#s-chat">Pod chat</a><a href="#s-board">Task board</a><a href="#s-memory">Memory</a><a href="#s-agent">Agent settings</a><a href="#s-settings">Settings</a><a href="#s-connectors">Connectors</a><a href="#s-byo">Bring your own</a><a href="#s-connect">Connect</a><a href="#s-team">Your team</a><a href="#s-firstrun">First run</a><a href="#s-dark">Dark mode</a>
 </nav>
 
 <section class="surf" id="s-sidebar">
@@ -944,6 +972,49 @@ export COMMONLY_API_URL=https://api.commonly.me
 export COMMONLY_AGENT_TOKEN=cm_agent_xxxxxxxxxxxxxxxx
 commonly agent run my-mcp-agent --adapter claude</pre><button type="button" class="v2-byo__copy">Copy</button></div><p class="v2-byo__listen-note" data-testid="byo-listen-waiting">Waiting for my-mcp-agent to check in… this turns green the moment the command connects.</p><p class="v2-byo__listen-note">MCP alone won't wake my-mcp-agent for @mentions. Keep this Terminal open.</p><p class="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">This stops when this Terminal window closes. For an agent that keeps running, add this computer under Other ways to connect, then choose On my computer.</p></div><p data-testid="byo-key-once">The command holds a private key we show only once. Lost it? Come back and press “Get my connect command” again, then confirm that you want to replace the old key.</p><details class="v2-byo__more" data-testid="byo-mcp-details"><summary>Claude Code in your own sessions. This does not answer @mentions.</summary><p class="v2-byo__hint">Gives your Claude Code sessions Commonly’s tools. Answering @mentions needs the command above.</p></details><details class="v2-byo__more" data-testid="byo-result-more-ways"><summary>Other ways to connect</summary><p class="v2-byo__hint">Add a computer, the key on its own, or Cursor.</p></details><div class="v2-byo__cta-row"><button type="button" class="v2-byo__submit">Go to your pod</button><span class="v2-byo__listen-note" data-testid="byo-cta-warning">my-mcp-agent isn’t listening yet: it won’t answer mentions until the command above is running.</span><button type="button" class="v2-byo__secondary">Install another</button></div></div></div></div></div><div class="mtab"><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-layers"/></svg><span>Pods</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-activity"/></svg><span class="bd">157</span><span>Needs you</span></div><div class="on"><svg class="i" viewBox="0 0 24 24"><use href="#i-team"/></svg><span>Team</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-gear"/></svg><span>Settings</span></div></div></div></div></figure>
     <div class="notes"><ul><li><b>Class names are the page's own</b> (<span class="cd">v2-byo__*</span>), so the build copies them and its tests keep passing. The rail, page head, (i) and avatars stand in for the shared shell, <span class="cd">V2Hint</span> and <span class="cd">V2Avatar</span>.</li><li><b>Three places to run it, one segment.</b> Each mode keeps its own (i). At 390 the segment becomes three 44px rows.</li><li><b>Fields are one list</b>, label left at 1440 and above a 44px control at 390, with the two hints the page shows.</li><li><b>The handoff leads with the command.</b> The OS links become a segment, Copy is a key on the block, and the check-in is one status line that turns cobalt when the agent connects.</li></ul><h3>Each state, one line</h3><table class="ctl"><tr><td>Run it here / Use my own agent</td><td><b>Same form, fewer fields.</b> Hosted keeps name and pod. Use my own agent drops Computer and Model and shows the Claude Code · Codex links.</td></tr><tr><td>Connected</td><td><b><span class="cd">v2-byo__live</span></b> takes the waiting line's place: cobalt tint and a filled dot. The preview chip turns <span class="cd">--live</span>.</td></tr><tr><td>Timed out / MCP only</td><td><b>The same waiting line</b> with the still-waiting or missed-command text. No new box.</td></tr><tr><td>Error, persona, re-key</td><td><b>Not drawn.</b> They keep prod's <span class="cd">__error</span> and <span class="cd">__persona</span> blocks above the act.</td></tr><tr><td>Preview card</td><td><b>1440 only.</b> Prod hides it under 940px.</td></tr></table></div>
+  </div>
+</section>
+
+<section class="surf" id="s-connect">
+  <div class="shead"><h2>Connect</h2><span class="route">/v2/connect</span></div>
+  <div class="row1">
+    <div class="notes"><ul><li><b>Class names are the page's own</b> (<span class="cd">v2-connect__*</span>), so the build copies them and its tests keep passing. The rail, page head and (i) stand in for the shared shell and <span class="cd">V2Hint</span>.</li><li><b>Same family as Connectors.</b> Lanes are bordered panels, each code block is a panel like BYO's command, and Copy is the same key.</li><li><b>Links and acts are controls.</b> Links sit in a 32px row at 1440 and a 44px row at 390; the agent lane's two acts are the ink key and a plain key, full width at 390.</li></ul><h3>Each state, one line</h3><table class="ctl"><tr><td>Member</td><td><b>Drawn.</b> Lanes 01 and 02.</td></tr><tr><td>Admin</td><td><b>Not drawn.</b> Lane 03, Instance keys, is a third lane with one plain key.</td></tr><tr><td>Copied</td><td><b>Not drawn.</b> The key's label reads Copied for 1.5s.</td></tr></table></div>
+    <figure><figcaption><b>Member · 1440</b><span></span></figcaption><div class="frame" style="--fw:1440;--fh:900" data-surface="connect" data-vp="1440"><div class="app d"><div class="sh sh--page"><nav class="rail"><div class="logo"><svg class="i" viewBox="0 0 24 24"><use href="#i-mark"/></svg></div><div class="nav" title="Pods"><svg class="i" viewBox="0 0 24 24"><use href="#i-layers"/></svg></div><div class="nav" title="Agents"><svg class="i" viewBox="0 0 24 24"><use href="#i-team"/></svg></div><div class="nav" title="Needs you"><svg class="i" viewBox="0 0 24 24"><use href="#i-activity"/></svg><span class="bd">157</span></div><div class="nav" title="Artifacts"><svg class="i" viewBox="0 0 24 24"><use href="#i-file"/></svg></div><div class="nav" title="Connectors"><svg class="i" viewBox="0 0 24 24"><use href="#i-plug"/></svg></div><div class="nav" title="Settings"><svg class="i" viewBox="0 0 24 24"><use href="#i-gear"/></svg></div><div class="sp"></div><div class="nav" title="Feedback"><svg class="i" viewBox="0 0 24 24"><use href="#i-feedback"/></svg></div><div class="seg seg--ic seg--rail" role="group" aria-label="Theme"><button type="button" data-t="light" title="Light" aria-label="Light" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><use href="#i-sun"/></svg></button><button type="button" data-t="dark" title="Dark" aria-label="Dark" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><use href="#i-moon"/></svg></button></div><span class="av av--36"><svg viewBox="0 0 40 40"><use href="#av-alex"/></svg></span></nav><div class="pane"><div class="ph"><h1>Connect</h1><button type="button" class="info" aria-label="About this page"><svg class="i" viewBox="0 0 24 24"><use href="#i-info"/></svg><span class="tip" role="tooltip">MCP uses an agent token created during setup.</span></button></div><div class="pbody"><div class="v2-connect"><section class="v2-connect__lane" aria-labelledby="connect-cli-heading-1440"><div class="v2-connect__lane-heading"><span class="v2-connect__number" aria-hidden="true">01</span><div><h2 id="connect-cli-heading-1440">Connect the CLI or MCP</h2></div></div><div class="v2-connect__code-grid"><div class="v2-connect__code-card"><div class="v2-connect__code-head"><span>Commonly CLI</span><button type="button" class="v2-connect__copy">Copy</button></div><pre>npm install -g @commonlyai/cli
+commonly login --instance https://api.commonly.me</pre></div><div class="v2-connect__code-card"><div class="v2-connect__code-head"><span>Claude Code MCP</span><button type="button" class="v2-connect__copy">Copy</button></div><pre>claude mcp add commonly \
+  -e COMMONLY_API_URL=https://api.commonly.me \
+  -e COMMONLY_AGENT_TOKEN=cm_agent_… \
+  -- npx -y @commonlyai/mcp</pre></div></div><div class="v2-connect__cursor"><a class="v2-connect__link" href="#s-connect">Add Commonly to Cursor</a><span>Add your agent key in Cursor’s MCP settings.</span></div><div class="v2-connect__code-card v2-connect__rule"><div class="v2-connect__code-head"><span>Cursor rule · save as <code>.cursor/rules/commonly.mdc</code> in your project</span><button type="button" class="v2-connect__copy">Copy</button></div><pre>---
+description: Use the team&#x27;s Commonly pod for shared context and handoffs
+alwaysApply: true
+---
+
+When a task names a Commonly pod, call `commonly_get_context` with that pod&#x27;s id before you start, so you have the team&#x27;s current priorities and recent messages. Use `commonly_get_messages` when you need more history.
+
+When the work is done, post a short result or handoff to the same pod with `commonly_post_message`. Don&#x27;t post step-by-step progress.
+
+This MCP connection lets Cursor use Commonly&#x27;s tools while a session is open. It does not wake Cursor for @mentions, so never say you are listening for them.
+
+Keep agent keys out of pod messages, URLs, logs and committed files.
+</pre></div><a class="v2-connect__link" href="#s-connect">Manage connected CLI devices</a></section><section class="v2-connect__lane" aria-labelledby="connect-agent-heading-1440"><div class="v2-connect__lane-heading"><span class="v2-connect__number" aria-hidden="true">02</span><div><h2 id="connect-agent-heading-1440">Connect an agent you run</h2></div></div><div class="v2-connect__actions"><a class="v2-connect__cta" href="#s-connect">Set up an agent</a><a class="v2-connect__secondary" href="#s-connect">Manage installed agents</a></div></section></div></div></div></div></div></div></figure>
+  </div>
+  <div class="row2 row2--even">
+    <figure><figcaption><b>Member · 390</b><span></span></figcaption><div class="frame" style="--fw:390;--fh:844" data-surface="connect" data-vp="390"><div class="app m"><div class="mtop"><span class="tt2">Connect</span><button type="button" class="info info--lg" aria-label="About this page"><svg class="i" viewBox="0 0 24 24"><use href="#i-info"/></svg><span class="tip" role="tooltip">MCP uses an agent token created during setup.</span></button></div><div class="mbody2"><div class="v2-connect"><section class="v2-connect__lane" aria-labelledby="connect-cli-heading-390"><div class="v2-connect__lane-heading"><span class="v2-connect__number" aria-hidden="true">01</span><div><h2 id="connect-cli-heading-390">Connect the CLI or MCP</h2></div></div><div class="v2-connect__code-grid"><div class="v2-connect__code-card"><div class="v2-connect__code-head"><span>Commonly CLI</span><button type="button" class="v2-connect__copy">Copy</button></div><pre>npm install -g @commonlyai/cli
+commonly login --instance https://api.commonly.me</pre></div><div class="v2-connect__code-card"><div class="v2-connect__code-head"><span>Claude Code MCP</span><button type="button" class="v2-connect__copy">Copy</button></div><pre>claude mcp add commonly \
+  -e COMMONLY_API_URL=https://api.commonly.me \
+  -e COMMONLY_AGENT_TOKEN=cm_agent_… \
+  -- npx -y @commonlyai/mcp</pre></div></div><div class="v2-connect__cursor"><a class="v2-connect__link" href="#s-connect">Add Commonly to Cursor</a><span>Add your agent key in Cursor’s MCP settings.</span></div><div class="v2-connect__code-card v2-connect__rule"><div class="v2-connect__code-head"><span>Cursor rule · save as <code>.cursor/rules/commonly.mdc</code> in your project</span><button type="button" class="v2-connect__copy">Copy</button></div><pre>---
+description: Use the team&#x27;s Commonly pod for shared context and handoffs
+alwaysApply: true
+---
+
+When a task names a Commonly pod, call `commonly_get_context` with that pod&#x27;s id before you start, so you have the team&#x27;s current priorities and recent messages. Use `commonly_get_messages` when you need more history.
+
+When the work is done, post a short result or handoff to the same pod with `commonly_post_message`. Don&#x27;t post step-by-step progress.
+
+This MCP connection lets Cursor use Commonly&#x27;s tools while a session is open. It does not wake Cursor for @mentions, so never say you are listening for them.
+
+Keep agent keys out of pod messages, URLs, logs and committed files.
+</pre></div><a class="v2-connect__link" href="#s-connect">Manage connected CLI devices</a></section><section class="v2-connect__lane" aria-labelledby="connect-agent-heading-390"><div class="v2-connect__lane-heading"><span class="v2-connect__number" aria-hidden="true">02</span><div><h2 id="connect-agent-heading-390">Connect an agent you run</h2></div></div><div class="v2-connect__actions"><a class="v2-connect__cta" href="#s-connect">Set up an agent</a><a class="v2-connect__secondary" href="#s-connect">Manage installed agents</a></div></section></div></div><div class="mtab"><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-layers"/></svg><span>Pods</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-activity"/></svg><span class="bd">157</span><span>Needs you</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-team"/></svg><span>Team</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-gear"/></svg><span>Settings</span></div></div></div></div></figure>
   </div>
 </section>
 

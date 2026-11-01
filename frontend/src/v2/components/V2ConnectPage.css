@@ -1,0 +1,52 @@
+/* Connect (/v2/connect), lifted from the d215 frame (R05):
+   docs/design/artboards/d215/index.html, section s-connect, frame "connect" at
+   1440 and 390. The rules below are the frame's own, same selectors and values;
+   only the tokens are translated to --v2-* (so light, dark and auto switch
+   together) and the frame's `.app.m` phone rules sit in the page's 760px phone
+   query. Scoped to .v2-connect, the page's root. */
+.v2-connect { display: flex; flex-direction: column; gap: 16px; max-width: 960px; margin: 0 auto; }
+.v2-connect .v2-connect__lane { display: flex; flex-direction: column; gap: 14px; padding: 20px; border-radius: 14px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-connect .v2-connect__lane-heading { display: flex; align-items: baseline; gap: 10px; }
+.v2-connect .v2-connect__number { flex: none; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-accent-text); }
+.v2-connect .v2-connect__lane h2 { margin: 0; font: 800 16px/1.25 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); }
+.v2-connect .v2-connect__code-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.v2-connect .v2-connect__code-card { min-width: 0; overflow: hidden; border-radius: 12px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-connect .v2-connect__code-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--v2-border-soft); font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-connect .v2-connect__code-card pre { margin: 0; padding: 12px 14px; font: 500 12.5px/21px var(--v2-font-mono); color: var(--v2-text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-connect .v2-connect__copy { all: unset; box-sizing: border-box; cursor: pointer; position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 12px; border-radius: 8px; font: 600 12.5px/1 var(--v2-font); color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
+.v2-connect .v2-connect__rule .v2-connect__code-head span { min-width: 0; }
+.v2-connect .v2-connect__rule .v2-connect__code-head code { font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-primary); overflow-wrap: anywhere; }
+.v2-connect .v2-connect__cursor { display: flex; flex-wrap: wrap; align-items: center; gap: 0 12px; font-size: 13px; line-height: 20px; color: var(--v2-text-secondary); }
+.v2-connect .v2-connect__link { display: inline-flex; align-items: center; min-height: 32px; font: 600 13px/20px var(--v2-font); color: var(--v2-accent-text); text-decoration: none; }
+.v2-connect .v2-connect__lane > .v2-connect__link, .v2-connect .v2-connect__lane > .v2-connect__secondary { align-self: flex-start; }
+.v2-connect .v2-connect__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.v2-connect .v2-connect__cta, .v2-connect .v2-connect__secondary { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; text-decoration: none; cursor: pointer; }
+.v2-connect .v2-connect__cta { color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
+.v2-connect .v2-connect__secondary { color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
+@media (max-width: 760px) {
+  .v2-connect { gap: 10px; }
+  .v2-connect .v2-connect__lane { padding: 16px; }
+  .v2-connect .v2-connect__code-grid { grid-template-columns: minmax(0, 1fr); }
+  .v2-connect .v2-connect__link { min-height: 44px; }
+  .v2-connect .v2-connect__actions { flex-direction: column; }
+  .v2-connect .v2-connect__cta, .v2-connect .v2-connect__lane > .v2-connect__secondary, .v2-connect .v2-connect__secondary { align-self: stretch; height: 44px; font-size: 14px; }
+  /* Not in the frame: a 44px hit area around the 28px Copy key. With its 1px
+     border, `inset` measures from the padding box (26px), so -9px makes 44. */
+  .v2-connect .v2-connect__copy::after { content: ""; position: absolute; inset: -9px; }
+}
+
+/* Live behaviour the frame does not draw, kept working with prod's values. */
+.v2-connect .v2-connect__copy:hover,
+.v2-connect .v2-connect__secondary:hover {
+  border-color: var(--v2-border-strong);
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+.v2-connect .v2-connect__cta:hover {
+  border-color: var(--v2-ink-hover);
+  background: var(--v2-ink-hover);
+}
+.v2-connect .v2-connect__link:hover { text-decoration: underline; }
+/* CJK never takes negative letter-spacing (TASK-055); this entry left the
+   v2.css :lang(zh) reset list with the rest of the page. */
+.v2-root:lang(zh) .v2-connect .v2-connect__lane h2 { letter-spacing: 0; }

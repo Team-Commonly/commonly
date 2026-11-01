@@ -4,6 +4,7 @@ import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useAuth } from '../../context/AuthContext';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
+import './V2ConnectPage.css';
 
 type CopyKey = 'cli' | 'mcp' | 'cursorRule';
 
