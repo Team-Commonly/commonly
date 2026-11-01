@@ -245,8 +245,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const stack = blockContaining(surface, '@media (max-width: 760px)', '.wt td:not(:first-child) { display: none; }');
     const targets = blockContaining(surface, '@media (max-width: 760px)', '.v2-agent-settings-page .lrow .ac .b {');
     expect(stack).not.toBe('');
+    // An opened row shows its hidden cells again; without this the expanded controls stay hidden.
+    expect(stack).toContain('.v2-agent-settings-page .wt tr[data-open="true"] td:not(:first-child) { display: block; }');
     // The thead hides at the same width, or a long pod name widens the stacked table past the page.
-    expect(blockContaining(surface, '@media (max-width: 760px)', '.wt thead { display: none; }')).not.toBe('');
+    const tableStack = blockContaining(surface, '@media (max-width: 760px)', '.wt thead { display: none; }');
+    expect(tableStack).toContain('.v2-agent-settings-page .wt, .v2-agent-settings-page .wt tbody, .v2-agent-settings-page .wt tr, .v2-agent-settings-page .wt td { display: block; width: 100%; }');
     // The fold's 28px lives in the stack block; the 44px override has to come after it.
     expect(surface.indexOf(targets)).toBeGreaterThan(surface.indexOf(stack));
     expect(selectorRuleBody(targets, '.v2-agent-settings-page .lrow .ac .b {')).toContain('height: 44px');
