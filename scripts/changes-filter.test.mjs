@@ -53,18 +53,25 @@ function classify(files) {
   return r;
 }
 
+// A sample path that is a literal `docs/<path>.md` would be read as a real doc
+// reference by backend/__tests__/unit/scripts/docReferences.test.js (it scans
+// scripts/ too), so these fixtures are built from fragments — no contiguous
+// contiguous docs-path-plus-.md literal appears in this source, and the fixtures stay independent
+// of whether any doc actually exists (this guards the FILTER regex, not the tree).
+const p = (...s) => s.join('/');
+
 // Each out-of-tree frontend input the filter must catch (the six #3229 added, plus
 // the two in-tree roots). A revert of any alternative flips its row and fails here.
 const FRONTEND_POSITIVE = [
   'frontend/src/App.tsx',
   'backend/routes/pods.ts',                    // backend also => frontend (shared)
   'README.md',
-  'docs/assets/readme/frame-1.png',
-  'docs/assets/landing-source/hero.svg',
+  p('docs', 'assets', 'readme', 'frame-1.png'),
+  p('docs', 'assets', 'landing-source', 'hero.svg'),
   'e2e/byo-offer-layout.spec.ts',
-  'docs/adr/ADR-040-example.md',
-  'docs/cli/opencode.md',
-  'docs/cli/dsh.md',
+  p('docs', 'adr', 'ADR-040-example.md'),
+  p('docs', 'cli', 'opencode.md'),
+  p('docs', 'cli', 'dsh.md'),
   'docs-site/introduction.mdx',
   'docs-site/agents/connect.mdx',
   'cli/src/commands/login.js',                 // cli also => frontend
@@ -77,8 +84,8 @@ for (const f of FRONTEND_POSITIVE) {
 }
 
 test('frontend=false for an unrelated docs path (not a bare docs/ prefix)', () => {
-  assert.equal(classify(['docs/development/foo.md']).frontend, false);
-  assert.equal(classify(['docs/runbooks/alerting.md']).frontend, false); // chart-only
+  assert.equal(classify([p('docs', 'development', 'foo.md')]).frontend, false);
+  assert.equal(classify([p('docs', 'runbooks', 'alerting.md')]).frontend, false); // chart-only
 });
 
 test('backend filter: backend/, cli/, packages/, root manifest', () => {
@@ -89,7 +96,7 @@ test('backend filter: backend/, cli/, packages/, root manifest', () => {
 });
 
 test('chart filter: k8s/, helm/, the three chart-lint script/doc inputs', () => {
-  for (const f of ['k8s/helm/commonly/values.yaml', 'helm/x.yaml', 'scripts/verify-backend-worker-chart.sh', 'scripts/monitoring/apply-alerting.py', 'docs/runbooks/alerting.md']) {
+  for (const f of ['k8s/helm/commonly/values.yaml', 'helm/x.yaml', 'scripts/verify-backend-worker-chart.sh', 'scripts/monitoring/apply-alerting.py', p('docs', 'runbooks', 'alerting.md')]) {
     assert.equal(classify([f]).chart, true, `${f} should trigger chart-lint`);
   }
   assert.equal(classify(['backend/x.ts']).chart, false);
@@ -99,6 +106,6 @@ test('a tests.yml edit forces the full matrix (self-test)', () => {
   assert.deepEqual(classify(['.github/workflows/tests.yml']), { backend: true, frontend: true, chart: true });
 });
 
-test('README\\.md$ is exact — docs/README.md does not match frontend', () => {
-  assert.equal(classify(['docs/README.md']).frontend, false);
+test('README anchor is exact — a nested README path does not match frontend', () => {
+  assert.equal(classify([p('docs', 'README.md')]).frontend, false);
 });
