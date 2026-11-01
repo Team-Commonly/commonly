@@ -32,7 +32,11 @@ body.modern-ui.v2-canvas {
   /* TASK-701: inactive rail glyphs, join-radio outlines (3:1 on white and
      #f2f4f7) and the neutral selected pod row. Dark values sit in both dark
      sets below. */
-  --v2-rail-icon: #374151;
+  /* D223 ruling (Cofounder, 11-01): the artboard's --ph (#98a2b3) is under
+     3:1 on the rail's own surface, --v2-shell-bg #eef0f4 (2.26:1), so this is
+     the nearest grey that passes there: 3.05:1, and 3.47:1 on the white tab
+     bar. Dark #5f6979 is 3.48:1 on the dark shell and 3.17:1 on its surface. */
+  --v2-rail-icon: #828a99;
   --v2-control-outline: #667085;
   /* D223 (TASK-735): the artboard's .pod.on in both themes, a neutral tint
      row whose mark alone turns cobalt. */
@@ -273,7 +277,7 @@ body.modern-ui.v2-canvas {
     --v2-status-blocked-edge: #f97066;
     --v2-text-primary: #e8ebf1;
     --v2-message-text: #e8ebf1;
-    --v2-rail-icon: #aeb6c4;
+    --v2-rail-icon: #5f6979;
     --v2-control-outline: #737e92;
     --v2-row-active: #1e2531;
     --v2-row-active-text: #e8ebf1;
@@ -347,7 +351,7 @@ body.modern-ui.v2-canvas {
       --v2-status-blocked-edge: #f97066;
       --v2-text-primary: #e8ebf1;
       --v2-message-text: #e8ebf1;
-      --v2-rail-icon: #aeb6c4;
+      --v2-rail-icon: #5f6979;
       --v2-control-outline: #737e92;
       --v2-row-active: #1e2531;
       --v2-row-active-text: #e8ebf1;
@@ -803,7 +807,10 @@ body.modern-ui.v2-canvas {
 
 .v2-rail {
   height: 100%;
-  padding: 6px 10px;
+  /* 56px rail - 1px pane border - 2 x 8px = 39px, room for the 38px nav glyph.
+     At 10px the nav was 35px wide and scrolled sideways by 2px, which the
+     staging smoke's "rail no h-scroll @1440px" check caught after #3139. */
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -892,8 +899,9 @@ body.modern-ui.v2-canvas {
   align-items: center;
   justify-content: center;
   gap: 0;
-  /* D223 (TASK-735): the artboard's .nav, a bare 38px glyph at rest. The
-     glyph colour stays the TASK-701 token, so dark keeps its lift. */
+  /* D223 (TASK-735): the artboard's .nav, a bare 38px glyph at rest, coloured
+     by --v2-rail-icon: the nearest grey to the artboard's that clears 3:1 on
+     the shell (values and ratios at the token). */
   width: 38px;
   min-height: 38px;
   height: 38px;
@@ -12656,7 +12664,9 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
     gap: 3px;
     padding: 0 6px;
     background: transparent;
-    color: var(--v2-text-placeholder);
+    /* Icons are controls: the rail's 3:1 grey, not the artboard's 2.58:1
+       placeholder (D223 standing rule, 11-01). The label sets its own colour. */
+    color: var(--v2-rail-icon);
   }
 
   .v2-root button.v2-mobile-tabs__item--active,
@@ -12674,8 +12684,10 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 
   .v2-root button.v2-mobile-tabs__item--active .v2-mobile-tabs__icon { color: var(--v2-ink); }
 
+  /* D223 ruling (Cofounder, 11-01): the artboard's sans family, at the
+     12px sans floor rather than its 10px. */
   .v2-mobile-tabs__label {
-    font: 500 11px/12px var(--v2-font-mono);
+    font: 500 12px/14px var(--v2-font);
     white-space: nowrap;
   }
 

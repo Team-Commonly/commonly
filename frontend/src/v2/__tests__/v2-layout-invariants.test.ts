@@ -334,7 +334,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const brand = ruleBody(v2, '.v2-rail__brand-icon');
     const item = ruleBody(v2, '.v2-root button.v2-rail__item');
     const active = ruleBody(v2, '.v2-root button.v2-rail__item--active');
-    expect(rail).toContain('padding: 6px 10px');
+    expect(rail).toContain('padding: 6px 8px');
+    // The nav glyph must fit the rail's content box or the nav scrolls
+    // sideways (staging smoke, "rail no h-scroll @1440px"): rail width, less
+    // the pane's 1px border, less both side paddings.
+    const railW = Number(/--v2-rail-w:\s*(\d+)px/.exec(v2)?.[1]);
+    const padX = Number(/padding: \d+px (\d+)px/.exec(rail)?.[1]);
+    const itemW = Number(/(?:^|\s)width: (\d+)px/.exec(item)?.[1]);
+    expect(railW - 1 - 2 * padX).toBeGreaterThanOrEqual(itemW);
     expect(brand).toContain('width: 36px');
     expect(brand).toContain('height: 36px');
     expect(item).toContain('width: 38px');
@@ -458,6 +465,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('phone tab labels keep text contrast while the glyphs take the artboard grey (D223)', () => {
     expect(v2).toContain('.v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }');
+    // The glyph half: inactive tabs take the artboard's placeholder grey.
+    const phone = blockContaining(v2, '@media (max-width: 760px)', '.v2-mobile-tabs__label {');
+    // Icons are controls, so they take the rail's 3:1 grey, not the artboard's placeholder.
+    expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item', { within: phone })).toContain('color: var(--v2-rail-icon)');
+    // D223 ruling: the artboard's sans family at the 12px sans floor.
+    expect(ruleBody(v2, '.v2-mobile-tabs__label', { within: phone })).toContain('font: 500 12px/14px var(--v2-font)');
+  });
+
+  test('rail glyphs at rest are the nearest grey to the artboard that clears 3:1 (D223 ruling)', () => {
+    // Measured on the rail's own surface, --v2-shell-bg #eef0f4: the
+    // artboard's #98a2b3 is 2.26:1 and #828a99 is 3.05:1.
+    expect(v2).toContain('--v2-shell-bg: #eef0f4;');
+    expect(v2).toContain('--v2-rail-icon: #828a99;');
+    expect(v2.match(/--v2-rail-icon: #5f6979;/g) || []).toHaveLength(2);
   });
 
   test('the phone pods page leads with the artboard title bar, search behind an icon (D223)', () => {
