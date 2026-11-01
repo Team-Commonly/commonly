@@ -145,6 +145,9 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
     expect(update.$set.status).toBe(canonical);
     // The audit-trail line records the canonical value, not the alias.
     expect(update.$push.updates.text).toContain(`status → ${canonical}`);
+    // F42: the assigned-task wake re-arms on an update authored by someone other
+    // than the assignee, so a status change must carry its author.
+    expect(update.$push.updates.authorId).toBe('u1');
     expect(mockEmitTaskUpdated).toHaveBeenCalled();
   });
 

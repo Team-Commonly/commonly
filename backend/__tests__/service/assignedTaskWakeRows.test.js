@@ -32,9 +32,10 @@ const eventRow = (extra) => ({
 async function settle(outcome, minutes) {
   const { _id } = await AgentEventService.enqueue.mock.results.at(-1).value;
   const when = at(minutes);
-  const delivery = outcome === 'failed'
-    ? { outcome: 'error', updatedAt: when }
-    : { outcome: 'no_action', reasonRecorded: true, updatedAt: when };
+  const delivery = {
+    failed: { outcome: 'error', updatedAt: when },
+    neutral: { outcome: 'no_action', reason: 'consecutive_run_cap', reasonRecorded: true, updatedAt: when },
+  }[outcome] || { outcome: 'no_action', reasonRecorded: true, updatedAt: when };
   await AgentEvent.collection.insertOne(eventRow({
     _id, status: outcome === 'failed' ? 'failed' : 'acked', delivery, createdAt: when, updatedAt: when,
   }));
@@ -45,6 +46,9 @@ const say = (userId, minutes) => Message.collection.insertOne({
   podId, userId, content: 'hello', messageType: 'text', createdAt: at(minutes),
 });
 const row = () => Task.findOne({ podId }).lean();
+const note = (authorId, minutes, author = 'someone') => Task.updateOne({ podId }, { $push: { updates: {
+  text: 'a note', author, authorId: authorId === null ? null : String(authorId), createdAt: at(minutes),
+} } });
 
 beforeAll(setupMongoDb);
 afterAll(closeMongoDb);
@@ -212,12 +216,82 @@ describe('a row the agent created for itself', () => {
 describe('a row a person created or assigned', () => {
   beforeEach(() => Task.create({ podId, taskNum: 1, taskId: 'TASK-1', title: 'Do the assigned work', assignee: 'forge' }));
 
-  it('keeps waking on the normal cadence while runs succeed', async () => {
+  // F42: 304 of 327 repeat wakes on 11-01 found the row as the agent's last
+  // completed run left it, apart from the kernel's lease notes. A completed run
+  // has seen the row; it wakes again only for a change someone else made.
+  it('wakes once, then stays quiet while nothing on it changes', async () => {
     expect(await wakes(0)).toBe(1);
     await settle('succeeded', 1);
+    expect(await wakes(31)).toBe(0);
+    expect(await wakes(240)).toBe(0);
+  });
+
+  it("is not re-armed by the kernel's lease notes or the agent's own updates", async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await note(null, 10, 'kernel-sweep');
+    await note(agent._id, 12, 'forge');
+    expect(await wakes(31)).toBe(0);
+  });
+
+  it('wakes again for an update a person made, once', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await note(person._id, 10, 'row-owner');
     expect(await wakes(31)).toBe(1);
     await settle('succeeded', 32);
-    expect(await wakes(62)).toBe(1);
+    expect(await wakes(62)).toBe(0);
+  });
+
+  it('wakes again for an update another agent made', async () => {
+    const other = await User.create({
+      username: 'other-bot', email: 'other-bot@example.test', password: 'test-password', isBot: true, botType: 'agent',
+    });
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await note(other._id, 10, 'other-bot');
+    expect(await wakes(31)).toBe(1);
+  });
+
+  it('is not re-armed by a pod message alone', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await say(person._id, 10);
+    expect(await wakes(31)).toBe(0);
+  });
+
+  // Review of F42: system writes carry no author either, and only the kernel
+  // sweep's lease notes are bookkeeping. A reopen is a change.
+  it('wakes again when the row is reopened by a system write', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await Task.updateOne({ podId, taskId: 'TASK-1' }, { $set: { status: 'done', completedAt: at(5) } });
+    expect(await wakes(31)).toBe(0);
+    // The sourceRef create reopens a done row as pending, writing only no-author 'system' updates.
+    await Task.updateOne({ podId, taskId: 'TASK-1' }, { $set: { status: 'pending' }, $push: { updates: {
+      text: 'Reopened: the source is open again', author: 'system', authorId: null, createdAt: at(40),
+    } } });
+    expect(await wakes(71)).toBe(1);
+  });
+
+  it('wakes again when the dep it was waiting on is done, though the row itself is untouched', async () => {
+    await Task.create({ podId, taskNum: 9, taskId: 'TASK-9', title: 'Upstream', status: 'pending' });
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    // The agent parked its row behind TASK-9 in that run.
+    await Task.updateOne({ podId, taskId: 'TASK-1' }, { $set: { dep: 'TASK-9' }, $push: { updates: {
+      text: 'forge updated: dep → TASK-9', author: 'forge', authorId: String(agent._id), createdAt: at(5),
+    } } });
+    expect(await wakes(31)).toBe(0);
+    // Merge evidence closes TASK-9 with no author and writes nothing on TASK-1.
+    await Task.updateOne({ podId, taskId: 'TASK-9' }, { $set: { status: 'done', completedAt: at(40) } });
+    expect(await wakes(71)).toBe(1);
+  });
+
+  it('wakes again after a run that ended for its own reason, since that run did not see the row', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('neutral', 1);
+    expect(await wakes(31)).toBe(1);
   });
 
   it('stops after three failed runs in a row, and says so once on the row', async () => {
@@ -283,12 +357,95 @@ describe('a row a person created or assigned', () => {
   });
 
   it('counts only consecutive failures: a successful run resets the count', async () => {
+    const other = await User.create({
+      username: 'other-bot', email: 'other-bot@example.test', password: 'test-password', isBot: true, botType: 'agent',
+    });
     const outcomes = ['failed', 'failed', 'succeeded', 'failed', 'failed'];
     for (const [step, outcome] of outcomes.entries()) {
       expect(await wakes(step * 31)).toBe(1); // eslint-disable-line no-await-in-loop
       await settle(outcome, step * 31 + 1); // eslint-disable-line no-await-in-loop
+      // A succeeded run has seen the row (F42): another agent's update brings the next wake.
+      if (outcome === 'succeeded') await note(other._id, step * 31 + 2, 'other-bot'); // eslint-disable-line no-await-in-loop
     }
     expect(await wakes(outcomes.length * 31)).toBe(1);
+  });
+});
+
+// Review of F42: one wake shows up to five rows and asks for the next one. A run
+// that moved one row on has not answered the rest, so they wake again; a run that
+// moved nothing has.
+describe('several rows in one wake', () => {
+  beforeEach(() => Task.create([
+    { podId, taskNum: 1, taskId: 'TASK-1', title: 'First', assignee: 'forge' },
+    { podId, taskNum: 2, taskId: 'TASK-2', title: 'Second', assignee: 'forge' },
+  ]));
+  const shownIn = (call) => AgentEventService.enqueue.mock.calls[call][0].payload.content;
+  // The PATCH route's own audit line: "<author> updated: status → <status>".
+  const ownUpdate = (taskId, set, minutes, text = `forge updated: status → ${set.status}`) => Task.updateOne(
+    { podId, taskId },
+    { $set: set, $push: { updates: { text, author: 'forge', authorId: String(agent._id), createdAt: at(minutes) } } },
+  );
+
+  it('stay quiet together when the run moved neither', async () => {
+    expect(await wakes(0)).toBe(1);
+    expect(shownIn(0)).toContain('TASK-2');
+    await settle('succeeded', 1);
+    expect(await wakes(31)).toBe(0);
+  });
+
+  it('wake the rest once the agent completes one', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await ownUpdate('TASK-1', { status: 'done', completedAt: at(10) }, 10);
+    expect(await wakes(31)).toBe(1);
+    expect(shownIn(1)).toContain('TASK-2');
+    await settle('succeeded', 32);
+    expect(await wakes(62)).toBe(0);
+  });
+
+  it('wake the rest once the agent marks one blocked', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await ownUpdate('TASK-1', { status: 'blocked' }, 10);
+    expect(await wakes(31)).toBe(1);
+    expect(shownIn(1)).toContain('TASK-2');
+  });
+
+  it('are not woken by a row completed before the last wake', async () => {
+    await Task.create({
+      podId, taskNum: 3, taskId: 'TASK-3', title: 'Earlier', assignee: 'forge', status: 'done', completedAt: at(-20),
+    });
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    expect(await wakes(31)).toBe(0);
+  });
+
+  it('are not woken by a row the agent blocked before the last wake', async () => {
+    await ownUpdate('TASK-2', { status: 'blocked' }, -20);
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    expect(await wakes(31)).toBe(0);
+  });
+
+  // CodeRabbit on #3263: a note on a row that was already blocked is not a move.
+  it('are not woken by the agent noting a row it had already blocked', async () => {
+    await ownUpdate('TASK-2', { status: 'blocked' }, -20);
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await ownUpdate('TASK-2', {}, 10, 'Still waiting on review');
+    expect(await wakes(31)).toBe(0);
+  });
+
+  // A builder seat's row usually closes on merge evidence, which records no author.
+  // The seat's queue moved on all the same, so the rest wake.
+  it('wake the rest when one is completed by merge evidence', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await Task.updateOne({ podId, taskId: 'TASK-1' }, { $set: { status: 'done', completedAt: at(10) }, $push: { updates: {
+      text: 'Completed: PR merged', author: 'system', authorId: null, createdAt: at(10),
+    } } });
+    expect(await wakes(31)).toBe(1);
+    expect(shownIn(1)).toContain('TASK-2');
   });
 });
 
