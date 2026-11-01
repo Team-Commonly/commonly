@@ -239,6 +239,8 @@ test('grants this viewer may not see read as owner-only, with no alert and no re
   expect(screen.queryByText('Could not load connector grants.')).toBeNull();
   expect(screen.queryByText('None')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  // Nothing to list, so no toggle that would open an empty panel.
+  expect(screen.queryByRole('button', { name: 'Connector grants' })).toBeNull();
 });
 
 test('a failed grant load is one row with Try again, which reloads the list', async () => {
@@ -256,6 +258,22 @@ test('a failed grant load is one row with Try again, which reloads the list', as
   fireEvent.click(within(grantsSection).getByRole('button', { name: 'Try again' }));
   expect(await within(grantsSection).findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   expect(within(grantsSection).queryByRole('alert')).toBeNull();
+  // Try again is gone once the list loads, so focus lands on the row's toggle, not the page.
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Connector grants' })).toHaveFocus());
+});
+
+test('a failed grant load opens the list, and its toggle still closes it', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/agent-binding/placement')) return Promise.resolve({ data: { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] } });
+    if (url.includes('/grants')) return Promise.reject(new Error('offline'));
+    return Promise.resolve({ data: response });
+  });
+  renderSection();
+  expect(await screen.findByRole('region', { name: 'Connector grants' })).toBeInTheDocument();
+  const toggle = screen.getByRole('button', { name: 'Connector grants' });
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('region', { name: 'Connector grants' })).toBeNull();
 });
 
 test('a failed revoke says so above the rows, keeps the grant revocable and offers no reload', async () => {

@@ -132,4 +132,17 @@ describe('V2AgentListingRow — registry entry owner controls (TASK-419)', () =>
     expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't update this listing. Try again.");
     expect(retireButton()).toBeInTheDocument();
   });
+
+  test('after a failed save the listing toggle still closes its panel', async () => {
+    axios.get.mockResolvedValue(entry('owner-1'));
+    axios.patch.mockRejectedValue(new Error('500'));
+    renderSection('owner-1');
+    await openOwnerControls();
+    fireEvent.click(await screen.findByRole('button', { name: 'Retire listing' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: 'Manage listing' });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
 });

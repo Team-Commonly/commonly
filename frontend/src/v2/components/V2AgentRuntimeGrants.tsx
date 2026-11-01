@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { machineDisplayName } from '../utils/machineLabel';
 import { useV2Api } from '../hooks/useV2Api';
+import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import V2AgentProviderKey from './V2AgentProviderKey';
 import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
 import ConnectorLogo, { connectorName } from '../connectors/ConnectorLogo';
@@ -214,7 +215,9 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
   const [revokeError, setRevokeError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmGrantId, setConfirmGrantId] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  // A failed load or revoke, or a pending confirm, opens the list so its message and action are in view.
+  const [open, setOpen] = useOpensOnDemand(Boolean(loadError || revokeError || confirmGrantId));
+  const toggleRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -259,8 +262,6 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
   </div>;
   const activeGrants = grants.filter((grant) => !grantEnded(grant)).length;
   const endedGrants = grants.length - activeGrants;
-  // A failed load or revoke, or a pending confirm, keeps the list open so its message and action stay in view.
-  const panelOpen = open || Boolean(loadError || revokeError || confirmGrantId);
   const panelId = `agent-grants-${instanceId}`;
   const title = t('agentManage.grants.title', { defaultValue: 'Connector grants' });
 
@@ -278,14 +279,14 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
           <Link className="b b-g ib b-sm" to="/v2/connectors" title={t('agentSettings.grantConnector')} aria-label={t('agentSettings.grantConnector')}>
             <V2AgentSettingsIcon name="plus" />
           </Link>
-          <button type="button" className="b b-g ib b-sm v2-agent-settings-page__toggle" title={title} aria-label={title}
-            aria-expanded={panelOpen} aria-controls={panelId} onClick={() => setOpen((value) => !value)}>
+          {!grantsPrivate && <button ref={toggleRef} type="button" className="b b-g ib b-sm v2-agent-settings-page__toggle" title={title} aria-label={title}
+            aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((value) => !value)}>
             <V2AgentSettingsIcon name="chev" />
-          </button>
+          </button>}
         </span>
       </div>
-      {panelOpen && <div id={panelId} role="region" aria-label={title} className="v2-agent-settings-page__panel">
-          {loadError && alertRow(loadError, 'muted', <button type="button" className="b b-s b-sm" disabled={loading} onClick={() => { setOpen(true); void load(); }}>{t('agentManage.grants.retry')}</button>)}
+      {open && !grantsPrivate && <div id={panelId} role="region" aria-label={title} className="v2-agent-settings-page__panel">
+          {loadError && alertRow(loadError, 'muted', <button type="button" className="b b-s b-sm" disabled={loading} onClick={() => { void load().then(() => toggleRef.current?.focus()); }}>{t('agentManage.grants.retry')}</button>)}
           {loading && !grants.length && <div className="lrow v2-agent-settings-page__plain">
             <span className="vl" role="status">{t('agentManage.grants.loading', { defaultValue: 'Loading grants…' })}</span>
           </div>}

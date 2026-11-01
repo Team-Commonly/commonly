@@ -773,7 +773,12 @@ describe('one Identity & access list (d215 frame)', () => {
     renderPage();
     expect(await screen.findByText('Connected · 1 pod')).toBeInTheDocument();
     await waitFor(() => expect(document.getElementById('agent-skills-panel')).not.toHaveAttribute('hidden'));
-    expect(screen.getByRole('button', { name: 'Skills' })).toHaveAttribute('aria-expanded', 'true');
+    const toggle = screen.getByRole('button', { name: 'Skills' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    // Opened by the error, but still the reader's to close.
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(document.getElementById('agent-skills-panel')).toHaveAttribute('hidden');
   });
 
   test('a healthy skills read leaves the Skills panel closed', async () => {
@@ -826,16 +831,19 @@ describe('one Identity & access list (d215 frame)', () => {
     fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
     expect(await screen.findByTestId('agent-one-time-key')).toHaveTextContent('cm_agent_once');
     const toggle = screen.getByRole('button', { name: 'Key actions' });
-    fireEvent.click(toggle);
-    // Closing the toggle cannot hide a key that is shown only once.
-    expect(screen.getByTestId('agent-one-time-key')).toBeInTheDocument();
+    // A key shown only once can't be folded away, and the toggle says so rather than doing nothing.
+    expect(toggle).toBeDisabled();
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     expect(screen.queryByTestId('agent-one-time-key')).toBeNull();
     expect(screen.queryByText('Runtime key · Laptop')).toBeNull();
+    // Done closes the panel and hands focus back to the row, not to the page.
+    expect(toggle).toBeEnabled();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveFocus();
   });
 
-  test('a key error forces the panel open', async () => {
+  test('a key error opens the panel, and its toggle still closes it', async () => {
     axios.get.mockImplementation(fleet());
     axios.post.mockRejectedValue({ response: { data: { error: 'Replacement refused' } } });
     renderPage();
@@ -843,7 +851,11 @@ describe('one Identity & access list (d215 frame)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
     fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
     expect(await screen.findByText('Replacement refused')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Key actions' }));
+    const toggle = screen.getByRole('button', { name: 'Key actions' });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Replacement refused')).toBeNull();
+    fireEvent.click(toggle);
     expect(screen.getByText('Replacement refused')).toBeInTheDocument();
   });
 
