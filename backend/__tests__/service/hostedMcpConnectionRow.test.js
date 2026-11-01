@@ -120,6 +120,14 @@ describe('the hosted-mcp connection row', () => {
     expect(dropped).toEqual([]);
   });
 
+  test('an empty scope a refresh records is stored as empty, so the write gate reads no write scope', async () => {
+    const doc = await Integration.create(shape());
+    await setAndRead(doc, 'config.grantedScope', 'read write openid');
+
+    expect(await setAndRead(doc, 'config.grantedScope', '')).toBe('');
+    expect((await Integration.findById(doc._id).lean()).config.grantedScope).toBe('');
+  });
+
   test('the mark the removal step writes is really on the row', async () => {
     // The instrument above is generic; this arm names the consequence, because
     // the field it writes is the only record that a vendor revoke happened —

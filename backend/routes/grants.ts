@@ -389,6 +389,19 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
         message: 'a hosted-mcp grant cannot hold write mode; use write-with-confirm',
       });
     }
+    // Approval cannot add a scope the vendor never granted, so a connection
+    // made before its entry gained writes must reconnect before this mode.
+    if (hosted && body.writeMode === 'write-with-confirm') {
+      const scopedEntry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, String(connection.config?.entryId || ''));
+      const writeScope = scopedEntry && 'writeScope' in scopedEntry ? scopedEntry.writeScope : undefined;
+      const grantedScope = connection.config?.grantedScope;
+      if (writeScope && !(typeof grantedScope === 'string' ? grantedScope : '').split(/\s+/).includes(writeScope)) {
+        return res.status(403).json({
+          error: 'write_scope_required',
+          message: `reconnect ${scopedEntry?.title || 'this connection'} to enable writes before granting write-with-confirm`,
+        });
+      }
+    }
 
     const target = body.target;
     // Pod only. The outsider gate below refuses every non-pod target
