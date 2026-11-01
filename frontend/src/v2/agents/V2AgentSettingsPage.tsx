@@ -258,9 +258,11 @@ const V2AgentSettingsPage: React.FC = () => {
       <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
         <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
         <span aria-current="page">{t('agentSettings.settings')}</span>
+        <Link to={`/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`}>{t('agentSettings.memory', { defaultValue: 'Memory' })}</Link>
       </nav>
       <AgentControlLoader agentName={agentName} instanceId={instanceId}
         refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
+      <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
       <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
           <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
@@ -301,7 +303,6 @@ const V2AgentSettingsPage: React.FC = () => {
         )}
       </section>
       {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
-      <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
       <V2AgentRuntimeGrants
         key={`runtime:${agentName}:${instanceId}`}
         name={agentName}

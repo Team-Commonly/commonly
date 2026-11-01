@@ -452,6 +452,7 @@ const V2AgentProfile: React.FC = () => {
           <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
             <span aria-current="page">{t('agentSettings.profile')}</span>
             <Link to={`/v2/agents/${encodeURIComponent(agent.agentName)}/${encodeURIComponent(agent.instanceId || 'default')}`}>{t('agentSettings.settings')}</Link>
+            <Link to={`/v2/agents/${encodeURIComponent(agent.agentName)}/${encodeURIComponent(agent.instanceId || 'default')}/memory`}>{t('agentSettings.memory', { defaultValue: 'Memory' })}</Link>
           </nav>
         )}
 

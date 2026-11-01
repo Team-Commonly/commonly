@@ -121,7 +121,7 @@
       "text": "Checking your access…"
     },
     "theme": {
-      "label": "Appearance",
+      "label": "Theme",
       "auto": "Auto",
       "light": "Light",
       "dark": "Dark"
@@ -598,6 +598,9 @@
     },
     "systemActions": {
       "taskClaimedVerb": "claimed"
+    },
+    "claimRun": {
+      "label": "{{count}} claims · {{first}} to {{last}}"
     },
     "starts": {
       "label": "Ways to start",
@@ -1994,6 +1997,7 @@
       "viewTag": "{{role}} view · private",
       "indexSummary_one": "{{notes}} notes across {{count}} section{{updated}}. Visible to you; hidden from the public profile.",
       "indexSummary_other": "{{notes}} notes across {{count}} sections{{updated}}. Visible to you; hidden from the public profile.",
+      "sectionUpdated": "Section updated {{when}}",
       "lastSavedClause": " · last saved to {{section}} {{time}}",
       "more": "+{{count}} more",
       "entriesRemembered": "entries remembered",
@@ -2811,6 +2815,7 @@
     "tabs": "Agent tabs",
     "profile": "Profile",
     "settings": "Settings",
+    "memory": "Memory",
     "key": "Key",
     "regenerate": "Regenerate key",
     "wrapperReconnect": "Replace this computer's key from Control.",
