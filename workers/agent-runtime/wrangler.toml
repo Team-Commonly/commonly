@@ -21,13 +21,17 @@ COMMONLY_API_URL = "https://api.commonly.me"
 # Provider decision 2026-08-29 (Sam): DeepSeek. Key is a secret (DEEPSEEK_API_KEY).
 MODEL_PROVIDER = "deepseek"
 
-# Staging env (added 2026-11-01): a separate worker with its own URL and its
-# own admin token (staging SM key commonly-staging-hosted-runtime-admin-token),
-# serving the staging Commonly instance at api-staging.commonly.me. A named
-# Cloudflare env does not inherit bindings or vars, so they are repeated here; the
-# top-level [[migrations]] applies to every env. Deploy is operator/CI-side (see
-# the header) — `wrangler deploy --env staging` plus a `wrangler secret put` that
-# pipes the token from staging SM, so the token is never typed by hand.
+# Staging env (added 2026-11-01): a separate worker serving the staging Commonly
+# instance at api-staging.commonly.me. A named Cloudflare env inherits neither
+# bindings, vars NOR secrets, so the AGENT binding and vars are repeated here and
+# BOTH secrets must be set per-env; the top-level [[migrations]] applies to every env.
+# Deploy is operator/CI-side (see the header): `wrangler deploy --env staging`, then
+# two `wrangler secret put ... --env staging` piped from staging Secret Manager so
+# nothing is typed by hand:
+#   RUNTIME_ADMIN_TOKEN  <- commonly-staging-hosted-runtime-admin-token (gates provision)
+#   DEEPSEEK_API_KEY     <- commonly-deepseek-api-key (MODEL_PROVIDER=deepseek; a turn
+#                           throws "DEEPSEEK_API_KEY unset" without it, so hosted-reply
+#                           would fail even once provision succeeds)
 [env.staging]
 name = "commonly-agent-runtime-staging"
 

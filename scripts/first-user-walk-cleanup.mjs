@@ -58,7 +58,7 @@ export const recoverRunPods = async ({ api, token, userId, podName, podIds }) =>
 // `deleteAccount: false` is the shared staging sign-in account: the run removes
 // only the pods it recorded, never pods that account owns from elsewhere, and
 // never the account itself.
-export const cleanupRun = async ({ api, token, password, email, userId, agentName, podIds = [], onBotIds = () => {}, deleteAccount = true }) => {
+export const cleanupRun = async ({ api, token, password, email, userId, agentName, podIds = [], onBotIds = () => {}, deleteAccount = true, hostedOptional = false }) => {
   const survivors = [];
   const botIds = new Set();
 
@@ -69,9 +69,16 @@ export const cleanupRun = async ({ api, token, password, email, userId, agentNam
   };
 
   // Stop the runtime before the seat goes: uninstalling the seat does not stop
-  // the hosted worker. 404 means there was no hosted install to stop.
+  // the hosted worker. 404 means there was no hosted install to stop. On a staging
+  // run where provisioning was skipped (hostedOptional), the backend answers
+  // deprovision with the same not-ready code (503 unconfigured / 502 unreachable):
+  // nothing was provisioned, so that is not a leaked runtime and must not become a
+  // survivor that reddens the run. On prod the agent WAS provisioned, so a failed
+  // deprovision stays a survivor.
   const stop = await api('POST', '/api/hosted/deprovision', { token, body: { agentName } });
-  if (stop.status >= 300 && stop.status !== 404) survivors.push(`hosted:${agentName} (deprovision ${stop.status})`);
+  const stopNotReady = hostedOptional
+    && (stop.data?.code === 'hosted_runtime_unconfigured' || stop.data?.code === 'hosted_runtime_unreachable');
+  if (stop.status >= 300 && stop.status !== 404 && !stopNotReady) survivors.push(`hosted:${agentName} (deprovision ${stop.status})`);
 
   let owned = [];
   if (deleteAccount) {

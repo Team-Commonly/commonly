@@ -219,6 +219,10 @@ export const runWalk = async ({
         agentName,
         podIds: manifest.podIds,
         deleteAccount: walkMode.deleteAccount,
+        // Staging run only: a not-ready deprovision (503 unconfigured / 502 unreachable)
+        // is not a leaked agent — provisioning was skipped, nothing was created — so it
+        // must not become a survivor and redden the run. On prod it stays a survivor.
+        hostedOptional: walkMode.mode === 'signin',
         // Persist each pod's bot ids before that pod is deleted, so a throw
         // later in the loop still leaves the ids SRE needs.
         onBotIds: (podId, bots) => {
@@ -345,6 +349,13 @@ export const runWalk = async ({
         return created;
       });
 
+      // The not-ready skip is scoped to the STAGING run (mode 'signin', the shared
+      // account on api-staging), which is the only place the worker may legitimately
+      // be undeployed during rollout. On prod (signin-prod) and on signup the worker
+      // is expected to be live, so a not-ready provision there is a genuine outage and
+      // must FAIL — never be hidden as a skip. This walk is advisory; staging-smoke,
+      // not it, gates the deploy.
+      const hostedOptional = walkMode.mode === 'signin';
       let hostedSkipped = false;
       await runStep('hosted-install', async () => {
         manifest.agentName = agentName;
@@ -355,19 +366,14 @@ export const runWalk = async ({
         });
         expect(r.status < 400, `install ${r.status}: ${JSON.stringify(r.data)}`);
         const p = await api('POST', '/api/hosted/provision', { token, body: { agentName } });
-        // The hosted runtime worker is not ready on this instance (staging before
-        // its worker is deployed). Provision then comes back not-ready in one of two
-        // shapes: 503 hosted_runtime_unconfigured (URL or admin token unset) or 502
-        // hosted_runtime_unreachable (configured, but the worker is not deployed yet —
-        // the backend maps every worker fetch/non-ok to 502, see hostedRuntimeService).
-        // Either is a missing worker, not a product defect, so the hosted steps are
-        // SKIPPED, not failed. Keyed on the error CODE, so a genuine 500
-        // (token_mint_failed, unexpected error) still fails. Once the worker is live
-        // provision returns 200 and the steps run for real. This walk is advisory —
-        // staging-smoke, not it, gates the deploy.
+        // Not-ready comes back in two shapes: 503 hosted_runtime_unconfigured (URL or
+        // admin token unset) or 502 hosted_runtime_unreachable (configured, but the
+        // worker is not deployed yet — the backend maps every worker fetch/non-ok to
+        // 502, see hostedRuntimeService). Keyed on the error CODE so a 503/502 from a
+        // proxy without that code, or a genuine 500 (token_mint_failed), still fails.
         const notReady = p.status >= 400
           && (p.data?.code === 'hosted_runtime_unconfigured' || p.data?.code === 'hosted_runtime_unreachable');
-        if (notReady) { hostedSkipped = true; throw new SkipStep(`no staging worker (${p.data.code})`); }
+        if (hostedOptional && notReady) { hostedSkipped = true; throw new SkipStep(`no staging worker (${p.data.code})`); }
         expect(p.status === 200 && p.data?.provisioned, `provision ${p.status}: ${JSON.stringify(p.data)}`);
       });
 
