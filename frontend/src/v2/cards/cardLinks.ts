@@ -1,5 +1,5 @@
 export const UI_LINK_HOSTS = new Set([
-  'commonly.me', 'docs.commonly.me', 'github.com', 'linear.app', 'sentry.io',
+  'commonly.me', 'staging.commonly.me', 'docs.commonly.me', 'github.com', 'linear.app', 'sentry.io',
 ]);
 // One suffix rule: a single-label Atlassian Cloud site, e.g. acme.atlassian.net.
 const ATLASSIAN_SITE = /^[a-z0-9-]+\.atlassian\.net$/;
