@@ -123,7 +123,7 @@ const MESSAGE_ID_MAX = 2147483647;
  * accept digits:
  *
  *   chat id     digits, 1..2147483647   verified against Postgres below
- *   comment id  24 hex, canonical case  verified against Mongo (existence only)
+ *   comment id  24 hex, canonical case  verified against Mongo in its pod
  *   anything else                       refused, no query
  *
  * A post-thread comment enters the mention and wake path as a Mongo ObjectId:
@@ -136,27 +136,11 @@ const MESSAGE_ID_MAX = 2147483647;
  * `{failOpen: true}`, and every woken seat proceeds unguarded. That is the
  * regression this arm exists to prevent.
  *
- * THE POD CANNOT BE CHECKED HERE; THE ID NOW CAN (TASK-122). Until TASK-122
- * this arm passed the id through unverified, so a fabricated 24-hex id minted a
- * permanent, un-renewable, un-completable phantom lease — permanent because the
- * prune collects terminal states only. It is now checked against the comment's
- * own store, which is `Post.comments[]`, not `messages`.
- *
- * What the check is NOT is pod-scoped, and that is a property of the wake path
- * rather than a shortcut: the pod for a comment wake cannot be verified here by
- * construction, because the enqueue resolves it through `resolveMentionPod`,
- * which may return the request's pod or a fallback — so refusing on a pod
- * mismatch could refuse a wake that is real. Existence is what this arm can
- * buy; the pod half stays the route's installation check.
- *
- * A STORE FAILURE PASSES THE ID THROUGH rather than refusing it, and the
- * direction carries the arm's own reasoning: a refusal for a 24-hex id does not
- * fail closed — the CLI's claim path (`cli/src/lib/enforcement.js:414`) turns
- * the route's non-2xx into `{failOpen: true}` — so an outage that refused would
- * unguard every woken seat and stop the race deduping. An unconfirmed id
- * therefore degrades to the
- * pre-TASK-122 behaviour (dedupe holds, a phantom is possible) and says so on
- * one line, rather than reverting the hardening in silence.
+ * TASK-122 added the comment-id existence check to prevent permanent phantom
+ * leases. TASK-213 also scopes that check to the stored Post.podId. The route's
+ * installation check alone cannot establish ownership of this comment. A
+ * store failure propagates before SQL mutation: the client may fail open on
+ * a non-2xx claim response, but a forged cross-pod lease must not be saved.
  *
  * The lookup is a collection scan: no index covers `comments._id` (models/Post
  * declares none), so a MISS — the fabricated-id case this arm exists to refuse —
@@ -221,21 +205,18 @@ function commentStore() {
  * nothing here needs to construct one; the caller has already proven the 24-hex
  * canonical shape, so the cast cannot fail on any input this predicate admits.
  *
- * The catch returns TRUE, not false, and that is the whole design: see
- * MONGO_OBJECT_ID. A store that cannot answer must not unguard the fleet, and
- * refusing an unconfirmed comment id is exactly what would do that.
+ * An unavailable comment store cannot confirm pod ownership. Propagate the
+ * error so the route stops before mutating the SQL claim table; otherwise a
+ * caller can create a lease for another pod's comment while Mongo is down.
  */
-async function commentExists(objectId: string): Promise<boolean> {
+async function commentExists(objectId: string, podId: string): Promise<boolean> {
   try {
-    const found = await commentStore().exists({ 'comments._id': objectId });
+    const found = await commentStore().exists({ podId, 'comments._id': objectId });
     return Boolean(found);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.warn(
-      `[claims] comment existence check failed (${message}) — passing ${objectId} through, `
-      + 'so the wake race keeps deduping',
-    );
-    return true;
+    console.warn(`[claims] comment existence check failed (${message}) for ${objectId} in ${podId}`);
+    throw err;
   }
 }
 
@@ -291,9 +272,9 @@ class MessageClaimService {
     const pod = String(podId ?? '');
     if (!pod) return false;
     // Comment namespace: it exists in Mongo, not in Postgres, so it is the
-    // other store that answers it — and since TASK-122 it does, existence-only
-    // (commentExists names the direction a store failure takes, and why).
-    if (MONGO_OBJECT_ID.test(id)) return commentExists(id);
+    // other store that answers it. Its failure stops claim mutation because
+    // pod ownership remains unconfirmed.
+    if (MONGO_OBJECT_ID.test(id)) return commentExists(id, pod);
     if (!isChatMessageId(id)) return false;
     const found = await pool.query(
       'SELECT 1 FROM messages WHERE id = $1 AND pod_id = $2 LIMIT 1',
