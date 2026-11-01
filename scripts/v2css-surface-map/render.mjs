@@ -4,7 +4,8 @@ const [,, ROWS, OUTDIR, MAIN_SHA, PROD_SHA, DATE] = process.argv;
 const rows = JSON.parse(fs.readFileSync(ROWS, 'utf8'));
 const SURFACES = { chat: 'Chat (main pane and pod inspector)', sidebar: 'Sidebar (nav rail, pods list, phone tab bar)', board: 'Task board', settings: 'Settings', connectors: 'Connectors', agentSettings: 'Agent settings', memory: 'Agent memory' };
 const byRule = {}; for (const r of rows) (byRule[r.line] ||= []).push(r);
-const code = (s) => '`' + s.replace(/`/g, '\\`') + '`';
+// Markdown code spans can't escape a backtick; a selector holding one gets a double fence.
+const code = (s) => (s.includes('`') ? '`` ' + s + ' ``' : '`' + s + '`');
 const flags = (r) => [r.live.length ? null : 'not seen live', r.pins.length ? 'pinned by ' + [...new Set(r.pins)].join(', ') : null, byRule[r.line].length > 1 ? `rule lists ${byRule[r.line].length} selectors` : null].filter(Boolean);
 const summary = [];
 for (const [s, title] of Object.entries(SURFACES)) {

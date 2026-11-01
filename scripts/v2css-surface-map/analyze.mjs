@@ -32,7 +32,8 @@ for (const f of Object.keys(text)) if (!fileSurf[f]) fileSurf[f] = new Set([f.st
 // Subject = the classes on the rightmost compound that has a v2 class (MUI classes are generated, never literal).
 const subject = (sel) => { const parts = sel.split(/\s*[>+~]\s*|\s+(?![^(]*\))/).filter(Boolean); for (let i = parts.length - 1; i >= 0; i--) { const cls = [...parts[i].replace(/:(not|is|where|has)\([^)]*\)/g, '').matchAll(/\.([a-zA-Z0-9_-]+)/g)].map(m => m[1]).filter(c => c.startsWith('v2')); if (cls.length) return cls; } return []; };
 const refCache = {};
-const refsOf = (cls) => { if (refCache[cls]) return refCache[cls]; const out = new Set(); const re = new RegExp(`(^|[^a-zA-Z0-9_-])${cls.replace(/[-]/g, '\\-')}(?![a-zA-Z0-9_])`); // Every separator prefix is a possible template stem: v2-board__owner-dot--${state} builds v2-board__owner-dot--not-claimed.
+const reEscape = (s) => s.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+const refsOf = (cls) => { if (refCache[cls]) return refCache[cls]; const out = new Set(); const re = new RegExp(`(^|[^a-zA-Z0-9_-])${reEscape(cls)}(?![a-zA-Z0-9_])`); // Every separator prefix is a possible template stem: v2-board__owner-dot--${state} builds v2-board__owner-dot--not-claimed.
   const stems = [...cls.matchAll(/--|__|-/g)].map(m => cls.slice(0, m.index + m[0].length)).filter(st => st.length > 3);
   for (const [f, t] of Object.entries(text)) { if (re.test(t) || stems.some(st => t.includes(st + '${') || t.includes(`'${st}' +`) || t.includes(`"${st}" +`))) out.add(f); }
   return (refCache[cls] = out); };
@@ -46,7 +47,7 @@ for (const r of rules) for (const s of r.selectors) {
   const lv = liveOf[s] || new Set();
   const all = new Set([...src, ...lv]);
   // A test pins a selector when it names the subject class as a CSS class, plain or regex-escaped.
-  const pins = tests.filter(([, t]) => t.includes(s) || cls.some(c => new RegExp(`\\\\?\\.${c.replace(/-/g, '\\-')}(?![a-zA-Z0-9_-])`).test(t))).map(([f]) => path.basename(f));
+  const pins = tests.filter(([, t]) => t.includes(s) || cls.some(c => new RegExp(`\\\\?\\.${reEscape(c)}(?![a-zA-Z0-9_-])`).test(t))).map(([f]) => path.basename(f));
   rows.push({ pins, line: r.line, end: r.endLine, media: r.media, sel: s, cls, live: [...lv].sort(), src: [...src].sort(), files: [...files].sort(), all: [...all].sort(), ruleSels: r.selectors.length });
 }
 fs.writeFileSync(OUT, JSON.stringify(rows));
