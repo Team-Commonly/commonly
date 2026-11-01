@@ -79,6 +79,17 @@ const serveRecord = async (req: RecordReq, res: express.Response, taskId: string
     try {
       const ref = { podId: String(pod._id), ...(taskId !== null ? { taskId } : {}) };
       record = await readRecordExport(ref, undefined, page);
+      // OTLP has no paging of its own: an export of one page would be a
+      // silently short trace. An OTLP read with no cursor covers the chain.
+      if (req.query.format === 'otlp' && page.after === undefined && page.limit === undefined) {
+        const lines = [record.jsonl];
+        for (let next = record.nextAfter; next !== null;) {
+          const more = await readRecordExport(ref, undefined, { after: next });
+          lines.push(more.jsonl);
+          next = more.nextAfter;
+        }
+        record = { ...record, jsonl: lines.join(''), nextAfter: null };
+      }
     } catch (error) {
       // A store outage is an error, never an apparently empty record.
       if (!(error instanceof RecordStoreUnavailableError)) {
