@@ -64,6 +64,12 @@ const V2AgentSettingsPage: React.FC = () => {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [skillCount, setSkillCount] = useState<number | null | undefined>(undefined);
   const [runsNeedAttention, setRunsNeedAttention] = useState(false);
+  const runsRef = useRef<HTMLDetailsElement>(null);
+  // Open How it runs when its body starts needing action, and leave closing to the person,
+  // so a fix (a successful move) doesn't snap shut over its own confirmation.
+  useEffect(() => {
+    if (runsNeedAttention && runsRef.current) runsRef.current.open = true;
+  }, [runsNeedAttention]);
   const [memory, setMemory] = useState<{ notes: number; updatedAt: string | null } | null>(null);
   const navigate = useNavigate();
   // The same width the page's one-line phone rows start at.
@@ -297,7 +303,7 @@ const V2AgentSettingsPage: React.FC = () => {
   const newestUse = activeKeys.map((key) => key.lastUsedAt).filter((value): value is string => Boolean(value)).sort().pop();
   // The key panel stays open whenever it holds something the owner must see or answer.
   const keyPanelOpen = keyOpen || Boolean(oneTimeKey || pendingAction || error);
-  // A failed skills read opens its panel, where the error and retry are.
+  // A failed skills read opens its panel, where the error is.
   const skillsShown = skillsOpen || skillCount === null;
   const runtimeDetails = describeRuntime(runtime);
   const runtimeSummary = [runtimeDetails.adapter || runtime.adapter || runtime.runtimeType, runtime.model].filter(Boolean).join(' · ');
@@ -450,7 +456,7 @@ const V2AgentSettingsPage: React.FC = () => {
                   agentName={agentName} instanceId={instanceId} onCount={setSkillCount} />
               </div>
               {/* Opens by itself when the machine placement needs a move or failed. */}
-              <details className="disc" data-testid="agent-how-it-runs" open={runsNeedAttention || undefined}>
+              <details className="disc" data-testid="agent-how-it-runs" ref={runsRef}>
                 <summary>
                   <span className="lb"><V2AgentSettingsIcon name="cpu" />{t('agentManage.controls.title')}</span>
                   <span className="vl">{runtimeSummary || t('agentManage.controls.notReported')}

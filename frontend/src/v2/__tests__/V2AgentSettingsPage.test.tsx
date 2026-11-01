@@ -752,6 +752,22 @@ describe('one Identity & access list (d215 frame)', () => {
     expect(screen.getByTestId('agent-how-it-runs')).not.toHaveAttribute('open');
   });
 
+  test('How it runs stays open after a successful move clears what opened it', async () => {
+    let moved = false;
+    const base = fleet({ runtimeType: 'wrapper', placement: 'revoked' });
+    axios.get.mockImplementation((url) => (url.includes('/agent-binding/placement') && moved
+      ? Promise.resolve({ data: { boundMachineId: 'new', requestedMachineId: null, boundMachineRevoked: false, activeMachines: [{ machineId: 'new', name: 'New Mac' }] } })
+      : base(url)));
+    axios.post.mockImplementation(() => { moved = true; return Promise.resolve({ data: {} }); });
+    renderPage();
+    const runs = await screen.findByTestId('agent-how-it-runs');
+    await waitFor(() => expect(runs).toHaveAttribute('open'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move agent' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/agent-binding/move', expect.anything(), expect.anything()));
+    expect(await screen.findByText(/New Mac/, { selector: 'span' })).toBeInTheDocument();
+    expect(runs).toHaveAttribute('open');
+  });
+
   test('a failed skills read opens the Skills panel, where its error is', async () => {
     axios.get.mockImplementation(fleet({ skills: 'failed' }));
     renderPage();
