@@ -1,6 +1,7 @@
 import { codexRuntimeInventory } from '../native-runtime-inventory.js';
 import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
 import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process-group';
+import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/turn-processes';
 /**
  * codex adapter — wraps the local `codex` CLI as a Commonly agent.
  *
@@ -73,7 +74,7 @@ import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
 import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credential-delivery.js';
 import { prepareMcpSpawn, publicMcpUnavailableError, selectedMcpVersionDir } from '../mcp-home.js';
-import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
+import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -731,14 +732,19 @@ const CODEX_PROVIDER_KEY_ENVS = [
 ];
 
 // `ownGroup`: see runClaude in claude.js.
-const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
+const runCodex = ({
+  args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
+  turnReap = turnReapEnabled(),
+}) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
   // and waits for input that never arrives. Interactive runs are fine because
   // codex detects a TTY and uses the argv prompt directly. Setting stdin to
   // `'ignore'` gives codex /dev/null → immediate EOF → it falls back to the
   // argv prompt as intended. Surfaced live during ADR-005 Phase 2 smoke.
-  const proc = spawnInOwnGroup(spawnImpl, 'codex', args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
+  // What the turn leaves running is stopped once it has closed (see claude.js).
+  const turn = markTurn(env ?? process.env, { enabled: turnReap });
+  const proc = spawnInOwnGroup(spawnImpl, 'codex', args, { cwd, env: turn.env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
   let stderr = '';
   let timedOut = false;
@@ -757,6 +763,9 @@ const runCodex = ({ args, cwd, env, timeoutMs, credentials = [], spawnImpl = chi
   });
   proc.on('close', (code) => {
     clearTimeout(timer);
+    const reaped = describeTurnReap(turn.reap(proc));
+    // eslint-disable-next-line no-console
+    if (reaped) console.warn(`[codex] ${reaped}`);
     if (timedOut) return reject(new Error(`codex timed out after ${timeoutMs}ms`));
     if (events.turnFailedMessage) {
       // Surface the model-side failure message verbatim — the run loop posts
@@ -823,7 +832,7 @@ export default {
     // answers strangers rather than working board rows, so it is taught neither.
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
-      workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE],
+      workCues: sandbox?.trust === 'public' ? [] : [ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE],
     });
 
     // Per-spawn temp dir for --output-last-message. Cleaned up in `finally`
@@ -917,6 +926,7 @@ export default {
         credentials: spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
+        turnReap: ctx._turnReap,
       });
 
       let text = '';

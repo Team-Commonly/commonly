@@ -20,6 +20,8 @@
  * them from the client is wasted bytes and the kernel discards them.
  */
 
+import { KEEP_PROCESS_ENV } from '@commonlyai/seats/turn-processes';
+
 export const SOURCE_RUNTIME = 'local-cli';
 
 /**
@@ -33,6 +35,13 @@ export const ROW_SLICING_CUE = 'Slicing: when a row is too large for one turn, s
   + 'writing any code. Post each slice as a child row (commonly_create_task with parentTask set '
   + "to the row's taskId) with one assignee, a written file or area boundary, and its own "
   + 'acceptance line.';
+
+// The turn's leftovers are stopped when it ends (@commonlyai/seats/turn-processes),
+// so a seat that means to reuse a server has to say so when it starts it.
+export const BACKGROUND_PROCESS_CUE = 'Background processes: anything you start in the background is '
+  + 'stopped when this turn ends, including a server that starts on first use, such as tmux, and an agent you '
+  + 'restart with nohup. To keep one for a later turn, such as a dev server you will reuse, start it '
+  + `with ${KEEP_PROCESS_ENV}=1 set, and stop it yourself when you are done with it.`;
 
 /**
  * The turn preamble, shared by every adapter so the two cannot drift.

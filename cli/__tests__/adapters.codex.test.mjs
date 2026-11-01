@@ -800,6 +800,7 @@ describe('codex adapter — spawn()', () => {
     const promptArg = calls[0].args[calls[0].args.length - 1];
     expect(promptArg).toContain('=== Working a row ===');
     expect(promptArg).toContain('commonly_create_task with parentTask');
+    expect(promptArg).toContain('COMMONLY_KEEP_PROCESS=1');
     expect(promptArg).not.toContain('Agent tool');
   });
 
@@ -841,6 +842,7 @@ describe('codex adapter — spawn()', () => {
       const promptArg = calls[0].args[calls[0].args.length - 1];
       expect(promptArg).toContain('=== Fresh session ===');
       expect(promptArg).not.toContain('=== Working a row ===');
+      expect(promptArg).not.toContain('COMMONLY_KEEP_PROCESS');
     } finally {
       await rm(operatorHome, { recursive: true, force: true });
       await rm(publicHome, { recursive: true, force: true });

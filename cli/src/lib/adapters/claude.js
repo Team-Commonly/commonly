@@ -6,6 +6,7 @@ import {
 import {
   descendantsOf, killProcessTree, readProcessTable, spawnInOwnGroup, wantsOwnProcessGroup,
 } from '@commonlyai/seats/process-group';
+import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/turn-processes';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -92,7 +93,7 @@ import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credent
 import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
-import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
+import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
@@ -115,13 +116,14 @@ const buildPrompt = buildMemoryPreamble;
 
 // The working habits a private claude seat is taught on a fresh session
 // (TASK-545). Parallel reads live here because only this CLI has a subagent
-// tool; codex is passed row slicing alone. A public seat is passed neither: its
-// argv allows Read and the MCP under dontAsk, so it has no subagent to spawn,
-// and it answers strangers rather than working board rows.
+// tool; codex is passed row slicing and the background-process cue. A public
+// seat is passed none: its argv allows Read and the MCP under dontAsk, so it
+// has no subagent to spawn or shell to background from, and it answers
+// strangers rather than working board rows.
 const PARALLEL_READS_CUE = 'Parallel reads: when a row needs several files or sources read, '
   + 'use the Agent tool. Spawn read-only subagents in parallel, brief each one with the files '
   + 'to read and the question to answer, and keep only their conclusions.';
-const WORK_CUES = [PARALLEL_READS_CUE, ROW_SLICING_CUE];
+const WORK_CUES = [PARALLEL_READS_CUE, ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE];
 const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
 const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
@@ -635,11 +637,14 @@ export const claudeFailureTail = (stdout) => {
 const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
-  processTable = readProcessTable, survivorIo, modelStream = true,
+  processTable = readProcessTable, survivorIo, modelStream = true, turnReap = turnReapEnabled(),
 }) => new Promise((resolve, reject) => {
+  // Every process the turn starts inherits this marker however it detaches,
+  // so what it leaves running is stopped once the turn has closed.
+  const turn = markTurn(env ?? process.env, { enabled: turnReap });
   const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
-    env,
+    env: turn.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
@@ -711,6 +716,9 @@ const runClaude = ({
     clearTimeout(timer);
     clearTimeout(stallKill);
     watchdog.stop();
+    const reaped = describeTurnReap(turn.reap(proc));
+    // eslint-disable-next-line no-console
+    if (reaped) console.warn(`[claude] ${reaped}`);
     if (stalled) {
       sweepStallSurvivors();
       return reject(stalled);
@@ -1418,6 +1426,7 @@ export default {
         stallKillGraceMs: ctx._stallKillGraceMs,
         processTable: ctx._processTable,
         survivorIo: ctx._survivorIo,
+        turnReap: ctx._turnReap,
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -1486,6 +1495,7 @@ export default {
           stallKillGraceMs: ctx._stallKillGraceMs,
           processTable: ctx._processTable,
           survivorIo: ctx._survivorIo,
+          turnReap: ctx._turnReap,
         });
         const contextTokens = claudeContextTokens({
           cwd: physicalPath(ctx.cwd), sessionId: freshId,
