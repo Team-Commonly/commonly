@@ -18,7 +18,7 @@ const fs = require('fs');
 const HERE = __dirname;
 const TARGETS = path.join(HERE, '..', 'targets.json');
 
-const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff', 'firstrun-welcome', 'firstrun-waiting', 'firstrun-connected', 'firstrun-error', 'activity-queue', 'activity-empty', 'activity-error', 'profile-person', 'profile-empty', 'profile-error', 'taskrecord-log', 'taskrecord-empty', 'taskrecord-error', 'runtrace-done', 'runtrace-live', 'runtrace-error'];
+const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff', 'firstrun-welcome', 'firstrun-waiting', 'firstrun-connected', 'firstrun-error', 'activity-queue', 'activity-empty', 'activity-error', 'profile-person', 'profile-empty', 'profile-error', 'taskrecord-log', 'taskrecord-empty', 'taskrecord-error', 'runtrace-done', 'runtrace-live', 'runtrace-error', 'artifacts-list', 'artifacts-empty', 'artifacts-error'];
 // byo-handoff is drawn but can't be captured on prod: reaching it issues a real key. The first-run
 // dialog is a latch-gated overlay, and the Scout welcome only exists in a brand-new pod, so neither is measured on prod.
 const PROD_SURFACES = SURFACES.filter(s => s !== 'byo-handoff' && !s.startsWith('firstrun-'));

@@ -198,5 +198,29 @@
  "runtrace-error-390": {
   "helperWords": 0,
   "innerRatio": 1
+ },
+ "artifacts-list-1440": {
+  "helperWords": 61,
+  "innerRatio": 1
+ },
+ "artifacts-empty-1440": {
+  "helperWords": 24,
+  "innerRatio": 1
+ },
+ "artifacts-error-1440": {
+  "helperWords": 3,
+  "innerRatio": 1
+ },
+ "artifacts-list-390": {
+  "helperWords": 33,
+  "innerRatio": 1
+ },
+ "artifacts-empty-390": {
+  "helperWords": 16,
+  "innerRatio": 1
+ },
+ "artifacts-error-390": {
+  "helperWords": 3,
+  "innerRatio": 1
  }
 }
