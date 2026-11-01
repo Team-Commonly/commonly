@@ -39,7 +39,11 @@ const seatNamesWhere = (
   .filter((seat) => narrowed(seat))
   .map((seat) => [seat.userId || `${seat.name}:${seat.instanceId || 'default'}`, seat.displayName || seat.name])).values()];
 
-export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpManualRevokeNotice | null = null) => {
+export const useToolConnectors = (
+  pods: V2Pod[],
+  manualRevokeNotice: HostedMcpManualRevokeNotice | null = null,
+  podListFailed = false,
+) => {
   const { t } = useTranslation();
   const api = useV2Api();
   // Revoke and Change access are the granter's: the route 403s anyone else.
@@ -97,9 +101,9 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
   // anywhere, or limited to one pod.
   const blockedSeatNames = useMemo(() => seatNamesWhere(seats, (seat) => seat.runtimeNarrowedByMultipleGrantPods), [seats]);
   const onePodSeatNames = useMemo(() => seatNamesWhere(seats, (seat) => seat.runtimeNarrowedToOnePod), [seats]);
-  // An unreadable roster, or a roster whose census failed, leaves posting
-  // status unknown. The page says so rather than implying posting works.
-  const narrowingStatusUnavailable = seatLookupFailed || Object.values(seats).flat()
+  // An unreadable pod list or roster, or a roster whose census failed, leaves
+  // posting status unknown. The page says so rather than implying posting works.
+  const narrowingStatusUnavailable = podListFailed || seatLookupFailed || Object.values(seats).flat()
     .some((seat) => seat.runtimeNarrowingUnavailable);
 
   const load = useCallback(async () => {

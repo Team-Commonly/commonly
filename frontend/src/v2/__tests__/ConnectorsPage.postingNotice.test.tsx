@@ -83,6 +83,13 @@ describe('Connectors page: posting notice', () => {
     expect(screen.queryByText(BLOCKED)).not.toBeInTheDocument();
   });
 
+  it('says the status is unknown when the pod list cannot be read', async () => {
+    mockApi({ pods: new Error('pod list unavailable') });
+    renderPage();
+
+    expect(await screen.findByText(UNKNOWN)).toHaveAttribute('role', 'status');
+  });
+
   it('says the status is unknown when the roster could not run its grant census', async () => {
     mockApi({ pods, seats: { p1: [{ ...scout, runtimeNarrowingUnavailable: true }] } });
     renderPage();

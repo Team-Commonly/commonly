@@ -46,7 +46,7 @@ const ConnectorsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const c = useChannelConnectors();
-  const m = useToolConnectors(c.podList, c.hostedMcpManualRevoke);
+  const m = useToolConnectors(c.podList, c.hostedMcpManualRevoke, c.podListFailed);
   const tp = useToolPanels(m);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
