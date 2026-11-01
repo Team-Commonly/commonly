@@ -33,8 +33,7 @@
  * the run is `incomplete` (exit 2), so a green run never claims more than it checked.
  */
 
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -90,7 +89,9 @@ export const runWalk = async ({
   // True once signup may have created the account, so cleanup knows to look for it.
   let accountMayExist = false;
   // 'signup' makes a fresh account; 'signin' uses the shared staging account and never deletes it.
-  let walkMode = { mode: 'signup', deleteAccount: true };
+  // Null until chooseWalkMode accepts the run, so a refused run is never reported as signup.
+  let walkMode = null;
+  let cleanupRan = false;
   // Signup returns no user id, so the manifest carries the exact username instead:
   // SRE finds the account by that name, not by a prefix. Never the email.
   const manifest = { mode: null, userId: null, username: null, podIds: [], unresolvedPodNames: [], agentName: null, botIds: [], survivors: [], status: 'running' };
@@ -99,7 +100,11 @@ export const runWalk = async ({
   // the result file. An API error body can echo what was sent.
   const redact = (text) => {
     let out = String(text);
-    for (const secret of [password, email]) if (secret) out = out.split(secret).join('[redacted]');
+    for (const secret of [password, email]) {
+      if (!secret) continue;
+      // The JSON-escaped form too: a body echo puts a quote or backslash in escaped form.
+      for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1)])) out = out.split(form).join('[redacted]');
+    }
     return out;
   };
 
@@ -215,12 +220,15 @@ export const runWalk = async ({
       startedAt,
       finishedAt: new Date(now()).toISOString(),
       base: BASE,
-      mode: walkMode.mode,
+      mode: walkMode ? walkMode.mode : 'not-chosen',
       walk: username,
       overall,
       exitCode,
       steps: results,
-      cleanup: { ok: cleanupOk, status: manifest.status, survivors: manifest.survivors.map(redact) },
+      // 'not-run' and ok null when cleanup never ran (a refused or failed setup).
+      cleanup: cleanupRan
+        ? { ok: cleanupOk, status: manifest.status, survivors: manifest.survivors.map(redact) }
+        : { ok: null, status: 'not-run', survivors: [] },
     };
     mkdirSync(path.dirname(resultPath), { recursive: true, mode: 0o700 });
     const tmp = `${resultPath}.${process.pid}.tmp`;
@@ -354,6 +362,7 @@ export const runWalk = async ({
     } catch {
       exitCode = 1;
     } finally {
+      cleanupRan = true;
       cleanupOk = await cleanup(token);
       if (!cleanupOk) exitCode = 1;
     }
@@ -374,18 +383,13 @@ const parseArgs = (argv) => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 
-// Deployed sha for the result: an explicit WALK_SHA from the scheduler (the
-// deploy being walked), else the HEAD of the repo this script runs from.
-const shaFromEnv = (env) => {
-  if (env.WALK_SHA) return env.WALK_SHA;
-  try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path.dirname(fileURLToPath(import.meta.url)), stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
-  } catch {
-    return null;
-  }
-};
+// The deployed sha is the one the scheduler names (WALK_SHA). The local checkout's
+// HEAD is not the deploy, so a rollback must never target it: no WALK_SHA, no sha.
+const shaFromEnv = (env) => env.WALK_SHA || null;
 
-const isEntry = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+// import.meta.url is the resolved path, so argv[1] is resolved the same way: a
+// symlinked path (/tmp on macOS) must still run the walk, not exit 0 silently.
+const isEntry = process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isEntry) {
   const base = parseArgs(process.argv.slice(2)) || process.env.COMMONLY_API_URL || 'https://api.commonly.me';
   runWalk({ base, env: process.env, sha: shaFromEnv(process.env) })

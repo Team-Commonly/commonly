@@ -86,22 +86,24 @@ Write is atomic (temp file, then rename), so a reader never sees a half file.
 ```json
 {
   "schema": 1,
-  "sha": "<deployed sha, from WALK_SHA or the repo HEAD>",
+  "sha": "<deployed sha from WALK_SHA, or null when the scheduler did not set it>",
   "startedAt": "...", "finishedAt": "...",
   "base": "https://api.commonly.me", "mode": "signup",
   "walk": "walk-<stamp>",
   "overall": "pass | fail | incomplete",
   "exitCode": 0,
   "steps": [{ "name": "signup", "result": "pass | fail | not-covered", "ms": 0, "reason": "only when not pass" }],
-  "cleanup": { "ok": true, "status": "clean | needs-admin-purge", "survivors": [] }
+  "cleanup": { "ok": true, "status": "clean | needs-admin-purge | not-run", "survivors": [] }
 }
 ```
 
+- The result is written at the end of a run. A run killed midway leaves the previous file, so check `finishedAt`.
 - `overall` and the exit code agree: `pass` = `0`, `fail` = `1`, `incomplete` = `2`.
 - `incomplete` means every covered step passed and a step is not covered yet
   (Bring your own connect). Today every full run is `incomplete`, never `pass`,
   until that step is built. Roll back on `fail` only; treat `incomplete` as
   not-green but not as a regression.
+- `cleanup.status` is `not-run` (and `ok` null) when the run stopped before cleanup could start, for example a refused mode.
 - The file holds no password, token or email. A `needs-admin-purge` cleanup
   points SRE at the manifest in `~/.commonly/state/walk-706/`.
 
