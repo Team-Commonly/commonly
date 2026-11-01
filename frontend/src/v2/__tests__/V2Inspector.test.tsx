@@ -1,10 +1,10 @@
 /* eslint-disable react/display-name */
 import React from 'react';
 import {
-  fireEvent, render, screen, waitFor,
+  fireEvent, render, screen, waitFor, within,
 } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import V2Inspector, { INSPECTOR_OPEN_KEY } from '../components/V2Inspector';
+import V2Inspector, { INSPECTOR_OPEN_KEY, threadRowsFrom } from '../components/V2Inspector';
 import V2Avatar from '../components/V2Avatar';
 
 const mockNavigate = jest.fn();
@@ -148,10 +148,73 @@ describe('V2Inspector', () => {
       currentUserId: 'owner-1',
       detail: { ...detail, pod: { ...detail.pod, createdBy: { _id: 'owner-1' }, joinPolicy: 'open' } } as any,
     });
-    expect(screen.getAllByRole('radio').map((radio) => radio.getAttribute('aria-label') || radio.textContent)).toEqual([
+    const join = screen.getByRole('radiogroup', { name: 'Who can join' });
+    expect(within(join).getAllByRole('radio').map((radio) => radio.getAttribute('aria-label') || radio.textContent)).toEqual([
       'Open to join',
       'Invite-only',
     ]);
+  });
+
+  test('the head switches between the pod and its threads, newest activity first (D215, TASK-734)', () => {
+    const messages = [
+      { id: '10', content: 'Older root', created_at: '2026-10-31T01:00:00Z', user: { username: 'ada' }, thread_root_id: null },
+      { id: '11', content: 'reply', created_at: '2026-10-31T01:05:00Z', user: { username: 'bo' }, thread_root_id: 10 },
+      { id: '20', content: 'Newer   root\nsecond line', created_at: '2026-10-31T02:00:00Z', user: { username: 'cy' }, thread_root_id: null },
+      { id: '21', content: 'reply', created_at: '2026-10-31T02:10:00Z', user: { username: 'ada' }, thread_root_id: '20' },
+      // A reply whose root is outside the loaded window has no text to show.
+      { id: '31', content: 'orphan', created_at: '2026-10-31T03:00:00Z', user: { username: 'ada' }, thread_root_id: 30 },
+    ];
+    expect(threadRowsFrom(messages as any).map((row) => [row.rootId, row.author, row.snippet])).toEqual([
+      ['20', 'cy', 'Newer root second line'],
+      ['10', 'ada', 'Older root'],
+    ]);
+
+    renderInspector({ detail: { ...detail, messages } as any });
+    expect(screen.getByRole('heading', { name: /Needs you/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('radio', { name: 'Threads' }));
+    expect(screen.queryByRole('heading', { name: /Needs you/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^cy/ }));
+    expect(mockNavigate).toHaveBeenCalledWith('/v2/pods/pod-1#message-20');
+  });
+
+  test('a reconciled root is found by its Postgres id and listed by the id its anchor uses', () => {
+    const messages = [
+      { id: '6a1f00000000000000000001', pgId: '40', content: 'Migrated root', created_at: '2026-10-31T01:00:00Z', user: { username: 'ada' }, thread_root_id: null },
+      { id: '41', pgId: '41', content: 'reply', created_at: '2026-10-31T01:05:00Z', user: { username: 'bo' }, thread_root_id: 40 },
+    ];
+    expect(threadRowsFrom(messages as any).map((row) => [row.rootId, row.snippet])).toEqual([
+      ['6a1f00000000000000000001', 'Migrated root'],
+    ]);
+  });
+
+  test('the threads view says so when the pod has none', () => {
+    renderInspector();
+    fireEvent.click(screen.getByRole('radio', { name: 'Threads' }));
+    expect(screen.getByText('No threads in the loaded messages.')).toBeInTheDocument();
+  });
+
+  test('opening another pod puts the panel back on the pod view', () => {
+    const view = renderInspector();
+    fireEvent.click(screen.getByRole('radio', { name: 'Threads' }));
+    expect(screen.getByRole('radio', { name: 'Threads' })).toBeChecked();
+    view.rerender(
+      <MemoryRouter>
+        <V2Inspector
+          detail={{ ...detail, pod: { ...detail.pod, _id: 'pod-2' } } as any}
+          attentionCount={0}
+          attentionItems={[]}
+          onOpenInvite={jest.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('radio', { name: 'Pod' })).toBeChecked();
+  });
+
+  test('the open panel carries its own Hide panel key', () => {
+    const onClose = jest.fn();
+    renderInspector({ onClose });
+    fireEvent.click(screen.getByRole('button', { name: 'Hide panel' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   test('non-owner cannot see the join-policy controls', () => {
@@ -327,6 +390,33 @@ describe('V2Inspector', () => {
     expect(onOpenInvite).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Manage agents' }));
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents');
+  });
+
+  test('lists this pod\'s own queue rows even when the global slice misses them', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/activity/decision-queue?podId=pod-1')
+      ? { items: [{ id: 'pod-row', kind: 'decision', title: 'Pod-only decision', podId: 'pod-1' }] }
+      : { tasks: [] }));
+    renderInspector({ attentionCount: 1, attentionItems: [] });
+    expect(await screen.findByText('Pod-only decision')).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue?podId=pod-1&limit=50');
+  });
+
+  test('members see the join policy as read-only text, not a segment', () => {
+    renderInspector({
+      currentUserId: 'another-user',
+      detail: { ...detail, pod: { ...detail.pod, createdBy: { _id: 'owner-1' }, joinPolicy: 'invite-only' } } as any,
+    });
+    expect(screen.queryByRole('radiogroup', { name: 'Who can join' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Who can join/ })).toBeInTheDocument();
+    expect(screen.getByText('Invite-only')).toBeInTheDocument();
+  });
+
+  test('falls back to the shared queue slice when this pod\'s queue read is rejected', async () => {
+    mockGet.mockImplementation((url: string) => (url.startsWith('/api/activity/decision-queue')
+      ? Promise.reject(new Error('down'))
+      : Promise.resolve({ tasks: [] })));
+    renderInspector({ attentionCount: 1, attentionItems: [{ id: 'shared', kind: 'decision', title: 'Shared slice item', podId: 'pod-1' }] });
+    expect(await screen.findByText('Shared slice item')).toBeInTheDocument();
   });
 
   test('does not render a stale attention item from another pod', async () => {

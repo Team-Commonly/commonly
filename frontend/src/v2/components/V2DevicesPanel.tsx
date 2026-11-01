@@ -12,11 +12,13 @@ interface Device {
 
 interface V2DevicesPanelProps {
   showHeading?: boolean;
+  /** Settings row: a one-line summary that expands to the list (D215, TASK-688). */
+  asFold?: boolean;
 }
 
 const dateLabel = (value: string | null) => (value ? new Date(value).toLocaleString() : 'Never');
 
-const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true }) => {
+const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asFold = false }) => {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,30 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true }) =
     }
   };
 
-  return (
+  if (asFold) {
+    const live = devices.filter((device) => !device.revokedAt);
+    const lastUsed = live.map((device) => device.lastUsedAt).filter(Boolean).sort().pop();
+    const summary = loading ? 'Loading…' : error ? 'Couldn’t load' : live.length === 0 ? 'None'
+      : `${live.length} CLI device${live.length === 1 ? '' : 's'}${lastUsed ? ` · used ${(() => { const when = new Date(lastUsed as string); return when.toDateString() === new Date().toDateString() ? when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : when.toLocaleDateString([], { month: 'short', day: 'numeric' }); })()}` : ''}`;
+    return (
+      <details className="v2p-disc">
+        <summary>
+          <span className="lb">
+            <svg className="v2-settings__icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6h16v10H4zM2 20h20" /></svg>
+            Devices
+          </span>
+          <span className={error ? 'vl v2-settings__vl--error' : 'vl'}>{summary}</span>
+          <svg className="v2-settings__icon v2-settings__chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+        </summary>
+        <div className="v2-settings__fold-body">{renderPanel()}</div>
+      </details>
+    );
+  }
+
+  return renderPanel();
+
+  function renderPanel() {
+    return (
     <section className="v2-devices" aria-labelledby="devices-heading">
       <div className="v2-devices__heading"><div>{showHeading && <h2 id="devices-heading">Devices</h2>}<p>CLI device tokens are long-lived until you revoke them.</p></div><button type="button" onClick={() => void load()} disabled={loading}>Refresh</button></div>
       {error && <p className="v2-devices__error">{error}</p>}
@@ -59,7 +84,8 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true }) =
         </article>)}
       </div>}
     </section>
-  );
+    );
+  }
 };
 
 export default V2DevicesPanel;

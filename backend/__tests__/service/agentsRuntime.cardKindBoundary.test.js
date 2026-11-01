@@ -22,6 +22,7 @@ const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const catalogueRevision = require('../../config/uiCardCatalogueRevision.json');
+const catalogueRevision2 = require('../../config/uiCardCatalogueRevision.rev2.json');
 
 jest.mock('../../services/agentEventService', () => ({
   enqueue: jest.fn(async () => ({ _id: 'stub-event' })),
@@ -170,4 +171,19 @@ describe('agent write path accepts only payload kind "ui" (TASK-657)', () => {
     expect(res.body.refused).toBeUndefined();
     expect(await storedMessageCount()).toBe(before + 1);
   });
+
+  // TASK-607: Source names a vendor origin, so only the server may write it.
+  it.each([['revision 1', catalogueRevision], ['revision 2', catalogueRevision2]])(
+    'refuses a hand-written Source under %s with invalid_ui_card and stores nothing',
+    async (_label, pin) => {
+      const before = await storedMessageCount();
+      const res = await postCard(uiPayload({
+        ...pin, source: 'root = Card("Issues", [Text("x"), Source("linear", "2026-11-01T09:30:00.000Z")])',
+      }));
+
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).toContain('invalid_ui_card');
+      expect(await storedMessageCount()).toBe(before);
+    },
+  );
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
+import { ShellGlyph } from '../icons/glyphs';
 import type { V2Message } from '../hooks/useV2PodDetail';
 
 export interface V2ComposerMention {
@@ -143,14 +144,16 @@ const V2Composer: React.FC<V2ComposerProps> = ({
         <div className="v2-composer__plus-wrap" ref={menuRef}>
           <button
             type="button"
-            className="v2-composer__plus"
+            className="v2p-b v2p-b-g v2p-ib v2-composer__plus"
             aria-label={t('podChat.composer.more')}
             title={t('podChat.composer.more')}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
             disabled={uploading}
-          />
+          >
+            <ShellGlyph name="plus" size={16} />
+          </button>
           {menuOpen && (
             <div className="v2-composer__menu" role="menu" aria-label={t('podChat.composer.more')}>
               <button type="button" role="menuitem" onClick={() => openFileInput(FILE_ACCEPT)}>{t('podChat.composer.attachFile')}</button>
@@ -206,18 +209,18 @@ const V2Composer: React.FC<V2ComposerProps> = ({
           )}
         </div>
         {uploading && <span className="v2-composer__uploading" role="status">{t('podChat.composer.uploading')}</span>}
-        {hasText && (
-          <button
-            type="button"
-            className="v2-composer__send"
-            onClick={onSend}
-            disabled={sending}
-            aria-label={sending ? t('podChat.composer.sending') : t('podChat.composer.sendAria')}
-            title={t('podChat.composer.sendTooltip', { name: authorName })}
-          >
-            <span aria-hidden="true">↵</span>
-          </button>
-        )}
+        {/* D215 draws Send at rest. With no text it is disabled, keeping its
+            name, so it never sends an empty draft. */}
+        <button
+          type="button"
+          className="v2p-b v2p-b-p v2p-ib v2-composer__send"
+          onClick={onSend}
+          disabled={sending || !hasText}
+          aria-label={sending ? t('podChat.composer.sending') : t('podChat.composer.sendAria')}
+          title={t('podChat.composer.sendTooltip', { name: authorName })}
+        >
+          <ShellGlyph name="send" size={16} />
+        </button>
       </div>
       <input
         ref={fileInputRef}

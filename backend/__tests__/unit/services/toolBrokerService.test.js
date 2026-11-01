@@ -27,6 +27,8 @@ jest.mock('../../../services/approvalActionService', () => ({
   proposeAction: jest.fn().mockResolvedValue({ ok: true, approvalId: 'approval-test' }),
 }));
 jest.mock('../../../services/dmService', () => mockDmService);
+const mockRecordBrokerCall = jest.fn();
+jest.mock('../../../services/brokerRecordService', () => ({ recordBrokerCall: (...args) => mockRecordBrokerCall(...args) }));
 // The seat's own declaration is judged inside `callTool`/`listToolsForGrant`
 // (TASK-175). This suite has no Mongo, so the RESOLUTION is mocked here and the
 // resolution itself is witnessed on memory Mongo in
@@ -507,5 +509,41 @@ describe('a suspended github-app row owner (§7)', () => {
     })).resolves.toBeTruthy();
     expect(mockGithub.listOpenIssues).toHaveBeenCalledTimes(1);
     expect(mockUser.findById).not.toHaveBeenCalled();
+  });
+});
+
+// TASK-560: every committed trail row reaches the record once, as the same call.
+describe('record wiring', () => {
+  const recorded = () => {
+    expect(mockRecordBrokerCall).toHaveBeenCalledTimes(mockToolCall.create.mock.calls.length);
+    const [row] = mockRecordBrokerCall.mock.calls[0];
+    const [trail] = mockToolCall.create.mock.calls[0];
+    expect(row).toMatchObject({ callId: trail.callId, outcome: trail.outcome, grantId: trail.grantId, tool: trail.tool, agentUserId: 'agent-a' });
+    return row;
+  };
+
+  it('a refusal', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.get_issue'] }));
+    await expect(callTool({ grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.list_issues', args: {} }))
+      .rejects.toMatchObject({ code: 'tool_not_allowed' });
+    expect(recorded().outcome).toBe('refused');
+  });
+
+  it('a park, with its card and the credential owner', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.create_issue'], writeMode: 'write-with-confirm' }));
+    await expect(callTool({ grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.create_issue', args: { title: 'x' } }))
+      .rejects.toMatchObject({ code: 'approval_required' });
+    expect(recorded()).toMatchObject({ outcome: 'pending_approval', approvalId: 'approval-test', credentialOwnerId: 'owner-1' });
+  });
+
+  it('an unattended run, with the grant it ran under', async () => {
+    const grant = seatGrant({ tools: ['github.close_issue'], writeMode: 'write' });
+    mockRoomGrant.findOne.mockResolvedValue(grant);
+    mockGithub.closeIssue.mockResolvedValue({ number: 7, title: 'closed', html_url: 'https://github.com/x/y/issues/7', state: 'closed' });
+    await callTool({ grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.close_issue', args: { issueNumber: 7 } });
+    const row = recorded();
+    expect(row.outcome).toBe('ok');
+    expect(row.approvalId).toBeUndefined();
+    expect(row.grant).toBe(grant);
   });
 });

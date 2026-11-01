@@ -348,7 +348,7 @@ test('a partial installation owner cannot see identity-wide key controls', async
   renderPage();
   expect(await screen.findByRole('heading', { name: 'Policy' })).toBeInTheDocument();
   expect(await screen.findByText('Key management is unavailable for this agent. Ask an admin for access.')).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Pods' })).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Pods' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByText('Laptop')).not.toBeInTheDocument();
   expect(axios.get.mock.calls.some(([url]) => url === '/api/agent-memory/maya-claude/default')).toBe(false);
@@ -457,9 +457,10 @@ test('runtime editor writes environment controls through the shared settings hoo
   await screen.findByRole('heading', { name: 'Skills' });
   const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2')).map((node) => node.textContent);
   expect(sections).toEqual(expect.arrayContaining(['Identity', 'Policy', 'Skills']));
+  // D215 artboard: Wake first, then Identity & access (Key, Identity).
+  expect(sections.indexOf('Wake')).toBeLessThan(sections.indexOf('Key'));
   expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('Identity'));
-  expect(sections.indexOf('Identity')).toBeLessThan(sections.indexOf('Wake'));
-  expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('How it runs'));
+  expect(sections.indexOf('Identity')).toBeLessThan(sections.indexOf('How it runs'));
   expect(sections.indexOf('Wake')).toBeLessThan(sections.indexOf('How it runs'));
   expect(sections.indexOf('How it runs')).toBeLessThan(sections.indexOf('Connector grants'));
   expect(sections.indexOf('Connector grants')).toBeLessThan(sections.indexOf('Policy'));

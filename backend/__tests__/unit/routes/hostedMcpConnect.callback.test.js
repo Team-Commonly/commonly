@@ -160,6 +160,9 @@ beforeEach(() => {
     issuer: 'https://mcp.linear.app',
     authorization_endpoint: 'https://mcp.linear.app/authorize',
     token_endpoint: TOKEN_ENDPOINT,
+    // A revoke goes only to the endpoint the issuer advertises (TASK-252), so the
+    // stub advertises the one the revoking arms pin, as the real vendors do.
+    revocation_endpoint: 'https://mcp.linear.app/revoke',
   });
   connectorSecrets.put.mockResolvedValueOnce('ref-access').mockResolvedValueOnce('ref-refresh');
   global.fetch = jest.fn().mockResolvedValue(okTokenResponse);

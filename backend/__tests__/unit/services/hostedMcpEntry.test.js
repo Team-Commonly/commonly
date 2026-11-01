@@ -689,7 +689,8 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entry.scopes.filter((scope) => scope.startsWith('write:'))).toEqual([
       'write:jira:agent-interface', 'write:confluence:agent-interface',
     ]);
-    expect(entry.revoke.endpoint).toBe('https://auth.atlassian.com/oauth/revoke');
+    // TASK-339: page-only. The endpoint refuses our CIMD client with 401.
+    expect(entry.revoke).toEqual({ page: 'https://id.atlassian.com/manage-profile/apps' });
 
     const pinnedUpstream = [
       'getAccessibleAtlassianResources', 'atlassianUserInfo', 'getConfluenceContent',

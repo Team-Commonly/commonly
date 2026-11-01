@@ -13,7 +13,8 @@ name: Deploy Staging
 # values overlay pattern. Differences: namespace/release commonly-staging, a
 # staging-only private-values secret, a single staging frontend variant per SHA
 # (the shared prod tag is NOT pushed from staging — see the build step), no
-# clawdbot-gateway (parked everywhere; staging never runs it), cancel-in-progress.
+# clawdbot-gateway (parked everywhere; staging never runs it), and a force_bad_tag
+# rollback-rehearsal input.
 #
 # DRAFT until the Thursday-night staging install lands — unmerged, this workflow
 # never runs. It goes live once commonly-staging exists (secrets, WI, DBs, tunnel).
@@ -25,6 +26,11 @@ on:
         description: 'Git ref / SHA to build + deploy to staging (defaults to the triggering ref)'
         required: false
         default: ''
+      force_bad_tag:
+        description: 'REHEARSAL: deploy a nonexistent backend image tag so the rollout fails and the rollback step fires (staging only)'
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [ main ]
 
@@ -35,7 +41,13 @@ permissions:
 
 concurrency:
   group: deploy-staging
-  cancel-in-progress: true   # reckless lane: a newer push supersedes an in-flight staging deploy
+  # cancel-in-progress: false so a deploy always runs its verify-or-rollback to completion.
+  # With auto-deploy on every merge, a newer push used to cancel an in-flight staging deploy
+  # mid-rollout — and a cancelled run skips the rollback step (cancellation does not satisfy
+  # failure()), leaving an unverified image at helm status=deployed that the next rollback would
+  # wrongly treat as good. Newer pushes now QUEUE behind the in-flight deploy. (PR test
+  # workflows still cancel in-progress; this is the deploy lane only.)
+  cancel-in-progress: false
 
 env:
   REGION: us-central1
@@ -49,7 +61,10 @@ jobs:
     name: Build + push + helm upgrade (staging)
     runs-on: ubuntu-latest
     environment: staging
-    timeout-minutes: 30
+    # 45, not 30: rollout verification can wait its full 8m per stuck workload and the
+    # rollback step needs its own window after; 30m risks GitHub cancelling mid-rollback
+    # (cancellation does not satisfy failure(), so rollback would not re-run).
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -149,46 +164,125 @@ jobs:
           cluster_name: ${{ env.CLUSTER }}
           location: ${{ env.REGION }}
 
+      # Record the revision Helm currently has as `deployed` (last known-good) BEFORE the
+      # upgrade, so the rollback step returns to exactly this revision instead of inferring
+      # one by arithmetic. 0 == no prior deploy (first install).
+      - name: Record the current good revision (for rollback)
+        id: prerev
+        run: |
+          set -uo pipefail
+          HIST=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')
+          PRE=$(printf '%s' "$HIST" | jq -r '[.[] | select(.status=="deployed")] | (sort_by(.revision) | last | .revision) // 0')
+          echo "prerev=$PRE" >> "$GITHUB_OUTPUT"
+          echo "Pre-upgrade good (deployed) revision: $PRE"
+
       # --create-namespace: commonly-staging does not exist before the first
       # install. NOTE: values-staging.yaml should set createNamespace:false
       # (as values-local.yaml does) so the chart does not ALSO declare the
       # Namespace and collide with the one helm creates here. Tracked against
       # the staging chart PR.
       - name: Helm upgrade commonly-staging
+        id: helm
         env:
           TAG: ${{ steps.tag.outputs.tag }}
+          FORCE_BAD: ${{ inputs.force_bad_tag }}
         run: |
+          # Rollback rehearsal (force_bad_tag): point the backend image at a tag that does not
+          # exist, so the pod never pulls, the rollout verify below fails, and the rollback step
+          # at the end of the job fires. Staging only; a normal run leaves BTAG = the real tag.
+          BTAG="$TAG"
+          if [ "$FORCE_BAD" = "true" ]; then
+            BTAG="rollback-rehearsal-nonexistent"
+            echo "::warning title=Rollback rehearsal::forcing a nonexistent backend image tag ($BTAG) to exercise the rollback step"
+          fi
           helm upgrade --install "$RELEASE" k8s/helm/commonly -n "$NAMESPACE" --create-namespace \
             -f k8s/helm/commonly/values.yaml \
             -f k8s/helm/commonly/values-staging.yaml \
             -f "$RUNNER_TEMP/values-private.yaml" \
-            --set backend.image.tag="$TAG" \
+            --set backend.image.tag="$BTAG" \
             --set frontend.image.tag="$TAG-staging" \
             --set agents.commonlyBot.image.tag="$TAG" \
             --timeout 10m \
             --burst-limit 200 \
             --qps 100
 
-      - name: Verify rollout of the deployed workloads
+      # Deployment LOOKUP in its own step before the rollout check, NOT in the rollback
+      # gate (see deploy-dev.yml): a transient `kubectl get deploy` failure after a good
+      # upgrade must fail the job for a human, not be read as a stuck rollout that demotes
+      # a healthy staging release. Retry rides out a blip.
+      - name: List the workloads to verify (lookup, not a rollout check)
+        id: deploylist
         run: |
           set -uo pipefail
-          FAILED=""
-          DEPLOYS=$(kubectl get deploy -n "$NAMESPACE" -o name)
-          if [ -z "$DEPLOYS" ]; then
-            echo "::error title=Rollout failed::no deployments in $NAMESPACE"
+          MANAGED=" backend backend-worker frontend clawdbot-gateway commonly-bot "
+          ALL=""
+          for attempt in 1 2 3; do
+            if ALL=$(kubectl get deploy -n "$NAMESPACE" -o name) && [ -n "$ALL" ]; then break; fi
+            echo "deploy lookup attempt $attempt returned nothing/failed; retrying in 5s"; ALL=""; sleep 5
+          done
+          if [ -z "$ALL" ]; then
+            echo "::error title=Deploy lookup failed::could not list deployments in $NAMESPACE after retries — cluster/API unreachable. NOT a rollout failure (no rollback)."
             exit 1
           fi
-          for d in $DEPLOYS; do
+          TARGETS=""
+          for d in $ALL; do
+            n=${d##*/}
+            case "$MANAGED" in *" $n "*) TARGETS="$TARGETS $d" ;; esac
+          done
+          if [ -z "$TARGETS" ]; then
+            echo "::error title=No managed workloads::none of the image-tagged workloads present in $NAMESPACE (cluster reachable); not auto-rolling back."
+            exit 1
+          fi
+          echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
+          echo "will verify:$TARGETS"
+
+      - name: Verify rollout of the deployed workloads
+        id: rollout
+        env:
+          TARGETS: ${{ steps.deploylist.outputs.targets }}
+        run: |
+          set -uo pipefail
+          # Short-circuit on the first stuck workload (see deploy-dev.yml): a bad tag fails
+          # all managed workloads, and waiting 8m x N could exceed the 45m job cap before
+          # rollback. One failure = the deploy is bad; stop and let failure() rollback run.
+          # The force_bad_tag rehearsal hits this on the first workload. Only THIS step's
+          # failure is eligible for rollback.
+          for d in $TARGETS; do
             echo "::group::rollout status $d"
             if kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m; then
-              echo "$d: rolled out"
+              echo "$d: rolled out"; echo "::endgroup::"
             else
-              echo "::error title=Rollout failed::$d did not become ready within 8m"
-              FAILED="$FAILED $d"
+              echo "::endgroup::"
+              echo "::error title=Rollout failed::$d did not become ready within 8m — stopping; rollback will run"
+              exit 1
             fi
-            echo "::endgroup::"
           done
-          if [ -n "$FAILED" ]; then echo "Deploy failed for:$FAILED"; exit 1; fi
+          echo "Deployed workloads live:$TARGETS"
+
+      # Record THIS release as rollout-verified, so the rollback step below returns to a
+      # revision that actually passed the rollout gate — never merely "last deployed". With
+      # auto-deploy, a deploy cancelled mid-rollout by a newer push leaves an unverified image
+      # at helm status=deployed, and prerev (last deployed) would pick it as the rollback
+      # target. This ConfigMap is written ONLY after the rollout gate passed (if: success() =>
+      # no earlier step failed), so it always names a revision whose managed workloads became
+      # ready. The Tier-1 smoke runs after this and gates PROD promotion, not staging's own
+      # rollback — so rollout-verified is the right bar for the staging rollback target.
+      - name: Record this release as rollout-verified (rollback target)
+        if: success()
+        run: |
+          set -uo pipefail
+          CURREV=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.[-1].revision // 0')
+          if [ "${CURREV:-0}" = "0" ]; then
+            echo "::warning title=No revision to record::helm reports no current revision for $RELEASE; leaving the verified pointer unchanged."
+            exit 0
+          fi
+          if kubectl create configmap deploy-verified-revision -n "$NAMESPACE" \
+               --from-literal=revision="$CURREV" \
+               --dry-run=client -o yaml | kubectl apply -f -; then
+            echo "Recorded rollout-verified revision $CURREV for $RELEASE rollback."
+          else
+            echo "::warning title=Record failed::could not write the verified-revision ConfigMap ($CURREV) for $RELEASE; the next rollback will fall back to last-deployed. Check the deploy service account's configmap RBAC."
+          fi
 
       - name: Set up Node for the Tier-1 smoke
         uses: actions/setup-node@v4
@@ -238,8 +332,18 @@ jobs:
           SHA: ${{ steps.tag.outputs.sha }}
           JOB_STATUS: ${{ job.status }}
           GH_TOKEN: ${{ github.token }}
+          FORCE_BAD: ${{ inputs.force_bad_tag }}
         run: |
           set -uo pipefail
+          # Rollback rehearsal (force_bad_tag): the rollout was failed deliberately, so this
+          # SHA's backend image was never actually tested. Posting staging-smoke=failure here
+          # would make deploy-dev.yml reject the SHA until a real staging run succeeds — a
+          # production-gating status from a drill. Post nothing; the rollout failure above
+          # already drives the rollback step (its gate reads steps.rollout.outcome).
+          if [ "${FORCE_BAD:-}" = "true" ]; then
+            echo "rollback rehearsal: not posting a production-gating staging-smoke status for $SHA ($TAG)"
+            exit 0
+          fi
           # A cancelled job deployed nothing, so it has nothing truthful to say about
           # this SHA. The step condition already skips a cancelled RUN; this covers a
           # job cancelled while the run is not, where cancelled() is false and
@@ -300,3 +404,67 @@ jobs:
             -f context="staging-smoke" \
             -f description="$DESC" >/dev/null
           [ "$STATE" = "success" ]
+
+      # Mirror of the prod rollback net. Roll this staging
+      # release back to the newest prior good revision when the helm upgrade or the rollout verify
+      # fails — NOT on a post-deploy infra flake (setup-node / npm / playwright-install), which
+      # would otherwise self-heal a healthy release. The `force_bad_tag` rehearsal input drives a
+      # failed rollout to exercise this path. The job still ends red.
+      - name: Roll back on a failed deploy
+        if: ${{ failure() && (steps.helm.outcome == 'failure' || steps.rollout.outcome == 'failure') }}
+        env:
+          PRE: ${{ steps.prerev.outputs.prerev }}
+        run: |
+          set -uo pipefail
+          HIST=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')
+          CUR=$(printf '%s' "$HIST" | jq -r '.[-1].revision // 0')
+          # Roll back to the revision THIS workflow last recorded as rollout-verified (the
+          # deploy-verified-revision ConfigMap), never to "last deployed": a deploy cancelled
+          # mid-rollout by a newer push leaves an unverified image at helm status=deployed,
+          # which prerev would wrongly pick. Distinguish a genuinely-absent ConfigMap (first
+          # failed deploy after this change) from a read ERROR: absent -> fall back to prerev;
+          # any other kubectl/API error -> FAIL CLOSED, do NOT roll back to a possibly-unverified
+          # revision — leave the (red) release in place for a human.
+          if CMOUT=$(kubectl get configmap deploy-verified-revision -n "$NAMESPACE" -o jsonpath='{.data.revision}' 2>&1); then
+            GOOD="$CMOUT"
+          elif printf '%s' "$CMOUT" | grep -q 'NotFound'; then
+            GOOD=""
+            echo "no verified-revision ConfigMap yet (first failed deploy after this change); falling back to last-deployed."
+          else
+            echo "::error title=Rollback aborted::could not read $RELEASE's verified-revision ConfigMap (not a NotFound): $CMOUT — NOT rolling back to a possibly-unverified revision. Investigate and roll back by hand."
+            exit 1
+          fi
+          TARGET="$GOOD"
+          if [ -z "$TARGET" ] || [ "$TARGET" = "0" ]; then
+            echo "::warning title=No verified revision::no rollout-verified revision recorded for $RELEASE; falling back to last-deployed $PRE (may not have passed verification)."
+            TARGET="$PRE"
+          fi
+          # No-op when there is no target at all, or when CUR==TARGET (the upgrade failed before
+          # Helm created a revision, or the live release already is the verified one — either
+          # way the release is unchanged).
+          if [ "${CUR:-0}" = "0" ] || [ "${TARGET:-0}" = "0" ] || [ -z "${TARGET:-}" ]; then
+            echo "::warning title=No rollback target::$RELEASE has no good revision to roll back to (CUR=${CUR:-0} TARGET=${TARGET:-0})."
+            exit 0
+          fi
+          if [ "$CUR" = "$TARGET" ]; then
+            echo "::warning title=No rollback needed::the live release already is the verified revision (CUR==TARGET==$TARGET); the release is unchanged."
+            exit 0
+          fi
+          echo "Rolling $RELEASE back: revision $CUR -> $TARGET (last rollout-verified)"
+          # No `--wait` (see the upgrade above): a release-wide wait can hang on an unrelated
+          # workload and record the rollback as failed. Apply, then verify only managed workloads.
+          # Check the exit explicitly: a swallowed failure (e.g. $TARGET aged out of helm history
+          # after a streak of failed deploys) would otherwise print the "rolled back" line below
+          # while the bad release stays live.
+          if ! helm rollback "$RELEASE" "$TARGET" -n "$NAMESPACE" --timeout 8m; then
+            echo "::error title=Rollback FAILED::helm could not roll back $RELEASE to $TARGET (aged out of history?); the bad release is STILL LIVE — manual intervention required."
+            exit 1
+          fi
+          MANAGED=" backend backend-worker frontend clawdbot-gateway commonly-bot "
+          for d in $(kubectl get deploy -n "$NAMESPACE" -o name); do
+            n=${d##*/}
+            case "$MANAGED" in *" $n "*) : ;; *) continue ;; esac
+            kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m \
+              || echo "::warning title=Rollback not yet ready::$d did not report ready within 8m after rollback to $TARGET; check the cluster."
+          done
+          echo "::error title=Deploy rolled back::$RELEASE rolled back to revision $TARGET after a failed deploy. Investigate before the next deploy."

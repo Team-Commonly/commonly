@@ -15,6 +15,18 @@ import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import './v2.css';
+// D223 shared primitives (TASK-730): the keys and segment chat and the sidebar use.
+import './primitives/primitives.css';
+// Chat surface CSS lifted out of v2.css (D223, S3). Imported here, after
+// v2.css, so its rules still win the order ties they won inside v2.css (a
+// component-level import would load before v2.css: V2Layout is imported above).
+// No chat rule ties a primitive on specificity, so following primitives.css
+// changes nothing.
+import './chat/chat-message.css';
+import './chat/chat-pane.css';
+import './chat/chat-composer.css';
+import './chat/chat-inspector.css';
+import './chat/chat-states.css';
 import { applyV2Theme, getV2Theme } from './utils/theme';
 
 // TASK-145 — inside the shell, only the surfaces the composer path needs stay
@@ -25,6 +37,8 @@ import { applyV2Theme, getV2Theme } from './utils/theme';
 // whole route table, so a chunk in flight shows the same <V2Boot/> the auth
 // check already shows.
 const V2Login = React.lazy(() => import('./components/V2Login'));
+// TASK-730 (D223): the shared primitives rendered alone, for frame checks.
+const V2PrimitivesPage = React.lazy(() => import('./primitives/V2PrimitivesPage'));
 const V2Register = React.lazy(() => import('./components/V2Register'));
 const V2OAuthComplete = React.lazy(() => import('./components/V2OAuthComplete'));
 const V2ForgotPassword = React.lazy(() => import('./components/V2ForgotPassword'));
@@ -35,12 +49,14 @@ const V2CommunityRedirect = React.lazy(() => import('./components/V2CommunityRed
 const V2SettingsPage = React.lazy(() => import('./components/V2SettingsPage'));
 const V2AgentProfile = React.lazy(() => import('./agents/V2AgentProfile'));
 const V2AgentSettingsPage = React.lazy(() => import('./agents/V2AgentSettingsPage'));
+const V2AgentMemory = React.lazy(() => import('./agents/V2AgentMemory'));
 const UserProfile = React.lazy(() => import('../components/UserProfile'));
 const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
-const V2ConnectorsPage = React.lazy(() => import('./components/V2ConnectorsPage'));
+const ConnectorsPage = React.lazy(() => import('./connectors/ConnectorsPage'));
 const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
 const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
+const V2TaskRecord = React.lazy(() => import('./components/V2TaskRecord'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
 const ChatRoom = React.lazy(() => import('../components/ChatRoom'));
@@ -217,6 +233,7 @@ const V2App: React.FC = () => {
           <Route path="agent/:agentName/:instanceId" element={<V2AgentProfile />} />
           <Route path="use-cases/:useCaseId" element={<V2UseCaseRedirect />} />
           <Route path="login" element={<V2Login />} />
+          <Route path="_primitives" element={<V2PrimitivesPage />} />
           <Route path="register" element={<V2Register />} />
           <Route path="register/invite-required" element={<RegistrationInviteRequired />} />
           <Route path="oauth/complete" element={<V2OAuthComplete />} />
@@ -294,6 +311,10 @@ const V2App: React.FC = () => {
                   element={feature('Agent settings', <V2AgentSettingsPage />, false, false)}
                 />
                 <Route
+                  path="agents/:agentName/:instanceId/memory"
+                  element={feature('Agent memory', <V2AgentMemory />, false, false)}
+                />
+                <Route
                   path="connect"
                   element={<V2FeaturePage title="Connect" hint="MCP uses an agent token created during setup."><V2ConnectPage /></V2FeaturePage>}
                 />
@@ -301,10 +322,11 @@ const V2App: React.FC = () => {
                   path="connectors"
                   element={feature(
                     'Connectors',
-                    <V2ConnectorsPage />,
+                    <ConnectorsPage />,
                     false,
                     // The Signal artboard owns this page's display-sized head.
                     false,
+                    'v2-feature--connectors',
                   )}
                 />
                 <Route
@@ -316,12 +338,16 @@ const V2App: React.FC = () => {
                   element={feature('Run trace', <V2RunTrace />, false, false)}
                 />
                 <Route
+                  path="pods/:podId/tasks/:taskId/record"
+                  element={feature('Task record', <V2TaskRecord />, false, false)}
+                />
+                <Route
                   path="activity"
                   element={feature('Activity', <V2ActivityPage />, false, false, 'v2-feature--activity')}
                 />
                 <Route
                   path="settings"
-                  element={feature('Settings', <V2SettingsPage />, false, false)}
+                  element={feature('Settings', <V2SettingsPage />, false, false, 'v2-feature--settings')}
                 />
                 <Route
                   path="settings/devices"

@@ -122,7 +122,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
     const { deps, revokeGrants } = recorder({ entryFor: () => dcrEntry });
     deps.dcrClientForRow = jest.fn(async () => null);
     const result = await remove(hostedRow(), deps, revokeGrants);
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
     expect(deps.secrets.get).not.toHaveBeenCalled();
     expect(deps.revokeAtVendor).not.toHaveBeenCalled();
     expect(deps.remove).toHaveBeenCalled();
@@ -137,7 +137,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
       entryId: 'linear', clientId: 'refused-client',
       credentialRef: 'access-ref', refreshTokenRef: 'refresh-ref',
     } }), deps, revokeGrants);
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
     expect(deps.markProviderRevoked).not.toHaveBeenCalled();
     expect(deps.secrets.revoke).toHaveBeenCalledWith('refresh-ref');
     expect(deps.remove).toHaveBeenCalled();
@@ -145,7 +145,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
   it('runs grants, row, provider, mark, material, delete in that order', async () => {
     const { calls, deps, revokeGrants } = recorder();
     const result = await remove(hostedRow(), deps, revokeGrants);
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: true });
     // The mark is between the provider revoke and the material on purpose: it
     // is the only record that survives the request, so it has to be written
     // while the material it protects is still there.
@@ -220,7 +220,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
       throw codedError('connector_secret_not_found', 'no such secret');
     });
     const result = await remove(hostedRow(), deps, revokeGrants);
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
     expect(deps.revokeAtVendor).not.toHaveBeenCalled();
     expect(deps.secrets.revoke).toHaveBeenCalledWith('refresh-ref');
     // The token is the one the ROW NAMES. Falling back to the access token when
@@ -271,7 +271,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
     const { deps, revokeGrants } = recorder();
     const row = hostedRow({ config: { entryId: 'linear', credentialRef: 'access-ref' } });
     const result = await remove(row, deps, revokeGrants);
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: true });
     // The token we hold is the access token, so that is the one that goes — and
     // the hint has to follow it, or the AS may answer `unsupported_token_type`.
     expect(deps.secrets.get).toHaveBeenCalledWith('access-ref');
@@ -296,7 +296,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
 
     const result = await remove(row, deps, revokeGrants);
 
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
     expect(deps.secrets.get).not.toHaveBeenCalled();
     expect(deps.revokeAtVendor).not.toHaveBeenCalled();
     expect(deps.markProviderRevoked).not.toHaveBeenCalled();
@@ -318,7 +318,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
 
     const result = await remove(row, deps, revokeGrants);
 
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: true });
     expect(deps.revokeAtVendor).toHaveBeenCalledWith({
       entry: ENTRY,
       clientId: 'commonly-client',
@@ -331,7 +331,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
     const { deps, revokeGrants } = recorder();
     const row = hostedRow({ config: { entryId: 'linear' } });
     const result = await remove(row, deps, revokeGrants);
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
     // No reference means no `token: ""`: RFC 7009 answers the empty string 200
     // for a request that revoked nothing, which would read as a revoke.
     expect(deps.secrets.get).not.toHaveBeenCalled();
@@ -363,7 +363,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
       },
     });
     const result = await remove(row, deps, revokeGrants);
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: true });
     // The token is already dead at the vendor and the material may be half
     // swept, so a retry neither reads nor re-sends it.
     expect(deps.secrets.get).not.toHaveBeenCalled();
@@ -388,9 +388,27 @@ describe('removeConnection (a hosted-MCP row)', () => {
       message: 'secret store unavailable',
       grantsRevoked: 2,
       revokeAt: PAGE,
+      providerRevoked: true,
     });
     expect(deps.markProviderRevoked).toHaveBeenCalled();
     expect(deps.remove).not.toHaveBeenCalled();
+  });
+
+  it('an incomplete removal on a page-only entry says the vendor was never told', async () => {
+    // The code's name reads as "the provider revoked", and a page-only entry
+    // never calls the vendor, so the result has to carry the answer itself.
+    const { deps, revokeGrants } = recorder({
+      entryFor: jest.fn(() => ({ ...ENTRY, revoke: { page: PAGE } })),
+      secrets: {
+        get: jest.fn(async () => 'refresh-token-value'),
+        revoke: jest.fn(async () => { throw new Error('secret store unavailable'); }),
+      },
+    });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toMatchObject({
+      removed: false, code: 'provider_revoked_removal_incomplete', providerRevoked: false,
+    });
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
   });
 
   it('calls the endpoint and returns the page when the entry names both', async () => {
@@ -412,7 +430,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
     // vendor at all — and a page that answered our POST with 200 would read as
     // a revoke that never happened.
     expect(deps.revokeAtVendor).not.toHaveBeenCalled();
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
     // The page still does not skip the material and the delete: the token is
     // ours to destroy either way, and leaving it would keep a live credential
     // for an authorization a person may never get round to revoking.
@@ -460,6 +478,55 @@ describe('removeConnection (a hosted-MCP row)', () => {
 // that state, and a removal that finds no entry finishes through the copy —
 // which is the authority that outlives the entry. A row connected before the
 // copy existed has neither, and keeps the refusal.
+describe('an Atlassian removal (TASK-339)', () => {
+  // Atlassian answers our CIMD client's RFC 7009 revoke with 401. The 10-09 and
+  // 10-19 tool captures saw 200 only because they registered a DCR client of
+  // their own, and both of those authorizations were still listed on the
+  // person's Atlassian apps page on 11-01, so even a 200 here removes nothing a
+  // person can see. A removal that waits on this endpoint can never finish.
+  const ATLASSIAN_PAGE = 'https://id.atlassian.com/manage-profile/apps';
+  const ISSUER = 'https://auth.atlassian.com/VCeDsk8ZHncYF1g234fKtc4lNipbBhu3';
+  const atlassianVendor = () => jest.fn(async (url) => (
+    String(url).includes('/.well-known/')
+      ? {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          issuer: ISSUER,
+          authorization_endpoint: 'https://auth.atlassian.com/authorize',
+          token_endpoint: 'https://auth.atlassian.com/oauth/token',
+          revocation_endpoint: 'https://auth.atlassian.com/oauth/revoke',
+        }),
+      }
+      : { ok: false, status: 401, json: async () => ({}) }
+  ));
+
+  it('finishes here, sends Atlassian nothing, and says the app is still listed there', async () => {
+    const fetchImpl = atlassianVendor();
+    const { calls, deps, revokeGrants } = recorder({
+      // The shipped catalog, not a fixture: the entry is what decides.
+      entryFor: defaultDeps().entryFor,
+      clientIdFor: () => 'https://api.commonly.me/api/integrations/hosted-mcp/client/atlassian',
+      revokeAtVendor: jest.fn((input) => revokeTokenAtVendor(input, fetchImpl)),
+    });
+    const row = hostedRow({ config: {
+      entryId: 'atlassian',
+      clientId: 'https://api.commonly.me/api/integrations/hosted-mcp/client/atlassian',
+      credentialRef: 'access-ref',
+      refreshTokenRef: 'refresh-ref',
+    } });
+
+    const result = await remove(row, deps, revokeGrants);
+
+    expect(result).toEqual({
+      removed: true, grantsRevoked: 2, revokeAt: ATLASSIAN_PAGE, providerRevoked: false,
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(deps.markProviderRevoked).not.toHaveBeenCalled();
+    expect(calls).toEqual(['grants', 'row', 'material:refresh-ref', 'material:access-ref', 'delete']);
+  });
+});
+
 describe('a row whose entry is gone', () => {
   const COPIED_PAGE = 'https://linear.app/settings/security/legacy';
 
@@ -474,7 +541,7 @@ describe('a row whose entry is gone', () => {
     // so no vendor call is attempted, and the material still goes: the row and
     // the secret are ours regardless of what the catalogue holds.
     expect(deps.revokeAtVendor).not.toHaveBeenCalled();
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: COPIED_PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: COPIED_PAGE, providerRevoked: false });
     expect(calls).toEqual(['grants', 'row', 'material:refresh-ref', 'material:access-ref', 'delete']);
   });
 
@@ -492,6 +559,7 @@ describe('a row whose entry is gone', () => {
       message: 'row delete unavailable',
       grantsRevoked: 2,
       revokeAt: COPIED_PAGE,
+      providerRevoked: false,
     });
   });
 
@@ -534,16 +602,34 @@ describe('a row whose entry is gone', () => {
     const result = await remove(row, deps, revokeGrants);
 
     expect(deps.revokeAtVendor).not.toHaveBeenCalled();
-    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: COPIED_PAGE });
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: COPIED_PAGE, providerRevoked: false });
   });
 });
 
 describe('revokeTokenAtVendor (RFC 7009)', () => {
+  // TASK-252: every revoke first reads the issuer's RFC 8414 metadata, and the
+  // request goes out only when the entry's pinned endpoint is the one the issuer
+  // advertises. `vendor` answers that GET and hands every other request to `answer`.
+  const metadataFor = (entry, over = {}) => ({
+    issuer: entry.issuer,
+    authorization_endpoint: `${entry.issuer}/authorize`,
+    token_endpoint: `${entry.issuer}/token`,
+    revocation_endpoint: entry.revoke.endpoint,
+    ...over,
+  });
+  const vendor = (entry, answer, metadata = metadataFor(entry)) => jest.fn(async (url, init) => (
+    String(url).includes('/.well-known/oauth-authorization-server')
+      ? { ok: true, status: 200, json: async () => metadata }
+      : answer(url, init)
+  ));
+  const revokeCalls = (fetchImpl) => fetchImpl.mock.calls
+    .filter(([url]) => !String(url).includes('/.well-known/'));
+
   it('marks only the refused DCR client when the vendor returns invalid_client', async () => {
     const registry = require('../../../services/hostedMcpDcrRegistry');
     const refuse = jest.spyOn(registry, 'refuseDcrClient').mockResolvedValue();
     const dcrEntry = { ...ENTRY, client: 'dcr' };
-    const fetchImpl = jest.fn(async () => ({
+    const fetchImpl = vendor(dcrEntry, async () => ({
       ok: false, status: 401, json: async () => ({ error: 'invalid_client' }),
     }));
     try {
@@ -552,15 +638,15 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
         tokenTypeHint: 'refresh_token',
       }, fetchImpl)).rejects.toMatchObject({ code: 'invalid_client' });
       expect(refuse).toHaveBeenCalledWith(dcrEntry, 'retired-client');
-      expect(new URLSearchParams(fetchImpl.mock.calls[0][1].body).get('client_id'))
+      expect(new URLSearchParams(revokeCalls(fetchImpl)[0][1].body).get('client_id'))
         .toBe('retired-client');
     } finally {
       refuse.mockRestore();
     }
   });
-  it('a post-registered DCR client revokes with post, though a dcr removal reads no metadata', async () => {
+  it('a post-registered DCR client revokes with post', async () => {
     const dcrEntry = { ...ENTRY, client: 'dcr' };
-    const fetchImpl = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    const fetchImpl = vendor(dcrEntry, async () => ({ ok: true, status: 200, json: async () => ({}) }));
     await revokeTokenAtVendor({
       entry: dcrEntry,
       clientId: 'conf-1',
@@ -569,16 +655,16 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
       token: 'held-token',
       tokenTypeHint: 'refresh_token',
     }, fetchImpl);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [, init] = fetchImpl.mock.calls[0];
+    expect(revokeCalls(fetchImpl)).toHaveLength(1);
+    const [, init] = revokeCalls(fetchImpl)[0];
     expect(init.headers.Authorization).toBeUndefined();
     const body = new URLSearchParams(init.body);
     expect(body.get('client_id')).toBe('conf-1');
     expect(body.get('client_secret')).toBe('registered-secret');
   });
 
-  const call = (response) => {
-    const fetchImpl = jest.fn(async () => response);
+  const call = (response, metadata = metadataFor(ENTRY)) => {
+    const fetchImpl = vendor(ENTRY, async () => response, metadata);
     return {
       fetchImpl,
       run: () => revokeTokenAtVendor({
@@ -593,7 +679,7 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
   it("the provider revoke sends the token to the entry's revocation endpoint", async () => {
     const { fetchImpl, run } = call({ ok: true, status: 200, json: async () => ({}) });
     await run();
-    const [url, init] = fetchImpl.mock.calls[0];
+    const [url, init] = revokeCalls(fetchImpl)[0];
     expect(url).toBe(ENDPOINT);
     expect(init.method).toBe('POST');
     expect(init.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
@@ -683,6 +769,32 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
   it('refuses a server error rather than reporting a revoke', async () => {
     const { run } = call({ ok: false, status: 502, json: async () => ({}) });
     await expect(run()).rejects.toThrow(/HTTP 502/);
+  });
+
+  it('sends nothing when the issuer advertises a different revocation endpoint than the entry pins', async () => {
+    const { fetchImpl, run } = call(
+      { ok: true, status: 200, json: async () => ({}) },
+      metadataFor(ENTRY, { revocation_endpoint: 'https://mcp.linear.app/oauth/revoke' }),
+    );
+    await expect(run()).rejects.toThrow(/not the revocation_endpoint .* advertises/);
+    expect(revokeCalls(fetchImpl)).toHaveLength(0);
+  });
+
+  it('sends nothing when the issuer advertises no revocation endpoint at all', async () => {
+    const metadata = metadataFor(ENTRY);
+    delete metadata.revocation_endpoint;
+    const { fetchImpl, run } = call({ ok: true, status: 200, json: async () => ({}) }, metadata);
+    await expect(run()).rejects.toThrow(/not the revocation_endpoint/);
+    expect(revokeCalls(fetchImpl)).toHaveLength(0);
+  });
+
+  it('sends nothing when the metadata is written for another issuer', async () => {
+    const { fetchImpl, run } = call(
+      { ok: true, status: 200, json: async () => ({}) },
+      metadataFor(ENTRY, { issuer: 'https://elsewhere.example' }),
+    );
+    await expect(run()).rejects.toMatchObject({ code: 'issuer_mismatch' });
+    expect(revokeCalls(fetchImpl)).toHaveLength(0);
   });
 
   it('refuses an entry that names no endpoint rather than guessing from the page', async () => {

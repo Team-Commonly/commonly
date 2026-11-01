@@ -1,0 +1,1110 @@
+/* Pod chat · message row (S3a, D223 lift of the d215 chat frame).
+
+   Source: docs/design/artboards/d215/index.html, data-surface="chat" at 1440
+   and 390, product CSS `.msg .mhead .mname .mmeta .mbody .cd .mn .fold
+   .showmore .acts .sumrow .sumlist`. Values are the frame's; the artboard's
+   short tokens map to v2 tokens as in V2AgentBYO.css (--sf surface, --p
+   bg-subtle, --t surface-tint, --d border-soft, --b border, --mu text-muted,
+   --se text-secondary, --ph text-placeholder, --ink text-primary, --ink2
+   ink-2, --c accent, --c-text accent-text, --c-soft accent-soft, --sh-pop
+   shadow-pop, --f-mono font-mono).
+
+   Imported by V2App.tsx AFTER v2.css and primitives.css, so these rules keep
+   the order they had at the end of v2.css. Rules the landing DemoWorkspace or
+   uiCard also use (.v2-msg, .v2-decision-card, ...) stay in v2.css. */
+
+/* Sender-only delivery feedback sits under the post as a quiet system line. */
+.v2-msg__sender-notice {
+  color: var(--v2-text-tertiary);
+  font: 12px/16px var(--v2-font);
+  margin-top: 6px;
+}
+
+.v2-root .v2-msg__sender-notice a {
+  color: var(--v2-accent);
+  text-decoration: underline;
+}
+
+/* TASK-406: quiet, non-interactive kernel action line in the pod timeline. */
+.v2-system-action-line {
+  box-sizing: border-box;
+  width: calc(100% - 48px);
+  margin-left: 48px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font: 400 13px/16px var(--v2-font);
+}
+
+.v2-thread .v2-system-action-line .v2-avatar {
+  width: 16px;
+  height: 16px;
+  border-width: 1px;
+  font: 650 11px/1 var(--v2-font-mono);
+  letter-spacing: 0;
+  text-indent: 0;
+}
+
+.v2-system-action-line__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--v2-text-primary);
+  font-weight: 500;
+}
+
+.v2-system-action-line__action {
+  grid-column: 3;
+  display: flex;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.v2-system-action-line__verb {
+  color: var(--v2-text-tertiary);
+}
+
+.v2-system-action-line__object {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--v2-text-tertiary);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-system-action-line time {
+  grid-column: 5;
+  color: var(--v2-text-placeholder);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+/* D215 .sumrow: a run of claim lines folds to one 34px bar in the text
+   column: board glyph, up to four 20px faces, "N claims · first to last",
+   the run's time, a chevron. The toggle is a control with its state on
+   aria-expanded. */
+.v2-root button.v2-claim-run__toggle {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% - 48px);
+  height: 34px;
+  margin: 4px 0 4px 48px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--v2-bg-subtle);
+  color: var(--v2-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  font: 400 12.5px/1 var(--v2-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* not drawn in the frame yet: kept as it was */
+.v2-root button.v2-claim-run__toggle:hover { background: var(--v2-surface-hover); }
+
+.v2-root button.v2-claim-run__toggle:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--v2-accent-text); }
+
+.v2-claim-run__toggle > svg { flex: none; }
+
+.v2-claim-run__faces { display: inline-flex; flex: none; }
+
+.v2-thread .v2-claim-run__faces .v2-avatar {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--v2-surface);
+  font: 650 11px/1 var(--v2-font-mono);
+}
+
+.v2-thread .v2-claim-run__faces .v2-avatar + .v2-avatar { margin-left: -6px; }
+
+.v2-claim-run__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.v2-claim-run__label b { color: var(--v2-text-primary); font-weight: 600; }
+
+.v2-claim-run__time { flex: none; color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
+
+/* The chevron takes text-muted, not the frame's --ph: --ph is 2.46:1 on the
+   bar, below the 3:1 a state mark needs; muted is 4.76:1 light, 5.48:1 dark. */
+.v2-claim-run__toggle > .v2-claim-run__chev {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  margin-left: auto;
+  color: var(--v2-text-muted);
+  transition: transform 160ms;
+}
+
+.v2-claim-run__toggle[aria-expanded='true'] > .v2-claim-run__chev { transform: rotate(180deg); }
+
+/* D215 .sumlist: the open run lists who took what in 26px rows. */
+.v2-claim-run__list { display: grid; gap: 2px; margin: 0 0 6px 48px; padding: 4px 10px; }
+
+.v2-claim-run__list .v2-system-action-line {
+  width: auto;
+  height: 26px;
+  margin-left: 0;
+  padding: 0;
+  grid-template-columns: 20px minmax(0, max-content) auto minmax(0, 1fr) auto;
+  color: var(--v2-text-secondary);
+  font: 400 12.5px/16px var(--v2-font);
+}
+
+.v2-thread .v2-claim-run__list .v2-system-action-line .v2-avatar { width: 20px; height: 20px; border-radius: 6px; }
+
+.v2-claim-run__list .v2-system-action-line__name { font-weight: 600; }
+
+.v2-claim-run__list .v2-system-action-line__verb { color: var(--v2-text-secondary); }
+
+.v2-claim-run__list .v2-system-action-line__object {
+  padding: 2px 5px;
+  border-radius: 6px;
+  background: var(--v2-surface-tint);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  color: var(--v2-text-primary);
+  font: 500 11px/1 var(--v2-font-mono);
+}
+
+.v2-claim-run__list .v2-system-action-line time { color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
+
+@media (max-width: 760px) {
+  /* D215 390: the run sits on the 40px text column. */
+  .v2-root button.v2-claim-run__toggle { width: calc(100% - 40px); margin-left: 40px; }
+  .v2-claim-run__list { margin-left: 40px; }
+}
+
+/* §3.8 system event card — replaces the regular author/avatar bubble for
+   commonly-bot announcements like "Pixel and codex started a DM". One-row,
+   chrome-light, with a primary CTA that navigates internally. */
+.v2-msg.v2-msg--system {
+  /* Override the two-column avatar grid from .v2-msg: a system card is a
+     single child and would otherwise be crammed into the 38px avatar column,
+     collapsing the headline and wrapping the timestamp. Block = full width.
+     Selector MUST be `.v2-msg.v2-msg--system` (two classes): `.v2-msg` sets
+     `display: grid` LATER in this file, so an equal-specificity `.v2-msg--system`
+     loses on source order. Higher specificity wins regardless of order. */
+  display: block;
+  padding: 6px 0;
+}
+
+.v2-syscard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--v2-surface-hover);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius);
+}
+
+.v2-syscard--action {
+  background: var(--v2-surface);
+  box-shadow: 0 0 0 2px var(--v2-accent);
+}
+
+.v2-syscard__icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--v2-radius-pill);
+  background: var(--v2-surface-hover);
+  color: var(--v2-ink);
+}
+
+.v2-syscard__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v2-syscard__headline {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-syscard__time {
+  font-size: 11.5px;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-syscard__cta,
+.v2-syscard__cta {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--v2-on-ink);
+  background: var(--v2-ink);
+  border: 1px solid var(--v2-ink);
+  border-radius: var(--v2-radius-pill);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.v2-root button.v2-syscard__cta:hover,
+.v2-syscard__cta:hover {
+  background: var(--v2-ink-hover);
+}
+
+/* Consecutive-author grouping (craft baseline rule 3): grouped rows drop
+   the 22px head + avatar and tighten padding, so a run of messages from one
+   author reads as one block. The ghost keeps the grid's avatar column so
+   text alignment never shifts. Reply and Thread become hover affordances
+   pinned to the row's top-right, since the head row is gone. */
+.v2-msg--grouped { padding: 2px 0; }
+
+.v2-msg__avatar-ghost { width: 38px; }
+
+.v2-msg__actions {
+  position: absolute;
+  top: -12px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(16, 20, 30, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+  z-index: 6;
+}
+
+.v2-msg:hover .v2-msg__actions,
+.v2-msg__actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.v2-root button.v2-msg__action {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--v2-text-secondary);
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.v2-root button.v2-msg__action:hover {
+  background: var(--v2-surface-hover);
+  color: var(--v2-text-primary);
+}
+
+.v2-msg__action-wrap { position: relative; display: inline-flex; }
+
+.v2-msg__actions .v2-msg__reaction-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  bottom: auto;
+  right: 0;
+  left: auto;
+}
+
+.v2-msg__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.v2-msg__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 22px;
+  margin-bottom: 0;
+}
+
+.v2-msg__author {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--v2-text-primary);
+}
+
+.v2-msg__author-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--v2-text-primary);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 80ms ease;
+}
+
+.v2-msg__author-btn:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-msg__author-kind {
+  display: inline-block;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--v2-surface-hover);
+  color: var(--v2-accent-text);
+  font: 700 11px/16px var(--v2-font-mono);
+  letter-spacing: 0.02em;
+}
+
+.v2-msg__avatar-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  width: fit-content;
+  height: fit-content;
+  line-height: 0;
+  transition: box-shadow 100ms ease;
+}
+
+.v2-msg__avatar-btn:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-msg__lead-badge {
+  background: transparent;
+  color: var(--v2-text-tertiary);
+  font-family: var(--v2-font-mono);
+  height: 18px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.v2-msg__time {
+  font-size: 11px;
+  color: var(--v2-text-tertiary);
+}
+
+.v2-msg__content {
+  /* D215 .mbody: 14/22 in ink-2, 3px under the head. */
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--v2-ink-2);
+  margin-top: 3px;
+  word-break: break-word;
+  /* NO measure cap — the THIRD ruling on this (2026-08-24 full-width Slack
+     model; #1367's craft-audit 75ch reverted 2026-09-01 by explicit request:
+     "I still don't like the char limit, looks really bad on desktop").
+     Typographic best practice loses to the product decision here; the
+     invariants test now bans ch-unit max-widths on message content so an
+     audit can't re-litigate this silently. */
+}
+
+.v2-msg__content > *:first-child { margin-top: 0; }
+
+.v2-msg__content > *:last-child  { margin-bottom: 0; }
+
+.v2-msg__content p {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+}
+
+.v2-msg__content a {
+  color: var(--v2-accent-text);
+  text-decoration: underline;
+}
+
+.v2-msg__mention {
+  background: color-mix(in srgb, var(--v2-accent) 10%, transparent);
+  color: var(--v2-accent-text);
+  padding: 0 4px;
+  border-radius: var(--v2-r-6);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* A message that mentions you gets no row highlight: the tint lives on the
+   @handle chip only (D224). The class stays as a hook for tests and selectors. */
+.v2-msg--mention { background: none; }
+
+.v2-msg__content ul,
+.v2-msg__content ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.v2-msg__content li {
+  margin: 2px 0;
+}
+
+/* D215 .cd: a mono chip on the tint with a soft inset ring. */
+.v2-msg__content code {
+  font: 500 12.5px/1 var(--v2-font-mono);
+  color: var(--v2-text-primary);
+  background: var(--v2-surface-tint);
+  padding: 2px 5px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+}
+
+.v2-msg__content pre {
+  margin: 6px 0;
+  padding: 10px 12px;
+  background: var(--v2-surface-tint);
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.v2-msg__content pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+.v2-msg__content blockquote {
+  margin: 6px 0;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid var(--v2-border);
+  color: var(--v2-text-secondary);
+  font-style: italic;
+}
+
+.v2-msg__content h1,
+.v2-msg__content h2,
+.v2-msg__content h3 {
+  margin: 8px 0 4px;
+  font-weight: 700;
+}
+
+.v2-msg__content h1 { font-size: 15px; }
+
+.v2-msg__content h2 { font-size: 14.5px; }
+
+.v2-msg__content h3 { font-size: 14px; }
+
+.v2-msg__content hr {
+  border: none;
+  border-top: 1px solid var(--v2-border-soft);
+  margin: 8px 0;
+}
+
+.v2-msg__content strong { font-weight: 700; }
+
+.v2-msg__content em     { font-style: italic; }
+
+.v2-msg__reactions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.v2-msg__reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  border: 1px solid transparent;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+
+.v2-msg__reaction:hover {
+  background: var(--v2-surface-hover);
+}
+
+/* Reactions row under message body — fixture-rendered (read-only).
+   Real reactions backend ships post-YC; this just renders [[reactions:...]]
+   tokens populated by the demo seed. */
+.v2-msg__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.v2-msg__reaction {
+  display: inline-flex;
+  align-items: baseline; /* see button rule below -- ink vs box */
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  color: #4b5563;
+  font-variant-emoji: emoji;
+}
+
+.v2-msg__reaction:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-msg__reaction-emoji {
+  font-size: 13px;
+  /* Chip inner height (24px - 2x1px border). With baseline alignment on the
+   * chip, this tall line box is the ONLY thing centering the glyph pair
+   * vertically -- shrink it back to 1 and the pair top-hugs the chip. */
+  line-height: 22px;
+}
+
+.v2-msg__reaction-count {
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* Transient reason-a-reaction-failed line (bad emoji / not a member / rate
+ * limited). Auto-clears after ~4s from the component. */
+.v2-msg__reaction-error {
+  font-size: 11px;
+  color: var(--v2-danger, #c0392b);
+  align-self: center;
+}
+
+/* Sprint B5 — interactive reaction chips + picker. Mine = an ink-bordered
+ * selection; not-mine = subtle gray (existing rule above). Same
+ * specificity workaround as other v2 buttons. */
+.v2-root button.v2-msg__reaction {
+  cursor: pointer;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  /* Baseline, not center: box-centering aligns the spans' LAYOUT boxes,
+   * but Apple Color Emoji ink extends below the baseline while digit ink
+   * does not, so on desktop the count visibly rides high (reported
+   * 2026-08-05, HQ screenshot; reproduced 3x-zoomed in Chromium). Digits
+   * hanging on the emoji's baseline is how "\1F44D 2" renders in plain
+   * inline text -- the reference that looks right on every platform. The
+   * emoji span's 22px line-height (chip inner height, below) is what
+   * vertically centers the shared line inside the fixed-height chip. */
+  align-items: baseline;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.v2-root button.v2-msg__reaction--mine {
+  background: var(--v2-surface);
+  border-color: var(--v2-ink);
+  color: var(--v2-ink);
+}
+
+.v2-root button.v2-msg__reaction:hover:not(:disabled) {
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-msg__reaction:disabled {
+  cursor: default;
+  opacity: 0.8;
+}
+
+/* The standalone "+" trigger, its hover wrap, and the --bare collapsed row
+ * were retired 2026-08-23: the reaction trigger lives in the
+ * .v2-msg__actions hover cluster (placement ruling), and a reactions
+ * row with no chips simply does not render — the phantom-band problem the
+ * --bare machinery solved cannot occur at all now. The picker below is
+ * shared by the cluster (which overrides its anchor to open downward). */
+.v2-msg__reaction-picker {
+  left: auto;
+  right: 0;
+}
+
+.v2-msg__reaction-picker {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--v2-surface, #fff);
+  border: 1px solid var(--v2-border, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 10;
+}
+
+.v2-root button.v2-msg__reaction-picker-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.v2-root button.v2-msg__reaction-picker-item:hover {
+  background: #f3f4f6;
+}
+
+.v2-root button.v2-msg__reaction-picker-item--mine {
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-ink);
+}
+
+@media (hover: none), (pointer: coarse) {
+  /* No hover on touch — but always-on clusters over every message are
+     chrome over content (2026-08-23). A tap on the message toggles
+     .v2-msg--reveal (V2MessageRow.onBubbleTap, gated to hoverless
+     devices); only then does the cluster appear, at the 44px floor (craft
+     baseline rule 9). Absolute positioning preserved — a static third
+     child would break the avatar|body grid. */
+  .v2-msg--reveal .v2-msg__actions,
+  .v2-msg__actions:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* Exception to the frame: the drawn 28px key keeps a 44px hit area. The
+     old 44px key size here was dead (the .v2-thread key size outranked it).
+     .v2-root on the gap: the strip's own rule sits later in this file. */
+  .v2-root .v2-thread .v2-msg__strip { gap: 16px; }
+  .v2-root .v2-thread button.v2-msg__action { position: relative; }
+  .v2-root .v2-thread button.v2-msg__action::after { content: ''; position: absolute; inset: -8px; }
+}
+
+.v2-msg__quote {
+  display: flex;
+  gap: 6px;
+  margin: 2px 0 4px;
+  padding: 4px 10px;
+  border-left: 3px solid var(--v2-border);
+  font-size: 12.5px;
+  color: var(--v2-text-secondary);
+  overflow: hidden;
+}
+
+.v2-msg__quote-author { font-weight: 600; flex-shrink: 0; }
+
+.v2-msg__quote-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The card sits IN the message content column, not flush with the row edge:
+   38px avatar column + 12px gap, in lockstep with the .v2-msg grid. Without
+   this inset the card starts 50px left of every bubble's text and reads as
+   misaligned (measured 372 vs 422, 2026-08-13). */
+.v2-msg.v2-msg--card {
+  padding-left: 50px;
+}
+
+@media (max-width: 760px) {
+  .v2-msg.v2-msg--card:has(.v2-gig) { padding-left: 0; }
+}
+
+@media (max-width: 640px) {
+  /* Touch has no hover: the action cluster appears on TAP-REVEAL
+     (.v2-msg--reveal, set by the bubble's tap handler) with 44px targets —
+     never by default; always-on clusters over every message are chrome
+     over content. The old inline head buttons this block used to force
+     visible were retired 2026-08-23. */
+  .v2-msg__head {
+    height: auto;
+    flex-wrap: wrap;
+  }
+  .v2-msg--reveal .v2-msg__actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.v2-root:lang(zh) .v2-msg__content,
+.v2-root:lang(zh) .v2-msg__content pre {
+  line-height: 1.6;
+}
+
+.v2-msg__ruled {
+  color: var(--v2-text-muted);
+  font: 500 11px/16px var(--v2-font-mono);
+}
+
+.v2-thread .v2-msg {
+  /* D215 (TASK-734): 36px faces at radius 9, 12px to the text. */
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+}
+
+.v2-thread .v2-msg--grouped { padding: 2px 0; }
+
+.v2-thread .v2-msg__avatar-ghost { width: 36px; }
+
+.v2-thread .v2-msg__head { height: 20px; gap: 8px; }
+
+.v2-thread .v2-msg__author,
+.v2-thread .v2-msg__author-btn { font-size: 14px; font-weight: 600; }
+
+/* The runtime and the time read as one mono line: "claude · 1:16 AM". */
+.v2-thread .v2-msg__time { font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+
+.v2-thread .v2-msg__avatar-btn { border-radius: var(--v2-r-9, 9px); }
+
+.v2-message-row--decision { padding: 8px 0; }
+
+@media (max-width: 760px) {
+  /* D215 390: 30px faces, 10px to the text; name, meta and body keep the
+     desktop 14 / 11.5 / 14-on-22 (the 15px phone type predates the frame). */
+  .v2-thread .v2-msg { grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
+  .v2-thread .v2-msg__avatar-ghost { width: 30px; }
+  .v2-thread .v2-msg__avatar-btn .v2-avatar { width: 30px; height: 30px; }
+  /* not drawn in the frame yet: kept as it was */
+  .v2-thread .v2-msg__ruled { font-size: 12px; }
+}
+
+/* Attachments */
+.v2-msg__thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.v2-root button.v2-msg__thumb {
+  display: block;
+  width: 156px;
+  height: 104px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  background: var(--v2-surface-tint);
+  position: relative;
+}
+
+.v2-root button.v2-msg__thumb:hover { border-color: var(--v2-border-strong); }
+
+.v2-msg__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.v2-msg__thumb-name {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: 500 11px/14px var(--v2-font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-msg__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.v2-root button.v2-msg__chip,
+.v2-msg__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 400 12.5px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root button.v2-msg__chip:hover { background: var(--v2-surface-hover); }
+
+.v2-msg__chip-ext {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--v2-surface-tint);
+  color: var(--v2-text-secondary);
+  font: 500 11px/14px var(--v2-font-mono);
+  text-transform: uppercase;
+}
+
+.v2-msg__chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-msg__chip-size {
+  flex: 0 0 auto;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+/* Long code collapses after six lines; expands in place. */
+.v2-msg__collapse { position: relative; }
+
+.v2-msg__collapse--closed pre { max-height: calc(6 * 1.5 * 12.5px + 20px); overflow: hidden; }
+
+/* Long agent prose folds after six lines (6 × 22px). The fade masks the prose itself, so a hovered row keeps its own surface. */
+.v2-msg__prose { position: relative; }
+
+.v2-msg__prose--closed {
+  max-height: 132px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
+}
+
+.v2-root button.v2-msg__showmore {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin: 6px 0 0;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--v2-border);
+  font: 500 12px/1 var(--v2-font);
+  cursor: pointer;
+}
+
+.v2-root button.v2-msg__showmore:hover { background: var(--v2-surface-hover); }
+
+.v2-root button.v2-msg__showmore:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--v2-accent-text); }
+
+.v2-msg__showmore svg { width: 14px; height: 14px; flex: none; transition: transform 160ms; }
+
+.v2-msg__showmore[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+.v2-root button.v2-msg__more {
+  display: inline-block;
+  margin: 2px 0 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 12.5px/18px var(--v2-font);
+}
+
+.v2-root button.v2-msg__more:hover { text-decoration: underline; }
+
+@media (max-width: 760px) {
+  .v2-root button.v2-msg__thumb { width: calc(50% - 3px); height: 84px; }
+}
+
+/* Hover band and the expanded band share the panel colour, not the tint. */
+.v2-thread .v2-msg:hover,
+.v2-thread .v2-msg:focus-within { background: var(--v2-bg-subtle); }
+
+.v2-thread .v2-msg { border-radius: 4px; }
+
+.v2-thread .v2-msg--landed { background: var(--v2-accent-soft, #e8ecfb); transition: background 0.6s ease; }
+
+/* Runtime label before the time on agent rows. D215 (TASK-734): plain mono,
+   no box, joined to the time by a middle dot. */
+.v2-msg__tag {
+  display: inline-block;
+  color: var(--v2-text-muted);
+  font: 500 11.5px/16px var(--v2-font-mono);
+  vertical-align: baseline;
+}
+
+.v2-msg__tag + .v2-msg__time { margin-left: -4px; }
+
+.v2-msg__tag + .v2-msg__time::before { content: '· '; }
+
+/* Grouped rows: the time shows in the gutter on hover. */
+.v2-msg__gutter-time {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 36px;
+  color: var(--v2-text-placeholder);
+  font: 400 11px/16px var(--v2-font-mono);
+  text-align: center;
+  visibility: hidden;
+}
+
+.v2-thread .v2-msg--grouped:hover .v2-msg__gutter-time { visibility: visible; }
+
+/* Quote: 2px rule, two lines, jumps to the source. */
+.v2-thread .v2-msg__quote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 2px 0 6px;
+  padding: 0 0 0 10px;
+  border-left: 2px solid var(--v2-border);
+  color: var(--v2-text-secondary);
+  font: 400 13px/17px var(--v2-font);
+  cursor: pointer;
+  max-width: 560px;
+}
+
+.v2-thread .v2-msg__quote:hover { border-left-color: var(--v2-border-strong); }
+
+.v2-thread .v2-msg__quote:focus-visible { outline: none; box-shadow: inset 2px 0 0 var(--v2-accent); }
+
+.v2-thread .v2-msg__quote-author { color: var(--v2-text-primary); font-weight: 600; }
+
+.v2-thread .v2-msg__quote-text {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Reactions: 20px chips, mine in the accent wash. */
+.v2-thread .v2-msg__reactions { gap: 6px; margin-top: 6px; }
+
+.v2-root .v2-thread button.v2-msg__reaction,
+.v2-thread .v2-msg__reaction {
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  font: 500 11px/18px var(--v2-font-mono);
+}
+
+.v2-thread .v2-msg__reaction-emoji { font-size: 12px; line-height: 18px; }
+
+.v2-thread .v2-msg__reaction-count { font: 500 11px/18px var(--v2-font-mono); }
+
+.v2-root .v2-thread button.v2-msg__reaction--mine {
+  border-color: #d4dbf7;
+  background: var(--v2-accent-soft, #e8ecfb);
+  color: var(--v2-accent-text);
+}
+
+.v2-root .v2-thread button.v2-msg__reaction--more { color: var(--v2-accent-text); }
+
+/* D215 .acts: a pop card at the row's top right, 2px in, r9, four 28px
+   ghost keys (Add reaction, Reply, Thread, More) with 17px glyphs. */
+.v2-thread .v2-msg__strip {
+  top: 2px;
+  right: 0;
+  gap: 2px;
+  padding: 2px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pop);
+}
+
+.v2-root .v2-thread button.v2-msg__action { width: 28px; height: 28px; border-radius: 8px; color: var(--v2-text-secondary); }
+
+.v2-root .v2-thread button.v2-msg__action:hover { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+
+.v2-thread .v2-msg__action svg { width: 17px; height: 17px; }
+
+.v2-msg__more-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 7;
+  display: flex;
+  min-width: 140px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--v2-border);
+  border-radius: 6px;
+  background: var(--v2-surface);
+}
+
+.v2-root .v2-msg__more-menu > button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root .v2-msg__more-menu > button:hover { background: var(--v2-surface-hover); }
+
+/* The reveal is gated on capability in the row — `matchMedia('(hover: none)')`,
+   with no width term and no `(pointer: coarse)` — so its placement matches that
+   query EXACTLY (sprint-review 64468 + 64485). A comma'd `(pointer: coarse)`
+   would style stylus/hybrid machines where `isHoverless()` is false and the
+   reveal never fires: a dead rule. This block sits AFTER the `.v2-thread
+   .v2-msg__strip` rules it overrides (11229) for the same reason the double
+   pod-header meta needed source order, not specificity. */
+@media (hover: none) {
+  /* Long-press reveals the strip inline under the body. */
+  .v2-thread .v2-msg { -webkit-touch-callout: none; }
+  /* The row is a 28px | 1fr grid and the strip precedes the body in DOM: left
+     to auto-place, a static strip takes the body's cell and the body drops
+     into the avatar column (one word per line — 390 walk). Pin it. */
+  .v2-thread .v2-msg--reveal { background: var(--v2-bg-subtle); row-gap: 6px; }
+  .v2-thread .v2-msg--reveal .v2-msg__strip {
+    position: static;
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+    display: inline-flex;
+    margin: 0;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Sizing is a width question, not a capability one. Exception to the
+     frame: the keys stay at the drawn 28px and each carries a 44px hit area
+     (8px each side); the 16px gap lets neighbouring hit areas meet without
+     overlapping. */
+  .v2-thread .v2-msg__strip { gap: 16px; }
+  .v2-root .v2-thread button.v2-msg__action { position: relative; width: 28px; height: 28px; }
+  .v2-root .v2-thread button.v2-msg__action::after { content: ''; position: absolute; inset: -8px; }
+  .v2-thread .v2-msg__gutter-time { display: none; }
+}

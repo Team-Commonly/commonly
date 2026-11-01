@@ -6,6 +6,7 @@ import { createHash } from 'crypto';
 import { Types } from 'mongoose';
 import Integration from '../models/Integration';
 import { isHostedMcpEntryHidden } from '../integrations/hostedMcp/visibility';
+import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 import ToolCall from '../models/ToolCall';
@@ -26,7 +27,21 @@ import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
 import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../services/seatEnvironmentProjection';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from '../services/outsiderGrantPodEligibility';
-import { agentActor, requestActor } from '../services/recordService';
+import { recordGrantIssued } from '../services/brokerRecordService';
+import { agentActor, humanActor, requestActor } from '../services/recordService';
+
+const plainGrant = (grant: unknown) => {
+  const doc = grant as { toObject?: () => Record<string, unknown> };
+  return (typeof doc?.toObject === 'function' ? doc.toObject() : grant) as Parameters<typeof recordGrantIssued>[0];
+};
+
+// Unbound issuance only. A task-bound grant's line is written by mintGrant on
+// its task chain (roomGrantService), so writing it here too would duplicate it.
+const recordUnboundIssuance = (grant: unknown, issuer: Parameters<typeof recordGrantIssued>[1]) => {
+  const plain = plainGrant(grant);
+  if ((plain as { binding?: unknown }).binding) return;
+  recordGrantIssued(plain, issuer);
+};
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -87,6 +102,26 @@ interface AuthenticatedRequest extends express.Request {
 type GrantRow = Pick<IRoomGrant, 'binding' | 'revocationReason' | 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
   | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt'> & { audience?: string[]; connectionId?: string };
 
+/**
+ * The connector a grant belongs to, read from its tool names (TASK-753). The
+ * page matches a grant to a catalogue row by those same names, so a grant
+ * whose entry is hidden, or whose connection is gone, matched no row and
+ * rendered as "Unknown connector" with no way to tell what it was. Every name
+ * carries its entry's namespace (`hostedMcpToolName`), so the namespace still
+ * names the connector. This adds nothing the row did not already say: the tool
+ * names it carries spell the same namespace. A grant naming two namespaces, or
+ * one no entry claims, is not guessed at.
+ */
+const GITHUB_CONNECTOR = { id: 'github', label: 'GitHub' };
+const grantConnector = (tools: string[] | undefined): { id: string; label: string } | null => {
+  const namespaces = new Set((tools || []).map((name) => (name.includes('.') ? name.slice(0, name.indexOf('.')) : '')));
+  if (namespaces.size !== 1) return null;
+  const [id] = [...namespaces];
+  if (id === GITHUB_CONNECTOR.id) return GITHUB_CONNECTOR;
+  const entry = id ? findHostedMcpEntry(HOSTED_MCP_ENTRIES, id) : undefined;
+  return entry ? { id: entry.id, label: entry.title } : null;
+};
+
 const projectGrant = (
   grant: GrantRow,
   currentMembers: string[],
@@ -97,6 +132,7 @@ const projectGrant = (
   installationId: grant.installationId,
   target: { kind: grant.target.kind, id: grant.target.id },
   tools: [...(grant.tools || [])],
+  connector: grantConnector(grant.tools),
   writeMode: grant.writeMode,
   budget: grant.budget ? { calls: grant.budget.calls, windowMs: grant.budget.windowMs } : null,
   effectiveAudience: effectiveAudience(grant, currentMembers),
@@ -430,6 +466,8 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       issuer: requestActor(req as Parameters<typeof requestActor>[0]),
     };
     const grant = await createGrant(grantInput);
+    // The connection owner minted it (checked above); the record names them.
+    recordUnboundIssuance(grant, humanActor(userId));
     return res.status(201).json(grant);
   } catch (error) {
     return handleError(res, error);
@@ -478,6 +516,8 @@ router.post(
       expiresAt: body.expiresAt as string | undefined,
       issuer: agentActor(req.agentUser as Parameters<typeof agentActor>[0]),
     });
+    // An agent attenuated its own grant: the agent is the issuer.
+    recordUnboundIssuance(child, agentActor(req.agentUser as Parameters<typeof agentActor>[0]));
     return res.status(201).json(child);
   } catch (error) {
     return handleError(res, error);

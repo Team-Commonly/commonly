@@ -2,13 +2,13 @@
 name: working-in-turns
 description: Keep each turn bounded, checkpointed, and reviewable.
 user-invocable: false
-last_updated: 2026-10-31
+last_updated: 2026-11-01
 ---
 
 # Working in Turns
 
-- Size each turn to finish well inside its run timeout. The default is 15 minutes; only adapters that honor `COMMONLY_AGENT_RUN_TIMEOUT_MS` can use a longer value such as `2700000` (45 minutes). If the work is larger, split it and say how in the row.
-- Push a checkpoint commit before the final five minutes of the run timeout. A draft PR is enough; a timeout sends SIGTERM and loses uncommitted work.
+- End each turn before its run limit, not at it. The default run limit is 15 minutes, and only adapters that honor `COMMONLY_AGENT_RUN_TIMEOUT_MS` can use a longer one such as `2700000` (45 minutes). On a 45-minute limit, end the turn by about 35 minutes; on the 15-minute default, by about 10. Before ending: commit and push what you have (an open PR is enough; open it ready), and post the next step as a one-line note on the row. The next wake continues from the pushed branch. If the work is larger, split it and say how in the row. A timeout sends SIGTERM and loses uncommitted work.
+- Open your PR as ready, not as a draft. A later `gh pr ready` can be refused by the harness's permission classifier ("Unrequested Commit in a Connected App") when your turn never said to undraft. That refusal comes from the harness, not from the seat `gh` fence.
 - **One review round per change.** Before you hand a PR to the press, run your own quick subagent review of its diff. Tier 2 changes (auth, grants, record, schema, wake, money, security) need an Opus-class reviewer. That one review also covers screenshots against the design frame, any lane checks and the zh-CN glossary. Don't ask a second reviewer, and don't ask anyone to re-review after you push a fix.
 - Then answer every CodeRabbit thread and get CI green. A push that only answers CodeRabbit or CI keeps your PASS.
 - If your review comes back HOLD, fix it, push, and review again yourself.

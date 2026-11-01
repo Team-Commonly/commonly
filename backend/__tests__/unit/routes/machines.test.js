@@ -7,6 +7,8 @@ const mockGetMachineForDaemon = jest.fn();
 const mockRecordMachineHeartbeat = jest.fn();
 const mockRemoveMachine = jest.fn();
 const mockFindMachine = jest.fn();
+const mockMarkByoDaemonRegistered = jest.fn();
+const mockRecordByoEvent = jest.fn();
 
 jest.mock('../../../middleware/auth', () => (req, _res, next) => {
   req.user = { id: '0123456789abcdef01234567' };
@@ -28,6 +30,13 @@ jest.mock('../../../models/Machine', () => ({
 }));
 jest.mock('../../../models/User', () => ({
   findById: jest.fn(() => ({ select: () => ({ lean: jest.fn().mockResolvedValue({ role: 'user' }) }) })),
+}));
+jest.mock('../../../services/onboardingMarks', () => ({
+  markByoDaemonRegistered: (...args) => mockMarkByoDaemonRegistered(...args),
+}));
+jest.mock('../../../services/byoTelemetry', () => ({
+  ...jest.requireActual('../../../services/byoTelemetry'),
+  recordByoEvent: (...args) => mockRecordByoEvent(...args),
 }));
 jest.mock('../../../services/machineService', () => ({
   registerMachine: (...args) => mockRegisterMachine(...args),
@@ -63,6 +72,54 @@ describe('machine lifecycle routes', () => {
     expect(res.status).toBe(201);
     expect(res.body).toEqual(expect.objectContaining({ daemonToken: 'cm_daemon_once' }));
     expect(mockRegisterMachine).toHaveBeenCalledWith(expect.objectContaining({ name: 'Sam’s Mac' }));
+  });
+
+  it('marks and records the daemon registration once per person (TASK-661)', async () => {
+    mockRegisterMachine.mockResolvedValue({
+      machine: {
+        id: 'm1', name: 'Sam’s Mac', machineId: 'daemon-machine', status: 'online',
+      },
+      token: 'cm_daemon_once',
+    });
+
+    const res = await request(app).post('/api/machines').send({ name: 'Sam’s Mac' });
+
+    expect(res.status).toBe(201);
+    expect(mockMarkByoDaemonRegistered).toHaveBeenCalledWith('0123456789abcdef01234567');
+    expect(mockRecordByoEvent).toHaveBeenCalledWith(
+      '0123456789abcdef01234567',
+      'daemon-registered',
+      {},
+      'daemon-registered:0123456789abcdef01234567',
+    );
+  });
+
+  it('keys the registration row by person, so a second machine uses the same key', async () => {
+    mockRegisterMachine.mockResolvedValue({
+      machine: {
+        id: 'm2', name: 'Work Mac', machineId: 'daemon-machine-2', status: 'online',
+      },
+      token: 'cm_daemon_two',
+    });
+
+    await request(app).post('/api/machines').send({ name: 'Work Mac' });
+    await request(app).post('/api/machines').send({ name: 'Work Mac' });
+
+    const keys = mockRecordByoEvent.mock.calls.map(([, , , key]) => key);
+    expect(keys).toEqual([
+      'daemon-registered:0123456789abcdef01234567',
+      'daemon-registered:0123456789abcdef01234567',
+    ]);
+  });
+
+  it('records nothing when registration fails', async () => {
+    mockRegisterMachine.mockRejectedValue(new Error('Machine limit reached'));
+
+    const res = await request(app).post('/api/machines').send({ name: 'Sam’s Mac' });
+
+    expect(res.status).toBe(400);
+    expect(mockMarkByoDaemonRegistered).not.toHaveBeenCalled();
+    expect(mockRecordByoEvent).not.toHaveBeenCalled();
   });
 
   it('lists only the caller’s machine views', async () => {

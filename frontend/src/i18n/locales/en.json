@@ -54,6 +54,44 @@
     "limitedCalls": "This stored trace was size-limited. {{calls}} tool calls are omitted. Large content fields are also capped.",
     "limitedContent": "This stored trace was size-limited. Large content fields are capped."
   },
+  "taskRecord": {
+    "title": "Task record",
+    "back": "Back to board",
+    "intro": "What happened on this task, in order. Each entry carries the hash of the one before it, so a changed entry breaks the chain.",
+    "loading": "Loading record…",
+    "access": "This record isn't available. The pod may not keep records, or you no longer have access to it.",
+    "members": "Only members of this pod can read its record.",
+    "store": "The record store is unavailable right now. Try again shortly.",
+    "error": "Could not load the record. Try again.",
+    "unreadable": "This record could not be read.",
+    "retry": "Try again",
+    "counts_one": "{{count}} entry",
+    "counts_other": "{{count}} entries",
+    "run": "Run {{id}}",
+    "empty": "Nothing has been recorded for this task yet.",
+    "entry": "Entry {{number}}",
+    "downloadJsonl": "Download JSONL",
+    "downloadOtlp": "Download OTLP",
+    "downloadError": "Could not download the record. Try again.",
+    "actor": {
+      "unknown": "Unknown actor",
+      "board": "Board",
+      "system": "System: {{id}}",
+      "policy": "Policy: {{id}}",
+      "agent": "{{name}} (agent)"
+    },
+    "kinds": {
+      "task_claimed": "Claimed",
+      "task_released": "Released",
+      "task_done": "Done",
+      "grant_issued": "Grant issued",
+      "grant_revoked": "Grant revoked",
+      "permission_requested": "Approval requested",
+      "permission_decided": "Approval decided",
+      "tool_call": "Tool call",
+      "tool_update": "Tool update"
+    }
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -83,7 +121,7 @@
       "text": "Checking your access…"
     },
     "theme": {
-      "label": "Appearance",
+      "label": "Theme",
       "auto": "Auto",
       "light": "Light",
       "dark": "Dark"
@@ -561,6 +599,11 @@
     "systemActions": {
       "taskClaimedVerb": "claimed"
     },
+    "claimRun": {
+      "label": "{{count}} claims · {{first}} to {{last}}",
+      "count": "{{count}} claims",
+      "range": "{{first}} to {{last}}"
+    },
     "starts": {
       "label": "Ways to start",
       "openByo": "Open Bring your own",
@@ -723,6 +766,7 @@
       "startThread": "Thread",
       "replyInThread": "Reply in thread",
       "replyFromExpandedThread": "Reply from expanded thread",
+      "groupLabel": "Thread, {{count}} {{unit}}",
       "replyingInThread": "Replying in thread ·",
       "last": "last",
       "collapse": "Collapse",
@@ -1364,7 +1408,12 @@
       "allFiles": "All {{count}} files",
       "agents": "Agents",
       "files": "Files",
-      "joinOpen": "Open"
+      "joinOpen": "Open",
+      "viewLabel": "Panel view",
+      "viewPod": "Pod",
+      "viewThreads": "Threads",
+      "hidePanel": "Hide panel",
+      "noThreads": "No threads in the loaded messages."
     },
     "goal": {
       "title": "Goal",
@@ -1467,6 +1516,10 @@
     "title": "Board",
     "backToChat": "Back to chat",
     "newTask": "New task",
+    "addTo": "Add to {{column}}",
+    "card": {
+      "needs": "Needs {{dep}}"
+    },
     "taskCount_one": "{{count}} task",
     "taskCount_other": "{{count}} tasks",
     "focus": {
@@ -1500,7 +1553,8 @@
       "reviewLatest": "Review latest",
       "latestReviewed": "Latest reviewed",
       "discard": "Discard your unsaved focus changes?",
-      "saveError": "Focus could not be saved. Try again."
+      "saveError": "Focus could not be saved. Try again.",
+      "progress": "{{done}}/{{total}} done"
     },
     "loadErrorTitle": "Couldn't load the board",
     "loadErrorText": "Check your connection and try again.",
@@ -1527,6 +1581,7 @@
     "detail": {
       "updates": "Updates",
       "pr": "View PR",
+      "record": "View record",
       "priority": "Priority",
       "assignedTo": "Assigned to",
       "claimedBy": "Claimed by",
@@ -1544,7 +1599,9 @@
       "saveError": "Could not save this change. Try again.",
       "statusLabel": "Status",
       "showEarlierUpdates": "Show {{count}} earlier updates",
-      "hideEarlierUpdates": "Hide earlier updates"
+      "hideEarlierUpdates": "Hide earlier updates",
+      "depends": "Depends on",
+      "noDeps": "None"
     },
     "form": {
       "title": "Title",
@@ -1557,10 +1614,23 @@
       "defaultPriority": "default"
     },
     "owner": {
-      "left": "{{holder}} · <minutes>{{minutes}}m left</minutes>",
-      "assigned": "{{assignee}} · not claimed",
-      "expired": "lease expired · {{holder}}",
-      "claimed": "{{holder}} · claimed"
+      "leaseShort": "{{minutes}}m",
+      "expiredShort": "expired",
+      "claimedShort": "claimed"
+    },
+    "filter": {
+      "label": "Filters",
+      "mine": "Mine",
+      "p0": "P0",
+      "unclaimed": "Unclaimed"
+    },
+    "search": {
+      "label": "Search tasks",
+      "placeholder": "Search tasks"
+    },
+    "doneRail": {
+      "show": "Show",
+      "hide": "Hide"
     }
   },
   "approvalCard": {
@@ -1955,6 +2025,7 @@
       "viewTag": "{{role}} view · private",
       "indexSummary_one": "{{notes}} notes across {{count}} section{{updated}}. Visible to you; hidden from the public profile.",
       "indexSummary_other": "{{notes}} notes across {{count}} sections{{updated}}. Visible to you; hidden from the public profile.",
+      "sectionUpdated": "Section updated {{when}}",
       "lastSavedClause": " · last saved to {{section}} {{time}}",
       "more": "+{{count}} more",
       "entriesRemembered": "entries remembered",
@@ -2272,12 +2343,16 @@
     }
   },
   "connectors": {
-    "about": "About connectors",
-    "counts": {
-      "connected_one": "{{count}} connected",
-      "connected_other": "{{count}} connected",
-      "needsYou_one": "{{count}} needs you",
-      "needsYou_other": "{{count}} need you"
+    "search": "Search",
+    "filterLabel": "Show",
+    "channelsGroup": "Channels",
+    "addChannelTile": "Channel",
+    "meta": "{{on}} on · {{available}} available",
+    "offCount": "+{{n}} off",
+    "filter": {
+      "all": "All",
+      "channels": "Channels",
+      "tools": "Tools"
     },
     "inactiveFold": "inactive · {{n}}",
     "loading": "Loading connectors…",
@@ -2327,6 +2402,7 @@
     "availableTelegram": "one message",
     "cancel": "Cancel",
     "channelDetails": "Channel details",
+    "closeDetails": "Close",
     "channelSees": "What the channel sees",
     "channels": "Your channels",
     "codeError": "Could not create a new code.",
@@ -2335,7 +2411,6 @@
     "connectChannel": "Connect a channel",
     "copied": "Copied",
     "copyCommand": "Copy command",
-    "description": "Connect a channel to a pod. Messages arrive there as you; choose what reaches the channel.",
     "errorLine": "The connection dropped.",
     "errorReconnect": "reconnect to resume",
     "gateLead": "Lead agent for {{pod}}",
@@ -2480,6 +2555,9 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "granted": "Granted",
+    "beta": "beta",
+    "adminOnce": "An admin installs this once",
     "emptyAudienceNotice": "Select at least one agent to grant access.",
     "makePodInviteOnly": "Make this pod invite-only",
     "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",
@@ -2528,7 +2606,6 @@
     "grantDetails": "Grant details",
     "grantError": "Could not grant it.",
     "grantedByOn": "Granted by {{member}} {{rel}}.",
-    "grantedCount": "{{count}} granted",
     "grantedOn": "Granted {{rel}}.",
     "grantedToPod": "granted to <b>{{pod}}</b>",
     "grantedToPodBy": "granted to <b>{{pod}}</b> by <b>{{member}}</b>",
@@ -2537,21 +2614,26 @@
     "installationId": "installation ID",
     "installingGitHubApp": "Installing…",
     "keep": "Keep it",
-    "loading": "Loading tools…",
     "manage": "Manage",
     "mayUse": "{{agents}} may use it",
     "mode": "what it may do",
     "modeRead": "read",
     "modeWrite": "read and write",
     "modeWriteConfirm": "read and write, ask first",
-    "moreCount": "{{count}} more",
     "existingConnection": "existing connection",
     "noLongerOffered": "This connector is no longer offered here.",
     "removeConnection": "Remove connection",
     "confirmRemoveConnection": "Yes, remove",
     "removeConnectionError": "Could not remove the connection.",
+    "disconnect": "Disconnect",
+    "disconnectLabel": "Disconnect {{label}}",
+    "confirmDisconnect": "Yes, disconnect",
+    "disconnectError": "Could not disconnect {{label}}.",
+    "disconnectPartial": "Disconnected {{label}} here, but {{label}} did not confirm. Remove Commonly in its connected apps.",
+    "disconnected": "Disconnected {{label}}.",
     "reviewProviderAccess": "Review access at {{label}}",
     "removedReviewProvider": "Connection removed. Review its access at {{label}}.",
+    "removedStillListed": "Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.",
     "openProviderSettings": "Open provider settings",
     "noConnection": "install the GitHub App first · an admin does this once",
     "noSeats": "no agent in this pod yet",
@@ -2567,6 +2649,26 @@
     "outcomeOk": "ok",
     "outcomeRefused": "refused",
     "outcomeSuperseded": "answered",
+    "reasonNotInAudience": "this seat is outside the grant audience",
+    "reasonToolNotAllowed": "this tool is not on the allow-list",
+    "reasonWriteNotAllowed": "writes are not granted",
+    "reasonGrantRevoked": "the grant was revoked",
+    "reasonGrantExpired": "the grant expired",
+    "reasonBudgetExhausted": "the call budget is spent",
+    "reasonApprovalUnavailable": "no one could be asked to approve it",
+    "reasonApprovalDeclined": "approval was declined",
+    "reasonApprovalExpired": "approval expired before the call ran",
+    "reasonInvalidArgs": "the arguments did not validate",
+    "reasonConnectionMismatch": "the connection no longer matches the grant",
+    "reasonReconnect": "the connection needs reconnecting",
+    "reasonCredentialMissing": "no credential is stored",
+    "reasonCredentialRejected": "the provider rejected the credential",
+    "reasonRefreshUnreachable": "the credential could not be refreshed",
+    "reasonProviderError": "the provider returned an error",
+    "reasonProviderUnreachable": "the provider could not be reached",
+    "reasonUpstreamToolError": "the provider tool returned an error",
+    "reasonBrokerUnavailable": "the broker was unavailable",
+    "reasonBrokerError": "the broker failed",
     "owner": "owner",
     "readInTesting": "read in testing",
     "readOrWrite": "read, or read and write",
@@ -2578,7 +2680,6 @@
     "revokeOld": "Revoke the old grant",
     "revokedByLine": "revoked by {{member}} {{rel}}",
     "revokedLine": "revoked {{rel}}",
-    "search": "Search tools",
     "segAll": "All",
     "segGranted": "Granted",
     "segNotYet": "Not yet",
@@ -2766,6 +2867,7 @@
     "tabs": "Agent tabs",
     "profile": "Profile",
     "settings": "Settings",
+    "memory": "Memory",
     "key": "Key",
     "regenerate": "Regenerate key",
     "wrapperReconnect": "Replace this computer's key from Control.",

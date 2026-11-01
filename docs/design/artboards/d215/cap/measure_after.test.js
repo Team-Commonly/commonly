@@ -20,13 +20,16 @@ test('--only with an unknown surface throws', () => {
   assert.throws(() => parseArgs(argv('prod', '--only', 'unknown')), /unknown surface: unknown/);
   assert.throws(() => parseArgs(argv('prod', '--only', 'chat,nope')), /unknown surface: nope/);
   assert.throws(() => parseArgs(argv('prod', '--only', ',')), /names no surface/);
+  // Drawn, but prod can't reach it without issuing a key: refused rather than a silent zero-check pass.
+  assert.throws(() => parseArgs(argv('prod', '--only', 'byo-handoff')), /unknown surface: byo-handoff/);
+  assert.deepStrictEqual(parseArgs(argv('prod', '--only', 'byo')), { mode: 'prod', only: ['byo'] });
   assert.throws(() => parseArgs(argv('prod', '--only')), /accepts only/);
   assert.deepStrictEqual(parseArgs(argv('prod', '--only', 'chat,board')), { mode: 'prod', only: ['chat', 'board'] });
 });
 
 test('the committed targets.json passes its own validation', () => {
   const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
-  assert.strictEqual(Object.keys(t).length, 14);
+  assert.strictEqual(Object.keys(t).length, 30);
   validateTargets(t);
 });
 
@@ -36,7 +39,7 @@ test('an empty or partial measurement is refused', () => {
   const partial = { ...t }; delete partial['board-390'];
   assert.throws(() => validateTargets(partial), /missing board-390/);
   assert.throws(() => validateTargets({ ...t, 'chat-1440': { helperWords: NaN, innerRatio: 2 } }), /invalid chat-1440/);
-  assert.strictEqual(EXPECTED.length, 14);
+  assert.strictEqual(EXPECTED.length, 30);
 });
 
 // A page whose SPA shell answers 200 and then redirects to `landsOn`. Its metrics would score

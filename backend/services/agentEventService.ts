@@ -2284,6 +2284,22 @@ class AgentEventService {
     return result.modifiedCount === 1;
   }
 
+  // True when the event is this agent's own and is mid-flight or already
+  // checkpointed. A turn that checkpoints (`commonly_checkpoint_event` acks
+  // mid-turn, which clears the nonce) keeps renewing, and `renewDelivery` then
+  // returns false because the row is `acked`. The listener check-in on
+  // /events/renew uses this to tell that runner from a request with made-up ids.
+  static async holdsEvent(eventId: string, agentName: string, instanceId: string): Promise<boolean> {
+    if (!eventId) return false;
+    const found = await AgentEvent.exists({
+      _id: eventId,
+      agentName: String(agentName).toLowerCase(),
+      instanceId: String(instanceId || 'default'),
+      status: { $in: ['delivered', 'acked'] },
+    });
+    return Boolean(found);
+  }
+
   // ADR-012 §3: acknowledge is status-gated. Lifecycle:
   //   pending → delivered (on `list()` claim)
   //   delivered → acked (here)

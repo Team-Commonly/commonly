@@ -1,10 +1,9 @@
 import React, { lazy, Suspense, useEffect, useState } from 'react';
 import type { V2Message } from '../hooks/useV2PodDetail';
-import { parseCard } from './uiCardSource';
+import { cardRevision, parseCard } from './uiCardSource';
 import { CardContext, TraceLink } from './cardViews';
 import './uiCard.css';
 import CardRenderBoundary from './CardRenderBoundary';
-import revision from './uiCardCatalogueRevision.json';
 
 const Runtime = lazy(() => {
   // OpenUI's development entry auto-mounts an inspector by default. Commonly
@@ -17,15 +16,15 @@ function CardBody({ message }: { message: V2Message }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer); }, []);
   const payload = message.payload;
-  const supported = payload?.catalogId === revision.catalogId && payload?.catalogRev === revision.catalogRev
-    && payload?.catalogHash === revision.catalogHash;
-  const valid = supported && payload?.v === 1 && payload?.lang === 'openui@1' && !!parseCard(payload?.source);
+  const rev = cardRevision(payload);
+  const supported = !!rev;
+  const valid = !!rev && payload?.v === 1 && payload?.lang === 'openui@1' && !!parseCard(payload?.source, rev);
   const expired = now >= new Date(message.created_at || message.createdAt || '').getTime() + 30 * 86400_000;
   const fallback = <><div className="ui-tx">{message.content}</div><p className="ui-meta">{supported ? 'This card couldn’t be displayed.' : 'Unsupported card version.'}</p></>;
   if (expired) return <section className="ui gone"><div className="ui-bd"><p className="ui-tx">{message.content}</p><p className="ui-meta">Card expires after 30 days. Trace persists.</p><TraceLink /></div></section>;
   if (!valid || failed) return <div className="ui-fallback">{fallback}</div>;
   return <CardRenderBoundary fallback={fallback}><Suspense fallback={<div className="ui-tx">{message.content}</div>}>
-    <Runtime source={payload!.source!} onError={() => setFailed(true)} />
+    <Runtime source={payload!.source!} rev={rev!} onError={() => setFailed(true)} />
   </Suspense></CardRenderBoundary>;
 }
 export default function V2UICard({ message, authorLabel, time }: { message: V2Message; authorLabel: string; time?: string }) {

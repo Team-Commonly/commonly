@@ -1,0 +1,799 @@
+# v2.css map: Chat (main pane and pod inspector)
+
+Generated 2026-11-01 from v2.css at main `323595193`, with live DOM read on prod `9460865ab`. Method and caveats: [README](README.md).
+
+- **Goes with the lift:** 579 selectors used only by this surface (553 in 513 whole rules, about 2578 lines; 26 sit in a rule shared with other selectors, so trim them from its list).
+- **Shared, stays:** 203 selectors this surface uses that another surface also uses.
+- 285 of the surface-only selectors were never matched on prod in the states walked; they are classed by source references alone. Check those before deleting.
+
+## Goes with the lift (surface-only)
+
+Line numbers are v2.css at `323595193`; they shift as earlier lines change, so search by selector.
+
+- L783–787 `.v2-pane--inspector` — pinned by v2-layout-invariants.test.ts
+- L1210–1221 `.v2-pod-join-settings` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1223–1228 `.v2-pod-join-settings legend` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1230–1237 `.v2-pod-join-settings label` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1241–1252 `.v2-pod-join-settings input` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1254–1257 `.v2-pod-join-settings input:checked` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1265–1269 `.v2-pod-join-settings__error` — not seen live
+- L1744–1749 `.v2-chat` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L1751–1760 `.v2-chat__header` — not seen live
+- L1762–1766 `.v2-chat__header-row` — not seen live
+- L1997–2002 `.v2-catchup` — not seen live
+- L2003–2008 `.v2-catchup__row` — not seen live
+- L2009–2018 `.v2-root button.v2-catchup__toggle` — not seen live
+- L2019 `.v2-root button.v2-catchup__toggle:hover:not(:disabled)` — not seen live
+- L2020 `.v2-root button.v2-catchup__toggle:disabled` — not seen live
+- L2021–2025 `.v2-catchup__chevron` — not seen live
+- L2026 `.v2-catchup__chevron--open` — not seen live
+- L2027 `.v2-catchup__time` — not seen live
+- L2028–2035 `.v2-catchup__snippet` — not seen live
+- L2036–2044 `.v2-root button.v2-catchup__refresh` — not seen live
+- L2045 `.v2-root button.v2-catchup__refresh:hover:not(:disabled)` — not seen live
+- L2046 `.v2-root button.v2-catchup__refresh:disabled` — not seen live
+- L2047–2055 `.v2-root button.v2-catchup__dismiss` — not seen live
+- L2056 `.v2-root button.v2-catchup__dismiss:hover` — not seen live
+- L2057–2064 `.v2-catchup__body` — not seen live
+- L2066–2078 `.v2-chat__messages` — pinned by v2-layout-invariants.test.ts
+- L2083–2085 `.v2-chat__messages[data-history-anchor="active"]` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2091–2096 `.v2-thread__transcript` — pinned by v2-layout-invariants.test.ts
+- L2098–2100 `.v2-thread__transcript > .v2-chat__messages` — pinned by v2-layout-invariants.test.ts
+- L2112–2115 `.v2-chat__messages > *` — pinned by v2-layout-invariants.test.ts
+- L2126–2130 `.v2-chat__delivery-hint` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2132–2135 `.v2-chat__delivery-hint strong` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2163–2168 `.v2-chat__delivery-hint` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L2163–2168 `.v2-chat__no-agents` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L2163–2168 `.v2-chat__starts` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L2175–2182 `.v2-chat__no-agents` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2184–2191 `.v2-chat__no-agents-kicker` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2193–2197 `.v2-chat__no-agents-body` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2199–2209 `.v2-root button.v2-chat__no-agents-action` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2211–2213 `.v2-root button.v2-chat__no-agents-action:hover` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2219–2223 `.v2-chat__starts` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2225–2238 `.v2-root button.v2-chat__start` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2240–2243 `.v2-root button.v2-chat__start:hover:not(:disabled)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2245–2248 `.v2-root button.v2-chat__start:disabled` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2252–2257 `.v2-root button.v2-chat__start.v2-chat__start--primary` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2258–2261 `.v2-root button.v2-chat__start.v2-chat__start--primary:hover:not(:disabled)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2265–2270 `.v2-chat__start-note` — not seen live
+- L2272–2274 `.v2-chat__start-note--error` — not seen live
+- L2280–2283 `.v2-root button.v2-chat__no-agents-action` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2285–2287 `.v2-root button.v2-chat__start` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2460–2467 `.v2-chat__error` — not seen live
+- L2490–2494 `.v2-msg__sender-notice` — not seen live
+- L2496–2499 `.v2-root .v2-msg__sender-notice a` — not seen live
+- L2504–2514 `.v2-chat__typing` — pinned by v2-layout-invariants.test.ts
+- L2516–2518 `.v2-chat__typing-avatars` — pinned by v2-layout-invariants.test.ts
+- L2520–2522 `.v2-chat__typing-avatars > * + *` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2524–2526 `.v2-chat__typing-label`
+- L2528–2533 `.v2-chat__typing-dots` — pinned by v2-layout-invariants.test.ts
+- L2535–2541 `.v2-chat__typing-dots > span` — pinned by v2-layout-invariants.test.ts
+- L2543 `.v2-chat__typing-dots > span:nth-child(2)` — pinned by v2-layout-invariants.test.ts
+- L2544 `.v2-chat__typing-dots > span:nth-child(3)` — pinned by v2-layout-invariants.test.ts
+- L2562–2571 `.v2-chat__agent-room-status` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2573–2579 `.v2-chat__agent-room-command` — not seen live
+- L2591–2597 `.v2-chat__agent-room-status--wait` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2599–2605 `.v2-chat__agent-room-status-dot` — not seen live
+- L2607–2612 `.v2-chat__agent-room-status--timeout` — not seen live
+- L2614–2628 `.v2-chat__starter-prompts` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2630–2638 `.v2-chat__new-pod` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2640–2646 `.v2-chat__new-pod-head` — not seen live
+- L2648–2653 `.v2-chat__new-pod-title` — not seen live
+- L2663–2671 `.v2-root button.v2-chat__new-pod-dismiss` — not seen live
+- L2673–2676 `.v2-root button.v2-chat__new-pod-dismiss:hover` — not seen live
+- L2678–2682 `.v2-chat__new-pod-actions` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2684–2698 `.v2-root button.v2-chat__new-pod-action` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L2684–2698 `.v2-chat__new-pod-action` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts; rule lists 2 selectors
+- L2700–2702 `.v2-root button.v2-chat__new-pod-action` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2704–2706 `.v2-root button.v2-chat__new-pod-action:hover` — not seen live
+- L2708–2712 `.v2-root button.v2-chat__new-pod-action--hosted` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2714–2716 `.v2-root button.v2-chat__new-pod-action--hosted:hover` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2718–2720 `.v2-root button.v2-chat__new-pod-action--hosted:disabled` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2722–2726 `.v2-chat__new-pod-action-title` — not seen live
+- L2728–2733 `.v2-chat__new-pod-status` — not seen live; pinned by v2-type-floors.test.ts; rule lists 2 selectors
+- L2740–2749 `.v2-root button.v2-chat__new-pod-copy` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2751–2754 `.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2756 `.v2-chat__new-pod-action--invite > .v2-chat__new-pod-copy` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2759–2761 `.v2-root button.v2-chat__new-pod-copy:hover` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2763–2770 `.v2-chat__new-pod-error` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2772–2777 `.v2-root .v2-chat__new-pod-error button` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2779–2793 `.v2-root button.v2-chat__starter-prompt` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2795–2797 `.v2-root button.v2-chat__starter-prompt:hover` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2800–2802 `.v2-chat__new-pod` in `@media (max-width: 700px)` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2804–2806 `.v2-chat__new-pod-actions` in `@media (max-width: 700px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L2808–2811 `.v2-root button.v2-chat__new-pod-action` in `@media (max-width: 700px)` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L2808–2811 `.v2-chat__new-pod-action` in `@media (max-width: 700px)` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts; rule lists 2 selectors
+- L2965–2974 `.v2-chat__readonly` — not seen live
+- L2976–2986 `.v2-chat__readonly-icon` — not seen live
+- L2988–2993 `.v2-chat__readonly-body` — not seen live
+- L2995–2999 `.v2-chat__readonly-title` — not seen live
+- L3001–3005 `.v2-chat__readonly-text` — not seen live
+- L3008–3018 `.v2-system-action-line` — pinned by v2-layout-invariants.test.ts
+- L3029–3036 `.v2-system-action-line__name` — pinned by v2-layout-invariants.test.ts
+- L3038–3045 `.v2-system-action-line__action` — pinned by v2-layout-invariants.test.ts
+- L3047–3049 `.v2-system-action-line__verb` — pinned by v2-layout-invariants.test.ts
+- L3051–3057 `.v2-system-action-line__object` — pinned by v2-layout-invariants.test.ts
+- L3059–3063 `.v2-system-action-line time` — pinned by v2-layout-invariants.test.ts
+- L3067–3081 `.v2-root button.v2-claim-run__toggle` — pinned by v2-layout-invariants.test.ts
+- L3082 `.v2-root button.v2-claim-run__toggle:hover` — pinned by v2-layout-invariants.test.ts
+- L3083 `.v2-root button.v2-claim-run__toggle:focus-visible` — pinned by v2-layout-invariants.test.ts
+- L3084–3093 `.v2-claim-run__toggle::after` — pinned by v2-layout-invariants.test.ts
+- L3094 `.v2-claim-run__toggle[aria-expanded='true']::after` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3110–3118 `.v2-syscard` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L3120–3123 `.v2-syscard--action` — not seen live
+- L3125–3135 `.v2-syscard__icon` — not seen live
+- L3137–3143 `.v2-syscard__body` — not seen live
+- L3145–3152 `.v2-syscard__headline` — not seen live
+- L3154–3157 `.v2-syscard__time` — not seen live; pinned by v2-type-floors.test.ts
+- L3159–3171 `.v2-root button.v2-syscard__cta` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3159–3171 `.v2-syscard__cta` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3173–3176 `.v2-root button.v2-syscard__cta:hover` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3173–3176 `.v2-syscard__cta:hover` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3183–3195 `.v2-prcard` — pinned by v2-type-floors.test.ts
+- L3196–3199 `.v2-prcard:hover`
+- L3200–3207 `.v2-prcard--loading` — not seen live
+- L3208–3215 `.v2-prcard__chip` — not seen live
+- L3216–3218 `.v2-prcard__loading-text` — not seen live
+- L3219–3226 `.v2-prcard__head`
+- L3227–3230 `.v2-prcard__repo`
+- L3231–3241 `.v2-prcard__state` — pinned by v2-type-floors.test.ts
+- L3242–3246 `.v2-prcard__state--open`
+- L3247–3251 `.v2-prcard__state--merged` — not seen live
+- L3252–3256 `.v2-prcard__state--closed` — not seen live
+- L3257–3262 `.v2-prcard__title`
+- L3263–3268 `.v2-prcard__num`
+- L3269–3276 `.v2-prcard__meta`
+- L3277–3280 `.v2-prcard__metric`
+- L3281 `.v2-prcard__metric--add`
+- L3282 `.v2-prcard__metric--del`
+- L3283–3287 `.v2-prcard__contributors`
+- L3288–3303 `.v2-prcard__avatar` — pinned by v2-type-floors.test.ts
+- L3304 `.v2-prcard__avatar:first-child` — pinned by v2-type-floors.test.ts
+- L3305–3309 `.v2-prcard__avatar--overflow` — not seen live; pinned by v2-type-floors.test.ts
+- L3313–3329 `.v2-mention-dropdown` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3331–3344 `.v2-mention-item` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L3346–3349 `.v2-mention-item:hover` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3346–3349 `.v2-mention-item--active` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3354–3356 `.v2-root button.v2-mention-item:hover` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3358–3360 `.v2-root button.v2-mention-item--active` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3363–3365 `.v2-root .v2-mention-dropdown button.v2-mention-item` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3367–3372 `.v2-mention-item__text` — not seen live
+- L3374–3381 `.v2-mention-item__label` — not seen live
+- L3383–3389 `.v2-mention-item__sub` — not seen live; pinned by v2-type-floors.test.ts
+- L3406 `.v2-msg--grouped` — pinned by v2-layout-invariants.test.ts
+- L3407 `.v2-msg__avatar-ghost` — pinned by v2-layout-invariants.test.ts
+- L3417–3433 `.v2-msg__actions` — pinned by v2-layout-invariants.test.ts
+- L3434–3438 `.v2-msg:hover .v2-msg__actions` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3434–3438 `.v2-msg__actions:focus-within` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3439–3451 `.v2-root button.v2-msg__action` — pinned by v2-layout-invariants.test.ts
+- L3452–3455 `.v2-root button.v2-msg__action:hover` — pinned by v2-layout-invariants.test.ts
+- L3456 `.v2-msg__action-wrap`
+- L3457–3463 `.v2-msg__actions .v2-msg__reaction-picker` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3465–3468 `.v2-msg__body`
+- L3470–3476 `.v2-msg__head`
+- L3478–3482 `.v2-msg__author` — pinned by v2-layout-invariants.test.ts
+- L3484–3495 `.v2-msg__author-btn`
+- L3497–3499 `.v2-msg__author-btn:hover`
+- L3501–3510 `.v2-msg__author-kind` — not seen live
+- L3512–3525 `.v2-msg__avatar-btn`
+- L3527–3529 `.v2-msg__avatar-btn:hover`
+- L3531–3542 `.v2-msg__lead-badge` — not seen live; pinned by v2-type-floors.test.ts
+- L3544–3547 `.v2-msg__time` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L3549–3561 `.v2-msg__content` — pinned by v2-layout-invariants.test.ts
+- L3563 `.v2-msg__content > *:first-child` — pinned by v2-layout-invariants.test.ts
+- L3564 `.v2-msg__content > *:last-child` — pinned by v2-layout-invariants.test.ts
+- L3566–3569 `.v2-msg__content p` — pinned by v2-layout-invariants.test.ts
+- L3571–3574 `.v2-msg__content a` — pinned by v2-layout-invariants.test.ts
+- L3576–3583 `.v2-msg__mention` — pinned by v2-layout-invariants.test.ts
+- L3586–3590 `.v2-msg--mention` — pinned by v2-layout-invariants.test.ts
+- L3598–3601 `.v2-chat__messages > .v2-msg--mention` — pinned by v2-layout-invariants.test.ts
+- L3603–3607 `.v2-msg__content ul` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3603–3607 `.v2-msg__content ol` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L3609–3611 `.v2-msg__content li` — pinned by v2-layout-invariants.test.ts
+- L3613–3619 `.v2-msg__content code` — pinned by v2-layout-invariants.test.ts
+- L3621–3630 `.v2-msg__content pre` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3632–3636 `.v2-msg__content pre code` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3638–3644 `.v2-msg__content blockquote` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3646–3651 `.v2-msg__content h1` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L3646–3651 `.v2-msg__content h2` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L3646–3651 `.v2-msg__content h3` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L3653 `.v2-msg__content h1` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3654 `.v2-msg__content h2` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3655 `.v2-msg__content h3` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3657–3661 `.v2-msg__content hr` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3663 `.v2-msg__content strong` — pinned by v2-layout-invariants.test.ts
+- L3664 `.v2-msg__content em` — not seen live; pinned by v2-layout-invariants.test.ts
+- L3729–3733 `.v2-msg__reactions`
+- L3735–3747 `.v2-msg__reaction` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L3749–3751 `.v2-msg__reaction:hover` — pinned by v2-layout-invariants.test.ts
+- L6079–6088 `.v2-pane--inspector` in `@media (max-width: 1023px)` — pinned by v2-layout-invariants.test.ts
+- L6108–6110 `.v2-chat__messages` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L6200–6202 `.v2-chat__header-row` in `@media (max-width: 760px)` — not seen live
+- L6231–6236 `.v2-msg__reactions`
+- L6237–6250 `.v2-msg__reaction` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L6251–6253 `.v2-msg__reaction:hover` — pinned by v2-layout-invariants.test.ts
+- L6254–6260 `.v2-msg__reaction-emoji` — pinned by v2-layout-invariants.test.ts
+- L6261–6264 `.v2-msg__reaction-count` — pinned by v2-type-floors.test.ts
+- L6267–6271 `.v2-msg__reaction-error` — not seen live; pinned by v2-type-floors.test.ts
+- L6276–6297 `.v2-root button.v2-msg__reaction` — pinned by v2-layout-invariants.test.ts
+- L6298–6302 `.v2-root button.v2-msg__reaction--mine`
+- L6303–6305 `.v2-root button.v2-msg__reaction:hover:not(:disabled)` — pinned by v2-layout-invariants.test.ts
+- L6306–6309 `.v2-root button.v2-msg__reaction:disabled` — not seen live; pinned by v2-layout-invariants.test.ts
+- L6317–6320 `.v2-msg__reaction-picker` — not seen live; pinned by v2-layout-invariants.test.ts
+- L6322–6334 `.v2-msg__reaction-picker` — not seen live; pinned by v2-layout-invariants.test.ts
+- L6335–6347 `.v2-root button.v2-msg__reaction-picker-item` — not seen live
+- L6348–6350 `.v2-root button.v2-msg__reaction-picker-item:hover` — not seen live
+- L6351–6354 `.v2-root button.v2-msg__reaction-picker-item--mine` — not seen live
+- L7569–7573 `.v2-msg--reveal .v2-msg__actions` in `@media (hover: none), (pointer: coarse)` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L7569–7573 `.v2-msg__actions:focus-within` in `@media (hover: none), (pointer: coarse)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L7574–7577 `.v2-root button.v2-msg__action` in `@media (hover: none), (pointer: coarse)` — pinned by v2-layout-invariants.test.ts
+- L7580–7589 `.v2-msg__quote` — pinned by v2-layout-invariants.test.ts
+- L7590 `.v2-msg__quote-author`
+- L7591 `.v2-msg__quote-text` — pinned by v2-layout-invariants.test.ts
+- L9311–9320 `.v2-gig` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9321 `.v2-gig__head` — not seen live; rule lists 3 selectors
+- L9321 `.v2-gig__stack` — not seen live; rule lists 3 selectors
+- L9322 `.v2-gig__head` — not seen live
+- L9323 `.v2-gig__stack` — not seen live
+- L9335–9345 `.v2-approval` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L9347–9351 `.v2-approval__head` — not seen live
+- L9353–9360 `.v2-approval__badge` — not seen live; pinned by v2-type-floors.test.ts
+- L9362–9366 `.v2-approval__agent` — not seen live
+- L9368–9372 `.v2-approval__time` — not seen live; pinned by v2-type-floors.test.ts
+- L9374–9378 `.v2-approval__summary` — not seen live
+- L9383–9389 `.v2-approval__action` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9393–9404 `.v2-approval__tool-call` — not seen live
+- L9407–9414 `.v2-approval__pitch` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9416–9420 `.v2-approval__actions` — not seen live
+- L9422–9429 `.v2-root button.v2-approval__btn` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9431–9435 `.v2-root button.v2-approval__btn--approve` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9437–9439 `.v2-root button.v2-approval__btn--approve:not(:disabled):hover` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9441–9444 `.v2-root button.v2-approval__btn--decline` — not seen live
+- L9446–9449 `.v2-root button.v2-approval__btn--decline:not(:disabled):hover` — not seen live
+- L9451–9454 `.v2-root button.v2-approval__btn:disabled` — not seen live
+- L9456–9463 `.v2-approval__state` — not seen live
+- L9465–9468 `.v2-approval__state--approved` — not seen live
+- L9470–9473 `.v2-approval__state--declined` — not seen live
+- L9475–9478 `.v2-approval__state--attention` — not seen live
+- L9480–9483 `.v2-approval__state--expired` — not seen live
+- L9485–9494 `.v2-root button.v2-approval__result-link` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9496–9499 `.v2-approval__error` — not seen live
+- L9504–9513 `.v2-byo-handoff` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9515–9519 `.v2-byo-handoff__head` — not seen live
+- L9521–9528 `.v2-byo-handoff__badge` — not seen live
+- L9530–9534 `.v2-byo-handoff__agent` — not seen live; rule lists 2 selectors
+- L9530–9534 `.v2-byo-handoff__time` — not seen live; rule lists 2 selectors
+- L9536–9540 `.v2-byo-handoff__time` — not seen live
+- L9542–9546 `.v2-byo-handoff__title` — not seen live
+- L9548–9553 `.v2-byo-handoff__body` — not seen live; rule lists 2 selectors
+- L9548–9553 `.v2-byo-handoff__note` — not seen live; rule lists 2 selectors
+- L9555–9559 `.v2-byo-handoff__os` — not seen live
+- L9561–9568 `.v2-root button.v2-byo-handoff__os-btn` — not seen live; rule lists 2 selectors
+- L9561–9568 `.v2-root button.v2-byo-handoff__copy` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L9570–9574 `.v2-root button.v2-byo-handoff__os-btn` — not seen live
+- L9576–9580 `.v2-root button.v2-byo-handoff__os-btn--selected` — not seen live
+- L9582–9593 `.v2-byo-handoff__command` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9595–9601 `.v2-root button.v2-byo-handoff__copy` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9603–9605 `.v2-root button.v2-byo-handoff__copy:hover:not(:disabled)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9607–9610 `.v2-root button.v2-byo-handoff__copy:disabled` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9683–9692 `.v2-thread-block` — pinned by v2-layout-invariants.test.ts
+- L9694–9699 `.v2-thread-card` — pinned by v2-layout-invariants.test.ts
+- L9701–9715 `.v2-root button.v2-thread-card__main` — pinned by v2-layout-invariants.test.ts
+- L9717–9719 `.v2-root button.v2-thread-card__main:hover` — pinned by v2-layout-invariants.test.ts
+- L9724–9729 `.v2-thread-card__count` — pinned by v2-layout-invariants.test.ts
+- L9735–9737 `.v2-thread-card--addressed .v2-thread-card__count` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9739–9744 `.v2-thread-card__dot` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9746–9748 `.v2-thread-card__faces` — pinned by v2-layout-invariants.test.ts
+- L9750–9752 `.v2-thread-card__faces > * + *` — pinned by v2-layout-invariants.test.ts
+- L9754–9756 `.v2-thread-card__time`
+- L9763–9769 `.v2-thread-replies` — pinned by v2-layout-invariants.test.ts
+- L9786–9788 `.v2-thread-replies .v2-msg--grouped` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9792–9794 `.v2-thread-replies .v2-msg__head`
+- L9796–9799 `.v2-thread-replies .v2-msg__author` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9801–9803 `.v2-thread-replies .v2-msg__time` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L9805–9815 `.v2-root button.v2-thread-replies__aim`
+- L9817–9819 `.v2-root button.v2-thread-replies__aim:hover`
+- L9831–9834 `.v2-msg__head` in `@media (max-width: 640px)`
+- L9836–9839 `.v2-msg--reveal .v2-msg__actions` in `@media (max-width: 640px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L9841–9844 `.v2-root button.v2-msg__action` in `@media (max-width: 640px)` — pinned by v2-layout-invariants.test.ts
+- L9846–9848 `.v2-thread-card` in `@media (max-width: 640px)` — pinned by v2-layout-invariants.test.ts
+- L9852–9854 `.v2-root .v2-thread-replies__foot button` in `@media (max-width: 640px)` — pinned by v2-layout-invariants.test.ts
+- L9859–9861 `.v2-thread-block__inner` in `@media (max-width: 640px)` — pinned by v2-layout-invariants.test.ts
+- L9863–9866 `.v2-thread-replies` in `@media (max-width: 640px)` — pinned by v2-layout-invariants.test.ts
+- L9868–9871 `.v2-root button.v2-thread-card__main` in `@media (max-width: 640px)` — pinned by v2-layout-invariants.test.ts
+- L10616–10620 `.v2-decision-card__option-recommended` — not seen live; rule lists 2 selectors
+- L10847–10850 `.v2-root button.v2-thread-card__main` in `@media (prefers-reduced-motion: reduce)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L10847–10850 `.v2-thread-replies` in `@media (prefers-reduced-motion: reduce)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L10863–10903 `.v2-root:lang(zh) .v2-thread__title h1` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts; rule lists 39 selectors
+- L10863–10903 `.v2-root:lang(zh) .v2-chat__new-pod-title` — not seen live; rule lists 39 selectors
+- L10930–10960 `.v2-root:lang(zh) .v2-msg__content` — pinned by v2-layout-invariants.test.ts; rule lists 29 selectors
+- L10930–10960 `.v2-root:lang(zh) .v2-msg__content pre` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 29 selectors
+- L10930–10960 `.v2-root:lang(zh) .v2-chat__delivery-hint` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 29 selectors
+- L10930–10960 `.v2-root:lang(zh) .v2-chat__readonly-text` — not seen live; rule lists 29 selectors
+- L10930–10960 `.v2-root:lang(zh) .v2-approval__summary` — not seen live; rule lists 29 selectors
+- L10930–10960 `.v2-root:lang(zh) .v2-approval__action` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 29 selectors
+- L11325–11334 `.v2-pane--inspector` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11342–11351 `.v2-workspace-inspector` — pinned by v2-layout-invariants.test.ts
+- L11355–11357 `.v2-pane--inspector` — pinned by v2-layout-invariants.test.ts
+- L11359–11366 `.v2-workspace-inspector__card` — pinned by v2-layout-invariants.test.ts
+- L11368–11374 `.v2-workspace-inspector__label` — pinned by v2-layout-invariants.test.ts
+- L11380–11388 `.v2-workspace-inspector__head` — pinned by v2-layout-invariants.test.ts
+- L11390 `.v2-workspace-inspector__head-spacer`
+- L11396 `.v2-root button.v2-workspace-inspector__hide` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11399 `.v2-workspace-inspector__threads`
+- L11401–11413 `.v2-root button.v2-workspace-inspector__thread`
+- L11415 `.v2-root button.v2-workspace-inspector__thread:hover`
+- L11416 `.v2-root button.v2-workspace-inspector__thread:focus-visible`
+- L11417 `.v2-workspace-inspector__thread-head`
+- L11418 `.v2-workspace-inspector__thread-author`
+- L11419 `.v2-workspace-inspector__thread-when`
+- L11420–11426 `.v2-workspace-inspector__thread-text`
+- L11428 `.v2-workspace-inspector__card.v2-workspace-inspector__group` — pinned by v2-layout-invariants.test.ts
+- L11430–11445 `.v2-root button.v2-workspace-inspector__fold` — pinned by v2-layout-invariants.test.ts
+- L11447 `.v2-root button.v2-workspace-inspector__fold:hover` — pinned by v2-layout-invariants.test.ts
+- L11448 `.v2-root button.v2-workspace-inspector__fold:focus-visible` — pinned by v2-layout-invariants.test.ts
+- L11450 `.v2-workspace-inspector__fold-icon`
+- L11451 `.v2-workspace-inspector__fold-label` — pinned by v2-layout-invariants.test.ts
+- L11452 `.v2-workspace-inspector__fold-count`
+- L11454 `.v2-workspace-inspector__fold-stack`
+- L11464–11471 `.v2-workspace-inspector__fold-chevron`
+- L11473 `.v2-workspace-inspector__fold-stack + .v2-workspace-inspector__fold-chevron`
+- L11474 `.v2-workspace-inspector__fold[aria-expanded="true"] .v2-workspace-inspector__fold-chevron`
+- L11476 `.v2-workspace-inspector__group-body`
+- L11478 `.v2-workspace-inspector__group-body .v2-pod-join-settings` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11480–11485 `.v2-workspace-inspector__rows`
+- L11487–11498 `.v2-root button.v2-workspace-inspector__agent` — rule lists 4 selectors
+- L11487–11498 `.v2-root button.v2-workspace-inspector__attention` — not seen live; rule lists 4 selectors
+- L11487–11498 `.v2-root button.v2-workspace-inspector__task` — not seen live; rule lists 4 selectors
+- L11500–11506 `.v2-root button.v2-workspace-inspector__agent`
+- L11508–11513 `.v2-root button.v2-workspace-inspector__agent:hover` — rule lists 4 selectors
+- L11508–11513 `.v2-root button.v2-workspace-inspector__attention:hover` — not seen live; rule lists 4 selectors
+- L11508–11513 `.v2-root button.v2-workspace-inspector__task:hover` — not seen live; rule lists 4 selectors
+- L11524–11529 `.v2-workspace-inspector__agent-copy`
+- L11531–11537 `.v2-workspace-inspector__agent-name`
+- L11539–11545 `.v2-workspace-inspector__agent-status`
+- L11547–11552 `.v2-workspace-inspector__state` — pinned by v2-layout-invariants.test.ts
+- L11554 `.v2-workspace-inspector__state--needs-you` — pinned by v2-layout-invariants.test.ts
+- L11555–11558 `.v2-workspace-inspector__state--working` — pinned by v2-layout-invariants.test.ts
+- L11560–11568 `.v2-root button.v2-workspace-inspector__attention` — not seen live; rule lists 2 selectors
+- L11560–11568 `.v2-root button.v2-workspace-inspector__task` — not seen live; rule lists 2 selectors
+- L11570–11576 `.v2-workspace-inspector__attention > span:first-child` — not seen live; rule lists 2 selectors
+- L11570–11576 `.v2-workspace-inspector__task > span:first-child` — not seen live; rule lists 2 selectors
+- L11578–11583 `.v2-workspace-inspector__actor` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11578–11583 `.v2-workspace-inspector__task-meta` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11585 `.v2-workspace-inspector__task-meta` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11595–11600 `.v2-workspace-inspector__empty` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11602–11612 `.v2-root button.v2-workspace-inspector__close` — pinned by v2-layout-invariants.test.ts
+- L11614 `.v2-root button.v2-workspace-inspector__close:hover` — pinned by v2-layout-invariants.test.ts
+- L11615 `.v2-root button.v2-workspace-inspector__close:focus-visible` — pinned by v2-layout-invariants.test.ts
+- L11618 `.v2-workspace-inspector` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11619 `.v2-root button.v2-workspace-inspector__close` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11624 `.v2-root:lang(zh) .v2-workspace-inspector__empty` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11625–11626 `.v2-root:lang(zh) .v2-workspace-inspector__actor` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11625–11626 `.v2-root:lang(zh) .v2-workspace-inspector__task-meta` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11643 `.v2-decision-card--ruled` — not seen live
+- L11676–11680 `.v2-decision-card__option` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11682–11692 `.v2-root button.v2-decision-card__other` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L11682–11692 `.v2-root button.v2-decision-card__other-form button` — not seen live; rule lists 3 selectors
+- L11707–11708 `.v2-root button.v2-decision-card__other:hover:not(:disabled)` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11711–11714 `.v2-decision-card__option-description` — not seen live
+- L11716–11719 `.v2-decision-card__option-recommended` — not seen live
+- L11721–11725 `.v2-root button.v2-decision-card__other` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11727–11732 `.v2-decision-card__footer` — not seen live
+- L11734–11738 `.v2-decision-card__other-form` — not seen live
+- L11740–11750 `.v2-decision-card__other-form input` — not seen live
+- L11752–11753 `.v2-decision-card__settled` — not seen live; rule lists 2 selectors
+- L11752–11753 `.v2-decision-card__error` — not seen live; rule lists 2 selectors
+- L11754 `.v2-decision-card__settled` — not seen live
+- L11755 `.v2-decision-card__error` — not seen live
+- L11757–11760 `.v2-msg__ruled` — pinned by v2-layout-invariants.test.ts
+- L11764–11772 `.v2-thread__header` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L11774–11780 `.v2-thread__header-row` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L11782–11785 `.v2-thread__title` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L11787–11792 `.v2-thread__title-line` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L11794–11808 `.v2-thread__title h1` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L11811 `.v2-root button.v2-thread__inspector-toggle`
+- L11819 `.v2-root button.v2-pod-header__invite` — pinned by v2-layout-invariants.test.ts
+- L11827–11837 `.v2-root button.v2-pod-header__invite` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11841 `.v2-root button.v2-pod-header__invite:focus-visible` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11843–11854 `.v2-root button.v2-pod-header__invite span` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11864 `.v2-thread .v2-msg--grouped` — pinned by v2-layout-invariants.test.ts
+- L11865 `.v2-thread .v2-msg__avatar-ghost` — pinned by v2-layout-invariants.test.ts
+- L11873 `.v2-thread .v2-msg__head`
+- L11874–11875 `.v2-thread .v2-msg__author` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11874–11875 `.v2-thread .v2-msg__author-btn` — rule lists 2 selectors
+- L11877 `.v2-thread .v2-msg__time` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L11878 `.v2-thread .v2-msg__avatar-btn`
+- L11881 `.v2-thread .v2-msg__actions` — pinned by v2-layout-invariants.test.ts
+- L11883 `.v2-message-row--decision` — not seen live
+- L11885–11890 `.v2-composer__error` — not seen live
+- L11892–11899 `.v2-composer__warnings` — not seen live
+- L11902–11905 `.v2-thread__header` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L11907 `.v2-thread__header-row` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L11908 `.v2-thread__title-line` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L11912 `.v2-thread__title h1` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L11914–11915 `.v2-thread .v2-msg__author` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11914–11915 `.v2-thread .v2-msg__author-btn` in `@media (max-width: 760px)` — rule lists 2 selectors
+- L11916–11917 `.v2-thread .v2-msg__time` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts; rule lists 2 selectors
+- L11916–11917 `.v2-thread .v2-msg__ruled` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L11918 `.v2-thread .v2-msg__content` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11923 `.v2-decision-card__option` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11925 `.v2-root button.v2-decision-card__other` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L11950–11960 `.v2-pane--inspector` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12175–12187 `.v2-root button.v2-icon-button` — pinned by v2-layout-invariants.test.ts
+- L12189–12192 `.v2-root button.v2-icon-button:hover:not(:disabled)` — pinned by v2-layout-invariants.test.ts
+- L12194–12197 `.v2-root button.v2-icon-button:focus-visible` — pinned by v2-layout-invariants.test.ts
+- L12435–12437 `.v2-pod-header .v2-thread__header-row` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12439–12447 `.v2-pod-header__meta` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12451 `.v2-pod-header__meta.v2-pod-header__meta--compact` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12454 `.v2-pod-header__stack` — pinned by v2-layout-invariants.test.ts
+- L12463 `.v2-pod-header__more`
+- L12466–12479 `.v2-root button.v2-pod-header__board`
+- L12481 `.v2-root button.v2-pod-header__board:hover`
+- L12482 `.v2-root button.v2-pod-header__board:focus-visible`
+- L12486–12493 `.v2-pod-header__rename` — not seen live
+- L12494–12504 `.v2-root .v2-pod-header__rename input` — not seen live
+- L12505 `.v2-root .v2-pod-header__rename input:focus-visible` — not seen live
+- L12506–12516 `.v2-root .v2-pod-header__rename button` — not seen live
+- L12517 `.v2-root .v2-pod-header__rename button[type="submit"]` — not seen live
+- L12518 `.v2-root .v2-pod-header__rename button:not([type="submit"]):hover:not(:disabled)` — not seen live
+- L12519 `.v2-root .v2-pod-header__rename button[type="submit"]:hover:not(:disabled)` — not seen live
+- L12520 `.v2-root .v2-pod-header__rename button:disabled` — not seen live
+- L12521 `.v2-root .v2-pod-header__rename button:focus-visible` — not seen live
+- L12522 `.v2-pod-header__rename-error` — not seen live
+- L12525 `.v2-root button.v2-pod-header__rename-open`
+- L12526–12527 `.v2-thread__title-line:hover button.v2-pod-header__rename-open` — rule lists 2 selectors
+- L12526–12527 `.v2-root button.v2-pod-header__rename-open:focus-visible` — rule lists 2 selectors
+- L12529 `.v2-root button.v2-pod-header__rename-open` in `@media (hover: none) and (pointer: coarse)`
+- L12534 `.v2-root button.v2-thread__back` — pinned by v2-layout-invariants.test.ts
+- L12588 `.v2-thread__header` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12589–12597 `.v2-pod-header .v2-thread__header-row` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12601–12605 `.v2-root button.v2-thread__back` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L12601–12605 `.v2-root button.v2-pod-header__invite` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L12601–12605 `.v2-root button.v2-thread__inspector-toggle` in `@media (max-width: 760px)` — rule lists 5 selectors
+- L12601–12605 `.v2-root button.v2-composer__plus` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L12601–12605 `.v2-root button.v2-composer__send` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L12606–12615 `.v2-root button.v2-thread__back::after` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L12606–12615 `.v2-root button.v2-pod-header__invite::after` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L12606–12615 `.v2-root button.v2-thread__inspector-toggle::after` in `@media (max-width: 760px)` — rule lists 5 selectors
+- L12606–12615 `.v2-root button.v2-composer__plus::after` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L12606–12615 `.v2-root button.v2-composer__send::after` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L12618 `.v2-pod-header .v2-thread__title` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12619 `.v2-thread__title h1` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12620 `.v2-pod-header__meta` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12621 `.v2-pod-header__meta.v2-pod-header__meta--compact` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12625 `.v2-root button.v2-pod-header__board--compact` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12626–12632 `.v2-root button.v2-pod-header__board--compact::before` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12633 `.v2-thread__title-line > h1` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12634 `.v2-pod-header__meta--compact` in `@media (max-width: 760px)` — pinned by v2-copy-budget.test.tsx, v2-layout-invariants.test.ts
+- L12637 `.v2-root button.v2-thread__back` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12717–12725 `.v2-composer` — pinned by v2-layout-invariants.test.ts
+- L12728–12731 `.v2-composer--typing` — not seen live; rule lists 2 selectors
+- L12728–12731 `.v2-composer:focus-within` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12733–12739 `.v2-composer__row` — pinned by v2-layout-invariants.test.ts
+- L12741 `.v2-composer__plus-wrap`
+- L12744 `.v2-root button.v2-composer__plus::before` — pinned by v2-layout-invariants.test.ts
+- L12746 `.v2-root button.v2-composer__plus[aria-expanded="true"]` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12748 `.v2-root button.v2-composer__plus:disabled` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12749 `.v2-root button.v2-composer__plus:disabled:hover` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12751–12765 `.v2-composer__menu` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12767–12778 `.v2-root .v2-composer__menu > button` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12780–12781 `.v2-root .v2-composer__menu > button:hover` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12780–12781 `.v2-root .v2-composer__menu > button:focus-visible` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12783–12788 `.v2-thread__empty-line` — not seen live
+- L12790–12806 `.v2-composer__tag` — not seen live
+- L12808–12817 `.v2-root button.v2-composer__tag-cancel` — not seen live
+- L12819 `.v2-composer__field` — pinned by v2-layout-invariants.test.ts
+- L12821 `.v2-composer__file`
+- L12823 `.v2-root .v2-composer__field > textarea::placeholder` — pinned by v2-layout-invariants.test.ts
+- L12826–12831 `.v2-root .v2-composer__field > textarea:focus` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12826–12831 `.v2-root .v2-composer__field > textarea:focus-visible` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12833–12846 `.v2-root .v2-composer__field > textarea` — pinned by v2-layout-invariants.test.ts
+- L12848–12853 `.v2-composer__uploading` — not seen live
+- L12856–12860 `.v2-root button.v2-composer__send` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12862 `.v2-root button.v2-composer__send:disabled` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12864–12865 `.v2-composer__error` — not seen live; rule lists 2 selectors
+- L12864–12865 `.v2-composer__warnings` — not seen live; rule lists 2 selectors
+- L12868–12873 `.v2-msg__thumbs`
+- L12875–12885 `.v2-root button.v2-msg__thumb` — pinned by v2-layout-invariants.test.ts
+- L12887 `.v2-root button.v2-msg__thumb:hover` — pinned by v2-layout-invariants.test.ts
+- L12889–12894 `.v2-msg__thumb img` — pinned by v2-layout-invariants.test.ts
+- L12896–12909 `.v2-msg__thumb-name`
+- L12911–12916 `.v2-msg__chips`
+- L12918–12932 `.v2-root button.v2-msg__chip` — rule lists 2 selectors
+- L12918–12932 `.v2-msg__chip` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12934 `.v2-root button.v2-msg__chip:hover`
+- L12936–12944 `.v2-msg__chip-ext` — pinned by v2-layout-invariants.test.ts
+- L12946–12951 `.v2-msg__chip-name`
+- L12953–12957 `.v2-msg__chip-size`
+- L12960 `.v2-msg__collapse` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12961 `.v2-msg__collapse--closed pre` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12964 `.v2-msg__prose` — pinned by v2-layout-invariants.test.ts
+- L12965–12970 `.v2-msg__prose--closed` — pinned by v2-layout-invariants.test.ts
+- L12972–12986 `.v2-root button.v2-msg__showmore`
+- L12988 `.v2-root button.v2-msg__showmore:hover`
+- L12989 `.v2-root button.v2-msg__showmore:focus-visible`
+- L12990 `.v2-msg__showmore svg`
+- L12991 `.v2-msg__showmore[aria-expanded='true'] svg`
+- L12993–13001 `.v2-root button.v2-msg__more` — not seen live
+- L13003 `.v2-root button.v2-msg__more:hover` — not seen live
+- L13056–13060 `.v2-thread__edge` — pinned by v2-layout-invariants.test.ts
+- L13062–13068 `.v2-thread__edge-line` — pinned by v2-layout-invariants.test.ts
+- L13070–13076 `.v2-root button.v2-thread__edge-line` — pinned by v2-layout-invariants.test.ts
+- L13078 `.v2-root button.v2-thread__edge-line` — pinned by v2-layout-invariants.test.ts
+- L13079 `.v2-root button.v2-thread__edge-line:hover` — pinned by v2-layout-invariants.test.ts
+- L13081–13090 `.v2-thread__history-status` — not seen live; pinned by v2-layout-invariants.test.ts
+- L13092 `.v2-thread__history-status--error` — not seen live
+- L13094–13106 `.v2-thread__history-status--viewport` — not seen live; pinned by v2-layout-invariants.test.ts
+- L13108–13110 `.v2-thread__history-status--viewport .v2-thread__history-retry` — not seen live
+- L13112–13120 `.v2-root button.v2-thread__history-retry` — not seen live
+- L13126–13134 `.v2-thread__jump-wrap` — pinned by v2-layout-invariants.test.ts
+- L13136–13149 `.v2-root button.v2-thread__jump` — pinned by v2-layout-invariants.test.ts
+- L13151 `.v2-root button.v2-thread__jump:hover` — pinned by v2-layout-invariants.test.ts
+- L13152 `.v2-thread__jump-count` — not seen live
+- L13156 `.v2-composer` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L13157 `.v2-composer__menu` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L13158 `.v2-root button.v2-msg__thumb` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L13159 `.v2-composer__tag` in `@media (max-width: 760px)` — not seen live
+- L13173 `.v2-thread .v2-msg--landed` — not seen live
+- L13177–13182 `.v2-msg__tag` — pinned by v2-layout-invariants.test.ts
+- L13183 `.v2-msg__tag + .v2-msg__time` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L13184 `.v2-msg__tag + .v2-msg__time::before` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L13187–13196 `.v2-msg__gutter-time` — pinned by v2-layout-invariants.test.ts
+- L13197 `.v2-thread .v2-msg--grouped:hover .v2-msg__gutter-time` — pinned by v2-layout-invariants.test.ts
+- L13202–13213 `.v2-thread .v2-msg__quote` — pinned by v2-layout-invariants.test.ts
+- L13214 `.v2-thread .v2-msg__quote:hover` — pinned by v2-layout-invariants.test.ts
+- L13215 `.v2-thread .v2-msg__quote:focus-visible` — pinned by v2-layout-invariants.test.ts
+- L13216 `.v2-thread .v2-msg__quote-author`
+- L13217–13223 `.v2-thread .v2-msg__quote-text` — pinned by v2-layout-invariants.test.ts
+- L13226 `.v2-thread .v2-msg__reactions`
+- L13227–13236 `.v2-root .v2-thread button.v2-msg__reaction` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L13227–13236 `.v2-thread .v2-msg__reaction` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L13237 `.v2-thread .v2-msg__reaction-emoji` — pinned by v2-layout-invariants.test.ts
+- L13238 `.v2-thread .v2-msg__reaction-count` — pinned by v2-type-floors.test.ts
+- L13239–13243 `.v2-root .v2-thread button.v2-msg__reaction--mine`
+- L13244 `.v2-root .v2-thread button.v2-msg__reaction--more` — not seen live
+- L13247–13255 `.v2-thread .v2-msg__strip` — pinned by v2-layout-invariants.test.ts
+- L13256 `.v2-root .v2-thread button.v2-msg__action` — pinned by v2-layout-invariants.test.ts
+- L13257–13270 `.v2-msg__more-menu` — not seen live
+- L13271–13281 `.v2-root .v2-msg__more-menu > button` — not seen live
+- L13282 `.v2-root .v2-msg__more-menu > button:hover` — not seen live
+- L13285 `.v2-thread .v2-thread-card` — pinned by v2-layout-invariants.test.ts
+- L13286–13297 `.v2-root .v2-thread button.v2-msg__thread-chip` — pinned by v2-layout-invariants.test.ts
+- L13298 `.v2-root .v2-thread button.v2-msg__thread-chip:hover` — pinned by v2-layout-invariants.test.ts
+- L13300 `.v2-thread .v2-thread-card__faces > * + *` — pinned by v2-layout-invariants.test.ts
+- L13301 `.v2-thread .v2-thread-card__count` — pinned by v2-layout-invariants.test.ts
+- L13302 `.v2-thread .v2-thread-card__time`
+- L13307 `.v2-thread .v2-thread-block` — pinned by v2-layout-invariants.test.ts
+- L13308 `.v2-thread .v2-thread-block__inner` — pinned by v2-layout-invariants.test.ts
+- L13309 `.v2-thread .v2-thread-block--open` — pinned by v2-layout-invariants.test.ts
+- L13312 `.v2-thread .v2-thread-block .v2-thread-card` — pinned by v2-layout-invariants.test.ts
+- L13313 `.v2-thread .v2-thread-replies` — pinned by v2-layout-invariants.test.ts
+- L13317–13324 `.v2-thread-replies__foot` — pinned by v2-layout-invariants.test.ts
+- L13325–13333 `.v2-root button.v2-thread-replies__collapse` — rule lists 2 selectors
+- L13325–13333 `.v2-root button.v2-thread-replies__more` — not seen live; rule lists 2 selectors
+- L13334 `.v2-root button.v2-thread-replies__more` — not seen live
+- L13335–13343 `.v2-root button.v2-thread-replies__follow`
+- L13344 `.v2-root button.v2-thread-replies__follow--on`
+- L13347 `.v2-thread .v2-msg__mention` — pinned by v2-layout-invariants.test.ts
+- L13356 `.v2-root .v2-thread button.v2-thread-replies__aim`
+- L13360 `.v2-composer__aim` — not seen live
+- L13375 `.v2-thread .v2-msg--reveal` in `@media (hover: none)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L13376–13385 `.v2-thread .v2-msg--reveal .v2-msg__strip` in `@media (hover: none)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L13390 `.v2-root .v2-thread button.v2-msg__action` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L13391 `.v2-root .v2-thread button.v2-msg__thread-chip` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L13392 `.v2-thread .v2-msg__gutter-time` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L13778 `.v2-root button.v2-workspace-inspector__file` — not seen live
+- L13779 `.v2-root button.v2-workspace-inspector__file > span:nth-child(2)` — not seen live
+- L13780 `.v2-root button.v2-workspace-inspector__file:hover` — not seen live
+- L13781 `.v2-workspace-inspector__ext` — not seen live; pinned by v2-layout-invariants.test.ts
+- L13782 `.v2-root button.v2-workspace-inspector__all-files` — not seen live; pinned by v2-layout-invariants.test.ts
+
+## Shared, stays
+
+Each line names the other surfaces that use the selector. It can go only when the last of them lifts.
+
+- L395 `.v2-root *` — also agentSettings, board, connectors, legacy, memory, other, settings, shell, sidebar
+- L395 `.v2-root *::before` — also agentSettings, board, connectors, legacy, memory, other, settings, shell, sidebar
+- L395 `.v2-root *::after` — also agentSettings, board, connectors, legacy, memory, other, settings, shell, sidebar
+- L405 `.v2-root *::-webkit-scrollbar` — also agentSettings, board, connectors, legacy, memory, other, settings, shell, sidebar
+- L409 `.v2-root *::-webkit-scrollbar-track` — also agentSettings, board, connectors, legacy, memory, other, settings, shell, sidebar
+- L412 `.v2-root *::-webkit-scrollbar-thumb` — also agentSettings, board, connectors, legacy, memory, other, settings, shell, sidebar
+- L418 `.v2-root *::-webkit-scrollbar-thumb:hover` — also agentSettings, board, connectors, legacy, memory, other, settings, shell, sidebar
+- L423 `.v2-root *::-webkit-scrollbar-corner` — also agentSettings, board, connectors, legacy, memory, other, settings, shell, sidebar
+- L427 `.v2-root *` — also agentSettings, board, connectors, legacy, memory, other, settings, shell, sidebar
+- L432 `.v2-root :where(button:not(.MuiButtonBase-root))` — also agentSettings, board, connectors, legacy, other, settings, shell, sidebar
+- L441 `.v2-root input` — also agentSettings, connectors, legacy, memory, other, settings, shell, sidebar
+- L441 `.v2-root textarea` — also legacy, other, settings, shell, sidebar
+- L447 `.v2-root a` — also agentSettings, legacy, memory, other, settings, shell, sidebar
+- L614 `.v2-root button:focus-visible` — also agentSettings, board, connectors, legacy, other, settings, shell, sidebar
+- L614 `.v2-root input:focus-visible` — also agentSettings, connectors, legacy, memory, other, settings, shell, sidebar
+- L614 `.v2-root textarea:focus-visible` — also legacy, other, settings, shell, sidebar
+- L614 `.v2-root a:focus-visible` — also agentSettings, legacy, memory, other, settings, shell, sidebar
+- L650 `.v2-authenticated-shell__content .v2-pane` — also agentSettings, board, connectors, memory, other, settings, sidebar
+- L745 `.v2-pane` — also agentSettings, board, connectors, memory, other, settings, sidebar
+- L764 `.v2-pane--main` — also agentSettings, board, connectors, memory, other, settings
+- L773 `.v2-authenticated-shell .v2-pane--main` — also agentSettings, board, connectors, memory, other, settings
+- L779 `.v2-shell:not(.v2-shell--no-inspector):not(.v2-shell--feature):not(.v2-shell--feature-wide) .v2-pane--main` — also other
+- L789 `.v2-inspector-backdrop` — also shell
+- L1020 `.v2-rail__account .v2-avatar` — also board, memory, other, settings, sidebar
+- L1210 `.v2-pods__join-policy` — also sidebar
+- L1223 `.v2-pods__join-policy legend` — also sidebar
+- L1230 `.v2-pods__join-policy label` — also sidebar
+- L1241 `.v2-pods__join-policy input` — also sidebar
+- L1254 `.v2-pods__join-policy input:checked` — also sidebar
+- L1259 `.v2-pods__join-policy-hint` — also sidebar
+- L2735 `.v2-chat__new-pod-action--invite .v2-invite-link-row` — also shell
+- L3020 `.v2-thread .v2-system-action-line .v2-avatar` — also board, memory, other, settings, sidebar
+- L3099 `.v2-msg.v2-msg--system` — also other
+- L3393 `.v2-msg` — also other
+- L3416 `.v2-msg` — also other
+- L4754 `.v2-modal__overlay` — also board, settings, shell
+- L4765 `.v2-modal` — also board, settings, shell
+- L4777 `.v2-modal__head` — also board, settings, shell
+- L4785 `.v2-modal__title` — also board, settings, shell
+- L4791 `.v2-root button.v2-modal__close` — also board, settings, shell
+- L4791 `.v2-modal__close` — also board, settings, shell
+- L4804 `.v2-root button.v2-modal__close:hover` — also board, settings, shell
+- L4804 `.v2-modal__close:hover` — also board, settings, shell
+- L4810 `.v2-modal__tabs` — also shell
+- L4817 `.v2-root button.v2-modal__tab` — also shell
+- L4817 `.v2-modal__tab` — also shell
+- L4831 `.v2-root button.v2-modal__tab:hover` — also shell
+- L4831 `.v2-modal__tab:hover` — also shell
+- L4836 `.v2-root button.v2-modal__tab--active` — also shell
+- L4836 `.v2-modal__tab--active` — also shell
+- L4842 `.v2-modal__body` — also board, settings, shell
+- L4849 `.v2-modal__hint` — also settings, shell
+- L4861 `.v2-modal__error` — also board, settings, shell
+- L4867 `.v2-modal__section-title` — also board, shell
+- L4873 `.v2-invite-options` — also shell
+- L4879 `.v2-invite-options__field` — also shell
+- L4889 `.v2-invite-options__select` — also shell
+- L4902 `.v2-invite-options__select:focus` — also shell
+- L4907 `.v2-invite-link-row` — also shell
+- L4918 `.v2-root .v2-invite-link-row button.v2-invite-card__cta` — also other, shell
+- L4918 `.v2-invite-link-row .v2-invite-card__cta` — also other, shell
+- L4926 `.v2-invite-link` — also shell
+- L4939 `.v2-invite-link:focus` — also shell
+- L4943 `.v2-invite-manage` — also shell
+- L4952 `.v2-invite-manage__empty` — also shell
+- L4961 `.v2-invite-manage__list` — also shell
+- L4967 `.v2-invite-manage__item` — also shell
+- L4975 `.v2-invite-manage__summary` — also shell
+- L4975 `.v2-invite-manage__meta` — also shell
+- L4983 `.v2-invite-manage__summary` — also shell
+- L4989 `.v2-invite-manage__summary strong` — also shell
+- L4997 `.v2-invite-manage__meta` — also shell
+- L5004 `.v2-invite-manage__url` — also shell
+- L5019 `.v2-invite-manage__url:focus` — also shell
+- L5023 `.v2-invite-manage__actions` — also shell
+- L5030 `.v2-root button.v2-invite-manage__action` — also shell
+- L5030 `.v2-invite-manage__action` — also shell
+- L5043 `.v2-root button.v2-invite-manage__action:hover` — also shell
+- L5043 `.v2-invite-manage__action:hover` — also shell
+- L5048 `.v2-root button.v2-invite-manage__action--danger` — also shell
+- L5048 `.v2-invite-manage__action--danger` — also shell
+- L5054 `.v2-root button.v2-invite-manage__action--danger:hover` — also shell
+- L5054 `.v2-invite-manage__action--danger:hover` — also shell
+- L5059 `.v2-root button.v2-invite-manage__action:disabled` — also shell
+- L5059 `.v2-invite-manage__action:disabled` — also shell
+- L5094 `.v2-modal__overlay` in `@media (max-width: 480px)` — also board, settings, shell
+- L5098 `.v2-invite-options` in `@media (max-width: 480px)` — also shell
+- L5102 `.v2-invite-link-row` in `@media (max-width: 480px)` — also shell
+- L5106 `.v2-root .v2-invite-link-row button.v2-invite-card__cta` in `@media (max-width: 480px)` — also other, shell
+- L5106 `.v2-invite-link-row .v2-invite-card__cta` in `@media (max-width: 480px)` — also other, shell
+- L5167 `.v2-root button.v2-invite-card__cta` — also other, shell
+- L5167 `.v2-invite-card__cta` — also other, shell
+- L5181 `.v2-root button.v2-invite-card__cta:hover` — also other, shell
+- L5181 `.v2-invite-card__cta:hover` — also other, shell
+- L5186 `.v2-root button.v2-invite-card__cta:disabled` — also other, shell
+- L5186 `.v2-invite-card__cta:disabled` — also other, shell
+- L5192 `.v2-root button.v2-invite-card__cta--secondary` — also shell
+- L5192 `.v2-invite-card__cta--secondary` — also shell
+- L5199 `.v2-root button.v2-invite-card__cta--secondary:hover` — also shell
+- L5199 `.v2-invite-card__cta--secondary:hover` — also shell
+- L5206 `.v2-avatar` — also board, memory, other, settings, sidebar
+- L5236 `.v2-avatar:has(img)` — also board, memory, other, settings, sidebar
+- L5243 `.v2-avatar:has(img).v2-avatar--character:not(.v2-avatar--flat)` — also board, memory, other, settings, sidebar
+- L5247 `.v2-avatar--lg` — also board, memory, other, settings, sidebar
+- L5253 `.v2-avatar--md` — also board, memory, other, settings, sidebar
+- L5259 `.v2-avatar--sm` — also board, memory, other, settings, sidebar
+- L5265 `.v2-avatar__online` — also board, memory, other, settings, sidebar
+- L5558 `.v2-hint` — also agentSettings, other
+- L5559 `.v2-root button.v2-hint__trigger` — also agentSettings, other
+- L5572 `.v2-root button.v2-hint__trigger:hover` — also agentSettings, other
+- L5573 `.v2-root button.v2-hint__trigger:focus-visible` — also agentSettings, other
+- L5578 `.v2-hint__content` — also agentSettings, other
+- L5594 `.v2-hint--open .v2-hint__content` — also agentSettings, other
+- L5596 `.v2-root button.v2-hint__trigger` in `@media (max-width: 760px)` — also agentSettings, other
+- L5597 `.v2-hint--open` in `@media (max-width: 760px)` — also agentSettings, other
+- L5598 `.v2-page-head__identity .v2-hint--open` in `@media (max-width: 760px)` — also agentSettings, other
+- L5598 `.v2-thread__title-line .v2-hint--open` in `@media (max-width: 760px)` — also agentSettings, other
+- L5600 `.v2-hint--open .v2-hint__content` in `@media (max-width: 760px)` — also agentSettings, other
+- L5609 `.v2-page-head__identity .v2-hint__content` in `@media (max-width: 760px)` — also agentSettings, other
+- L5609 `.v2-thread__title-line .v2-hint__content` in `@media (max-width: 760px)` — also agentSettings, other
+- L5964 `.v2-empty` — also board, other, shell
+- L6007 `.v2-empty__title` — also board, other, shell
+- L6013 `.v2-empty__text` — also board, other, shell
+- L6019 `.v2-spinner` — also board, other, sidebar
+- L6094 `.v2-pane--main` in `@media (max-width: 760px)` — also agentSettings, board, connectors, memory, other, settings
+- L6094 `.v2-authenticated-shell .v2-pane--main` in `@media (max-width: 760px)` — also agentSettings, board, connectors, memory, other, settings
+- L6136 `.v2-pane:not(.v2-pane--rail):not(.v2-pane--main):not(.v2-pods-aside):not(.v2-pane--inspector)` in `@media (max-width: 760px)` — also other, sidebar
+- L6159 `.v2-inspector-backdrop` in `@media (max-width: 760px)` — also shell
+- L6573 `.v2-byo__layout .v2-avatar` — also board, memory, other, settings, sidebar
+- L6582 `.v2-byo__layout .v2-avatar__online` — also board, memory, other, settings, sidebar
+- L6784 `.v2-byo__mode-option > .v2-hint` — also agentSettings, other
+- L7557 `.v2-root input` in `@media (hover: none), (pointer: coarse)` — also agentSettings, connectors, legacy, memory, other, settings, shell, sidebar
+- L7557 `.v2-root textarea` in `@media (hover: none), (pointer: coarse)` — also legacy, other, settings, shell, sidebar
+- L8831 `.v2-board__focus-editor .v2-modal__close` — also board, settings, shell
+- L9276 `.v2-board__focus-editor .v2-modal__close` in `@media (max-width: 760px)` — also board, settings, shell
+- L9307 `.v2-msg.v2-msg--card` — also other
+- L9332 `.v2-msg.v2-msg--card:has(.v2-gig)` in `@media (max-width: 760px)` — also other
+- L9776 `.v2-thread-replies .v2-msg` — also other
+- L9782 `.v2-thread-replies .v2-msg:first-child` — also other
+- L10863 `.v2-root:lang(zh) .v2-board__detail .v2-modal__title` — also board, settings, shell
+- L10930 `.v2-root:lang(zh) .v2-modal__hint` — also settings, shell
+- L11269 `.v2-shell .v2-pane` — also agentSettings, board, connectors, memory, other, settings, sidebar
+- L11274 `.v2-shell .v2-pane--main` — also agentSettings, board, connectors, memory, other, settings
+- L11294 `.v2-shell .v2-pane` in `@media (max-width: 760px)` — also agentSettings, board, connectors, memory, other, settings, sidebar
+- L11309 `.v2-authenticated-shell__content .v2-shell .v2-pane` in `@media (max-width: 760px)` — also agentSettings, board, connectors, memory, other, settings, sidebar
+- L11455 `.v2-workspace-inspector__fold-avatar.v2-avatar` — also board, memory, other, settings, sidebar
+- L11515 `.v2-workspace-inspector__avatar.v2-avatar` — also board, memory, other, settings, sidebar
+- L11631 `.v2-decision-card` — also other
+- L11645 `.v2-decision-card__head` — also other
+- L11652 `.v2-decision-card__head h3` — also other
+- L11659 `.v2-decision-card__agent` — also other
+- L11665 `.v2-decision-card__question` — also other
+- L11671 `.v2-decision-card__options` — also other
+- L11682 `.v2-root button.v2-decision-card__choice` — also other
+- L11694 `.v2-root button.v2-decision-card__choice` — also other
+- L11701 `.v2-root button.v2-decision-card__choice--primary` — also other
+- L11707 `.v2-root button.v2-decision-card__choice:hover:not(:disabled)` — also other
+- L11709 `.v2-root button.v2-decision-card__choice--primary:hover:not(:disabled)` — also other
+- L11857 `.v2-thread .v2-msg` — also other
+- L11866 `.v2-thread .v2-avatar` — also board, memory, other, settings, sidebar
+- L11880 `.v2-thread .v2-chat__typing-avatars .v2-avatar` — also board, memory, other, settings, sidebar
+- L11922 `.v2-decision-card__options` in `@media (max-width: 760px)` — also other
+- L11924 `.v2-root button.v2-decision-card__choice` in `@media (max-width: 760px)` — also other
+- L11946 `.v2-pane--main` in `@media (max-width: 760px)` — also agentSettings, board, connectors, memory, other, settings
+- L12159 `.v2-root button.v2-seg__option:hover:not(:disabled)` — also settings, sidebar
+- L12162 `.v2-root button.v2-seg__option:focus-visible` — also settings, sidebar
+- L12167 `.v2-root button.v2-seg__option:disabled` — also settings, sidebar
+- L12169 `.v2-seg__count` — also settings, sidebar
+- L12361 `.v2-pods__row-mark.v2-avatar` — also board, memory, other, settings, sidebar
+- L12455 `.v2-thread .v2-pod-header__stack .v2-avatar` — also board, memory, other, settings, sidebar
+- L12462 `.v2-thread .v2-pod-header__stack .v2-avatar + .v2-avatar` — also board, memory, other, settings, sidebar
+- L13006 `.v2-lightbox` — also other
+- L13016 `.v2-lightbox__image` — also other
+- L13024 `.v2-lightbox__name` — also other
+- L13035 `.v2-root button.v2-lightbox__close` — also other
+- L13035 `.v2-root button.v2-lightbox__nav` — also other
+- L13051 `.v2-root button.v2-lightbox__close` — also other
+- L13052 `.v2-root button.v2-lightbox__nav--prev` — also other
+- L13053 `.v2-root button.v2-lightbox__nav--next` — also other
+- L13170 `.v2-thread .v2-msg:hover` — also other
+- L13170 `.v2-thread .v2-msg:focus-within` — also other
+- L13172 `.v2-thread .v2-msg` — also other
+- L13299 `.v2-thread .v2-thread-card__faces .v2-avatar` — also board, memory, other, settings, sidebar
+- L13310 `.v2-thread .v2-thread-block--open > .v2-msg:hover` — also other
+- L13310 `.v2-thread .v2-thread-block--open > .v2-msg:focus-within` — also other
+- L13314 `.v2-thread .v2-thread-replies .v2-msg` — also other
+- L13315 `.v2-thread .v2-thread-replies .v2-msg:hover` — also other
+- L13316 `.v2-thread .v2-thread-replies .v2-msg .v2-avatar` — also board, memory, other, settings, sidebar
+- L13351 `.v2-thread .v2-avatar--flat` — also board, memory, other, settings, sidebar
+- L13352 `.v2-thread .v2-avatar--flat-human` — also board, memory, other, settings, sidebar
+- L13353 `.v2-thread .v2-avatar--flat-agent` — also board, memory, other, settings, sidebar
+- L13354 `.v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat` — also board, memory, other, settings, sidebar
+- L13355 `.v2-thread .v2-thread-card__faces .v2-avatar--flat` — also board, memory, other, settings, sidebar
+- L13371 `.v2-thread .v2-msg` in `@media (hover: none)` — also other
+- L13673 `.v2-root button.v2-team-card__mark .v2-avatar` — also board, memory, other, settings, sidebar
+- L13831 `.v2-board .v2-modal` — also board, settings, shell
+- L13833 `.v2-board__detail .v2-modal__head` — also board, settings, shell
+- L13834 `.v2-board__detail .v2-modal__title` — also board, settings, shell
+- L13835 `.v2-board__detail .v2-modal__body` — also board, settings, shell
+- L13836 `.v2-root .v2-board__detail button.v2-modal__close` — also board, settings, shell
+- L13875 `.v2-board__detail .v2-modal__head` in `@media (max-width: 760px)` — also board, settings, shell
+- L13876 `.v2-board__detail .v2-modal__body` in `@media (max-width: 760px)` — also board, settings, shell
+- L13877 `.v2-root .v2-board__detail button.v2-modal__close` in `@media (max-width: 760px)` — also board, settings, shell

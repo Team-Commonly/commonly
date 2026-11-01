@@ -42,7 +42,7 @@ function V2Segmented<T extends string>({
 
   return (
     <div
-      className={['v2-seg', size === 'sm' ? 'v2-seg--sm' : '', className].filter(Boolean).join(' ')}
+      className={['v2p-seg v2-seg', size === 'sm' ? 'v2p-seg--sm v2-seg--sm' : '', className].filter(Boolean).join(' ')}
       role="radiogroup"
       aria-label={ariaLabel}
       aria-disabled={disabled || undefined}
@@ -59,7 +59,7 @@ function V2Segmented<T extends string>({
             aria-label={option.ariaLabel}
             tabIndex={index === activeIndex ? 0 : -1}
             disabled={disabled}
-            className={`v2-seg__option${checked ? ' v2-seg__option--on' : ''}`}
+            className={`v2-seg__option${checked ? ' on v2-seg__option--on' : ''}`}
             onClick={() => { if (!checked) onChange(option.value); }}
             onKeyDown={(event) => onKeyDown(event, index)}
           >

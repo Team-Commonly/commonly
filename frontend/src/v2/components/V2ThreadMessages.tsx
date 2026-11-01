@@ -7,6 +7,9 @@ import { ThreadViewItem } from '../utils/threadView';
 import { isGroupedWithPrevious } from '../utils/messageGrouping';
 import V2MessageRow from './V2MessageRow';
 import V2ThreadCard from './V2ThreadCard';
+import V2Avatar from './V2Avatar';
+import { ShellGlyph } from '../icons/glyphs';
+import { formatRelativeTime } from '../utils/grouping';
 import { V2DecisionCardData, V2DecisionRuling } from './V2DecisionCard';
 
 // Expanded threads show the newest eight; a `N more replies` line reveals the rest.
@@ -167,6 +170,16 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   // row is written to match on each open/close (it still drives the wake
   // path), but a fresh mount always shows chips.
   const [openRoots, setOpenRoots] = useState<Set<string>>(() => new Set());
+  // A run of claim lines folds to one summary row; this is the open ones.
+  const [openClaimRuns, setOpenClaimRuns] = useState<Set<string>>(() => new Set());
+  const toggleClaimRun = useCallback((key: string) => {
+    setOpenClaimRuns((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const setOpen = useCallback((rootId: string, open: boolean) => {
     setOpenRoots((current) => {
       const next = new Set(current);
@@ -362,6 +375,59 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
           );
         };
 
+        if (item.kind === 'claims') {
+          const open = openClaimRuns.has(item.key);
+          const first = item.messages[0].payload?.taskId ?? '';
+          const last = item.messages[item.messages.length - 1].payload?.taskId ?? '';
+          // D215 .sumrow: up to four distinct claimers' faces and the run's
+          // last time. The accessible name stays the one-line label.
+          const claimers = item.messages.filter((message, claimIndex) => item.messages
+            .findIndex((other) => (other.user_id || other.payload?.actorName) === (message.user_id || message.payload?.actorName)) === claimIndex)
+            .slice(0, 4);
+          const lastAt = item.messages[item.messages.length - 1].created_at;
+          return (
+            <div className="v2-claim-run" key={`claims-${item.key}`}>
+              <button
+                type="button"
+                className="v2-claim-run__toggle"
+                aria-expanded={open}
+                aria-label={t('podChat.claimRun.label', { count: item.messages.length, first, last })}
+                onClick={() => toggleClaimRun(item.key)}
+              >
+                <ShellGlyph name="board" size={18} />
+                <span className="v2-claim-run__faces" aria-hidden="true">
+                  {claimers.map((message) => (
+                    <V2Avatar
+                      key={String(message.id)}
+                      name={message.payload?.actorName || message.user?.username || ''}
+                      src={message.user?.profile_picture || undefined}
+                      size="sm"
+                      tone="flat"
+                      kind={message.user?.isBot === false ? 'human' : 'agent'}
+                      seed={message.user_id || undefined}
+                    />
+                  ))}
+                </span>
+                <span className="v2-claim-run__label" aria-hidden="true">
+                  <b>{t('podChat.claimRun.count', { count: item.messages.length })}</b>
+                  {' · '}
+                  {t('podChat.claimRun.range', { first, last })}
+                </span>
+                {lastAt && <span className="v2-claim-run__time" aria-hidden="true">{formatRelativeTime(lastAt)}</span>}
+                <span className="v2-claim-run__chev" aria-hidden="true"><ShellGlyph name="chevron" size={15} /></span>
+              </button>
+              {open && (
+                <div className="v2-claim-run__list">
+                  {item.messages.map((message, claimIndex) => renderMessage(
+                    message,
+                    claimIndex === 0 ? view[index - 1] : { kind: 'message', message: item.messages[claimIndex - 1] },
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }
+
         if (item.kind === 'message') {
           const next = view[index + 1];
           // A root with a live thread renders INSIDE its band (below), so the
@@ -403,7 +469,14 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               />
             )}
             {!collapsed && (
-              <div className="v2-thread-replies">
+              <div
+                className="v2-thread-replies"
+                role="group"
+                aria-label={t('podChat.thread.groupLabel', {
+                  count: item.replyCount,
+                  unit: item.replyCount === 1 ? t('podChat.thread.replyOne') : t('podChat.thread.replyOther'),
+                })}
+              >
                 {hiddenReplies > 0 && (
                   <button type="button" className="v2-thread-replies__more" onClick={() => setExpandedAll((current) => new Set(current).add(item.rootId))}>
                     {t('podChat.thread.moreReplies', { count: hiddenReplies })}
@@ -433,20 +506,22 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                   </React.Fragment>
                 ))}
                 <div className="v2-thread-replies__foot">
-                  <button type="button" className="v2-thread-replies__collapse" onClick={() => setOpen(item.rootId, false)}>
-                    {t('podChat.thread.collapse')}
-                  </button>
-                  <span className="v2-thread-replies__count">{item.replyCount} {item.replyCount === 1 ? t('podChat.thread.replyOne') : t('podChat.thread.replyOther')}</span>
                   {onReply && (
                     <button
                       type="button"
-                      className="v2-thread-replies__aim"
+                      className="v2p-b v2p-b-s v2p-b-sm v2-thread-replies__aim"
                       aria-label={t('podChat.thread.replyFromExpandedThread')}
                       onClick={() => onAimAtThread(item.rootId, rootPreview(item.rootId))}
                     >
+                      <ShellGlyph name="reply" size={16} />
                       {t('podChat.thread.replyInThread')}
                     </button>
                   )}
+                  <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2-thread-replies__collapse" onClick={() => setOpen(item.rootId, false)}>
+                    <ShellGlyph name="chevron" size={16} />
+                    {t('podChat.thread.collapse')}
+                  </button>
+                  <span className="v2-thread-replies__count">{item.replyCount} {item.replyCount === 1 ? t('podChat.thread.replyOne') : t('podChat.thread.replyOther')}</span>
                   <button
                     type="button"
                     className={`v2-thread-replies__follow${following === true ? ' v2-thread-replies__follow--on' : ''}${following === false ? ' v2-thread-replies__follow--muted' : ''}`}

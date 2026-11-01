@@ -10,7 +10,7 @@ const path = require('path');
 const { runPgMigrations } = require('../../config/run-pg-migrations');
 const { createRealPgSchema } = require('../utils/realPgSchema');
 const { appendRecord, readRecordExport, BOARD_ACTOR } = require('../../services/recordService');
-const { appendToChain } = require('../../repositories/recordChainRepository');
+const { appendToChain, MAX_PAGE_LINES } = require('../../repositories/recordChainRepository');
 const { verifyRecord } = require('../../vendor/seats/src/record/format');
 
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
@@ -150,9 +150,39 @@ real('record chains on real PostgreSQL', () => {
 
     it('reads an unwritten chain as empty, and a missing store as an error', async () => {
       expect(await readRecordExport({ podId: POD, taskId: 'TASK-never' }, pool))
-        .toEqual({ runId: null, entries: 0, head: null, jsonl: '' });
+        .toEqual({
+          runId: null, entries: 0, head: null, jsonl: '', nextAfter: null,
+        });
       const { readChain, RecordStoreUnavailableError } = require('../../repositories/recordChainRepository');
       await expect(readChain({ podId: POD }, null)).rejects.toBeInstanceOf(RecordStoreUnavailableError);
+    });
+
+    it('reads a long chain in pages that each name the whole chain\'s head and join into one that verifies', async () => {
+      const ref = { podId: POD, taskId: 'TASK-7' };
+      const total = MAX_PAGE_LINES + 2;
+      await appendRecord(ref, 'bulk', Array.from({ length: total }, () => ({ kind: 'task.claimed', actor: AGENT })), pool);
+
+      // No cursor still reads one bounded page, never the whole history.
+      const first = await readRecordExport(ref, pool);
+      expect(kinds(first.jsonl)).toHaveLength(MAX_PAGE_LINES);
+      expect(first).toMatchObject({ entries: total, nextAfter: MAX_PAGE_LINES });
+      expect(kinds((await readRecordExport(ref, pool, { limit: MAX_PAGE_LINES * 5 })).jsonl)).toHaveLength(MAX_PAGE_LINES);
+
+      const pages = [];
+      let after = 0;
+      while (after !== null) {
+        // eslint-disable-next-line no-await-in-loop
+        const page = await readRecordExport(ref, pool, { after, limit: 400 });
+        expect(page).toMatchObject({ entries: total, head: first.head, runId: first.runId });
+        pages.push(page.jsonl);
+        after = page.nextAfter;
+      }
+      expect(pages.map((jsonl) => kinds(jsonl).length)).toEqual([400, 400, total - 800]);
+      expect(kinds(pages[1])[0].seq).toBe(401);
+      expect(verifyRecord(pages.join(''))).toMatchObject({ ok: true, entries: total, head: first.head });
+
+      expect(await readRecordExport(ref, pool, { after: total, limit: 10 }))
+        .toMatchObject({ entries: total, jsonl: '', nextAfter: null });
     });
 
     it('stores lines byte for byte, so an edited row fails verification', async () => {

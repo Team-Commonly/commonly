@@ -1,0 +1,98 @@
+name: Staging e2e walk (TASK-728)
+
+# Runs the first-user walk on staging at a given SHA and reports it as the
+# `staging-e2e-walk` check run. Until the walk covers Bring your own and the
+# @mention reply, the check is neutral (ruled 2026-11-01): it never gates a
+# deploy, and its summary names what was not covered. A commit status is not
+# posted, because GitHub's commit-status states have no neutral value.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit to walk on staging (defaults to the dispatched ref)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: staging-e2e-walk-${{ inputs.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  walk:
+    name: staging e2e walk
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HEAD_SHA: ${{ inputs.sha || github.sha }}
+      COMMONLY_WALK_EMAIL: ${{ secrets.COMMONLY_WALK_EMAIL }}
+      COMMONLY_WALK_PASSWORD: ${{ secrets.COMMONLY_WALK_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # A short sha is read by checkout as a branch name and fails at checkout
+      # (run 41278291280, 2026-11-01). Reject anything that is not a full sha
+      # here, so the next bad dispatch fails at this step with a clear error.
+      - name: Validate the sha input
+        env:
+          SHA_INPUT: ${{ inputs.sha }}
+        run: |
+          if [ -n "$SHA_INPUT" ] && ! echo "$SHA_INPUT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::sha input must be a full 40-character commit SHA, got '$SHA_INPUT'. Leave it empty to walk main's head."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Walk staging
+        id: walk
+        continue-on-error: true
+        env:
+          COMMONLY_WALK_STATE_DIR: ${{ runner.temp }}/walk-state
+        run: |
+          set +e
+          node scripts/first-user-walk.mjs --base https://api-staging.commonly.me 2>&1 | tee "$RUNNER_TEMP/walk.log"
+          echo "exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Post the staging-e2e-walk check run
+        env:
+          WALK_EXIT: ${{ steps.walk.outputs.exit }}
+        run: |
+          # Exit 0 = every step ran; 2 = the covered steps passed but BYO was not
+          # covered; anything else is a failure. All three post neutral until the
+          # walk covers the full path, and the summary carries the real outcome.
+          case "$WALK_EXIT" in
+            0) SUMMARY="Every step the walk covers passed. Bring your own and the @mention reply are NOT COVERED." ;;
+            2) SUMMARY="Covered steps passed. Bring your own and the @mention reply are NOT COVERED, so this check stays neutral." ;;
+            *) SUMMARY="The walk failed (exit $WALK_EXIT). The first error is in the log." ;;
+          esac
+          LOG=$(tail -c 60000 "$RUNNER_TEMP/walk.log" | sed 's/[[:cntrl:]]//g')
+          jq -n --arg sha "$HEAD_SHA" --arg summary "$SUMMARY" --arg text "$LOG" '{
+            name: "staging-e2e-walk",
+            head_sha: $sha,
+            status: "completed",
+            conclusion: "neutral",
+            output: { title: "Staging first-user walk", summary: $summary, text: $text }
+          }' > "$RUNNER_TEMP/check.json"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" --input "$RUNNER_TEMP/check.json" >/dev/null
+
+      # The walk writes the hosted-agent ids SRE needs for the admin purge into
+      # COMMONLY_WALK_STATE_DIR, which the runner discards. Keep it on every
+      # outcome, including a failed walk. It holds ids only, never credentials.
+      - name: Keep the walk manifest for SRE's purge
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-e2e-walk-manifest-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/walk-state
+          if-no-files-found: warn
+          retention-days: 30

@@ -19,7 +19,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
-import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
+import { recordByoStep, type ByoCopyType, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import { defaultMachine, machineDisplayName } from '../utils/machineLabel';
@@ -35,6 +35,7 @@ import { hostedCapNotice } from './hostedCapNotice';
 import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
+import './V2AgentBYO.css';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
 // The token routes refuse a name that belongs to an agent Commonly runs (the
@@ -142,6 +143,7 @@ const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'haiku', labelKey: 'agentByo.form.modelHaiku' },
 ];
 // Suggestions only: the installed Codex CLI catalog decides which slugs work.
+const LISTEN_RUNNERS = ['claude', 'codex'] as const;
 const CODEX_MODEL_SUGGESTIONS = ['gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'];
 
 const sanitizeAgentName = (raw: string): string => raw
@@ -989,8 +991,10 @@ const V2AgentBYO: React.FC = () => {
   // BYO funnel telemetry: 7 of 7 recent seats died between token issuance and
   // the first authenticated call, and the server cannot see whether the user
   // even copied a command. Fire-and-forget; the flow never waits on it.
-  const byoStep = (step: ByoStep) => {
-    recordByoStep(api, step);
+  // Every step carries the setup the page is showing (OS and listener
+  // eligibility) so the server can tell "listener was possible" from "not".
+  const byoStep = (step: ByoStep, copyType?: ByoCopyType) => {
+    recordByoStep(api, step, { setupOs, listenerAvailable, ...(copyType ? { copyType } : {}) });
   };
 
   useEffect(() => {
@@ -1020,8 +1024,9 @@ const V2AgentBYO: React.FC = () => {
     setShowHostedOffer(false);
     if (!issued) return;
     // This event means the issued command rendered, distinct from page entry.
-    recordByoStep(api, 'seat-created');
-  }, [api, issued]);
+    // It also carries the setup the result page shows (TASK-714).
+    recordByoStep(api, 'seat-created', { setupOs, listenerAvailable });
+  }, [api, issued, setupOs, listenerAvailable]);
 
   const rememberHostedOffer = () => {
     if (!offerSessionKey) return;
@@ -1068,10 +1073,11 @@ const V2AgentBYO: React.FC = () => {
       else if (key === 'listen') markCopiedKind('listen');
       setCopied(key);
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
-      if (key === 'claude' || key === 'cursor') byoStep('mcp-command-copied');
-      else if (key === 'listen') byoStep('cli-command-copied');
-      else if (key === 'daemon-setup') byoStep('daemon-command-copied');
-      else if (key === 'tok') byoStep('token-copied');
+      if (key === 'claude') byoStep('mcp-command-copied', 'mcp-claude');
+      else if (key === 'cursor') byoStep('mcp-command-copied', 'mcp-cursor');
+      else if (key === 'listen') byoStep('cli-command-copied', 'listen');
+      else if (key === 'daemon-setup') byoStep('daemon-command-copied', 'daemon');
+      else if (key === 'tok') byoStep('token-copied', 'token');
     } catch {
       // Clipboard may be unavailable (non-HTTPS, sandbox); user can select manually.
     }
@@ -1158,25 +1164,27 @@ const V2AgentBYO: React.FC = () => {
     </div>
   ) : null;
   const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
-    <p className="v2-byo__os" data-testid="byo-runner">
-      {t('agentByo.form.adapterLabel')}{' '}
-      {(['claude', 'codex'] as const).map((runner, i) => (
-        <React.Fragment key={runner}>
-          {i > 0 && ' · '}
-          <button
-            type="button"
-            className="v2-byo__link"
-            aria-pressed={listenAdapter === runner}
-            data-testid={`byo-runner-${runner}`}
-            disabled={submitting}
-            // The name follows the runner, so a key prompt for the old name is stale.
-            onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
-          >
-            {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
-          </button>
-        </React.Fragment>
+    // A segment (d215 frame) under a visible label: the frame doesn't draw this
+    // picker, so it keeps the "Adapter" label the page always showed.
+    <>
+    <p className="v2-byo__modes-question" id="byo-runner-label">{t('agentByo.form.adapterLabel')}</p>
+    <p className="v2-byo__os" data-testid="byo-runner" role="group" aria-labelledby="byo-runner-label">
+      {LISTEN_RUNNERS.map((runner) => (
+        <button
+          key={runner}
+          type="button"
+          className="v2-byo__link"
+          aria-pressed={listenAdapter === runner}
+          data-testid={`byo-runner-${runner}`}
+          disabled={submitting}
+          // The name follows the runner, so a key prompt for the old name is stale.
+          onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
+        >
+          {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
+        </button>
       ))}
     </p>
+    </>
   ) : null;
 
   return (
@@ -1524,9 +1532,9 @@ const V2AgentBYO: React.FC = () => {
               os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
             })}{' '}
             {t('agentByo.footnote.notSure')}{' '}
-            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
+            <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
             {' · '}
-            <a href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.fullWalkthrough')}</a>.
+            <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/MCP_INTEGRATION.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.fullWalkthrough')}</a>.
           </p>
           </details>
         </div>
@@ -1651,21 +1659,18 @@ const V2AgentBYO: React.FC = () => {
             {/* Everything a stranger needs BEFORE the paste, in one place (QA
                 BYO walk 1 found none of it on the page). One block, so other
                 systems can add their own line beside it. */}
-            <p className="v2-byo__os" data-testid="byo-setup-os">
-              {t('agentByo.listen.osLabel')}{' '}
-              {SETUP_OS_OPTIONS.map(({ os, labelKey }, i) => (
-                <React.Fragment key={os}>
-                  {i > 0 && ' · '}
-                  <button
-                    type="button"
-                    className="v2-byo__link"
-                    aria-pressed={setupOs === os}
-                    data-testid={`byo-setup-os-${os}`}
-                    onClick={() => setSetupOs(os)}
-                  >
-                    {t(labelKey)}
-                  </button>
-                </React.Fragment>
+            <p className="v2-byo__os" data-testid="byo-setup-os" role="group" aria-label={t('agentByo.listen.osLabel')}>
+              {SETUP_OS_OPTIONS.map(({ os, labelKey }) => (
+                <button
+                  key={os}
+                  type="button"
+                  className="v2-byo__link"
+                  aria-pressed={setupOs === os}
+                  data-testid={`byo-setup-os-${os}`}
+                  onClick={() => setSetupOs(os)}
+                >
+                  {t(labelKey)}
+                </button>
               ))}
             </p>
             {!listenerAvailable && (

@@ -18,9 +18,31 @@ rename it without changing the exclusion list too.
 
 ## Run it
 
+### Prod: sign in to the existing test account
+
+Prod has no signup for the walk. The run signs in to one existing test account
+and runs the six covered steps (login, first pod, hosted install, hosted reply,
+invite preview, and the BYO step that reports not-covered). It removes only the
+pod, seat and agent it made, and it never deletes the account.
+
+```bash
+COMMONLY_WALK_EMAIL=<existing test account> \
+COMMONLY_WALK_PASSWORD="<its password>" \
+  node scripts/first-user-walk.mjs --base https://api.commonly.me
+```
+
+- Without `COMMONLY_WALK_EMAIL` a prod run is refused before any request.
+- The manifest records `"mode": "signin-prod"`. The result file has no
+  `signup` or `signup-workspace` steps.
+
+### Signup (non-prod targets with no account given)
+
+Prod never signs up. A prod base without `COMMONLY_WALK_EMAIL` is refused before
+any request, so this form is for other targets only:
+
 ```bash
 COMMONLY_WALK_PASSWORD="$(openssl rand -base64 24)" \
-  node scripts/first-user-walk.mjs --base https://api.commonly.me
+  node scripts/first-user-walk.mjs --base https://api-dev.example.test
 ```
 
 - Generate a fresh password per run. The script reads it from the environment
@@ -29,6 +51,26 @@ COMMONLY_WALK_PASSWORD="$(openssl rand -base64 24)" \
 - Exit codes: `0` every step passed, `1` a step failed or the account survived
   cleanup, `2` the walk passed but a step is not yet covered (today, the
   Bring-your-own connect step).
+
+### Staging: the shared sign-in account
+
+Staging signup needs a verified email, which a walk address cannot receive, so
+staging runs sign in to one shared walk account that SRE pre-verifies. Set
+`COMMONLY_WALK_EMAIL` and `COMMONLY_WALK_PASSWORD` from the environment and pass
+the staging API as the target:
+
+```bash
+COMMONLY_WALK_EMAIL=<shared walk account> COMMONLY_WALK_PASSWORD=<its password> \
+  node scripts/first-user-walk.mjs --base https://api-staging.commonly.me
+```
+
+- The run signs in and never signs up. It removes only the pods, seats and
+  agents it created, and it never deletes the shared account.
+- `COMMONLY_WALK_EMAIL` aimed at any host other than staging is refused before
+  the walk starts. Prod uses the same variable name, so keep staging credentials
+  out of a shell that runs the walk against prod.
+- The manifest records `"mode": "signin"` for these runs. Prod runs record
+  `"mode": "signin-prod"`.
 
 ## Cleanup is part of the run
 
@@ -58,6 +100,37 @@ cleanup reports `account <username>` as a survivor and the manifest is
 `needs-admin-purge`: SRE looks the account up by that exact name. The manifest
 never holds the email. Only a run that dies before its manifest write (before
 signup starts) leaves nothing to find, and that case needs no purge.
+
+## Result file (what SRE reads)
+
+Every run, including one that fails before its first step, overwrites
+`~/.commonly/state/walk-729/result.json` (override with `COMMONLY_WALK_RESULT`).
+Write is atomic (temp file, then rename), so a reader never sees a half file.
+
+```json
+{
+  "schema": 1,
+  "sha": "<deployed sha from WALK_SHA, or null when the scheduler did not set it>",
+  "startedAt": "...", "finishedAt": "...",
+  "base": "https://api.commonly.me", "mode": "signin-prod",
+  "walk": "walk-<stamp>",
+  "overall": "pass | fail | incomplete",
+  "exitCode": 0,
+  "steps": [{ "name": "signup", "result": "pass | fail | not-covered", "ms": 0, "reason": "only when not pass" }],
+  "cleanup": { "ok": true, "status": "clean | needs-admin-purge | not-run", "survivors": [] }
+}
+```
+
+- The result is written at the end of a run. A run killed midway leaves the previous file, so check `finishedAt`.
+- `overall` and the exit code agree: `pass` = `0`, `fail` = `1`, `incomplete` = `2`.
+- `incomplete` means every covered step passed and a step is not covered yet
+  (Bring your own connect). Today every full run is `incomplete`, never `pass`,
+  until that step is built. Roll back on `fail` only; treat `incomplete` as
+  not-green but not as a regression.
+- `mode` is `signup`, `signin` (staging) or `signin-prod`, or `not-chosen` when the run was refused before a mode was accepted (no request was made).
+- `cleanup.status` is `not-run` (and `ok` null) when the run stopped before cleanup could start, for example a refused mode.
+- The file holds no password, token or email. A `needs-admin-purge` cleanup
+  points SRE at the manifest in `~/.commonly/state/walk-706/`.
 
 ## Daily schedule
 

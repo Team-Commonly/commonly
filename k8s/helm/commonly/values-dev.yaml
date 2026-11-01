@@ -442,14 +442,15 @@ hostedMcp:
     # Not walked end to end on staging before the 10-23 deploy; unwalked entries ship hidden.
     # Remove each line once its staging walk passes.
     - atlassian
-    - sentry
+    # Sentry passed connect and read: C0-C2 on staging with a non-admin user (10-23), C3 live
+    # on prod (10-25), so it is offered. TASK-308 still owes the write-with-confirm arm (C6)
+    # and the open C9 arms listed in the matrix. Its allowlist key left the overlay secret with this change.
     # Added by #2429. Hidden until each is walked end to end.
     - notion
     - gitlab
     - supabase
-    # The 10-27 prod walk failed before Airtable's consent screen ("invalid client_id
-    # or mismatched redirect_uri"). Hidden until TASK-318 lands and a walk passes.
-    - airtable
+    # Airtable passed a live prod walk on 10-31 (TASK-307: connect, a list_bases call,
+    # grant revoke, disconnect), so it is offered. Its allowlist key left the overlay secret too.
     # Hidden until a fresh non-admin account walks connect, grant, call and
     # refusal end to end (TASK-290). That account joins the runner-only allowlist overlay (#2950).
     - github-mcp

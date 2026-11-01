@@ -1,0 +1,237 @@
+# v2.css map: Sidebar (nav rail, pods list, phone tab bar)
+
+Generated 2026-11-01 from v2.css at main `323595193`, with live DOM read on prod `9460865ab`. Method and caveats: [README](README.md).
+
+- **Goes with the lift:** 148 selectors used only by this surface (147 in 130 whole rules, about 727 lines; 1 sit in a rule shared with other selectors, so trim them from its list).
+- **Shared, stays:** 72 selectors this surface uses that another surface also uses.
+- 44 of the surface-only selectors were never matched on prod in the states walked; they are classed by source references alone. Check those before deleting.
+
+## Goes with the lift (surface-only)
+
+Line numbers are v2.css at `323595193`; they shift as earlier lines change, so search by selector.
+
+- L754–759 `.v2-pane--rail` — pinned by v2-layout-invariants.test.ts
+- L808–818 `.v2-rail` — pinned by v2-layout-invariants.test.ts
+- L822–827 `.v2-rail__foot`
+- L829–834 `.v2-rail__utility`
+- L836–840 `.v2-rail__foot-sep`
+- L877–885 `.v2-rail__nav` — pinned by v2-layout-invariants.test.ts
+- L890–893 `.v2-rail__nav` in `@media (max-height: 460px)` — pinned by v2-layout-invariants.test.ts
+- L896–917 `.v2-root button.v2-rail__item` — pinned by v2-layout-invariants.test.ts
+- L919–935 `.v2-rail__item:hover::after` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L919–935 `.v2-rail__item:focus-visible::after` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L937–940 `.v2-root button.v2-rail__item:hover` — pinned by v2-layout-invariants.test.ts
+- L942–948 `.v2-root button.v2-rail__item--active` — pinned by v2-layout-invariants.test.ts
+- L950–956 `.v2-rail__item-icon` — pinned by v2-layout-invariants.test.ts
+- L958–960 `.v2-rail__item-label`
+- L962–967 `.v2-rail__divider` — not seen live
+- L969–977 `.v2-rail__user` — pinned by v2-layout-invariants.test.ts
+- L979–981 `.v2-rail__user > div` — not seen live; pinned by v2-layout-invariants.test.ts
+- L983–996 `.v2-rail__feedback` — pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L983–996 `.v2-rail__signout` — rule lists 3 selectors
+- L983–996 `.v2-rail__account` — pinned by v2-layout-invariants.test.ts; rule lists 3 selectors
+- L998–1005 `.v2-rail__feedback:hover` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L998–1005 `.v2-rail__feedback[aria-expanded="true"]` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L998–1005 `.v2-rail__signout:hover` — rule lists 5 selectors
+- L998–1005 `.v2-rail__account:hover` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L998–1005 `.v2-rail__account[aria-expanded="true"]` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L1007–1011 `.v2-rail__feedback svg` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1007–1011 `.v2-rail__signout svg` — rule lists 2 selectors
+- L1013–1017 `.v2-rail__account` — pinned by v2-layout-invariants.test.ts
+- L1029–1038 `.v2-root .v2-account-menu__popover.MuiPaper-root` — not seen live
+- L1040–1045 `.v2-account-menu__list` — not seen live
+- L1047–1061 `.v2-root button.v2-account-menu__item` — not seen live
+- L1063–1068 `.v2-root button.v2-account-menu__item:hover` — not seen live; rule lists 2 selectors
+- L1063–1068 `.v2-root button.v2-account-menu__item:focus-visible` — not seen live; rule lists 2 selectors
+- L1070–1072 `.v2-root button.v2-account-menu__item:focus-visible` — not seen live
+- L1074–1078 `.v2-account-menu__item svg` — not seen live
+- L1080–1089 `.v2-root .v2-feedback-menu__popover.MuiPaper-root` — not seen live; pinned by v2-layout-invariants.test.ts
+- L1091–1096 `.v2-feedback-menu__list` — not seen live
+- L1098–1109 `.v2-feedback-menu__item` — not seen live
+- L1111–1116 `.v2-feedback-menu__item:hover` — not seen live; rule lists 2 selectors
+- L1111–1116 `.v2-feedback-menu__item:focus-visible` — not seen live; rule lists 2 selectors
+- L1118–1120 `.v2-feedback-menu__item:focus-visible` — not seen live
+- L1122–1127 `.v2-feedback-menu__item svg` — not seen live
+- L1152–1157 `.v2-pods` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L1194–1203 `.v2-pods__create` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L1271–1279 `.v2-pods__create-input`
+- L1281–1283 `.v2-pods__create-input:focus`
+- L1285–1288 `.v2-pods__create-error` — not seen live; pinned by v2-type-floors.test.ts
+- L1290–1294 `.v2-pods__create-actions`
+- L1296–1302 `.v2-root button.v2-pods__create-cancel` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1296–1302 `.v2-root button.v2-pods__create-submit` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1304–1306 `.v2-root button.v2-pods__create-cancel` — pinned by v2-layout-invariants.test.ts
+- L1308–1311 `.v2-root button.v2-pods__create-submit` — pinned by v2-layout-invariants.test.ts
+- L1313–1316 `.v2-root button.v2-pods__create-submit:disabled` — pinned by v2-layout-invariants.test.ts
+- L1319–1322 `.v2-root button.v2-pods__create-cancel` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1319–1322 `.v2-root button.v2-pods__create-submit` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L1391–1395 `.v2-pods__list` — pinned by v2-layout-invariants.test.ts
+- L1621–1626 `.v2-pods__empty` — not seen live
+- L6142–6153 `.v2-pods-aside` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L10863–10903 `.v2-root:lang(zh) .v2-pods__page-title` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 39 selectors
+- L11279–11284 `.v2-pods` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L11313–11315 `.v2-pods-aside` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11945 `.v2-pane--rail` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11962–11974 `.v2-mobile-tabs` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11975–11987 `.v2-root button.v2-mobile-tabs__item` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11988 `.v2-root button.v2-mobile-tabs__item svg` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11989 `.v2-root button.v2-mobile-tabs__item--active` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11990 `.v2-root button.v2-mobile-tabs__item:hover:not(:disabled)` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L11991 `.v2-root button.v2-mobile-tabs__item--active:hover:not(:disabled)` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12009 `.v2-mobile-tabs` — pinned by v2-layout-invariants.test.ts
+- L12012 `.v2-mobile-tabs` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12022–12024 `.v2-pods-aside` — pinned by v2-layout-invariants.test.ts
+- L12028–12039 `.v2-pods` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L12042–12046 `.v2-pods-aside--page .v2-pods` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12048–12056 `.v2-pods__bar` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12058–12068 `.v2-pods__page-title` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12070–12076 `.v2-pods-aside--page .v2-pods__body` — not seen live
+- L12078–12080 `.v2-pods__body`
+- L12082–12088 `.v2-pods__tools`
+- L12090–12104 `.v2-pods__search` — pinned by v2-layout-invariants.test.ts
+- L12106 `.v2-pods__search > svg` — pinned by v2-layout-invariants.test.ts
+- L12108–12111 `.v2-pods__search:focus-within` — pinned by v2-layout-invariants.test.ts
+- L12113–12122 `.v2-pods__search-input`
+- L12124–12126 `.v2-pods__search-input::placeholder`
+- L12128–12130 `.v2-pods__search-input::-webkit-search-cancel-button`
+- L12132–12141 `.v2-pods__search-kbd` — pinned by v2-layout-invariants.test.ts
+- L12144 `.v2-pods__search-kbd` in `@media (max-width: 760px), (hover: none) and (pointer: coarse)` — pinned by v2-layout-invariants.test.ts
+- L12149 `.v2-root button.v2-pods__new`
+- L12151 `.v2-root button.v2-pods__new[aria-expanded="true"]`
+- L12199 `.v2-pods__view`
+- L12201 `.v2-pods-aside--page .v2-pods__view` — not seen live
+- L12203–12218 `.v2-pods__list` — pinned by v2-layout-invariants.test.ts
+- L12220–12222 `.v2-pods__section` — not seen live; pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L12224–12238 `.v2-pods__section-head` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12224–12238 `.v2-root button.v2-pods__section-head` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12240 `.v2-root button.v2-pods__section-head` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12241 `.v2-root button.v2-pods__section-head:hover` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12243–12246 `.v2-pods__section-count` — not seen live
+- L12248–12252 `.v2-pods__section-chevron` — not seen live; pinned by v2-type-floors.test.ts
+- L12254 `.v2-pods__section-chevron::before` — not seen live; pinned by v2-type-floors.test.ts
+- L12255 `[aria-expanded="true"] > .v2-pods__section-chevron::before` — not seen live; pinned by v2-type-floors.test.ts
+- L12257–12260 `.v2-root .v2-pods__section--kind button.v2-pods__section-head` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12262–12266 `.v2-pods__rows`
+- L12269–12284 `.v2-root button.v2-pods__row` — pinned by v2-layout-invariants.test.ts
+- L12286 `.v2-root button.v2-pods__row--in-fold` — not seen live
+- L12289 `.v2-pods__rowwrap` — pinned by v2-layout-invariants.test.ts
+- L12291–12306 `.v2-root button.v2-pods__pin` — pinned by v2-layout-invariants.test.ts
+- L12314–12315 `.v2-pods__rowwrap:hover .v2-pods__pin` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12314–12315 `.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12317 `.v2-root button.v2-pods__pin:focus-visible` — pinned by v2-layout-invariants.test.ts
+- L12318 `.v2-root button.v2-pods__pin--active` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12319 `.v2-root button.v2-pods__pin:hover` — pinned by v2-layout-invariants.test.ts
+- L12321 `.v2-pods__row-time` — pinned by v2-layout-invariants.test.ts
+- L12323–12324 `.v2-pods__rowwrap:hover .v2-pods__row-time` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12323–12324 `.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time` — not seen live; pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12327 `.v2-root button.v2-pods__pin` in `@media (hover: none) and (pointer: coarse)` — pinned by v2-layout-invariants.test.ts
+- L12328 `.v2-pods__row-time` in `@media (hover: none) and (pointer: coarse)` — pinned by v2-layout-invariants.test.ts
+- L12331 `.v2-root button.v2-pods__row:hover` — pinned by v2-layout-invariants.test.ts
+- L12333–12336 `.v2-root button.v2-pods__row:focus-visible` — pinned by v2-layout-invariants.test.ts
+- L12341–12346 `.v2-root button.v2-pods__row--selected` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12341–12346 `.v2-root button.v2-pods__row--selected:hover` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12348–12358 `.v2-pods__row-mark` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L12369–12372 `.v2-root button.v2-pods__row--selected .v2-pods__row-mark:not(.v2-avatar)` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L12374–12379 `.v2-pods__row-name` — pinned by v2-layout-invariants.test.ts
+- L12381 `.v2-root button.v2-pods__row--unread .v2-pods__row-name` — pinned by v2-layout-invariants.test.ts
+- L12383–12390 `.v2-pods__row-meta` — pinned by v2-layout-invariants.test.ts
+- L12392 `.v2-root button.v2-pods__row--selected .v2-pods__row-meta` — pinned by v2-layout-invariants.test.ts
+- L12394–12396 `.v2-root button.v2-pods__row--selected:focus-visible` — pinned by v2-layout-invariants.test.ts
+- L12399–12409 `.v2-pods__row-pill` — pinned by v2-layout-invariants.test.ts
+- L12415–12418 `.v2-root button.v2-pods__row` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12420–12423 `.v2-root button.v2-pods__pin` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12426–12428 `.v2-pods__create` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L12430 `.v2-pods__empty` — not seen live
+- L12431 `.v2-pods__empty--mono` — not seen live
+- L12570–12577 `.v2-shell--list .v2-pods-aside--page` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12579–12582 `.v2-shell--list .v2-pods` in `@media (max-width: 760px)` — not seen live; pinned by v2-layout-invariants.test.ts
+- L12584 `.v2-pods-aside:not(.v2-pods-aside--page)` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12640–12644 `.v2-mobile-tabs` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12652–12665 `.v2-root button.v2-mobile-tabs__item` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12667–12671 `.v2-root button.v2-mobile-tabs__item--active` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12667–12671 `.v2-root button.v2-mobile-tabs__item--active:hover:not(:disabled)` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L12673–12678 `.v2-mobile-tabs__icon` in `@media (max-width: 760px)`
+- L12680 `.v2-root button.v2-mobile-tabs__item--active .v2-mobile-tabs__icon` in `@media (max-width: 760px)`
+- L12684–12687 `.v2-mobile-tabs__label` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12691 `.v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label` in `@media (max-width: 760px)` — pinned by v2-layout-invariants.test.ts
+- L12695 `.v2-mobile-tabs__icon` in `@media (max-width: 760px)`
+- L12696–12708 `.v2-mobile-tabs__count` in `@media (max-width: 760px)`
+- L13456–13470 `.v2-rail__item-icon .MuiBadge-badge` — pinned by v2-layout-invariants.test.ts
+- L13473–13475 `.v2-rail__item-icon .v2-rail__badge--activity .MuiBadge-badge` — pinned by v2-layout-invariants.test.ts
+
+## Shared, stays
+
+Each line names the other surfaces that use the selector. It can go only when the last of them lifts.
+
+- L19 `.v2-root` — also legacy, other, settings, shell
+- L246 `:root[data-v2-theme="dark"] .v2-root` — also legacy, other, settings, shell
+- L320 `:root:not([data-v2-theme="light"]) .v2-root` in `@media (prefers-color-scheme: dark)` — also legacy, other, settings, shell
+- L395 `.v2-root *` — also agentSettings, board, chat, connectors, legacy, memory, other, settings, shell
+- L395 `.v2-root *::before` — also agentSettings, board, chat, connectors, legacy, memory, other, settings, shell
+- L395 `.v2-root *::after` — also agentSettings, board, chat, connectors, legacy, memory, other, settings, shell
+- L405 `.v2-root *::-webkit-scrollbar` — also agentSettings, board, chat, connectors, legacy, memory, other, settings, shell
+- L409 `.v2-root *::-webkit-scrollbar-track` — also agentSettings, board, chat, connectors, legacy, memory, other, settings, shell
+- L412 `.v2-root *::-webkit-scrollbar-thumb` — also agentSettings, board, chat, connectors, legacy, memory, other, settings, shell
+- L418 `.v2-root *::-webkit-scrollbar-thumb:hover` — also agentSettings, board, chat, connectors, legacy, memory, other, settings, shell
+- L423 `.v2-root *::-webkit-scrollbar-corner` — also agentSettings, board, chat, connectors, legacy, memory, other, settings, shell
+- L427 `.v2-root *` — also agentSettings, board, chat, connectors, legacy, memory, other, settings, shell
+- L432 `.v2-root :where(button:not(.MuiButtonBase-root))` — also agentSettings, board, chat, connectors, legacy, other, settings, shell
+- L441 `.v2-root input` — also agentSettings, chat, connectors, legacy, memory, other, settings, shell
+- L441 `.v2-root textarea` — also chat, legacy, other, settings, shell
+- L447 `.v2-root a` — also agentSettings, chat, legacy, memory, other, settings, shell
+- L614 `.v2-root button:focus-visible` — also agentSettings, board, chat, connectors, legacy, other, settings, shell
+- L614 `.v2-root input:focus-visible` — also agentSettings, chat, connectors, legacy, memory, other, settings, shell
+- L614 `.v2-root textarea:focus-visible` — also chat, legacy, other, settings, shell
+- L614 `.v2-root a:focus-visible` — also agentSettings, chat, legacy, memory, other, settings, shell
+- L650 `.v2-authenticated-shell__content .v2-pane` — also agentSettings, board, chat, connectors, memory, other, settings
+- L745 `.v2-pane` — also agentSettings, board, chat, connectors, memory, other, settings
+- L844 `.v2-rail__brand` — also other, shell
+- L858 `.v2-rail__brand > span:not(.v2-rail__brand-icon)` — also other, shell
+- L863 `.v2-rail__brand-icon` — also other, shell
+- L1020 `.v2-rail__account .v2-avatar` — also board, chat, memory, other, settings
+- L1210 `.v2-pods__join-policy` — also chat
+- L1223 `.v2-pods__join-policy legend` — also chat
+- L1230 `.v2-pods__join-policy label` — also chat
+- L1241 `.v2-pods__join-policy input` — also chat
+- L1254 `.v2-pods__join-policy input:checked` — also chat
+- L1259 `.v2-pods__join-policy-hint` — also chat
+- L3020 `.v2-thread .v2-system-action-line .v2-avatar` — also board, chat, memory, other, settings
+- L5206 `.v2-avatar` — also board, chat, memory, other, settings
+- L5236 `.v2-avatar:has(img)` — also board, chat, memory, other, settings
+- L5243 `.v2-avatar:has(img).v2-avatar--character:not(.v2-avatar--flat)` — also board, chat, memory, other, settings
+- L5247 `.v2-avatar--lg` — also board, chat, memory, other, settings
+- L5253 `.v2-avatar--md` — also board, chat, memory, other, settings
+- L5259 `.v2-avatar--sm` — also board, chat, memory, other, settings
+- L5265 `.v2-avatar__online` — also board, chat, memory, other, settings
+- L6019 `.v2-spinner` — also board, chat, other
+- L6063 `.v2-root` in `@media (max-width: 1023px)` — also legacy, other, settings, shell
+- L6136 `.v2-pane:not(.v2-pane--rail):not(.v2-pane--main):not(.v2-pods-aside):not(.v2-pane--inspector)` in `@media (max-width: 760px)` — also chat, other
+- L6573 `.v2-byo__layout .v2-avatar` — also board, chat, memory, other, settings
+- L6582 `.v2-byo__layout .v2-avatar__online` — also board, chat, memory, other, settings
+- L7557 `.v2-root input` in `@media (hover: none), (pointer: coarse)` — also agentSettings, chat, connectors, legacy, memory, other, settings, shell
+- L7557 `.v2-root textarea` in `@media (hover: none), (pointer: coarse)` — also chat, legacy, other, settings, shell
+- L7557 `.v2-root select` in `@media (hover: none), (pointer: coarse)` — also agentSettings, board, legacy, other, settings, shell
+- L10863 `.v2-root:lang(zh) .v2-rail__brand` — also other, shell
+- L11269 `.v2-shell .v2-pane` — also agentSettings, board, chat, connectors, memory, other, settings
+- L11294 `.v2-shell .v2-pane` in `@media (max-width: 760px)` — also agentSettings, board, chat, connectors, memory, other, settings
+- L11309 `.v2-authenticated-shell__content .v2-shell .v2-pane` in `@media (max-width: 760px)` — also agentSettings, board, chat, connectors, memory, other, settings
+- L11455 `.v2-workspace-inspector__fold-avatar.v2-avatar` — also board, chat, memory, other, settings
+- L11515 `.v2-workspace-inspector__avatar.v2-avatar` — also board, chat, memory, other, settings
+- L11866 `.v2-thread .v2-avatar` — also board, chat, memory, other, settings
+- L11880 `.v2-thread .v2-chat__typing-avatars .v2-avatar` — also board, chat, memory, other, settings
+- L12159 `.v2-root button.v2-seg__option:hover:not(:disabled)` — also chat, settings
+- L12162 `.v2-root button.v2-seg__option:focus-visible` — also chat, settings
+- L12167 `.v2-root button.v2-seg__option:disabled` — also chat, settings
+- L12169 `.v2-seg__count` — also chat, settings
+- L12361 `.v2-pods__row-mark.v2-avatar` — also board, chat, memory, other, settings
+- L12455 `.v2-thread .v2-pod-header__stack .v2-avatar` — also board, chat, memory, other, settings
+- L12462 `.v2-thread .v2-pod-header__stack .v2-avatar + .v2-avatar` — also board, chat, memory, other, settings
+- L13299 `.v2-thread .v2-thread-card__faces .v2-avatar` — also board, chat, memory, other, settings
+- L13316 `.v2-thread .v2-thread-replies .v2-msg .v2-avatar` — also board, chat, memory, other, settings
+- L13351 `.v2-thread .v2-avatar--flat` — also board, chat, memory, other, settings
+- L13352 `.v2-thread .v2-avatar--flat-human` — also board, chat, memory, other, settings
+- L13353 `.v2-thread .v2-avatar--flat-agent` — also board, chat, memory, other, settings
+- L13354 `.v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat` — also board, chat, memory, other, settings
+- L13355 `.v2-thread .v2-thread-card__faces .v2-avatar--flat` — also board, chat, memory, other, settings
+- L13673 `.v2-root button.v2-team-card__mark .v2-avatar` — also board, chat, memory, other, settings
+- L13892 `.v2-root.v2-legal` — also legacy, other, settings, shell

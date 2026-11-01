@@ -54,6 +54,44 @@
     "limitedCalls": "此轨迹受到存储大小限制，省略了{{calls}}次工具调用，大型内容字段也已截断。",
     "limitedContent": "此轨迹受到存储大小限制，大型内容字段已截断。"
   },
+  "taskRecord": {
+    "title": "任务记录",
+    "back": "返回看板",
+    "intro": "按顺序列出此任务发生的事。每条记录都带有上一条的哈希，任何一条被改动，链就会断开。",
+    "loading": "正在加载记录…",
+    "access": "此记录不可用。该 Pod 可能没有开启记录，或你已无权访问它。",
+    "members": "只有此 Pod 的成员可以查看它的记录。",
+    "store": "记录存储暂时不可用，请稍后重试。",
+    "error": "无法加载记录，请重试。",
+    "unreadable": "无法读取此记录。",
+    "retry": "重试",
+    "counts_one": "{{count}}条记录",
+    "counts_other": "{{count}}条记录",
+    "run": "运行 {{id}}",
+    "empty": "此任务还没有任何记录。",
+    "entry": "第{{number}}条",
+    "downloadJsonl": "下载 JSONL",
+    "downloadOtlp": "下载 OTLP",
+    "downloadError": "无法下载记录，请重试。",
+    "actor": {
+      "unknown": "未知操作者",
+      "board": "看板",
+      "system": "系统：{{id}}",
+      "policy": "策略：{{id}}",
+      "agent": "{{name}}（智能体）"
+    },
+    "kinds": {
+      "task_claimed": "已认领",
+      "task_released": "已释放",
+      "task_done": "已完成",
+      "grant_issued": "已签发授权",
+      "grant_revoked": "已撤销授权",
+      "permission_requested": "请求审批",
+      "permission_decided": "审批已决定",
+      "tool_call": "工具调用",
+      "tool_update": "工具更新"
+    }
+  },
   "common": {
     "brandName": "Commonly",
     "brandWordmark": "commonly",
@@ -561,6 +599,11 @@
     "systemActions": {
       "taskClaimedVerb": "认领了"
     },
+    "claimRun": {
+      "label": "{{count}}次认领 · {{first}} 至 {{last}}",
+      "count": "{{count}}次认领",
+      "range": "{{first}} 至 {{last}}"
+    },
     "starts": {
       "label": "开始方式",
       "openByo": "去接入自己的智能体",
@@ -722,6 +765,7 @@
       "startThread": "话题",
       "replyInThread": "在话题中回复",
       "replyFromExpandedThread": "在已展开的话题中回复",
+      "groupLabel": "话题，{{count}} {{unit}}",
       "replyingInThread": "正在话题中回复：",
       "last": "最近",
       "collapse": "收起",
@@ -1359,7 +1403,12 @@
       "allFiles": "全部{{count}}个文件",
       "agents": "智能体",
       "files": "文件",
-      "joinOpen": "开放"
+      "joinOpen": "开放",
+      "viewLabel": "面板视图",
+      "viewPod": "Pod",
+      "viewThreads": "话题",
+      "hidePanel": "收起面板",
+      "noThreads": "已加载的消息里没有话题。"
     },
     "goal": {
       "title": "目标",
@@ -1460,6 +1509,10 @@
     "title": "看板",
     "backToChat": "返回聊天",
     "newTask": "新建任务",
+    "addTo": "添加到{{column}}",
+    "card": {
+      "needs": "依赖 {{dep}}"
+    },
     "taskCount_other": "{{count}}个任务",
     "focus": {
       "eyebrow": "Pod 方向",
@@ -1492,7 +1545,8 @@
       "reviewLatest": "查看最新内容",
       "latestReviewed": "已查看最新内容",
       "discard": "放弃未保存的焦点更改？",
-      "saveError": "无法保存焦点，请重试。"
+      "saveError": "无法保存焦点，请重试。",
+      "progress": "{{done}}/{{total}}已完成"
     },
     "loadErrorTitle": "看板加载失败",
     "loadErrorText": "请检查网络连接后重试。",
@@ -1519,6 +1573,7 @@
     "detail": {
       "updates": "更新记录",
       "pr": "查看 PR",
+      "record": "查看记录",
       "priority": "优先级",
       "assignedTo": "分配给",
       "claimedBy": "认领人",
@@ -1536,7 +1591,9 @@
       "saveError": "未能保存更改，请重试。",
       "statusLabel": "状态",
       "showEarlierUpdates": "显示{{count}}条更早的更新",
-      "hideEarlierUpdates": "隐藏更早的更新"
+      "hideEarlierUpdates": "隐藏更早的更新",
+      "depends": "依赖",
+      "noDeps": "无"
     },
     "form": {
       "title": "标题",
@@ -1549,10 +1606,23 @@
       "defaultPriority": "默认"
     },
     "owner": {
-      "left": "{{holder}} · <minutes>剩余{{minutes}}分钟</minutes>",
-      "assigned": "{{assignee}} · 尚未认领",
-      "expired": "认领已到期 · {{holder}}",
-      "claimed": "{{holder}} · 已认领"
+      "leaseShort": "{{minutes}}分钟",
+      "expiredShort": "已到期",
+      "claimedShort": "已认领"
+    },
+    "filter": {
+      "label": "筛选",
+      "mine": "我的",
+      "p0": "P0",
+      "unclaimed": "未认领"
+    },
+    "search": {
+      "label": "搜索任务",
+      "placeholder": "搜索任务"
+    },
+    "doneRail": {
+      "show": "展开",
+      "hide": "收起"
     }
   },
   "approvalCard": {
@@ -1946,6 +2016,7 @@
       "viewTag": "{{role}}视图 · 私有",
       "indexSummary_one": "{{notes}}条笔记，分布在{{count}}个板块{{updated}}。仅你可见；对公开资料页隐藏。",
       "indexSummary_other": "{{notes}}条笔记，分布在{{count}}个板块{{updated}}。仅你可见；对公开资料页隐藏。",
+      "sectionUpdated": "板块更新于{{when}}",
       "lastSavedClause": " · 最后保存至 {{section}}，{{time}}",
       "more": "还有{{count}}条",
       "entriesRemembered": "条已记住的条目",
@@ -2262,12 +2333,16 @@
     }
   },
   "connectors": {
-    "about": "关于连接器",
-    "counts": {
-      "connected_one": "已连接{{count}}个频道",
-      "connected_other": "已连接{{count}}个频道",
-      "needsYou_one": "{{count}}项需要你处理",
-      "needsYou_other": "{{count}}项需要你处理"
+    "search": "搜索",
+    "filterLabel": "显示",
+    "channelsGroup": "频道",
+    "addChannelTile": "频道",
+    "meta": "已开启{{on}}个 · 可用{{available}}个",
+    "offCount": "另有{{n}}个未启用",
+    "filter": {
+      "all": "全部",
+      "channels": "频道",
+      "tools": "工具"
     },
     "inactiveFold": "非活跃 · {{n}}",
     "loading": "正在加载连接器…",
@@ -2317,6 +2392,7 @@
     "availableTelegram": "发一条消息",
     "cancel": "取消",
     "channelDetails": "频道详情",
+    "closeDetails": "关闭",
     "channelSees": "频道可见内容",
     "channels": "你的频道",
     "codeError": "无法生成新的启用码。",
@@ -2325,7 +2401,6 @@
     "connectChannel": "连接频道",
     "copied": "已复制",
     "copyCommand": "复制命令",
-    "description": "将频道连接到 Pod。消息会以你的身份进入 Pod；你可以选择哪些内容回传到频道。",
     "errorLine": "连接已断开。",
     "errorReconnect": "重新连接以恢复",
     "gateLead": "{{pod}} 的主导智能体",
@@ -2483,6 +2558,9 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
+    "granted": "已授权",
+    "beta": "测试版",
+    "adminOnce": "需管理员安装一次",
     "emptyAudienceNotice": "请至少选择一个智能体以授予访问权限。",
     "makePodInviteOnly": "将此 Pod 设为仅限邀请",
     "podInviteOnlyNow": "此 Pod 现已设为仅限邀请。再次选择“授权”继续。",
@@ -2531,7 +2609,6 @@
     "grantDetails": "授权详情",
     "grantError": "无法授权。",
     "grantedByOn": "{{rel}}由 {{member}} 授权。",
-    "grantedCount": "已授权{{count}}个",
     "grantedOn": "{{rel}}授权。",
     "grantedToPod": "授权给 <b>{{pod}}</b>",
     "grantedToPodBy": "由 <b>{{member}}</b> 授权给 <b>{{pod}}</b>",
@@ -2540,21 +2617,26 @@
     "installationId": "安装 ID",
     "installingGitHubApp": "安装中…",
     "keep": "保留",
-    "loading": "正在加载工具…",
     "manage": "管理",
     "mayUse": "{{agents}} 可以使用",
     "mode": "可执行的操作",
     "modeRead": "读取",
     "modeWrite": "读取和写入",
     "modeWriteConfirm": "读取和写入，写入前需确认",
-    "moreCount": "另有{{count}}个",
     "existingConnection": "现有连接",
     "noLongerOffered": "此连接器已不在本实例提供。",
     "removeConnection": "移除连接",
     "confirmRemoveConnection": "确认移除",
     "removeConnectionError": "无法移除连接。",
+    "disconnect": "断开连接",
+    "disconnectLabel": "断开 {{label}}",
+    "confirmDisconnect": "确认断开",
+    "disconnectError": "无法断开 {{label}}。",
+    "disconnectPartial": "已在此处断开 {{label}}，但 {{label}} 未确认。请在其已连接的应用中移除 Commonly。",
+    "disconnected": "已断开 {{label}}。",
     "reviewProviderAccess": "查看 {{label}} 的授权",
     "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",
+    "removedStillListed": "已在此处断开 {{label}}，但 {{label}} 仍显示 Commonly，请到那里一并移除。",
     "openProviderSettings": "打开服务提供方设置",
     "noConnection": "请先安装 GitHub App · 管理员只需安装一次",
     "noSeats": "此 Pod 中还没有智能体",
@@ -2570,6 +2652,26 @@
     "outcomeOk": "成功",
     "outcomeRefused": "已拒绝",
     "outcomeSuperseded": "已回答",
+    "reasonNotInAudience": "此席位不在授权范围内",
+    "reasonToolNotAllowed": "此工具不在允许列表中",
+    "reasonWriteNotAllowed": "未授予写入权限",
+    "reasonGrantRevoked": "授权已撤销",
+    "reasonGrantExpired": "授权已过期",
+    "reasonBudgetExhausted": "调用次数已用完",
+    "reasonApprovalUnavailable": "无法请求人工批准",
+    "reasonApprovalDeclined": "审批已被拒绝",
+    "reasonApprovalExpired": "审批在调用运行前已过期",
+    "reasonInvalidArgs": "参数校验未通过",
+    "reasonConnectionMismatch": "连接与授权已不再匹配",
+    "reasonReconnect": "需要重新连接",
+    "reasonCredentialMissing": "未保存凭据",
+    "reasonCredentialRejected": "服务商拒绝了该凭据",
+    "reasonRefreshUnreachable": "无法刷新凭据",
+    "reasonProviderError": "服务商返回了错误",
+    "reasonProviderUnreachable": "无法连接服务商",
+    "reasonUpstreamToolError": "服务商工具返回了错误",
+    "reasonBrokerUnavailable": "代理服务不可用",
+    "reasonBrokerError": "代理服务出错",
     "owner": "所有者",
     "readInTesting": "只读功能测试中",
     "readOrWrite": "读取，或读取和写入",
@@ -2581,7 +2683,6 @@
     "revokeOld": "撤销旧授权",
     "revokedByLine": "{{rel}}由 {{member}} 撤销",
     "revokedLine": "{{rel}}撤销",
-    "search": "搜索工具",
     "segAll": "全部",
     "segGranted": "已授权",
     "segNotYet": "尚未授权",
@@ -2769,6 +2870,7 @@
     "tabs": "智能体标签页",
     "profile": "资料",
     "settings": "设置",
+    "memory": "记忆",
     "key": "密钥",
     "regenerate": "重新生成密钥",
     "wrapperReconnect": "请在「控制」中替换这台电脑的密钥。",

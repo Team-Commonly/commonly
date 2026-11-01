@@ -193,6 +193,73 @@ export function markByoCommandCopied(userId: unknown, commandType: 'mcp' | 'cli'
 }
 
 /**
+ * The first copy of each setup command, by its own type (TASK-714).
+ *
+ * `listen` is the listener command; `mcp-claude` and `mcp-cursor` are the two
+ * MCP snippets; `daemon` and `token` are the daemon and token copies. Each
+ * gets its own write-once field, so a later listen copy after an MCP copy
+ * leaves a trace. The existing first-copy marks above are unchanged.
+ */
+export const BYO_COPY_TYPES = ['listen', 'mcp-claude', 'mcp-cursor', 'daemon', 'token'] as const;
+export type ByoCopyType = typeof BYO_COPY_TYPES[number];
+const BYO_COPY_FIELD: Record<ByoCopyType, string> = {
+  listen: 'onboarding.byoListenCopiedAt',
+  'mcp-claude': 'onboarding.byoMcpClaudeCopiedAt',
+  'mcp-cursor': 'onboarding.byoMcpCursorCopiedAt',
+  daemon: 'onboarding.byoDaemonCopiedAt',
+  token: 'onboarding.byoTokenCopiedAt',
+};
+const byoCopyTypeMarked = new Set<string>();
+
+export function markByoCopyType(userId: unknown, copyType: unknown): void {
+  const id = String(userId || '');
+  if (!id || !(BYO_COPY_TYPES as readonly unknown[]).includes(copyType)) return;
+  const type = copyType as ByoCopyType;
+  const key = `${id}:${type}`;
+  if (byoCopyTypeMarked.has(key)) return;
+  byoCopyTypeMarked.add(key);
+  const field = BYO_COPY_FIELD[type];
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, [field]: { $exists: false } },
+      { $set: { [field]: new Date() } },
+    ).catch(() => {
+      byoCopyTypeMarked.delete(key);
+    });
+  } catch {
+    // Telemetry fails open: it must never break the copy flow.
+    byoCopyTypeMarked.delete(key);
+  }
+}
+
+/**
+ * The OS the result page set up for and whether its listener could run there,
+ * written once per person (TASK-714). Booleans and the fixed OS enum only: no
+ * command, token, or pod is stored. A missing or malformed value writes nothing.
+ */
+const byoSetupMarked = new Set<string>();
+
+type ByoSetupInput = { setupOs?: unknown; listenerAvailable?: unknown } | null | undefined;
+export function markByoSetup(userId: unknown, setup: ByoSetupInput): void {
+  const id = String(userId || '');
+  const setupOs = parseByoOpenedOs(setup?.setupOs);
+  const listenerEligible = setup?.listenerAvailable;
+  if (!id || !setupOs || typeof listenerEligible !== 'boolean' || byoSetupMarked.has(id)) return;
+  byoSetupMarked.add(id);
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, 'onboarding.byoListenerEligible': { $exists: false } },
+      { $set: { 'onboarding.byoSetupOs': setupOs, 'onboarding.byoListenerEligible': listenerEligible } },
+    ).catch(() => {
+      byoSetupMarked.delete(id);
+    });
+  } catch {
+    // Telemetry fails open: it must never break the copy flow.
+    byoSetupMarked.delete(id);
+  }
+}
+
+/**
  * Record the first authenticated request from a BYO/local runtime.
  *
  * The caller supplies the installation so hosted/native seats do not look
@@ -233,6 +300,31 @@ export function markByoConnectionAttempt(
   }
 }
 
+/**
+ * The first `commonly daemon register` for a person (TASK-661). Written from
+ * the machine route, after registration succeeds, so a failed register writes
+ * nothing. The byo_telemetry row is keyed per person by the caller, so the
+ * row and this mark each land once however many machines are registered.
+ */
+const daemonRegisteredMarked = new Set<string>();
+
+export function markByoDaemonRegistered(userId: unknown): void {
+  const id = String(userId || '');
+  if (!id || daemonRegisteredMarked.has(id)) return;
+  daemonRegisteredMarked.add(id);
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, 'onboarding.byoDaemonRegisteredAt': { $exists: false } },
+      { $set: { 'onboarding.byoDaemonRegisteredAt': new Date() } },
+    ).catch(() => {
+      daemonRegisteredMarked.delete(id);
+    });
+  } catch {
+    // Telemetry fails open: a registration must never fail on its mark.
+    daemonRegisteredMarked.delete(id);
+  }
+}
+
 /** Record the first time a person met one of the onboarding surfaces. */
 export function markSurface(userId: unknown, mark: SurfaceMark): void {
   const id = String(userId || '');
@@ -262,6 +354,9 @@ export function resetOnboardingMarksForTest(): void {
   byoOpenedMarked.clear();
   byoCommandCopiedMarked.clear();
   byoCommandKindMarked.clear();
+  byoCopyTypeMarked.clear();
+  byoSetupMarked.clear();
   byoConnectionAttemptMarked.clear();
+  daemonRegisteredMarked.clear();
   surfaceMarked.clear();
 }

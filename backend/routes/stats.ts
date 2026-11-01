@@ -78,7 +78,7 @@ router.get('/public', statsPublicLimit, async (_req: unknown, res: { json: (d: u
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
-const { markByoCommandCopied, markSurface } = require('../services/onboardingMarks');
+const { markByoCommandCopied, markByoCopyType, markByoSetup, markSurface } = require('../services/onboardingMarks');
 // eslint-disable-next-line global-require
 const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line global-require
@@ -91,6 +91,14 @@ const BYO_STEPS = new Set([
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
   'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown',
 ]);
+// Steps that copy a setup command, and the copy types each may carry. A step
+// and its type must agree, so "token-copied" can never set the listen mark.
+const COPY_TYPES_BY_STEP: Record<string, string[]> = {
+  'mcp-command-copied': ['mcp-claude', 'mcp-cursor'],
+  'cli-command-copied': ['listen'],
+  'daemon-command-copied': ['daemon'],
+  'token-copied': ['token'],
+};
 // Onboarding surfaces: each step also sets its write-once onboarding mark.
 const SURFACE_STEPS: Record<string, string> = {
   'invite-card-shown': 'inviteCardShownAt',
@@ -114,6 +122,13 @@ router.post('/byo-step', rateLimit({
     // the copied command, which contains a runtime token.
     markByoCommandCopied(req.userId, step === 'mcp-command-copied' ? 'mcp' : 'cli');
   }
+  const allowedCopyTypes = COPY_TYPES_BY_STEP[step];
+  if (allowedCopyTypes && allowedCopyTypes.includes(req.body?.copyType)) {
+    markByoCopyType(req.userId, req.body.copyType);
+  }
+  // The setup the result page showed. The service validates both fields and
+  // writes nothing for a missing or malformed value.
+  markByoSetup(req.userId, { setupOs: req.body?.setupOs, listenerAvailable: req.body?.listenerAvailable });
   if (SURFACE_STEPS[step]) markSurface(req.userId, SURFACE_STEPS[step]);
   await recordByoEvent(req.userId, step as any, {
     ...(step === 'mcp-command-copied' ? { commandType: 'mcp' } : {}),

@@ -19,6 +19,28 @@ export function applyV2Theme(pref: V2ThemePref): void {
   document.documentElement.setAttribute('data-v2-theme', pref);
 }
 
+const listeners = new Set<() => void>();
+
+// Lets every mounted control (the Settings picker, the rail switch) follow the
+// one stored preference instead of keeping a copy of it.
+// It also fires when the OS flips light/dark, so an 'auto' preference stays current.
+export function subscribeV2Theme(listener: () => void): () => void {
+  listeners.add(listener);
+  const mql = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-color-scheme: dark)') : undefined;
+  mql?.addEventListener?.('change', listener);
+  return () => {
+    listeners.delete(listener);
+    mql?.removeEventListener?.('change', listener);
+  };
+}
+
+// 'auto' follows the OS; the rail switch needs the set actually showing.
+export function resolveV2Theme(pref: V2ThemePref): 'light' | 'dark' {
+  if (pref !== 'auto') return pref;
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
+    ? 'dark' : 'light';
+}
+
 export function setV2Theme(pref: V2ThemePref): void {
   try {
     window.localStorage.setItem(V2_THEME_KEY, pref);
@@ -26,4 +48,5 @@ export function setV2Theme(pref: V2ThemePref): void {
     // Storage can be blocked; the choice still applies for this page view.
   }
   applyV2Theme(pref);
+  listeners.forEach((listener) => listener());
 }

@@ -10,7 +10,9 @@ jest.mock('../../../models/User', () => ({
 
 const {
   markPodOpened, markStartPicked, markByoOpened, markByoCommandCopied,
-  markByoConnectionAttempt, markWelcomeHostedStart, markSurface, resetOnboardingMarksForTest,
+  markByoConnectionAttempt, markWelcomeHostedStart, markSurface, markByoDaemonRegistered,
+  resetOnboardingMarksForTest,
+  markByoCopyType, markByoSetup,
 } = require('../../../services/onboardingMarks');
 
 const flush = () => new Promise((r) => setImmediate(r));
@@ -255,6 +257,86 @@ describe('BYO setup marks', () => {
     markByoConnectionAttempt('u1', { config: { runtime: { runtimeType: 'hosted' } } });
     markByoConnectionAttempt('u2', { config: { runtime: { runtimeType: 'native' } } });
     markByoConnectionAttempt('u3', { config: { runtime: { runtimeType: 'webhook', webhookUrl: 'https://example.test' } } });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('markByoCopyType and markByoSetup (TASK-714)', () => {
+  test('each command type gets its own write-once mark, so a later listen copy after MCP leaves a trace', () => {
+    markByoCopyType('u1', 'mcp-claude');
+    markByoCopyType('u1', 'listen');
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'u1', isBot: { $ne: true }, 'onboarding.byoMcpClaudeCopiedAt': { $exists: false } },
+      { $set: { 'onboarding.byoMcpClaudeCopiedAt': expect.any(Date) } },
+    );
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'u1', isBot: { $ne: true }, 'onboarding.byoListenCopiedAt': { $exists: false } },
+      { $set: { 'onboarding.byoListenCopiedAt': expect.any(Date) } },
+    );
+  });
+
+  test('each type is written once per person, however often it is copied', () => {
+    markByoCopyType('u1', 'daemon');
+    markByoCopyType('u1', 'daemon');
+    markByoCopyType('u1', 'daemon');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+  });
+
+  test('refuses an unknown copy type, so the page cannot write an arbitrary field', () => {
+    markByoCopyType('u1', 'constructor');
+    markByoCopyType('u1', 'listen; drop');
+    markByoCopyType('u1', undefined);
+    markByoCopyType('', 'token');
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+
+  test('writes the setup OS and listener eligibility once, and nothing else', () => {
+    markByoSetup('u1', { setupOs: 'mac', listenerAvailable: true });
+    markByoSetup('u1', { setupOs: 'windows', listenerAvailable: false });
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'u1', isBot: { $ne: true }, 'onboarding.byoListenerEligible': { $exists: false } },
+      { $set: { 'onboarding.byoSetupOs': 'mac', 'onboarding.byoListenerEligible': true } },
+    );
+    expect(JSON.stringify(mockUpdateOne.mock.calls)).not.toMatch(/token|command|pod/i);
+  });
+
+  test('a missing or malformed setup writes nothing', () => {
+    markByoSetup('u1', { setupOs: 'mac' });
+    markByoSetup('u1', { setupOs: 'plan9', listenerAvailable: true });
+    markByoSetup('u1', { setupOs: 'linux', listenerAvailable: 'yes' });
+    markByoSetup('u1', undefined);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('markByoDaemonRegistered (TASK-661)', () => {
+  test('sets byoDaemonRegisteredAt write-once in the filter, never for bots', () => {
+    markByoDaemonRegistered('u1');
+
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'u1', isBot: { $ne: true }, 'onboarding.byoDaemonRegisteredAt': { $exists: false } },
+      { $set: { 'onboarding.byoDaemonRegisteredAt': expect.any(Date) } },
+    );
+  });
+
+  test('one write per person per process, however many machines they register', () => {
+    markByoDaemonRegistered('u1');
+    markByoDaemonRegistered('u1');
+    markByoDaemonRegistered('u2');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+
+  test('a failed write is retried on the next registration and never throws', async () => {
+    mockUpdateOne.mockRejectedValueOnce(new Error('db down'));
+    markByoDaemonRegistered('u1');
+    await flush();
+    markByoDaemonRegistered('u1');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+
+  test('no person, no write', () => {
+    markByoDaemonRegistered(undefined);
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 });
