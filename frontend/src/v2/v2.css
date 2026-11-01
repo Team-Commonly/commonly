@@ -7787,16 +7787,13 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-settings__layout {
-  display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  grid-template-rows: auto 1fr;
-  gap: 0 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
   padding-top: 40px;
 }
 
 .v2-settings__title {
-  grid-column: 1;
-  grid-row: 1;
   margin: 0;
   color: var(--v2-text-primary);
   font-family: var(--v2-font-display);
@@ -7806,98 +7803,82 @@ body.modern-ui.v2-canvas {
   line-height: 1.1;
 }
 
-.v2-settings__nav {
-  grid-column: 1;
-  grid-row: 2;
-  position: sticky;
-  top: 24px;
-  align-self: start;
-}
+.v2-settings__section { min-width: 0; }
 
-.v2-settings__nav-list {
-  display: grid;
-  gap: 2px;
-  margin-top: 24px;
-}
-
-.v2-root a.v2-settings__nav-link {
-  display: flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 0 8px;
-  border-radius: var(--v2-radius-sm);
-  color: var(--v2-text-secondary);
-  font-family: var(--v2-font);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 20px;
-  text-decoration: none;
-}
-
-.v2-root a.v2-settings__nav-link:hover {
-  color: var(--v2-text-primary);
-}
-
-.v2-root a.v2-settings__nav-link--active {
-  color: var(--v2-text-primary);
-  background: var(--v2-bg-subtle);
-  font-weight: 600;
-}
-
-.v2-root a.v2-settings__nav-link:focus-visible {
-  outline: 2px solid var(--v2-accent);
-  outline-offset: 2px;
-}
-
-.v2-settings__nav-note {
-  margin: 24px 0 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--v2-border-soft);
+.v2-settings__label {
+  margin: 0 0 8px;
   color: var(--v2-text-tertiary);
   font-family: var(--v2-font-mono);
   font-size: 12px;
+  font-weight: 500;
   line-height: 16px;
 }
 
-.v2-settings__section {
-  padding: 28px 0;
-  border-bottom: 1px solid var(--v2-border-soft);
-  scroll-margin-top: 24px;
-}
-
-.v2-settings__label {
-  margin: 0 0 16px;
-  color: var(--v2-text-primary);
-  font-family: var(--v2-font-display);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.v2-settings__section-body {
+/* One bordered card per group; rows are separated by hairlines. */
+.v2-settings__group,
+.v2-settings__fold {
   min-width: 0;
-}
-
-.v2-settings__link-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: baseline;
-  gap: 12px;
-  padding: 12px;
+  overflow: hidden;
   border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
+  border-radius: var(--v2-radius-lg);
+  background: var(--v2-surface);
+}
+.v2-settings__group > * + *,
+.v2-settings__group .v2-settings__fold { border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__group .v2-settings__fold { border-width: 0; border-radius: 0; border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__group > .v2-settings__fold:first-child { border-top: 0; }
+.v2-settings__group > .v2-settings__account { border-top: 0; }
+.v2-settings__account > .v2-settings__row + .v2-settings__row,
+.v2-settings__account > .v2-settings__edit { border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__row {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
   color: var(--v2-text-primary);
   text-decoration: none;
 }
-.v2-settings__link-row:hover { background: var(--v2-surface-hover); }
-.v2-settings__link-row:focus-visible {
-  outline: 2px solid var(--v2-accent);
-  outline-offset: 2px;
+.v2-settings__row > .v2-settings__row-label { flex: 0 0 auto; min-width: 84px; font: 600 13px/18px var(--v2-font); }
+.v2-settings__row > .v2-settings__row-value { flex: 1 1 auto; min-width: 0; color: var(--v2-text-muted); font-size: 12px; }
+.v2-settings__row-value--mono { font-family: var(--v2-font-mono); }
+.v2-settings__row-actions { display: inline-flex; gap: 8px; margin-left: auto; }
+.v2-settings__row > .v2-settings__secondary,
+.v2-settings__row > .v2-settings__icon-btn,
+.v2-settings__row > .v2-settings__row-actions { margin-left: auto; }
+.v2-settings__icon { flex: 0 0 auto; color: var(--v2-text-tertiary); }
+.v2-settings__summary { cursor: pointer; list-style: none; }
+.v2-settings__summary::-webkit-details-marker { display: none; }
+.v2-settings__summary > .v2-settings__icon:last-child { margin-left: auto; transition: transform .15s; }
+details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transform: rotate(180deg); }
+.v2-settings__fold-body { padding: 12px 14px 14px; border-top: 1px solid var(--v2-border-soft); }
+.v2-settings__fold--actions .v2-settings__fold-body { display: flex; flex-direction: column; gap: 12px; }
+.v2-settings__row--link:hover { background: var(--v2-surface-hover); }
+.v2-settings__row--link:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: -2px; }
+.v2-settings__row-arrow { margin-left: auto; color: var(--v2-text-tertiary); font-size: 18px; line-height: 18px; }
+.v2-settings__row--plan > .v2-billing { display: flex; flex: 1 1 auto; align-items: center; justify-content: space-between; gap: 12px; }
+.v2-settings__row--plan .v2-billing__head { margin: 0; }
+.v2-settings__row--plan .v2-billing__badge,
+.v2-settings__row--plan .v2-billing__btn { white-space: nowrap; }
+.v2-settings__row--plan .v2-billing__actions { margin: 0; }
+.v2-root .v2-settings button.v2-settings__icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--v2-radius-sm);
+  background: transparent; color: var(--v2-text-tertiary); cursor: pointer;
 }
-.v2-settings__link-row-label { font: 600 13px/18px var(--v2-font); }
-.v2-settings__link-row-detail { color: var(--v2-text-muted); font-size: 12px; }
-.v2-settings__link-row-arrow { color: var(--v2-accent-text); font-size: 18px; line-height: 18px; }
+.v2-root .v2-settings button.v2-settings__icon-btn:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+.v2-settings__edit { padding: 12px 14px 14px; }
+.v2-settings__edit--closed { display: none; }
+.v2-settings__group .v2-settings__developer-disclosure { margin: 0; padding: 12px 14px; }
+.v2-settings__token-detail { padding: 0 14px 12px; }
+@media (max-width: 560px) {
+  .v2-settings__layout { padding-top: 20px; gap: 16px; }
+  .v2-settings__row > .v2-settings__row-label { min-width: 0; }
+  .v2-settings__token > .v2-settings__row { flex-wrap: wrap; }
+  .v2-settings__row-actions { flex: 1 0 100%; justify-content: flex-end; }
+  .v2-settings__row--plan > .v2-billing { flex-wrap: wrap; justify-content: flex-start; }
+  .v2-settings__row--plan .v2-billing__actions { margin-left: auto; }
+}
 
 .v2-settings__developer-disclosure {
   margin-top: 20px;
@@ -7912,21 +7893,19 @@ body.modern-ui.v2-canvas {
 .v2-settings__developer-disclosure[open] > summary { margin-bottom: 16px; }
 
 .v2-settings__content {
-  grid-column: 2;
-  grid-row: 1 / span 2;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(100%, 640px);
+  margin: 0 auto;
 }
 
-.v2-settings__account-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 44px;
-}
+.v2-settings__account-row { min-height: 64px; }
 
 .v2-settings__avatar {
-  width: 64px;
-  height: 64px;
-  flex: 0 0 64px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border: 0;
   border-radius: var(--v2-radius-sm);
   font-size: 12px;
@@ -8179,9 +8158,9 @@ body.modern-ui.v2-canvas {
   overflow: hidden;
   color: var(--v2-text-primary);
   font-family: var(--v2-font-display);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -8431,16 +8410,8 @@ body.modern-ui.v2-canvas {
 /* D215 Settings › Look: a label and a segment per row. Language moved here
    from the rail (TASK-691). */
 .v2-settings__look { display: flex; flex-direction: column; }
-.v2-settings__look-row {
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-.v2-settings__look-row:last-child { border-bottom: 0; }
-.v2-settings__look-label { color: var(--v2-text-primary); font: 500 13px/18px var(--v2-font); }
+.v2-settings__look .v2-settings__row { justify-content: space-between; }
+.v2-settings__look .v2-settings__row + .v2-settings__row { border-top: 1px solid var(--v2-border-soft); }
 
 
 /* Settings owns the connected-apps controls without inheriting the legacy
@@ -8525,17 +8496,6 @@ body.modern-ui.v2-canvas {
     font-size: 28px;
   }
 
-  .v2-settings__nav {
-    display: none;
-  }
-
-  .v2-settings__section {
-    padding: 20px 0;
-  }
-
-  .v2-settings__label {
-    margin-bottom: 14px;
-  }
 
   .v2-settings__token-value {
     grid-template-columns: 1fr 1fr;
