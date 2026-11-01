@@ -81,7 +81,7 @@
   cursor: pointer;
 }
 
-.v2-root button.v2-catchup__dismiss:hover { color: var(--v2-text); }
+.v2-root button.v2-catchup__dismiss:hover { color: var(--v2-text-primary); }
 
 .v2-catchup__body {
   margin-top: 6px;

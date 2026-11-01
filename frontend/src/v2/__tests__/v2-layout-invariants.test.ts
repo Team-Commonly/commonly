@@ -5473,3 +5473,29 @@ describe('pod board column scroll (TASK-698)', () => {
     expect(mobile).toMatch(/button\.v2-board__tab\.is-active \{ background: var\(--v2-surface\)/);
   });
 });
+
+describe('chat sheets lifted out of v2.css (S3)', () => {
+  const chatSheets = ['chat-message', 'chat-pane', 'chat-composer', 'chat-inspector', 'chat-states']
+    .map((name) => read(`../chat/${name}.css`));
+
+  test('the rules the landing demo renders stay in v2.css, which is all the landing loads', () => {
+    const v2Only = read('../v2.css');
+    expect(v2Only).toMatch(/\n\.v2-msg \{/);
+    expect(v2Only).toMatch(/\n\.v2-decision-card__options \{/);
+    expect(v2Only).toMatch(/\n\.v2-decision-card__option \{/);
+    // Selectors only: a comment may name the class to say it stayed behind.
+    for (const sheet of chatSheets) expect(sheet.replace(/\/\*[\s\S]*?\*\//g, '')).not.toContain('.v2-decision-card');
+  });
+
+  test('the phone thread foot keys take touches at 44px, measured inside their 1px border', () => {
+    expect(chatSheets[1]).toContain(".v2-root .v2-thread-replies__foot .v2p-b-sm::after { content: ''; position: absolute; inset: -7px; }");
+  });
+
+  test('a UI card posted as a thread reply keeps its own stack gap', () => {
+    expect(chatSheets[1]).toContain('.v2-thread .v2-thread-replies .v2-msg.v2-ui-card { gap: 4px; }');
+  });
+
+  test('every token the chat sheets read is defined', () => {
+    for (const sheet of chatSheets) expect(sheet).not.toMatch(/var\(--v2-text\)/);
+  });
+});

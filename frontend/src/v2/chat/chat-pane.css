@@ -690,6 +690,9 @@
 
 /* D215 .thr .rmsg: 24px avatar, 10px gap, 18px head, 13px name, 13.5/20 body. */
 .v2-thread .v2-thread-replies .v2-msg { grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding: 0; margin: 0; }
+/* A UI card posted as a reply keeps its own 4px stack gap. uiCard.css now loads
+   before this sheet, so the reply rule above would otherwise win the tie. */
+.v2-thread .v2-thread-replies .v2-msg.v2-ui-card { gap: 4px; }
 
 .v2-thread .v2-thread-replies .v2-msg--grouped { padding: 0; }
 
@@ -766,5 +769,7 @@
   .v2-thread .v2-thread-replies { padding: 8px 10px 8px; }
   .v2-thread-replies__foot { gap: 12px; }
   .v2-root .v2-thread-replies__foot .v2p-b-sm { position: relative; height: 32px; }
-  .v2-root .v2-thread-replies__foot .v2p-b-sm::after { content: ''; position: absolute; inset: -6px; }
+  /* From the padding box, inside the key's 1px border: 30 + 2 x 7 = 44; the 12px gap
+     takes 6px of reach from each side, so neighbouring rings meet without overlapping. */
+  .v2-root .v2-thread-replies__foot .v2p-b-sm::after { content: ''; position: absolute; inset: -7px; }
 }
