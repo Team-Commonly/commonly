@@ -19,6 +19,7 @@ import type {
   ToolOutcome,
   ToolCatalogEntry,
   HiddenToolConnection,
+  ToolConnection,
 } from './toolModel';
 import type { ToolConnectorsModel } from './useToolConnectors';
 
@@ -128,12 +129,55 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
       </p>
     );
   };
+  const agentNameById = (agentId?: string): string => {
+    if (!agentId) return '';
+    const seat = Object.values(seats).flat().find((candidate) => candidate.userId === agentId);
+    return seat?.displayName || seat?.name || '';
+  };
+  // Names one hosted connection: a key row by its agent, the sign-in as such,
+  // and both by when. Null when the server did not describe the row (no
+  // connectedAt), so it cannot be told apart.
+  const connectionLabel = (connection: ToolConnection): string | null => {
+    if (!connection.connectedAt || Number.isNaN(Date.parse(connection.connectedAt))) return null;
+    const date = new Date(connection.connectedAt).toLocaleDateString(i18n.language, { month: 'short', day: 'numeric' });
+    const separator = t('tools.connectionSeparator', { defaultValue: ' · ' });
+    if (connection.agentId) {
+      return [t('tools.connectionKey', { defaultValue: 'Key' }), agentNameById(connection.agentId), date].filter(Boolean).join(separator);
+    }
+    return [t('tools.connectionSignedIn', { defaultValue: 'Signed in' }), date].join(separator);
+  };
   // Hosted connections only: a GitHub App connection is the instance's, not the viewer's to drop.
   const renderDisconnect = (entry: ToolCatalogEntry | null, variant: 'row' | 'aside') => {
-    // One connection only: a grant does not say which connection it was minted on,
-    // so with several the button could drop the wrong one.
-    const connection = entry && entry.connectionType === 'hosted-mcp' && entry.connections.length === 1 ? entry.connections[0] : null;
-    if (!entry || !connection) return null;
+    const hosted = entry && entry.connectionType === 'hosted-mcp' ? entry.connections : [];
+    if (!entry || hosted.length === 0) return null;
+    if (hosted.length === 1) {
+      const button = renderDisconnectOne(entry, hosted[0], variant, null);
+      return variant === 'aside' ? <div className="v2-connector-aside__actions">{button}</div> : button;
+    }
+    // Several connections: each is named, so each gets its own Disconnect. A
+    // connection that cannot be told apart (the server did not describe it, or
+    // it reads the same as another) gets none rather than one that might drop
+    // the wrong connection.
+    const labelled = hosted.map((connection) => ({ connection, label: connectionLabel(connection) }));
+    const labels = labelled.map((row) => row.label);
+    if (labels.some((label) => !label) || new Set(labels).size < labels.length) return null;
+    return (
+      <>
+        {labelled.map(({ connection, label }) => (variant === 'aside' ? (
+          <div key={connection.connectionId} className="v2-connector-aside__actions">
+            <span className="v2-connector-aside__conn">{label}</span>
+            {renderDisconnectOne(entry, connection, variant, label)}
+          </div>
+        ) : (
+          <span key={connection.connectionId} className="v2-cx-pop__acts">
+            <span className="v2-cx-note">{label}</span>
+            {renderDisconnectOne(entry, connection, variant, label)}
+          </span>
+        )))}
+      </>
+    );
+  };
+  const renderDisconnectOne = (entry: ToolCatalogEntry, connection: ToolConnection, variant: 'row' | 'aside', label: string | null) => {
     const cls = variant === 'row'
       ? 'v2-connector-row__action v2-connector-row__action--secondary'
       : 'v2-connector-aside__secondary';
@@ -150,7 +194,14 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
       );
     }
     return (
-      <button type="button" className={cls} aria-label={t('tools.disconnectLabel', { defaultValue: 'Disconnect {{label}}', label: entry.label })} onClick={() => setConfirmDisconnect(connection.connectionId)}>
+      <button
+        type="button"
+        className={cls}
+        aria-label={label
+          ? t('tools.disconnectConnectionLabel', { defaultValue: 'Disconnect {{label}}: {{connection}}', label: entry.label, connection: label })
+          : t('tools.disconnectLabel', { defaultValue: 'Disconnect {{label}}', label: entry.label })}
+        onClick={() => setConfirmDisconnect(connection.connectionId)}
+      >
         {t('tools.disconnect', { defaultValue: 'Disconnect' })}
       </button>
     );
@@ -583,9 +634,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               </button>
             </div>
           ))}
-          {isGranter(grant) && (
-            <div className="v2-connector-aside__actions">{renderDisconnect(entry, 'aside')}</div>
-          )}
+          {isGranter(grant) && renderDisconnect(entry, 'aside')}
           {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
         </section>
         <section className="v2-connector-aside__card">

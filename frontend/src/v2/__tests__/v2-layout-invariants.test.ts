@@ -2579,6 +2579,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(asideIcon).toContain('height: 32px');
     expect(asideIcon).toContain('min-height: 32px');
     expect(v2).toContain('.v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon { width: 44px; height: 44px; min-height: 44px; }');
+    // A hosted connection's name sits in the aside's flex row beside its own
+    // Disconnect. The note class's `margin-top: 12px !important` dropped it
+    // about 6px below the button's centre, so this label carries no margin.
+    expect(ruleBody(v2, '.v2-connector-aside__conn')).toContain('font-size: 12px');
+    expect(ruleBody(v2, '.v2-connector-aside__conn')).not.toContain('margin');
     expect(ruleBody(v2, '.v2-connector-row__details')).toContain('padding-right: 8px');
     expect(ruleBody(v2, '.v2-page-head__meta')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');

@@ -2736,7 +2736,11 @@
     "trailError": "无法读取调用记录。",
     "viewGrant": "在 {{pod}} 中查看 {{tool}}",
     "listSeparator": "、",
-    "sentenceSeparator": ""
+    "sentenceSeparator": "",
+    "connectionSeparator": " · ",
+    "connectionSignedIn": "已登录",
+    "connectionKey": "密钥",
+    "disconnectConnectionLabel": "断开 {{label}}：{{connection}}"
   },
   "agentManage": {
     "runtime": {
