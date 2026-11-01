@@ -1,24 +1,17 @@
 /* Connectors, rebuilt from the d215 artboard (TASK-733): one logo grid for
    channels and tools, reveal-only descriptions, inactive ones folded. Values are
-   the frame's own. Colours are v2 tokens so light and dark switch together; the
-   key gradient has no v2 token yet, so it is named once here. */
+   the frame's own. Colours are v2 tokens (the d215 key gradient and pop shadow
+   from the Signal tokens), so light, dark and auto switch together. */
 .v2-cx {
-  --cx-key-a: var(--v2-surface);
-  --cx-key-b: var(--v2-bg-subtle);
-  --cx-key-edge: var(--v2-border-soft);
-  --cx-pop-bg: var(--v2-surface);
-  --cx-pop-shadow: 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28);
+  --cx-key-a: var(--v2-key-a);
+  --cx-key-b: var(--v2-key-b);
+  --cx-key-edge: var(--v2-key-edge);
+  --cx-pop-bg: var(--v2-key-a);
+  --cx-pop-shadow: var(--v2-shadow-pop);
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
-}
-:root[data-theme='dark'] .v2-cx {
-  --cx-key-a: #1e2531;
-  --cx-key-b: #191f29;
-  --cx-key-edge: rgba(255, 255, 255, 0.1);
-  --cx-pop-bg: #232b38;
-  --cx-pop-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 18px 36px -14px rgba(0, 0, 0, 0.75);
 }
 
 /* the shell's body gives the page its whole pane: the head and the grid pad themselves */
@@ -45,7 +38,6 @@
 .v2-cx-inner { max-width: 1100px; margin: 0 auto; }
 .v2-cx-group + .v2-cx-group { margin-top: 28px; }
 .v2-cx-group__title { display: flex; align-items: center; gap: 8px; margin: 0 4px 8px; font: 500 11.5px/1 var(--v2-font-mono, ui-monospace, monospace); color: var(--v2-text-muted); }
-.v2-cx-group__title svg { width: 13px; height: 13px; }
 .v2-cx-off { all: unset; box-sizing: border-box; cursor: pointer; margin-left: auto; padding: 4px; border-radius: 6px; color: var(--v2-text-muted); }
 .v2-cx-off:hover { color: var(--v2-text-primary); }
 .v2-cx-off:focus-visible { box-shadow: 0 0 0 2px var(--v2-accent); }
@@ -106,7 +98,7 @@
 }
 /* the shell's tab bar is up to 760: the sheet sits above it */
 @media (max-width: 760px) {
-  .v2-cx-pop { position: fixed; left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); top: auto !important; width: auto; }
+  .v2-cx-pop { position: fixed; left: 12px !important; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); top: auto !important; width: auto; max-height: calc(100vh - 160px); overflow-y: auto; z-index: 50; }
 }
 
 /* the manage drawer */

@@ -3,7 +3,7 @@
 // descriptions are reveal-only, and what is not offered folds into "+N off". An
 // unconnected tile reveals a popover with the act; a connected one opens a drawer
 // that holds the panels the old page's aside held, verbs and copy unchanged.
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
@@ -111,6 +111,30 @@ const ConnectorsPage: React.FC = () => {
   const toolEntry = toolKey ? m.catalog.find((entry) => entry.installableId === toolKey) || null : null;
   const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry || m.selected);
 
+  // A drawer and a reveal never show together, and a reveal that opened a drawer
+  // stays closed when the drawer does.
+  useEffect(() => {
+    if (channelDrawerOpen || toolDrawerOpen) setPop(null);
+  }, [channelDrawerOpen, toolDrawerOpen]);
+
+  // Coming back from a hosted-MCP disconnect that needs a manual revoke, the notice
+  // lives in its tile's reveal or drawer: open that tile once so it is not missed.
+  const revokeNotice = c.hostedMcpManualRevoke;
+  const revokeEntry = revokeNotice
+    ? m.catalog.find((entry) => entry.entryId === revokeNotice.entryId
+      && entry.connections.some((connection) => connection.connectionId === revokeNotice.connectionId))
+    : null;
+  const revealedRevoke = useRef(false);
+  useEffect(() => {
+    if (!revokeEntry || revealedRevoke.current) return;
+    const anchor = tileRefs.current[`tool:${revokeEntry.installableId}`];
+    if (!anchor) return;
+    revealedRevoke.current = true;
+    if (toolHasDrawer(revokeEntry)) setToolKey(revokeEntry.installableId);
+    else setPop({ key: `tool:${revokeEntry.installableId}`, anchor });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revokeEntry?.installableId, container]);
+
   const closeTools = useCallback(() => {
     setToolKey(null);
     m.setSelectedId(null);
@@ -129,7 +153,8 @@ const ConnectorsPage: React.FC = () => {
 
   const openChannel = (item: ListItem, event: React.MouseEvent<HTMLButtonElement>) => {
     closeTools();
-    const hasConnection = item.connector !== null || (item.kind === 'catalog' && Boolean(item.entry.installation));
+    // An installed provider this instance no longer offers has no panel: it gets the reveal (the reason and Ask).
+    const hasConnection = item.connector !== null || (item.kind === 'catalog' && item.entry.available && Boolean(item.entry.installation));
     if (hasConnection) {
       setPop(null);
       c.selectItem(item);
@@ -321,7 +346,7 @@ const ConnectorsPage: React.FC = () => {
     if (c.adding) {
       const title = t('connectors.connectChannel', { defaultValue: 'Connect a channel' });
       return (
-        <ConnectorDrawer type={c.addingType || 'slack'} title={title} onClose={closeChannels}>
+        <ConnectorDrawer notices={noticeBlock} type={c.addingType || 'slack'} title={title} onClose={closeChannels}>
           <section className="v2-connector-aside__step">
             <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
             {renderAddForm()}
@@ -331,7 +356,7 @@ const ConnectorsPage: React.FC = () => {
     }
     if (!drawerItem) return null;
     return (
-      <ConnectorDrawer type={c.itemType(drawerItem)} title={c.itemLabel(drawerItem) || ''} onClose={closeChannels}>
+      <ConnectorDrawer notices={noticeBlock} type={c.itemType(drawerItem)} title={c.itemLabel(drawerItem) || ''} onClose={closeChannels}>
         <ChannelPanel m={c} item={drawerItem} />
       </ConnectorDrawer>
     );
@@ -340,14 +365,14 @@ const ConnectorsPage: React.FC = () => {
   const renderToolDrawer = () => {
     if (m.draft) {
       return (
-        <ConnectorDrawer type={m.draftEntry?.installableId || 'github'} title={m.draftEntry?.label || t('tools.title', { defaultValue: 'Tools' })} onClose={closeTools}>
+        <ConnectorDrawer notices={noticeBlock} type={m.draftEntry?.installableId || 'github'} title={m.draftEntry?.label || t('tools.title', { defaultValue: 'Tools' })} onClose={closeTools}>
           {tp.renderDraft()}
         </ConnectorDrawer>
       );
     }
     if (m.githubAppSetup) {
       return (
-        <ConnectorDrawer type="github" title={GITHUB_BRAND} onClose={closeTools}>
+        <ConnectorDrawer notices={noticeBlock} type="github" title={GITHUB_BRAND} onClose={closeTools}>
           {tp.renderGithubAppSetup()}
         </ConnectorDrawer>
       );
@@ -355,7 +380,7 @@ const ConnectorsPage: React.FC = () => {
     if (!toolEntry) {
       if (!m.selected) return null;
       return (
-        <ConnectorDrawer type={m.selected.tools[0]?.split('.')[0] || 'tools'} title={m.toolLabel(m.selected)} onClose={closeTools}>
+        <ConnectorDrawer notices={noticeBlock} type={m.selected.tools[0]?.split('.')[0] || 'tools'} title={m.toolLabel(m.selected)} onClose={closeTools}>
           {tp.renderAside(m.selected)}
         </ConnectorDrawer>
       );
@@ -364,7 +389,7 @@ const ConnectorsPage: React.FC = () => {
     const liveGrants = entryGrants.filter((grant) => !isDead(grant, m.now));
     const deadGrants = entryGrants.filter((grant) => isDead(grant, m.now));
     return (
-      <ConnectorDrawer type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
+      <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
         {!toolGranted(toolEntry) && (
           <div className="v2-cx-drawer__offer">
             <p>{catalogDescription(i18n, toolEntry.installableId, toolEntry.description)}</p>
@@ -391,13 +416,28 @@ const ConnectorsPage: React.FC = () => {
   const connectedChannels = c.connectedCount;
   const grantedTools = m.catalog.filter(toolGranted).length;
   const onCount = connectedChannels + grantedTools;
-  const availableCount = liveChannels.length + liveTools.length - onCount;
+  // Counted over everything, not the search result, so the header holds still while typing.
+  const offeredCount = c.items.filter((item) => !channelInactive(item)).length
+    + m.catalog.filter((entry) => !toolOff(entry)).length;
+  const availableCount = offeredCount - onCount;
   const meta = t('connectors.meta', { defaultValue: '{{on}} on · {{available}} available', on: onCount, available: Math.max(0, availableCount) });
 
   const showChannels = filter !== 'tools';
   const showTools = filter !== 'channels';
   const errorText = c.hostedMcpCallbackError || c.error || c.slackCallbackError || (
     !m.draft && !m.selected && !m.githubAppSetup ? m.error : null
+  );
+  const noticeBlock = (
+    <>
+      {errorText && <p className="v2-cx-error" role="alert">{errorText}</p>}
+      {m.removedHiddenNotice && (
+        <p className="v2-cx-note" role="status">
+          {m.removedHiddenNotice.revokePage
+            ? <>{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: m.removedHiddenNotice.label })} <a href={m.removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></>
+            : t('tools.disconnected', { defaultValue: 'Disconnected {{label}}.', label: m.removedHiddenNotice.label })}
+        </p>
+      )}
+    </>
   );
   const nothing = !c.loading && q && liveChannels.length + offChannels.length + toolEntries.length + orphanHidden.length + orphanGrants.length === 0;
 
@@ -442,14 +482,7 @@ const ConnectorsPage: React.FC = () => {
       {!c.loading && (
         <div className="v2-cx-body" ref={setContainer}>
           <div className="v2-cx-inner">
-            {errorText && <p className="v2-cx-error" role="alert">{errorText}</p>}
-            {m.removedHiddenNotice && (
-              <p className="v2-cx-note" role="status">
-                {m.removedHiddenNotice.revokePage
-                  ? <>{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: m.removedHiddenNotice.label })} <a href={m.removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></>
-                  : t('tools.disconnected', { defaultValue: 'Disconnected {{label}}.', label: m.removedHiddenNotice.label })}
-              </p>
-            )}
+            {!channelDrawerOpen && !toolDrawerOpen && noticeBlock}
 
             {showChannels && (
               <section className="v2-cx-group" aria-label={t('connectors.channelsGroup', { defaultValue: 'Channels' })}>

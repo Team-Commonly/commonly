@@ -282,5 +282,39 @@ describe('Connectors page: the tile surface', () => {
     fireEvent.click(within(pop).getByRole('button', { name: 'Add' }));
     await findDrawer('GitHub');
     expect(screen.queryByRole('dialog', { name: 'GitHub' })).toBeNull();
+
+    // And it stays closed once the drawer closes; it does not come back.
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'GitHub' })).toBeNull());
+    expect(screen.queryByRole('dialog', { name: 'GitHub' })).toBeNull();
+  });
+
+  it('keeps the header count steady while searching', async () => {
+    mockCatalog([channel('telegram', 'Telegram'), liveSlack, tool('github', 'GitHub'), tool('linear', 'Linear')]);
+    renderPage();
+
+    await findTile('GitHub');
+    const meta = () => document.querySelector('.v2-cx-head__meta');
+    expect(meta()).toHaveTextContent('1 on · 3 available');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'lin' } });
+    await findTile('Linear');
+    expect(meta()).toHaveTextContent('1 on · 3 available');
+  });
+
+  it('gives an installed provider this instance no longer offers the reveal, not an empty drawer', async () => {
+    mockCatalog([
+      channel('discord', 'Discord', {
+        available: false,
+        installation: { status: 'active', updatedAt: new Date().toISOString(), boundPodId: null, components: [] },
+      }),
+      tool('github', 'GitHub'),
+    ]);
+    renderPage();
+
+    await findTile('GitHub');
+    await expandOff('Channels');
+    fireEvent.click(await findTile('Discord'));
+    expect(await findPopover('Discord')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Discord' })).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 // Tool connectors: state, effects and verbs of the Tools list, moved out of the
 // retired tools list so the tile page and its panels share one model (TASK-733).
-// Behaviour is unchanged; the rows that drew it are gone.
+// The page draws it as tiles and a drawer.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
@@ -15,7 +15,6 @@ import {
   WRITE_MODES,
   isDead,
   entryCovers,
-  entryIsGranted,
 } from './toolModel';
 import type {
   GrantWriteMode,
@@ -226,28 +225,6 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
   };
 
   const q = query.trim().toLowerCase();
-  const rows = useMemo(() => (grants || []).filter((grant) => {
-    if (!q) return true;
-    return toolLabel(grant).toLowerCase().includes(q) || grant.tools.some((tool) => tool.toLowerCase().includes(q));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [grants, q, catalog]);
-  // Catalogue entries without a live grant are offers. `now` is a dep so an
-  // expired grant becomes inactive and its catalogue entry becomes an offer.
-  const notYet = useMemo(() => catalog.filter((entry) => (
-    !entryIsGranted(entry, grants || [], now)
-    && (!q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q)))
-  )), [catalog, grants, now, q]);
-  const liveRows = rows.filter((grant) => !isDead(grant, now));
-  const inactiveRows = rows.filter((grant) => isDead(grant, now));
-  const matchedHiddenConnections = hiddenConnections.filter((connection) => !q || connection.label.toLowerCase().includes(q));
-  const inactiveCount = inactiveRows.length + matchedHiddenConnections.length;
-  // Grants, not entries: a person may hold two live grants on one tool.
-  const grantedCount = (grants || []).filter((grant) => !isDead(grant, now)).length;
-  // Entries, from the same predicate the Not yet list filters on, so the header
-  // cannot claim fewer than the list shows. Deliberately not `notYet.length`:
-  // that one honours the search box too, and the header must not move as you type.
-  const moreCount = catalog.filter((entry) => !entryIsGranted(entry, grants || [], now)).length;
-
   const selected = selectedId ? (grants || []).find((grant) => grant.grantId === selectedId) || null : null;
 
   const openDraft = (entry: ToolCatalogEntry, from?: ToolGrant) => {
@@ -594,14 +571,6 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     entryModeCopy,
     usedRecently,
     q,
-    rows,
-    notYet,
-    liveRows,
-    inactiveRows,
-    matchedHiddenConnections,
-    inactiveCount,
-    grantedCount,
-    moreCount,
     selected,
     openDraft,
     openGithubAppSetup,

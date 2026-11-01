@@ -1,6 +1,6 @@
 // Channel connectors: state, effects and verbs of the connectors page, moved out
 // of the retired channels page so the tile page and its panels share one model
-// (TASK-733). Behaviour is unchanged; the UI that drew it is gone.
+// (TASK-733). The rows' behaviour is unchanged; the page that drew them is gone.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
@@ -896,41 +896,9 @@ export const useChannelConnectors = () => {
   // have no Channels row until the catalog provides a label or this map does.
   const items = allItems.filter((item) => Boolean(itemLabel(item)));
   const connectedCount = items.filter((item) => item.connector?.status === 'connected').length;
-  const needsYouCount = items.filter((item) => (
-    item.connector?.status === 'error'
-    || (item.kind === 'catalog' && item.entry.installation?.status === 'error')
-    || (item.connector?.status === 'connected' && !connectorPodId(item.connector))
-    || Boolean(item.connector?.config?.pendingBind)
-  )).length;
-  const headMeta = [
-    connectedCount ? t('connectors.counts.connected', { count: connectedCount }) : null,
-    needsYouCount ? t('connectors.counts.needsYou', { count: needsYouCount }) : null,
-  ].filter(Boolean).join(' · ');
-
   const itemType = (item: ListItem): string => (item.kind === 'catalog' ? item.entry.installableId : item.connector.type);
 
-  // Direction A rule 3: every row's kicker is `pod · verb age` in mono. The verb
-  // stays ("added 23d", never "23d") so an age beside a state dot is not read as
-  // last-used; a connection with no pod says so. Both parts come from keys and
-  // the timestamp, never from rendered English.
-  const kickerFor = (item: ListItem, row: ConnectorRow): string => {
-    // Inactive rows sit under the "inactive · N" fold. Their state is the fold's
-    // job, so the kicker carries no pod and no state word.
-    if (row.muted) return '';
-    const podId = item.connector ? connectorPodId(item.connector) : null;
-    // TASK-140: a not-enabled row has no connection to name a pod for, so the
-    // pod slot read `no pod` — which is false, it names the blocker instead.
-    const pod = podId ? podNameById(podId, item.connector) : t('connectors.noPod', { defaultValue: 'no pod' });
-    // A row with no age (the not-enabled row's '—') carries only the pod.
-    return row.when === '—' ? pod : `${pod} · ${row.when}`;
-  };
-
   const needsUser = (row: ConnectorRow): boolean => row.action !== null && !row.secondary && row.action !== 'connect';
-  const selectedItem = items.find((item) => item.key === selectedKey)
-    || items.find((item) => needsUser(rowForItem(item)))
-    || items.find((item) => item.connector !== null)
-    || null;
-
   const selectItem = (item: ListItem) => {
     setSelectedKey(item.key);
     setConfirmRemove(null);
@@ -966,15 +934,6 @@ export const useChannelConnectors = () => {
     if (action === 'confirm') return undefined;
     return undefined;
   };
-
-  // Live rows first; every dead row (not offered, unavailable, or not enabled)
-  // goes under the one shared "inactive · N" fold.
-  const isInactive = (item: ListItem): boolean => {
-    const row = rowForItem(item);
-    return Boolean(row.muted || row.notEnabled);
-  };
-  const liveItems = items.filter((item) => !isInactive(item));
-  const inactiveItems = items.filter(isInactive);
 
   const busyFor = (item: ListItem): boolean => busyId === item.key || (item.connector !== null && busyId === item.connector._id);
 
@@ -1055,17 +1014,10 @@ export const useChannelConnectors = () => {
     itemLabel,
     items,
     connectedCount,
-    needsYouCount,
-    headMeta,
     itemType,
-    kickerFor,
     needsUser,
-    selectedItem,
     selectItem,
     runAction,
-    isInactive,
-    liveItems,
-    inactiveItems,
     busyFor,
   };
 };

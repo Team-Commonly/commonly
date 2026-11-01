@@ -2483,6 +2483,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(pop).toContain('position: fixed');
       expect(pop).toMatch(/bottom: calc\(84px/);
       expect(pop).toContain('top: auto !important');
+      // the popover's inline top and left must lose to the sheet, or it floats off-screen
+      expect(pop).toContain('left: 12px !important');
+      expect(pop).toMatch(/max-height: calc\(100vh/);
+    });
+
+    it('colours come from the Signal tokens, so dark and auto themes follow the shell', () => {
+      expect(cx).toContain('--cx-key-a: var(--v2-key-a)');
+      expect(cx).toContain('--cx-pop-shadow: var(--v2-shadow-pop)');
+      expect(cx).not.toContain("data-theme='dark'");
     });
 
     it('the drawer is fixed over the page at 760, clear of the tab bar', () => {

@@ -25,7 +25,7 @@ const ConnectorPopover: React.FC<Props> = ({ anchor, container, label, onClose, 
     const a = anchor.getBoundingClientRect();
     const c = container.getBoundingClientRect();
     const left = Math.min(Math.max(0, a.left - c.left + a.width / 2 - WIDTH / 2), Math.max(0, c.width - WIDTH));
-    setPlace({ top: a.bottom - c.top + GAP, left });
+    setPlace({ top: a.bottom - c.top + container.scrollTop + GAP, left: left + container.scrollLeft });
   }, [anchor, container]);
 
   useEffect(() => {

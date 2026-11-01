@@ -9,10 +9,12 @@ interface Props {
   type: string;
   title: string;
   onClose: () => void;
+  /** Page errors and notices: on a phone the sheet covers the page body, so they show here. */
+  notices?: React.ReactNode;
   children: React.ReactNode;
 }
 
-const ConnectorDrawer: React.FC<Props> = ({ type, title, onClose, children }) => {
+const ConnectorDrawer: React.FC<Props> = ({ type, title, onClose, notices, children }) => {
   const { t } = useTranslation();
   const ref = useRef<HTMLElement | null>(null);
 
@@ -33,7 +35,7 @@ const ConnectorDrawer: React.FC<Props> = ({ type, title, onClose, children }) =>
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
       </header>
-      <div className="v2-cx-drawer__body">{children}</div>
+      <div className="v2-cx-drawer__body">{notices}{children}</div>
     </section>
   );
 };
