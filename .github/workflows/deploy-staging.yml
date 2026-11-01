@@ -199,28 +199,47 @@ jobs:
             --burst-limit 200 \
             --qps 100
 
-      - name: Verify rollout of the deployed workloads
-        id: rollout
+      # Deployment LOOKUP in its own step before the rollout check, NOT in the rollback
+      # gate (see deploy-dev.yml): a transient `kubectl get deploy` failure after a good
+      # upgrade must fail the job for a human, not be read as a stuck rollout that demotes
+      # a healthy staging release. Retry rides out a blip.
+      - name: List the workloads to verify (lookup, not a rollout check)
+        id: deploylist
         run: |
           set -uo pipefail
-          # Scoped to the workloads this job image-tags (backend/+worker, frontend,
-          # commonly-bot — clawdbot-gateway when the staging chart ships it), derived from
-          # the cluster. An unrelated unhealthy workload in the namespace is not this job's
-          # failure and must not trip the rollback below; a parked workload drops out.
           MANAGED=" backend backend-worker frontend clawdbot-gateway commonly-bot "
+          ALL=""
+          for attempt in 1 2 3; do
+            if ALL=$(kubectl get deploy -n "$NAMESPACE" -o name) && [ -n "$ALL" ]; then break; fi
+            echo "deploy lookup attempt $attempt returned nothing/failed; retrying in 5s"; ALL=""; sleep 5
+          done
+          if [ -z "$ALL" ]; then
+            echo "::error title=Deploy lookup failed::could not list deployments in $NAMESPACE after retries — cluster/API unreachable. NOT a rollout failure (no rollback)."
+            exit 1
+          fi
           TARGETS=""
-          for d in $(kubectl get deploy -n "$NAMESPACE" -o name); do
+          for d in $ALL; do
             n=${d##*/}
             case "$MANAGED" in *" $n "*) TARGETS="$TARGETS $d" ;; esac
           done
           if [ -z "$TARGETS" ]; then
-            echo "::error title=Rollout failed::none of the image-tagged workloads found in $NAMESPACE"
+            echo "::error title=No managed workloads::none of the image-tagged workloads present in $NAMESPACE (cluster reachable); not auto-rolling back."
             exit 1
           fi
+          echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
+          echo "will verify:$TARGETS"
+
+      - name: Verify rollout of the deployed workloads
+        id: rollout
+        env:
+          TARGETS: ${{ steps.deploylist.outputs.targets }}
+        run: |
+          set -uo pipefail
           # Short-circuit on the first stuck workload (see deploy-dev.yml): a bad tag fails
           # all managed workloads, and waiting 8m x N could exceed the 45m job cap before
           # rollback. One failure = the deploy is bad; stop and let failure() rollback run.
-          # The force_bad_tag rehearsal hits this on the first workload.
+          # The force_bad_tag rehearsal hits this on the first workload. Only THIS step's
+          # failure is eligible for rollback.
           for d in $TARGETS; do
             echo "::group::rollout status $d"
             if kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m; then

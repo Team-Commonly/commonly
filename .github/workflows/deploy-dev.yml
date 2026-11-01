@@ -342,33 +342,56 @@ jobs:
       # moment it is disabled — the gate follows the release, not a memory of
       # it. A deployment scaled to zero passes instantly (0 of 0 updated),
       # which is correct: parked is not stuck.
-      - name: Verify rollout of the deployed workloads
-        id: rollout
+      # The deployment LOOKUP is its own step, deliberately BEFORE the rollout check and
+      # NOT referenced by the rollback gate. A transient `kubectl get deploy` failure
+      # after a good helm upgrade must not be read as a stuck rollout: if it were in the
+      # rollout step, the empty result would fail that step and the gate would demote a
+      # healthy release over an API blip. Here a lookup error (or a confirmed-empty
+      # managed set) fails the JOB for a human, while the rollout step stays skipped
+      # (outcome != 'failure'), so no rollback fires. Retry rides out a blip.
+      - name: List the workloads to verify (lookup, not a rollout check)
+        id: deploylist
         run: |
           set -uo pipefail
-          # Derived from the cluster AND intersected with the workloads this job sets
-          # image tags for — backend (+ its worker), frontend, clawdbot-gateway,
-          # commonly-bot. A parked workload (enabled:false removes the Deployment, as
-          # #1051 did to the gateway) simply isn't present and drops out; an unrelated
-          # unhealthy workload in the same namespace (litellm, redis, cloud-codex,
-          # ops-runner, cloudflared) is a real problem but NOT this job's failure, and
-          # must not fail the deploy or trip the rollback below. A scaled-to-zero managed
-          # workload passes instantly (0 of 0 updated) — parked is not stuck.
           MANAGED=" backend backend-worker frontend clawdbot-gateway commonly-bot "
+          ALL=""
+          for attempt in 1 2 3; do
+            if ALL=$(kubectl get deploy -n "$NAMESPACE" -o name) && [ -n "$ALL" ]; then break; fi
+            echo "deploy lookup attempt $attempt returned nothing/failed; retrying in 5s"; ALL=""; sleep 5
+          done
+          if [ -z "$ALL" ]; then
+            echo "::error title=Deploy lookup failed::could not list deployments in $NAMESPACE after retries — cluster/API unreachable. NOT a rollout failure; the running release is left in place (no rollback)."
+            exit 1
+          fi
+          # Intersect the cluster's deployments with the workloads this job image-tags —
+          # backend (+ worker), frontend, clawdbot-gateway, commonly-bot. A parked workload
+          # (enabled:false removes the Deployment, as #1051 did to the gateway) drops out;
+          # an unrelated unhealthy workload (litellm, redis, cloud-codex, ops-runner,
+          # cloudflared) is never this job's failure. A scaled-to-zero managed workload
+          # passes rollout instantly (0 of 0 updated) — parked is not stuck.
           TARGETS=""
-          for d in $(kubectl get deploy -n "$NAMESPACE" -o name); do
+          for d in $ALL; do
             n=${d##*/}
             case "$MANAGED" in *" $n "*) TARGETS="$TARGETS $d" ;; esac
           done
           if [ -z "$TARGETS" ]; then
-            echo "::error title=Rollout failed::none of the image-tagged workloads (backend/frontend/clawdbot-gateway/commonly-bot) found in $NAMESPACE — nothing to verify is itself a failure"
+            echo "::error title=No managed workloads::none of backend/frontend/clawdbot-gateway/commonly-bot present in $NAMESPACE (cluster reachable). A human should look; not auto-rolling back."
             exit 1
           fi
-          # Short-circuit on the FIRST stuck workload. The loop runs sequentially and each
-          # kubectl rollout status waits up to 8m; a bad image tag fails ALL managed
-          # workloads, so continuing would burn ~8m x N (~40m for 5) and could hit the 45m
-          # job cap before the rollback step runs. One failure already means the deploy is
-          # bad — stop and let the failure() rollback fire.
+          echo "targets=$TARGETS" >> "$GITHUB_OUTPUT"
+          echo "will verify:$TARGETS"
+
+      - name: Verify rollout of the deployed workloads
+        id: rollout
+        env:
+          TARGETS: ${{ steps.deploylist.outputs.targets }}
+        run: |
+          set -uo pipefail
+          # Short-circuit on the FIRST stuck workload. Each kubectl rollout status waits up
+          # to 8m; a bad image tag fails ALL managed workloads, so continuing would burn
+          # ~8m x N (~40m for 5) and could hit the 45m job cap before the rollback step
+          # runs. One failure already means the deploy is bad — stop and let failure()
+          # rollback fire. Only THIS step's failure is eligible for rollback.
           for d in $TARGETS; do
             echo "::group::rollout status $d"
             if kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m; then
