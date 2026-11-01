@@ -33,7 +33,8 @@ describe('tool registry shape', () => {
     // + 2 attention-claim tools (ADR-018: claim-or-renew, release).
     // + 1 agent-originated decision request (TASK-095 rev 2).
     // + 1 self-follow task digest subscription (TASK-443).
-    expect(tools).toHaveLength(32);
+    // + 1 direct row edit (commonly_patch_task, TASK-669): PATCH the row itself.
+    expect(tools).toHaveLength(33);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
@@ -467,6 +468,54 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
     expect(result.content[0].text).toContain('409');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][1].method).toBe('PATCH');
+  });
+
+  it('patch_task PATCHes the row itself, never the note route', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_patch_task.call({ podId: 'POD', taskId: 'TASK-001', title: 'Renamed' });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/v1/tasks/POD/TASK-001');
+    expect(init.method).toBe('PATCH');
+  });
+
+  it.each([
+    ['status', 'blocked'],
+    ['title', 'Renamed'],
+    ['assignee', 'nova'],
+    ['assignee', ''],
+    ['priority', 'P0'],
+    ['dep', 'TASK-002'],
+    ['dep', ''],
+    ['notes', 'waiting on review'],
+  ])('patch_task sends %s as %j and nothing else', async (field, value) => {
+    const fetchSpy = installFetch(async () => okResponse({ ok: true }));
+    await byName.commonly_patch_task.call({ podId: 'POD', taskId: 'TASK-001', [field]: value });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toEqual({ [field]: value });
+  });
+
+  it('patch_task surfaces a lease refusal as an error that names the holder', async () => {
+    installFetch(async () => ({
+      ok: false,
+      status: 409,
+      text: async () => JSON.stringify({ error: 'Task is claimed by another seat', claimedBy: 'other-seat' }),
+    }));
+    const result = await byName.commonly_patch_task.call({ podId: 'POD', taskId: 'TASK-001', title: 'x' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('409');
+    expect(result.content[0].text).toContain('other-seat');
+  });
+
+  it('patch_task declares the row fields, and only the row address is required', () => {
+    const { inputSchema } = byName.commonly_patch_task;
+    expect(Object.keys(inputSchema.properties).sort())
+      .toEqual(['assignee', 'dep', 'notes', 'podId', 'priority', 'status', 'taskId', 'title']);
+    expect(inputSchema.required).toEqual(['podId', 'taskId']);
+  });
+
+  it('update_task and patch_task point at each other', () => {
+    expect(byName.commonly_update_task.description).toContain('commonly_patch_task');
+    expect(byName.commonly_patch_task.description).toContain('commonly_update_task');
   });
 });
 

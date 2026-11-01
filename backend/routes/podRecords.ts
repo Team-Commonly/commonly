@@ -31,8 +31,9 @@ type RecordReq = express.Request & {
 const notFound = (res: express.Response) => res.status(404).json({ error: 'record_not_found' });
 
 /**
- * One task's record as record-v1 JSONL, or `?format=otlp` for the spec's
- * OTLP/JSON export.
+ * A chain as record-v1 JSONL, or `?format=otlp` for the spec's OTLP/JSON
+ * export. `taskId` null is the pod's taskless chain (grants and the calls
+ * made under them).
  *
  * Access follows today's pod access (canViewPod), checked before any record
  * byte is loaded, and fails as not-found so the route never confirms a pod or
@@ -41,10 +42,10 @@ const notFound = (res: express.Response) => res.status(404).json({ error: 'recor
  * without breaking verification. That is the same set runTraces shows those
  * ids to, so admins and agent-DM observers who pass canViewPod get a 403.
  */
-router.get('/:podId/record/tasks/:taskId', recordReadLimit, auth, async (req: RecordReq, res) => {
+const serveRecord = async (req: RecordReq, res: express.Response, taskId: string | null) => {
   try {
-    const { podId, taskId } = req.params;
-    if (!mongoose.isObjectIdOrHexString(podId) || !TASK_ID.test(String(taskId))) return notFound(res);
+    const { podId } = req.params;
+    if (!mongoose.isObjectIdOrHexString(podId) || (taskId !== null && !TASK_ID.test(taskId))) return notFound(res);
     if (!isRecordEnabled(podId)) return notFound(res);
     const userId = req.userId || req.user?._id || req.agentUser?._id;
     const pod = await Pod.findById(podId).select('members type').lean();
@@ -52,12 +53,11 @@ router.get('/:podId/record/tasks/:taskId', recordReadLimit, auth, async (req: Re
     // Lean and unpopulated, so members are ObjectIds.
     const isMember = (pod.members || []).some((member: unknown) => String(member) === String(userId));
     if (!isMember) return res.status(403).json({ error: 'record_requires_membership' });
-    const task = await Task.findOne({ podId: pod._id, taskId }).select('_id').lean();
-    if (!task) return notFound(res);
+    if (taskId !== null && !await Task.findOne({ podId: pod._id, taskId }).select('_id').lean()) return notFound(res);
 
     let record;
     try {
-      record = await readRecordExport({ podId: String(pod._id), taskId: String(taskId) });
+      record = await readRecordExport({ podId: String(pod._id), ...(taskId !== null ? { taskId } : {}) });
     } catch (error) {
       // A store outage is an error, never an apparently empty record.
       if (!(error instanceof RecordStoreUnavailableError)) {
@@ -78,6 +78,13 @@ router.get('/:podId/record/tasks/:taskId', recordReadLimit, auth, async (req: Re
     console.error('GET /record error:', (error as Error).name, String((error as Error).message || '').slice(0, 160));
     return res.status(500).json({ error: 'Failed to read record' });
   }
-});
+};
+
+router.get('/:podId/record/tasks/:taskId', recordReadLimit, auth, (req: RecordReq, res: express.Response) => (
+  serveRecord(req, res, String(req.params.taskId))
+));
+router.get('/:podId/record', recordReadLimit, auth, (req: RecordReq, res: express.Response) => (
+  serveRecord(req, res, null)
+));
 
 module.exports = router;

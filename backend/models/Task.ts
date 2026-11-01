@@ -29,6 +29,8 @@ export interface ITask extends Document {
   claimedBy?: string | null;
   /** Authenticated principal, separate from the display/lease-holder key. */
   claimedByUserId?: string | null;
+  /** The seat that created the row (TASK-669). Stamped once, at create; never a PATCH field. */
+  createdByUserId?: string | null;
   claimedAt?: Date | null;
   // ADR-018 D4: a claim is a lease, never permanent. Null on legacy claims —
   // readers derive their effective expiry from claimedAt + the route's lease.
@@ -78,6 +80,9 @@ const TaskSchema = new Schema<ITask>(
     claimedBy: { type: String, default: null },
     // Missing identifies pre-authenticated-principal claims; null explicitly clears authority.
     claimedByUserId: { type: String },
+    // The creator override reads this stamp alone. `immutable` makes Mongoose drop any
+    // update to it, so a PATCH or a note cannot move it. A row without one is not overridable.
+    createdByUserId: { type: String, default: null, immutable: true },
     claimedAt: { type: Date, default: null },
     claimExpiresAt: { type: Date, default: null },
     // No default: missing means this revision has not been offered.

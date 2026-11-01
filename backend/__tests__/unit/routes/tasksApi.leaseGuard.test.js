@@ -70,6 +70,7 @@ jest.mock('../../../models/Pod', () => ({
         { toString: () => 'holder' },
         { toString: () => 'me-seat' },
         { toString: () => 'other-seat' },
+        { toString: () => 'lead-seat' },
       ],
     }),
   })),
@@ -136,6 +137,11 @@ const patch = (seat, body = { title: 'a better title' }, { human = false } = {})
 
 const note = (seat, text = 'context for whoever holds this') => asSeat(
   request(app).post(`/api/v1/tasks/${POD_ID}/TASK-001/updates`).send({ text }),
+  seat,
+);
+
+const claim = (seat) => asSeat(
+  request(app).post(`/api/v1/tasks/${POD_ID}/TASK-001/claim`).send({}),
   seat,
 );
 
@@ -338,6 +344,133 @@ describe('PATCH is guarded the same way', () => {
     await leasedByPeer();
 
     expect((await patch('holder', { assignee: 'me-seat' }, { human: true })).status).toBe(200);
+  });
+});
+
+// TASK-669. The row's creator opened it, so it may close, release or edit a row a
+// seat holds under a live lease. Every other member still stands down, and the
+// override is written on the row, naming the claim it overrode.
+// The stamp the create route writes, beside the "Created by" update it always writes first.
+// The stamp is what the override reads; the update is only history.
+const createdBy = (author) => ({
+  createdByUserId: author,
+  updates: [{ text: `Created by ${author}`, author, authorId: author, createdAt: new Date() }],
+});
+const updateTexts = async () => ((await Task.findOne({ taskId: 'TASK-001' }).lean()).updates || [])
+  .map((u) => u.text);
+
+describe('the row\'s creator may act over a peer\'s live lease (TASK-669)', () => {
+  it('retitles a row a peer holds, and the edit names the claim it overrode', async () => {
+    await leasedByPeer(createdBy('lead-seat'));
+
+    const res = await patch('lead-seat');
+
+    expect(res.status).toBe(200);
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.title).toBe('a better title');
+    // The override edits the row and leaves the claim itself alone.
+    expect(row.claimedBy).toBe('other-seat');
+    expect((await updateTexts()).at(-1)).toMatch(/overrode other-seat's live claim$/);
+  });
+
+  it('closes a row a peer holds, and the close names the claim it overrode', async () => {
+    await leasedByPeer(createdBy('lead-seat'));
+
+    const res = await complete('lead-seat');
+
+    expect(res.status).toBe(200);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('done');
+    expect((await updateTexts()).at(-1)).toMatch(/\(overrode other-seat's live claim\)$/);
+  });
+
+  it('releases a row a peer holds by moving it to pending, and the next seat is not refused', async () => {
+    await leasedByPeer(createdBy('lead-seat'));
+
+    expect((await patch('lead-seat', { status: 'pending' })).status).toBe(200);
+    // A row that is no longer claimed has no live lease for the guard to see.
+    expect((await patch('me-seat', { title: 'picked up after release' })).status).toBe(200);
+  });
+
+  it('a released row is claimable by the next seat, though its old claimedBy is still set', async () => {
+    await leasedByPeer(createdBy('lead-seat'));
+
+    expect((await patch('lead-seat', { status: 'pending' })).status).toBe(200);
+
+    expect((await claim('me-seat')).status).toBe(200);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).claimedBy).toBe('me-seat');
+  });
+
+  it('a creator who holds the claim overrides nothing', async () => {
+    await leasedByPeer({ claimedBy: 'lead-seat', ...createdBy('lead-seat') });
+
+    expect((await patch('lead-seat')).status).toBe(200);
+    expect((await updateTexts()).at(-1)).not.toMatch(/overrode/);
+  });
+
+  it('every other seat is still refused, with the creator present', async () => {
+    await leasedByPeer(createdBy('lead-seat'));
+
+    expect((await patch('me-seat')).status).toBe(409);
+    expect((await complete('me-seat')).status).toBe(409);
+    const row = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    expect(row.status).toBe('claimed');
+    expect(row.title).toBe('decouple the schema');
+    expect(await updateTexts()).toEqual(['Created by lead-seat']);
+  });
+
+  it('a row with no creator record is not overridable', async () => {
+    await leasedByPeer();
+
+    expect((await patch('lead-seat')).status).toBe(409);
+    expect((await complete('lead-seat')).status).toBe(409);
+  });
+
+  it('a claim on a native row does not make its first claimant the creator', async () => {
+    // A native row has no create update. Its first update is the claim, which names
+    // the claimant as author. That is history, not a creator record.
+    await leasedByPeer({
+      claimedBy: 'other-seat',
+      updates: [{ text: 'Claimed by me-seat', author: 'me-seat', authorId: 'me-seat', createdAt: new Date() }],
+    });
+
+    expect((await patch('me-seat')).status).toBe(409);
+    expect((await complete('me-seat')).status).toBe(409);
+  });
+
+  it('a note that opens "Created by" does not stamp its author as creator', async () => {
+    await leasedByPeer();
+
+    const note = await asSeat(
+      request(app).post(`/api/v1/tasks/${POD_ID}/TASK-001/updates`).send({ text: 'Created by me-seat' }),
+      'me-seat',
+    );
+    expect(note.status).toBeLessThan(300);
+
+    expect((await patch('me-seat')).status).toBe(409);
+  });
+
+  it('a row created before the stamp is not overridable until it is backfilled', async () => {
+    // Older rows carry the "Created by" update but no createdByUserId. The override
+    // reads the stamp alone, so these stay refused until the backfill sets it.
+    await leasedByPeer({
+      updates: [{ text: 'Created by lead-seat', author: 'lead-seat', authorId: 'lead-seat', createdAt: new Date() }],
+    });
+
+    expect((await patch('lead-seat')).status).toBe(409);
+  });
+
+  it('a note cannot change priority over a peer lease, even for the creator', async () => {
+    // A priority change is a PATCH field, and the override is recorded there, so
+    // the note route keeps the strict guard.
+    const before = await leasedByPeer(createdBy('lead-seat'));
+
+    const res = await asSeat(
+      request(app).post(`/api/v1/tasks/${POD_ID}/TASK-001/updates`).send({ text: 'bumping this', priority: 'P0' }),
+      'lead-seat',
+    );
+
+    expect(res.status).toBe(409);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).priority).toBe(before.priority);
   });
 });
 

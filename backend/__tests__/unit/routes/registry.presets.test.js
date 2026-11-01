@@ -56,6 +56,19 @@ describe('registry presets', () => {
     process.env.GEMINI_API_KEY = originalGemini;
   });
 
+  it('no preset PATCHes a task to claimed, because a seat cannot PATCH a claim', () => {
+    const { PRESET_DEFINITIONS } = require('../../../routes/registry/presets');
+    const serialized = JSON.stringify(PRESET_DEFINITIONS);
+    // A status written as a key or a value, plain or JSON-escaped: `status: \"claimed\"`,
+    // `\"status\":\"claimed\"`, `status=claimed`. The old pattern missed the last two.
+    const claimedWrite = /\bstatus\W{1,6}(?:claimed|in_progress|in-progress|inprogress)\b/i;
+    // The matcher must catch the spellings it promises, or the absence check below is vacuous.
+    ['status: "claimed"', '"status":"claimed"', 'status=claimed', '{ status: "in_progress" }']
+      .forEach((sample) => expect(claimedWrite.test(sample)).toBe(true));
+    expect(serialized).toContain('commonly_claim_task');
+    expect(claimedWrite.test(serialized)).toBe(false);
+  });
+
   it('returns preset catalog with tool and api readiness', async () => {
     const handler = getRouteHandler('/presets', 'get');
     const req = { userId: 'user-1', user: { id: 'user-1' } };

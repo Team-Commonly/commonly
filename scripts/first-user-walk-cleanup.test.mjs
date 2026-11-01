@@ -1,7 +1,8 @@
 // Run: node --test scripts/first-user-walk-cleanup.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanupRun } from './first-user-walk-cleanup.mjs';
+import { cleanupRun, recoverRunPods } from './first-user-walk-cleanup.mjs';
+import { chooseWalkMode } from './first-user-walk-mode.mjs';
 
 const USER = 'user-walk';
 const OTHER = 'user-other';
@@ -193,4 +194,99 @@ test('the shared default bot is never recorded, even though it is a pod member',
   assert.equal(result.ok, true);
   assert.deepEqual(result.botIds, ['scout', 'agent']);
   assert.ok(!result.botIds.includes('shared-bot'));
+});
+
+test('shared sign-in account: the run never deletes the account', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }] });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount: false });
+  assert.equal(result.ok, true);
+  assert.equal(backend.state.accountGone, false);
+  assert.ok(!backend.state.calls.includes('DELETE /api/users/me'), `calls: ${backend.state.calls}`);
+  assert.ok(!backend.state.calls.includes('POST /api/auth/login'), 'no login check when the account is kept');
+});
+
+test('shared sign-in account: only the recorded pods go, not other pods the account owns', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }, { _id: 'old', createdBy: USER }] });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount: false });
+  assert.equal(result.ok, true);
+  assert.deepEqual(backend.state.pods.map((p) => p._id), ['old']);
+  assert.ok(!backend.state.calls.includes('DELETE /api/pods/old'));
+});
+
+test('shared sign-in account: a recorded pod that survives is still a survivor', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }], stuck: new Set(['p1']) });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount: false });
+  assert.equal(result.ok, false);
+  assert.ok(result.survivors.includes('pod:p1 (still readable)'), `survivors: ${result.survivors}`);
+});
+
+test('shared sign-in account: its own Scout bot is never recorded for purge', async () => {
+  const members = [
+    { _id: 'account-scout', isBot: true, username: 'scout-uowner1' },
+    { _id: 'agent', isBot: true, username: 'walk-x-agent' },
+  ];
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER, members }] });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount: false });
+  assert.deepEqual(result.botIds, ['agent']);
+});
+
+test('a signup run still records the Scout it created', async () => {
+  const members = [{ _id: 'run-scout', isBot: true, username: 'scout-unew1' }];
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER, members }] });
+  const result = await run(backend);
+  assert.deepEqual(result.botIds, ['run-scout']);
+});
+
+test('handoff: the staging sign-in mode reaches cleanup as deleteAccount false, and the account is never deleted', async () => {
+  const { deleteAccount } = chooseWalkMode({ base: 'https://api-staging.commonly.me', env: { COMMONLY_WALK_EMAIL: 'walk@commonly.me' } });
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }] });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount });
+  assert.equal(result.ok, true);
+  assert.ok(!backend.state.calls.includes('DELETE /api/users/me'), 'the shared account must not be deleted');
+});
+
+test('handoff: a signup run reaches cleanup as deleteAccount true, and the account is deleted', async () => {
+  const { deleteAccount } = chooseWalkMode({ base: 'https://api-staging.commonly.me', env: {} });
+  const backend = fakeBackend({ pods: [] });
+  await run(backend, { deleteAccount });
+  assert.ok(backend.state.calls.includes('DELETE /api/users/me'));
+});
+
+test('recoverRunPods records this run\'s pod by its unique name, never another owner\'s', async () => {
+  const backend = fakeBackend({ pods: [
+    { _id: 'mine', name: 'walk-x workspace', createdBy: USER },
+    { _id: 'theirs', name: 'walk-x workspace', createdBy: OTHER },
+    { _id: 'other-name', name: 'Team', createdBy: USER },
+  ] });
+  const podIds = [];
+  const ok = await recoverRunPods({ api: backend.api, token: 'tok', userId: USER, podName: 'walk-x workspace', podIds });
+  assert.equal(ok, true);
+  assert.deepEqual(podIds, ['mine']);
+});
+
+test('recoverRunPods reports failure when the list cannot be read, so the name is unresolved', async () => {
+  const backend = fakeBackend({ pods: [], listFails: true });
+  const podIds = [];
+  const ok = await recoverRunPods({ api: backend.api, token: 'tok', userId: USER, podName: 'walk-x workspace', podIds });
+  assert.equal(ok, false);
+  assert.deepEqual(podIds, []);
+});
+
+test('recoverRunPods reports unresolved when a valid list has no match for this run', async () => {
+  const backend = fakeBackend({ pods: [
+    { _id: 'theirs', name: 'walk-x workspace', createdBy: OTHER },
+    { _id: 'other-name', name: 'Team', createdBy: USER },
+  ] });
+  const podIds = [];
+  const ok = await recoverRunPods({ api: backend.api, token: 'tok', userId: USER, podName: 'walk-x workspace', podIds });
+  assert.equal(ok, false);
+  assert.deepEqual(podIds, []);
+});
+
+test('recoverRunPods treats a 200 that is not a pod list as unresolved', async () => {
+  const backend = fakeBackend({ pods: [] });
+  const garbage = async (method, path) => (method === 'GET' && path === '/api/pods' ? { status: 200, data: { error: 'nope' } } : backend.api(method, path));
+  const podIds = [];
+  const ok = await recoverRunPods({ api: garbage, token: 'tok', userId: USER, podName: 'walk-x workspace', podIds });
+  assert.equal(ok, false);
 });

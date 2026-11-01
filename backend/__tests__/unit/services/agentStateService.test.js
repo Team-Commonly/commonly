@@ -2,7 +2,7 @@
  * agentStateService.deriveAgentState — #891 surface 1's honesty rules, pure.
  *
  * Contract under test (each rule earned by a measured review finding):
- *  - BYO installs derive from lastUsedAt: null → never-connected,
+ *  - BYO installs derive from lastListenedAt: null → never-connected,
  *    fresh → listening, stale → gone-dark
  *  - the union of BOTH token stores decides (finding D: legacy/new split
  *    made live agents read null)
@@ -43,7 +43,7 @@ describe('deriveAgentState', () => {
 
   test('fresh use on the INSTALLATION token store → listening', () => {
     const row = deriveAgentState(
-      byoInstall({ runtimeTokens: [{ lastUsedAt: new Date(NOW - 10_000) }] }),
+      byoInstall({ runtimeTokens: [{ lastListenedAt: new Date(NOW - 10_000) }] }),
       [],
       'owner-1',
       NOW,
@@ -55,7 +55,7 @@ describe('deriveAgentState', () => {
   test('fresh use on the USER token store alone also counts — the union decides (finding D)', () => {
     const row = deriveAgentState(
       byoInstall(),
-      [{ lastUsedAt: new Date(NOW - 10_000) }],
+      [{ lastListenedAt: new Date(NOW - 10_000) }],
       'owner-1',
       NOW,
     );
@@ -68,7 +68,7 @@ describe('deriveAgentState', () => {
     });
     const live = deriveAgentState(
       installation,
-      [{ lastUsedAt: new Date(NOW - 10_000) }],
+      [{ lastListenedAt: new Date(NOW - 10_000) }],
       'owner-1',
       NOW,
     );
@@ -76,16 +76,55 @@ describe('deriveAgentState', () => {
 
     const stopped = deriveAgentState(
       installation,
-      [{ lastUsedAt: new Date(NOW - AGENT_LISTENING_STALE_MS - 1000) }],
+      [{ lastListenedAt: new Date(NOW - AGENT_LISTENING_STALE_MS - 1000) }],
       'owner-1',
       NOW,
     );
     expect(stopped.state).toBe('gone-dark');
   });
 
+  test('an MCP tool call alone is not listening: a fresh lastUsedAt with no check-in is never-connected', () => {
+    const row = deriveAgentState(
+      byoInstall({ runtimeTokens: [{ lastUsedAt: new Date(NOW - 10_000) }] }),
+      [{ lastUsedAt: new Date(NOW - 10_000) }],
+      'owner-1',
+      NOW,
+    );
+    expect(row.state).toBe('never-connected');
+    expect(row.lastUsedAt).toBeNull();
+    expect(row.fixCommand).toBe('commonly agent run sam-agent');
+  });
+
+  test('a check-in still decides over a later MCP call: listening, and lastUsedAt reports the check-in', () => {
+    const checkIn = new Date(NOW - 20_000);
+    const row = deriveAgentState(
+      byoInstall(),
+      [{ lastUsedAt: new Date(NOW - 1_000), lastListenedAt: checkIn }],
+      'owner-1',
+      NOW,
+    );
+    expect(row.state).toBe('listening');
+    expect(row.lastUsedAt).toBe(checkIn.toISOString());
+  });
+
+  test('an old seat after the backfill (lastListenedAt = lastUsedAt) keeps its verdict instead of flipping to never-connected', () => {
+    const lastSeen = new Date(NOW - 3 * 24 * 60 * 60 * 1000);
+    const before = deriveAgentState(byoInstall(), [{ lastUsedAt: lastSeen }], 'owner-1', NOW);
+    const after = deriveAgentState(
+      byoInstall(),
+      [{ lastUsedAt: lastSeen, lastListenedAt: lastSeen }],
+      'owner-1',
+      NOW,
+    );
+    // Without the backfill the deploy would read this seat as never-connected,
+    // and the stalled-connect scan would nudge a room that has long been quiet.
+    expect(before.state).toBe('never-connected');
+    expect(after.state).toBe('gone-dark');
+  });
+
   test('stale use → gone-dark, and the owner gets the wake command', () => {
     const row = deriveAgentState(
-      byoInstall({ runtimeTokens: [{ lastUsedAt: new Date(NOW - AGENT_LISTENING_STALE_MS - 1000) }] }),
+      byoInstall({ runtimeTokens: [{ lastListenedAt: new Date(NOW - AGENT_LISTENING_STALE_MS - 1000) }] }),
       [],
       'owner-1',
       NOW,
@@ -150,7 +189,7 @@ describe('deriveAgentState', () => {
     const row = deriveAgentState(
       byoInstall({
         config: { runtime: { runtimeType: 'moltbot', host: 'cloud' } },
-        runtimeTokens: [{ lastUsedAt: new Date(NOW - 5_000) }], // fresh, and still not trusted
+        runtimeTokens: [{ lastListenedAt: new Date(NOW - 5_000) }], // fresh, and still not trusted
       }),
       [],
       'owner-1',
@@ -164,7 +203,7 @@ describe('deriveAgentState', () => {
     const row = deriveAgentState(
       byoInstall({
         config: { runtime: { runtimeType: 'webhook', host: 'cloud' } },
-        runtimeTokens: [{ lastUsedAt: new Date(NOW - 5_000) }],
+        runtimeTokens: [{ lastListenedAt: new Date(NOW - 5_000) }],
       }),
       [],
       'owner-1',

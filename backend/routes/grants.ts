@@ -26,7 +26,21 @@ import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
 import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../services/seatEnvironmentProjection';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from '../services/outsiderGrantPodEligibility';
-import { agentActor, requestActor } from '../services/recordService';
+import { recordGrantIssued } from '../services/brokerRecordService';
+import { agentActor, humanActor, requestActor } from '../services/recordService';
+
+const plainGrant = (grant: unknown) => {
+  const doc = grant as { toObject?: () => Record<string, unknown> };
+  return (typeof doc?.toObject === 'function' ? doc.toObject() : grant) as Parameters<typeof recordGrantIssued>[0];
+};
+
+// Unbound issuance only. A task-bound grant's line is written by mintGrant on
+// its task chain (roomGrantService), so writing it here too would duplicate it.
+const recordUnboundIssuance = (grant: unknown, issuer: Parameters<typeof recordGrantIssued>[1]) => {
+  const plain = plainGrant(grant);
+  if ((plain as { binding?: unknown }).binding) return;
+  recordGrantIssued(plain, issuer);
+};
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const auth = require('../middleware/auth');
@@ -430,6 +444,8 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       issuer: requestActor(req as Parameters<typeof requestActor>[0]),
     };
     const grant = await createGrant(grantInput);
+    // The connection owner minted it (checked above); the record names them.
+    recordUnboundIssuance(grant, humanActor(userId));
     return res.status(201).json(grant);
   } catch (error) {
     return handleError(res, error);
@@ -478,6 +494,8 @@ router.post(
       expiresAt: body.expiresAt as string | undefined,
       issuer: agentActor(req.agentUser as Parameters<typeof agentActor>[0]),
     });
+    // An agent attenuated its own grant: the agent is the issuer.
+    recordUnboundIssuance(child, agentActor(req.agentUser as Parameters<typeof agentActor>[0]));
     return res.status(201).json(child);
   } catch (error) {
     return handleError(res, error);
