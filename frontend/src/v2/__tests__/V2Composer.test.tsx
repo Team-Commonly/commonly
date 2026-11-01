@@ -144,11 +144,12 @@ describe('V2Composer send button', () => {
     });
   });
 
-  test('there is no Send until the draft has text', () => {
+  // S3c (D215): Send is drawn at rest, and disabled until the draft has text.
+  test('Send is disabled, keeping its name, until the draft has text', () => {
     renderChat(makeDetail());
-    expect(screen.queryByRole('button', { name: /send message/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send message/i })).toBeDisabled();
     fireEvent.change(composerInput(), { target: { value: 'hello' } });
-    expect(screen.getByRole('button', { name: /send message/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /send message/i })).toBeEnabled();
   });
 
   test('shows send failures by the composer and keeps the reply draft intact', async () => {

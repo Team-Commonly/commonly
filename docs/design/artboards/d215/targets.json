@@ -78,5 +78,37 @@
  "team-390": {
   "helperWords": 34,
   "innerRatio": 1.93
+ },
+ "firstrun-welcome-1440": {
+  "helperWords": 16,
+  "innerRatio": 1
+ },
+ "firstrun-waiting-1440": {
+  "helperWords": 68,
+  "innerRatio": 1
+ },
+ "firstrun-connected-1440": {
+  "helperWords": 62,
+  "innerRatio": 1
+ },
+ "firstrun-error-1440": {
+  "helperWords": 62,
+  "innerRatio": 1
+ },
+ "firstrun-welcome-390": {
+  "helperWords": 12,
+  "innerRatio": 1
+ },
+ "firstrun-waiting-390": {
+  "helperWords": 64,
+  "innerRatio": 1
+ },
+ "firstrun-connected-390": {
+  "helperWords": 58,
+  "innerRatio": 1
+ },
+ "firstrun-error-390": {
+  "helperWords": 58,
+  "innerRatio": 1
  }
 }

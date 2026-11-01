@@ -86,7 +86,7 @@ const V2MessageActions: React.FC<V2MessageActionsProps> = ({
             onClick={onTogglePicker}
             disabled={!canInteract}
           >
-            <Icon d="M8 14s1.5 2 4 2 4-2 4-2" extra={<><circle cx="12" cy="12" r="10" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" /></>} />
+            <Icon d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01" extra={<circle cx="12" cy="12" r="9" />} />
           </button>
           {pickerOpen && (
             <span className="v2-msg__reaction-picker" role="menu">
@@ -127,7 +127,7 @@ const V2MessageActions: React.FC<V2MessageActionsProps> = ({
           title={t('podChat.thread.startThread')}
           onClick={() => onThread(message)}
         >
-          <Icon d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          <Icon d="M4 5h16M4 11h10M4 17h7" />
         </button>
       )}
       <span className="v2-msg__action-wrap" ref={moreRef}>

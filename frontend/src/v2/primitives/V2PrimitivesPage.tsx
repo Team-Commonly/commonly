@@ -37,6 +37,18 @@ const V2PrimitivesPage: React.FC = () => (
             </div>
           </div>
 
+          <div className="v2p-gtitle">disclosure row</div>
+          <div className="v2p-list">
+            <details className="v2p-disc">
+              <summary>
+                <span className="lb">How it runs</span>
+                <span className="vl">CLI · webhook</span>
+                <svg className="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+              </summary>
+              <div className="v2p-body">Detail sits behind the row and is closed by default.</div>
+            </details>
+          </div>
+
           <div className="v2p-gtitle">chips, badges, dots</div>
           <div className="v2p-list">
             <div className="v2p-lrow">
