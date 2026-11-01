@@ -183,9 +183,15 @@ async function stopRow(row: Row, state: RowState, install: Installation, princip
   state.stoppedAt = now;
 }
 
-// The seat has moved one of its rows in this pod on since `since`: completed it,
-// or blocked it itself. One wake shows several rows and asks for the next one, so
-// after that the rows it did not move have not been answered yet.
+// The seat has moved one of its rows in this pod on since `since`: the row was
+// completed (by the seat, a person, or merge evidence, which records no author:
+// the queue moved on either way), or the seat itself blocked it. A blocked row
+// counts only for the PATCH route's own "status → blocked" line by this seat, so
+// a later note on a row it had already blocked is not a move. One wake shows
+// several rows and asks for the next one, so after a move the rows it did not
+// move have not been answered yet.
+const BLOCKED_LINE = /status → blocked/;
+
 async function movedOnSince(install: Installation, principalId: string, since: Date): Promise<boolean> {
   const instance = normalized(install.instanceId || 'default');
   const alias = exactIgnoringCase(instance === 'default' ? normalized(install.agentName) : instance);
@@ -195,7 +201,10 @@ async function movedOnSince(install: Installation, principalId: string, since: D
       { $or: [{ assignee: alias }, { claimedBy: principalId }, { claimedBy: alias }] },
       { $or: [
         { status: 'done', completedAt: { $gt: since } },
-        { status: 'blocked', updates: { $elemMatch: { authorId: principalId, createdAt: { $gt: since } } } },
+        {
+          status: 'blocked',
+          updates: { $elemMatch: { authorId: principalId, createdAt: { $gt: since }, text: BLOCKED_LINE } },
+        },
       ] },
     ],
   }));
@@ -320,7 +329,8 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       { status: 'claimed', claimedBy: { $type: 'string', $ne: '' } },
     ],
   })
-    .select('_id podId taskId title status assignee claimedBy dep depMockOk source updates.authorId updates.author updates.createdAt')
+    .select('_id podId taskId title status assignee claimedBy dep depMockOk source '
+      + 'updates.authorId updates.author updates.createdAt')
     .lean() as Row[];
   const rows = await actionableRows(open);
   if (!rows.length) return { eligible: 0, woken: 0 };

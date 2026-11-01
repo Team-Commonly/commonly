@@ -265,8 +265,13 @@ describe('a row a person created or assigned', () => {
   it('wakes again when the row is reopened by a system write', async () => {
     expect(await wakes(0)).toBe(1);
     await settle('succeeded', 1);
-    await note(null, 10, 'system');
-    expect(await wakes(31)).toBe(1);
+    await Task.updateOne({ podId, taskId: 'TASK-1' }, { $set: { status: 'done', completedAt: at(5) } });
+    expect(await wakes(31)).toBe(0);
+    // The sourceRef create reopens a done row as pending, writing only no-author 'system' updates.
+    await Task.updateOne({ podId, taskId: 'TASK-1' }, { $set: { status: 'pending' }, $push: { updates: {
+      text: 'Reopened: the source is open again', author: 'system', authorId: null, createdAt: at(40),
+    } } });
+    expect(await wakes(71)).toBe(1);
   });
 
   it('wakes again when the dep it was waiting on is done, though the row itself is untouched', async () => {
@@ -375,9 +380,11 @@ describe('several rows in one wake', () => {
     { podId, taskNum: 2, taskId: 'TASK-2', title: 'Second', assignee: 'forge' },
   ]));
   const shownIn = (call) => AgentEventService.enqueue.mock.calls[call][0].payload.content;
-  const ownUpdate = (taskId, set, minutes) => Task.updateOne({ podId, taskId }, { $set: set, $push: { updates: {
-    text: `forge updated: ${JSON.stringify(set)}`, author: 'forge', authorId: String(agent._id), createdAt: at(minutes),
-  } } });
+  // The PATCH route's own audit line: "<author> updated: status → <status>".
+  const ownUpdate = (taskId, set, minutes, text = `forge updated: status → ${set.status}`) => Task.updateOne(
+    { podId, taskId },
+    { $set: set, $push: { updates: { text, author: 'forge', authorId: String(agent._id), createdAt: at(minutes) } } },
+  );
 
   it('stay quiet together when the run moved neither', async () => {
     expect(await wakes(0)).toBe(1);
@@ -418,6 +425,27 @@ describe('several rows in one wake', () => {
     expect(await wakes(0)).toBe(1);
     await settle('succeeded', 1);
     expect(await wakes(31)).toBe(0);
+  });
+
+  // CodeRabbit on #3263: a note on a row that was already blocked is not a move.
+  it('are not woken by the agent noting a row it had already blocked', async () => {
+    await ownUpdate('TASK-2', { status: 'blocked' }, -20);
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await ownUpdate('TASK-2', {}, 10, 'Still waiting on review');
+    expect(await wakes(31)).toBe(0);
+  });
+
+  // A builder seat's row usually closes on merge evidence, which records no author.
+  // The seat's queue moved on all the same, so the rest wake.
+  it('wake the rest when one is completed by merge evidence', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await Task.updateOne({ podId, taskId: 'TASK-1' }, { $set: { status: 'done', completedAt: at(10) }, $push: { updates: {
+      text: 'Completed: PR merged', author: 'system', authorId: null, createdAt: at(10),
+    } } });
+    expect(await wakes(31)).toBe(1);
+    expect(shownIn(1)).toContain('TASK-2');
   });
 });
 
