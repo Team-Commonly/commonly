@@ -108,6 +108,37 @@ describe('group pod agent liveness', () => {
     expect(screen.queryByTestId('pod-agent-liveness')).not.toBeInTheDocument();
   });
 
+  test('two agents away fold into one closed line that names both and opens to their rows', async () => {
+    mockStates([
+      { agentName: 'flint', instanceId: 'default', displayName: 'Flint', state: 'gone-dark', lastUsedAt: HOURS_AGO_3, isOwner: false },
+      { agentName: 'swift', instanceId: 'default', displayName: 'Swift', state: 'never-connected', lastUsedAt: null, isOwner: false },
+    ]);
+    renderChat(makeDetail());
+
+    const away = await screen.findByTestId('pod-agents-away');
+    expect(away.tagName).toBe('DETAILS');
+    expect(away).not.toHaveAttribute('open');
+    expect(away.querySelector('summary')).toHaveTextContent("Flint and Swift aren't answering right now");
+    const rows = screen.getAllByTestId('pod-agent-liveness');
+    expect(rows.map((r) => r.textContent)).toEqual([
+      "Flint last checked in 3h ago. It answers when it's back.",
+      "Swift isn't connected yet, so it won't answer here until it's running.",
+    ]);
+    expect(rows.every((r) => away.contains(r))).toBe(true);
+    expect(document.querySelectorAll('.v2-chat__agent-room-status')).toHaveLength(1);
+  });
+
+  test('three agents away name two and count the rest', async () => {
+    mockStates(['Flint', 'Swift', 'Dart'].map((name) => ({
+      agentName: name.toLowerCase(), instanceId: 'default', displayName: name, state: 'gone-dark', lastUsedAt: HOURS_AGO_3, isOwner: false,
+    })));
+    renderChat(makeDetail());
+
+    const away = await screen.findByTestId('pod-agents-away');
+    expect(away.querySelector('summary')).toHaveTextContent("Flint, Swift and 1 other aren't answering right now");
+    expect(screen.getAllByTestId('pod-agent-liveness')).toHaveLength(3);
+  });
+
   test('a 1:1 agent room keeps its own row and never doubles it', async () => {
     mockStates([{ agentName: 'sam-agent', instanceId: 'default', displayName: 'Sam Agent', state: 'never-connected', lastUsedAt: null, isOwner: true }]);
     renderChat(makeDetail({

@@ -640,7 +640,10 @@
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",
-      "offlineSince": "{{agentName}} last checked in {{age}}. It answers when it's back."
+      "offlineSince": "{{agentName}} last checked in {{age}}. It answers when it's back.",
+      "awayTwo": "{{first}} and {{second}} aren't answering right now",
+      "awayMany_one": "{{first}}, {{second}} and {{formattedCount}} other aren't answering right now",
+      "awayMany_other": "{{first}}, {{second}} and {{formattedCount}} others aren't answering right now"
     },
     "typing": {
       "one": "{{name}} is thinking…",
