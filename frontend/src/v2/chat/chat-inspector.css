@@ -1,0 +1,432 @@
+/* Pod chat · the pod inspector (S3c, D223 lift of the d215 chat frame and
+   the #3176 inspector frame).
+
+   Source: docs/design/artboards/d215/index.html, data-surface="chat" at
+   1440, product CSS `.insp`, `.insp .ih`, `.insp .row`, `.grp`. Token map as
+   in chat-message.css. Imported by V2App.tsx after chat-composer.css. */
+
+.v2-pane--inspector {
+  border-right: none;
+  border-left: 1px solid var(--v2-border-soft);
+  background: var(--v2-shell-bg);
+}
+
+.v2-pod-join-settings {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  margin: 3px 0;
+  padding: 0;
+  border: 0;
+  color: var(--v2-text-secondary);
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-pod-join-settings legend {
+  margin-bottom: 6px;
+  color: var(--v2-text-primary);
+  font-weight: 600;
+}
+
+.v2-pod-join-settings label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.v2-pod-join-settings input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--v2-control-outline);
+  border-radius: 50%;
+  background: var(--v2-surface);
+  cursor: pointer;
+}
+
+.v2-pod-join-settings input:checked {
+  border: 4px solid var(--v2-accent);
+}
+
+.v2-pod-join-settings__error {
+  margin: 8px 0 0;
+  color: var(--v2-danger);
+  font: 400 12px/16px var(--v2-font);
+}
+
+@media (max-width: 1023px) {
+  /* Below the 3-pane width the inspector becomes a right DRAWER, not a
+     casualty. Hiding the pane outright here made the avatar-stack button a
+     no-op on phones: V2Layout mounts the pane on tap, CSS hid it, and the
+     pod's members/files/artifacts were unreachable on mobile entirely
+     (2026-08-26). The pane only exists in the DOM while open
+     (V2Layout mounts it conditionally), so its presence IS the open state;
+     the existing v2-inspector__close dismisses it. Shadow is allowed here:
+     the design system reserves shadows for floating UI, which this now is. */
+  .v2-pane--inspector {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(360px, calc(100vw - 48px));
+    z-index: 60;
+    border-left: 1px solid var(--v2-border);
+    box-shadow: -12px 0 32px rgba(17, 24, 39, 0.14);
+  }
+}
+
+@media (max-width: 760px) {
+  /* The inspector is a bottom sheet on phones, not a narrow desktop drawer. */
+  .v2-pane--inspector {
+    top: auto;
+    left: 0;
+    width: 100%;
+    max-height: min(78dvh, 680px);
+    border: 1px solid var(--v2-border);
+    border-bottom: 0;
+    border-radius: 6px 6px 0 0;
+    box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
+  }
+}
+
+.v2-workspace-inspector {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  background: var(--v2-shell-bg);
+}
+
+/* The new inspector is a card stack on the shell ground, not a second pane
+   delineated by a desktop divider. Its cards provide the only borders. */
+.v2-pane--inspector {
+  border-left: 0;
+}
+
+.v2-workspace-inspector__card {
+  min-width: 0;
+  border: 0;
+  border-radius: var(--v2-r-14, 14px);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pane, 0 0 0 1px var(--v2-border-soft));
+  padding: 12px;
+}
+
+.v2-workspace-inspector__label {
+  display: block;
+  margin: 0;
+  color: var(--v2-text-primary);
+  font: 600 13px/18px var(--v2-font);
+  white-space: nowrap;
+}
+
+/* ---------- D215 panel fold (TASK-691) ----------
+   Needs you, Agents, Files and Who can join are each one 44px row at rest and
+   open on demand. The section titles lost their mono captions; an icon and a
+   count say the same thing. Members and manage are icon buttons in the head. */
+.v2-workspace-inspector__head {
+  display: flex;
+  min-height: 32px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  /* D215 (TASK-734): Pod | Threads on the left, the icon keys on the right.
+     S3c: the frame's .ihead pads 8 10 all round. */
+  padding: 8px 10px;
+}
+
+.v2-workspace-inspector__head-spacer { flex: 1; }
+
+/* Hide panel is the desktop key; the phone sheet keeps its close X. The key
+   is a primitive (.v2p-b, 0,1,0), so .v2-root button.<class> outranks its
+   display. */
+@media (max-width: 760px) {
+  .v2-root button.v2-workspace-inspector__hide { display: none; }
+}
+
+.v2-workspace-inspector__threads { display: grid; gap: 2px; align-content: start; }
+
+.v2-root button.v2-workspace-inspector__thread {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--v2-r-8, 8px);
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.v2-root button.v2-workspace-inspector__thread:hover { background: var(--v2-surface-tint); }
+
+.v2-root button.v2-workspace-inspector__thread:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+
+.v2-workspace-inspector__thread-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+
+.v2-workspace-inspector__thread-author { font: 600 13px/18px var(--v2-font); }
+
+.v2-workspace-inspector__thread-when { margin-left: auto; color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
+
+.v2-workspace-inspector__thread-text {
+  overflow: hidden;
+  color: var(--v2-text-secondary);
+  font: 400 12.5px/18px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__card.v2-workspace-inspector__group { flex: none; padding: 0; overflow: hidden; }
+
+.v2-root button.v2-workspace-inspector__fold {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px 0 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 600 13.5px/18px var(--v2-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.v2-root button.v2-workspace-inspector__fold:hover { background: var(--v2-surface-hover); }
+
+.v2-root button.v2-workspace-inspector__fold:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--v2-accent); }
+
+.v2-workspace-inspector__fold-icon { display: grid; flex: none; place-items: center; color: var(--v2-text-secondary); }
+
+.v2-workspace-inspector__fold-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+.v2-workspace-inspector__fold-count { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
+
+.v2-workspace-inspector__fold-stack { display: flex; margin-left: auto; padding-left: 6px; }
+
+.v2-workspace-inspector__fold-avatar.v2-avatar {
+  width: 24px;
+  height: 24px;
+  margin-left: -6px;
+  border: 2px solid var(--v2-surface);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.v2-workspace-inspector__fold-chevron {
+  display: grid;
+  flex: none;
+  margin-left: auto;
+  place-items: center;
+  /* Ruling 7: the frame's --ph chevron measures 2.58:1 on the surface (dark
+     3.17:1), under 3:1 for a mark; muted measures 4.97:1 (dark 5.77:1). */
+  color: var(--v2-text-muted);
+  transition: transform 160ms;
+}
+
+.v2-workspace-inspector__fold-stack + .v2-workspace-inspector__fold-chevron { margin-left: 0; }
+
+.v2-workspace-inspector__fold[aria-expanded="true"] .v2-workspace-inspector__fold-chevron { transform: rotate(180deg); }
+
+.v2-workspace-inspector__group-body { padding: 0 14px 12px; }
+
+.v2-workspace-inspector__group-body .v2-pod-join-settings { margin: 0; padding: 0; border: 0; }
+
+.v2-workspace-inspector__rows {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  /* D215 .gbody: rows 2px apart. */
+  gap: 2px;
+}
+
+.v2-root button.v2-workspace-inspector__agent,
+.v2-root button.v2-workspace-inspector__attention,
+.v2-root button.v2-workspace-inspector__task {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+}
+
+.v2-root button.v2-workspace-inspector__agent {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 8px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+}
+
+.v2-root button.v2-workspace-inspector__agent:hover,
+.v2-root button.v2-workspace-inspector__attention:hover,
+.v2-root button.v2-workspace-inspector__task:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-workspace-inspector__avatar.v2-avatar {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 4px;
+  box-shadow: none;
+  font-size: 12px;
+}
+
+.v2-workspace-inspector__agent-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.v2-workspace-inspector__agent-name {
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  font: 600 13px/18px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__agent-status {
+  overflow: hidden;
+  color: var(--v2-text-muted);
+  font: 400 12px/16px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__state {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  background: var(--v2-text-muted);
+}
+
+.v2-workspace-inspector__state--needs-you { background: var(--v2-accent); }
+
+.v2-workspace-inspector__state--working {
+  background: var(--v2-accent);
+  animation: v2-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
+}
+
+.v2-root button.v2-workspace-inspector__attention,
+.v2-root button.v2-workspace-inspector__task {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 4px;
+  font: 400 13px/18px var(--v2-font);
+}
+
+.v2-workspace-inspector__attention > span:first-child,
+.v2-workspace-inspector__attention-title,
+.v2-workspace-inspector__task > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-workspace-inspector__actor,
+.v2-workspace-inspector__task-meta {
+  flex-shrink: 0;
+  color: var(--v2-accent-text);
+  font: 500 11px/14px var(--v2-font-mono);
+}
+
+.v2-workspace-inspector__task-meta { color: var(--v2-text-muted); }
+
+/* D215 .nrow: a Needs-you item is a 32px row in ink-2 with an inbox glyph.
+   The frame's P1/P2 badge has no data behind it (V2AttentionItem carries no
+   priority), so the agent name keeps that slot. The "N need you" link row
+   above the items is not drawn and keeps its look. */
+.v2-root button.v2-workspace-inspector__attention--item {
+  align-items: center;
+  justify-content: flex-start;
+  height: 32px;
+  padding: 0 4px;
+  color: var(--v2-ink-2);
+}
+
+.v2-workspace-inspector__attention--item > svg { flex: none; }
+
+.v2-workspace-inspector__attention-title { flex: 1; }
+
+.v2-workspace-inspector__empty {
+  margin: 0;
+  padding: 4px;
+  color: var(--v2-text-muted);
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-root button.v2-workspace-inspector__close {
+  display: none;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-secondary);
+}
+
+.v2-root button.v2-workspace-inspector__close:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+.v2-root button.v2-workspace-inspector__close:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+
+@media (max-width: 760px) {
+  .v2-workspace-inspector { padding: 12px 14px 0; }
+  .v2-root button.v2-workspace-inspector__close { display: inline-grid; }
+}
+
+/* The new factual inspector keeps CJK metadata at the established readable
+   floor. These rows are the artboard's compact mono labels, not body prose. */
+.v2-root:lang(zh) .v2-workspace-inspector__empty { line-height: 1.6; }
+
+.v2-root:lang(zh) .v2-workspace-inspector__actor,
+.v2-root:lang(zh) .v2-workspace-inspector__task-meta { font-size: 12px; }
+
+@media (max-width: 760px) {
+  /* The inspector becomes the artboard's bottom sheet; its header toggle is
+     intentionally always present so the sheet cannot become unreachable. */
+  .v2-pane--inspector {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: min(76dvh, 620px);
+    border: 1px solid var(--v2-border);
+    border-bottom: 0;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
+  }
+}
+
+/* Inspector Files pane: the same rows as needs-you, an ext chip in front, All N files as cobalt text. */
+.v2-root button.v2-workspace-inspector__file { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; padding: 7px 4px; border: 0; background: transparent; color: var(--v2-text-primary); font: 400 13px/18px var(--v2-font); text-align: left; }
+
+.v2-root button.v2-workspace-inspector__file > span:nth-child(2) { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.v2-root button.v2-workspace-inspector__file:hover { background: var(--v2-surface-hover); }
+
+.v2-workspace-inspector__ext { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 18px; padding: 0 4px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-text-secondary); font: 500 11px/14px var(--v2-font-mono); }
+
+.v2-root button.v2-workspace-inspector__all-files { padding: 6px 4px 2px; border: 0; background: transparent; color: var(--v2-accent-text); font: 600 12px/16px var(--v2-font); text-align: left; }

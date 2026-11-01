@@ -819,9 +819,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const block = v2.slice(start, v2.indexOf('@media', start + 10));
     expect(block).toContain('.v2-shell:not(.v2-shell--feature-wide)');
     expect(block).not.toMatch(/\.v2-shell\s*\{/);
-    expect(block).toContain('.v2-pane--inspector');
-    expect(block).toContain('position: fixed');
     expect(block).not.toContain('display: none');
+    // S3c (D223): the drawer rule moved to chat/chat-inspector.css in its own
+    // 1023px block; read that block the same way.
+    const drawerStart = v2.indexOf('@media (max-width: 1023px) {\n  /* Below the 3-pane width the inspector');
+    expect(drawerStart).toBeGreaterThan(-1);
+    const drawer = v2.slice(drawerStart, v2.indexOf('@media', drawerStart + 10));
+    expect(drawer).toContain('.v2-pane--inspector');
+    expect(drawer).toContain('position: fixed');
+    expect(drawer).not.toContain('display: none');
     // The 760px secondary-pane eraser out-specifies the drawer (0-4-0 vs
     // 0-1-0); the inspector must be in its :not chain or the drawer is a
     // mounted-but-invisible pane again — the exact live bug, twice.
@@ -1436,7 +1442,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(podBoard).not.toContain('+ {t(\'board.newTask\')}');
   });
 
-  test('the composer is one line with a 32px plus menu and a 32px ink Send that exists only with text (D215, TASK-734)', () => {
+  test('the composer is one line with a 32px plus menu and a 32px ink Send, disabled until there is text (D215, TASK-734)', () => {
     expect(lastRuleBody(v2, '.v2-composer__row')).toContain('min-height: 52px');
     expect(ruleBody(v2, '.v2-composer')).toContain('border-radius: var(--v2-r-14, 14px)');
     // D223: plus and Send are the primitives' 32px ghost and primary icon keys,
@@ -1454,7 +1460,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(primitives, '.v2p-b-p')).toContain('background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
     // A bespoke look on Send would outrank the primitive (0,2,1 over 0,1,0).
     expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).not.toContain('background');
-    expect(composer).toContain('{hasText && (');
+    // S3c: Send is drawn at rest (D215) and disabled while the draft is empty;
+    // only an in-flight send takes the dimmed progress look.
+    expect(composer).toContain('disabled={sending || !hasText}');
+    expect(composer).not.toContain('{hasText && (');
+    expect(ruleBody(v2, '.v2-root .v2-composer--typing button.v2-composer__send:disabled')).toContain('opacity: 0.6');
+    expect(ruleBody(v2, '.v2-root button.v2-composer__send:disabled')).not.toContain('opacity');
+    // Ruling 7: the placeholder reads at 4.97:1 (dark 5.77:1), not --ph's 2.58:1.
+    expect(ruleBody(v2, '.v2-root .v2-composer__field > textarea::placeholder')).toContain('var(--v2-text-muted)');
     expect(composer).toContain("role=\"menu\"");
     expect(composer).not.toContain('postsAs');
     expect(v2).not.toContain('.v2-composer__posts-as');
@@ -2008,7 +2021,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Join policy is now chosen at creation, but public visibility remains a
     // later act. The old option buttons lost to the global button reset (#870).
     expect(v2).not.toMatch(/\.v2-pods__create-option[^\n]*\{/);
-    expect(ruleBody(v2, '.v2-pods__join-policy,\n.v2-pod-join-settings')).toContain('display: flex');
+    // S3c (D223): the pod-settings half of this shared rule moved to
+    // chat/chat-inspector.css; each half keeps the flex layout.
+    expect(ruleBody(v2, '.v2-pods__join-policy')).toContain('display: flex');
+    expect(ruleBody(v2, '.v2-pod-join-settings')).toContain('display: flex');
   });
 
   test('the approval card visually outranks the action over the agent prose', () => {

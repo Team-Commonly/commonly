@@ -8,6 +8,8 @@ export const V2_CSS_FILES = [
   'v2.css',
   'chat/chat-message.css',
   'chat/chat-pane.css',
+  'chat/chat-composer.css',
+  'chat/chat-inspector.css',
 ];
 
 export const readV2Css = (): string => V2_CSS_FILES

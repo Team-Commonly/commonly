@@ -777,12 +777,6 @@ body.modern-ui.v2-canvas {
   margin-right: 0;
 }
 
-.v2-pane--inspector {
-  border-right: none;
-  border-left: 1px solid var(--v2-border-soft);
-  background: var(--v2-shell-bg);
-}
-
 .v2-inspector-backdrop {
   display: none;
 }
@@ -1204,8 +1198,7 @@ body.modern-ui.v2-canvas {
  * connector grant. These are radios rather than the old option buttons whose
  * styling lost to the global button reset (#870). */
 
-.v2-pods__join-policy,
-.v2-pod-join-settings {
+.v2-pods__join-policy {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -1217,15 +1210,13 @@ body.modern-ui.v2-canvas {
   font: 400 12px/16px var(--v2-font);
 }
 
-.v2-pods__join-policy legend,
-.v2-pod-join-settings legend {
+.v2-pods__join-policy legend {
   margin-bottom: 6px;
   color: var(--v2-text-primary);
   font-weight: 600;
 }
 
-.v2-pods__join-policy label,
-.v2-pod-join-settings label {
+.v2-pods__join-policy label {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1235,8 +1226,7 @@ body.modern-ui.v2-canvas {
 
 /* Native radios ignore border tokens, so draw the outline from one. Checked, the
    border thickens into the accent dot, so no cobalt background is added. */
-.v2-pods__join-policy input,
-.v2-pod-join-settings input {
+.v2-pods__join-policy input {
   appearance: none;
   width: 14px;
   height: 14px;
@@ -1248,8 +1238,7 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 
-.v2-pods__join-policy input:checked,
-.v2-pod-join-settings input:checked {
+.v2-pods__join-policy input:checked {
   border: 4px solid var(--v2-accent);
 }
 
@@ -1257,12 +1246,6 @@ body.modern-ui.v2-canvas {
   margin: 0;
   color: var(--v2-text-secondary);
   font: 400 var(--v2-fs-meta)/16px var(--v2-font);
-}
-
-.v2-pod-join-settings__error {
-  margin: 8px 0 0;
-  color: var(--v2-danger);
-  font: 400 12px/16px var(--v2-font);
 }
 
 .v2-pods__create-input {
@@ -3000,86 +2983,6 @@ body.modern-ui.v2-canvas {
   background-color: var(--v2-border-soft);
   color: var(--v2-text-secondary);
   font-size: 10px;
-}
-
-/* @-mention dropdown anchored to the composer input wrap. Sits above the
-   composer in DOM order but renders above-and-out via absolute positioning. */
-.v2-mention-dropdown {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(100% + 6px);
-  z-index: 10;
-  max-height: 240px;
-  overflow-y: auto;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.v2-mention-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 9px;
-  border-radius: var(--v2-radius-sm);
-  background: transparent;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  width: 100%;
-  font: inherit;
-  color: var(--v2-text-primary);
-}
-
-.v2-mention-item:hover,
-.v2-mention-item--active {
-  background: var(--v2-surface-hover);
-}
-
-/* Keep an explicit root/button selector for the interaction states. The reset
-   is a low-specificity default now, but these rules document the intended
-   highlight instead of relying on source order or browser defaults. */
-.v2-root button.v2-mention-item:hover {
-  background: var(--v2-surface-hover);
-}
-
-.v2-root button.v2-mention-item--active {
-  background: var(--v2-surface-hover);
-}
-
-/* The dropdown owns the item's 7px 9px padding explicitly. */
-.v2-root .v2-mention-dropdown button.v2-mention-item {
-  padding: 7px 9px;
-}
-
-.v2-mention-item__text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.v2-mention-item__label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-mention-item__sub {
-  font-size: 11px;
-  color: var(--v2-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---------- Message bubble ---------- */
@@ -5479,24 +5382,6 @@ body.modern-ui.v2-canvas {
     grid-template-columns: var(--v2-rail-w) var(--v2-pods-w) minmax(0, 1fr);
   }
 
-  /* Below the 3-pane width the inspector becomes a right DRAWER, not a
-     casualty. Hiding the pane outright here made the avatar-stack button a
-     no-op on phones: V2Layout mounts the pane on tap, CSS hid it, and the
-     pod's members/files/artifacts were unreachable on mobile entirely
-     (2026-08-26). The pane only exists in the DOM while open
-     (V2Layout mounts it conditionally), so its presence IS the open state;
-     the existing v2-inspector__close dismisses it. Shadow is allowed here:
-     the design system reserves shadows for floating UI, which this now is. */
-  .v2-pane--inspector {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(360px, calc(100vw - 48px));
-    z-index: 60;
-    border-left: 1px solid var(--v2-border);
-    box-shadow: -12px 0 32px rgba(17, 24, 39, 0.14);
-  }
 }
 
 @media (max-width: 760px) {
@@ -10356,17 +10241,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
     z-index: 1;
   }
 
-  /* The inspector is a bottom sheet on phones, not a narrow desktop drawer. */
-  .v2-pane--inspector {
-    top: auto;
-    left: 0;
-    width: 100%;
-    max-height: min(78dvh, 680px);
-    border: 1px solid var(--v2-border);
-    border-bottom: 0;
-    border-radius: 6px 6px 0 0;
-    box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
-  }
 }
 
 /* ---------- Workspace inspector (TASK-129 PR 2) ----------
@@ -10374,154 +10248,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
    same invite, agent-profile, board, and attachment exits without retaining
    a second, legacy inspector surface. */
 
-.v2-workspace-inspector {
-  position: relative;
-  display: flex;
-  min-height: 0;
-  height: 100%;
-  flex-direction: column;
-  gap: 10px;
-  overflow-y: auto;
-  background: var(--v2-shell-bg);
-}
-
-/* The new inspector is a card stack on the shell ground, not a second pane
-   delineated by a desktop divider. Its cards provide the only borders. */
-.v2-pane--inspector {
-  border-left: 0;
-}
-
-.v2-workspace-inspector__card {
-  min-width: 0;
-  border: 0;
-  border-radius: var(--v2-r-14, 14px);
-  background: var(--v2-surface);
-  box-shadow: var(--v2-shadow-pane, 0 0 0 1px var(--v2-border-soft));
-  padding: 12px;
-}
-
-.v2-workspace-inspector__label {
-  display: block;
-  margin: 0;
-  color: var(--v2-text-primary);
-  font: 600 13px/18px var(--v2-font);
-  white-space: nowrap;
-}
-
-/* ---------- D215 panel fold (TASK-691) ----------
-   Needs you, Agents, Files and Who can join are each one 44px row at rest and
-   open on demand. The section titles lost their mono captions; an icon and a
-   count say the same thing. Members and manage are icon buttons in the head. */
-.v2-workspace-inspector__head {
-  display: flex;
-  min-height: 32px;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  /* D215 (TASK-734): Pod | Threads on the left, the icon keys on the right. */
-  padding: 8px 10px 0;
-}
-
-.v2-workspace-inspector__head-spacer { flex: 1; }
-
-/* Hide panel is the desktop key; the phone sheet keeps its close X. The key
-   is a primitive (.v2p-b, 0,1,0), so .v2-root button.<class> outranks its
-   display. */
-@media (max-width: 760px) {
-  .v2-root button.v2-workspace-inspector__hide { display: none; }
-}
-
-.v2-workspace-inspector__threads { display: grid; gap: 2px; align-content: start; }
-
-.v2-root button.v2-workspace-inspector__thread {
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  gap: 2px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: var(--v2-r-8, 8px);
-  background: transparent;
-  color: var(--v2-text-primary);
-  text-align: left;
-  cursor: pointer;
-}
-
-.v2-root button.v2-workspace-inspector__thread:hover { background: var(--v2-surface-tint); }
-.v2-root button.v2-workspace-inspector__thread:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
-.v2-workspace-inspector__thread-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.v2-workspace-inspector__thread-author { font: 600 13px/18px var(--v2-font); }
-.v2-workspace-inspector__thread-when { margin-left: auto; color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
-.v2-workspace-inspector__thread-text {
-  overflow: hidden;
-  color: var(--v2-text-secondary);
-  font: 400 12.5px/18px var(--v2-font);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-workspace-inspector__card.v2-workspace-inspector__group { flex: none; padding: 0; overflow: hidden; }
-
-.v2-root button.v2-workspace-inspector__fold {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  height: 44px;
-  align-items: center;
-  gap: 9px;
-  padding: 0 12px 0 14px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--v2-text-primary);
-  font: 600 13.5px/18px var(--v2-font);
-  text-align: left;
-  cursor: pointer;
-}
-
-.v2-root button.v2-workspace-inspector__fold:hover { background: var(--v2-surface-hover); }
-.v2-root button.v2-workspace-inspector__fold:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--v2-accent); }
-
-.v2-workspace-inspector__fold-icon { display: grid; flex: none; place-items: center; color: var(--v2-text-secondary); }
-.v2-workspace-inspector__fold-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.v2-workspace-inspector__fold-count { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
-
-.v2-workspace-inspector__fold-stack { display: flex; margin-left: auto; padding-left: 6px; }
-.v2-workspace-inspector__fold-avatar.v2-avatar {
-  width: 24px;
-  height: 24px;
-  margin-left: -6px;
-  border: 2px solid var(--v2-surface);
-  border-radius: 6px;
-  box-shadow: none;
-}
-
-.v2-workspace-inspector__fold-chevron {
-  display: grid;
-  flex: none;
-  margin-left: auto;
-  place-items: center;
-  color: var(--v2-text-placeholder);
-  transition: transform 160ms;
-}
-
-.v2-workspace-inspector__fold-stack + .v2-workspace-inspector__fold-chevron { margin-left: 0; }
-.v2-workspace-inspector__fold[aria-expanded="true"] .v2-workspace-inspector__fold-chevron { transform: rotate(180deg); }
-
-.v2-workspace-inspector__group-body { padding: 0 14px 12px; }
-
-.v2-workspace-inspector__group-body .v2-pod-join-settings { margin: 0; padding: 0; border: 0; }
-
-.v2-workspace-inspector__rows {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.v2-root button.v2-workspace-inspector__agent,
-.v2-root button.v2-workspace-inspector__attention,
-.v2-root button.v2-workspace-inspector__task,
 .v2-root button.v2-workspace-inspector__board-counts {
   width: 100%;
   min-width: 0;
@@ -10532,92 +10258,9 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   text-align: left;
 }
 
-.v2-root button.v2-workspace-inspector__agent {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 8px;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 4px;
-}
-
-.v2-root button.v2-workspace-inspector__agent:hover,
-.v2-root button.v2-workspace-inspector__attention:hover,
-.v2-root button.v2-workspace-inspector__task:hover,
 .v2-root button.v2-workspace-inspector__board-counts:hover {
   background: var(--v2-surface-hover);
 }
-
-.v2-workspace-inspector__avatar.v2-avatar {
-  width: 28px;
-  height: 28px;
-  border: 0;
-  border-radius: 4px;
-  box-shadow: none;
-  font-size: 12px;
-}
-
-.v2-workspace-inspector__agent-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.v2-workspace-inspector__agent-name {
-  overflow: hidden;
-  color: var(--v2-text-primary);
-  font: 600 13px/18px var(--v2-font);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-workspace-inspector__agent-status {
-  overflow: hidden;
-  color: var(--v2-text-muted);
-  font: 400 12px/16px var(--v2-font);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-workspace-inspector__state {
-  width: 8px;
-  height: 8px;
-  border-radius: 0;
-  background: var(--v2-text-muted);
-}
-
-.v2-workspace-inspector__state--needs-you { background: var(--v2-accent); }
-.v2-workspace-inspector__state--working {
-  background: var(--v2-accent);
-  animation: v2-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
-}
-
-.v2-root button.v2-workspace-inspector__attention,
-.v2-root button.v2-workspace-inspector__task {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 4px;
-  font: 400 13px/18px var(--v2-font);
-}
-
-.v2-workspace-inspector__attention > span:first-child,
-.v2-workspace-inspector__task > span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-workspace-inspector__actor,
-.v2-workspace-inspector__task-meta {
-  flex-shrink: 0;
-  color: var(--v2-accent-text);
-  font: 500 11px/14px var(--v2-font-mono);
-}
-
-.v2-workspace-inspector__task-meta { color: var(--v2-text-muted); }
 
 .v2-root button.v2-workspace-inspector__board-counts {
   margin: 0 0 6px;
@@ -10626,39 +10269,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   color: var(--v2-text-muted);
   font: 500 11px/16px var(--v2-font-mono);
 }
-
-.v2-workspace-inspector__empty {
-  margin: 0;
-  padding: 4px;
-  color: var(--v2-text-muted);
-  font: 400 12px/16px var(--v2-font);
-}
-
-.v2-root button.v2-workspace-inspector__close {
-  display: none;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--v2-text-secondary);
-}
-
-.v2-root button.v2-workspace-inspector__close:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
-.v2-root button.v2-workspace-inspector__close:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
-
-@media (max-width: 760px) {
-  .v2-workspace-inspector { padding: 12px 14px 0; }
-  .v2-root button.v2-workspace-inspector__close { display: inline-grid; }
-}
-
-/* The new factual inspector keeps CJK metadata at the established readable
-   floor. These rows are the artboard's compact mono labels, not body prose. */
-.v2-root:lang(zh) .v2-workspace-inspector__empty { line-height: 1.6; }
-.v2-root:lang(zh) .v2-workspace-inspector__actor,
-.v2-root:lang(zh) .v2-workspace-inspector__task-meta { font-size: 12px; }
 
 /* ---------- Workspace decision card (TASK-129 PR 3) ----------
    A DecisionRequest is an in-thread fork, not prose the human must parse.
@@ -10794,24 +10404,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 /* The pod header shows the toggle only while the panel is hidden; the open
    panel carries its own Hide button in its head (D215, TASK-734). */
 
-/* TASK-702: the header Invite. Same height and frame as the inspector
-   toggle beside it, with a label so it reads as an action, not decoration. */
-.v2-composer__error {
-  margin: 0;
-  padding: 0 10px 8px;
-  color: #b91c1c;
-  font: 400 12px/16px var(--v2-font);
-}
-
-.v2-composer__warnings {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0 10px 8px;
-  color: var(--v2-text-secondary);
-  font: 400 12px/16px var(--v2-font);
-}
-
 @media (max-width: 760px) {
   /* The phone artboard makes every decision option a full-width, 44px row;
      Other remains a centred text escape hatch beneath them. */
@@ -10840,20 +10432,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   }
   .v2-pane--rail { display: none; }
   .v2-pane--main { background: var(--v2-surface); }
-
-  /* The inspector becomes the artboard's bottom sheet; its header toggle is
-     intentionally always present so the sheet cannot become unreachable. */
-  .v2-pane--inspector {
-    top: auto;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    height: min(76dvh, 620px);
-    border: 1px solid var(--v2-border);
-    border-bottom: 0;
-    border-radius: 12px 12px 0 0;
-    box-shadow: 0 -12px 32px rgba(17, 24, 39, 0.14);
-  }
 
   .v2-mobile-tabs {
     position: fixed;
@@ -11375,18 +10953,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   .v2-pods-aside:not(.v2-pods-aside--page) { display: none; }
   .v2-mobile-backdrop { display: none; }
 
-  /* The phone keys draw at 32px and take touches at 44px (D223 standing
-     rule, 11-01): a pseudo-element extends the hit area, the box stays.
-     z-index keeps it above later positioned siblings such as the transcript. */
-  .v2-root button.v2-composer__plus,
-  .v2-root button.v2-composer__send { position: relative; z-index: 1; }
-  .v2-root button.v2-composer__plus::after,
-  .v2-root button.v2-composer__send::after {
-    content: '';
-    position: absolute;
-    /* From the padding box, inside each key's 1px border: 30 + 2 x 7 = 44. */
-    inset: -7px;
-  }
   /* Tab bar with labels; the count lives inside the label, one counter. */
   .v2-mobile-tabs {
     height: 58px;
@@ -11465,148 +11031,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
    badge, code past six lines collapsed; older messages load on scroll with a
    mono edge line and a Jump-to-latest pill. */
 
-.v2-composer {
-  flex: 0 0 auto;
-  /* D215 (TASK-734): a floating card, radius 14 on the pop shadow, no border. */
-  margin: 4px 18px 16px;
-  border: 0;
-  border-radius: var(--v2-r-14, 14px);
-  background: var(--v2-surface);
-  box-shadow: var(--v2-shadow-pop, 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28));
-}
-
-/* Typing or focused, a darker hairline sits over the card's own; the drop stays. */
-.v2-composer--typing,
-.v2-composer:focus-within {
-  box-shadow: 0 0 0 1px var(--v2-border-strong), var(--v2-shadow-pop, 0 18px 36px -14px rgba(16, 24, 40, 0.28));
-}
-
-.v2-composer__row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  min-height: 52px;
-  padding: 10px;
-}
-
-.v2-composer__plus-wrap { position: relative; flex: 0 0 auto; align-self: flex-end; }
-
-.v2-root button.v2-composer__plus::before { content: '+'; font: 500 18px/1 var(--v2-font); }
-/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-g v2p-ib; the open menu keeps the hover tint. */
-.v2-root button.v2-composer__plus[aria-expanded="true"] { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
-/* Disabled while a file uploads: the primitive's ghost hover has no :disabled guard. */
-.v2-root button.v2-composer__plus:disabled { cursor: progress; }
-.v2-root button.v2-composer__plus:disabled:hover { background: transparent; color: var(--v2-text-secondary); }
-
-.v2-composer__menu {
-  position: absolute;
-  left: 0;
-  bottom: 40px;
-  z-index: 4;
-  display: flex;
-  min-width: 220px;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  border: 0;
-  border-radius: var(--v2-r-10, 10px);
-  background: var(--v2-surface);
-  box-shadow: var(--v2-shadow-pop, 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28));
-}
-
-.v2-root .v2-composer__menu > button {
-  display: block;
-  width: 100%;
-  min-height: 32px;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--v2-text-primary);
-  font: 400 13px/18px var(--v2-font);
-  text-align: left;
-}
-
-.v2-root .v2-composer__menu > button:hover,
-.v2-root .v2-composer__menu > button:focus-visible { background: var(--v2-surface-hover); outline: none; }
-
-.v2-composer__tag {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
-  max-width: 220px;
-  padding: 2px 4px 2px 6px;
-  margin-bottom: 4px;
-  border-radius: 3px;
-  background: var(--v2-accent-soft, #e8ecfb);
-  color: var(--v2-accent-text);
-  font: 500 11px/16px var(--v2-font-mono);
-  text-transform: lowercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-root button.v2-composer__tag-cancel {
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font-size: 14px;
-  line-height: 1;
-}
-
-.v2-composer__field { position: relative; min-width: 0; flex: 1; }
-
-.v2-composer__file { display: none; }
-
-.v2-root .v2-composer__field > textarea::placeholder { color: var(--v2-text-placeholder); }
-
-/* The row carries the focus state on its border; the field itself draws none. */
-.v2-root .v2-composer__field > textarea:focus,
-.v2-root .v2-composer__field > textarea:focus-visible {
-  outline: none;
-  box-shadow: none;
-  border: 0;
-}
-
-.v2-root .v2-composer__field > textarea {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: 32px;
-  max-height: 112px;
-  padding: 6px 4px;
-  resize: none;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--v2-text-primary);
-  font: 400 14px/20px var(--v2-font);
-}
-
-.v2-composer__uploading {
-  flex: 0 0 auto;
-  align-self: center;
-  color: var(--v2-text-muted);
-  font: 400 11px/16px var(--v2-font-mono);
-}
-
-/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-p v2p-ib. The glyph keeps its mono face. */
-.v2-root button.v2-composer__send {
-  flex: 0 0 32px;
-  margin-bottom: 0;
-  font: 500 14px/1 var(--v2-font-mono);
-}
-
-.v2-root button.v2-composer__send:disabled { cursor: progress; opacity: 0.6; }
-
-.v2-composer__error,
-.v2-composer__warnings { padding: 0 10px 8px; }
-
 /* Lightbox */
 .v2-lightbox {
   position: fixed;
@@ -11657,13 +11081,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-root button.v2-lightbox__nav--prev { left: 12px; top: 50%; transform: translateY(-50%); }
 .v2-root button.v2-lightbox__nav--next { right: 12px; top: 50%; transform: translateY(-50%); }
 
-@media (max-width: 760px) {
-  /* Sits above the 56px tab bar; the row itself keeps its desktop shape. */
-  .v2-composer { margin: 4px 10px 64px; }
-  .v2-composer__menu { min-width: 200px; }
-  .v2-composer__tag { max-width: 120px; }
-}
-
 /* ---------- Workspace at scale · direction C · PR 2b (threading restyle, walk-3 misses 51–63) ----------
    Runtime tag on agent rows; 20px reaction chips; a two-line quote that jumps to
    its source; the thread summary is one chip; the expanded thread is one var(--v2-bg-subtle)
@@ -11676,9 +11093,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 /* Mention token: wash + cobalt (ux-lead 64476 (7)); the row tint stays. */
 
 /* Jump pill: white, #dde0e6 border, r14, ink 13/600, cobalt count (walk-3 miss 58). */
-/* Composer aim chip (walk-3 miss 59). */
-.v2-composer__aim { background: var(--v2-accent-soft, #e8ecfb); color: var(--v2-accent-text); }
-
 /* Direction C Activity board: a 52px bar over a readable 760px column.
    The composer remains under the explicit destination ruling. */
 .v2-activity { position: relative; width: 100%; max-width: none; padding: 0 0 28px; }
@@ -12061,12 +11475,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-artifacts__empty { padding: 18px 20px; border: 1px dashed var(--v2-border); border-radius: var(--v2-radius); color: var(--v2-text-secondary); font: 400 13px/18px var(--v2-font); }
 .v2-artifacts__error { padding: 12px 14px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); color: var(--v2-text-primary); font: 400 13px/18px var(--v2-font); }
 .v2-artifacts__loading { display: grid; place-items: center; padding: 24px; }
-/* Inspector Files pane: the same rows as needs-you, an ext chip in front, All N files as cobalt text. */
-.v2-root button.v2-workspace-inspector__file { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; padding: 7px 4px; border: 0; background: transparent; color: var(--v2-text-primary); font: 400 13px/18px var(--v2-font); text-align: left; }
-.v2-root button.v2-workspace-inspector__file > span:nth-child(2) { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.v2-root button.v2-workspace-inspector__file:hover { background: var(--v2-surface-hover); }
-.v2-workspace-inspector__ext { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 18px; padding: 0 4px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-text-secondary); font: 500 11px/14px var(--v2-font-mono); }
-.v2-root button.v2-workspace-inspector__all-files { padding: 6px 4px 2px; border: 0; background: transparent; color: var(--v2-accent-text); font: 600 12px/16px var(--v2-font); text-align: left; }
 /* ≤760 (ux-lead 66462): no sideways scroll — keep file / kind / when, fold the pod under
    the name as a mono line, hide pod / shared-by / size; the head stays display 32. */
 @media (max-width: 760px) {

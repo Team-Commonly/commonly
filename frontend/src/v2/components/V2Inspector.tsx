@@ -391,8 +391,9 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               </button>
             )}
             {attention.map((item) => (
-              <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention" onClick={() => openAttention(item)}>
-                <span>{item.title}</span>
+              <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention v2-workspace-inspector__attention--item" onClick={() => openAttention(item)}>
+                <ShellGlyph name="inbox" size={16} />
+                <span className="v2-workspace-inspector__attention-title">{item.title}</span>
                 {item.actorName && (
                   <span className="v2-workspace-inspector__actor">
                     {labelForAttentionActor(agents, item.actorName, t('common.agent'))}
