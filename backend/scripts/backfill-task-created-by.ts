@@ -18,17 +18,24 @@
  * claimant's authorId, and trusting it would hand the claimant the override
  * over their own lease.
  *
- * Dry run by default. `--apply` writes. Run it once, offline (backend stopped,
- * so nothing else writes to `tasks` during the run), from backend/:
+ * Run by SRE, on prod, through the throwaway read pod, never the serving
+ * backend. The dry run and the apply are separate runs, and the apply takes a
+ * frozen id set:
  *
- *   npm run backfill:task-created-by            # dry run: counts, no writes
- *   npm run backfill:task-created-by -- --apply
+ *   npm run backfill:task-created-by -- --out ids.txt         # dry run: counts, and the ids it would write
+ *   npm run backfill:task-created-by -- --apply --ids ids.txt
+ *
+ * The counts and the id set go to TASK-718 for review before the apply. The
+ * apply stamps only the ids in the file, and derives each creator from that row
+ * at apply time. It never does a fresh compute, so a row that became derivable
+ * after the dry run is not stamped.
  *
  * Re-running is a no-op. The write is compare-and-set on the field being null,
  * so a stamp from an earlier run, or from a create after the deploy, is never
  * overwritten.
  */
 
+import { readFileSync, writeFileSync } from 'fs';
 import mongoose, { Types } from 'mongoose';
 import Task from '../models/Task';
 
@@ -45,6 +52,7 @@ interface RawTask {
   _id: Types.ObjectId;
   podId: Types.ObjectId;
   taskId: string;
+  createdByUserId?: unknown;
   updates?: Array<{ text?: unknown; authorId?: unknown }> | null;
 }
 
@@ -80,8 +88,22 @@ export interface LeftNullRow {
 export interface BackfillPlan {
   alreadyStamped: number;
   scanned: number;
+  // Frozen ids with no row at all. Always 0 for a full scan.
+  missing: number;
   toStamp: StampPlan[];
   leftNull: LeftNullRow[];
+}
+
+// Shared by the full scan and the frozen-id plan, so both classify a row the same way.
+function classify(rows: RawTask[], plan: BackfillPlan): void {
+  rows.forEach((row) => {
+    const decision = decideCreator(row);
+    if ('creatorId' in decision) {
+      plan.toStamp.push({ _id: row._id, podId: row.podId, taskId: row.taskId, creatorId: decision.creatorId });
+    } else {
+      plan.leftNull.push({ _id: row._id, podId: row.podId, taskId: row.taskId, reason: decision.reason });
+    }
+  });
 }
 
 // The raw collection, not the model. This branch's Task schema does not declare
@@ -94,15 +116,31 @@ export async function planBackfill(): Promise<BackfillPlan> {
   const rows = (await Task.collection
     .find({ createdByUserId: null }, { projection: { podId: 1, taskId: 1, updates: { $slice: 1 } } })
     .toArray()) as unknown as RawTask[];
-  const plan: BackfillPlan = { alreadyStamped, scanned: rows.length, toStamp: [], leftNull: [] };
-  rows.forEach((row) => {
-    const decision = decideCreator(row);
-    if ('creatorId' in decision) {
-      plan.toStamp.push({ _id: row._id, podId: row.podId, taskId: row.taskId, creatorId: decision.creatorId });
-    } else {
-      plan.leftNull.push({ _id: row._id, podId: row.podId, taskId: row.taskId, reason: decision.reason });
-    }
-  });
+  const plan: BackfillPlan = { alreadyStamped, scanned: rows.length, missing: 0, toStamp: [], leftNull: [] };
+  classify(rows, plan);
+  return plan;
+}
+
+// The apply's plan. It reads only the frozen ids, so a row that became derivable
+// after the dry run is never stamped by an apply that was given the older set.
+export async function planForIds(ids: string[]): Promise<BackfillPlan> {
+  const objectIds = [...new Set(ids)].map((id) => new Types.ObjectId(id));
+  const rows = (await Task.collection
+    .find(
+      { _id: { $in: objectIds } },
+      { projection: { podId: 1, taskId: 1, createdByUserId: 1, updates: { $slice: 1 } } },
+    )
+    .toArray()) as unknown as RawTask[];
+  const isStamped = (row: RawTask) => row.createdByUserId !== null && row.createdByUserId !== undefined;
+  const unstamped = rows.filter((row) => !isStamped(row));
+  const plan: BackfillPlan = {
+    alreadyStamped: rows.length - unstamped.length,
+    scanned: unstamped.length,
+    missing: objectIds.length - rows.length,
+    toStamp: [],
+    leftNull: [],
+  };
+  classify(unstamped, plan);
   return plan;
 }
 
@@ -129,11 +167,66 @@ export interface BackfillSummary {
   stamped: number;
 }
 
-export async function backfillTaskCreatedBy(options: { apply?: boolean } = {}): Promise<BackfillSummary> {
+// `ids` is the frozen set. An apply without one is refused: a fresh compute would
+// stamp whatever is derivable at that moment, which is not the set anyone reviewed.
+export async function backfillTaskCreatedBy(
+  options: { apply?: boolean; ids?: string[] } = {},
+): Promise<BackfillSummary> {
   const apply = options.apply === true;
-  const plan = await planBackfill();
+  if (apply && !options.ids) {
+    throw new Error('apply needs a frozen id set (--ids <file>); a fresh compute is never applied');
+  }
+  const plan = options.ids ? await planForIds(options.ids) : await planBackfill();
   const stamped = apply ? await writeStamps(plan.toStamp) : 0;
   return { apply, plan, stamped };
+}
+
+// One ObjectId per line, as the dry run writes them.
+const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
+
+// Blank lines are skipped and a repeated id is kept once. The error names the
+// line number, not its content, so a mistyped file is refused without echoing it.
+export function parseIdsText(text: string): string[] {
+  const ids = new Set<string>();
+  text.split(/\r?\n/).forEach((raw, index) => {
+    const line = raw.trim();
+    if (line === '') return;
+    if (!OBJECT_ID.test(line)) throw new Error(`line ${index + 1} of the ids file is not an ObjectId`);
+    ids.add(line);
+  });
+  return Array.from(ids);
+}
+
+export const renderIdsText = (ids: string[]): string => (ids.length ? `${ids.join('\n')}\n` : '');
+
+export interface CliOptions {
+  apply: boolean;
+  idsPath?: string;
+  outPath?: string;
+}
+
+// Refuses an apply without a frozen set, and an out file on an apply, before any
+// database connection is opened.
+export function parseArgs(argv: string[]): CliOptions {
+  const pathAfter = (flag: string): string | undefined => {
+    const at = argv.indexOf(flag);
+    if (at === -1) return undefined;
+    const path = argv[at + 1];
+    if (!path || path.startsWith('--')) throw new Error(`${flag} needs a file path`);
+    return path;
+  };
+  const options: CliOptions = {
+    apply: argv.includes('--apply'),
+    idsPath: pathAfter('--ids'),
+    outPath: pathAfter('--out'),
+  };
+  if (options.apply && !options.idsPath) {
+    throw new Error('--apply needs --ids <file>: only a frozen id set is applied');
+  }
+  if (options.apply && options.outPath) {
+    throw new Error('--out is for the dry run only: it does not go with --apply');
+  }
+  return options;
 }
 
 const LIST_CAP = 20;
@@ -143,9 +236,10 @@ function printSummary({ apply, plan, stamped }: BackfillSummary): void {
   const count = (reason: LeftNullReason) => plan.leftNull.filter((row) => row.reason === reason).length;
   console.log(apply
     ? '[backfill-task-created-by] APPLIED'
-    : '[backfill-task-created-by] DRY RUN — nothing written. Re-run with --apply.');
+    : '[backfill-task-created-by] DRY RUN — nothing written. Apply the id set with --apply --ids <file>.');
   console.log(`already stamped (skipped):        ${plan.alreadyStamped}`);
   console.log(`unstamped rows scanned:           ${plan.scanned}`);
+  if (plan.missing > 0) console.log(`frozen ids with no row:           ${plan.missing}`);
   console.log(`creator derivable (to stamp):     ${plan.toStamp.length}`);
   console.log(`left null (not derivable):        ${plan.leftNull.length}`);
   console.log(`  no "Created by" first update:   ${count('no-created-by-first-update')}`);
@@ -161,15 +255,23 @@ function printSummary({ apply, plan, stamped }: BackfillSummary): void {
 }
 
 async function main(): Promise<void> {
-  const apply = process.argv.includes('--apply');
+  const options = parseArgs(process.argv.slice(2));
   const mongoUri = process.env.MONGO_URI;
   if (!mongoUri) {
     console.error('MONGO_URI is required');
     process.exit(1);
   }
+  const ids = options.idsPath ? parseIdsText(readFileSync(options.idsPath, 'utf8')) : undefined;
   await mongoose.connect(mongoUri);
   try {
-    printSummary(await backfillTaskCreatedBy({ apply }));
+    const summary = await backfillTaskCreatedBy({ apply: options.apply, ids });
+    printSummary(summary);
+    if (!summary.apply) {
+      const toStamp = summary.plan.toStamp.map((row) => row._id.toString());
+      console.log(`ids it would write (${toStamp.length}):`);
+      toStamp.forEach((id) => console.log(id));
+      if (options.outPath) writeFileSync(options.outPath, renderIdsText(toStamp));
+    }
   } finally {
     await mongoose.disconnect();
   }

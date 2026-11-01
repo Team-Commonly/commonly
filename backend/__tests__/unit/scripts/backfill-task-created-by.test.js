@@ -1,10 +1,20 @@
 /**
- * TASK-718: the creator rule the backfill stamps from. This decides which rows
- * may be attributed at all; the write path (compare-and-set, idempotence) is in
- * the service test.
+ * TASK-718: the creator rule the backfill stamps from, and the reading of the
+ * frozen id file. This decides which rows may be attributed at all, and what an
+ * SRE run may apply; the write path (compare-and-set, idempotence, the frozen
+ * set at apply time) is in the service test.
  */
 const mongoose = require('mongoose');
-const { CREATED_BY_PREFIX, decideCreator } = require('../../../scripts/backfill-task-created-by');
+const {
+  CREATED_BY_PREFIX,
+  decideCreator,
+  parseArgs,
+  parseIdsText,
+  renderIdsText,
+} = require('../../../scripts/backfill-task-created-by');
+
+const ID_A = '6ae5a1fc0a8ccf82743b94b8';
+const ID_B = '6ae6757a0a8ccf827470b00b';
 
 describe('decideCreator', () => {
   const wren = new mongoose.Types.ObjectId();
@@ -54,6 +64,45 @@ describe('decideCreator', () => {
 
   it('matches the prefix the create path writes', () => {
     expect(CREATED_BY_PREFIX).toBe('Created by ');
+  });
+});
+
+describe('parseIdsText', () => {
+  it('reads one ObjectId per line, skipping blanks and CRLF, keeping each id once', () => {
+    expect(parseIdsText(`${ID_A}\r\n\n  ${ID_B}  \n${ID_A}\n`)).toEqual([ID_A, ID_B]);
+  });
+
+  it('refuses a line that is not an ObjectId, naming the line and not its content', () => {
+    expect(() => parseIdsText(`${ID_A}\nTASK-718 wren\n`))
+      .toThrow(/^line 2 of the ids file is not an ObjectId$/);
+  });
+});
+
+describe('renderIdsText', () => {
+  it('writes one id per line, and nothing for an empty set', () => {
+    expect(renderIdsText([ID_A, ID_B])).toBe(`${ID_A}\n${ID_B}\n`);
+    expect(renderIdsText([])).toBe('');
+  });
+});
+
+describe('parseArgs', () => {
+  it('a dry run writes the ids it would stamp to --out, and reads no file', () => {
+    expect(parseArgs(['--out', 'ids.txt'])).toEqual({ apply: false, outPath: 'ids.txt' });
+  });
+
+  it('an apply takes its frozen set from --ids, and refuses to run without one', () => {
+    expect(parseArgs(['--apply', '--ids', 'ids.txt'])).toEqual({ apply: true, idsPath: 'ids.txt' });
+    expect(() => parseArgs(['--apply'])).toThrow(/--apply needs --ids/);
+  });
+
+  it('an out file does not go with an apply', () => {
+    expect(() => parseArgs(['--apply', '--ids', 'ids.txt', '--out', 'more.txt']))
+      .toThrow(/does not go with --apply/);
+  });
+
+  it('a flag with no path is refused', () => {
+    expect(() => parseArgs(['--out'])).toThrow('--out needs a file path');
+    expect(() => parseArgs(['--ids', '--apply'])).toThrow('--ids needs a file path');
   });
 });
 
