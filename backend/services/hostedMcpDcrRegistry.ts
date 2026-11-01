@@ -346,13 +346,16 @@ export const retireCurrentDcrClient = async (
 };
 
 /**
- * Called when a member starts again while their last start never came back.
- * A client the vendor deleted fails on the vendor's own authorize page, so a
- * start that never returned is the one sign of it this side gets. When
- * `clientId` is still the entry's current client, the vendor is asked about it,
- * at most once per DCR_ASK_INTERVAL_MS. If the vendor no longer knows it, it is
- * retired, and this start registers a new one. A member who simply closed the
- * tab costs one ask. True when the client was retired; never throws.
+ * Called when a member starts again while their last start didn't finish. A
+ * client the vendor deleted fails on the vendor's own authorize page, which
+ * never comes back here, so an unfinished start is the one sign of it this
+ * side gets. When `clientId` is still the entry's current client, the vendor is
+ * asked about it, at most once per DCR_ASK_INTERVAL_MS, and never while the
+ * client is younger than that: a vendor that wrongly answers invalid_client
+ * can then cost at most one registration an interval, not one a retry. If the
+ * vendor no longer knows it, it is retired, and this start registers a new one.
+ * A member who closed the tab or declined consent costs one ask. True when the
+ * client was retired; never throws.
  */
 export const retireDcrClientIfUnknown = async (
   entry: HostedMcpOAuthEntry,
@@ -368,6 +371,7 @@ export const retireDcrClientIfUnknown = async (
         ...currentFilter(entry),
         clientId,
         refusedAt: null,
+        createdAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) },
         $or: [{ askedAt: null }, { askedAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) } }],
       },
       { $set: { askedAt: now } },

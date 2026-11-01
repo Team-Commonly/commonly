@@ -10,6 +10,7 @@
  *
  *   (no flags)        list each entry's current client and the rows it minted
  *   --ask             also ask each vendor whether it still knows its client
+ *                     (one token-endpoint POST each, even without --apply)
  *   --retire <entry>  retire that entry's current client
  *   --ask --apply     retire every client its vendor says it no longer knows
  *

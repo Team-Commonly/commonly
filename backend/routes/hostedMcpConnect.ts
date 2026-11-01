@@ -286,13 +286,16 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
 
   try {
     if (entry.client === 'dcr') {
-      // A pending start still on the row is one that never came back, which is
-      // how a client the vendor deleted looks from here (F14): ask about it first.
-      const unfinished = await Integration.findOne({
-        type: 'hosted-mcp', createdBy: userId, 'config.entryId': entry.id,
-      }).select('config.pendingAuth.clientId').lean();
-      const unfinishedClientId = unfinished?.config?.pendingAuth?.clientId;
-      if (unfinishedClientId) await retireDcrClientIfUnknown(entry, authorizationServer, unfinishedClientId);
+      // A pending start still on the member's row is one that didn't finish,
+      // which is how a client the vendor deleted looks from here (F14): ask
+      // about it first. The ask is a repair, so a failure in it never fails the start.
+      try {
+        const unfinished = await Integration.findOne({
+          type: 'hosted-mcp', createdBy: userId, 'config.entryId': entry.id,
+        }).select('config.pendingAuth.clientId').lean();
+        const unfinishedClientId = unfinished?.config?.pendingAuth?.clientId;
+        if (unfinishedClientId) await retireDcrClientIfUnknown(entry, authorizationServer, unfinishedClientId);
+      } catch { /* start with the current client */ }
       client = await ensureDcrClient(entry, authorizationServer, hostedMcpCallbackUrl(entry.id));
     }
   } catch (error) {

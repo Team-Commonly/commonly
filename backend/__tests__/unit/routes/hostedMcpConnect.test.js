@@ -223,9 +223,27 @@ describe('hosted-mcp connect: start', () => {
       select: () => ({ lean: async () => ({ config: { pendingAuth: { clientId: 'registered-1' } } }) }),
     });
     expect((await start()).status).toBe(200);
+    // Only the member's own row says what their last start used.
+    expect(Integration.findOne).toHaveBeenCalledWith({
+      type: 'hosted-mcp', createdBy: 'user-1', 'config.entryId': 'linear',
+    });
     expect(dcr.retireDcrClientIfUnknown).toHaveBeenCalledWith(FIXTURE_ENTRY, AS_METADATA, 'registered-1');
     expect(dcr.retireDcrClientIfUnknown.mock.invocationCallOrder[0])
       .toBeLessThan(dcr.ensureDcrClient.mock.invocationCallOrder[1]);
+  });
+
+  it('starts with the current DCR client when asking about the last one fails', async () => {
+    FIXTURE_ENTRY.client = 'dcr';
+    dcr.ensureDcrClient.mockResolvedValue({ clientId: 'registered-1' });
+    Integration.findOne.mockImplementationOnce(() => { throw new Error('mongo unavailable'); });
+    expect((await start()).status).toBe(200);
+
+    Integration.findOne.mockReturnValueOnce({
+      select: () => ({ lean: async () => ({ config: { pendingAuth: { clientId: 'registered-1' } } }) }),
+    });
+    dcr.retireDcrClientIfUnknown.mockRejectedValueOnce(new Error('vendor unreachable'));
+    expect((await start()).status).toBe(200);
+    expect(dcr.ensureDcrClient).toHaveBeenCalledTimes(2);
   });
   it('sends the member to the vendor with the entry\'s own resource and a fresh state', async () => {
     const res = await start();

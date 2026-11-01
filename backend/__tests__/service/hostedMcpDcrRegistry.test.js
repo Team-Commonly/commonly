@@ -467,13 +467,16 @@ describe('instance-scoped hosted MCP DCR registry', () => {
         return tokenAnswer();
       });
     };
+    const asks = (sent) => sent.filter((call) => call.kind === 'token').length;
+    // A client is asked about only once it is an interval old.
+    const after = (ms = 0) => new Date(Date.now() + DCR_ASK_INTERVAL_MS + ms);
 
     test('is asked about at the token endpoint and replaced, while rows it minted keep it', async () => {
       const sent = [];
       const fetch = vendor(sent, () => answer(401, { error: 'invalid_client' }));
       await ensureDcrClient(entry, metadata, callback, fetch);
 
-      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch)).toBe(true);
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after())).toBe(true);
 
       const asked = sent.find((call) => call.kind === 'token');
       expect(asked.url).toBe(metadata.token_endpoint);
@@ -491,14 +494,36 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       const sent = [];
       const fetch = vendor(sent, () => answer(400, { error: 'invalid_grant' }));
       await ensureDcrClient(entry, metadata, callback, fetch);
-      const now = new Date();
+      const now = after();
 
       expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, now)).toBe(false);
       expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, now)).toBe(false);
-      expect(sent.filter((call) => call.kind === 'token')).toHaveLength(1);
-      const later = new Date(now.getTime() + DCR_ASK_INTERVAL_MS + 1);
+      expect(asks(sent)).toBe(1);
+      // Exactly an interval later it may be asked again.
+      const later = new Date(now.getTime() + DCR_ASK_INTERVAL_MS);
       expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, later)).toBe(false);
-      expect(sent.filter((call) => call.kind === 'token')).toHaveLength(2);
+      expect(asks(sent)).toBe(2);
+      expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: true });
+    });
+
+    test('two retries at once send one ask', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(400, { error: 'invalid_grant' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+      const now = after();
+      await Promise.all([
+        retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, now),
+        retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, now),
+      ]);
+      expect(asks(sent)).toBe(1);
+    });
+
+    test('is not asked about while it is younger than the interval', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(401, { error: 'invalid_client' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, new Date())).toBe(false);
+      expect(asks(sent)).toBe(0);
       expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: true });
     });
 
@@ -510,24 +535,51 @@ describe('instance-scoped hosted MCP DCR registry', () => {
         () => new Response('not json', { status: 401 }),
         () => { throw new Error('connect ECONNREFUSED'); },
       ];
-      const now = Date.now();
       for (const [i, reply] of replies.entries()) {
+        /* eslint-disable no-await-in-loop */
         await Model.deleteMany({});
         const fetch = vendor([], reply);
         await ensureDcrClient(entry, metadata, callback, fetch);
-        // eslint-disable-next-line no-await-in-loop
-        expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, new Date(now + i))).toBe(false);
+        expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after(i))).toBe(false);
         expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: true });
+        /* eslint-enable no-await-in-loop */
       }
     });
 
-    test('only the current client is asked about', async () => {
+    test('only the current client is asked about, and only it is retired', async () => {
       const sent = [];
       const fetch = vendor(sent, () => answer(401, { error: 'invalid_client' }));
       await ensureDcrClient(entry, metadata, callback, fetch);
-      expect(await retireDcrClientIfUnknown(entry, metadata, 'some-other-client', fetch)).toBe(false);
-      expect(await retireDcrClientIfUnknown({ ...entry, client: 'cimd' }, metadata, 'registered-1', fetch)).toBe(false);
-      expect(sent.filter((call) => call.kind === 'token')).toHaveLength(0);
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'some-other-client', fetch, after())).toBe(false);
+      expect(await retireDcrClientIfUnknown({ ...entry, client: 'cimd' }, metadata, 'registered-1', fetch, after()))
+        .toBe(false);
+      expect(asks(sent)).toBe(0);
+    });
+
+    test('a client replaced while the vendor was being asked is not the one retired', async () => {
+      const sent = [];
+      let fetch = null;
+      fetch = vendor(sent, async () => {
+        // Another start moves the entry to a new client while this ask is out.
+        await retireCurrentDcrClient(entry);
+        await ensureDcrClient(entry, metadata, callback, fetch);
+        return answer(401, { error: 'invalid_client' });
+      });
+      await ensureDcrClient(entry, metadata, callback, fetch);
+
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after())).toBe(false);
+      expect(await Model.findOne({ current: true })).toMatchObject({ clientId: 'registered-2' });
+    });
+
+    test('never throws, so a broken ask never fails the start it runs in', async () => {
+      const fetch = vendor([], () => answer(401, { error: 'invalid_client' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+      const claim = jest.spyOn(Model, 'findOneAndUpdate').mockRejectedValueOnce(new Error('mongo unavailable'));
+      try {
+        await expect(retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after())).resolves.toBe(false);
+      } finally {
+        claim.mockRestore();
+      }
     });
 
     test('an admin can retire an entry\'s current client by hand', async () => {

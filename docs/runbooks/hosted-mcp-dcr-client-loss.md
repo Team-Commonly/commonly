@@ -9,15 +9,21 @@ never sees the failure.
 ## What happens on its own
 
 When a member starts a connect while their last start is still pending (it
-never came back), the start route asks the vendor about the client that start
-used. It sends a made-up code to the token endpoint:
+didn't finish: it never came back, the member declined, or it expired), the
+start route asks the vendor about the client that start used. It sends a
+made-up code to the token endpoint:
 
 - `invalid_client`: the vendor no longer knows the client. It is retired, and
   this same start registers a new client, so the member's retry works.
 - `invalid_grant`: the client is fine. Nothing changes.
 - Anything else, including no answer: nothing changes.
 
-The vendor is asked about a registration at most once every 10 minutes.
+The vendor is asked about a registration at most once every 10 minutes, and
+never while the registration is less than 10 minutes old. A vendor that wrongly
+answers `invalid_client` for a client it still knows therefore costs at most one
+new registration every 10 minutes. If you see that churn (one new current client
+every 10 minutes in the listing below), that vendor's answer can't be trusted:
+file it, and retire by hand instead.
 
 A retired client is not refused. Rows it already minted keep refreshing with
 it, and the registration is refused only when the vendor refuses one of their
@@ -30,7 +36,7 @@ Run the admin command from ops-runner (never inside the serving backend, see
 
 ```bash
 npm run retire:hosted-mcp-dcr-client                       # list current clients and the rows each minted
-npm run retire:hosted-mcp-dcr-client -- --ask              # also ask each vendor about its client
+npm run retire:hosted-mcp-dcr-client -- --ask              # also ask each vendor about its client (one POST each)
 npm run retire:hosted-mcp-dcr-client -- --ask --apply      # retire every client its vendor no longer knows
 npm run retire:hosted-mcp-dcr-client -- --retire <entryId> --apply   # retire one entry's client
 ```
