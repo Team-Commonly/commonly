@@ -251,5 +251,5 @@
   .v2p-ph h1 { font-size: 20px; white-space: normal; }
   .v2p-body { padding: 16px 14px; }
   .v2p-lrow { grid-template-columns: minmax(0, 1fr); min-height: 48px; padding: 8px 12px; }
-  .v2p-drawer { width: 100%; border-radius: 0; }
+  .v2p-drawer:not(.v2p-drawer--inline) { width: 100%; border-radius: 0; }
 }
