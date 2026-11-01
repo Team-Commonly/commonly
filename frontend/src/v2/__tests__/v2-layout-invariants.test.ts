@@ -5065,6 +5065,14 @@ describe('agent Wake and Pods controls', () => {
     expect(segment).toContain('display: flex');
     expect(segment).toContain('flex-wrap: wrap');
   });
+
+  it('keeps the settings header on one row with the tabs at its end', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
+    const head = ruleBody(css, '.v2-agent-settings__head');
+    expect(head).toContain('display: flex');
+    expect(head).toContain('align-items: center');
+    expect(ruleBody(css, '.v2-agent-settings__seg')).toContain('margin-left: auto');
+  });
 });
 
 describe('agent runtime and grants fit the Settings column', () => {
