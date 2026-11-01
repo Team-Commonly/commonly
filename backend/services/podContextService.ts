@@ -399,7 +399,20 @@ class PodContextService {
     const memberIds = ((pod.members as unknown[]) || [])
       .map((m) => toObjectIdString(m))
       .filter((id) => /^[a-f0-9]{24}$/i.test(id));
-    let members: Array<{ name: string; isAgent: boolean; self: boolean }> = [];
+    // The pod's mention map, read once: members and recent-message authors get
+    // the handle that routes to them here. Best effort, like recent messages:
+    // without it agents get no handle and humans get their username.
+    // Lazy: agentMentionService loads the event and message services, which
+    // most readers of this module never need.
+    // eslint-disable-next-line global-require
+    const mentions = require('./agentMentionService');
+    let mentionMap = new Map<string, { agentName: string; instanceId?: string }>();
+    try {
+      mentionMap = await mentions.loadPodMentionMap(podId);
+    } catch (error) {
+      console.warn('Pod mention map unavailable:', (error as Error).message);
+    }
+    let members: Array<{ name: string; mention: string; isAgent: boolean; self: boolean }> = [];
     if (memberIds.length) {
       const memberDocs = await User.find({ _id: { $in: memberIds } })
         .select('_id username isBot botMetadata')
@@ -412,6 +425,8 @@ class PodContextService {
           name: user?.isBot
             ? resolveAgentDisplayLabel(user, (user.username as string) || 'agent')
             : (user ? ((user.username as string) || 'member') : 'Deleted user'),
+          // The @handle mention routing resolves, next to the display name.
+          mention: mentions.mentionHandleForUser(mentionMap, user || null),
           isAgent: !!user?.isBot,
           self: id === selfId,
         };
@@ -442,17 +457,25 @@ class PodContextService {
     // react to (commonly_react_to_message) or reply to a specific message,
     // not just read a rolled-up summary. Honors the tool's "recent messages"
     // contract. Compact + capped; full history is commonly_get_messages.
-    let recentMessages: Array<{ id: string; author: string; content: string; createdAt: unknown }> = [];
+    let recentMessages: Array<{
+      id: string; author: string; mention: string; content: string; createdAt: unknown;
+    }> = [];
     let recentMessagesRead = false;
     try {
       const recent = await AgentMessageService.getRecentMessages(podId, 12);
       recentMessagesRead = !process.env.PG_HOST
         || (recent as typeof recent & { readSource?: string }).readSource === 'postgres';
-      recentMessages = (Array.isArray(recent) ? recent : []).map((m: Record<string, unknown>) => ({
+      const withMention = await AgentMessageService.withMentionHandles(
+        Array.isArray(recent) ? recent : [],
+        podId,
+        { mentionMap },
+      );
+      recentMessages = withMention.map((m: Record<string, unknown>) => ({
         id: String(m.id || m._id || ''),
         author: (m.username as string)
           || ((m.userId as { username?: string })?.username)
           || 'unknown',
+        mention: m.mention as string,
         content: String(m.content || '').slice(0, 500),
         createdAt: m.createdAt || m.created_at,
       }));
