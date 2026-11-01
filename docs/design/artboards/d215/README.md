@@ -3,6 +3,7 @@
 The spec for D215 (artboard v2). Open `index.html` in a browser. The toggle at the top switches it between light and dark, and every D215 surface has a frame at 1440 and at 390.
 
 - `index.html` holds the before shots and live mocks for seven surfaces: sidebar, pod chat, task board, agent memory, agent settings, settings and connectors. The mock's names, messages and task titles are neutral samples. Counts and times come from the captures.
+- The theme switch (sun / moon, D224) sits in the rail above the avatar at 1440. At 390 there is no rail, so the same switch rides the Pods top bar, left of Search. It is a two-item segment: the item for the theme in effect is the white key.
 - `before/` holds prod captures from 2026-10-31, blurred so they show layout and density only.
 - `targets.json` holds the helper-word and scroll targets per frame. `cap/measure_after.js` writes it from `index.html`.
 - `cap/` holds the measuring scripts. See the header of `measure_after.js` for its env.
