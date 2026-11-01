@@ -8,7 +8,7 @@
 
 import { jest } from '@jest/globals';
 import {
-  readLongTerm, syncBack, SOURCE_RUNTIME, buildMemoryPreamble, ROW_SLICING_CUE,
+  readLongTerm, syncBack, SOURCE_RUNTIME, buildMemoryPreamble, ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE,
 } from '../src/lib/memory-bridge.js';
 
 const makeClient = ({ memoryPayload = null, getThrows = false, postThrows = false } = {}) => {
@@ -281,5 +281,9 @@ describe('buildMemoryPreamble', () => {
   it('names the exact call and field a seat slices a row with', () => {
     expect(ROW_SLICING_CUE).toContain('commonly_create_task');
     expect(ROW_SLICING_CUE).toContain('parentTask');
+  });
+
+  it('names the exact setting that keeps a background process past the turn', () => {
+    expect(BACKGROUND_PROCESS_CUE).toContain('COMMONLY_KEEP_PROCESS=1');
   });
 });

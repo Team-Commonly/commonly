@@ -749,9 +749,11 @@ describe('claude adapter — ctx.environment', () => {
       // environment; values are not serialized into bwrap argv.
       expect(calls[0].args).not.toContain('--clearenv');
       expect(calls[0].args).not.toContain('must-not-reach-public-seat');
+      // Plus the turn's marker (turn-processes), which carries nothing from the host.
       expect(calls[0].opts.env).toEqual({
         PATH: process.env.PATH,
         COMMONLY_AGENT_SEAT_NAME: 'Public Linux Seat',
+        COMMONLY_TURN_ID: expect.stringMatching(/^[0-9a-f-]{36}$/),
       });
       // The inner claude argv rides after `--`, inside the namespace.
       const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
@@ -1550,8 +1552,9 @@ describe('claude adapter — a workspace seat on Linux', () => {
 
     expect(calls).toHaveLength(1);
     const { args, opts } = calls[0];
+    // COMMONLY_TURN_ID is the turn's marker (turn-processes), not a host value.
     expect(Object.keys(opts.env).sort()).toEqual([
-      'CLAUDE_CODE_TMPDIR', 'HOME', 'LANG', 'PATH', 'TMPDIR',
+      'CLAUDE_CODE_TMPDIR', 'COMMONLY_TURN_ID', 'HOME', 'LANG', 'PATH', 'TMPDIR',
       'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME',
     ]);
     expect(Object.values(opts.env)).not.toContain('host-secret');
