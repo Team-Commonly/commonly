@@ -3,14 +3,19 @@
  * writes nothing, the apply writes only the frozen ids and derives each creator
  * from its row at apply time, a second apply of the same set is a no-op, an
  * existing stamp is never touched, and the write never overwrites a stamp that
- * landed between scan and write. The creator rule itself is in the unit test.
+ * landed between scan and write. The CLI's --out file holds the planned ids and is
+ * never written over an existing file. The creator rule itself is in the unit test.
  */
 process.env.PG_HOST = '';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const mongoose = require('mongoose');
 const Task = require('../../models/Task');
 const {
   backfillTaskCreatedBy,
+  main,
   planBackfill,
   writeStamps,
 } = require('../../scripts/backfill-task-created-by');
@@ -188,5 +193,50 @@ describe('backfill-task-created-by (service)', () => {
     expect(written).toBe(0);
     const row = await Task.collection.findOne({ _id });
     expect(row.createdByUserId).toBe('winner');
+  });
+
+  describe('main --out', () => {
+    let dir;
+    let priorUri;
+
+    beforeEach(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'backfill-out-'));
+      priorUri = process.env.MONGO_URI;
+      process.env.MONGO_URI = 'mongodb://cli-test-uri';
+      // The test process is already connected to mongod; the CLI must not reconnect or disconnect it.
+      jest.spyOn(mongoose, 'connect').mockResolvedValue(mongoose);
+      jest.spyOn(mongoose, 'disconnect').mockResolvedValue();
+      jest.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+      if (priorUri === undefined) delete process.env.MONGO_URI;
+      else process.env.MONGO_URI = priorUri;
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('writes the ids the dry run would stamp to --out, one per line', async () => {
+      const wren = String(new mongoose.Types.ObjectId());
+      const first = await insert(legacyRow('TASK-050', [update('Created by wren', wren)]));
+      const second = await insert(legacyRow('TASK-051', [update('Created by wren', wren)]));
+      const outPath = path.join(dir, 'planned.txt');
+
+      await main(['--out', outPath]);
+
+      const lines = fs.readFileSync(outPath, 'utf8').trim().split('\n');
+      expect(lines.sort()).toEqual([String(first), String(second)].sort());
+    });
+
+    it('refuses an --out file that already exists, and leaves it as it was', async () => {
+      const wren = String(new mongoose.Types.ObjectId());
+      await insert(legacyRow('TASK-052', [update('Created by wren', wren)]));
+      const outPath = path.join(dir, 'reviewed.txt');
+      fs.writeFileSync(outPath, 'reviewed by SRE\n');
+
+      await expect(main(['--out', outPath])).rejects.toThrow(/already exists/);
+
+      expect(fs.readFileSync(outPath, 'utf8')).toBe('reviewed by SRE\n');
+    });
   });
 });

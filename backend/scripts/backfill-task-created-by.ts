@@ -300,8 +300,9 @@ function printSummary({ apply, plan, stamped }: BackfillSummary): void {
   }
 }
 
-async function main(): Promise<void> {
-  const options = parseArgs(process.argv.slice(2));
+// argv is a parameter so the service test can drive the --out path against its own mongod.
+export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+  const options = parseArgs(argv);
   const mongoUri = process.env.MONGO_URI;
   if (!mongoUri) {
     console.error('MONGO_URI is required');
