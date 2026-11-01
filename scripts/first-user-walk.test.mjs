@@ -95,7 +95,8 @@ const dirs = () => {
   return { stateDir: path.join(root, 'state'), resultPath: path.join(root, 'result', 'result.json') };
 };
 
-const run = (fetchImpl, { stateDir, resultPath }, { password = PASSWORD, env = {}, base = 'https://api.commonly.me' } = {}) => runWalk({
+// Non-prod, non-staging by default: a run with no account given signs up, as the signup tests expect.
+const run = (fetchImpl, { stateDir, resultPath }, { password = PASSWORD, env = {}, base = 'https://api-dev.commonly.test' } = {}) => runWalk({
   base,
   env: { COMMONLY_WALK_PASSWORD: password, ...env },
   fetchImpl,
@@ -196,6 +197,35 @@ test('signin mode never deletes the shared account, and the result says so', asy
   // The run removed the pod it made, and nothing else.
   assert.equal(state.pods.length, 0);
   assert.equal(result.steps.some((s) => s.name === 'signup-workspace'), false);
+});
+
+test('prod signs in to the existing test account: no signup, the six covered steps, the account is never deleted', async () => {
+  const dirsFor = dirs();
+  const { fetchImpl, state } = fakeBackend({ seeded: true });
+  const { exitCode, result } = await run(fetchImpl, dirsFor, {
+    base: 'https://api.commonly.me',
+    env: { COMMONLY_WALK_PROD_EMAIL: 'walk-test@commonly.test', COMMONLY_WALK_PROD_PASSWORD: PASSWORD },
+  });
+
+  assert.equal(result.mode, 'signin-prod');
+  assert.equal(exitCode, 2);
+  assert.equal(result.overall, 'incomplete');
+  assert.deepEqual(result.steps.map((st) => st.name), ['login', 'first-pod', 'hosted-install', 'hosted-reply', 'invite-preview-api', 'byo-connect']);
+  assert.equal(state.calls.includes('POST /api/auth/register'), false);
+  assert.equal(state.calls.includes('DELETE /api/users/me'), false);
+  assert.equal(state.accountExists, true);
+  assert.equal(state.pods.length, 0);
+  assert.equal(result.cleanup.ok, true);
+});
+
+test('prod without an existing test account is refused before any request', async () => {
+  const dirsFor = dirs();
+  const { fetchImpl, state } = fakeBackend({ seeded: true });
+  const { exitCode, result } = await run(fetchImpl, dirsFor, { base: 'https://api.commonly.me' });
+
+  assert.equal(exitCode, 1);
+  assert.equal(result.mode, 'not-chosen');
+  assert.equal(state.calls.length, 0);
 });
 
 test('a refused mode (shared email aimed at prod) makes no request, is not reported as signup, and exits 1', async () => {

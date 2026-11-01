@@ -18,6 +18,27 @@ rename it without changing the exclusion list too.
 
 ## Run it
 
+### Prod: sign in to the existing test account
+
+Prod has no signup for the walk. The run signs in to one existing test account
+and runs the six covered steps (login, first pod, hosted install, hosted reply,
+invite preview, and the BYO step that reports not-covered). It removes only the
+pod, seat and agent it made, and it never deletes the account.
+
+```bash
+COMMONLY_WALK_PROD_EMAIL=<existing test account> \
+COMMONLY_WALK_PROD_PASSWORD="<its password>" \
+  node scripts/first-user-walk.mjs --base https://api.commonly.me
+```
+
+- Without `COMMONLY_WALK_PROD_EMAIL` a prod run is refused before any request.
+- `COMMONLY_WALK_EMAIL` (the staging shared account) is refused on prod.
+- The manifest records `"mode": "signin-prod"`. The result file has no
+  `signup` or `signup-workspace` steps.
+- The variable names are provisional until SRE confirms them.
+
+### Signup (staging and other targets with no account given)
+
 ```bash
 COMMONLY_WALK_PASSWORD="$(openssl rand -base64 24)" \
   node scripts/first-user-walk.mjs --base https://api.commonly.me

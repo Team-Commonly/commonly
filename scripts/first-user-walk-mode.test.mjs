@@ -10,9 +10,17 @@ test('staging with COMMONLY_WALK_EMAIL takes the sign-in path', () => {
   assert.deepEqual(chooseWalkMode({ base: STAGING, env: { COMMONLY_WALK_EMAIL: 'walk@commonly.me' } }), { mode: 'signin', email: 'walk@commonly.me', deleteAccount: false });
 });
 
-test('no COMMONLY_WALK_EMAIL signs up a fresh account, on any target, and that account is deleted', () => {
-  assert.deepEqual(chooseWalkMode({ base: PROD, env: {} }), { mode: 'signup', deleteAccount: true });
+test('no COMMONLY_WALK_EMAIL signs up a fresh account on staging, and that account is deleted', () => {
   assert.deepEqual(chooseWalkMode({ base: STAGING, env: {} }), { mode: 'signup', deleteAccount: true });
+});
+
+test('prod never signs up: it signs in to the existing test account, which is never deleted', () => {
+  const env = { COMMONLY_WALK_PROD_EMAIL: 'walk-test@commonly.me', COMMONLY_WALK_PROD_PASSWORD: 'pw' };
+  assert.deepEqual(chooseWalkMode({ base: PROD, env }), { mode: 'signin-prod', email: 'walk-test@commonly.me', password: 'pw', deleteAccount: false });
+});
+
+test('prod without an existing test account is refused, not signed up', () => {
+  assert.throws(() => chooseWalkMode({ base: PROD, env: {} }), /no walk signup/);
 });
 
 test('the shared sign-in account is refused on prod', () => {
