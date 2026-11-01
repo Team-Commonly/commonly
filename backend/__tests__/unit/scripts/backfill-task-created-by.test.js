@@ -7,6 +7,7 @@
 const mongoose = require('mongoose');
 const {
   CREATED_BY_PREFIX,
+  backfillTaskCreatedBy,
   decideCreator,
   parseArgs,
   parseIdsText,
@@ -18,14 +19,20 @@ const ID_B = '6ae6757a0a8ccf827470b00b';
 
 describe('decideCreator', () => {
   const wren = new mongoose.Types.ObjectId();
+  const createdAt = new Date('2026-10-30T12:00:00.000Z');
+  // The create path writes the row and its init update a few ms apart, so the
+  // init update carries the row's author name and its own createdAt.
+  const init = (text, { author = 'wren', at = createdAt } = {}) => ({
+    text, author, authorId: String(wren), createdAt: at,
+  });
 
   it('takes the creator from a first "Created by" update', () => {
-    expect(decideCreator({ updates: [{ text: 'Created by wren · assigned to wren', authorId: String(wren) }] }))
+    expect(decideCreator({ createdAt, updates: [init('Created by wren · assigned to wren')] }))
       .toEqual({ creatorId: String(wren) });
   });
 
   it('reads an ObjectId authorId as its hex string', () => {
-    expect(decideCreator({ updates: [{ text: 'Created by wren', authorId: wren }] }))
+    expect(decideCreator({ createdAt, updates: [{ ...init('Created by wren'), authorId: wren }] }))
       .toEqual({ creatorId: wren.toHexString() });
   });
 
@@ -56,6 +63,29 @@ describe('decideCreator', () => {
       .toEqual({ reason: 'created-by-without-author' });
   });
 
+  it('leaves a row null when the name in its "Created by" text is not its author', () => {
+    expect(decideCreator({ createdAt, updates: [init('Created by lily-shen', { author: 'wren' })] }))
+      .toEqual({ reason: 'created-by-not-its-author' });
+    // "wren2" is not "wren": the name ends at a space or at the end of the text.
+    expect(decideCreator({ createdAt, updates: [init('Created by wren2 · notes', { author: 'wren' })] }))
+      .toEqual({ reason: 'created-by-not-its-author' });
+  });
+
+  it('leaves a row null when its "Created by" update was not written at the create', () => {
+    // A note can open with "Created by " too. Only the create writes the stamp.
+    const later = new Date(createdAt.getTime() + 60 * 60 * 1000);
+    expect(decideCreator({ createdAt, updates: [init('Created by wren', { at: later })] }))
+      .toEqual({ reason: 'created-by-not-at-create' });
+    expect(decideCreator({ updates: [init('Created by wren')] }))
+      .toEqual({ reason: 'created-by-not-at-create' });
+  });
+
+  it('accepts an init update a few ms after the row, as the create path writes it', () => {
+    const shortly = new Date(createdAt.getTime() + 20);
+    expect(decideCreator({ createdAt, updates: [init('Created by wren', { at: shortly })] }))
+      .toEqual({ creatorId: String(wren) });
+  });
+
   it('handles a row with no updates', () => {
     expect(decideCreator({ updates: [] })).toEqual({ reason: 'no-created-by-first-update' });
     expect(decideCreator({ updates: null })).toEqual({ reason: 'no-created-by-first-update' });
@@ -82,6 +112,12 @@ describe('renderIdsText', () => {
   it('writes one id per line, and nothing for an empty set', () => {
     expect(renderIdsText([ID_A, ID_B])).toBe(`${ID_A}\n${ID_B}\n`);
     expect(renderIdsText([])).toBe('');
+  });
+});
+
+describe('backfillTaskCreatedBy', () => {
+  it('refuses an apply over an empty id set before it reads the database', async () => {
+    await expect(backfillTaskCreatedBy({ apply: true, ids: [] })).rejects.toThrow('the frozen id set is empty');
   });
 });
 

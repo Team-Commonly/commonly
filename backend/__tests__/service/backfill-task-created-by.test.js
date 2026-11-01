@@ -30,9 +30,10 @@ const legacyRow = (taskId, updates, extra = {}) => ({
   ...extra,
 });
 
-// Production stores authorId as a string (models/Task.ts: type String).
+// Production stores authorId as a string (models/Task.ts: type String). The create
+// path names the author in the text and in `author`, so the fixture does too.
 const update = (text, authorId = null) => ({
-  text, author: 'x', authorId, createdAt: new Date(),
+  text, author: (text.match(/^Created by (\S+)/) || [])[1] || 'x', authorId, createdAt: new Date(),
 });
 
 const insert = async (doc) => (await Task.collection.insertOne(doc)).insertedId;

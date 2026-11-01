@@ -46,14 +46,23 @@ mongoose.set('autoIndex', false);
 
 export const CREATED_BY_PREFIX = 'Created by ';
 
-export type LeftNullReason = 'no-created-by-first-update' | 'created-by-without-author';
+export type LeftNullReason =
+  | 'no-created-by-first-update'
+  | 'created-by-without-author'
+  | 'created-by-not-its-author'
+  | 'created-by-not-at-create';
+
+// A real create writes the row and its init update in one request, a few
+// milliseconds apart. A minute is slack for a slow write.
+const CREATE_SLACK_MS = 60 * 1000;
 
 interface RawTask {
   _id: Types.ObjectId;
   podId: Types.ObjectId;
   taskId: string;
+  createdAt?: unknown;
   createdByUserId?: unknown;
-  updates?: Array<{ text?: unknown; authorId?: unknown }> | null;
+  updates?: Array<{ text?: unknown; author?: unknown; authorId?: unknown; createdAt?: unknown }> | null;
 }
 
 export type CreatorDecision = { creatorId: string } | { reason: LeftNullReason };
@@ -62,13 +71,28 @@ export type CreatorDecision = { creatorId: string } | { reason: LeftNullReason }
 // assignedTaskWakeService trusts updates[0].authorId for the same question. A
 // "Created by" update further down is not the creator's, and an authorId on any
 // other first update belongs to whoever wrote it, so neither is trusted.
-export const decideCreator = (row: Pick<RawTask, 'updates'>): CreatorDecision => {
+//
+// Index 0 alone is not enough. A native or starter row has no init update, so
+// its first update is whatever was written first, and a note can open with
+// "Created by " too. So the text must name that update's own author, and the
+// update must sit at the row's create. Both checks only remove rows from the
+// stamp set.
+export const decideCreator = (row: Pick<RawTask, 'createdAt' | 'updates'>): CreatorDecision => {
   const first = row.updates?.[0];
   if (!first || typeof first.text !== 'string' || !first.text.startsWith(CREATED_BY_PREFIX)) {
     return { reason: 'no-created-by-first-update' };
   }
   const creatorId = first.authorId === null || first.authorId === undefined ? '' : String(first.authorId).trim();
-  return creatorId ? { creatorId } : { reason: 'created-by-without-author' };
+  if (!creatorId) return { reason: 'created-by-without-author' };
+  // The name ends at the end of the text or at a space, so "wren2" is not "wren".
+  const author = typeof first.author === 'string' ? first.author : '';
+  const head = `${CREATED_BY_PREFIX}${author}`;
+  if (!author || (first.text !== head && !first.text.startsWith(`${head} `))) {
+    return { reason: 'created-by-not-its-author' };
+  }
+  const atCreate = row.createdAt instanceof Date && first.createdAt instanceof Date
+    && Math.abs(first.createdAt.getTime() - row.createdAt.getTime()) <= CREATE_SLACK_MS;
+  return atCreate ? { creatorId } : { reason: 'created-by-not-at-create' };
 };
 
 export interface StampPlan {
@@ -114,7 +138,7 @@ export async function planBackfill(): Promise<BackfillPlan> {
   const alreadyStamped = await Task.collection.countDocuments({ createdByUserId: { $ne: null } });
   // $slice keeps the scan to the one update that decides each row.
   const rows = (await Task.collection
-    .find({ createdByUserId: null }, { projection: { podId: 1, taskId: 1, updates: { $slice: 1 } } })
+    .find({ createdByUserId: null }, { projection: { podId: 1, taskId: 1, createdAt: 1, updates: { $slice: 1 } } })
     .toArray()) as unknown as RawTask[];
   const plan: BackfillPlan = { alreadyStamped, scanned: rows.length, missing: 0, toStamp: [], leftNull: [] };
   classify(rows, plan);
@@ -128,7 +152,7 @@ export async function planForIds(ids: string[]): Promise<BackfillPlan> {
   const rows = (await Task.collection
     .find(
       { _id: { $in: objectIds } },
-      { projection: { podId: 1, taskId: 1, createdByUserId: 1, updates: { $slice: 1 } } },
+      { projection: { podId: 1, taskId: 1, createdByUserId: 1, createdAt: 1, updates: { $slice: 1 } } },
     )
     .toArray()) as unknown as RawTask[];
   const isStamped = (row: RawTask) => row.createdByUserId !== null && row.createdByUserId !== undefined;
@@ -175,6 +199,11 @@ export async function backfillTaskCreatedBy(
   const apply = options.apply === true;
   if (apply && !options.ids) {
     throw new Error('apply needs a frozen id set (--ids <file>); a fresh compute is never applied');
+  }
+  // An empty file is almost always a failed redirect or the wrong file. Refuse it
+  // here, so an empty set can never be mistaken for a missing one.
+  if (apply && options.ids?.length === 0) {
+    throw new Error('the frozen id set is empty (the --ids file has no ids): nothing to apply');
   }
   const plan = options.ids ? await planForIds(options.ids) : await planBackfill();
   const stamped = apply ? await writeStamps(plan.toStamp) : 0;
@@ -244,6 +273,8 @@ function printSummary({ apply, plan, stamped }: BackfillSummary): void {
   console.log(`left null (not derivable):        ${plan.leftNull.length}`);
   console.log(`  no "Created by" first update:   ${count('no-created-by-first-update')}`);
   console.log(`  "Created by" without an author: ${count('created-by-without-author')}`);
+  console.log(`  "Created by" not its author's:  ${count('created-by-not-its-author')}`);
+  console.log(`  "Created by" not at create:     ${count('created-by-not-at-create')}`);
   if (apply) console.log(`stamped:                          ${stamped}`);
   if (plan.leftNull.length > 0) {
     console.log(`left-null rows, podId taskId reason (first ${LIST_CAP}):`);
