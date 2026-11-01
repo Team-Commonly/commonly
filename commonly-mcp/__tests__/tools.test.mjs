@@ -34,7 +34,8 @@ describe('tool registry shape', () => {
     // + 1 agent-originated decision request (TASK-095 rev 2).
     // + 1 self-follow task digest subscription (TASK-443).
     // + 1 direct row edit (commonly_patch_task, TASK-669): PATCH the row itself.
-    expect(tools).toHaveLength(33);
+    // + 1 backlog skip (commonly_catch_up, F45): the one way past a hold a read can't clear.
+    expect(tools).toHaveLength(34);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
@@ -184,6 +185,47 @@ describe('commonly_get_messages', () => {
     expect(url).toContain('/pods/POD/messages?');
     expect(url).toContain('limit=5');
     expect(url).toContain('before=2026-08-01T00%3A00%3A00.000Z');
+  });
+});
+
+// F45 (F): a read acknowledges unseen messages only when it returns every one
+// of them, and a read returns at most 50. Past that, only the catch-up verb
+// clears the hold, and before this an MCP agent had no such verb.
+describe('unseen_messages holds', () => {
+  const held = (unseenCount) => ({
+    ok: false, status: 409, text: async () => JSON.stringify({ code: 'unseen_messages', unseenCount, messages: [] }),
+  });
+  const next = (result) => JSON.parse(result.content[0].text).next;
+
+  it('a hold names the read that clears it', async () => {
+    installFetch(async () => held(3));
+    const result = await byName.commonly_post_message.call({ podId: 'POD', content: 'hi' });
+    expect(result.isError).toBe(true);
+    // The read comes first; catch-up is only the fallback when a read can't clear it.
+    expect(next(result)).toMatch(/^Read the pod with commonly_get_messages \(limit 50\)/);
+  });
+
+  it('a hold no single read can clear names commonly_catch_up', async () => {
+    installFetch(async () => held(51));
+    const hint = next(await byName.commonly_post_message.call({ podId: 'POD', content: 'hi' }));
+    expect(hint).toMatch(/no read can clear this\. Call commonly_catch_up/);
+    expect(hint).not.toMatch(/^Read the pod/);
+  });
+
+  it('a 409 that is not an unseen hold gets no hint', async () => {
+    installFetch(async () => ({ ok: false, status: 409, text: async () => JSON.stringify({ error: 'Task is leased by another agent' }) }));
+    expect(next(await byName.commonly_claim_task.call({ podId: 'POD', taskId: 'TASK-1' }))).toBeUndefined();
+  });
+
+  it('commonly_catch_up asks the server to skip the backlog, and says so', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ messages: [], catchUp: { skippedCount: 30 } }));
+    const result = await byName.commonly_catch_up.call({ podId: 'POD 1' });
+    expect(result.isError).toBeFalsy();
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/agents/runtime/pods/POD%201/catch-up');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ confirmSkipHistory: true });
+    expect(byName.commonly_catch_up.description).toMatch(/skipped, not read/);
   });
 });
 

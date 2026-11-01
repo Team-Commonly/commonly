@@ -379,6 +379,23 @@ describe('native turn with commonly_fetch_url', () => {
     expect(fetchReply.content).toMatch(/does not appear in this conversation/);
   });
 
+  // F45 (G): a hosted reviewer asked about "message 126551" could not check the
+  // citation, because read_context dropped the ids the MCP read returns.
+  test('read_context returns each message\'s id, so a cited id can be checked', async () => {
+    mockRecentRows.mockResolvedValue([
+      { id: '126551', user_id: SAM_ID, is_bot: false, username: 'sam', content: 'Please gate TASK-002.', createdAt: new Date() },
+    ]);
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_read_context', {})))
+      .mockResolvedValueOnce(finalReply);
+
+    await runAgent(install(), mention('@analyst gate message 126551'));
+
+    expect(JSON.parse(toolMessages(1)[0].content).messages).toEqual([
+      expect.objectContaining({ id: '126551', author: 'sam', content: 'Please gate TASK-002.' }),
+    ]);
+  });
+
   // The agent's own posts were recognised
   // by author NAME, and a bot's name drifts by design. Read back under a
   // drifted name, the agent's own address counted as another author's.
