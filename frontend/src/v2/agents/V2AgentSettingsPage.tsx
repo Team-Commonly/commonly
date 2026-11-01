@@ -255,66 +255,68 @@ const V2AgentSettingsPage: React.FC = () => {
   return (
     <main className="v2-agent-settings">
       <V2PageHead title={access.displayName || agentName} actions={<Link to="/v2/agents">{t('agentSettings.yourTeam')}</Link>} />
-      <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
-        <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
-        <span aria-current="page">{t('agentSettings.settings')}</span>
-      </nav>
-      <AgentControlLoader agentName={agentName} instanceId={instanceId}
-        refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
-      <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
-      <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
-        <div className="v2-agent-settings__section-head">
-          <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
-          {keysForbidden ? null : installation?.runtime?.runtimeType === 'wrapper' ? (
-            <span>{t('agentSettings.wrapperReconnect')}</span>
-          ) : !disconnected && (
-            <button type="button" onClick={() => setPendingAction('replace')} disabled={busy}>
-              {t('agentSettings.regenerate')}
-            </button>
-          )}
-        </div>
-        {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
-        {pendingAction === 'replace' && !keysForbidden && (
-          <div className="v2-agent-settings__confirm" data-testid="agent-key-replace-confirmation">
-            <p>{t('agentByo.rekey.warning', { name: access.displayName || agentName })}</p>
-            <div className="v2-agent-settings__actions">
-              <button type="button" disabled={busy} onClick={replaceKey}>{t('agentByo.rekey.replace')}</button>
-              <button type="button" disabled={busy} onClick={() => setPendingAction(null)}>{t('agentByo.rekey.cancel')}</button>
+      <div className="v2-agent-settings__column">
+        <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
+          <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
+          <span aria-current="page">{t('agentSettings.settings')}</span>
+        </nav>
+        <AgentControlLoader agentName={agentName} instanceId={instanceId}
+          refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
+        <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
+        <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
+          <div className="v2-agent-settings__section-head">
+            <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
+            {keysForbidden ? null : installation?.runtime?.runtimeType === 'wrapper' ? (
+              <span>{t('agentSettings.wrapperReconnect')}</span>
+            ) : !disconnected && (
+              <button type="button" onClick={() => setPendingAction('replace')} disabled={busy}>
+                {t('agentSettings.regenerate')}
+              </button>
+            )}
+          </div>
+          {error && <p role="alert" className="v2-agent-settings__error">{error}</p>}
+          {pendingAction === 'replace' && !keysForbidden && (
+            <div className="v2-agent-settings__confirm" data-testid="agent-key-replace-confirmation">
+              <p>{t('agentByo.rekey.warning', { name: access.displayName || agentName })}</p>
+              <div className="v2-agent-settings__actions">
+                <button type="button" disabled={busy} onClick={replaceKey}>{t('agentByo.rekey.replace')}</button>
+                <button type="button" disabled={busy} onClick={() => setPendingAction(null)}>{t('agentByo.rekey.cancel')}</button>
+              </div>
             </div>
-          </div>
-        )}
-        {oneTimeKey && (
-          <div className="v2-agent-settings__reveal">
-            <strong>{t('agentSettings.copyNow')}</strong>
-            <code data-testid="agent-one-time-key">{oneTimeKey}</code>
-            <button type="button" onClick={() => setOneTimeKey(null)}>{t('agentSettings.done')}</button>
-          </div>
-        )}
-        {keysForbidden ? <p className="v2-agent-settings__empty">{t('agentSettings.keyUnavailable')}</p> : (
-          <>
-            {activeKeys.length ? <ul className="v2-agent-settings__keys">{activeKeys.map(renderKey)}</ul>
-              : <p className="v2-agent-settings__empty">{t('agentSettings.noActiveKeys')}</p>}
-            {revokedKeys.length > 0 && <details className="v2-agent-settings__revoked-keys">
-              <summary>{t('agentSettings.revokedCount', { count: revokedKeys.length })}</summary>
-              <ul className="v2-agent-settings__keys">{revokedKeys.map(renderKey)}</ul>
-            </details>}
-          </>
-        )}
-      </section>
-      {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
-      <V2AgentRuntimeGrants
-        key={`runtime:${agentName}:${instanceId}`}
-        name={agentName}
-        instanceId={instanceId}
-        runtime={runtime}
-        onSaveRuntime={runtimeEditable ? async (changes) => {
-          await updateRuntime(changes);
-        } : undefined}
-      />
-      <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
-        installation={installation} update={update} />
-      <div className="v2-agent-settings__section">
-        <V2AgentSkills podId={podId} podName={access?.pods.find((pod) => pod.id === podId)?.name || podId} agentName={agentName} instanceId={instanceId} />
+          )}
+          {oneTimeKey && (
+            <div className="v2-agent-settings__reveal">
+              <strong>{t('agentSettings.copyNow')}</strong>
+              <code data-testid="agent-one-time-key">{oneTimeKey}</code>
+              <button type="button" onClick={() => setOneTimeKey(null)}>{t('agentSettings.done')}</button>
+            </div>
+          )}
+          {keysForbidden ? <p className="v2-agent-settings__empty">{t('agentSettings.keyUnavailable')}</p> : (
+            <>
+              {activeKeys.length ? <ul className="v2-agent-settings__keys">{activeKeys.map(renderKey)}</ul>
+                : <p className="v2-agent-settings__empty">{t('agentSettings.noActiveKeys')}</p>}
+              {revokedKeys.length > 0 && <details className="v2-agent-settings__revoked-keys">
+                <summary>{t('agentSettings.revokedCount', { count: revokedKeys.length })}</summary>
+                <ul className="v2-agent-settings__keys">{revokedKeys.map(renderKey)}</ul>
+              </details>}
+            </>
+          )}
+        </section>
+        {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
+        <V2AgentRuntimeGrants
+          key={`runtime:${agentName}:${instanceId}`}
+          name={agentName}
+          instanceId={instanceId}
+          runtime={runtime}
+          onSaveRuntime={runtimeEditable ? async (changes) => {
+            await updateRuntime(changes);
+          } : undefined}
+        />
+        <V2AgentPolicy key={`policy:${agentName}:${instanceId}`} agentName={agentName} instanceId={instanceId}
+          installation={installation} update={update} />
+        <div className="v2-agent-settings__section">
+          <V2AgentSkills podId={podId} podName={access?.pods.find((pod) => pod.id === podId)?.name || podId} agentName={agentName} instanceId={instanceId} />
+        </div>
       </div>
     </main>
   );
