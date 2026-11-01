@@ -10938,6 +10938,29 @@ body.modern-ui.v2-canvas {
 .v2-connectors__inactive-caret { width: 7px; height: 7px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
 .v2-root button.v2-connectors__inactive-toggle[aria-expanded="true"] .v2-connectors__inactive-caret { transform: rotate(45deg); }
 .v2-connectors__inactive-rows > .v2-connector-row:last-child { border-bottom: 0; }
+/* TASK-677 slice (a), D215 artboard: channel rows render as a tile grid
+   (auto-fill, 150px minimum, per the 2026-10-31 ruling; the aside stays). Layout
+   only: the same rows, the same act and the same connect flow. Tools rows are not
+   tiled in this slice. The inactive fold spans the grid, and its own rows reuse
+   the same tile template. */
+.v2-connectors__rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; overflow: visible; border: 0; border-radius: 0; }
+.v2-connectors__rows .v2-connector-row { grid-template-columns: minmax(0, 1fr); align-content: center; min-height: 128px; border: 1px solid var(--v2-border-soft); border-radius: 14px; padding: 14px 12px; }
+.v2-connectors__inactive-fold { grid-column: 1 / -1; }
+.v2-connectors__inactive-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 12px 0 0; }
+/* Lumen's 1440 HOLD (review 5722362448): the row's own two-track grid and its
+   spanning placements sized the name, detail and act past a 150px tile. Inside a
+   tile the content stacks in one track and wraps within the tile. */
+.v2-root .v2-connectors__rows button.v2-connector-row__selection { grid-column: 1; grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
+.v2-connectors__rows .v2-connector-row__name { min-width: 0; overflow-wrap: anywhere; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.v2-connectors__rows .v2-connector-row__details { min-width: 0; overflow-wrap: anywhere; padding-right: 0; }
+/* The 760px rule reserved 52px beside the icon act (column 2). Inside a tile the
+   icon act is centred under the text, so the reserve only narrowed the text. The
+   specificity here is (0,5,1), above the 760px padding-right rule (0,4,1). */
+.v2-root .v2-connectors__rows .v2-connector-row:has(.v2-connector-row__action--icon) button.v2-connector-row__selection { padding-right: 0; }
+.v2-root .v2-connectors__rows .v2-connector-row__action { grid-column: 1; grid-row: 2; justify-self: stretch; }
+/* The icon act is 32px or 44px wide, so stretch does nothing; centre it under the
+   text. Specificity (0,4,1) beats the 760px icon placement (0,2,1). */
+.v2-root .v2-connectors__rows button.v2-connector-row__action--icon { grid-column: 1; grid-row: 2; justify-self: center; }
 
 .v2-connector-row {
   display: grid;

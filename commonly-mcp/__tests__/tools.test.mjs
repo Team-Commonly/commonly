@@ -33,7 +33,7 @@ describe('tool registry shape', () => {
     // + 2 attention-claim tools (ADR-018: claim-or-renew, release).
     // + 1 agent-originated decision request (TASK-095 rev 2).
     // + 1 self-follow task digest subscription (TASK-443).
-    expect(tools).toHaveLength(31);
+    expect(tools).toHaveLength(32);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {

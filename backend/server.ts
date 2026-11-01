@@ -55,6 +55,7 @@ const statsRoutes = require('./routes/stats');
 const emailRoutes = require('./routes/email');
 const showcaseRoutes = require('./routes/showcase');
 const adminPodsRoutes = require('./routes/admin/pods');
+const adminAgentAuthRoutes = require('./routes/admin/agentAuthRefusals');
 const agentEnsembleRoutes = require('./routes/agentEnsemble');
 const globalIntegrationsRoutes = require('./routes/admin/globalIntegrations');
 const agentAutonomyAdminRoutes = require('./routes/admin/agentAutonomy');
@@ -301,6 +302,7 @@ app.use('/api/personas', require('./routes/personas'));
 // profile). Self-gates via auth middleware + owner/admin check inside the route.
 app.use('/api/agent-memory', require('./routes/agentMemoryView'));
 app.use('/api/admin/pods', adminPodsRoutes); // Admin pod ops (showcase toggle)
+app.use('/api/admin/agent-auth', adminAgentAuthRoutes); // Agent auth refusal counts (TASK-712)
 app.use('/api/pods', agentEnsembleRoutes); // Agent Ensemble Pod endpoints
 
 // Dev tooling and test routes: opt-in only (config/devRoutes), never NODE_ENV,
