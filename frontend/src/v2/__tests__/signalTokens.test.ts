@@ -107,6 +107,10 @@ describe('D223 Signal tokens in v2.css', () => {
   const asCssReadsIt = (text: string): string => text.replace(/\/\*[\s\S]*?\*\//g, ' ');
 
   test('no comment in v2.css ends early', () => {
+    // The scan still sees a stray `*/`, and it keeps the declarations, so an
+    // empty result can't pass for a clean one.
+    expect(asCssReadsIt('/* quotes --a-*/--b-* here */ x: 1;')).toContain('*/');
+    expect(asCssReadsIt(css)).toContain('--v2-ink-2:');
     expect(asCssReadsIt(css)).not.toContain('*/');
   });
 
