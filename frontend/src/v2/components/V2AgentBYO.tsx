@@ -19,7 +19,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
-import { recordByoStep, type ByoStep } from '../utils/byoTelemetry';
+import { recordByoStep, type ByoCopyType, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 import { defaultMachine, machineDisplayName } from '../utils/machineLabel';
@@ -989,8 +989,10 @@ const V2AgentBYO: React.FC = () => {
   // BYO funnel telemetry: 7 of 7 recent seats died between token issuance and
   // the first authenticated call, and the server cannot see whether the user
   // even copied a command. Fire-and-forget; the flow never waits on it.
-  const byoStep = (step: ByoStep) => {
-    recordByoStep(api, step);
+  // Every step carries the setup the page is showing (OS and listener
+  // eligibility) so the server can tell "listener was possible" from "not".
+  const byoStep = (step: ByoStep, copyType?: ByoCopyType) => {
+    recordByoStep(api, step, { setupOs, listenerAvailable, ...(copyType ? { copyType } : {}) });
   };
 
   useEffect(() => {
@@ -1020,8 +1022,9 @@ const V2AgentBYO: React.FC = () => {
     setShowHostedOffer(false);
     if (!issued) return;
     // This event means the issued command rendered, distinct from page entry.
-    recordByoStep(api, 'seat-created');
-  }, [api, issued]);
+    // It also carries the setup the result page shows (TASK-714).
+    recordByoStep(api, 'seat-created', { setupOs, listenerAvailable });
+  }, [api, issued, setupOs, listenerAvailable]);
 
   const rememberHostedOffer = () => {
     if (!offerSessionKey) return;
@@ -1068,10 +1071,11 @@ const V2AgentBYO: React.FC = () => {
       else if (key === 'listen') markCopiedKind('listen');
       setCopied(key);
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
-      if (key === 'claude' || key === 'cursor') byoStep('mcp-command-copied');
-      else if (key === 'listen') byoStep('cli-command-copied');
-      else if (key === 'daemon-setup') byoStep('daemon-command-copied');
-      else if (key === 'tok') byoStep('token-copied');
+      if (key === 'claude') byoStep('mcp-command-copied', 'mcp-claude');
+      else if (key === 'cursor') byoStep('mcp-command-copied', 'mcp-cursor');
+      else if (key === 'listen') byoStep('cli-command-copied', 'listen');
+      else if (key === 'daemon-setup') byoStep('daemon-command-copied', 'daemon');
+      else if (key === 'tok') byoStep('token-copied', 'token');
     } catch {
       // Clipboard may be unavailable (non-HTTPS, sandbox); user can select manually.
     }
