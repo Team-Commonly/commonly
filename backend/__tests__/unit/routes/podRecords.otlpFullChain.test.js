@@ -14,6 +14,7 @@ const mockToOtlp = jest.fn(() => ({ resourceSpans: [] }));
 
 jest.mock('../../../services/recordService', () => ({
   isRecordEnabled: () => true,
+  isRecordReader: (members, userId) => (members || []).some((m) => String(m) === String(userId)),
   readRecordExport: (...args) => mockReadRecordExport(...args),
   toOtlp: (...args) => mockToOtlp(...args),
   RecordStoreUnavailableError: class RecordStoreUnavailableError extends Error {},

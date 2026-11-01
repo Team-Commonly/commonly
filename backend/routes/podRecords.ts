@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { MAX_PAGE_LINES } from '../repositories/recordChainRepository';
 import {
-  isRecordEnabled, readRecordExport, RecordStoreUnavailableError, toOtlp, type ChainPage,
+  isRecordEnabled, isRecordReader, readRecordExport, RecordStoreUnavailableError, toOtlp, type ChainPage,
 } from '../services/recordService';
 
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
@@ -70,9 +70,7 @@ const serveRecord = async (req: RecordReq, res: express.Response, taskId: string
     const userId = req.userId || req.user?._id || req.agentUser?._id;
     const pod = await Pod.findById(podId).select('members type').lean();
     if (!pod || !await DMService.canViewPod(userId, pod)) return notFound(res);
-    // Lean and unpopulated, so members are ObjectIds.
-    const isMember = (pod.members || []).some((member: unknown) => String(member) === String(userId));
-    if (!isMember) return res.status(403).json({ error: 'record_requires_membership' });
+    if (!isRecordReader(pod.members, userId)) return res.status(403).json({ error: 'record_requires_membership' });
     if (taskId !== null && !await Task.findOne({ podId: pod._id, taskId }).select('_id').lean()) return notFound(res);
 
     let record;

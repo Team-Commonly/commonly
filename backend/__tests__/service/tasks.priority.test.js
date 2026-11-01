@@ -44,6 +44,27 @@ test('create, edit and list use validated P0–P3 and priority order', async () 
   expect(list.body.permissions.canWrite).toBe(true);
 });
 
+test('the record link is offered only to members of a record pilot pod', async () => {
+  const before = process.env.RECORD_V1_PODS;
+  const DMService = require('../../services/dmService');
+  const observerAccess = jest.spyOn(DMService, 'canViewPod').mockResolvedValue(true);
+  const observer = await User.create({ username: 'record-observer', email: 'record-observer@test.com', password: 'Password123!', verified: true });
+  try {
+    delete process.env.RECORD_V1_PODS;
+    const off = await request(app).get(api()).set('Authorization', `Bearer ${token}`).expect(200);
+    expect(off.body.permissions.canReadRecord).toBe(false);
+    process.env.RECORD_V1_PODS = String(pod._id);
+    const on = await request(app).get(api()).set('Authorization', `Bearer ${token}`).expect(200);
+    expect(on.body.permissions.canReadRecord).toBe(true);
+    // An observer may read the board but would get a 403 from the record route.
+    const watched = await request(app).get(api()).set('Authorization', `Bearer ${generateTestToken(observer._id)}`).expect(200);
+    expect(watched.body.permissions).toEqual({ canWrite: false, canReadRecord: false });
+  } finally {
+    observerAccess.mockRestore();
+    if (before === undefined) delete process.env.RECORD_V1_PODS; else process.env.RECORD_V1_PODS = before;
+  }
+});
+
 test('migration copies prefixes silently, preserves explicit priority/revisions and is rerunnable', async () => {
   const at = new Date('2026-10-01T00:00:00Z');
   const rows = [

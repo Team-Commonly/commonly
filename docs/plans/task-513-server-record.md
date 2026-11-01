@@ -97,6 +97,29 @@ endpoint. Every writer and the endpoint are off unless the pod is listed in
   is read. The v2 view (slice 4) calls the API from another origin. It can
   read these headers only after CORS exposes them.
 
+### Decisions taken in slice 4 (TASK-562)
+
+- **One entry point per reader the route serves.** `GET /api/v1/tasks/:podId`
+  returns `permissions.canReadRecord`: the pod is in `RECORD_V1_PODS` and the
+  caller is an actual member. Both it and the record route use
+  `recordService.isRecordReader`, so the drawer never offers a link the route
+  answers with 403. Observers who can read the board see no link.
+- **The view is `/v2/pods/:podId/tasks/:taskId/record`.** It reads the JSONL as
+  text, never through a JSON parse of the whole body, and shows each line's
+  kind, actor (by member name where the pod read gives one) and data. Unknown
+  kinds show by raw name (spec §3 rule 2). A line that does not parse makes
+  the whole record unreadable rather than partly shown. 403, 404 and 503 each
+  have their own message, and none reads as an empty record.
+- **Downloads are the served bytes.** JSONL saves the text exactly as served;
+  OTLP saves `?format=otlp`.
+- **Not in this change:** the approval card's link. Approval lines sit on the
+  grant's pod chain, read through `GET /api/pods/:podId/record`, which lands
+  with slice 2 (#2779). The card will link to its approval row's own pod, never
+  the pod it is displayed in. The view pages the chain itself: it asks for
+  `?after=<seq>&limit=1000` and keeps reading from the last seq while a page is
+  full. It reads the body, not `X-Record-*`, because the API sends no CORS
+  `exposedHeaders` and the view is on another origin.
+
 ## Measured inputs (2026-10-25)
 
 - TASK-504 landed in #2684, merge `ab5132313ad399d8fb990d69bc39db0ccf99e055`.
