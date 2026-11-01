@@ -269,7 +269,8 @@ export const useChannelConnectors = () => {
         const eligible = Array.isArray(data) ? data : [];
         if (!cancelled) {
           setPods(eligible);
-          setPodListFailed(false);
+          // A non-array body is not a confirmed pod list either.
+          setPodListFailed(!Array.isArray(data));
           setNewPodId((current) => current || defaultPodForChannel(eligible));
         }
       } catch {

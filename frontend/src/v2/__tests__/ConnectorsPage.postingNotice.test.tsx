@@ -90,6 +90,13 @@ describe('Connectors page: posting notice', () => {
     expect(await screen.findByText(UNKNOWN)).toHaveAttribute('role', 'status');
   });
 
+  it('says the status is unknown when the pod list read returns something other than a list', async () => {
+    mockApi({ pods: { error: 'unexpected body' } });
+    renderPage();
+
+    expect(await screen.findByText(UNKNOWN)).toHaveAttribute('role', 'status');
+  });
+
   it('says the status is unknown when the roster could not run its grant census', async () => {
     mockApi({ pods, seats: { p1: [{ ...scout, runtimeNarrowingUnavailable: true }] } });
     renderPage();
