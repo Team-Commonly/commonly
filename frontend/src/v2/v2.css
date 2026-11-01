@@ -176,7 +176,7 @@ body.modern-ui.v2-canvas {
   --v2-radius-pill: 999px;
 
   /* D223 Signal primitives (TASK-730), from the d215 artboard :root. Additive:
-     the old --v2-radius-*/--v2-shadow-* values above stay until PR2 moves
+     the old --v2-radius and --v2-shadow values above stay until PR2 moves
      consumers onto the scale. Pinned by __tests__/signalTokens.test.ts. */
   --v2-ink-2: #1d2433;
   --v2-fill-a: #333c4e;
