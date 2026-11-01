@@ -203,6 +203,20 @@ describe('install', () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining(`sudo loginctl enable-linger ${username}`));
     });
 
+    test('an account with no user name keeps the installed unit and claims no boot start', async () => {
+      const deps = makeDeps();
+      deps.existsFile = jest.fn(() => false);
+      const warn = jest.fn();
+      const result = await installDaemonService({
+        platform: 'linux', home, nodePath, cliPath, ...deps, warn,
+        lookupUsername: () => { throw new Error('ENOENT: no passwd entry'); },
+      });
+      expect(deps.execCmd).toHaveBeenCalledWith(['systemctl', '--user', 'restart', SYSTEMD_UNIT]);
+      expect(deps.execCmd.mock.calls.map(([argv]) => argv[0])).not.toContain('loginctl');
+      expect(result.startsAtBoot).toBe(false);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('starts at login'));
+    });
+
     test('macOS never runs loginctl and never claims a boot start', async () => {
       const deps = makeDeps();
       const result = await installDaemonService({

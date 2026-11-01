@@ -243,8 +243,10 @@ export const installDaemonService = async ({
   chmod = () => {},
   ensureFile,
   existsFile = existsSync,
-  // Resolved only on Linux: userInfo() throws for a uid with no passwd entry.
+  // Resolved only on Linux, and only after the unit is up: userInfo() throws
+  // for a uid with no passwd entry.
   username,
+  lookupUsername = () => userInfo().username,
   log = () => {},
   warn = log,
 }) => {
@@ -279,9 +281,15 @@ export const installDaemonService = async ({
     await execCmd(['systemctl', '--user', 'enable', SYSTEMD_UNIT]);
     await execCmd(['systemctl', '--user', 'restart', SYSTEMD_UNIT]);
     // After the unit is up, so a refused linger leaves a working login service.
-    startsAtBoot = await ensureLinger({
-      username: username ?? userInfo().username, existsFile, execCmd, warn,
-    });
+    let lingerUser = username;
+    if (!lingerUser) {
+      try {
+        lingerUser = lookupUsername();
+      } catch (error) {
+        warn(`Could not read this account's user name (${error.message}), so lingering was not turned on: the daemon starts at login, not at boot.`);
+      }
+    }
+    if (lingerUser) startsAtBoot = await ensureLinger({ username: lingerUser, existsFile, execCmd, warn });
   }
   for (const name of missing) {
     warn(`${name} is not set in this shell, so it is NOT in the service file. A seat whose adapter needs it will fail to start; export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
