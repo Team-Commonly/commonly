@@ -16,8 +16,11 @@ export const usePhone = (): boolean => {
     const list = window.matchMedia(QUERY);
     const onChange = () => setPhone(list.matches);
     onChange();
-    list.addEventListener('change', onChange);
-    return () => list.removeEventListener('change', onChange);
+    // Safari before 14 only has the old addListener pair.
+    if (list.addEventListener) list.addEventListener('change', onChange); else list.addListener(onChange);
+    return () => {
+      if (list.removeEventListener) list.removeEventListener('change', onChange); else list.removeListener(onChange);
+    };
   }, []);
   return phone;
 };

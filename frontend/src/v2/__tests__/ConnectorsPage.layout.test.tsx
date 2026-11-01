@@ -351,7 +351,7 @@ describe('Connectors page: phone layout (d215 frame, 390)', () => {
     expect(document.querySelector('.v2-cx-body .v2-cx-seg')).not.toBeNull();
     // channels first, tools next, the add tile last
     const names = Array.from(document.querySelectorAll('.v2-cx-tile')).map((node) => node.getAttribute('title'));
-    expect(names.slice(0, 4)).toEqual(expect.arrayContaining(['Telegram', 'Slack', 'GitHub', 'Linear']));
+    expect(names).toEqual(['Telegram', 'Slack', 'GitHub', 'Linear', 'Channel']);
     expect(names[names.length - 1]).toBe('Channel');
 
     expect(screen.queryByRole('searchbox')).toBeNull();
@@ -376,5 +376,22 @@ describe('Connectors page: phone layout (d215 frame, 390)', () => {
     expect(await findTile('Discord')).toBeInTheDocument();
     expect(await findTile('Linear')).toBeInTheDocument();
   });
-});
 
+  it('counts +N off for the chosen filter only, and keeps the search button honest', async () => {
+    mockCatalog([channel('telegram', 'Telegram'), tool('github', 'GitHub'), tool('linear', 'Linear', { available: false, connections: [] })]);
+    renderPage();
+
+    await findTile('GitHub');
+    expect(document.querySelector('.v2-cx-off')).toHaveTextContent('+1 off');
+    fireEvent.click(screen.getByRole('button', { name: 'Channels' }));
+    expect(document.querySelector('.v2-cx-off')).toBeNull();
+
+    const searchButton = screen.getByRole('button', { name: 'Search' });
+    expect(searchButton).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(searchButton);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'tele' } });
+    fireEvent.click(searchButton);
+    expect(searchButton).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('searchbox')).toBeInTheDocument();
+  });
+});

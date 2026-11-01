@@ -55,6 +55,7 @@ const ConnectorsPage: React.FC = () => {
   const [offOpen, setOffOpen] = useState({ channels: false, tools: false });
   const phone = usePhone();
   const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const tileRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
@@ -113,6 +114,12 @@ const ConnectorsPage: React.FC = () => {
   const channelDrawerOpen = c.adding || drawerItem !== null;
   const toolEntry = toolKey ? m.catalog.find((entry) => entry.installableId === toolKey) || null : null;
   const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry || m.selected);
+
+  // Opening the phone search puts the cursor in the box.
+  useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
+
+  // Crossing the phone breakpoint remounts every tile, so a reveal's anchor is gone.
+  useEffect(() => { setPop(null); }, [phone]);
 
   // A drawer and a reveal never show together, and a reveal that opened a drawer
   // stays closed when the drawer does.
@@ -468,6 +475,7 @@ const ConnectorsPage: React.FC = () => {
     <label className="v2-cx-search">
       <SearchGlyph />
       <input
+        ref={searchRef}
         type="search"
         value={search}
         placeholder={t('connectors.search', { defaultValue: 'Search' })}
@@ -477,7 +485,7 @@ const ConnectorsPage: React.FC = () => {
     </label>
   );
   // Phone: one grid, channels then tools, the add tile last, one "+N off" under it.
-  const offTotal = offChannels.length + offTools.length + orphanHidden.length;
+  const offTotal = (showChannels ? offChannels.length : 0) + (showTools ? offTools.length + orphanHidden.length : 0);
   const phoneOffOpen = offOpen.channels || offOpen.tools;
 
   return (
@@ -491,7 +499,7 @@ const ConnectorsPage: React.FC = () => {
             type="button"
             className="v2-cx-searchbtn"
             aria-label={t('connectors.search', { defaultValue: 'Search' })}
-            aria-expanded={searchOpen}
+            aria-expanded={searchOpen || Boolean(q)}
             onClick={() => setSearchOpen((open) => !open)}
           >
             <SearchGlyph />
