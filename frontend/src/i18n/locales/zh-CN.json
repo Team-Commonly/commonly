@@ -2818,7 +2818,8 @@
       "revokeError": "无法撤销授权。",
       "activeCount": "{{count}}项生效中",
       "endedCount": "{{count}}项已结束",
-      "retry": "重试"
+      "retry": "重试",
+      "private": "仅所有者和管理员可见"
     },
     "controls": {
       "title": "运行方式",
@@ -3020,7 +3021,8 @@
     "userRunCeiling": "运行次数／天",
     "loadError": "无法加载策略数据。",
     "saveError": "无法保存更改。",
-    "saved": "已保存"
+    "saved": "已保存",
+    "memoryPrivate": "只有这个智能体的所有者和管理员能编辑它的记忆。"
   },
   "time": {
     "age": {

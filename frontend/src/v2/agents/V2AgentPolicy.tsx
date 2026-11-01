@@ -10,6 +10,9 @@ type MemoryDocument = { content: string; updatedAt: string | null; visibility: s
 type MemoryDocuments = Record<MemorySection, MemoryDocument>;
 const memorySections: MemorySection[] = ['long_term', 'soul', 'shared'];
 const trustAdapters = new Set(['claude', 'codex', 'opencode', 'qwen']);
+// A 403 is an answer, not a failure: the viewer can't edit this memory, and a retry won't change that.
+const forbidden = (error: unknown): boolean => (error as { response?: { status?: number } })?.response?.status === 403;
+
 const message = (error: unknown, fallback: string) => (
   (error as { response?: { data?: { error?: string } } })?.response?.data?.error
   || (error instanceof Error && error.message) || fallback
@@ -39,6 +42,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
   const [feedback, setFeedback] = useState<{ group: 'trust' | 'memory';
     kind: 'error' | 'saved'; text: string } | null>(null);
   const [memoryLoadError, setMemoryLoadError] = useState<string | null>(null);
+  const [memoryPrivate, setMemoryPrivate] = useState(false);
   const [quotaError, setQuotaError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,13 +61,18 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     let current = true;
     setDocuments(null);
     setMemoryLoadError(null);
+    setMemoryPrivate(false);
     setQuotaError(null);
     void axios.get<{ sections: MemoryDocuments }>(memoryUrl).then((response) => {
       if (current) {
         setDocuments(response.data.sections);
         setContent(response.data.sections.long_term?.content || '');
       }
-    }).catch((requestError) => { if (current) setMemoryLoadError(message(requestError, t('agentPolicy.loadError'))); });
+    }).catch((requestError) => {
+      if (!current) return;
+      if (forbidden(requestError)) setMemoryPrivate(true);
+      else setMemoryLoadError(message(requestError, t('agentPolicy.loadError')));
+    });
     void axios.get<{ turnCap: number; userRunCeiling: number | null }>(
       `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`, { params: { instanceId } },
     ).then((response) => { if (current) setQuota(response.data); })
@@ -167,7 +176,8 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         <label>{t(`agentPolicy.section.${section}`)}<textarea value={content} rows={8}
           onChange={(event) => setContent(event.target.value)} /></label>
         <button type="button" disabled={busy || content === documents[section].content} onClick={saveMemory}>{t('agentPolicy.saveMemory')}</button>
-      </> : memoryLoadError ? <>
+      </> : memoryPrivate ? <p className="v2-agent-policy__muted">{t('agentPolicy.memoryPrivate')}</p>
+        : memoryLoadError ? <>
         <p role="alert" className="v2-agent-policy__error">{memoryLoadError}</p>
         <button type="button" onClick={() => { setMemoryLoadError(null);
           void loadMemory().catch((requestError) => setMemoryLoadError(message(requestError, t('agentPolicy.loadError'))));
