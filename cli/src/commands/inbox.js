@@ -188,8 +188,8 @@ export const runInboxAck = async (itemId, opts = {}, deps = {}) => {
   }
 };
 
-// `value` is either a 1-based option index (as printed by `list`'s decision
-// options) or an option label. The server stores whatever string it is sent, so
+// `value` is either a 1-based option index (position in the decision's options,
+// shown on refusal) or an option label. The server stores whatever string it is sent, so
 // the label is resolved here against the open queue and only the label is posted:
 // a bare "2" recorded in the ruling would mean nothing to anyone reading it later.
 export const resolveDecisionChoice = (options, value) => {
@@ -267,7 +267,7 @@ Examples:
   $ commonly inbox list --cursor-file ~/.commonly/inbox/connector-ops.cursor   # only what is new
   $ commonly inbox list --cursor-file ~/.commonly/inbox/c.cursor --window 300  # widen the re-read to 5m
   $ commonly inbox ack <attentionItemId>
-  $ commonly inbox choose <decisionId> 2          # option 2 of the card, by position
+  $ commonly inbox choose <decisionId> 2          # second option of the card, by position
   $ commonly inbox choose <decisionId> "Ship it"  # or by its label
 
 Cost: with no cursor, \`list\` reads the WHOLE queue, one request per 50 items —
