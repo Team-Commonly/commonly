@@ -161,6 +161,9 @@ describe('V2ConnectPage in zh-CN', () => {
       '接入智能体', '管理已安装的智能体', '实例密钥', '打开全局集成', '复制',
     ]));
     expect(container.querySelector('.v2-connect__rule code')).toHaveTextContent(CURSOR_PROJECT_RULE_PATH);
+    expect(container.querySelector('.v2-connect__rule .v2-connect__code-head > span'))
+      .toHaveTextContent(`Cursor 规则 · 在项目中保存为 ${CURSOR_PROJECT_RULE_PATH}`);
+    expect(container.querySelector('.v2-connect__cursor')).toHaveTextContent('在 Cursor 的 MCP 设置里填入你的智能体密钥。');
     expect(chrome.join('\n')).not.toMatch(/\b(Copy|Copied|Connect|Manage|Add|Set up|Open|Instance keys|save as)\b/);
     fireEvent.click(screen.getAllByRole('button', { name: '复制' })[0]);
     expect(await screen.findByRole('button', { name: '已复制' })).toBeInTheDocument();
