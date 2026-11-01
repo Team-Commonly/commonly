@@ -309,6 +309,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const rule = ruleBody(teamCss, '.v2-team .v2-team-card__name');
     expect(rule).toContain('min-width: 0');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__head')).toContain('min-width: 0');
+    // ruleBody reads the first, desktop rule; no phone override may undo it.
+    for (const phone of [...teamCss.matchAll(/@media \(max-width: 760px\) \{[\s\S]*?\n\}/g)].map((m) => m[0])) {
+      expect(phone).not.toMatch(/v2-team-card__name[^{]*\{[^}]*(nowrap|min-width: auto|flex-shrink: 0)/);
+    }
   });
 
   test('Your Team card name WRAPS — a primary identifier never one-line-ellipsizes (craft audit rule 1)', () => {
@@ -5491,6 +5495,18 @@ describe('Your team lifted from the d215 frame (R06)', () => {
     expect(ring).toContain('content: ""');
     expect(ring).toContain('position: absolute');
     expect(ring).toContain('inset: -14px 0');
+  });
+
+  // Undrawn controls in the phone block that follows the base rules: the code
+  // input matches its 44px buttons, and the Connected agents ring (14px below
+  // the link) clears the first chip row.
+  test('on a phone, the code input is 44px and the internal ring clears the chips', () => {
+    const phone = mediaBlockContaining(teamCss, '.v2-team .v2-team__redeem-input');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__redeem-input', { within: phone })).toContain('height: 44px');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__internal', { within: phone })).toContain('gap: 14px');
+    // The override must come after the base rules or the base wins.
+    expect(teamCss.indexOf(phone)).toBeGreaterThan(teamCss.indexOf('.v2-team .v2-team__redeem-input {'));
+    expect(teamCss.indexOf(phone)).toBeGreaterThan(teamCss.indexOf('.v2-team .v2-team__internal {'));
   });
 
   // The v2.css :lang(zh) reset (TASK-055) scans only v2.css, so the entries

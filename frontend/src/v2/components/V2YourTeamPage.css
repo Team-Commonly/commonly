@@ -93,6 +93,14 @@
   overflow-wrap: anywhere;
   user-select: all;
 }
+/* Phone overrides for the undrawn rules above; they sit after them so they win
+   at equal specificity. The code input matches the 44px buttons beside it, and
+   the gap keeps the Connected agents ring (14px below the link) off the first
+   chip row. */
+@media (max-width: 760px) {
+  .v2-team .v2-team__redeem-input { height: 44px; }
+  .v2-team .v2-team__internal { gap: 14px; }
+}
 /* CJK never takes negative letter-spacing (TASK-055); these entries left the
    v2.css :lang(zh) reset list with the rest of the page. */
 .v2-root:lang(zh) .v2-team .v2-team__title,
