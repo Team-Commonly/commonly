@@ -91,7 +91,7 @@ describe('stampCardSource', () => {
   it.each(['github', 'Linear', '', undefined])('refuses an unknown connector %p', (connector) => {
     expect(() => stampCardSource(issues, 'fallback', { connector, fetchedAt })).toThrow(refused(/connector/));
   });
-  it.each(['yesterday', '', '1', '2026-11-01', '2026-11-01T09:30:00Z', new Date(Number.NaN), '+275760-09-13T00:00:00.000Z'])('refuses an invalid fetchedAt %p', (value) => {
+  it.each(['yesterday', '', '1', '2026-11-01', '2026-11-01T09:30:00Z', '2026-02-30T09:30:00.000Z', '2026-11-01T24:00:00.000Z', 1761989400000, new Date(Number.NaN), '+275760-09-13T00:00:00.000Z'])('refuses an invalid fetchedAt %p', (value) => {
     expect(() => stampCardSource(issues, 'fallback', { connector: 'linear', fetchedAt: value })).toThrow(refused(/fetchedAt|catalogue/));
   });
   it('holds the input to the agent rules, so vendor data cannot carry its own Source', () => {

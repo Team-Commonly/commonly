@@ -352,11 +352,14 @@ export function stampCardSource(
     kind: 'ui', v: 1, lang: 'openui@1', source, ...UI_CARD_CATALOGUE,
   }, content, false)!;
   if (!UI_CARD_SOURCE_CONNECTORS.includes(stamp.connector)) refuse('Unknown UI card Source connector');
-  // A Date from the server clock, or its exact ISO form: Date() would read a
-  // loose vendor string such as "1" as 2001 and stamp it as valid.
-  const fetchedAt = stamp.fetchedAt instanceof Date ? stamp.fetchedAt
-    : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(String(stamp.fetchedAt)) ? new Date(stamp.fetchedAt) : new Date(Number.NaN);
-  if (Number.isNaN(fetchedAt.getTime())) refuse('UI card Source requires a valid fetchedAt');
+  // A Date from the server clock, or its exact ISO form. Date() reads a loose
+  // string such as "1" as 2001 and rolls 02-30 over to 03-02, so a string must
+  // survive the round trip unchanged.
+  const raw = stamp.fetchedAt;
+  const fetchedAt = raw instanceof Date ? raw : new Date(typeof raw === 'string' ? raw : Number.NaN);
+  if (Number.isNaN(fetchedAt.getTime()) || (!(raw instanceof Date) && fetchedAt.toISOString() !== raw)) {
+    refuse('UI card Source requires a valid fetchedAt');
+  }
   if (root.typeName !== 'Card') refuse('UI card Source is stamped on a Card root');
   const children = root.props.children as unknown[];
   const rev = revisions.find((candidate) => candidate.pin.catalogRev === UI_CARD_SOURCE_CATALOGUE.catalogRev)!;
