@@ -49,7 +49,9 @@ describe('D223 phone shell', () => {
 
   test('the memory bar is the same 52px phone bar, in the memory sheet on its v2m names', () => {
     const memCss = fs.readFileSync(path.join(__dirname, '../agents/V2AgentMemory.css'), 'utf8');
-    const phoneBlock = memCss.slice(memCss.indexOf('@media (max-width: 767px)'));
+    const start = memCss.indexOf('@media (max-width: 767px)');
+    const phoneBlock = memCss.slice(start, memCss.indexOf('@media', start + 1));
+    expect(phoneBlock).not.toContain('min-width: 768px');
     expect(phoneBlock).toMatch(/\.v2m-page \.v2p-ph\s*\{[^}]*min-height:\s*52px[^}]*flex-wrap:\s*nowrap/);
     expect(phoneBlock).toMatch(/\.v2m-ahead\s*\{\s*min-width:\s*0/);
     expect(phoneBlock).toMatch(/\.v2m-ahead h1\s*\{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*ellipsis/);
