@@ -4,6 +4,17 @@ The authenticated BYO page posts fixed event names to `POST /api/stats/byo-step`
 The endpoint stores `userId`, `step`, and server time in `byo_telemetry`.
 Commands, keys, names, and clipboard contents are never sent.
 
+Setup OS and listener eligibility (TASK-714) are not stored in `byo_telemetry`.
+`seat-created` and the copy steps also send `setupOs`, `listenerAvailable` and a
+`copyType`, and the server writes those to the person's User row instead:
+`users.onboarding.byoSetupOs` (`mac`, `linux`, `windows` or `other`),
+`users.onboarding.byoListenerEligible`, and one write-once first-copy mark per
+type (`byoListenCopiedAt`, `byoMcpClaudeCopiedAt`, `byoMcpCursorCopiedAt`,
+`byoDaemonCopiedAt`, `byoTokenCopiedAt`). A query for "which OS did they set up
+on" reads the User row. The `byo_telemetry` rows only answer "did they reach
+this step, and when". On 2026-11-01 a read of `byo_telemetry` alone found no
+setup OS at all, although prod had already written the fields to the User row.
+
 As of TASK-483 and TASK-493 (2026-10-24), the browser sends:
 
 | Event | Observed state |
