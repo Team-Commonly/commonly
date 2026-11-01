@@ -416,21 +416,27 @@ interface CallbackFlow {
   connectedRowId?: string;
   credentialWriteStarted?: boolean;
   authGeneration?: number;
-  /** The write lease this callback took at its retire write, released when it stops writing. */
-  writeLease?: { rowId: string; until: Date };
+  /**
+   * The write lease this callback took at its retire write, released when it
+   * stops writing. `inherited` is the lease the retire write displaced: a
+   * refresh of the previous pair still in flight, handed back on release.
+   */
+  writeLease?: { rowId: string; until: Date; inherited: Date | null };
 }
 
 /**
  * Release the write lease a callback took, and only that one: a newer writer's
- * lease carries a different expiry. A failed release costs a removal at most
- * one lease's wait, so it never fails the callback.
+ * lease carries a different expiry. What it releases to is the lease it
+ * displaced, so a refresh that was mid-flight at the retire write still holds a
+ * removal off until its own lease and overrun have passed. A failed release
+ * costs a removal at most one lease's wait, so it never fails the callback.
  */
 const releaseWriteLease = async (lease: CallbackFlow['writeLease']) => {
   if (!lease) return;
   try {
     await Integration.updateOne(
       { _id: lease.rowId, 'config.refreshingUntil': lease.until },
-      { $set: { 'config.refreshingUntil': null } },
+      { $set: { 'config.refreshingUntil': lease.inherited } },
     );
   } catch {
     // The lease expires on its own.
@@ -715,7 +721,10 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
       // for the same reason).
       $unset: { [`config.${PROVIDER_REVOKED_MARK}`]: '' },
     },
-    { new: true },
+    // The row BEFORE this write: the lease it replaced may belong to a refresh
+    // of the previous pair that is still calling the vendor, and its puts are
+    // upserts no row write fences. That lease is handed back, not dropped.
+    { new: false },
   );
   if (!retired) {
     // The vendor has already issued this grant, and nothing will store it. When
@@ -729,7 +738,8 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
       : undefined;
     return callbackRedirect(res, 'error', 'state_consumed', revoked);
   }
-  flow.writeLease = { rowId: String(consumed._id), until: writeLease };
+  const displacedLease = retired.config?.refreshingUntil ? new Date(retired.config.refreshingUntil) : null;
+  flow.writeLease = { rowId: String(consumed._id), until: writeLease, inherited: displacedLease };
   // Clear the old-grant assessment before replacement begins.
   forgetHostedMcpDrift(String(consumed._id));
   flow.credentialWriteStarted = true;
@@ -787,8 +797,10 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
         // unknowns and revokes, which is the safe reading.
         'config.providerSubject': providerSubject || null,
         // Released with the write it guarded, so the first refresh of the new
-        // pair is not turned away by this callback's own lease.
-        'config.refreshingUntil': null,
+        // pair is not turned away by this callback's own lease. Released to
+        // the lease the retire write displaced, if any: a refresh of the old
+        // pair still in flight keeps the removal off until its puts land.
+        'config.refreshingUntil': displacedLease,
         revokedAt: null,
         errorMessage: null,
       },
@@ -796,11 +808,17 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
     { new: true },
   );
   if (!published) {
-    // A removal moved the generation while the pair was being stored. What
-    // this callback put stays behind the refs for the removal's retry to read
-    // and revoke; it has stopped writing, so the retry need not wait.
+    // A removal moved the generation while the pair was being stored. Only
+    // this write records refs, so what was just put may have none: a first
+    // refresh token on a row whose old grant had no refresh token, or both
+    // halves on a row first connecting. A removal's retry cannot send what no
+    // ref names, so the grant is revoked here, as on a lost retire write. A
+    // second revoke of the same token by that retry is harmless.
+    const revoked = await lostToRemoval(consumed._id, consumed.revokedAt)
+      ? await revokeRefusedGrant(entry, client, tokens)
+      : undefined;
     await releaseWriteLease(flow.writeLease);
-    return callbackRedirect(res, 'error', 'state_consumed');
+    return callbackRedirect(res, 'error', 'state_consumed', revoked);
   }
 
   // Also discard any assessment started during the exchange, before the row

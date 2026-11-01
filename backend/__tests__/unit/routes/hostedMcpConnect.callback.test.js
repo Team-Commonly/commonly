@@ -267,13 +267,38 @@ describe('hosted-mcp connect: callback', () => {
           // The old token's provider-revoked mark goes before new material does (F28).
           $unset: { 'config.providerRevokedAt': '' },
         },
-        { new: true },
+        // The row before the write, so the lease it displaced can be handed back.
+        { new: false },
       ]);
       // It stopped writing, so it releases its own lease, and only its own.
       const lease = Integration.findOneAndUpdate.mock.calls[1][1].$set['config.refreshingUntil'];
       expect(Integration.updateOne).toHaveBeenCalledWith(
         { _id: 'row-1', 'config.refreshingUntil': lease },
         { $set: { 'config.refreshingUntil': null } },
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('hands the lease it displaced back to the refresh that held it when it stops writing', async () => {
+    const refreshLease = new Date(Date.now() + 10 * 1000);
+    const connected = {
+      ...storedRow({ credentialRef: 'ref-old-access', refreshingUntil: refreshLease }),
+      status: 'connected',
+    };
+    Integration.findOne.mockResolvedValue(connected);
+    Integration.findOneAndUpdate.mockReset()
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValueOnce(connected);
+    connectorSecrets.put.mockReset().mockRejectedValue(new Error('secret store failed'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await callback();
+      const lease = Integration.findOneAndUpdate.mock.calls[1][1].$set['config.refreshingUntil'];
+      expect(Integration.updateOne).toHaveBeenCalledWith(
+        { _id: 'row-1', 'config.refreshingUntil': lease },
+        { $set: { 'config.refreshingUntil': refreshLease } },
       );
     } finally {
       log.mockRestore();

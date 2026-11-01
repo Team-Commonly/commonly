@@ -75,7 +75,9 @@ jest.mock('../../services/connectorSecrets', () => {
         gate.arrive();
         await gate.opened;
       }
-      const ref = `${rowId}:${kind}`;
+      // Keyed on the kind's name, as the real store's (integrationId, kind)
+      // index is: the spec object itself stringifies the same for both halves.
+      const ref = `${rowId}:${kind.kind}`;
       store.set(ref, value);
       return ref;
     }),
@@ -300,12 +302,14 @@ describe('a removal racing the writers that put a token', () => {
     expect((await Integration.findById(rowId).lean()).status).toBe('disconnected');
 
     gate.open();
-    // The removal moved the row's generation, so the callback cannot publish.
+    // The removal moved the row's generation, so the callback cannot publish,
+    // and it revokes the grant it was handed rather than leave it to refs.
     expect((await callback).get('hostedMcp')).toBe('error');
     expect((await Integration.findById(rowId).lean()).status).toBe('disconnected');
+    expect(revokedAtVendor).toEqual(['refresh-2']);
 
     const retry = await remove();
-    expect(revokedAtVendor).toEqual(['refresh-2']);
+    expect(revokedAtVendor).toEqual(['refresh-2', 'refresh-2']);
     expect(retry).toEqual(expect.objectContaining({ removed: true, providerRevoked: true }));
     expect(await Integration.findById(rowId).lean()).toBeNull();
     expect(storedTokens()).toEqual([]);
@@ -364,6 +368,70 @@ describe('a removal racing the writers that put a token', () => {
     const retry = await remove({ now: afterTheLease });
     expect(revokedAtVendor).toEqual(['refresh-r']);
     expect(retry).toEqual(expect.objectContaining({ removed: true, providerRevoked: true }));
+    expect(await Integration.findById(rowId).lean()).toBeNull();
+    expect(storedTokens()).toEqual([]);
+  });
+
+  // CodeRabbit on #3252: only the publish write records refs. A row whose old
+  // grant came with no refresh token has no refresh ref, so a refresh token
+  // this callback put before losing its publish is named by nothing, and the
+  // removal's retry can send only the access token.
+  it('a callback that loses its publish to a removal revokes its grant, even a refresh token no ref names', async () => {
+    const rowId = await seedConnectedRow();
+    await Integration.updateOne({ _id: rowId }, { $unset: { 'config.refreshTokenRef': '' } });
+    connectorSecrets.store.delete(`${rowId}:${HOSTED_MCP_REFRESH_TOKEN.kind}`);
+    await startReconnect(rowId);
+
+    const gate = makeGate();
+    connectorSecrets.holdPut.gate = gate;
+    const callback = sendCallback();
+    await gate.arrived;
+    expect(await remove()).toEqual(expect.objectContaining({ code: 'removal_busy' }));
+
+    gate.open();
+    expect((await callback).get('hostedMcp')).toBe('error');
+    expect(revokedAtVendor).toEqual(['refresh-2']);
+
+    const retry = await remove();
+    expect(revokedAtVendor).toEqual(['refresh-2', 'access-2']);
+    expect(retry).toEqual(expect.objectContaining({ removed: true }));
+  });
+
+  // CodeRabbit on #3252: a refresh of the old pair can still be calling the
+  // vendor when a reconnect retires the row, and the retire write replaces its
+  // lease. Dropped at the publish, that lease no longer holds a removal off,
+  // and the refresh's puts (upserts) land after the sweep.
+  it('a refresh in flight across a reconnect keeps its lease after the callback publishes', async () => {
+    const rowId = await seedConnectedRow({
+      credentialAuthGeneration: 1,
+      refreshGeneration: 0,
+      expiresAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+    const gate = makeGate();
+    const refresh = credentialFor(await Integration.findById(rowId).lean(), {
+      clientIdFor: () => CLIENT_ID,
+      clientSecretFor: () => undefined,
+      sleep: async () => {},
+      refreshAtVendor: async () => {
+        gate.arrive();
+        await gate.opened;
+        return { accessToken: 'access-r', refreshToken: 'refresh-r', expiresIn: 3600, scope: 'read openid' };
+      },
+    });
+    await gate.arrived;
+
+    await startReconnect(rowId);
+    expect((await sendCallback()).get('hostedMcp')).toBe('connected');
+
+    const first = await remove();
+    expect(first).toEqual(expect.objectContaining({ removed: false, code: 'removal_busy' }));
+    expect(revokedAtVendor).toEqual([]);
+
+    gate.open();
+    await expect(refresh).rejects.toBeTruthy();
+
+    const retry = await remove({ now: afterTheLease });
+    expect(retry).toEqual(expect.objectContaining({ removed: true }));
     expect(await Integration.findById(rowId).lean()).toBeNull();
     expect(storedTokens()).toEqual([]);
   });

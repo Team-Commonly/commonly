@@ -350,11 +350,6 @@ const holdsNothingToRevoke = (error: unknown): boolean =>
   (error as { code?: string })?.code === 'connector_secret_not_found';
 
 /**
- * `revokeGrants` is a required argument rather than a defaulted dep, because a
- * default would be a silent no-op on the one step whose omission recreates
- * TASK-145. A caller has to name it.
- */
-/**
  * Steps 3 to 5, run only while the removal holds its lease: nothing can put new
  * material behind the refs in the meantime, so what is read here is what is
  * revoked and what is swept.
@@ -515,6 +510,11 @@ const revokeThenSweep = async (input: {
   return { removed: true, grantsRevoked, revokeAt: revokePage, providerRevoked };
 };
 
+/**
+ * `revokeGrants` is a required argument rather than a defaulted dep, because a
+ * default would be a silent no-op on the one step whose omission recreates
+ * TASK-145. A caller has to name it.
+ */
 export const removeConnection = async (options: {
   connection: RemovableConnection;
   removedBy: string;
