@@ -288,6 +288,10 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
     expect(linear.connectNotice).toBeUndefined();
     expect(acmeRow.accessPage).toBe(acme.accessPage);
     expect(linear.accessPage).toBeUndefined();
+    // The page a refused connect's error return may name (TASK-344): the
+    // browser shows a link only when the callback's page equals this one.
+    expect(acmeRow.revokePage).toBe(acme.revoke.page);
+    expect(linear.revokePage).toBe(linearEntry.revoke.page);
     // Each row sees its own vendor's connection and not the other's.
     expect(linear.connections).toEqual([
       { connectionId: 'conn-linear', owner: '', repo: '' },

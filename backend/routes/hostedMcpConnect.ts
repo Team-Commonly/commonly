@@ -95,15 +95,22 @@ const parseScopeSet = (scope: string): Set<string> => new Set(
   scope.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean),
 );
 
-/** A refused grant is never stored; revoke its refresh token when the entry can. */
+/**
+ * A refused grant is never stored; revoke its refresh token when the entry can.
+ * Whatever happens the connect stays refused and no token is kept. When the
+ * vendor did not confirm the revoke, the grant is still live there and only the
+ * person can remove it, so the redirect names the entry's own revoke page
+ * (TASK-344). The page is the server's; the browser never supplies it.
+ */
 const revokeRefusedGrant = async (
   entry: HostedMcpEntry,
   client: { clientId: string; clientSecret?: string },
   tokens: TokenResponse,
-): Promise<void> => {
-  if (!hostedMcpRevokeTarget(entry)?.endpoint) return;
+): Promise<{ manualRevoke?: { entryId: string; revokeAt: string } }> => {
+  const target = hostedMcpRevokeTarget(entry);
+  const leftLive = target?.page ? { manualRevoke: { entryId: entry.id, revokeAt: target.page } } : {};
   const token = tokens.refresh_token || tokens.access_token;
-  if (!token) return;
+  if (!target?.endpoint || !token) return leftLive;
   try {
     await revokeTokenAtVendor({
       entry,
@@ -112,8 +119,9 @@ const revokeRefusedGrant = async (
       token,
       tokenTypeHint: tokens.refresh_token ? 'refresh_token' : 'access_token',
     });
+    return {};
   } catch {
-    // The connect remains refused and no token is retained if vendor revoke fails.
+    return leftLive;
   }
 };
 
@@ -501,8 +509,7 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
 
   const scopeWasReturned = Object.prototype.hasOwnProperty.call(tokens, 'scope');
   if (scopeWasReturned && typeof tokens.scope !== 'string') {
-    await revokeRefusedGrant(entry, client, tokens);
-    return callbackRedirect(res, 'error', 'exchange_invalid_scope');
+    return callbackRedirect(res, 'error', 'exchange_invalid_scope', await revokeRefusedGrant(entry, client, tokens));
   }
   const grantedScope = scopeWasReturned ? tokens.scope as string : entry.scopes.join(' ');
   const grantedScopes: Set<string> = scopeWasReturned
@@ -517,8 +524,7 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
       entryId: entry.id,
       extraScopeCount: extraScopes.length,
     }));
-    await revokeRefusedGrant(entry, client, tokens);
-    return callbackRedirect(res, 'error', 'unrequested_scope');
+    return callbackRedirect(res, 'error', 'unrequested_scope', await revokeRefusedGrant(entry, client, tokens));
   }
   // Store the parsed set in the canonical OAuth space-delimited form. This
   // keeps a vendor's comma-separated response useful to later scope checks.
