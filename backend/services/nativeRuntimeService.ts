@@ -2216,6 +2216,11 @@ export async function runAgent(
     // Tool names offered in the most recent model call; a call to anything
     // else is refused at dispatch.
     let offeredToolNames = new Set<string>();
+    // The broker projection those tools came from. A claim mid-response re-reads
+    // `broker` for the next round; this response's calls still resolve through
+    // the projection that was offered, so a name keeps the grant it was offered
+    // with (TASK-340).
+    let offeredBroker: HostedBrokerProjection = broker;
     // Bounded loop. Each iteration = one LiteLLM call + any tool dispatch.
     // Break on: no tool_calls (final assistant text), caps hit, or errors.
     // eslint-disable-next-line no-constant-condition
@@ -2255,10 +2260,11 @@ export async function runAgent(
       // The round after a set-aside is the recovery round: one model call,
       // offered only a post, and the run ends after it whatever it did.
       const recoveryRound = webSetAside;
+      offeredBroker = broker;
       const offeredTools = [
         ...toolsForConfig(cfg, inPodOnly, { webTainted, computerReadSeen: dispatchCtx.computerReadSeen, podBridged })
           .filter((tool) => !recoveryRound || tool.function.name === 'commonly_post_message'),
-        ...(webTainted || recoveryRound ? [] : broker.tools),
+        ...(webTainted || recoveryRound ? [] : offeredBroker.tools),
       ];
       offeredToolNames = new Set(offeredTools.map((tool: any) => String(tool?.function?.name || '')));
       try {
@@ -2399,7 +2405,7 @@ export async function runAgent(
           // runs: a claim earlier in the same response re-reads the projection
           // (TASK-340), and what it unlocks is offered from the next round.
           const brokerCall = webTaintedAway || !offeredToolNames.has(toolName) ? null : await dispatchHostedBrokerTool({
-            projection: broker,
+            projection: offeredBroker,
             runId: dispatchCtx.runId,
             runPodId: String(dispatchCtx.podId),
             name: toolName,

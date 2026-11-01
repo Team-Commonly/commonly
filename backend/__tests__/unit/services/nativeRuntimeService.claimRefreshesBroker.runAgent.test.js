@@ -108,6 +108,35 @@ describe('a claim mid-turn re-reads the grant projection (TASK-340)', () => {
     expect(JSON.parse(refused.content)).toMatchObject({ ok: false, error: expect.stringMatching(/not available to you in this turn/) });
   });
 
+  test('a call in the claiming response resolves through the projection it was offered from', async () => {
+    // Two grants expose one tool name. Before the claim it maps to grant A; the
+    // claim makes grant B usable, and B sorts first. The name was offered from
+    // A, so the same response's call must still go to A, not B's connection.
+    brokerProjection.hostedBrokerToolsForRun.mockReset();
+    brokerProjection.hostedBrokerToolsForRun
+      .mockResolvedValueOnce({ tools: [GRANTED], dispatch: new Map([['sentry_find_organizations', { grantId: 'grant-a' }]]) })
+      .mockResolvedValue({ tools: [GRANTED], dispatch: new Map([['sentry_find_organizations', { grantId: 'grant-b' }]]) });
+    axios.post.mockReset();
+    axios.post
+      .mockResolvedValueOnce(toolCalls(
+        call('c1', 'commonly_claim_task', { taskId: 'TASK-001' }),
+        call('c2', 'sentry_find_organizations', {}),
+      ))
+      .mockResolvedValueOnce(toolCalls(call('c3', 'sentry_find_organizations', {})))
+      .mockResolvedValueOnce(modelSays('Done.'));
+    // As the real one does: null for a name outside the projection it was given.
+    brokerProjection.dispatchHostedBrokerTool.mockImplementation(async ({ projection, name }) => (
+      projection.dispatch.has(name) ? { callId: 'b', outcome: 'ok' } : null));
+    mockClaimTaskAs.mockResolvedValue({ status: 200, task: { taskId: 'TASK-001', status: 'claimed' } });
+    await runAgent(SEAT, MENTION);
+    const grantsUsed = brokerProjection.dispatchHostedBrokerTool.mock.calls
+      .map(([input]) => input.projection.dispatch.get(input.name)?.grantId)
+      .filter(Boolean);
+    expect(mockClaimTaskAs).toHaveBeenCalledTimes(1);
+    // c2 in the claiming response stays on A; c3, a round later, uses the re-read projection.
+    expect(grantsUsed).toEqual(['grant-a', 'grant-b']);
+  });
+
   test('a refused claim leaves the projection as it was', async () => {
     mockClaimTaskAs.mockResolvedValue({ status: 409, body: { error: 'Task already claimed', claimedBy: 'someone' } });
     await runAgent(SEAT, MENTION);
