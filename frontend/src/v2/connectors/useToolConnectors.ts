@@ -124,8 +124,10 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
   }, [api, selectedId]);
 
   // The entry a grant belongs to is the one whose namespaced tools it carries.
-  // If the catalogue no longer has that entry, keep the row visibly unknown;
-  // assigning it to GitHub would misstate who owns the grant and its policy.
+  // If the catalogue no longer has that entry, the name comes from the server's
+  // `connector`, read from the same namespace; with neither, the row stays
+  // visibly unknown, because assigning it to GitHub would misstate who owns the
+  // grant and its policy.
   const entryFor = (grant: ToolGrant): ToolCatalogEntry | null => (
     catalog.find((entry) => entryCovers(entry, grant)) || null
   );
@@ -135,6 +137,7 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     && entry.connections.some((connection) => connection.connectionId === manualRevokeNotice.connectionId),
   );
   const toolLabel = (grant: ToolGrant): string => entryFor(grant)?.label
+    || grant.connector?.label
     || t('tools.unknownConnector', { defaultValue: 'Unknown connector' });
 
   const podName = (podId: string): string => pods.find((pod) => String(pod._id) === podId)?.name || t('tools.aPod', { defaultValue: 'a pod' });

@@ -20,6 +20,13 @@ export interface ToolGrant {
   rootGrantId: string | null;
   createdAt: string;
   grantedBy: string | null;
+  /**
+   * The connector the server reads from the grant's tool namespace (TASK-753).
+   * It still names a grant whose catalogue entry is hidden or gone, which
+   * `entryCovers` can no longer match; null when the tools name no single
+   * known connector.
+   */
+  connector?: { id: string; label: string } | null;
 }
 
 /** `superseded` is a DERIVED read-only value the server reports for a parked
