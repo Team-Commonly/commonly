@@ -15,6 +15,7 @@ import mongoose from 'mongoose';
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { appendSystemExchange, truncateTakeaway } from './agentMemoryService';
+import { resolveAssigneeAgent } from './taskAssigneeService';
 
 interface AgentMember {
   agentName: string;
@@ -341,36 +342,6 @@ interface RecordTaskCompletedArgs {
   ts?: Date;
 }
 
-// Resolve an agent's instanceId for a given pod via their AgentInstallation.
-// An agent installed at instance scope across multiple pods can have one row
-// per pod; the row scoped to THIS pod gives us the right instanceId. If no
-// row exists, fall back to 'default' (matches the convention used elsewhere
-// in the codebase for unclaimed identity).
-async function resolveAgentInstanceForPod(
-  agentName: string,
-  podId: string,
-): Promise<string> {
-  try {
-    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const { AgentInstallation } = require('../models/AgentRegistry') as {
-      AgentInstallation: {
-        findOne: (q: Record<string, unknown>) => {
-          select: (fields: string) => {
-            lean: () => Promise<{ instanceId?: string } | null>;
-          };
-        };
-      };
-    };
-    const inst = await AgentInstallation
-      .findOne({ agentName: agentName.toLowerCase(), podId, status: 'active' })
-      .select('instanceId')
-      .lean();
-    return inst?.instanceId || 'default';
-  } catch {
-    return 'default';
-  }
-}
-
 // ADR-012 §4: task-completed — fired when a task transitions to `done`. Only
 // the assignee gets the entry. Takeaway format: "<title> → <prUrl|status>",
 // head-truncated to 280 chars.
@@ -386,18 +357,15 @@ export async function recordTaskCompleted(args: RecordTaskCompletedArgs): Promis
     if (!assignee || typeof assignee !== 'string') return;
     if (!podId || typeof podId !== 'string' || !mongoose.isValidObjectId(podId)) return;
 
-    const { podType, podName, agents } = await resolveAgentMembers(String(podId));
-    // Skip if the assignee isn't a recognized agent member of this pod —
-    // human assignees don't have a memory envelope. NOTE: matching on
-    // agentName alone is correct here because Task.assignee stores the agent
-    // identifier the runtime owns (one assignee → one agent). For OpenClaw
-    // agents the matching peer in `agents[]` has agentName='openclaw' and a
-    // distinguishing instanceId; we resolve the right instanceId below.
-    const assigneeLower = assignee.toLowerCase();
-    const isAgentInPod = agents.some((a) => a.agentName === assigneeLower);
-    if (!isAgentInPod) return;
-
-    const instanceId = await resolveAgentInstanceForPod(assigneeLower, String(podId));
+    // Only an agent member of this pod gets the entry; a person has no memory
+    // envelope. The board stores an agent by its board name (taskAssigneeService),
+    // which tells apart agents sharing an agentName such as 'openclaw'. A name
+    // two agents share picks neither.
+    const agent = await resolveAssigneeAgent(String(podId), assignee);
+    if (!agent) return;
+    const { podType, podName } = await resolveAgentMembers(String(podId));
+    const assigneeLower = agent.agentName.toLowerCase();
+    const { instanceId } = agent;
     const surfaceLabel = surfaceLabelFor(podType, podName, podId);
 
     const titlePart = taskTitle ? String(taskTitle).trim() : '(untitled task)';

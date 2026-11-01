@@ -50,7 +50,10 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
     req.agentUser = {
       _id: req.get('x-test-user'),
       username: asAgent,
-      botMetadata: { agentName: asAgent, instanceId: 'default' },
+      // `x-test-agent-instance` is "agentName/instanceId" for a non-default seat.
+      botMetadata: req.get('x-test-agent-instance')
+        ? { agentName: req.get('x-test-agent-instance').split('/')[0], instanceId: req.get('x-test-agent-instance').split('/')[1] }
+        : { agentName: asAgent, instanceId: 'default' },
     };
   }
   next();
@@ -74,14 +77,21 @@ jest.mock('../../../models/Pod', () => ({
         { toString: () => '6a693bfbe833c668acdce53b' },
         { toString: () => 'someone-else-id' },
         { toString: () => 'some-other-bot-id' },
+        { toString: () => '6a693bfbe833c668acdce5aa' },
       ],
     }),
   })),
 }));
 
+// One id is the bot row for openclaw/nova, which a plain `cm_` user token
+// authenticates as. Every other id reads as before.
 jest.mock('../../../models/User', () => ({
-  findById: jest.fn(() => ({
-    select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ username: 'tester' }) })),
+  findById: jest.fn((id) => ({
+    select: jest.fn(() => ({
+      lean: jest.fn().mockResolvedValue(String(id) === '6a693bfbe833c668acdce5aa'
+        ? { username: 'openclaw-nova', isBot: true, botMetadata: { agentName: 'openclaw', instanceId: 'nova' } }
+        : { username: 'tester' }),
+    })),
   })),
 }));
 
@@ -580,6 +590,50 @@ describe('the AGENT request shape resolves too', () => {
     });
     const res = await postAsAgent('6a693bfbe833c668acdce53b', 'pod-architect');
     expect(res.body.leaseRenewed).toBe(true);
+  });
+
+  // F45: the board stores an agent assignee by its board name, and the sweep
+  // writes the assignee into lapsedFrom. For openclaw/nova that is `nova`, which
+  // is neither its id nor its username `openclaw-nova`.
+  const postAsSeat = (userId, username, seat) => postAsAgent(userId, username).set('x-test-agent-instance', seat);
+
+  it('restores when lapsedFrom holds the caller\'s board name', async () => {
+    await seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: 'nova' });
+
+    const res = await postAsSeat('6a693bfbe833c668acdce53b', 'openclaw-nova', 'openclaw/nova');
+
+    expect(res.body.leaseRenewed).toBe(true);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('claimed');
+  });
+
+  it('but NOT when lapsedFrom holds an agentName the caller shares with other seats', async () => {
+    await seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: 'openclaw' });
+
+    const res = await postAsSeat('6a693bfbe833c668acdce53b', 'openclaw-nova', 'openclaw/nova');
+
+    expect(res.body.leaseRenewed).toBe(false);
+  });
+
+  // An agent on a plain `cm_` user token takes the human path: req.user carries
+  // its id and username but no botMetadata, so the board name comes from its row.
+  const postAsTokenSeat = (lapsedFrom) => seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom })
+    .then(() => request(app)
+      .post(`/api/v1/tasks/${POD_ID}/TASK-001/updates`)
+      .set('x-test-user', '6a693bfbe833c668acdce5aa')
+      .set('x-test-username', 'openclaw-nova')
+      .send({ text: 'still mine' }));
+
+  it('restores for an agent on a user token when lapsedFrom holds its board name', async () => {
+    const res = await postAsTokenSeat('nova');
+
+    expect(res.body.leaseRenewed).toBe(true);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('claimed');
+  });
+
+  it('but NOT for an agent on a user token when lapsedFrom holds its shared agentName', async () => {
+    const res = await postAsTokenSeat('openclaw');
+
+    expect(res.body.leaseRenewed).toBe(false);
   });
 
   it('but NOT for a different agent', async () => {

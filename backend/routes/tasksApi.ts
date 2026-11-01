@@ -31,6 +31,8 @@ const { recordTaskAttention, resolveTaskAttention } = require('../services/atten
 // eslint-disable-next-line global-require
 const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
 // eslint-disable-next-line global-require
+const { boardNameOf, canonicalAssignee } = require('../services/taskAssigneeService');
+// eslint-disable-next-line global-require
 const { isRecordEnabled, isRecordReader, requestActor } = require('../services/recordService');
 // eslint-disable-next-line global-require
 const { recordTaskTransition } = require('../services/taskRecordService');
@@ -198,6 +200,19 @@ async function resolveAuthor(req: AuthReq): Promise<string> {
   return 'unknown';
 }
 
+// The caller's board name, or undefined for a person (F45). A `cm_agent_`
+// token arrives with req.agentUser.botMetadata. An agent on a plain `cm_` user
+// token takes the human path, whose req.user carries neither isBot nor
+// botMetadata, so its own row is read.
+async function callerBoardName(req: AuthReq, userId: unknown): Promise<string | undefined> {
+  const meta = req.agentUser?.botMetadata;
+  if (meta?.agentName) return boardNameOf(meta);
+  if (!userId || !mongoose.isValidObjectId(String(userId))) return undefined;
+  const row = await User.findById(userId).select('isBot botMetadata').lean() as
+    { isBot?: boolean; botMetadata?: { agentName?: string; instanceId?: string } } | null;
+  return row?.isBot && row.botMetadata?.agentName ? boardNameOf(row.botMetadata) : undefined;
+}
+
 function resolveAgentInstanceId(req: AuthReq): string | null {
   if (!req.user?.isBot) return null;
   return req.user.botMetadata?.instanceId || req.user.botMetadata?.agentName || null;
@@ -231,7 +246,13 @@ router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) 
     const access = await requirePodMember(podId || '', userId);
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const query: Record<string, unknown> = { podId: mongoose.Types.ObjectId.createFromHexString(podId || '') };
-    if (assignee) query.assignee = assignee;
+    // Read the filter the way the writers store it, so a seat that assigned a
+    // row by an agent's handle finds it again by that handle. The spelling as
+    // typed still matches a row stored before the writers canonicalized.
+    if (assignee) {
+      const stored = await canonicalAssignee(podId || '', assignee);
+      query.assignee = stored === assignee ? assignee : { $in: [stored, assignee] };
+    }
     if (status) query.status = status.includes(',') ? { $in: status.split(',') } : status;
     // Composes with `status` by AND rather than overriding it, so
     // ?status=claimed&claimable=true asks the useful narrow question — show me
@@ -309,7 +330,7 @@ router.post('/:podId', rateLimit({
     const title = titleInput === undefined ? undefined : toSingleLineTitle(String(titleInput));
     const assigneeParsed = assigneeInput === undefined ? undefined : parseAssignee(String(assigneeInput));
     if (assigneeParsed?.error) return res.status(400).json({ error: assigneeParsed.error });
-    const assignee = assigneeParsed?.value ?? undefined;
+    const typedAssignee = assigneeParsed?.value ?? undefined;
     const dep = depInput === undefined ? undefined : String(depInput);
     const parentTask = parentTaskInput === undefined ? undefined : String(parentTaskInput);
     const source = sourceInput === undefined ? undefined : String(sourceInput);
@@ -318,6 +339,8 @@ router.post('/:podId', rateLimit({
     if (!title) return res.status(400).json({ error: 'title is required' });
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
+    // Resolved only for a member: an agent named by any of its names is stored by its board name.
+    const assignee = (await canonicalAssignee(podId || '', typedAssignee)) ?? undefined;
     if (sourceRef) {
       // A create's identity is the (sourceRef, title) PAIR: the ref says where
       // the ask came from, the title says which ask it is. Keying on the ref
@@ -1046,11 +1069,22 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     // string 'openclaw' for every OpenClaw seat, so making it matchable would
     // let one agent restore another's lapsed row. The agent path gets the
     // same single term the human path gets.
+    //
+    // One exception, and it is the BOARD NAME, not either raw field (F45). The
+    // board stores an agent assignee by its board name (the instanceId, or the
+    // agentName when the instance is "default"), and the sweep writes the
+    // assignee into lapsedFrom first. For openclaw/nova that is `nova`, which is
+    // neither its id nor its username, so its own lapsed rows never restored.
+    // The board name is what the assigned-task wake already matches, so this
+    // restores to the seat the board treats as assigned and no other. A shared
+    // agentName like 'openclaw' is still unmatchable for any non-default seat.
     const identities = [
       claimKey,
       userId?.toString(),
       req.user?.username,
       req.agentUser?.username,
+      // Read only when a restore is possible: it can cost a lookup.
+      task ? undefined : await callerBoardName(req, userId),
     ].filter((v): v is string => typeof v === 'string' && v.length > 0);
 
     if (!task && identities.length) {
@@ -1190,6 +1224,9 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     // (TASK-669), and the edit names the claim it overrode.
     const lease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
     if (lease.refusal) return res.status(409).json(lease.refusal);
+    if (typeof fieldUpdates.assignee === 'string') {
+      fieldUpdates.assignee = await canonicalAssignee(podId || '', fieldUpdates.assignee);
+    }
     // A PATCH to done on a row that is already done is not a second completion. It keeps
     // the original completedAt and fires no close side effects; the other fields in the
     // same PATCH still apply. The write filter below makes the transition itself atomic.

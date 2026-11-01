@@ -3,6 +3,7 @@
 const Task = require('../models/Task');
 const { threadAuthorIds } = require('./threadWakeScopeService');
 const MessageClaimService = require('./messageClaimService');
+const { assigneeNamesSeat } = require('./taskAssigneeService');
 
 interface Target {
   agentName?: unknown;
@@ -70,12 +71,10 @@ export async function addressedMessageTargets({
     if (!ids.includes(row.taskId) && !prs.has(prNumber(row.prUrl) || '')) continue;
     for (const target of targets) {
       const targetKey = key(target);
-      const agentName = String(target.agentName || '').toLowerCase();
-      const assignee = String(row.assignee || '').replace(/^@/, '').toLowerCase();
       const liveClaim = row.status === 'claimed'
         && (!row.claimExpiresAt || new Date(row.claimExpiresAt).getTime() >= now)
         && String(row.claimedBy || '') === (botUserIds.get(targetKey) || '');
-      if (assignee === agentName || liveClaim) addressed.add(targetKey);
+      if (assigneeNamesSeat(target, row.assignee) || liveClaim) addressed.add(targetKey);
     }
   }
   return addressed;
