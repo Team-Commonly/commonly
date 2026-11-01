@@ -543,6 +543,14 @@ const ConnectorsPage: React.FC = () => {
           })}
         </p>
       )}
+      {m.onePodSeatNames.length > 0 && (
+        <p className="v2-cx-note" role="status">
+          {t('tools.grantPodPostingNarrowed', {
+            defaultValue: '{{agents}} can post only in one of their pods while that pod has connector access.',
+            agents: m.onePodSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
+          })}
+        </p>
+      )}
       {m.narrowingStatusUnavailable && (
         <p className="v2-cx-note" role="status">
           {t('tools.runtimePostingStatusUnavailable', {

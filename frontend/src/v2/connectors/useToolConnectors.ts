@@ -30,6 +30,15 @@ import type {
   HostedMcpManualRevokeNotice,
 } from './toolModel';
 
+// Seats matching `narrowed` across every pod roster, named by display name,
+// once each, never by the pods their grants reach.
+const seatNamesWhere = (
+  seats: Record<string, PodSeat[]>,
+  narrowed: (seat: PodSeat) => boolean | undefined,
+): string[] => [...new Map(Object.values(seats).flat()
+  .filter((seat) => narrowed(seat))
+  .map((seat) => [seat.userId || `${seat.name}:${seat.instanceId || 'default'}`, seat.displayName || seat.name])).values()];
+
 export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpManualRevokeNotice | null = null) => {
   const { t } = useTranslation();
   const api = useV2Api();
@@ -84,11 +93,10 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
 
   const podIds = useMemo(() => pods.map((pod) => String(pod._id)), [pods]);
 
-  // Seats a runtime-token boundary currently stops from posting anywhere.
-  // Named by display name, once each, never by the pods their grants reach.
-  const blockedSeatNames = useMemo(() => [...new Map(Object.values(seats).flat()
-    .filter((seat) => seat.runtimeNarrowedByMultipleGrantPods)
-    .map((seat) => [seat.userId || `${seat.name}:${seat.instanceId || 'default'}`, seat.displayName || seat.name])).values()], [seats]);
+  // Seats a runtime-token boundary currently narrows: stopped from posting
+  // anywhere, or limited to one pod.
+  const blockedSeatNames = useMemo(() => seatNamesWhere(seats, (seat) => seat.runtimeNarrowedByMultipleGrantPods), [seats]);
+  const onePodSeatNames = useMemo(() => seatNamesWhere(seats, (seat) => seat.runtimeNarrowedToOnePod), [seats]);
   // An unreadable roster, or a roster whose census failed, leaves posting
   // status unknown. The page says so rather than implying posting works.
   const narrowingStatusUnavailable = seatLookupFailed || Object.values(seats).flat()
@@ -573,6 +581,7 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     seats,
     setSeats,
     blockedSeatNames,
+    onePodSeatNames,
     narrowingStatusUnavailable,
     lastUse,
     setLastUse,

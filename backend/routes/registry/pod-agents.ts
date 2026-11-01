@@ -13,7 +13,7 @@ const { hostedRunsNative } = require('../../services/hostedEngine');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
-const { agentsWithMultipleOutsiderGrantPods } = require('../../services/nativeOutsiderGrantPolicy');
+const { outsiderGrantPodCounts } = require('../../services/nativeOutsiderGrantPolicy');
 const { revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 const {
   getUserId,
@@ -178,10 +178,10 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
 
     const installations = await AgentInstallation.getInstalledAgents(podId);
-    let multiGrantPodAgents = new Set<string>();
+    let grantPodCounts = new Map<string, { pods: number; grantPods: number }>();
     let runtimeNarrowingUnavailable = false;
     try {
-      multiGrantPodAgents = await agentsWithMultipleOutsiderGrantPods(installations);
+      grantPodCounts = await outsiderGrantPodCounts(installations);
     } catch (narrowingErr) {
       // The roster is advisory. The runtime middleware independently fails
       // closed; the Connectors page must not claim the seat can post on a bad read.
@@ -385,9 +385,13 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         });
         // Every return path below carries the narrowing state: a boolean per
         // seat, never the ids of the other pods its grants reach.
+        const grantCount = grantPodCounts.get(instanceKey);
         const payload = basePayload && {
           ...basePayload,
-          runtimeNarrowedByMultipleGrantPods: multiGrantPodAgents.has(instanceKey),
+          runtimeNarrowedByMultipleGrantPods: (grantCount?.grantPods ?? 0) >= 2,
+          // A seat in one pod loses nothing; one granted pod out of several
+          // means it can post only there.
+          runtimeNarrowedToOnePod: grantCount?.grantPods === 1 && grantCount.pods >= 2,
           runtimeNarrowingUnavailable,
         };
         const runtimeType = payload?.runtime?.runtimeType;

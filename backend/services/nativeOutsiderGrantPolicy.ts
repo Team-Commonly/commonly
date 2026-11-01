@@ -80,14 +80,19 @@ export const podsWithOutsiderWritableGrants = async (podIds: string[]): Promise<
 
 /** Human roster projection of the same identity-wide boundary enforced by
  * agentRuntimeAuth. Return only a boolean; other pod ids remain private. */
-export const agentsWithMultipleOutsiderGrantPods = async (
+export type OutsiderGrantPodCount = { pods: number; grantPods: number };
+
+// Per seat (`agentName:instanceId`): how many pods it is installed in, and in
+// how many of those an outsider-writable grant is in scope. Runtime auth narrows
+// a seat's posting on the second number; the roster reports it as booleans.
+export const outsiderGrantPodCounts = async (
   identities: Array<{ agentName: string; instanceId?: string }>,
-): Promise<Set<string>> => {
+): Promise<Map<string, OutsiderGrantPodCount>> => {
   const unique = [...new Map(identities.map((identity) => {
     const instanceId = identity.instanceId || 'default';
     return [`${identity.agentName}:${instanceId}`, installationIdentityFilter(identity.agentName, instanceId)];
   })).values()];
-  if (!unique.length) return new Set();
+  if (!unique.length) return new Map();
   const installations = await AgentInstallation.find({
     status: 'active', $or: unique,
   }).select('agentName instanceId podId').lean() as Array<{
@@ -97,13 +102,15 @@ export const agentsWithMultipleOutsiderGrantPods = async (
   // The human roster reports an unavailable status on census failure. Runtime
   // authentication applies its own fail-closed policy to the same failure.
   const narrowed = await podsWithOutsiderWritableGrants(podIds);
-  const counts = new Map<string, Set<string>>();
+  const pods = new Map<string, { all: Set<string>; granted: Set<string> }>();
   for (const row of installations) {
     const podId = objectId(row.podId);
-    if (!podId || !narrowed.has(podId)) continue;
+    if (!podId) continue;
     const key = `${row.agentName}:${row.instanceId || 'default'}`;
-    if (!counts.has(key)) counts.set(key, new Set());
-    counts.get(key)!.add(podId);
+    if (!pods.has(key)) pods.set(key, { all: new Set(), granted: new Set() });
+    const entry = pods.get(key)!;
+    entry.all.add(podId);
+    if (narrowed.has(podId)) entry.granted.add(podId);
   }
-  return new Set([...counts].filter(([, pods]) => pods.size >= 2).map(([key]) => key));
+  return new Map([...pods].map(([key, entry]) => [key, { pods: entry.all.size, grantPods: entry.granted.size }]));
 };

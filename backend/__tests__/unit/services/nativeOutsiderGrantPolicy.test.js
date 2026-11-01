@@ -20,7 +20,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: { find: (...args) => mockInstallationFind(...args) },
 }));
 
-const { podHasOutsiderWritableGrant, podsWithOutsiderWritableGrants, agentsWithMultipleOutsiderGrantPods } = require('../../../services/nativeOutsiderGrantPolicy');
+const { podHasOutsiderWritableGrant, podsWithOutsiderWritableGrants, outsiderGrantPodCounts } = require('../../../services/nativeOutsiderGrantPolicy');
 
 const POD = '507f1f77bcf86cd799439011';
 const SEAT = '507f1f77bcf86cd799439013';
@@ -98,12 +98,16 @@ test('roster marker uses every installation pod, including pods outside the view
   ]));
   mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
   mockGrantFind.mockReturnValue(chain([grant(), grant({ target: { kind: 'pod', id: OTHER } })]));
-  expect(await agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout', instanceId: 'default' }]))
-    .toEqual(new Set(['scout:default']));
+  expect(await outsiderGrantPodCounts([{ agentName: 'scout', instanceId: 'default' }]))
+    .toEqual(new Map([['scout:default', { pods: 2, grantPods: 2 }]]));
   expect(mockInstallationFind).toHaveBeenCalledTimes(1);
   expect(mockPodFind).toHaveBeenCalledTimes(1);
   mockGrantFind.mockReturnValue(chain([grant()]));
-  expect(await agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout' }])).toEqual(new Set());
+  expect(await outsiderGrantPodCounts([{ agentName: 'scout' }]))
+    .toEqual(new Map([['scout:default', { pods: 2, grantPods: 1 }]]));
+  mockGrantFind.mockReturnValue(chain([]));
+  expect(await outsiderGrantPodCounts([{ agentName: 'scout' }]))
+    .toEqual(new Map([['scout:default', { pods: 2, grantPods: 0 }]]));
 });
 
 test('default-instance roster census includes an older row without instanceId', async () => {
@@ -113,8 +117,8 @@ test('default-instance roster census includes an older row without instanceId', 
   ]));
   mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
   mockGrantFind.mockReturnValue(chain([grant(), grant({ target: { kind: 'pod', id: OTHER } })]));
-  expect(await agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout' }]))
-    .toEqual(new Set(['scout:default']));
+  expect(await outsiderGrantPodCounts([{ agentName: 'scout' }]))
+    .toEqual(new Map([['scout:default', { pods: 2, grantPods: 2 }]]));
   expect(mockInstallationFind).toHaveBeenCalledWith({
     status: 'active',
     $or: [{ agentName: 'scout', $or: [{ instanceId: 'default' }, { instanceId: null }] }],
@@ -130,7 +134,7 @@ test('roster marker propagates a failed grant census for the unavailable state',
   mockGrantFind.mockReturnValue({ select: () => ({ lean: async () => {
     throw new Error('grant DB unavailable');
   } }) });
-  await expect(agentsWithMultipleOutsiderGrantPods([{ agentName: 'scout', instanceId: 'default' }]))
+  await expect(outsiderGrantPodCounts([{ agentName: 'scout', instanceId: 'default' }]))
     .rejects.toThrow('grant DB unavailable');
 });
 

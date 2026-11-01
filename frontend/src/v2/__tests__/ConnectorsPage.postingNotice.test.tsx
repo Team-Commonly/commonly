@@ -3,7 +3,8 @@
 // roster marks a seat whose connector grants reach more than one of its pods
 // (the runtime then refuses its writes everywhere), and marks a census it could
 // not run. The page names the seats, never the pods, and never reads an
-// unknown status as "posting works".
+// unknown status as "posting works". A seat whose grants reach exactly one of
+// its several pods can post only there, and gets its own line.
 import React from 'react';
 import { screen, waitFor } from '@testing-library/react';
 import { axios, mockApi, renderPage, pageReady } from '../__testkit__/connectorsKit';
@@ -17,6 +18,7 @@ const pods = [
 const scout = { name: 'scout', displayName: 'Scout', userId: 'a1' };
 const BLOCKED = /cannot post in any pod while connectors reach more than one of their pods/;
 const UNKNOWN = /Could not check whether connector grants limit agent posting/;
+const ONE_POD = /can post only in one of their pods while that pod has connector access/;
 
 afterEach(() => jest.restoreAllMocks());
 
@@ -37,6 +39,23 @@ describe('Connectors page: posting notice', () => {
     expect(note).not.toHaveTextContent('Wren');
     expect(note).not.toHaveTextContent(/Launch pod|Ops|p1|p2/);
     expect(screen.queryByText(UNKNOWN)).not.toBeInTheDocument();
+  });
+
+  it('names a seat limited to one pod on its own line, apart from a blocked seat, and no pod', async () => {
+    mockApi({
+      pods,
+      seats: {
+        p1: [{ ...scout, runtimeNarrowedByMultipleGrantPods: true }, { name: 'wren', displayName: 'Wren', userId: 'a2', runtimeNarrowedToOnePod: true }],
+        p2: [{ name: 'wren', displayName: 'Wren', userId: 'a2', runtimeNarrowedToOnePod: true }],
+      },
+    });
+    renderPage();
+
+    const onePod = await screen.findByText(ONE_POD);
+    expect(onePod).toHaveAttribute('role', 'status');
+    expect(onePod.textContent.startsWith('Wren can post only')).toBe(true);
+    expect(onePod).not.toHaveTextContent(/Scout|Launch pod|Ops|p1|p2/);
+    expect(screen.getByText(BLOCKED)).not.toHaveTextContent('Wren');
   });
 
   it('names two instances of one agent separately when neither has a user row', async () => {
@@ -78,6 +97,7 @@ describe('Connectors page: posting notice', () => {
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/registry/pods/p2/agents', expect.anything()));
     await pageReady();
     expect(screen.queryByText(BLOCKED)).not.toBeInTheDocument();
+    expect(screen.queryByText(ONE_POD)).not.toBeInTheDocument();
     expect(screen.queryByText(UNKNOWN)).not.toBeInTheDocument();
   });
 });

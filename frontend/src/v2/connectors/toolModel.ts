@@ -102,6 +102,9 @@ export interface PodSeat {
   internal?: boolean;
   // Set by the pod roster: connector grants reach more than one of this seat's pods.
   runtimeNarrowedByMultipleGrantPods?: boolean;
+  // Set by the pod roster: exactly one of this seat's several pods has a grant,
+  // so it can post only there.
+  runtimeNarrowedToOnePod?: boolean;
   // The roster could not run its grant census, so posting status is unknown.
   runtimeNarrowingUnavailable?: boolean;
 }
