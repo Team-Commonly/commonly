@@ -1806,6 +1806,10 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
     }));
     fs.writeFileSync(path.join(pkgDir, 'src', 'index.js'), '');
     fs.writeFileSync(path.join(home, 'current'), '0.3.13\n');
+    // A fresh registry answer naming the installed build, so no turn here starts
+    // a background warm: a detached `npm install` outlives the suite and writes
+    // into TMPDIR after it ends (the CLI temp-cleanup guard caught it).
+    fs.writeFileSync(path.join(home, '.registry.json'), JSON.stringify({ version: '0.3.13', checkedAt: Date.now() }));
     prior = process.env.COMMONLY_MCP_HOME;
     process.env.COMMONLY_MCP_HOME = home;
     Object.defineProperty(process, 'platform', { value: 'darwin' });
@@ -1924,7 +1928,8 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
   // As in the OpenCode check: only the shipped server's error contract is known,
   // so a server run some other way is not judged by it.
   test('a seat that does not run the shipped Commonly MCP is not witnessed', async () => {
-    const mcp = [{ name: 'commonly', transport: 'stdio', command: ['commonly-mcp'] }];
+    // A hand-run copy, as the staging seats run: not the published package.
+    const mcp = [{ name: 'commonly', transport: 'stdio', command: ['node', '/opt/commonly-mcp-staging/src/index.js'] }];
     await expect(turn(stream(init('failed'), result('HELLO')), { mcp })).resolves.toMatchObject({ text: 'HELLO' });
   });
 
