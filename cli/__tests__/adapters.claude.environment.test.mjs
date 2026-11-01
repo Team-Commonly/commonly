@@ -1806,10 +1806,14 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
     }));
     fs.writeFileSync(path.join(pkgDir, 'src', 'index.js'), '');
     fs.writeFileSync(path.join(home, 'current'), '0.3.13\n');
-    // A fresh registry answer naming the installed build, so no turn here starts
-    // a background warm: a detached `npm install` outlives the suite and writes
-    // into TMPDIR after it ends (the CLI temp-cleanup guard caught it).
     fs.writeFileSync(path.join(home, '.registry.json'), JSON.stringify({ version: '0.3.13', checkedAt: Date.now() }));
+    // A held warm lock, so no turn here starts a background warm. A fresh
+    // registry answer isn't enough: a seat running a hand-run copy resolves no
+    // version from this home, and a spawn with no version always wants a warm.
+    // That warm is a detached `npm install` from the real registry. It outlived
+    // the suite, refilled this home after the teardown below removed it, and
+    // raced the CLI temp-cleanup guard's own rm (ENOTEMPTY, two dequeued PRs).
+    fs.writeFileSync(path.join(home, '.warm.lock'), 'warming\n');
     prior = process.env.COMMONLY_MCP_HOME;
     process.env.COMMONLY_MCP_HOME = home;
     Object.defineProperty(process, 'platform', { value: 'darwin' });
