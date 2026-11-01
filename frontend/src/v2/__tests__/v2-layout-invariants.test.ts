@@ -5098,6 +5098,12 @@ describe('agent Memory tab (TASK-690 slice 1 and 2)', () => {
     expect(ruleBody(css, '.v2-agent-memory')).toContain('display: grid');
     expect(ruleBody(css, '.v2-agent-memory', { within: desktop })).toContain('grid-template-columns: 200px minmax(0, 1fr)');
   });
+  test('the page spans the pane instead of a centred column', () => {
+    const page = ruleBody(css, '.v2-agent-memory-page');
+    expect(page).toContain('width: 100%');
+    expect(page).toContain('max-width: none');
+    expect(page).toContain('align-self: stretch');
+  });
   test('phone hides the group nav and makes the groups collapsible', () => {
     expect(ruleBody(css, '.v2-agent-memory__nav ul', { within: phone })).toContain('display: none');
     expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: phone })).toContain('cursor: pointer');
