@@ -18,6 +18,10 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Machine = require('../models/Machine');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { markByoDaemonRegistered } = require('../services/onboardingMarks');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { recordByoEvent, daemonRegisteredKey } = require('../services/byoTelemetry');
 
 const router = express.Router();
 
@@ -51,6 +55,11 @@ router.post('/', machineRateLimit, auth, async (req: AuthReq, res: express.Respo
       name: req.body?.name,
       deviceTokenHash: req.deviceTokenHash,
     });
+    // First registration per person only: the mark and the funnel row are both
+    // write-once, so a second machine writes nothing. Written after success, so a
+    // failed register records nothing.
+    markByoDaemonRegistered(ownerUserId);
+    await recordByoEvent(ownerUserId, 'daemon-registered', {}, daemonRegisteredKey(ownerUserId));
     // The raw daemon credential is intentionally only ever returned here.
     return res.status(201).json({ machine, daemonToken: token });
   } catch (error) {
