@@ -15,6 +15,8 @@ import V2Fold from './V2Fold';
 
 // Expanded threads show the newest eight; a `N more replies` line reveals the rest.
 const MAX_EXPANDED_REPLIES = 8;
+// A transcript load shorter than this never shows a spinner.
+const SPINNER_DELAY_MS = 300;
 
 interface V2ThreadMessagesProps {
   messages: V2Message[];
@@ -166,7 +168,18 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   // Loading → content: whatever replaces the spinner fades in once, over
   // --v2-dur. A load that never showed the spinner (an older page, a
   // reconnect catch-up) gets nothing, and a re-render never replays it.
-  const showSpinner = loading && messages.length === 0;
+  // The spinner itself waits SPINNER_DELAY_MS, so a fast load shows content with
+  // no flash of a loader.
+  const waiting = loading && messages.length === 0;
+  const [showSpinner, setShowSpinner] = useState(false);
+  useEffect(() => {
+    if (!waiting) {
+      setShowSpinner(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setShowSpinner(true), SPINNER_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [waiting]);
   const spinnerShownRef = useRef(showSpinner);
   const [revealed, setRevealed] = useState(false);
   useLayoutEffect(() => {

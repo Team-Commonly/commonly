@@ -197,8 +197,26 @@ describe('chat motion: content replacing the loader fades in once', () => {
   };
   const scroller = (container) => container.querySelector('.v2-chat__messages');
 
-  it('fades the transcript in when it replaces the spinner, and a later render does not restart it', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('a load under 300ms shows no spinner, and its content appears without a fade', () => {
+    jest.useFakeTimers();
     const view = render(renderTranscript({ messages: [], loading: true }));
+    act(() => { jest.advanceTimersByTime(299); });
+    expect(view.container.querySelector('.v2-spinner')).toBeNull();
+    view.rerender(renderTranscript({ messages: [message('h', 0)], loading: false }));
+    act(() => { jest.advanceTimersByTime(400); });
+    expect(view.container.querySelector('.v2-spinner')).toBeNull();
+    expect(scroller(view.container)).not.toHaveClass('v2-chat__messages--reveal');
+  });
+
+  it('fades the transcript in when it replaces the spinner, and a later render does not restart it', () => {
+    jest.useFakeTimers();
+    const view = render(renderTranscript({ messages: [], loading: true }));
+    expect(view.container.querySelector('.v2-spinner')).toBeNull();
+    act(() => { jest.advanceTimersByTime(300); });
     expect(view.container.querySelector('.v2-spinner')).not.toBeNull();
     expect(scroller(view.container)).not.toHaveClass('v2-chat__messages--reveal');
 
