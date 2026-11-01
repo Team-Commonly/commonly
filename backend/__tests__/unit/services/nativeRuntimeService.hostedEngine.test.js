@@ -386,7 +386,9 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
       });
       expect(systemPromptIn(0)).toMatch(/check the board with commonly_list_tasks before saying what is or is not on it/);
       // Walk 5: it offered to "mark TASK-002 done" with no tool that can.
-      expect(systemPromptIn(0)).toMatch(/you cannot change a task's status or mark one done: if asked to, say so/);
+      // Claiming is allowed (TASK-340), so the prompt must not deny it.
+      expect(systemPromptIn(0)).toMatch(/claim a task for yourself with commonly_claim_task, but you cannot mark a task done or change it any other way: if asked to, say so/);
+      expect(systemPromptIn(0)).not.toMatch(/cannot change a task's status/);
       // QA walk: a pod summary also searched the web and ran code (19 s).
       expect(systemPromptIn(0)).toMatch(/Answer a question about this pod from the pod itself; reach for the tools below only when/);
       // QA walk: an answer opening "@asker" filed every reply as "needs you".

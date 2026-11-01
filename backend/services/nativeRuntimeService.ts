@@ -2392,8 +2392,10 @@ export async function runAgent(
             && !allowedAfterTaint(toolName, Boolean(dispatchCtx.computerReadSeen));
           // Row B (TASK-132): a granted seat's broker tool, dispatched in
           // process. `null` means this is not a broker tool and the agent's own
-          // dispatcher handles it below.
-          const brokerCall = webTaintedAway ? null : await dispatchHostedBrokerTool({
+          // dispatcher handles it below. Only a tool offered in this round
+          // runs: a claim earlier in the same response re-reads the projection
+          // (TASK-340), and what it unlocks is offered from the next round.
+          const brokerCall = webTaintedAway || !offeredToolNames.has(toolName) ? null : await dispatchHostedBrokerTool({
             projection: broker,
             runId: dispatchCtx.runId,
             runPodId: String(dispatchCtx.podId),

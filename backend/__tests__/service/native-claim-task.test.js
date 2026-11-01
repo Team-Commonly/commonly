@@ -107,10 +107,16 @@ describe('commonly_claim_task (TASK-340)', () => {
     await Task.updateOne({ taskId: 'TASK-001' }, { $set: {
       status: 'claimed', claimedBy: 'someone', claimedByUserId: holder, claimedAt: new Date(), claimExpiresAt: until,
     } });
+    const before = await Task.findOne({ taskId: 'TASK-001' }).lean();
+    mockEmitTaskUpdated.mockClear();
+    mockNotifyPodAgents.mockClear();
     const result = await claim({ taskId: 'TASK-001' });
     expect(result.content).toMatchObject({ ok: false, claimedBy: 'someone' });
     expect(result.error).toBe('task_already_claimed');
-    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).claimedByUserId).toBe(holder);
+    // A refusal has no side effects: the row, its updates, and nobody woken.
+    expect(await Task.findOne({ taskId: 'TASK-001' }).lean()).toEqual(before);
+    expect(mockEmitTaskUpdated).not.toHaveBeenCalled();
+    expect(mockNotifyPodAgents).not.toHaveBeenCalled();
   });
 
   it('writes nothing for an agent that is not a member of the pod', async () => {

@@ -89,6 +89,25 @@ describe('a claim mid-turn re-reads the grant projection (TASK-340)', () => {
     expect(offeredIn(1)).toContain('sentry_find_organizations');
   });
 
+  test('a tool the claim unlocks does not run in the same response', async () => {
+    // One model response: claim, then the granted tool it was not yet offered.
+    axios.post.mockReset();
+    axios.post
+      .mockResolvedValueOnce(toolCalls(
+        call('c1', 'commonly_claim_task', { taskId: 'TASK-001' }),
+        call('c2', 'sentry_find_organizations', {}),
+      ))
+      .mockResolvedValueOnce(modelSays('Claimed TASK-001.'));
+    mockClaimTaskAs.mockResolvedValue({ status: 200, task: { taskId: 'TASK-001', status: 'claimed' } });
+    await runAgent(SEAT, MENTION);
+    expect(brokerProjection.hostedBrokerToolsForRun).toHaveBeenCalledTimes(2);
+    expect(brokerProjection.dispatchHostedBrokerTool).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'sentry_find_organizations' }),
+    );
+    const refused = axios.post.mock.calls[1][1].messages.find((m) => m.role === 'tool' && m.tool_call_id === 'c2');
+    expect(JSON.parse(refused.content)).toMatchObject({ ok: false, error: expect.stringMatching(/not available to you in this turn/) });
+  });
+
   test('a refused claim leaves the projection as it was', async () => {
     mockClaimTaskAs.mockResolvedValue({ status: 409, body: { error: 'Task already claimed', claimedBy: 'someone' } });
     await runAgent(SEAT, MENTION);
