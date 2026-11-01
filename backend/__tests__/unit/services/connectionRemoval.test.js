@@ -527,6 +527,35 @@ describe('an Atlassian removal (TASK-339)', () => {
   });
 });
 
+describe('an operator-key removal (TASK-330)', () => {
+  // A pasted key has no refresh token and no RFC 7009 client, so removal never
+  // sends it anywhere: it ends our grants, deletes the stored key, and points
+  // the person at the vendor's key page. The entry here even names an endpoint,
+  // so it is the credential mode, not a missing URL, that keeps the vendor out.
+  const KEY_PAGE = 'https://latchkey.example/settings/api-keys';
+  const KEY_ENTRY = {
+    id: 'keyvendor',
+    credentialMode: 'operator_key',
+    revoke: { page: KEY_PAGE, endpoint: 'https://latchkey.example/oauth/revoke' },
+    resource: 'https://latchkey.example/mcp',
+  };
+
+  it('never calls the vendor, deletes the stored key, and hands over the key page', async () => {
+    const { calls, deps, revokeGrants } = recorder({ entryFor: () => KEY_ENTRY });
+    const row = hostedRow({ config: { entryId: 'keyvendor', agentId: 'agent-1', intake: 'operator_key', credentialRef: 'key-ref' } });
+
+    const result = await remove(row, deps, revokeGrants);
+
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: KEY_PAGE, providerRevoked: false });
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
+    expect(deps.secrets.get).not.toHaveBeenCalled();
+    expect(deps.secrets.revoke).toHaveBeenCalledWith('key-ref');
+    // The refresh slot is swept too and is empty (`connectorSecrets.revoke`
+    // returns on a missing ref), as on any row without a refresh token.
+    expect(calls).toEqual(['grants', 'row', 'material:undefined', 'material:key-ref', 'delete']);
+  });
+});
+
 describe('a row whose entry is gone', () => {
   const COPIED_PAGE = 'https://linear.app/settings/security/legacy';
 
