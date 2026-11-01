@@ -81,18 +81,28 @@ export const capTimeoutMs = (kind, { baseMs, env = process.env } = {}) => {
 // AbortSignal.any is Node 20.3+, and `engines` allows 20.0, so the fallback
 // joins the two by hand. Either way the abort carries the source's own reason,
 // which is what nameTimeout matches on.
+// The fallback's listeners are removed when the request settles, so a caller
+// that reuses one long-lived signal does not collect one per request.
 const capSignal = (capTimeout, callerSignal) => {
-  if (!callerSignal) return capTimeout;
-  if (typeof AbortSignal.any === 'function') return AbortSignal.any([callerSignal, capTimeout]);
+  if (!callerSignal) return { signal: capTimeout, release: () => {} };
+  if (typeof AbortSignal.any === 'function') {
+    return { signal: AbortSignal.any([callerSignal, capTimeout]), release: () => {} };
+  }
   const joined = new AbortController();
+  const listeners = [];
   for (const source of [callerSignal, capTimeout]) {
     if (source.aborted) {
       joined.abort(source.reason);
       break;
     }
-    source.addEventListener('abort', () => joined.abort(source.reason), { once: true });
+    const onAbort = () => joined.abort(source.reason);
+    source.addEventListener('abort', onAbort, { once: true });
+    listeners.push([source, onAbort]);
   }
-  return joined.signal;
+  return {
+    signal: joined.signal,
+    release: () => listeners.forEach(([source, onAbort]) => source.removeEventListener('abort', onAbort)),
+  };
 };
 
 export const formatLimit = (ms) => (ms < 1000 ? `${ms}ms` : `${Math.round(ms / 1000)}s`);
@@ -114,9 +124,11 @@ const nameTimeout = (capTimeout, method, path, ms) => (err) => {
 
 const timedFetch = (url, init, { method, path, ms, session }) => {
   const capTimeout = AbortSignal.timeout(ms);
-  return fetch(url, { ...init, signal: capSignal(capTimeout, init.signal) })
+  const { signal, release } = capSignal(capTimeout, init.signal);
+  return fetch(url, { ...init, signal })
     .then((res) => handleResponse(res, session))
-    .catch(nameTimeout(capTimeout, method, path, ms));
+    .catch(nameTimeout(capTimeout, method, path, ms))
+    .finally(release);
 };
 
 export const createClient = ({ instance = null, token = undefined, timeoutMs = undefined } = {}) => {

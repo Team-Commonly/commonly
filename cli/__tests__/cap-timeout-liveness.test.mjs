@@ -210,6 +210,20 @@ describe('without AbortSignal.any (Node 20.0 to 20.2)', () => {
       .rejects.toMatchObject({ code: 'cap_timeout', timeoutMs: 150 });
   });
 
+  test("a settled request takes its listener off a caller's long-lived signal", async () => {
+    stub = await startStub(() => EMPTY);
+    AbortSignal.any = undefined;
+    const caller = new AbortController();
+    const added = jest.spyOn(caller.signal, 'addEventListener');
+    const removed = jest.spyOn(caller.signal, 'removeEventListener');
+    const client = createClient({ instance: stub.url, token: 'cm_agent_test', timeoutMs: 5000 });
+    await client.get('/api/agents/runtime/events', {}, { signal: caller.signal });
+    await client.get('/api/agents/runtime/events', {}, { signal: caller.signal });
+    const ours = (spy) => spy.mock.calls.filter(([type]) => type === 'abort').map(([, fn]) => fn);
+    expect(ours(removed)).toEqual(ours(added));
+    expect(ours(added)).toHaveLength(2);
+  });
+
   test("a caller's shorter timeout still keeps its own error", async () => {
     stub = await startStub(() => 'hang');
     AbortSignal.any = undefined;
