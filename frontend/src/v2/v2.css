@@ -1181,30 +1181,27 @@ body.modern-ui.v2-canvas {
   place-items: center;
   overflow-y: auto;
   padding: 24px;
-  background: rgba(15, 23, 42, 0.42);
+  background: var(--v2-scrim);
 }
 
+/* D215 .v2-first-run: the pop surface at 16px, its edge carried by the pop
+   shadow rather than a border. */
 .v2-first-run {
   width: min(720px, 100%);
   max-height: calc(100dvh - 48px);
   overflow-y: auto;
   padding: 28px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
+  border-radius: 16px;
   background: var(--v2-surface);
   color: var(--v2-text-primary);
-  box-shadow: var(--v2-shadow-md, 0 8px 24px rgba(15, 23, 42, 0.12));
+  box-shadow: var(--v2-shadow-pop);
   outline: none;
 }
 
 .v2-first-run__eyebrow {
   margin-bottom: 8px;
-  color: var(--v2-text-tertiary);
-  font-family: var(--v2-font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  color: var(--v2-text-muted);
+  font: 500 11.5px/16px var(--v2-font-mono);
 }
 
 .v2-first-run__heading-row {
@@ -1216,9 +1213,11 @@ body.modern-ui.v2-canvas {
 
 .v2-first-run__title {
   margin: 0;
-  font-size: clamp(22px, 3vw, 30px);
-  line-height: 1.15;
+  color: var(--v2-text-primary);
+  font: 700 28px/1.15 var(--v2-font-display);
   letter-spacing: -0.025em;
+  /* Two even lines on a phone, not a lone last word. */
+  text-wrap: balance;
 }
 
 .v2-first-run__lede {
@@ -1230,33 +1229,38 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-root button.v2-first-run__skip {
-  flex-shrink: 0;
-  padding: 4px 0;
-  color: var(--v2-text-tertiary);
-  font-size: 12px;
-  font-weight: 600;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--v2-r-9);
+  color: var(--v2-text-secondary);
+  font: 600 12.5px/1 var(--v2-font);
 }
 
 .v2-root button.v2-first-run__skip:hover {
+  background: var(--v2-surface-tint);
   color: var(--v2-text-primary);
 }
 
 .v2-first-run__steps {
   display: grid;
-  gap: 14px;
-  margin: 24px 0 0;
+  gap: 10px;
+  margin: 22px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .v2-first-run__step {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
   padding: 14px;
-  border-radius: var(--v2-radius);
+  border-radius: var(--v2-r-12);
   background: var(--v2-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
 }
 
 .v2-first-run__step-mark {
@@ -1264,18 +1268,17 @@ body.modern-ui.v2-canvas {
   place-items: center;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--v2-border);
   border-radius: 50%;
   background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border);
   color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 700;
+  font: 600 12px/1 var(--v2-font-mono);
 }
 
 .v2-first-run__step-mark--done {
-  border-color: var(--v2-border);
-  background: var(--v2-surface);
-  color: var(--v2-accent);
+  background: var(--v2-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--v2-accent);
+  color: var(--v2-accent-text);
 }
 
 .v2-first-run__step-body {
@@ -1292,52 +1295,95 @@ body.modern-ui.v2-canvas {
 .v2-first-run__step-body strong {
   color: var(--v2-text-primary);
   font-size: 14px;
+  font-weight: 600;
 }
 
-.v2-root a.v2-first-run__setup,
-.v2-root button.v2-first-run__hello {
+/* D215 keys: setup is the key material, hello the one filled action
+   (TASK-647 item 4: the card keeps one ink action). */
+.v2-root button.v2-first-run__hello,
+.v2-root a.v2-first-run__setup {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 34px;
+  gap: 7px;
+  height: 32px;
   margin-top: 6px;
-  padding: 8px 12px;
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-  font-size: 12px;
-  font-weight: 700;
+  padding: 0 13px;
+  border-radius: var(--v2-r-10);
+  font: 600 13px/1 var(--v2-font);
   text-decoration: none;
 }
 
 .v2-root a.v2-first-run__setup {
-  /* Bordered, not ink: the first-run card keeps one ink action (TASK-647 item 4). */
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
+  border: 1px solid var(--v2-key-edge);
+  background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b));
+  box-shadow: var(--v2-key-inset);
   color: var(--v2-text-primary);
 }
 .v2-root a.v2-first-run__setup:hover {
-  background: var(--v2-surface-hover);
   border-color: var(--v2-border-strong);
+}
+.v2-root button.v2-first-run__hello {
+  border: 1px solid var(--v2-fill-edge);
+  background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b));
+  color: var(--v2-on-fill);
 }
 .v2-root button.v2-first-run__hello:hover:not(:disabled) {
   background: var(--v2-ink-hover);
-  color: var(--v2-on-ink);
 }
 
+/* Disabled before the agent connects, as drawn; busy while the room opens. */
 .v2-root button.v2-first-run__hello:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.v2-root button.v2-first-run__hello[aria-busy="true"] {
   cursor: wait;
   opacity: 0.65;
 }
 
+.v2-first-run__waiting,
+.v2-first-run__connected,
+.v2-first-run__error {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The waiting dot is the presence dot: cobalt, with the shared pulse. */
+.v2-first-run__dot {
+  position: relative;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--v2-accent);
+}
+.v2-first-run__dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--v2-accent);
+  opacity: 0;
+  animation: v2-presence-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2-first-run__dot::after { animation: none; }
+}
+
 .v2-first-run__connected {
-  color: var(--v2-success);
-  font-weight: 700;
+  color: var(--v2-accent-text);
+  font-weight: 600;
 }
 
 .v2-first-run__error {
+  color: var(--v2-text-primary);
+  font-size: 12.5px;
+}
+
+.v2-first-run__error svg {
+  flex: none;
   color: var(--v2-danger);
-  font-size: 12px;
 }
 
 @keyframes v2-typing-dot {
@@ -2696,8 +2742,10 @@ body.modern-ui.v2-canvas {
     grid-template-columns: var(--v2-rail-w) minmax(0, 1fr);
   }
 
+  /* D215 phone: a sheet on the bottom edge, 44px touch targets. */
   .v2-first-run__overlay {
     padding: 12px;
+    place-items: end center;
   }
 
   .v2-first-run {
@@ -2710,8 +2758,20 @@ body.modern-ui.v2-canvas {
     gap: 8px;
   }
 
+  .v2-first-run__title {
+    font-size: 24px;
+  }
+
   .v2-root button.v2-first-run__skip {
     align-self: flex-start;
+    height: 44px;
+    padding-left: 0;
+  }
+
+  .v2-root a.v2-first-run__setup,
+  .v2-root button.v2-first-run__hello {
+    height: 44px;
+    font-size: 14px;
   }
 
   /* Hide secondary panes — but NOT the pods sidebar OR the inspector, which

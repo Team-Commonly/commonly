@@ -156,7 +156,9 @@ describe('V2FirstRunHero', () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText('✓ Connected')).toBeInTheDocument();
+    // Connected is a check glyph and the word, under the step's own title.
+    expect(await screen.findByText('Connected')).toHaveClass('v2-first-run__connected');
+    expect(screen.getByText('Start your agent')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Say hello' }));
     await flush();
 
