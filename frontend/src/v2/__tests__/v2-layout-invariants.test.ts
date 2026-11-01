@@ -311,6 +311,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(list).toContain('box-shadow: none');
     expect(list).toContain('border-radius: 0');
     expect(list).toContain('border-top: 1px solid var(--d)');
+    // The caption carries its own hairline, so the list under it drops one rather than doubling it.
+    expect(ruleBody(surface, '.v2-agent-settings-page .v2-agent-settings-page__runsbody .gtitle')).toContain('border-top: 1px solid var(--d)');
+    expect(ruleBody(surface, '.v2-agent-settings-page .v2-agent-settings-page__runsbody .gtitle + .list')).toContain('border-top: 0');
     const memory = ruleBody(surface, '.v2-agent-settings-page .v2-agent-settings-page__runsbody .v2-agent-policy__group');
     expect(memory).toContain('border: 0');
     expect(memory).toContain('border-radius: 0');
