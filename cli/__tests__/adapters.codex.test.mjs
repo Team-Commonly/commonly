@@ -448,7 +448,8 @@ describe('codex adapter — spawn()', () => {
       expect(args).toContain('mcp_servers.commonly.command="node"');
       // TASK-287: a public seat is never offered attach_file. (The private
       // spawn's exact -c list above proves the private seat keeps it.)
-      expect(args).toContain('mcp_servers.commonly.disabled_tools=["commonly_attach_file"]');
+      // F45: nor catch_up, which moves the read cursor past history unread.
+      expect(args).toContain('mcp_servers.commonly.disabled_tools=["commonly_attach_file","commonly_catch_up"]');
       const permissionConfig = args.find((arg) => arg.startsWith('permissions.commonly_public.filesystem='));
       expect(permissionConfig).toContain(`${JSON.stringify(versionDir)}="read"`);
       expect(permissionConfig).not.toContain(`${JSON.stringify(home)}="read"`);
