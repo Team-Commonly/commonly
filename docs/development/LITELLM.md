@@ -137,7 +137,7 @@ answered logs first: it is `served`, and the outer hop of the same request is
 class and status only. The error message stays out, because a provider can
 echo the request into it, and so do the key and its alias. The `model_fallback` log
 metric in `k8s/monitoring/log-metrics.json` counts these lines, one per hop.
-Native hosted turns send `disable_fallbacks` (D81), so every count comes from
+Native hosted turns send `disable_fallbacks`, so every count comes from
 another caller: the moltbot gateway, commonly-bot, or platform features
 through `llmService`.
 Verified 2026-10-26 against the real 1.106.2 Router with a local upstream that

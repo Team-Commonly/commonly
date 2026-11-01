@@ -1,4 +1,5 @@
 import SlackApi = require('./slackApi');
+import { publicAppUrl } from '../utils/publicAppUrl';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../models/Integration');
@@ -44,7 +45,7 @@ interface SlackIntegrationDoc {
     slackUserId?: string;
     liveRelay?: boolean;
     relayAllAgentMessages?: boolean;
-    gates?: Record<string, { enabled?: boolean }>;
+    gates?: Record<string, { enabled?: boolean; lead?: string }>;
     leadAgentUsername?: string;
     relayMutedUntil?: Date | string;
     adminPause?: { reason?: string; at?: Date | string; adminId?: string };
@@ -130,13 +131,16 @@ const isInboundRelayableIntegration = (integration: SlackIntegrationDoc, podId: 
 );
 
 const NO_ACTIVE_POD_REPLY = 'This connector has no active pod. Choose one in Commonly first.';
+const NO_LEAD_REPLY = 'Your message reached the pod, but no lead agent is selected there. '
+  + 'Choose a lead in Commonly to get replies here.';
 
 // ADR-025 D11: a quote-reply whose pod is no longer reachable is refused in the
 // chat and posted nowhere. Naming the pod is the whole point — "your reply did
 // not go through" is unactionable, while "that line came from Launch" tells the
-// user which pod the fix is in.
+// user which pod the fix is in. The label is escaped because postMessage sends
+// mrkdwn as-is and a pod name is agent-choosable.
 const routedPodRefusal = (podLabel: string): string => (
-  `⚠️ That line came from “${podLabel}”, which this chat no longer reaches. `
+  `⚠️ That line came from “${escapeSlackMrkdwn(podLabel)}”, which this chat no longer reaches. `
   + 'Nothing was posted — open Commonly to reply there.'
 );
 
@@ -169,6 +173,19 @@ const replyRoutedPodRefused = async (
     await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, sent);
   } catch (error) {
     console.warn('[slack-bridge] could not send routed-pod refusal:', (error as Error).message);
+  }
+};
+
+const replyNoLead = async (integration: SlackIntegrationDoc): Promise<void> => {
+  const chatId = integration.config?.chatId;
+  const botTokenRef = integration.config?.botTokenRef;
+  if (!chatId || !botTokenRef) return;
+  try {
+    const token = await connectorSecrets.get(String(botTokenRef));
+    const sent = await new SlackApi(token).postMessage(String(chatId), NO_LEAD_REPLY);
+    await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, sent);
+  } catch (error) {
+    console.warn('[slack-bridge] could not send no-lead reply:', (error as Error).message);
   }
 };
 
@@ -254,7 +271,7 @@ export const relayAgentMessageToSlack = async (opts: {
       connectorSecrets.get(String(integration.config!.botTokenRef)),
     ]);
     const podName = String(pod?.name || 'Commonly');
-    const base = (process.env.PUBLIC_APP_URL || 'https://commonly.me').replace(/\/$/, '');
+    const base = publicAppUrl();
     const link = opts.card && podMessageId
       ? `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(podMessageId)}`
       : `${base}/v2/pods/${podId}`;
@@ -443,13 +460,16 @@ export const relaySlackMessageToPod = async (opts: {
     }
     podId = String(routed.podId);
   }
-  const { content: routedText, routedAgent } = routed;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { extractMentions } = require('./agentMentionService');
+  const lead = config.gates?.[podId]?.lead;
+  const plainMessage = !routed.routedAgent && !event.thread_ts && !cardReply.lateReply
+    // Slack wraps emails (<mailto:a@b.com|a@b.com>) and user mentions (<@U123>) in <...>;
+    // neither addresses an agent, so they must not turn a plain DM into a mention.
+    && extractMentions(String(rawText).replace(/<[^<>]*>/g, ' ')).length === 0;
   const replyToMessageId = cardReply.lateReply?.messageId || null;
   const linkedUserId = String(config.linkedUserId);
   const senderName = event.user_profile?.display_name || event.user_profile?.real_name;
-  const content = senderName
-    ? `💬 ${senderName} (via Slack): ${routedText}`
-    : `💬 (via Slack): ${routedText}`;
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const User = require('../models/User');
@@ -473,6 +493,20 @@ export const relaySlackMessageToPod = async (opts: {
     console.warn('[slack-bridge] inbound dropped — linked user missing');
     return { relayed: false };
   }
+  let addressedLead: string | null = null;
+  if (plainMessage && typeof lead === 'string' && /^[a-z0-9_-]{2,}$/i.test(lead)) {
+    try {
+      const member = await User.findOne({ _id: { $in: pod.members }, username: lead, isBot: true });
+      if (member) addressedLead = lead;
+    } catch (error) {
+      console.warn('[slack-bridge] lead membership lookup failed:', (error as Error).message);
+    }
+  }
+  const routedText = addressedLead ? `@${addressedLead} ${routed.content}` : routed.content;
+  const routedAgent = routed.routedAgent || addressedLead;
+  const content = senderName
+    ? `💬 ${senderName} (via Slack): ${routedText}`
+    : `💬 (via Slack): ${routedText}`;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
     const PGPod = require('../models/pg/Pod');
@@ -534,6 +568,9 @@ export const relaySlackMessageToPod = async (opts: {
   } catch (error) {
     console.warn('[slack-bridge] socket emit failed:', (error as Error).message);
   }
+  // Slack's notice is best effort. A slow Slack API must not hold the inbound
+  // webhook after the pod message has been stored and delivered.
+  if (plainMessage && !addressedLead) void replyNoLead(integration);
   return { relayed: true, routedAgent };
 };
 

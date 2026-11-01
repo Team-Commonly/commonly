@@ -431,7 +431,7 @@ const endpointAuthentication = (
   // the removal path passes no metadata for a dcr entry, and RFC 8414's
   // omitted-list default (basic) would otherwise turn a post-registered client
   // into Basic, and its invalid_client would refuse the registration every
-  // row shares (Vera, #2377).
+  // row shares (#2377).
   if (entry.client === 'dcr' && client.clientSecret && client.tokenEndpointAuthMethod) {
     return confidentialAuthentication(client, client.tokenEndpointAuthMethod);
   }
@@ -455,10 +455,13 @@ const endpointAuthentication = (
   const supported = endpoint === 'token'
     ? metadata.token_endpoint_auth_methods_supported
     : metadata.revocation_endpoint_auth_methods_supported;
+  const pinnedMethod = endpoint === 'token' ? entry.tokenEndpointAuthMethod : undefined;
   const methods = supported === undefined
-    ? ['client_secret_basic']
+    ? [pinnedMethod ?? 'client_secret_basic']
     : (Array.isArray(supported) ? supported : []);
-  const method = CONFIDENTIAL_CLIENT_METHODS.find((candidate) => methods.includes(candidate));
+  const method = pinnedMethod
+    ? methods.find((candidate) => candidate === pinnedMethod)
+    : CONFIDENTIAL_CLIENT_METHODS.find((candidate) => methods.includes(candidate));
   if (!method) {
     throw new HostedMcpClientError(
       'client_auth_unsupported',

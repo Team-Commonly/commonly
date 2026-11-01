@@ -30,6 +30,10 @@ jest.mock('../../../config/socket', () => ({ getIO: jest.fn(() => null) }));
 const mockEnqueue = jest.fn().mockResolvedValue({});
 jest.mock('../../../services/agentEventService', () => ({ enqueue: (...args) => mockEnqueue(...args) }));
 jest.mock('../../../models/Message', () => ({ updateOne: jest.fn().mockResolvedValue({}) }));
+const mockRecordApprovalOutcome = jest.fn();
+jest.mock('../../../services/brokerRecordService', () => ({
+  recordApprovalOutcome: (...args) => mockRecordApprovalOutcome(...args),
+}));
 
 const service = require('../../../services/approvalActionService');
 const broker = require('../../../services/toolBrokerService');
@@ -180,7 +184,7 @@ test('uses the approver display name in the execution receipt', async () => {
   mockApproval.findOneAndUpdate.mockResolvedValue(resolved);
   mockUser.findById.mockReturnValue({
     select: jest.fn(() => ({
-      lean: jest.fn().mockResolvedValue({ isBot: false, username: 'samxu01', displayName: 'Sam Xu' }),
+      lean: jest.fn().mockResolvedValue({ isBot: false, username: 'team-member', displayName: 'Team Member' }),
     })),
   });
   broker.executeApprovedToolCall.mockResolvedValue({ callId: 'tool_call_second', outcome: 'ok', result: { id: 9 } });
@@ -188,7 +192,7 @@ test('uses the approver display name in the execution receipt', async () => {
   await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'approved' });
 
   expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
-    content: "Sam Xu approved grant-broker's github.comment_on_issue · ran",
+    content: "Team Member approved grant-broker's github.comment_on_issue · ran",
   }));
 });
 
@@ -379,4 +383,54 @@ test('every terminal state, including moot, scrubs canonicalArgs and keeps argsD
   );
   expect(pending.toolCall.argsDigest).toBe(toolCall.argsDigest);
   expect(pending.toolCall.canonicalArgs).toBeUndefined();
+});
+
+// TASK-560: one terminal record per parked call, after its ending is saved.
+describe('record wiring', () => {
+  const outcomeCall = () => {
+    expect(mockRecordApprovalOutcome).toHaveBeenCalledTimes(1);
+    return mockRecordApprovalOutcome.mock.calls[0];
+  };
+
+  test('approved: after the run, with the approver, and the saved ending', async () => {
+    const pending = row();
+    const resolved = row({ status: 'resolved', decision: 'approved' });
+    mockApproval.findById.mockResolvedValue(pending);
+    mockApproval.findOneAndUpdate.mockResolvedValue(resolved);
+    broker.executeApprovedToolCall.mockResolvedValue({ callId: 'tool_call_second', outcome: 'ok', result: {} });
+    await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'approved' });
+    const [approval, parked, outcome] = outcomeCall();
+    expect(approval).toBe(resolved);
+    expect(approval.toolCallEnding).toBe('ran');
+    expect(parked).toMatchObject({ grantId: 'grant-1', callId: 'tool_call_original', tool: toolCall.tool });
+    expect(outcome).toEqual({ kind: 'approved' });
+  });
+
+  test('declined', async () => {
+    const pending = row();
+    mockApproval.findById.mockResolvedValue(pending);
+    mockApproval.findOneAndUpdate.mockResolvedValue(row({ status: 'resolved', decision: 'declined' }));
+    await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'declined' });
+    expect(outcomeCall()[2]).toEqual({ kind: 'declined' });
+  });
+
+  test('expired at decide time, and in the sweep', async () => {
+    mockApproval.findById.mockResolvedValue(row({ expiresAt: new Date(Date.now() - 1) }));
+    mockApproval.findOneAndUpdate.mockResolvedValue(row({ status: 'expired' }));
+    await service.resolveApproval({ approvalId: 'approval-1', callerUserId: OWNER, decision: 'approved' });
+    expect(outcomeCall()[2]).toEqual({ kind: 'expired' });
+    mockRecordApprovalOutcome.mockClear();
+    mockApproval.find.mockResolvedValue([row({ expiresAt: new Date(Date.now() - 1) })]);
+    await service.sweepExpiredToolCallApprovals();
+    expect(outcomeCall()[2]).toEqual({ kind: 'expired' });
+  });
+
+  test('a lost race and a refused decider write nothing', async () => {
+    mockApproval.find.mockResolvedValue([row({ expiresAt: new Date(Date.now() - 1) })]);
+    mockApproval.findOneAndUpdate.mockResolvedValue(null);
+    await service.sweepExpiredToolCallApprovals();
+    mockApproval.findById.mockResolvedValue(row());
+    await service.resolveApproval({ approvalId: 'approval-1', callerUserId: OTHER, decision: 'approved' });
+    expect(mockRecordApprovalOutcome).not.toHaveBeenCalled();
+  });
 });

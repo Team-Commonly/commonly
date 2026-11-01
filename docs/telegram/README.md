@@ -19,7 +19,7 @@
 
 ## Environment Variables
 - `TELEGRAM_BOT_TOKEN` — universal bot token used to send command responses.
-- `TELEGRAM_SECRET_TOKEN` — the webhook secret token, and **required**: `routes/webhooks/telegram.ts` refuses every update while it is unset, whatever the integration row holds. The single exception is local development with `TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED=true`, which accepts unverified updates and logs a warning.
+- `TELEGRAM_SECRET_TOKEN` — the webhook secret token, and **required**: `routes/webhooks/telegram.ts` refuses every update while it is unset, whatever the integration row holds. There is no opt-out: the old `TELEGRAM_WEBHOOK_ALLOW_UNVERIFIED` flag was removed under D137 A9 and is ignored if still set. For local development, set any secret here and pass the same value as `secret_token` to `setWebhook`.
 
 ## Webhook Setup
 1. Call `https://api.telegram.org/bot<botToken>/setWebhook` with:

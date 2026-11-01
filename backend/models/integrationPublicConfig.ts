@@ -45,6 +45,8 @@ export const INTEGRATION_SECRET_CONFIG_KEYS = [
   // Slack and hosted-MCP refs beside them.
   'feedAccessTokenRef',
   'feedRefreshTokenRef',
+  // The GroupMe access token's ref (`services/chatConnectorTokens`).
+  'accessTokenRef',
 ] as const;
 
 export const toPublicIntegrationConfig = (

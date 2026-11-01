@@ -4,6 +4,7 @@ import Task from '../models/Task';
 import { foldExpiredDigests, readFoldedDigest, settleFoldedDigest } from './agentDigestFoldService';
 import { postToPublicAddress } from './outboundUrlGuard';
 import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
+import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES } from './unansweredMentionService';
 
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
@@ -99,10 +100,10 @@ const DIGEST_FRAME_ROWS = 8;
 // NO_REPLY (a suppressed runtime failure is `runtime_*_suppressed` instead), so
 // it is the seat's decision, not a refusal. Treating it as unread left a
 // silent seat's digest pending, and the hourly unread-digest wake re-woke it to
-// be silent again (rhea, 2026-10-25). A turn that printed nothing acks as
+// be silent again. A turn that printed nothing acks as
 // `empty-output`, which is not a read: that is what a silently failing seat
 // sends every turn, and reading on it would drain a backlog nobody saw
-// (sable, #2753).
+// (#2753).
 const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome === 'posted'
   || outcome === 'acknowledged'
   || (outcome === 'no_action' && (!reason || reason === 'silent_or_empty'));
@@ -110,9 +111,13 @@ const digestConsumedBy = (outcome?: string, reason?: string): boolean => outcome
 // TASK-264: how many stuck in-process events one sweep re-runs, and how long a
 // 'queued'/'running' AgentRun may sit before it counts as abandoned.
 const STUCK_REDISPATCH_BATCH = 50;
+// A person's messages retired per pass, one at a time with a line each
+// (TASK-656). 686 retirements of every type took 7 days, so 50 per 10-minute
+// pass keeps up with any realistic backlog.
+const UNANSWERED_MENTION_BATCH = 50;
 const ABANDONED_RUN_MINUTES = 30;
 
-// TASK-265 (Rhea on #2236): an in-process event is born 'delivered', so one
+// TASK-265: an in-process event is born 'delivered', so one
 // left 'pending' for an agent that now runs in-process was routed before the
 // agent moved in-process (the hosted migration: enqueue decides routing before
 // the insert) and nothing polls it. The sweep runs those once they are a
@@ -128,7 +133,7 @@ const STRANDED_PENDING_MAX_AGE_MS = 30 * 60 * 1000;
 // Phase A (default): a presented nonce must match; an absent one is accepted
 // and counted. Phase B: an absent nonce is refused.
 //
-// **Phase B flips PER CONSUMER, not globally** (Sam, 2026-08-30). The first
+// **Phase B flips PER CONSUMER, not globally**. The first
 // draft gated the flip on `withoutNonce` reaching zero across everything,
 // which hands a veto to whichever consumer is slowest — and one of them, the
 // openclaw extension, has been parked since 2026-08-20. A parked runtime
@@ -194,6 +199,7 @@ interface InstallationDoc {
   _id?: unknown;
   agentName?: string;
   instanceId?: string;
+  displayName?: string;
   podId?: unknown;
   status?: string;
   scopes?: string[];
@@ -315,6 +321,59 @@ const normalizeConfig = (config: unknown): Record<string, unknown> => {
   return config as Record<string, unknown>;
 };
 
+// Inline webhook replies take the same service path as the CAP post route
+// (agentsRuntime.ts): the unseen-messages freshness hold, postMessage with the
+// installation config, then the mention or agent-dm enqueue. Resolves to a
+// recorded outcome only when the reply was held or skipped; throws when the post fails.
+const postInlineReply = async (
+  installation: InstallationDoc, event: EventDoc, content: string,
+): Promise<{ outcome: string; reason: string } | null> => {
+  // eslint-disable-next-line global-require
+  const AgentMessageService = require('./agentMessageService');
+  // eslint-disable-next-line global-require
+  const AgentMentionService = require('./agentMentionService');
+  // eslint-disable-next-line global-require
+  const AgentSendFreshness = require('./agentSendFreshness');
+  // eslint-disable-next-line global-require
+  const PodModel = require('../models/Pod');
+
+  const agentUser = await AgentIdentityService.getOrCreateAgentUser(event.agentName, {
+    instanceId: event.instanceId || 'default',
+    displayName: installation.displayName,
+  });
+  // The event's own message is the one being answered, so only messages that
+  // landed after it hold the reply (see unseenMessages).
+  const hold = await AgentSendFreshness.unseenMessages(agentUser._id, event.podId, {
+    seenThroughMessageId: event.payload?.messageId,
+  });
+  if (hold) return { outcome: 'skipped', reason: 'unseen_messages' };
+
+  const result = await AgentMessageService.postMessage({
+    agentName: event.agentName,
+    instanceId: event.instanceId || 'default',
+    displayName: installation.displayName,
+    podId: event.podId,
+    content,
+    replyToMessageId: null,
+    threadRootId: null,
+    installationConfig: installation.config || null,
+  });
+  if (result?.skipped) return { outcome: 'skipped', reason: String(result.reason || 'skipped') };
+  if (!result?.success || !result.message) throw new Error('post returned no message');
+
+  PodModel.findById(event.podId).select('type').lean()
+    .then((podDoc: { type?: string } | null) => {
+      const args = {
+        podId: event.podId, message: result.message, userId: agentUser._id, username: agentUser.username,
+      };
+      return podDoc?.type === 'agent-dm'
+        ? AgentMentionService.enqueueDmEvent(args)
+        : AgentMentionService.enqueueMentions(args);
+    })
+    .catch((err: Error) => console.warn('[webhook] inline reply enqueue failed:', err.message));
+  return null;
+};
+
 const deliverEventViaWebhook = async (installation: InstallationDoc, event: EventDoc): Promise<void> => {
   const runtimeConfig = (normalizeConfig(installation.config)?.runtime || {}) as Record<string, unknown>;
   const { webhookUrl, webhookSecret } = runtimeConfig as { webhookUrl?: string; webhookSecret?: string };
@@ -366,18 +425,21 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
       outcome?: string; content?: string; reason?: string;
     };
 
+    // The endpoint's claim is only what it asked for. If the inline reply does
+    // not land, record that instead of 'posted'.
+    let recordedOutcome = outcome;
+    let recordedReason = reason;
     if (outcome === 'posted' && content) {
       try {
-        // eslint-disable-next-line global-require
-        const agentMessageService = require('./agentMessageService');
-        await agentMessageService.postAgentMessage({
-          agentName: event.agentName,
-          instanceId: event.instanceId,
-          podId: event.podId,
-          content: String(content),
-        });
+        const held = await postInlineReply(installation, event, String(content));
+        if (held) {
+          recordedOutcome = held.outcome;
+          recordedReason = held.reason;
+        }
       } catch (postErr) {
         console.warn(`[webhook] Failed to post message for ${event.agentName}:`, (postErr as Error).message);
+        recordedOutcome = 'error';
+        recordedReason = 'inline_post_failed';
       }
     }
 
@@ -394,9 +456,9 @@ const deliverEventViaWebhook = async (installation: InstallationDoc, event: Even
     await AgentEvent.findByIdAndUpdate(event._id, {
       status: 'acked',
       deliveredAt: new Date(),
-      delivery: AgentEventService.normalizeDeliveryMeta({ outcome, reason }),
+      delivery: AgentEventService.normalizeDeliveryMeta({ outcome: recordedOutcome, reason: recordedReason }),
     });
-    if (digestConsumedBy(outcome, reason)) {
+    if (digestConsumedBy(recordedOutcome, recordedReason)) {
       await AgentEventService.settleLegacyDigest(event).catch((err: Error) => {
         console.warn('[webhook] digest settle failed:', err.message);
       });
@@ -809,6 +871,11 @@ class AgentEventService {
     };
   }
 
+  // Test seam: unit tests drive the real webhook delivery, not a copy of it.
+  static deliverEventViaWebhook(installation: InstallationDoc, event: EventDoc): Promise<void> {
+    return deliverEventViaWebhook(installation, event);
+  }
+
   static normalizeDeliveryMeta(input: unknown = {}): DeliveryMeta | null {
     if (!input || typeof input !== 'object') return null;
     const allowedOutcomes = new Set(['acknowledged', 'posted', 'no_action', 'skipped', 'error']);
@@ -903,6 +970,7 @@ class AgentEventService {
     let requeuedDelivered = 0;
     let expiredDelivered = 0;
     const attemptCap = Math.max(requeueMaxAttempts, 1);
+    const retireError = `requeue cap exhausted after ${attemptCap} delivery attempts without an ack`;
 
     // TASK-264: an in-process (native) turn that died with its process — a
     // deploy, a crash — leaves its event 'delivered' with no ack. The requeue
@@ -978,21 +1046,34 @@ class AgentEventService {
       // #67 symptom above — stuck, unretried, unsurfaced — for the full 168h
       // retention window. Disjoint from the requeue by `attempts` alone, so
       // the two passes cannot touch the same document in one run.
+      //
+      // TASK-656: a person's message is retired one row at a time, so each one
+      // this pass retires gets exactly one visible line instead of silence. A
+      // second replica's pass loses the compare-and-set and posts nothing.
+      // Its own catch: a failure here must not cost the bulk retire its pass.
+      expiredDelivered += await this.retireUnansweredMentions(requeueThreshold, attemptCap, retireError)
+        .catch((waitErr: Error) => {
+          console.warn('[agent-event] unanswered-mention retire pass failed:', waitErr.message);
+          return 0;
+        });
+      // Everything else. A person's message past the batch waits for the next
+      // pass rather than being retired here without its line.
       const expireResult = await AgentEvent.updateMany(
         {
           status: 'delivered',
           deliveredAt: { $lt: requeueThreshold },
           attempts: { $gte: attemptCap },
+          type: { $nin: PERSON_WAITING_EVENT_TYPES },
         },
         {
           $set: {
             status: 'failed',
             deliveryNonce: null,
-            error: `requeue cap exhausted after ${attemptCap} delivery attempts without an ack`,
+            error: retireError,
           },
         },
       ) as { modifiedCount?: number };
-      expiredDelivered = expireResult?.modifiedCount || 0;
+      expiredDelivered += expireResult?.modifiedCount || 0;
       if (expiredDelivered > 0) {
         console.warn(`[agent-event] retired ${expiredDelivered} 'delivered' events that exhausted the ${attemptCap}-attempt requeue cap`);
       }
@@ -1071,6 +1152,38 @@ class AgentEventService {
       rescuedPendingInProcess,
       closedPendingInProcess,
     };
+  }
+
+  /**
+   * TASK-656. Retires cap-exhausted events a person is waiting on, one row at
+   * a time, and posts one visible line for each it retires. The retire is a
+   * compare-and-set on the delivery nonce, so a second replica's pass loses
+   * it and posts nothing.
+   */
+  static async retireUnansweredMentions(threshold: Date, attemptCap: number, error: string): Promise<number> {
+    const waiting = await AgentEvent.find({
+      status: 'delivered',
+      deliveredAt: { $lt: threshold },
+      attempts: { $gte: attemptCap },
+      type: { $in: PERSON_WAITING_EVENT_TYPES },
+    }).sort({ deliveredAt: 1 }).limit(UNANSWERED_MENTION_BATCH).lean() as EventDoc[];
+    let retiredCount = 0;
+    for (const event of waiting) {
+      // eslint-disable-next-line no-await-in-loop -- bounded by UNANSWERED_MENTION_BATCH
+      const retired = await AgentEvent.findOneAndUpdate(
+        { _id: event._id, status: 'delivered', deliveryNonce: event.deliveryNonce ?? null },
+        { $set: { status: 'failed', deliveryNonce: null, error } },
+        { new: true },
+      ).lean() as EventDoc | null;
+      if (retired) {
+        retiredCount += 1;
+        // eslint-disable-next-line no-await-in-loop
+        await noteUnansweredMention(retired).catch((lineErr: Error) => {
+          console.warn('[agent-event] unanswered-mention line not posted:', lineErr.message);
+        });
+      }
+    }
+    return retiredCount;
   }
 
   /**
@@ -1154,7 +1267,7 @@ class AgentEventService {
    * identities (projections included), and keeps only the rows the routing
    * rule itself runs, with the engine in effect. An unfinished migration's
    * rows are therefore not targets, so their events can never fill the
-   * sweep's batch and starve a runnable agent's event (Rhea on #2236).
+   * sweep's batch and starve a runnable agent's event.
    */
   static async inProcessEventTargets(): Promise<{ agentName: string; instanceId: string; podId: unknown }[]> {
     const identities = await AgentInstallation.find({ status: 'active', ...IN_PROCESS_RUNTIME_FILTER })
@@ -1477,7 +1590,7 @@ class AgentEventService {
    * runtime runs for `installationDoc` (merged with `sibling`'s config when the
    * row is a projection with no runtime of its own), or null. Shared by
    * `resolveInProcessInstallation` and the stranded-event sweep, so the sweep
-   * can never select an event that enqueue would not run (Rhea on #2236).
+   * can never select an event that enqueue would not run.
    */
   static inProcessInstallationFrom(
     installationDoc: InstallationDoc,
@@ -2169,6 +2282,22 @@ class AgentEventService {
       deliveryNonce: deliveryId,
     }, { $set: { deliveredAt: new Date() } });
     return result.modifiedCount === 1;
+  }
+
+  // True when the event is this agent's own and is mid-flight or already
+  // checkpointed. A turn that checkpoints (`commonly_checkpoint_event` acks
+  // mid-turn, which clears the nonce) keeps renewing, and `renewDelivery` then
+  // returns false because the row is `acked`. The listener check-in on
+  // /events/renew uses this to tell that runner from a request with made-up ids.
+  static async holdsEvent(eventId: string, agentName: string, instanceId: string): Promise<boolean> {
+    if (!eventId) return false;
+    const found = await AgentEvent.exists({
+      _id: eventId,
+      agentName: String(agentName).toLowerCase(),
+      instanceId: String(instanceId || 'default'),
+      status: { $in: ['delivered', 'acked'] },
+    });
+    return Boolean(found);
   }
 
   // ADR-012 §3: acknowledge is status-gated. Lifecycle:

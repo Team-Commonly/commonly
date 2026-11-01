@@ -14,7 +14,7 @@ const MIN = 60 * 1000;
 const iso = (ms) => new Date(ms).toISOString();
 
 // claude/Sonnet → claude/Haiku → opencode/DeepSeek. No codex/GPT entry: the
-// fleet has no GPT access (D111), so no example chain falls back to one.
+// fleet has no GPT access, so no example chain falls back to one.
 const CONFIG = {
   harness: 'claude',
   model: 'claude-sonnet-5-5',

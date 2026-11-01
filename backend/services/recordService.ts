@@ -13,7 +13,7 @@
  */
 import { createHash } from 'crypto';
 import {
-  appendToChain, readChain, RecordStoreUnavailableError, type ChainRef,
+  appendToChain, readChain, RecordStoreUnavailableError, type ChainPage, type ChainRef,
 } from '../repositories/recordChainRepository';
 
 type Store = Parameters<typeof readChain>[1];
@@ -42,9 +42,15 @@ export type RecordLineInput = {
   actor?: RecordActor | null;
   data?: Record<string, unknown>;
 };
-export { RecordStoreUnavailableError, type ChainRef };
+export { RecordStoreUnavailableError, type ChainPage, type ChainRef };
 
 export const BOARD_ACTOR: RecordActor = format.BOARD_ACTOR;
+/**
+ * The server itself, for an entry no person or board write caused (a grant
+ * found expired at use). The format's own default system actor is `seats`,
+ * the local run writer, which would misname the server.
+ */
+export const SERVER_ACTOR: RecordActor = Object.freeze({ type: 'system', id: 'commonly' }) as RecordActor;
 
 /**
  * Pods the record is written and served for. Nothing is public until a
@@ -151,19 +157,28 @@ const chainKey = (ref: ChainRef): string => `${ref.podId}\u0000${ref.taskId || '
 
 /**
  * Record a committed source event, best-effort. Returns at once; never throws.
+ * `inputs` may be a function, called in the chain's queue, when building the
+ * lines needs a lookup: the event keeps the queue position of the call.
  * A failure logs one bounded line naming the chain and kinds, never data.
  */
-export const emitRecord = (ref: ChainRef, eventKey: string, inputs: RecordLineInput[]): void => {
-  if (!ref?.podId || inputs.length === 0 || !isRecordEnabled(ref.podId)) return;
+export const emitRecord = (
+  ref: ChainRef,
+  eventKey: string,
+  inputs: RecordLineInput[] | (() => Promise<RecordLineInput[]>),
+): void => {
+  if (!ref?.podId || !isRecordEnabled(ref.podId)) return;
+  if (Array.isArray(inputs) && inputs.length === 0) return;
   const key = chainKey(ref);
   const run = async (): Promise<void> => {
+    let lines: RecordLineInput[] = [];
     try {
-      await appendRecord(ref, eventKey, inputs);
+      lines = Array.isArray(inputs) ? inputs : await inputs();
+      if (lines.length > 0) await appendRecord(ref, eventKey, lines);
     } catch (error) {
       const err = error as { name?: string; code?: string; message?: string };
       console.warn(
         `[record] append failed pod=${ref.podId} task=${ref.taskId || '-'} `
-        + `kinds=${inputs.map((input) => input.kind).join(',')}: `
+        + `kinds=${lines.map((input) => input.kind).join(',') || '?'}: `
         + `${err.code || err.name || 'Error'} ${String(err.message || '').slice(0, 160)}`,
       );
     }
@@ -186,17 +201,24 @@ export type RecordExport = {
   entries: number;
   head: string | null;
   jsonl: string;
+  /** Pass as `after` for the next page; null once a page reaches the head. */
+  nextAfter: number | null;
 };
 
-/** A chain as stored, in record-v1's file form: one line per entry, each ending in \n. */
-export async function readRecordExport(ref: ChainRef, db?: Store): Promise<RecordExport> {
-  const chain = await readChain(ref, db);
-  if (!chain) return { runId: null, entries: 0, head: null, jsonl: '' };
+/**
+ * One page of a chain as stored, in record-v1's file form: one line per entry,
+ * each ending in \n. `entries` and `head` describe the whole chain, not the
+ * page, so every page names the same head.
+ */
+export async function readRecordExport(ref: ChainRef, db?: Store, page: ChainPage = {}): Promise<RecordExport> {
+  const chain = await readChain(ref, db, page);
+  if (!chain) return { runId: null, entries: 0, head: null, jsonl: '', nextAfter: null };
   return {
     runId: chain.runId,
-    entries: chain.lines.length,
+    entries: chain.headSeq,
     head: chain.headHash,
     jsonl: chain.lines.map((line) => `${line}\n`).join(''),
+    nextAfter: chain.nextAfter,
   };
 }
 

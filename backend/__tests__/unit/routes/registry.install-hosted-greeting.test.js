@@ -178,4 +178,17 @@ describe('registry install — a hosted agent joins with one post', () => {
     expect(introPosts()).toHaveLength(1);
     expect(introPosts()[0][0].authorKind).toBe('kernel');
   });
+
+  it('in a personal room, the greeting gets no handle, since plain replies are auto-routed there', async () => {
+    Pod.findById.mockImplementation(() => {
+      const doc = { _id: 'pod-1', createdBy: 'user-1', members: ['user-1', 'bot-1'], type: 'agent-room' };
+      return { ...buildLeanChain(doc), select: () => buildLeanChain(doc) };
+    });
+    const res = makeRes();
+    await installHandler(makeReq('hosted'), res);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(mockFireFirstContact).toHaveBeenCalledWith(expect.not.objectContaining({ mentionHandle: expect.anything() }));
+    expect(mockFireFirstContact).toHaveBeenCalledWith(expect.objectContaining({ hostedAgentUserId: 'bot-1' }));
+  });
 });

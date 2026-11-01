@@ -43,7 +43,7 @@ import { spawnInOwnGroup, wantsOwnProcessGroup } from '@commonlyai/seats/process
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
-import { accessSync, constants } from 'fs';
+import { accessSync, constants, existsSync, realpathSync } from 'fs';
 import {
   chmod,
   lstat,
@@ -51,6 +51,7 @@ import {
   mkdtemp,
   readFile,
   readlink,
+  realpath,
   rename,
   rm,
   symlink,
@@ -58,10 +59,15 @@ import {
   writeFile,
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
+import { createRequire } from 'module';
 import {
+  basename,
+  delimiter,
   dirname,
+  isAbsolute,
   join,
   resolve as pathResolve,
+  sep,
 } from 'path';
 import { CREDENTIAL_KEY, writeCredentialFile } from '../credential-file.js';
 import { supportedGitHooks } from '../commit-attribution.js';
@@ -71,6 +77,7 @@ import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -115,7 +122,7 @@ const buildPrompt = buildMemoryPreamble;
 //     when they also carry a `command`. `auditDeclaredMcp` classifies by
 //     `transport` and never judges the command of an entry that declared an
 //     http one, so emitting it here executes a command the guard did not
-//     approve — the case Vera measured on 2026-09-18 (Connectors 69774).
+//     approve — a case measured on 2026-09-18.
 //   - Token-bearing values ride through `env_vars`, never a `-c ...env=...`
 //     argv override. Command lines are visible to other same-user processes
 //     unless the OS sandbox blocks process inspection; keeping bearer tokens
@@ -212,6 +219,10 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       '-c',
       `mcp_servers.${server.name}.default_tools_approval_mode="approve"`,
     );
+    // ...except the tools no public seat is offered (public-withheld-tools.js).
+    if (ctx.publicSeat) {
+      flags.push('-c', `mcp_servers.${server.name}.disabled_tools=[${PUBLIC_WITHHELD_TOOLS.map(toml).join(',')}]`);
+    }
     if (rest.length) {
       flags.push('-c', `mcp_servers.${server.name}.args=[${rest.map(toml).join(',')}]`);
     }
@@ -274,18 +285,114 @@ const statOrNull = async (path) => {
 // therefore expose global private instructions even though shell reads of
 // ~/.codex are denied. Give every public wrapper identity its own persistent
 // Codex home for sessions/state, with only an auth symlink back to the
-// operator credential. The symlink itself lives under ~/.commonly, which the
-// permission profile denies to model-generated commands.
-const preparePublicCodexHome = async (ctx) => {
+// operator credential. On macOS the symlink lives under ~/.commonly, which the
+// permission profile denies to model-generated commands; on Linux (below) its
+// target, ~/.codex, is denied instead.
+//
+// On Linux the home cannot sit under ~/.commonly. Codex (0.164 and later)
+// runs its file helper by exec'ing `$CODEX_HOME/tmp/arg0-linux/.../
+// codex-linux-sandbox` inside bwrap, and grants read on that one file, but a
+// denied ancestor always wins, so the profile's ~/.commonly deny made every
+// public session fail at bootstrap with "bwrap: execvp ... Permission denied".
+// Outside every granted root the home is still unreadable to model commands:
+// Codex binds the helper file alone, not the home around it (measured on
+// codex-cli 0.164.0, where a home there reached the model call). That holds
+// only while the workspace does not contain the home, so such a workspace is
+// refused. macOS has no arg0 helper and keeps its homes where they were.
+const LEGACY_CODEX_HOMES = (home) => join(home, '.commonly', 'codex-homes');
+
+const contains = (outer, inner) => inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
+
+const stateHomeUnderCommonly = (ctx, home) => new Error(
+  `XDG_STATE_HOME (${ctx.env?.XDG_STATE_HOME}) puts the public Codex home under ${join(home, '.commonly')}, `
+  + 'which the public sandbox denies on Linux. Point it elsewhere or unset it.',
+);
+
+const publicCodexHomesRoot = (ctx) => {
+  const home = ctx._homeDir || homedir();
+  if ((ctx._platform || process.platform) !== 'linux') return LEGACY_CODEX_HOMES(home);
+  const stateHome = ctx.env?.XDG_STATE_HOME;
+  const root = join(stateHome && isAbsolute(stateHome) ? stateHome : join(home, '.local', 'state'),
+    'commonly', 'codex-homes');
+  // An override that lands back under the denied tree would bring the
+  // bootstrap failure above back with it. Checked here by name, and again
+  // through symlinks before anything is created (preparePublicCodexHome).
+  if (contains(pathResolve(home, '.commonly'), pathResolve(root))) throw stateHomeUnderCommonly(ctx, home);
+  return root;
+};
+
+// The real path of a path that may not exist yet: its nearest existing
+// ancestor resolved, with the rest appended.
+const realpathOfNearest = async (path) => {
+  const rest = [];
+  let current = pathResolve(path);
+  for (;;) {
+    try {
+      return join(await realpath(current), ...rest);
+    } catch (err) {
+      // Only a missing path walks up. Anything else (EACCES, ELOOP) would leave
+      // the containment check comparing a path nobody resolved: fail closed.
+      if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') throw err;
+      const parent = dirname(current);
+      if (parent === current) return join(current, ...rest);
+      rest.unshift(basename(current));
+      current = parent;
+    }
+  }
+};
+
+const preparePublicCodexHome = async (ctx, childEnv) => {
   const operatorHome = ctx.env?.CODEX_HOME
     || process.env.CODEX_HOME
     || join(homedir(), '.codex');
   const identity = ctx.agentName || ctx.cwd || 'anonymous';
   const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
-  const publicHome = ctx._publicCodexHome
-    || join(homedir(), '.commonly', 'codex-homes', identityHash);
+  const homesRoot = publicCodexHomesRoot(ctx);
+  const publicHome = ctx._publicCodexHome || join(homesRoot, identityHash);
   if (pathResolve(publicHome) === pathResolve(operatorHome)) {
     throw new Error('public codex home must be isolated from the operator CODEX_HOME');
+  }
+
+  // Checked before anything is created or moved, so a refused workspace
+  // never receives the home or a migrated seat's sessions.
+  if (!ctx._publicCodexHome && homesRoot !== LEGACY_CODEX_HOMES(ctx._homeDir || homedir())) {
+    const home = ctx._homeDir || homedir();
+    const [realRoot, realCommonly] = await Promise.all([realpathOfNearest(homesRoot), realpathOfNearest(join(home, '.commonly'))]);
+    if (contains(realCommonly, realRoot)) throw stateHomeUnderCommonly(ctx, home);
+    const workspacePath = pathResolve(ctx.cwd || process.cwd());
+    const [workspace, realHome] = await Promise.all([
+      // As in realpathOfNearest: only a missing workspace falls back to its own path.
+      realpath(workspacePath).catch((err) => {
+        if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') return workspacePath;
+        throw err;
+      }),
+      realpathOfNearest(publicHome),
+    ]);
+    if (contains(workspace, realHome)) {
+      throw new Error(`public codex agents cannot run in ${ctx.cwd}: it contains the agent's own `
+        + `Codex home (${publicHome}), which the sandbox would then expose. Run it in a project folder.`);
+    }
+  }
+
+  // A Linux seat that ran before the move keeps its sessions, so a resumed
+  // thread still resumes. Across filesystems it starts fresh instead, and
+  // says so: the old sessions stay where they were, untouched, and a copy
+  // that failed halfway would leave a home later runs never migrate again.
+  const legacyHome = join(LEGACY_CODEX_HOMES(ctx._homeDir || homedir()), identityHash);
+  if (!ctx._publicCodexHome && legacyHome !== publicHome && !(await statOrNull(publicHome))) {
+    const legacy = await statOrNull(legacyHome);
+    if (legacy?.isDirectory()) {
+      await mkdir(homesRoot, { recursive: true, mode: 0o700 });
+      try {
+        await rename(legacyHome, publicHome);
+      } catch (err) {
+        if (err?.code !== 'EXDEV') throw err;
+        console.warn(
+          `[codex] ${legacyHome} is on another filesystem from ${publicHome}; starting a fresh Codex home. `
+          + 'Earlier sessions stay in the old home and will not resume; move it there by hand to keep them.',
+        );
+      }
+    }
   }
 
   await mkdir(publicHome, { recursive: true, mode: 0o700 });
@@ -312,7 +419,53 @@ const preparePublicCodexHome = async (ctx) => {
     // fail closed with its normal "not logged in" error.
     await unlink(targetAuth);
   }
-  return publicHome;
+  // Model commands are sandboxed through the arg0 helper in this folder, a
+  // symlink to Codex's own binary, and unlike the file helper that path grants
+  // itself neither the folder nor the binary. Without both, every command
+  // fails with "bwrap: execvp ... No such file or directory" (measured on
+  // codex-cli 0.164.0 with a user-prefix npm install). Only where the home
+  // sits outside every deny can the folder's grant take effect.
+  const helperReadPaths = [];
+  if (homesRoot !== LEGACY_CODEX_HOMES(ctx._homeDir || homedir())) {
+    const helperDirectory = join(publicHome, 'tmp', 'arg0-linux');
+    await mkdir(helperDirectory, { recursive: true, mode: 0o700 });
+    helperReadPaths.push(helperDirectory);
+    // Looked up on the PATH the child gets, so the grant names the binary it runs.
+    const binary = (ctx._codexNativeBinary || codexNativeBinary)(childEnv);
+    if (binary) helperReadPaths.push(binary);
+  }
+  return { home: publicHome, helperReadPaths };
+};
+
+// The native binary `codex` on PATH runs: itself when it is one, or the one
+// the npm launcher (`bin/codex.js`) picks, resolved the way that launcher does.
+// Only the Linux targets are named because only the Linux helper needs this.
+const LINUX_CODEX_TARGETS = { x64: 'x86_64-unknown-linux-musl', arm64: 'aarch64-unknown-linux-musl' };
+
+export const codexNativeBinary = (env) => {
+  const onPath = String(env?.PATH || '').split(delimiter).filter(Boolean)
+    .map((dir) => join(dir, 'codex'))
+    .find((candidate) => {
+      try {
+        accessSync(candidate, constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  if (!onPath) return null;
+  const real = realpathSync(onPath);
+  if (basename(real) !== 'codex.js') return real;
+  const target = LINUX_CODEX_TARGETS[process.arch];
+  if (!target) return null;
+  const packageRoot = dirname(dirname(real));
+  let vendorRoot = join(packageRoot, 'vendor');
+  try {
+    const platformPackage = createRequire(real).resolve(`@openai/codex-linux-${process.arch}/package.json`);
+    vendorRoot = join(dirname(platformPackage), 'vendor');
+  } catch { /* the launcher falls back to its own vendor folder too */ }
+  const binary = join(vendorRoot, target, 'bin', 'codex');
+  return existsSync(binary) ? realpathSync(binary) : null;
 };
 
 // A public seat ran with none of its declared skills: this adapter never read
@@ -380,6 +533,7 @@ const publicPermissionProfileFlags = (
   mode,
   commitAttributionEnv = null,
   mcpReadDirectories = [],
+  codexHelperReadPaths = [],
 ) => {
   if (!PUBLIC_SANDBOX_MODES.has(mode)) {
     throw new Error(
@@ -422,6 +576,7 @@ const publicPermissionProfileFlags = (
     ...(commitHooksPath ? [`${toml(commitHooksPath)}="read"`] : []),
     ...originalHookPaths.map((hookPath) => `${toml(hookPath)}="read"`),
     ...mcpReadDirectories.map((path) => `${toml(path)}="read"`),
+    ...codexHelperReadPaths.map((path) => `${toml(path)}="read"`),
   ].join(',');
   const shellEnvironment = [
     'PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_*',
@@ -472,6 +627,7 @@ const buildArgs = ({
   effort = null,
   commitAttributionEnv = null,
   mcpReadDirectories = [],
+  codexHelperReadPaths = [],
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -495,6 +651,7 @@ const buildArgs = ({
         publicSandboxMode,
         commitAttributionEnv,
         mcpReadDirectories,
+        codexHelperReadPaths,
       ),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
@@ -661,7 +818,7 @@ export default {
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     //
-    // Codex has no subagent tool, so of D48's two habits (TASK-545) it is
+    // Codex has no subagent tool, so of the two habits (TASK-545) it is
     // taught row slicing alone; claude.js adds parallel reads. A public seat
     // answers strangers rather than working board rows, so it is taught neither.
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
@@ -707,6 +864,10 @@ export default {
       const publicSandboxMode = sandbox?.trust === 'public'
         ? sandbox?.mode ?? 'workspace'
         : null;
+      const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
+      const publicCodexHome = publicSandboxMode !== null
+        ? await preparePublicCodexHome(ctx, childEnv)
+        : null;
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
         prompt: fullPrompt,
@@ -717,9 +878,9 @@ export default {
         model: seatModel,
         effort: ctx.environment?.effort,
         commitAttributionEnv: ctx.commitAttributionEnv,
+        codexHelperReadPaths: publicCodexHome?.helperReadPaths || [],
       });
-      const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
-      // Derived from the process environment, so the bootstrap export has to be
+      // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
       // and a value left here is a value codex's own children inherit. Kept only
       // when the substitution genuinely needed it (`forwardedEnv` names that
@@ -732,10 +893,17 @@ export default {
         Object.assign(childEnv, ctx.commitAttributionEnv);
       }
       if (publicSandboxMode !== null) {
-        childEnv.CODEX_HOME = await preparePublicCodexHome(ctx);
+        childEnv.CODEX_HOME = publicCodexHome.home;
         await writePublicCodexInstructions(childEnv.CODEX_HOME, ctx);
       }
 
+      // The awaits above can outlast a supervisor stall window. Once it has
+      // aborted, the attempt has already settled and a retry may be running,
+      // so no process is created for this one. Checked synchronously before
+      // runCodex, so the spawn itself cannot race the abort.
+      if (ctx.signal?.aborted) {
+        throw ctx.signal.reason || new Error('codex spawn cancelled before the process started');
+      }
       const { threadId } = await runCodex({
         args,
         cwd: ctx.cwd,

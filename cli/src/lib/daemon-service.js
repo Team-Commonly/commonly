@@ -203,6 +203,10 @@ export const installDaemonService = async ({
   cliPath = resolve(process.argv[1]),
   // The provider keys the seats' adapters declare (adapters/index.js).
   providerKeyEnvNames = [],
+  // Settings carried only when set, never warned about when absent: the
+  // operator's opt-outs (COMMONLY_NO_UPDATE_CHECK), which reach the seats the
+  // daemon spawns only through this file.
+  optionalEnvNames = [],
   env = process.env,
   writeFile = writeServiceFile,
   mkdirp,
@@ -221,7 +225,7 @@ export const installDaemonService = async ({
     chmod(daemonLogPath(home), 0o600);
   }
 
-  const providerEnv = providerEnvPairs({ names: providerKeyEnvNames, env });
+  const providerEnv = providerEnvPairs({ names: [...new Set([...providerKeyEnvNames, ...optionalEnvNames])], env });
   const missing = missingProviderKeys({ names: providerKeyEnvNames, env });
 
   if (target.kind === 'launchd') {
@@ -237,7 +241,10 @@ export const installDaemonService = async ({
   } else {
     writeFile(target.file, systemdUnit({ nodePath, cliPath, providerEnv }));
     await execCmd(['systemctl', '--user', 'daemon-reload']);
-    await execCmd(['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT]);
+    // restart, not `enable --now`: a unit that is already running must pick up
+    // the environment just written, the way launchd's unload/load does.
+    await execCmd(['systemctl', '--user', 'enable', SYSTEMD_UNIT]);
+    await execCmd(['systemctl', '--user', 'restart', SYSTEMD_UNIT]);
   }
   for (const name of missing) {
     warn(`${name} is not set in this shell, so it is NOT in the service file. A seat whose adapter needs it will fail to start; export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);

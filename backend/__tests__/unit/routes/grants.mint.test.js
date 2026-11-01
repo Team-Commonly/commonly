@@ -3,7 +3,7 @@
  * Installable and lets a grant allow only tools that Installable enables.
  * RoomGrant runs on memory Mongo; the pod, the connection and the seeded
  * Installable are mocked at their module boundaries, as grants.read does.
- * The follow-up (Vera 67821) adds: the grant's installationId is the
+ * The follow-up adds: the grant's installationId is the
  * connection's, and a body value is refused like brokerId.
  */
 const express = require('express');
@@ -18,7 +18,16 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.userId = id;
   return next();
 });
-jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
+jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
+  const agent = req.get('x-test-agent');
+  if (agent) req.agentUser = { _id: agent, isBot: true, botMetadata: { ownerUserId: req.get('x-test-agent-owner') } };
+  return next();
+});
+const mockRecordGrantIssued = jest.fn();
+jest.mock('../../../services/brokerRecordService', () => ({
+  ...jest.requireActual('../../../services/brokerRecordService'),
+  recordGrantIssued: (...args) => mockRecordGrantIssued(...args),
+}));
 jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Integration', () => ({ findById: jest.fn(), findOne: jest.fn() }));
 jest.mock('../../../models/Installable', () => ({ findOne: jest.fn() }));
@@ -406,6 +415,78 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
     const res = await hostedMint({ installationId: HOSTED_ID });
     expect(res.status).toBe(400);
     expect(res.body).toMatchObject({ error: 'invalid_installation' });
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+});
+
+// TASK-560: a minted grant reaches the record once, issued by whoever minted it.
+describe('record wiring', () => {
+  test('the owner mints: grant.issued names the owner as a person', async () => {
+    const res = await mint({});
+    expect(res.status).toBe(201);
+    expect(mockRecordGrantIssued).toHaveBeenCalledTimes(1);
+    const [grant, issuer] = mockRecordGrantIssued.mock.calls[0];
+    expect(grant).toMatchObject({ grantId: res.body.grantId, target: { kind: 'pod', id: POD } });
+    expect(typeof grant.toObject).toBe('undefined');
+    expect(issuer).toEqual({ type: 'human', id: OWNER });
+  });
+
+  test('a refused mint writes nothing', async () => {
+    expect((await mint({ audience: [] })).status).toBe(400);
+    expect(mockRecordGrantIssued).not.toHaveBeenCalled();
+  });
+
+  test('an agent attenuates: the child is issued by that agent, as an agent', async () => {
+    const parent = await mint({});
+    mockRecordGrantIssued.mockClear();
+    const res = await request(app).post(`/api/grants/${parent.body.grantId}/attenuate`)
+      .set('x-test-agent', SEAT).set('x-test-agent-owner', OWNER)
+      .send({ tools: ['github.list_issues'], expiresAt: new Date(Date.now() + 86400000).toISOString() });
+    expect(res.status).toBe(201);
+    const [child, issuer] = mockRecordGrantIssued.mock.calls[0];
+    expect(child).toMatchObject({ grantId: res.body.grantId, parentGrantId: parent.body.grantId });
+    expect(issuer).toEqual({ type: 'agent', id: SEAT, owner: OWNER });
+  });
+});
+
+describe('task-bound mint', () => {
+  const Task = require('../../../models/Task');
+  beforeEach(async () => {
+    await Task.deleteMany({});
+    await Task.create({ podId: POD, taskNum: 1, taskId: 'TASK-1', title: 'Task-bound grant', status: 'pending' });
+  });
+  test('stores the authorized task tuple and ignores caller epoch values', async () => {
+    const res = await mint({ binding: { taskId: 'TASK-1', podId: POD }, taskEpoch: 999 });
+    expect(res.status).toBe(201);
+    expect(res.body.binding).toEqual({ taskId: 'TASK-1', podId: POD, endsOn: 'task.done' });
+    expect(res.body.taskEpoch).toBe(0);
+  });
+  test.each([
+    { taskId: 'TASK-1', podId: 'aaaaaaaaaaaaaaaaaaaaaa02' },
+    { taskId: 'TASK-404', podId: POD },
+    { taskId: 'TASK-1' },
+  ])('rejects foreign or missing task context without saving: %p', async (binding) => {
+    const res = await mint({ binding });
+    expect([400, 404]).toContain(res.status);
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+  test('refuses a binding that ends on anything but task.done, without saving', async () => {
+    const res = await mint({ binding: { taskId: 'TASK-1', podId: POD, endsOn: 'expiresAt' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_task_binding');
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+  test('the route leaves a bound grant to mintGrant, so the record gets one line', async () => {
+    mockRecordGrantIssued.mockClear();
+    const res = await mint({ binding: { taskId: 'TASK-1', podId: POD } });
+    expect(res.status).toBe(201);
+    expect(mockRecordGrantIssued).not.toHaveBeenCalled();
+  });
+  test('rejects a closed task', async () => {
+    await Task.updateOne({ podId: POD, taskId: 'TASK-1' }, { $set: { status: 'done' } });
+    const res = await mint({ binding: { taskId: 'TASK-1', podId: POD } });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('task_closed');
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 });

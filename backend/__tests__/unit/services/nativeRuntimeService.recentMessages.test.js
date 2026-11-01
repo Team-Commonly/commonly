@@ -84,10 +84,14 @@ const sentUserMessage = () => {
 };
 
 describe('native runtime: recent pod messages inline (recentMessages)', () => {
-  const previousEnv = { baseUrl: process.env.LITELLM_BASE_URL, masterKey: process.env.LITELLM_MASTER_KEY };
+  const previousEnv = {
+    baseUrl: process.env.LITELLM_BASE_URL, masterKey: process.env.LITELLM_MASTER_KEY, pgHost: process.env.PG_HOST,
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // The pod-message read follows PG_HOST; the unit setup unsets it.
+    process.env.PG_HOST = 'pg.test';
     process.env.LITELLM_BASE_URL = 'http://litellm.test';
     process.env.LITELLM_MASTER_KEY = 'test-key';
     AgentRun.create.mockImplementation(async (doc) => ({
@@ -108,6 +112,8 @@ describe('native runtime: recent pod messages inline (recentMessages)', () => {
     else process.env.LITELLM_BASE_URL = previousEnv.baseUrl;
     if (previousEnv.masterKey === undefined) delete process.env.LITELLM_MASTER_KEY;
     else process.env.LITELLM_MASTER_KEY = previousEnv.masterKey;
+    if (previousEnv.pgHost === undefined) delete process.env.PG_HOST;
+    else process.env.PG_HOST = previousEnv.pgHost;
   });
 
   test('an opted-in turn opens with the prior messages, oldest first, and leaves out the one it answers', async () => {

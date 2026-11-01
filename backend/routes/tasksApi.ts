@@ -1,4 +1,5 @@
 import { requirePodMember } from '../services/podMembershipService';
+import { onTaskClosed } from '../services/roomGrantService';
 import { compareTaskPriority, isTaskPriority } from '../utils/taskPriority';
 import { createHash } from 'crypto';
 import type { Request, Response } from 'express';
@@ -236,6 +237,9 @@ router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) 
     // One `now` for the whole page: derived per row, two rows either side of a
     // tick boundary could otherwise report lease states that never coexisted.
     const now = new Date();
+    // The same holder id the claim route writes, so a seat can tell its own
+    // claims from a peer's without knowing its user id (TASK-640).
+    const caller = resolveAgentInstanceId(req) || userId?.toString() || '';
     return res.json({
       permissions: {
         canWrite: access.canWrite === true,
@@ -243,7 +247,11 @@ router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) 
         // route will serve (routes/podRecords.ts).
         canReadRecord: isRecordEnabled(podId) && isRecordReader((access.pod as { members?: unknown })?.members, userId),
       },
-      tasks: tasks.sort(compareTaskPriority).map((task: Record<string, unknown>) => ({ ...task, leaseState: deriveLeaseState(task, now) })),
+      tasks: tasks.sort(compareTaskPriority).map((task: Record<string, unknown>) => ({
+        ...task,
+        leaseState: deriveLeaseState(task, now),
+        claimedByMe: Boolean(caller) && task.claimedBy === caller,
+      })),
     });
   } catch (err) {
     console.error('GET /tasks error:', err);
@@ -350,7 +358,7 @@ router.post('/:podId', rateLimit({
             { _id: existing._id, status: 'done', updatedAt: existing.updatedAt },
             {
               $set: {
-                status: 'pending', assignee: assignee || null, claimedAt: null,
+                status: 'pending', assignee: assignee || null, claimedByUserId: null, claimedAt: null,
                 claimExpiresAt: null, notes: 'Reopened — the same source is active again.',
                 updatedAt: writeTime,
               },
@@ -387,7 +395,7 @@ router.post('/:podId', rateLimit({
       : source || 'human';
     let task;
     try {
-      task = await Task.create({ podId, taskNum, taskId, title, priority: priorityInput || 'P2', assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef, updates: [initUpdate] });
+      task = await Task.create({ podId, taskNum, taskId, title, priority: priorityInput || 'P2', assignee: assignee || null, dep: dep || null, depMockOk: !!depMockOk, parentTask: parentTask || null, source: taskSource, sourceRef, createdByUserId: userId?.toString() || null, updates: [initUpdate] });
     } catch (createErr) {
       const duplicate = createErr as {
         code?: number;
@@ -558,37 +566,57 @@ const liveLeaseHolder = (
 // sets neither — so either signal means "a seat is calling".
 const isSeatCaller = (req: AuthReq): boolean => Boolean(req.agentUser || req.user?.isBot);
 
-// The refusal both conflicting write paths share, so the two cannot drift into
+type LeaseCheck = { refusal: Record<string, unknown> | null; overridesHolder: string | null };
+
+// The refusal every conflicting write path shares, so the two cannot drift into
 // disagreeing about what a live lease is, and so the body has one shape: the fields
 // `claim` already returns on a lost race, which is what tells a refused writer who
-// holds the row and when it frees. Returns null when the write may proceed.
-const leaseRefusalForWrite = async (
+// holds the row and when it frees. `refusal` is null when the write may proceed;
+// `overridesHolder` names the holder a creator is writing over, for the update note.
+const leaseCheckForWrite = async (
   podId: string,
   taskId: string,
   req: AuthReq,
   userId: unknown,
-): Promise<Record<string, unknown> | null> => {
-  if (!isSeatCaller(req)) return null;
+  { creatorOverride = false }: { creatorOverride?: boolean } = {},
+): Promise<LeaseCheck> => {
+  if (!isSeatCaller(req)) return { refusal: null, overridesHolder: null };
   const claimKey = resolveAgentInstanceId(req) || userId?.toString() || '';
   const current = await Task.findOne({
     podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
     taskId,
-  }).select('status claimedBy claimedAt claimExpiresAt').lean() as {
+  }).select('status claimedBy claimedAt claimExpiresAt createdByUserId').lean() as {
     status?: string; claimedBy?: string | null; claimedAt?: Date | null; claimExpiresAt?: Date | null;
+    createdByUserId?: string | null;
   } | null;
   const holder = current ? liveLeaseHolder(current, new Date(), claimKey) : null;
-  if (!holder) return null;
+  if (!holder) return { refusal: null, overridesHolder: null };
+  // The creator is the stamp the create route wrote, never inferred from `updates`:
+  // on a native row the first claim or note would otherwise make its author the creator.
+  if (creatorOverride && userId && current?.createdByUserId === String(userId)) {
+    return { refusal: null, overridesHolder: holder.claimedBy };
+  }
   return {
-    error: 'Task is claimed by another seat',
-    status: current?.status || 'claimed',
-    claimedBy: holder.claimedBy,
-    claimExpiresAt: holder.claimExpiresAt,
+    refusal: {
+      error: 'Task is claimed by another seat',
+      status: current?.status || 'claimed',
+      claimedBy: holder.claimedBy,
+      claimExpiresAt: holder.claimExpiresAt,
+    },
+    overridesHolder: null,
   };
 };
 
 // Recheck the same lease at the Mongo write boundary. A read-only refusal
 // above can race with a peer claiming the row before findOneAndUpdate runs.
-const writableLeaseCondition = (req: AuthReq, userId: unknown, now: Date): Record<string, unknown> => {
+// The creator clause is the write-side twin of the override above, so a race
+// cannot refuse the creator a write its read allowed.
+const writableLeaseCondition = (
+  req: AuthReq,
+  userId: unknown,
+  now: Date,
+  { creatorOverride = false }: { creatorOverride?: boolean } = {},
+): Record<string, unknown> => {
   if (!isSeatCaller(req)) return {};
   const claimKey = resolveAgentInstanceId(req) || userId?.toString() || '';
   return { $or: [
@@ -597,6 +625,7 @@ const writableLeaseCondition = (req: AuthReq, userId: unknown, now: Date): Recor
     { claimedBy: { $in: [null, ''] } },
     { claimExpiresAt: { $lt: now } },
     { claimExpiresAt: null, claimedAt: { $lt: new Date(now.getTime() - TASK_CLAIM_LEASE_MS) } },
+    ...(creatorOverride && userId ? [{ createdByUserId: String(userId) }] : []),
   ] };
 };
 
@@ -627,7 +656,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     // Classify the current holder only after this claim's CAS wins:
     // a same-holder continuation (renewal, or re-take after the holder's own
     // lapse) is no news to the room and must not fan out (the redundant wakes
-    // burned a model turn per seat per renewal and filled Sharpen with seats
+    // burned a model turn per seat per renewal and filled a pod with seats
     // narrating why they won't act — measured 2026-08-25, 4 wakes in one
     // session for one task). The revision CAS binds the ownership snapshot to
     // this successful write, even if an assignee PATCH raced the claim.
@@ -635,22 +664,38 @@ router.post('/:podId/:taskId/claim', rateLimit({
     // The deferral budget is per-lease, not per-task: a seat that renews
     // normally must never inherit a predecessor's spent budget, or the third
     // holder of a hot task gets rescued on its first lapse.
-    const update = { $set: { status: 'claimed', claimedBy, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0, lapsedFrom: null }, $push: { updates: { text: `Claimed by ${author}`, author, authorId: userId?.toString() || null, createdAt: now } } };
-    // One CAS, five ways to win: the task is unclaimed; the caller already
+    const update = { $set: { status: 'claimed', claimedBy, claimedByUserId: userId?.toString() || null, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0, lapsedFrom: null }, $push: { updates: { text: `Claimed by ${author}`, author, authorId: userId?.toString() || null, createdAt: now } } };
+    // The primary CAS stamps authenticated ownership. Five ways to win: the task is unclaimed; the caller already
     // holds it (renewal); the holder's lease lapsed; the claim predates
     // leases entirely (claimExpiresAt null) and is older than one lease; or
     // this named task is blocked. Legacy claims get their effective expiry
     // derived from claimedAt, so no migration and no instant steal of work
     // someone claimed minutes ago.
-    const result = await updateTaskWithRevisionSnapshot({
+    let result = await updateTaskWithRevisionSnapshot({
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
       // A blocked row is deliberately resumable only when a seat names its
       // task id. Do not add it to claimableConditions: that predicate also
       // drives the discovery query, where a parked dependency is not work a
       // peer may pick up speculatively.
-      $or: [...claimableConditions(now, claimedBy), { status: 'blocked' }],
+      $or: [
+        ...claimableConditions(now),
+        { status: 'claimed', claimedBy, $or: [
+          { claimedByUserId: userId?.toString() },
+          // Legacy runtime-bearer claims already used this immutable ID.
+          { claimedByUserId: null, claimedBy: userId?.toString() },
+        ] },
+        { status: 'blocked' },
+      ],
     }, update);
+    if (!result && claimedBy !== userId?.toString()) {
+      // Preserve name-only legacy renewal, but never promote a display key to
+      // authenticated grant authority. A fresh claim after release/expiry does.
+      result = await updateTaskWithRevisionSnapshot({
+        podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId,
+        status: 'claimed', claimedBy, claimedByUserId: null,
+      }, { ...update, $set: { ...update.$set, claimedByUserId: null } });
+    }
     if (!result) {
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { claimedBy?: string; status?: string; claimExpiresAt?: Date | null } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
@@ -708,6 +753,32 @@ router.post('/:podId/:taskId/claim', rateLimit({
   }
 });
 
+// ADR-012 §4: the task-completed trigger, fired by every close path (`complete`, and a
+// PATCH to `done`), so a row closed either way reaches the same downstream. Fire-and-forget;
+// only writes when the assignee is a recognized agent member of the pod.
+const dispatchTaskCompleted = (podId: unknown, task: unknown, prUrl?: string | null): void => {
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const triggers = require('../services/systemExchangeTriggers') as {
+      recordTaskCompleted: (a: {
+        podId: string;
+        assignee?: string | null;
+        taskTitle: string;
+        prUrlOrStatus?: string | null;
+      }) => Promise<void>;
+    };
+    const taskWithFields = task as { title?: string; assignee?: string | null; prUrl?: string | null };
+    void triggers.recordTaskCompleted({
+      podId: String(podId),
+      assignee: taskWithFields.assignee ?? null,
+      taskTitle: taskWithFields.title || '',
+      prUrlOrStatus: prUrl || taskWithFields.prUrl || null,
+    });
+  } catch (triggerErr) {
+    console.warn('[system-exchange] task-completed dispatch failed:', (triggerErr as Error).message);
+  }
+};
+
 router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId, taskId } = req.params || {};
@@ -718,21 +789,23 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     // AX entry 61 (2026-09-19): the write below filters on `status` alone, so this
     // route reported `done` through a peer's live lease. A seat must stand down; a
-    // person never is.
-    const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
-    if (refusal) return res.status(409).json(refusal);
-    const updateText = prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`;
+    // person never is. TASK-669: the row's creator may close over a live claim, and
+    // the close names the claim it overrode.
+    const lease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
+    if (lease.refusal) return res.status(409).json(lease.refusal);
+    const overNote = lease.overridesHolder ? ` (overrode ${lease.overridesHolder}'s live claim)` : '';
+    const updateText = `${prUrl ? `Completed by ${author} · PR: ${prUrl}` : `Completed by ${author}`}${overNote}`;
     const now = new Date();
-    const update = { $set: { status: 'done', completedAt: now, ...(prUrl && { prUrl }), ...(notes && { notes }) }, $push: { updates: { text: updateText, author, authorId: userId?.toString() || null, createdAt: now } } };
+    const update = { $inc: { grantEpoch: 1 }, $set: { status: 'done', claimedByUserId: null, completedAt: now, ...(prUrl && { prUrl }), ...(notes && { notes }) }, $push: { updates: { text: updateText, author, authorId: userId?.toString() || null, createdAt: now } } };
     const task = await updateTaskWithRevision({
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
       status: { $in: ['claimed', 'pending'] },
-      ...writableLeaseCondition(req, userId, now),
-    }, update) as { taskId?: string; updates?: unknown[] } | null;
+      ...writableLeaseCondition(req, userId, now, { creatorOverride: true }),
+    }, update) as { podId?: unknown; taskId?: string; status?: string; grantEpoch?: number; updates?: unknown[] } | null;
     if (!task) {
-      const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
-      if (racedRefusal) return res.status(409).json(racedRefusal);
+      const racedLease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
+      if (racedLease.refusal) return res.status(409).json(racedLease.refusal);
       const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { status?: string } | null;
       if (!existing) return res.status(404).json({ error: 'Task not found' });
       const error = existing.status === 'done'
@@ -742,35 +815,16 @@ router.post('/:podId/:taskId/complete', taskWriteRateLimit(30), auth, async (req
           : `Task cannot be completed from status '${existing.status || 'unknown'}'`;
       return res.status(409).json({ error, status: existing.status });
     }
-    // ADR-012 §4: task-completed trigger. Fire-and-forget; only writes when
-    // the assignee is a recognized agent member of the pod.
-    try {
-      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-      const triggers = require('../services/systemExchangeTriggers') as {
-        recordTaskCompleted: (a: {
-          podId: string;
-          assignee?: string | null;
-          taskTitle: string;
-          prUrlOrStatus?: string | null;
-        }) => Promise<void>;
-      };
-      const taskWithFields = task as { title?: string; assignee?: string | null; prUrl?: string | null };
-      void triggers.recordTaskCompleted({
-        podId: String(podId),
-        assignee: taskWithFields.assignee ?? null,
-        taskTitle: taskWithFields.title || '',
-        prUrlOrStatus: prUrl || taskWithFields.prUrl || null,
-      });
-    } catch (triggerErr) {
-      console.warn('[system-exchange] task-completed dispatch failed:', (triggerErr as Error).message);
-    }
+    dispatchTaskCompleted(podId, task, prUrl);
     // A done task needs no human: close its outstanding handoff cards. The
     // PATCH gate already does this on a status change; this route wrote
     // `done` without it, and 11 of 12 open handoffs on 2026-09-19 pointed at
     // tasks completed here.
+    // task.done is queued before the close hook's grant.revoked (ADR-033 §4).
+    recordTaskTransition({ podId, task, from: null, to: 'done', at: now, doneBy: userId });
+    await onTaskClosed(task);
     await resolveTaskAttention(task);
     emitTaskUpdated(podId, task, 'updated');
-    recordTaskTransition({ podId, task, from: null, to: 'done', at: now, doneBy: userId });
     notifyAgents(req, podId, task, 'updated', { status: 'claimed' });
     return res.json({ task });
   } catch (err) {
@@ -820,7 +874,9 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
       if (hold) return res.status(409).json(hold);
     }
     if (priority !== undefined) {
-      const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
+      // Not creator-overridable: a priority change is a PATCH field, and the
+      // override is recorded there (TASK-669).
+      const refusal = (await leaseCheckForWrite(podId || '', taskId || '', req, userId)).refusal;
       if (refusal) return res.status(409).json(refusal);
     }
     const priorityUpdate = priority === undefined ? {} : { priority };
@@ -952,6 +1008,8 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
             ...priorityUpdate,
             status: 'claimed',
             claimedBy: claimKey,
+            // Legacy restoration matches display provenance, not an authenticated holder.
+            claimedByUserId: null,
             claimedAt: now,
             claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS),
             rescueDeferrals: 0,
@@ -1056,10 +1114,18 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
       if (!VALID_TASK_STATUSES.includes(normalized)) {
         return res.status(400).json({
           error: `status must be one of ${VALID_TASK_STATUSES.join('|')} (got '${fieldUpdates.status}'). `
-            + 'Aliases accepted: in_progress→claimed, completed→done, todo→pending.',
+            + 'Aliases accepted: completed→done, todo→pending.',
         });
       }
+      // A seat cannot PATCH a claim. A claim is a lease, and this route writes none for a
+      // seat, so the row would sit `claimed` under a lease nobody renews. A person's Start
+      // is still a PATCH: it writes no lease, and any lease the row carries stays as it is.
+      // Whether a Start should carry a lease is TASK-723.
+      if (normalized === 'claimed' && isSeatCaller(req)) {
+        return res.status(400).json({ error: "status 'claimed' takes a lease: claim the row with commonly_claim_task (POST /:podId/:taskId/claim)" });
+      }
       fieldUpdates.status = normalized;
+      if (normalized !== 'claimed') fieldUpdates.claimedByUserId = null;
     }
     const access = await requirePodMember(podId || '', userId, { write: true });
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
@@ -1067,9 +1133,21 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     // board editor and the openclaw `commonly_update_task` retitle or reassign a
     // row. The note-append route above is deliberately NOT gated — a note on
     // someone else's row is the coordination a claim exists to enable, and posting
-    // one is also how a holder renews.
-    const refusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
-    if (refusal) return res.status(409).json(refusal);
+    // one is also how a holder renews. The row's creator may edit over a live claim
+    // (TASK-669), and the edit names the claim it overrode.
+    const lease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
+    if (lease.refusal) return res.status(409).json(lease.refusal);
+    // A PATCH to done on a row that is already done is not a second completion. It keeps
+    // the original completedAt and fires no close side effects; the other fields in the
+    // same PATCH still apply. The write filter below makes the transition itself atomic.
+    if (fieldUpdates.status === 'done') {
+      const current = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId });
+      if (current?.status === 'done') {
+        delete fieldUpdates.status;
+        delete fieldUpdates.claimedByUserId;
+        if (Object.keys(fieldUpdates).length === 0) return res.json({ task: current });
+      }
+    }
     const author = await resolveAuthor(req);
     const needsPriorOwner = fieldUpdates.assignee !== undefined || fieldUpdates.status !== undefined;
     const changeParts: string[] = [];
@@ -1081,15 +1159,22 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
     if (fieldUpdates.notes !== undefined) changeParts.push('notes updated');
     if (fieldUpdates.priority !== undefined) changeParts.push(`priority → ${fieldUpdates.priority}`);
     if (fieldUpdates.title !== undefined) changeParts.push('title updated');
+    if (lease.overridesHolder) changeParts.push(`overrode ${lease.overridesHolder}'s live claim`);
     let writeTime = needsPriorOwner ? new Date() : null;
+    // A done row carries its completion time, as `complete` writes it (CodeRabbit, #3089).
+    if (fieldUpdates.status === 'done') fieldUpdates.completedAt = writeTime;
     const update: Record<string, unknown> = {
       $set: writeTime ? { ...fieldUpdates, updatedAt: writeTime } : fieldUpdates,
     };
+    if (fieldUpdates.status === 'done') update.$inc = { grantEpoch: 1 };
     if (changeParts.length > 0) update.$push = { updates: { text: `${author} updated: ${changeParts.join(', ')}`, author, authorId: userId?.toString() || null, createdAt: new Date() } };
     const taskFilter = {
       podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
       taskId,
-      ...writableLeaseCondition(req, userId, new Date()),
+      ...writableLeaseCondition(req, userId, new Date(), { creatorOverride: true }),
+      // Only a row that is not done yet can move into done, so completedAt, the grant
+      // epoch and the close hooks fire once even when two PATCHes race.
+      ...(fieldUpdates.status === 'done' ? { status: { $ne: 'done' } } : {}),
     };
     let task = null;
     let racedRevision = false;
@@ -1113,10 +1198,11 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
       racedRevision = true;
       writeTime = new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1));
       (update.$set as Record<string, unknown>).updatedAt = writeTime;
+      if (fieldUpdates.status === 'done') (update.$set as Record<string, unknown>).completedAt = writeTime;
     }
     if (!task) {
-      const racedRefusal = await leaseRefusalForWrite(podId || '', taskId || '', req, userId);
-      if (racedRefusal) return res.status(409).json(racedRefusal);
+      const racedLease = await leaseCheckForWrite(podId || '', taskId || '', req, userId, { creatorOverride: true });
+      if (racedLease.refusal) return res.status(409).json(racedLease.refusal);
       if (racedRevision) return res.status(409).json({ error: 'Task changed concurrently; retry' });
       if (!needsPriorOwner) {
         const existing = await Task.findOne({ podId: taskFilter.podId, taskId }).select('_id').lean();
@@ -1139,9 +1225,7 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
       }
       task.updatedAt = writeTime;
     }
-    if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
-    if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
-    emitTaskUpdated(podId, task, 'updated');
+    // Before the close hook, so task.done precedes its grant.revoked (ADR-033 §4).
     if (fieldUpdates.status !== undefined && previousTask && writeTime) {
       recordTaskTransition({
         podId,
@@ -1153,6 +1237,15 @@ router.patch('/:podId/:taskId', taskWriteRateLimit(60), auth, async (req: AuthRe
         doneBy: userId,
       });
     }
+    if (fieldUpdates.status === 'blocked') await recordTaskAttention(task, { includeBlocked: true });
+    if (fieldUpdates.status === 'done') {
+      task.grantEpoch = (task.grantEpoch || 0) + 1;
+      await onTaskClosed(task);
+      // Only the transition into done announces the completion; a repeated PATCH to done does not.
+      if (previousTask?.status !== 'done') dispatchTaskCompleted(podId, task, null);
+    }
+    if (fieldUpdates.status !== undefined && fieldUpdates.status !== 'blocked') await resolveTaskAttention(task);
+    emitTaskUpdated(podId, task, 'updated');
     notifyAgents(req, podId, task, 'updated', previousTask);
     return res.json({ task });
   } catch (err) {

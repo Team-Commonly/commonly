@@ -678,3 +678,24 @@ test('the drawer links to the task record only when the server says the reader m
   expect(screen.getByRole('dialog')).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'View record' })).toBeNull();
 });
+
+test('detail status is a segment that moves the task, and older updates fold behind a toggle', async () => {
+  const updates = ['one', 'two', 'three', 'four', 'five'].map((text) => ({ text, author: 'Kai', authorId: 'kai-id' }));
+  const task = { taskId: 'TASK-5', title: 'Segmented', status: 'pending', watchers: [], updates };
+  wireAxios([task]);
+  axios.patch.mockResolvedValue({ data: { task: { ...task, status: 'claimed' } } });
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-5'));
+  const dialog = screen.getByRole('dialog', { name: /Segmented/ });
+  const segment = within(dialog).getByRole('radiogroup', { name: 'Status' });
+  expect(within(segment).getByRole('radio', { name: 'Pending' })).toHaveAttribute('aria-checked', 'true');
+  fireEvent.click(within(segment).getByRole('radio', { name: /in progress/i }));
+  await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/api/v1/tasks/pod-1/TASK-5', { status: 'claimed' }, expect.any(Object)));
+  // Newest three show; the two oldest fold behind the toggle.
+  expect(within(dialog).queryByText('one')).toBeNull();
+  expect(within(dialog).queryByText('two')).toBeNull();
+  expect(within(dialog).getByText('five')).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Show 2 earlier updates' }));
+  expect(within(dialog).getByText('one')).toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: 'Hide earlier updates' })).toHaveAttribute('aria-expanded', 'true');
+});

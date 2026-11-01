@@ -18,6 +18,8 @@ import ApprovalAction, {
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { assertAgentRuntimeMayJoinPod } from './outsiderGrantAgentJoinPolicy';
+import { recordApprovalOutcome } from './brokerRecordService';
+import { nextFreeByoName } from './byoNameAllocator';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation, AgentRegistry } = require('../models/AgentRegistry');
@@ -477,6 +479,38 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     }
   }
 
+  // The card proposes the name the connect page would land on (TASK-329): the
+  // same allocator the page's suggestion uses, so the person approves the name
+  // they get. A seat this owner already holds in this pod is a reconnect, and
+  // keeps its name.
+  let cardParams = params || {};
+  let cardSummary = trimmedSummary;
+  if (actionType === 'connect_local_agent') {
+    const requestedName = String(cardParams.name || '').trim().toLowerCase();
+    const reconnect = await AgentInstallation.findOne({
+      agentName: requestedName, podId, instanceId: 'default', installedBy: ownerUserId, status: 'active',
+    });
+    const freeName = reconnect
+      ? requestedName
+      : await nextFreeByoName(ownerUserId, requestedName, { podId: String(podId) });
+    if (freeName !== requestedName) {
+      if (!LOCAL_AGENT_NAME_RE.test(freeName)) {
+        return {
+          ok: false,
+          error: `no free name near "${requestedName}" fits the 40-character limit — pick a shorter name`,
+        };
+      }
+      cardParams = { ...cardParams, name: freeName };
+      // The summary is what the card prints, so it must name the same agent.
+      // requestedName passed validateParams, but escape it anyway: it is user input.
+      const escapedName = requestedName.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+      cardSummary = cardSummary.replace(
+        new RegExp(`(?<![a-z0-9-])${escapedName}(?![a-z0-9-])`, 'g'),
+        freeName,
+      );
+    }
+  }
+
   const row = await ApprovalAction.create({
     ...(options.runId ? { runId: options.runId,
       ...(options.runPodId ? { runPodId: options.runPodId } : {}) } : {}),
@@ -486,12 +520,12 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     ...(actionType === 'tool_call' && agentUserId ? { agentUserId } : {}),
     instanceId: instanceId || 'default',
     actionType,
-    params: actionType === 'tool_call' ? {} : (params || {}),
+    params: actionType === 'tool_call' ? {} : cardParams,
     ...(actionType === 'tool_call' && toolCall ? { toolCall } : {}),
     ...(actionType === 'tool_call' && approvalExpiresAt
       ? { expiresAt: new Date(Math.min(Date.now() + 24 * 60 * 60 * 1000, approvalExpiresAt.getTime())) }
       : {}),
-    summary: trimmedSummary.slice(0, 500),
+    summary: cardSummary.slice(0, 500),
   });
 
   // The card message. `content` is the plain-text fallback so legacy
@@ -871,6 +905,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     expired.toolCallCode = 'approval_expired';
     expired.toolCallTrailId = await recordToolCallDecision(expired, 'refused', 'approval_expired', parkedCall);
     await expired.save();
+    recordApprovalOutcome(expired, parkedCall, { kind: 'expired' });
     await updateCardEverywhere(expired);
     await enqueueToolCallResolvedEvent(expired);
     return { status: 409, body: { error: 'expired', approval: buildCardPayload(expired) } };
@@ -965,6 +1000,12 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     transitioned.toolCallTrailId = await recordToolCallDecision(transitioned, 'refused', 'approval_declined', parkedCall);
     await transitioned.save();
   }
+  // One terminal decision per parked call, after its ending has been saved
+  // (ADR-033 B3). The broker's own trail row for an approved run carries the
+  // approval id, so recordBrokerCall leaves it to this line.
+  if (parkedCall) {
+    recordApprovalOutcome(transitioned, parkedCall, { kind: decision });
+  }
 
   await updateCardEverywhere(transitioned);
   if (decision === 'approved' && !parkedCall) {
@@ -1036,6 +1077,7 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
       result.toolCallCode = 'approval_expired';
       result.toolCallTrailId = await recordToolCallDecision(result, 'refused', 'approval_expired', row.toolCall);
       await result.save();
+      recordApprovalOutcome(result, row.toolCall, { kind: 'expired' });
       await updateCardEverywhere(result);
       await enqueueToolCallResolvedEvent(result);
     }

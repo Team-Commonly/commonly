@@ -11,6 +11,10 @@ jest.mock('../../models/User', () => ({
   updateOne: jest.fn(),
 }));
 
+const mockRecordListenerCheckIn = jest.fn();
+jest.mock('../../services/agentListenerCheckIn', () => ({
+  recordListenerCheckIn: (...args) => mockRecordListenerCheckIn(...args),
+}));
 const mockMarkByoConnectionAttempt = jest.fn();
 jest.mock('../../services/onboardingMarks', () => ({
   markByoConnectionAttempt: (...args) => mockMarkByoConnectionAttempt(...args),
@@ -147,7 +151,13 @@ describe('agentWebSocketService', () => {
       });
       expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
         { _id: 'install-1', 'runtimeTokens.tokenHash': hash(token) },
-        { $set: { 'runtimeTokens.$.lastUsedAt': expect.any(Date) } },
+        // An installation-bound token is stamped as a listener check-in too (TASK-721).
+        {
+          $set: {
+            'runtimeTokens.$.lastUsedAt': expect.any(Date),
+            'runtimeTokens.$.lastListenedAt': expect.any(Date),
+          },
+        },
       );
       expect(result).toEqual({
         agentName: 'openclaw',
@@ -177,7 +187,13 @@ describe('agentWebSocketService', () => {
       });
       expect(User.updateOne).toHaveBeenCalledWith(
         { _id: 'user-1', 'agentRuntimeTokens.tokenHash': hash(token) },
-        { $set: { 'agentRuntimeTokens.$.lastUsedAt': expect.any(Date) } },
+        // A WebSocket connect is a listener check-in as well as a use (TASK-719).
+        {
+          $set: {
+            'agentRuntimeTokens.$.lastUsedAt': expect.any(Date),
+            'agentRuntimeTokens.$.lastListenedAt': expect.any(Date),
+          },
+        },
       );
       expect(AgentInstallation.findOne).not.toHaveBeenCalled();
       expect(result).toEqual({
@@ -282,6 +298,13 @@ describe('agentWebSocketService', () => {
       expect(agentWebSocketService.pingInterval).not.toBeNull();
     });
 
+    it('does not let the ping interval own process lifetime', () => {
+      jest.useRealTimers();
+      agentWebSocketService.init(mockIo);
+
+      expect(agentWebSocketService.pingInterval.hasRef()).toBe(false);
+    });
+
     it('disconnects the identity room when its last installation is removed', () => {
       agentWebSocketService.init(mockIo);
       agentWebSocketService.disconnectIdentity('OpenClaw', 'Default');
@@ -339,6 +362,25 @@ describe('agentWebSocketService', () => {
 
       // lastPong should be updated
       expect(agentData.lastPong).toBeGreaterThan(initialPong);
+    });
+
+    it('a pong from the live socket is a listener check-in, one from a replaced socket is not', () => {
+      AgentInstallation.findOne.mockResolvedValue({ agentName: 'openclaw', instanceId: 'default' });
+      agentWebSocketService.init(mockIo);
+      if (connectionHandler) connectionHandler(mockSocket);
+      mockSocket.agentUserId = 'bot-user-1';
+      mockSocket.tokenHash = 'hashed-token';
+      const pongHandler = mockSocket.on.mock.calls.find((call) => call[0] === 'pong')?.[1];
+
+      mockRecordListenerCheckIn.mockClear();
+      pongHandler();
+      expect(mockRecordListenerCheckIn).toHaveBeenCalledWith('bot-user-1', 'hashed-token');
+
+      // A reconnect replaced this socket: the old one must not keep the seat listening.
+      agentWebSocketService.connectedAgents.get('openclaw:default').socket = { id: 'socket-2' };
+      mockRecordListenerCheckIn.mockClear();
+      pongHandler();
+      expect(mockRecordListenerCheckIn).not.toHaveBeenCalled();
     });
 
     it('sends ping to all connected agents every 30 seconds', () => {

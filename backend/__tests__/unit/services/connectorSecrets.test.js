@@ -6,11 +6,13 @@ const {
   ConnectorSecretStaleWrite,
   get,
   put,
+  putIfAbsent,
   rewrap,
   revoke,
 } = require('../../../services/connectorSecrets');
 const {
   DISCORD_WEBHOOK_URL,
+  GROUPME_ACCESS_TOKEN,
   SLACK_BOT_TOKEN,
 } = require('../../../services/connectorSecretKinds');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
@@ -55,7 +57,7 @@ describe('connectorSecrets', () => {
     // The corruption this guards: with a filter on `integrationId` alone the
     // second put does not collide — it matches the first kind's document and
     // $sets the new ciphertext onto it, so the first ref stays valid and starts
-    // decrypting to the second secret (vera 74141). Varying the kind is the
+    // decrypting to the second secret. Varying the kind is the
     // whole test; the refs and both plaintexts must differ.
     const integrationId = new mongoose.Types.ObjectId().toString();
     const slackRef = await put(integrationId, SLACK_BOT_TOKEN, 'xoxb-secret');
@@ -81,7 +83,7 @@ describe('connectorSecrets', () => {
     // `syncIndexes()` keeps every declared index, so a `unique: true` left on
     // `integrationId` while the compound index is added leaves the OLD key
     // enforced: the second kind is rejected by an index whose name no longer
-    // says what it does (wren 74127).
+    // says what it does.
     const declared = ConnectorSecret.schema.indexes();
     expect(declared).toHaveLength(1);
     const [spec, options] = declared[0];
@@ -118,5 +120,27 @@ describe('connectorSecrets', () => {
     const ref = await put(new mongoose.Types.ObjectId().toString(), SLACK_BOT_TOKEN, 'xoxb-secret');
     await revoke(ref);
     expect(await ConnectorSecret.findById(ref)).toBeNull();
+  });
+
+  // TASK-539: the import path. Insert-only, so a secret a live edit stored
+  // first is never replaced with an older copy.
+  it('putIfAbsent inserts when the pair is free and reports it created', async () => {
+    const integrationId = new mongoose.Types.ObjectId().toString();
+    const { ref, created } = await putIfAbsent(integrationId, GROUPME_ACCESS_TOKEN, 'imported');
+
+    expect(created).toBe(true);
+    expect(await get(ref)).toBe('imported');
+  });
+
+  it('putIfAbsent returns the existing ref and keeps its material when the pair is taken', async () => {
+    const integrationId = new mongoose.Types.ObjectId().toString();
+    const live = await put(integrationId, GROUPME_ACCESS_TOKEN, 'live-edit');
+
+    const { ref, created } = await putIfAbsent(integrationId, GROUPME_ACCESS_TOKEN, 'older-copy');
+
+    expect(created).toBe(false);
+    expect(ref).toBe(live);
+    expect(await get(live)).toBe('live-edit');
+    expect(await ConnectorSecret.countDocuments({ integrationId })).toBe(1);
   });
 });

@@ -392,7 +392,7 @@ const checkPinDirection = ({ exec = execFileSync } = {}) => {
   // fetch-depth, so actions/checkout took depth 1 and fetched only the PR's
   // merge ref: `origin/main` did not exist, no merge base could be computed,
   // and this probe returned undetermined on every pull request while the
-  // caller dropped it — the check never fired. Measured by @otto on #2497.
+  // caller dropped it — the check never fired. Measured on #2497.
   // Two halves to the fix: that job now checks out with `fetch-depth: 0`
   // (the depth belongs in the workflow, not in a git fetch from inside a
   // guard, where it would also pollute the fetch assertions this suite makes

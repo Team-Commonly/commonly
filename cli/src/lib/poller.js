@@ -9,6 +9,7 @@
 import { createClient } from './api.js';
 import { formatDigestFrame } from './digest-frame.js';
 import { EMPTY_OUTPUT } from './claim-outcome.js';
+import { createPollLiveness, formatStall, resolvePollLivenessMs } from './poll-liveness.js';
 
 // Delivery failures that must stop a consumer rather than fall through to the
 // normal at-least-once retry path. A stale delivery belongs to a replacement
@@ -36,8 +37,12 @@ export const startPoller = ({
   agentName,
   instanceId = 'default',
   intervalMs = 5000,
+  loginInstance,    // the --instance the connect ran with, so the login hint names it
   onEvent,          // async (event) => { outcome, content? }
   onError,          // (err) => void
+  pollLivenessMs,   // TASK-338: see lib/poll-liveness.js
+  pollLivenessCheckMs,
+  onPollStalled,    // ({ stalledMs }) => void; the connect command exits on it
 }) => {
   const client = createClient({ instance: instanceUrl, token });
   let running = true;
@@ -48,16 +53,35 @@ export const startPoller = ({
   // reprovision-all; 5+ wastes rate-limit budget after the real-revoke case.
   let consecutiveAuthErrors = 0;
   const MAX_AUTH_ERRORS = 3;
+  let pollStalled = false;
+  const pollLiveness = createPollLiveness({
+    limitMs: resolvePollLivenessMs(pollLivenessMs),
+    checkEveryMs: pollLivenessCheckMs,
+    onStall: ({ stalledMs }) => {
+      if (!running) return;
+      pollStalled = true;
+      running = false;
+      pollLiveness.stop();
+      onError?.(new Error(`poll stalled: no inbox poll settled for ${formatStall(stalledMs)} — stopping poller`));
+      onPollStalled?.({ stalledMs });
+    },
+  });
 
   const poll = async () => {
     if (!running) return;
 
     try {
-      const { events = [] } = await client.get('/api/agents/runtime/events', {
+      // Same clock as `agent run`: running from here to the scheduled wait,
+      // paused while the local handler takes the event.
+      pollLiveness.arm();
+      const page = await client.get('/api/agents/runtime/events', {
         agentName,
         instanceId,
         limit: 10,
       });
+      pollLiveness.arm();
+      if (pollStalled) return;
+      const { events = [] } = page;
 
       // A digest is received context, not a webhook invocation. The runtime
       // inbox claims it only alongside a wake from the same pod.
@@ -82,9 +106,12 @@ export const startPoller = ({
         let result = { outcome: 'no_action' };
         try {
           // A handler that returns nothing said nothing: not a read of the digest.
+          pollLiveness.pause();
           result = (await onEvent(forwarded)) || { outcome: 'no_action', reason: EMPTY_OUTPUT };
         } catch (handlerErr) {
           result = { outcome: 'error', reason: handlerErr.message };
+        } finally {
+          pollLiveness.arm();
         }
 
         // Acknowledge the event
@@ -139,7 +166,9 @@ export const startPoller = ({
         if (consecutiveAuthErrors >= MAX_AUTH_ERRORS) {
           onError?.(new Error(
             `Runtime token rejected ${consecutiveAuthErrors} times in a row — stopping poller. `
-            + `The token is likely revoked.`,
+            + `This connection takes its key from --token, then COMMONLY_TOKEN, then your saved login. `
+            + `If the key was rotated or revoked, re-run with the new key in --token or COMMONLY_TOKEN; `
+            + `with neither set, run commonly login${loginInstance ? ` --instance ${loginInstance}` : ''}.`,
           ));
           running = false;
           return;
@@ -147,11 +176,14 @@ export const startPoller = ({
       }
       consecutiveErrors++;
       onError?.(err);
-      // Back off on repeated errors (max 60s)
+      // Back off on repeated errors (max 60s). A wait this loop scheduled
+      // itself always ends, so the liveness clock stops for it.
       const backoff = Math.min(intervalMs * consecutiveErrors, 60_000);
+      pollLiveness.pause();
       await new Promise((r) => setTimeout(r, backoff));
     }
 
+    pollLiveness.pause();
     if (running) setTimeout(poll, intervalMs);
   };
 
@@ -159,6 +191,9 @@ export const startPoller = ({
   poll();
 
   return {
-    stop: () => { running = false; },
+    stop: () => {
+      running = false;
+      pollLiveness.stop();
+    },
   };
 };

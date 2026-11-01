@@ -52,7 +52,7 @@ class SlackApi {
    * that reaches a human's DM unescaped can be made to say what the bot never
    * said. It lives here, one step above the single call that posts, so an
    * escaped call site cannot sit beside an unescaped one in the same file —
-   * which is how this recurred in two of them (wren 73822, vera 73824).
+   * which is how this recurred in two of them.
    *
    * `??` rather than `||`: a missing value must render as nothing, while a
    * legitimate `0` or `false` still renders as itself. `String(undefined)` is

@@ -93,6 +93,26 @@ beforeEach(async () => {
   await AgentDigestState.deleteMany({});
 });
 
+describe('holdsEvent (the listener check-in on /events/renew)', () => {
+  const make = (over = {}) => AgentEvent.create({
+    agentName: AGENT, instanceId: INSTANCE, podId: POD_ID, type: 'chat.mention', payload: { content: 'q' }, ...over,
+  });
+
+  test('true for this agent\'s delivered and checkpointed events, false for pending, other agents and unknown ids', async () => {
+    const delivered = await make({ status: 'delivered', deliveryNonce: 'n1' });
+    const acked = await make({ status: 'acked', deliveryNonce: null });
+    const pending = await make({ status: 'pending' });
+    const other = await make({ agentName: 'someone-else', status: 'acked' });
+    const unknownId = String(new mongoose.Types.ObjectId());
+    const holds = (id, agent = AGENT) => AgentEventService.holdsEvent(String(id), agent, INSTANCE);
+    expect(await holds(delivered._id)).toBe(true);
+    expect(await holds(acked._id)).toBe(true);
+    expect(await holds(pending._id)).toBe(false);
+    expect(await holds(other._id)).toBe(false);
+    expect(await holds(unknownId)).toBe(false);
+  });
+});
+
 describe('legacy ambient digest bridge', () => {
   test('a push hint does not consume durable inbox state before the reconciling poll', async () => {
     const ws = require('../../../services/agentWebSocketService');
@@ -779,7 +799,7 @@ describe('the sweep re-runs a stuck in-process event', () => {
   });
 });
 
-// TASK-265, Rhea on #2236: enqueue decides routing before the insert, so an
+// TASK-265: enqueue decides routing before the insert, so an
 // event enqueued while the hosted migration runs can persist 'pending' after
 // the agent became in-process, and nothing polls it. The recurring sweep runs
 // it. Real installation rows, so the routing decision is the production one.
@@ -885,7 +905,7 @@ describe('the sweep runs a pending event stranded by a move in-process', () => {
     expect(closed.error).toMatch(/not run within 30 minutes/);
   });
 
-  // Rhea on #2236: the batch cap used to apply before runnability, so 50
+  // The batch cap used to apply before runnability, so 50
   // pending events of an unfinished migration filled every pass and a
   // completed agent's event aged out unrun. Only runnable targets are
   // selected now, so it runs on the first pass and the backlog is untouched.

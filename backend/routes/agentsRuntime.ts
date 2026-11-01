@@ -44,6 +44,7 @@ const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
 const { recordReportedCli } = require('../services/reportedCli');
+const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
 const File = require('../models/File');
 const { getObjectStore } = require('../services/objectStore');
 const { requireApiTokenScopes } = require('../middleware/apiTokenScopes');
@@ -97,7 +98,7 @@ const { patchAgentRuntimeConfiguration } = require('../services/agentRuntimeConf
 // Pre-auth, agentRateLimitKeyGenerator has no `req.agentTokenHash` yet (that
 // is set by agentRuntimeAuth), so it keys on a sha256 of the Authorization /
 // x-commonly-agent-token header. That isolates callers, but a caller who
-// rotates the header gets a fresh bucket every request (Vera measured it on
+// rotates the header gets a fresh bucket every request (measured on
 // #1689: 300 fixed-header requests reached auth 120 times, 300 rotating
 // headers reached auth 300 times — the same class as the B2 webhook finding).
 // So the stack is two tiers, IP first: a coarse per-IP limiter keyed by the
@@ -138,13 +139,13 @@ const phase4AgentRateLimit = rateLimit({
 const phase4RateLimit = [phase4IpRateLimit, phase4AgentRateLimit, rateLimitObserver];
 
 // TASK-108 / TASK-097 §5: the long-poll reads take the IP tier with the token
-// tier OFF (ruled, wren 71374) — a long-poll's request count is not a per-token
+// tier OFF (ruled) — a long-poll's request count is not a per-token
 // budget question, and a retry storm is still an IP. 3000/60s is the existing
 // IP tier's own budget, restated here rather than reusing `phase4IpRateLimit`
 // because that instance emits the legacy `{message, code}` body and these two
 // routes sit on a seat's tool path, where a refusal has to be classifiable
 // (see middleware/platformRateLimit.ts). Registering a limiter per ROUTE is
-// not (A): (A) is the mount-level limiter on the family, which is Sam's order
+// not (A): (A) is the mount-level limiter on the family, which is a separate order
 // and is not registered by this change.
 const longPollIpLimit = platformIpRateLimit({
   windowMs: 60_000,
@@ -404,7 +405,7 @@ router.post('/messages/:messageId/claim', phase4RateLimit, agentRuntimeAuth, asy
     // this pod, or absent entirely, so the route leaks no membership oracle —
     // and the guard inside messageExists runs before the query, because
     // `messages.id` is SERIAL and a non-numeric id would otherwise reach
-    // Postgres as a syntax error the catch turns into a 500 (vera 71873).
+    // Postgres as a syntax error the catch turns into a 500.
     // That guard is a split over namespaces, not a digits test: the wake for a
     // post-thread comment carries a Mongo ObjectId, so refusing that shape
     // 404s a legitimate wake and costs the claim race its dedupe.
@@ -657,6 +658,10 @@ router.get('/events', longPollIpLimit, agentRuntimeAuth, async (req: any, res: a
     if (req.query.reportedCli) {
       recordReportedCli((req.agentInstallations || []).map((item: any) => item?._id), req.query.reportedCli);
     }
+    // Listener check-in: polling for events is what makes "mentions will wake
+    // it" true, so it stamps `lastListenedAt` (any other authenticated call
+    // does not). Best-effort and throttled; see agentListenerCheckIn.ts.
+    recordListenerCheckIn(agentUser?._id, req.agentTokenHash);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 50);
     const installationPodIds = (req.agentInstallations || [])
       .map((item: any) => item?.podId)
@@ -1169,7 +1174,7 @@ router.post('/agent-dm', phase4RateLimit, agentRuntimeAuth, async (req: any, res
       // and we explicitly choose stricter behavior on the new endpoint.
       const expectedUsername = AgentIdentityService.buildAgentUsername(agentName, instanceId);
       const existing = await User.findOne({
-        // Bot rows only (TASK-133 b, wren 73994): the derived name is plain
+        // Bot rows only (TASK-133 b): the derived name is plain
         // lowercase, so a person's row matches the username branch below — and
         // the §3.7 co-pod check runs AFTER `getOrCreateAgentUser`, so the probe
         // would hand the identity service a person to adopt. The legacy /room
@@ -1389,12 +1394,22 @@ router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any,
     || req.agentUser?.botMetadata?.agentType || req.agentUser?.username;
   const instanceId = req.agentInstallation?.instanceId || req.agentUser?.botMetadata?.instanceId || 'default';
   if (!agentName) return res.status(403).json({ message: 'Agent token not authorized for events' });
+  // The runner polls /events only between turns, so a turn longer than the
+  // listening window would age a working seat into gone-dark. Renewing a
+  // delivery is the runner saying it is alive and holding work, so it counts
+  // as a check-in, but only when the request names an event this agent owns:
+  // made-up ids must not move an MCP-only seat out of never-connected. A turn
+  // that already checkpointed an event (the MCP tool acks mid-turn, so the
+  // renew no longer matches a `delivered` row) is still that agent's own event.
+  // The MCP checkpoint tool uses /ack, not this route.
   try {
-    const renewed = await Promise.all(events.map(async (entry: { eventId: string; deliveryId: string }) => (
-      await AgentEventService.renewDelivery(entry.eventId, agentName, instanceId, entry.deliveryId)
-        ? entry.eventId : null
-    )));
-    return res.json({ renewed: renewed.filter(Boolean) });
+    const results = await Promise.all(events.map(async (entry: { eventId: string; deliveryId: string }) => {
+      const renewedOne = await AgentEventService.renewDelivery(entry.eventId, agentName, instanceId, entry.deliveryId);
+      const owned = renewedOne || await AgentEventService.holdsEvent(entry.eventId, agentName, instanceId);
+      return { eventId: entry.eventId, renewedOne, owned };
+    }));
+    if (results.some((r) => r.owned)) recordListenerCheckIn(req.agentUser?._id, req.agentTokenHash);
+    return res.json({ renewed: results.filter((r) => r.renewedOne).map((r) => r.eventId) });
   } catch (error: any) {
     console.error('Error renewing inbox deliveries:', error.message);
     return res.status(500).json({ message: 'Could not renew inbox deliveries' });
@@ -1621,7 +1636,9 @@ router.post(
       return res.json(result);
     } catch (error: any) {
       const err = error as Error & { code?: string; statusCode?: number };
-      if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      // A message-store outage is retryable (TASK-503): 503, not 500.
+      if (err.statusCode && ((err.statusCode >= 400 && err.statusCode < 500)
+        || err.code === 'MESSAGE_STORE_UNAVAILABLE')) {
         console.warn('Bot message refused:', { code: err.code, status: err.statusCode, message: err.message });
         return res.status(err.statusCode).json({
           message: err.message,
@@ -2102,6 +2119,8 @@ router.get('/pods/:podId/files/:fileName/content', phase4RateLimit, agentRuntime
     if (!buffer) {
       return res.status(404).json({ message: 'File content not found' });
     }
+    // Set explicitly on every response that carries file bytes, so the header never depends on a default.
+    res.set('Cache-Control', 'private, no-store');
 
     const ct = String(file.contentType || '');
     const isText = isTextualContentType(ct);
@@ -2318,7 +2337,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       messageType,
       ...(payload !== undefined ? { payload } : {}),
       replyToMessageId: replyToMessageId || null,
-      // In-thread post WITHOUT addressing (constraint 5, Sam's independence
+      // In-thread post WITHOUT addressing (constraint 5, the independence
       // rule): the thread is ambient membership, the reply edge is a ping.
       // Validated by threadRootResolver on the service side — same five
       // rejections as the human composer path.
@@ -2382,7 +2401,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     // from "pod truly missing" (404) and unexpected failures (500). Without
     // this, the post-message route 500'd on every legitimate guard refusal,
     // and the gateway logged "Failed to post message: 500" floods.
-    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+    // A message-store outage is retryable (TASK-503): 503, not 500.
+    if (err.statusCode && ((err.statusCode >= 400 && err.statusCode < 500)
+      || err.code === 'MESSAGE_STORE_UNAVAILABLE')) {
       console.warn('Agent message refused:', { code: err.code, status: err.statusCode, message: err.message });
       return res.status(err.statusCode).json({
         message: err.message,
@@ -3741,13 +3762,24 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
         after,
       });
     } else if (integration.type === 'groupme') {
-      if (!integration.config?.accessToken || !integration.config?.groupId) {
+      // The token lives in connectorSecrets; the row's own `accessToken` is not
+      // read (TASK-539). A ref whose secret is gone answers like a missing token.
+      // Any other failure (key ring, decryption, database) is a 500.
+      const { readGroupmeAccessToken } = require('../services/chatConnectorTokens');
+      const { ConnectorSecretNotFoundError } = require('../services/connectorSecrets');
+      let accessToken: string | undefined;
+      try {
+        accessToken = await readGroupmeAccessToken(integration.config);
+      } catch (error) {
+        if (!(error instanceof ConnectorSecretNotFoundError)) throw error;
+      }
+      if (!accessToken || !integration.config?.groupId) {
         return res.status(400).json({ message: 'GroupMe integration missing accessToken or groupId' });
       }
       const GroupMeService = require('../services/groupmeService');
       messages = await GroupMeService.fetchMessages({
         groupId: integration.config.groupId,
-        accessToken: integration.config.accessToken,
+        accessToken,
         limit,
         before,
         after,
@@ -3760,7 +3792,9 @@ router.get('/pods/:podId/integrations/:integrationId/messages', phase4RateLimit,
 
     return res.json({ messages });
   } catch (error: any) {
-    console.error('Error fetching messages for agent:', error);
+    // The message only: a provider's HTTP error object carries its request
+    // config, which holds the credential (a query param or an auth header).
+    console.error('Error fetching messages for agent:', (error as Error)?.message);
     return res.status(500).json({ message: (error as Error).message || 'Failed to fetch messages' });
   }
 });

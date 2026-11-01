@@ -87,10 +87,22 @@ async function fetchMessages(options: FetchOptions = {} as FetchOptions): Promis
   if (before) params.before_id = before;
   if (after) params.after_id = after;
 
-  const response = await axios.get<GroupMeHistoryResponse>(
-    `${GROUPME_API_BASE}/groups/${groupId}/messages`,
-    { params },
-  );
+  let response;
+  try {
+    response = await axios.get<GroupMeHistoryResponse>(
+      `${GROUPME_API_BASE}/groups/${groupId}/messages`,
+      { params },
+    );
+  } catch (error) {
+    // GroupMe takes the token as a query parameter, so the axios error's
+    // `config.params` (and its request URL) carry it. Rethrow only the status,
+    // so a caller that logs the error object never logs the token.
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    throw Object.assign(
+      new Error(status ? `GroupMe request failed with status ${status}` : 'GroupMe request failed'),
+      status ? { status } : {},
+    );
+  }
   const messages = response.data?.response?.messages || [];
 
   return messages.map((msg) => ({

@@ -300,7 +300,7 @@ test('the envelope pins owner/repo and a changed connection refuses', async () =
 
 // The arm is inside `resolveConnection`, so the parked-write path inherits it.
 // Nothing else witnesses that: a caller-side placement keeps every
-// `callTool` witness green while this path loses the guard (Vera 74521).
+// `callTool` witness green while this path loses the guard.
 test('the approved envelope refuses a grant that predates the re-added connection row', async () => {
   await expect(broker.callTool({
     grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue', args: { title: 'hello' },

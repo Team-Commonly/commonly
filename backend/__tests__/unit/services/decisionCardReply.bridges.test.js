@@ -59,6 +59,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   messages = [];
   process.env.TELEGRAM_BOT_TOKEN = 'test-token';
+  // This instance's own origin. Links in the asserted text are built from it.
+  process.env.PUBLIC_APP_URL = 'https://commonly.me';
   Pod.findById.mockImplementation(() => chain({ name: 'Launch', type: 'team', members: [ownerId, newOwnerId] }));
   User.findById.mockImplementation(() => chain({ username: 'sam', isBot: false }));
   PGMessage.create.mockImplementation(async (pid, uid, content, _type, replyTo, _payload, root) => {

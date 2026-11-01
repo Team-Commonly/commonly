@@ -6,9 +6,12 @@
  * `lastUsedAt` lying for every class except the polling one:
  *
  *   - BYO wrapper/MCP installs (host 'byo' or legacy local-cli, no
- *     webhookUrl): the wrapper polls every ~5s while alive, so lastUsedAt is
- *     an honest reachability signal. null → never-connected · fresh →
- *     listening · stale → gone-dark.
+ *     webhookUrl): the wrapper polls every ~5s while alive, so the last
+ *     LISTENER check-in (`lastListenedAt`, stamped by the events poll, the
+ *     WebSocket connect and a delivery renew) is an honest reachability signal. null →
+ *     never-connected · fresh → listening · stale → gone-dark. `lastUsedAt`
+ *     is not: any authenticated call stamps it, so one MCP tool call made a
+ *     seat nobody was running read as listening (TASK-719, TASK-721).
  *   - push webhooks (webhookUrl set) and native runtime: reachable by
  *     construction — no dot, no guess.
  *   - everything else (gateway moltbots, cloud): 'unknown'. The gateway
@@ -20,18 +23,19 @@
  * an instruction addressed to someone who cannot perform it is the P1/P2
  * contradiction the review caught.
  *
- * lastUsedAt is the max across BOTH token stores (User.agentRuntimeTokens
- * and AgentInstallation.runtimeTokens) — the legacy/new split that made
- * live agents read null (finding D). Pure function: callers fetch, this
+ * The check-in time is the max across BOTH token stores
+ * (User.agentRuntimeTokens and AgentInstallation.runtimeTokens) — the
+ * legacy/new split that made live agents read null (finding D). Pure function: callers fetch, this
  * derives; the seam is what makes the honesty rules testable without a DB.
  */
 import { hostedRunsNative } from './hostedEngine';
+import { BYO_STALE_MS } from './agentConnectionStateService';
 
 export const AGENT_LISTENING_STALE_MS = 5 * 60 * 1000;
 
 export type AgentReachState = 'listening' | 'gone-dark' | 'never-connected' | 'reachable' | 'unknown';
 
-interface TokenRow { lastUsedAt?: Date | string | null }
+interface TokenRow { lastUsedAt?: Date | string | null; lastListenedAt?: Date | string | null }
 
 interface InstallationRow {
   agentName?: string;
@@ -47,6 +51,10 @@ export interface AgentStateRow {
   instanceId: string;
   displayName: string;
   state: AgentReachState;
+  /**
+   * For a polling BYO seat, the last LISTENER check-in, not the last token use.
+   * The key keeps its old name because the shell reads it (V2Thread "last seen").
+   */
   lastUsedAt: string | null;
   isOwner: boolean;
   /** A Commonly-hosted agent ("Run it here"); the beta allows one per account. */
@@ -54,12 +62,12 @@ export interface AgentStateRow {
   fixCommand?: string;
 }
 
-const latestUse = (tokenLists: TokenRow[][]): Date | null => {
+const latestListen = (tokenLists: TokenRow[][]): Date | null => {
   let latest: Date | null = null;
   for (const list of tokenLists) {
     for (const row of list || []) {
-      if (!row?.lastUsedAt) continue;
-      const used = new Date(row.lastUsedAt as string);
+      if (!row?.lastListenedAt) continue;
+      const used = new Date(row.lastListenedAt as string);
       if (Number.isNaN(used.getTime())) continue;
       if (!latest || used > latest) latest = used;
     }
@@ -119,7 +127,7 @@ export function deriveAgentState(
   } else if (!isByo) {
     state = 'unknown';
   } else {
-    lastUsedAt = latestUse([installation.runtimeTokens || [], userTokens || []]);
+    lastUsedAt = latestListen([installation.runtimeTokens || [], userTokens || []]);
     if (!lastUsedAt) state = 'never-connected';
     else if (now - lastUsedAt.getTime() <= AGENT_LISTENING_STALE_MS) state = 'listening';
     else state = 'gone-dark';
@@ -153,7 +161,10 @@ export function deriveAgentState(
 // Never add a "new" service without reading the path first; never name two
 // exports the same thing because they feel similar.
 
-const ACTIVE_WINDOW_MS = 10 * 60 * 1000; // active within 10 minutes
+// The same five minutes as the roster and Settings connection verdict
+// (agentConnectionStateService), so Scout and the page never disagree about
+// an agent that checked in seven minutes ago.
+const ACTIVE_WINDOW_MS = BYO_STALE_MS;
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // stale after a silent day
 
 export type AgentActivityBucket = 'active' | 'idle' | 'stale' | 'ready' | 'never-connected';
@@ -162,6 +173,7 @@ interface ActivityInstallationLike {
   agentName: string;
   instanceId?: string;
   config?: { runtime?: { runtimeType?: string } };
+  runtimeTokens?: Array<{ lastUsedAt?: Date | null }>;
 }
 
 /**
@@ -252,19 +264,42 @@ export const collectPodAgentActivity = async (
   }
   const userRows = usernameByKey.size > 0
     ? await User.find({ username: { $in: Array.from(usernameByKey.values()) } })
-      .select('username agentRuntimeTokens.lastUsedAt')
+      .select('_id username agentRuntimeTokens.lastUsedAt')
       .lean()
     : [];
-  const userByUsername = new Map<string, { agentRuntimeTokens?: Array<{ lastUsedAt?: Date }> }>(
+  const userByUsername = new Map<string, { _id?: unknown; agentRuntimeTokens?: Array<{ lastUsedAt?: Date }> }>(
     (userRows as Array<{ username: string }>).map((u) => [u.username, u as never]),
   );
+
+  // A seat's key can also live in the credential ledger (connect page,
+  // daemon mints, spawn children) or on a legacy installation. Runtime auth
+  // stamps lastUsedAt on whichever store authenticated the call, so the
+  // status read has to take all three.
+  // A failed ledger read throws rather than reading as "never connected":
+  // the status tool turns it into a failed call, and the roster route keeps
+  // its advisory fallback.
+  const credentialTimeByUser = new Map<string, number>();
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const AgentCredential = require('../models/AgentCredential');
+  const agentUserIds = (userRows as Array<{ _id?: unknown }>).map((u) => u._id).filter(Boolean);
+  const credentials = agentUserIds.length > 0
+    ? await AgentCredential.find({ kind: 'runtime', agentUserId: { $in: agentUserIds } })
+      .select('agentUserId lastUsedAt')
+      .lean()
+    : [];
+  for (const credential of credentials as Array<{ agentUserId?: unknown; lastUsedAt?: Date | null }>) {
+    const time = credential.lastUsedAt ? new Date(credential.lastUsedAt).getTime() : 0;
+    const id = String(credential.agentUserId);
+    if (time > (credentialTimeByUser.get(id) || 0)) credentialTimeByUser.set(id, time);
+  }
 
   for (const i of installations) {
     const k = key(i.agentName, i.instanceId);
     const user = userByUsername.get(usernameByKey.get(k) || '');
-    const tokenTimes = (user?.agentRuntimeTokens || [])
+    const tokenTimes = [...(user?.agentRuntimeTokens || []), ...(i.runtimeTokens || [])]
       .map((tok) => (tok?.lastUsedAt ? new Date(tok.lastUsedAt).getTime() : 0));
-    const candidates = [heartbeatMap.get(k), runMap.get(k), ...tokenTimes]
+    const credentialTime = user?._id ? credentialTimeByUser.get(String(user._id)) : undefined;
+    const candidates = [heartbeatMap.get(k), runMap.get(k), ...tokenTimes, credentialTime]
       .map((v) => (v ? new Date(v as Date).getTime() : 0))
       .filter((v) => Number.isFinite(v) && v > 0);
     result.set(k, candidates.length > 0 ? new Date(Math.max(...candidates)) : null);

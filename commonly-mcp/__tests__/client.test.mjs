@@ -33,6 +33,13 @@ describe('loadConfig', () => {
       COMMONLY_AGENT_TOKEN: 'sk-not-an-agent-token',
     })).toThrow(/cm_agent_/);
   });
+
+  it('names the command that fixes a user-token refusal', () => {
+    expect(() => loadConfig({
+      COMMONLY_API_URL: 'https://x.example',
+      COMMONLY_AGENT_TOKEN: 'eyJuser.jwt',
+    })).toThrow(/commonly mcp config/);
+  });
 });
 
 describe('request', () => {

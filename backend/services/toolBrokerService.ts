@@ -15,6 +15,7 @@ import { judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from './outsiderGrantPodEligibility';
+import { recordBrokerCall } from './brokerRecordService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
@@ -680,6 +681,7 @@ const HOSTED_OWNER_REFUSALS: Record<SessionAccountRefusal, string> = {
   banned: 'connection_owner_banned',
   missing: 'connection_owner_missing',
   bot: 'connection_owner_bot',
+  restricted: 'connection_owner_restricted',
   deleting: 'connection_owner_deleting',
 };
 
@@ -687,6 +689,7 @@ const HOSTED_OWNER_MESSAGES: Record<SessionAccountRefusal, string> = {
   banned: 'the person who connected this connection is suspended',
   missing: 'the person who connected this connection no longer exists',
   bot: 'this connection is owned by a bot account, which cannot be its granter',
+  restricted: 'the person who connected this connection is no longer allowed on this instance',
   deleting: 'the person who connected this connection is deleting their account',
 };
 
@@ -1118,6 +1121,17 @@ const recordCall = async (
     vendorError: overrides?.vendorError?.split(/[\r\n]/, 1)[0].slice(0, 200),
     approvalId: overrides?.approvalId,
     durationMs: Math.max(0, Date.now() - startedAt),
+  });
+  // The trail row has committed; the record mirrors it (ADR-033 B1, B2, B5).
+  recordBrokerCall({
+    grant: grant as Record<string, unknown> | undefined,
+    callId,
+    grantId: input.grantId,
+    agentUserId: input.agentUserId,
+    tool: input.tool,
+    outcome,
+    approvalId: overrides?.approvalId,
+    credentialOwnerId: overrides?.credentialOwnerId,
   });
   return callId;
 };

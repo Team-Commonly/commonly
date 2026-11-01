@@ -30,6 +30,7 @@ const {
 } = require('./connectorRelayPolicy');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const channelVerdictService = require('./channelVerdictService');
+const { publicAppUrl } = require('../utils/publicAppUrl');
 import type { DecisionRelayCard } from './decisionCardRelay';
 import { resolveDecisionCardReply } from './decisionCardReply';
 import type { ChannelCardEntry } from './decisionCardReply';
@@ -337,7 +338,7 @@ export const relayAgentMessageToTelegram = async (opts: {
     const chatId = integration.config?.chatId;
     if (!botToken || !chatId) return;
 
-    const base = (process.env.PUBLIC_APP_URL || 'https://commonly.me').replace(/\/$/, '');
+    const base = publicAppUrl();
     const link = opts.card && podMessageId
       ? `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(podMessageId)}`
       : `${base}/v2/pods/${podId}`;

@@ -24,6 +24,7 @@ const {
   AGENT_USERNAME_CONFLICT_CODE?: string;
   AGENT_IDENTITY_CONFLICT_CODE?: string;
 };
+const GlobalModelConfigService = require('../../services/globalModelConfigService');
 const AgentMessageService = require('../../services/agentMessageService');
 const { deriveAgentState, runInstructionFor } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
@@ -31,6 +32,7 @@ const HostedRuntime = require('../../services/hostedRuntimeService');
 const HostedEngine = require('../../services/hostedEngine');
 const { reservedAgentNameRefusal } = require('../../services/agentNameReservation');
 const { normalizeAvatarUrl } = require('../../services/avatarService');
+const { isPersonalPodType } = require('../../services/podTypePolicyService');
 const {
   getUserId,
   resolveUsername,
@@ -43,12 +45,14 @@ const {
   buildAgentProfileId,
   composeInstallIntro,
 } = require('./helpers');
+const { isDevTierGitHubIssueWriter } = require('../../services/githubIssueWriteCapability');
 const {
   AUTO_GRANTED_INTEGRATION_SCOPES,
   revokeRuntimeTokensAfterLastUninstall,
 } = require('./tokens');
 const { validateEnvironmentMcpEntries } = require('../../utils/environmentSpecValidation');
 const { willSolelyInstallRuntimeIdentity, webhookUrlRefusal } = require('../../services/runtimeIdentityOwnership');
+const { webhookUrlRegistrationRefusal } = require('../../services/outboundUrlGuard');
 const { personAgentWakeDefault } = require('../../services/wakeDefaultService');
 const { logAgentInstallRefusal } = require('../../middleware/logAgentInstallRefusal');
 const { assertAgentRuntimeMayJoinPod } = require('../../services/outsiderGrantAgentJoinPolicy');
@@ -471,7 +475,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     }
 
     const installConfig = normalizeConfigMap(config) || {};
-    // WRITE-TIME SHAPE CHECK (TASK-071, Vera's ruling). This route is the OTHER
+    // WRITE-TIME SHAPE CHECK (TASK-071). This route is the OTHER
     // backend writer of `config.environment` — the first is the agent-config
     // PATCH — and it stores the body's config unchecked. Same rule, same
     // refusal, same code, so a caller can branch on one thing.
@@ -501,6 +505,12 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       if (!ownership.owned) {
         return res.status(403).json({ code: ownership.failure, error: webhookUrlRefusal[ownership.failure] });
       }
+    }
+    // A URL supplied at install is a new registration, so it must be https,
+    // admins included.
+    if (requestedWebhookUrl) {
+      const schemeRefusal = webhookUrlRegistrationRefusal(requestedWebhookUrl);
+      if (schemeRefusal) return res.status(400).json({ code: 'webhook_url_refused', error: schemeRefusal });
     }
     const runtimeConfig = typeof installConfig.runtime === 'object' && installConfig.runtime
       ? { ...installConfig.runtime }
@@ -560,8 +570,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // Store runtimeType NORMALIZED. Every gate below lowercases its own copy;
     // the stored value was whatever the caller sent, so `runtimeType: "Hosted"`
     // passed the hosted gate, got metered as hosted, and was never counted by
-    // countHostedAgentsForUser (exact 'hosted') — the per-user cap failed open
-    // (Otto on #1355). Query the field the code writes: write it normalized.
+    // countHostedAgentsForUser (exact 'hosted') — the per-user cap failed open.
+    // Query the field the code writes: write it normalized.
     if (runtimeConfig.runtimeType !== undefined && runtimeConfig.runtimeType !== null) {
       runtimeConfig.runtimeType = String(runtimeConfig.runtimeType).trim().toLowerCase();
     }
@@ -626,6 +636,23 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       if (newHostedEngine === HostedEngine.HOSTED_ENGINE_NATIVE) {
         installConfig.hosted = HostedEngine.nativeHostedConfigForInstall(explicitDescription || undefined);
       }
+    }
+
+    // GitHub issue writes spend a server-held credential, so this is a
+    // server-owned per-installation capability rather than a caller-provided
+    // scope. The configured OpenClaw dev seats are its only initial grant.
+    // If configuration cannot be read, fail closed: the install still works,
+    // but it receives no GitHub write authority.
+    let githubIssueWrite = false;
+    try {
+      const modelConfig = await GlobalModelConfigService.getConfig();
+      githubIssueWrite = isDevTierGitHubIssueWriter({
+        instanceId: normalizedInstanceId,
+        runtimeType: effectiveRuntimeType,
+        devAgentIds: modelConfig?.openclaw?.devAgentIds,
+      });
+    } catch (err) {
+      console.warn('[install] could not resolve dev-tier GitHub issue capability:', (err as Error).message);
     }
 
     const grantedScopes = Array.from(new Set([
@@ -765,7 +792,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       });
       await AgentIdentityService.ensureAgentInPod(agentUser, podId, effectiveRuntimeType, newHostedEngine);
     } catch (identityError: unknown) {
-      // A refusal is not a best-effort failure (TASK-133 b, wren 73987/73988):
+      // A refusal is not a best-effort failure (TASK-133 b):
       // swallowing it would answer 2xx and leave an AgentInstallation row with
       // no identity behind it. Every other identity failure stays best-effort.
       const refusal = identityError as { code?: string; message?: string; username?: string };
@@ -803,6 +830,7 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       version: version || agent.latestVersion,
       config: installConfig,
       scopes: grantedScopes,
+      githubIssueWrite,
       installedBy: userId,
       instanceId: normalizedInstanceId,
       displayName: effectiveDisplayName,
@@ -871,7 +899,10 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         podId,
         installedByUserId: userId,
         installerIsAgent: installerUser?.isBot === true,
-        ...(greetsItself ? { mentionHandle: handle } : {}),
+        // A personal pod (agent-room, agent-dm, agent-admin) auto-routes every
+        // plain reply to the agent, so the greeting must not tell the person to
+        // @mention it there. Only a team pod needs the handle.
+        ...(greetsItself && !isPersonalPodType(pod?.type) ? { mentionHandle: handle } : {}),
         ...(greetsItself ? { hostedAgentUserId: String(agentUser._id) } : {}),
       });
     } catch (firstContactError: unknown) {
@@ -971,13 +1002,13 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
         // (inferred from staleness), which made a gone-dark agent announce
         // "Nothing is running me yet" — flat-certain and factually wrong,
         // since it demonstrably ran. Asserting an inference in the agent's own
-        // voice is the same defect in a new costume (ux-lead, 2026-08-14).
+        // voice is the same defect in a new costume.
         //
         // The token store is the BOT's, not the installer's (sprint-impl,
         // fleet review 2026-08-14). `deriveAgentState` unions
         // `installation.runtimeTokens` with a USER's `agentRuntimeTokens`, and
         // the user it means is the agent's bot row — that is where a polling
-        // wrapper stamps `lastUsedAt`. An earlier draft passed the human
+        // wrapper stamps its check-in. An earlier draft passed the human
         // installer's tokens, a store a wrapper never writes, so a reused and
         // demonstrably live seat computed as never-connected and would have
         // been announced as dead. Same identity match the pod roster uses
@@ -995,8 +1026,8 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
             isBot: true,
             'botMetadata.agentName': agent.agentName,
             'botMetadata.instanceId': normalizedInstanceId,
-          }).select('agentRuntimeTokens.lastUsedAt').lean() as
-              { agentRuntimeTokens?: { lastUsedAt?: Date | string | null }[] } | null;
+          }).select('agentRuntimeTokens.lastListenedAt').lean() as
+              { agentRuntimeTokens?: { lastListenedAt?: Date | string | null }[] } | null;
           // `config` is `{ type: Map, of: Mixed }` (AgentRegistry.ts:235), so
           // on a LIVE Mongoose document `installation.config.runtime` is
           // undefined — a Map needs `.get()`. `deriveAgentState` reads

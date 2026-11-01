@@ -80,7 +80,7 @@ describe('pgMessageController', () => {
     AgentMentionService.enqueueMentions.mockResolvedValue({
       enqueued: [{ installationId: 'i1' }],
       implicit: ['recorder'],
-      woken: [{ installationId: 'i2' }],
+      woken: ['guide'],
     });
     AgentInstallation.countDocuments.mockResolvedValue(2);
     const req = {
@@ -103,6 +103,7 @@ describe('pgMessageController', () => {
         implicit: ['recorder'],
         agentsInPod: 2,
         woken: 1,
+        wokenAgents: ['guide'],
       },
     });
   });
@@ -150,7 +151,7 @@ describe('pgMessageController', () => {
   });
 
   it('refuses a departed CREATOR whose PG row is present', async () => {
-    // 36 of the 77 ghost rows are the pod's own creator (Vera 74648), which is
+    // 36 of the 77 ghost rows are the pod's own creator, which is
     // the population where the creator clause and the stale row reinforce each
     // other. `createdBy` is not membership: it says who made the pod, not who is
     // in it.

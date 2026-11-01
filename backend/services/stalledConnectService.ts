@@ -126,8 +126,8 @@ const botTokensFor = async (agentName: string, instanceId: string) => {
     isBot: true,
     'botMetadata.agentName': agentName,
     'botMetadata.instanceId': instanceId,
-  }).select('agentRuntimeTokens.lastUsedAt agentRuntimeTokens.createdAt').lean() as
-    { agentRuntimeTokens?: Array<{ lastUsedAt?: Date; createdAt?: Date }> } | null;
+  }).select('agentRuntimeTokens.lastListenedAt agentRuntimeTokens.createdAt').lean() as
+    { agentRuntimeTokens?: Array<{ lastListenedAt?: Date; createdAt?: Date }> } | null;
   return row?.agentRuntimeTokens || [];
 };
 
@@ -183,6 +183,14 @@ export const scan = async ({
     $or: [
       { 'config.runtime.host': 'byo' },
       { 'config.runtime.runtimeType': 'local-cli' },
+      // Legacy polling seats: runtimeType 'webhook' with no host stamp and no
+      // push URL. classifyRuntime calls these BYO, so the pre-filter must too,
+      // or they never reach deriveAgentState (TASK-655, #1320).
+      {
+        'config.runtime.runtimeType': 'webhook',
+        'config.runtime.host': { $in: [null, ''] },
+        'config.runtime.webhookUrl': { $in: [null, ''] },
+      },
     ],
   }).limit(CANDIDATE_LIMIT).lean();
   result.candidates = candidates.length;
@@ -239,6 +247,9 @@ const nudgeOnce = async ({
       onboarding?: {
         byoCommandCopiedAt?: Date;
         byoCommandType?: 'mcp' | 'cli';
+        byoMcpCopiedAt?: Date;
+        byoCliCopiedAt?: Date;
+        byoOpenedOs?: 'mac' | 'linux' | 'windows' | 'other';
       };
     } | null;
   if (!installer?.username) return; // Nobody to address; a nameless nudge is noise.
@@ -284,6 +295,9 @@ const nudgeOnce = async ({
     evidence: {
       commandCopiedAt: installer.onboarding?.byoCommandCopiedAt,
       commandType: installer.onboarding?.byoCommandType,
+      mcpCopiedAt: installer.onboarding?.byoMcpCopiedAt,
+      cliCopiedAt: installer.onboarding?.byoCliCopiedAt,
+      openedOs: installer.onboarding?.byoOpenedOs,
       tokenIssuedAt: issuedAt,
     },
   });
@@ -367,7 +381,7 @@ const resolveConnected = async ({
     const handle = buildAgentUsername
       ? buildAgentUsername(String(ep.agentName), String(ep.instanceId))
       : String(ep.agentName);
-    // `lastUsedAt` leaving null is a PERMANENT transition, so this timestamp
+    // `lastListenedAt` leaving null is a PERMANENT transition, so this timestamp
     // survives a wrapper that connected and stopped again between passes —
     // which is why the confirmation needs no time bound (ux-lead, 53307).
     const firstSeenAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : now;

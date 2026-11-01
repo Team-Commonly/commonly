@@ -8,6 +8,7 @@
 
 import { createClient } from '../lib/api.js';
 import { getToken, resolveInstanceUrl } from '../lib/config.js';
+import { createTailPoller } from '../lib/pod-tail.js';
 
 export const registerPod = (program) => {
   const pod = program.command('pod').description('Manage pods');
@@ -96,28 +97,16 @@ Commonly instance (see: commonly login --help).
 
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
 
-      let lastId = null;
       console.log(`Watching pod ${podId}... (Ctrl+C to stop)\n`);
 
+      const pollNew = createTailPoller({
+        fetchPage: (limit) => client.get(`/api/messages/${podId}`, { limit }),
+        filter: opts.filter,
+        print: (line) => console.log(line),
+      });
       const poll = async () => {
         try {
-          const data = await client.get(`/api/messages/${podId}`, {
-            limit: 20,
-            after: lastId,
-          });
-          const messages = Array.isArray(data) ? data : data.messages || [];
-
-          messages.forEach((m) => {
-            const isBot = m.isBot || m.sender?.isBot;
-            if (opts.filter === 'agents' && !isBot) return;
-            if (opts.filter === 'humans' && isBot) return;
-
-            const ts = new Date(m.createdAt || m.timestamp).toTimeString().slice(0, 8);
-            const who = m.username || m.sender?.username || '?';
-            const marker = isBot ? '🤖' : '👤';
-            console.log(`[${ts}] ${marker} ${who}: ${m.content}`);
-            lastId = m._id || m.id;
-          });
+          await pollNew();
         } catch (err) {
           console.error(`[poll error] ${err.message}`);
         }

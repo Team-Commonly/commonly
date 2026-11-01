@@ -54,6 +54,7 @@ import {
 import {
   buildByoHandoffPayload,
   defaultByoHandoffName,
+  availableByoHandoffName,
   type ByoHandoffAdapter,
 } from './byoHandoffService';
 import { appendLongTermMemory } from './agentMemoryService';
@@ -87,7 +88,13 @@ export interface NativeRunResult {
 // --- tuning constants ------------------------------------------------------
 
 const MAX_TURNS = 10;
-const MAX_TOKENS = 50_000;
+// Usage summed over every model call in the run, and each call re-sends the
+// context, so the sum grows much faster than any one prompt. 50k failed
+// ordinary hosted research turns: five calls whose prompts grow from ~3k to
+// ~19k sum to 55-76k (43 of one outside user's 73 assigned-task wakes,
+// 10-24 to 10-26; no prompt over 28k in any of the 48 cap failures from
+// 2026-10-01 to 10-29). 200k fits MAX_TURNS calls at that late-turn size.
+const MAX_TOKENS = 200_000;
 const MAX_WALL_CLOCK_MS = 60_000;
 // Free-tier default for the native runtime. Per-installation config can
 // override (`installation.config.model`) for dev agents that legitimately
@@ -118,6 +125,17 @@ const NATIVE_RUNTIME_GUARDRAILS = (
 // How a guardrail rejection reads in a chat call's error body.
 const GUARDRAIL_REJECTION = /guardrail|moderation|prompt-injection/i;
 const GUARD_CHECK_TIMEOUT_MS = 10_000;
+// The free-name walk is advisory; past this it gives up and the default name posts.
+const BYO_NAME_LOOKUP_TIMEOUT_MS = 3_000;
+// Rejects if `work` has not settled in time, so a hung registry read cannot
+// keep the handoff card from posting.
+const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('name lookup timed out')), ms);
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+};
 
 // A web result the guard stops on its own is replaced with this before the
 // turn's one extra round. It names no rule and repeats nothing from the result.
@@ -382,9 +400,10 @@ export const TOOLS = [
     function: {
       name: 'commonly_agent_status',
       description:
-        'Check the connection status of every agent installed in this pod. '
+        'Check the connection status of every agent installed in this pod, and of '
+        + 'the asker\'s own agents in other pods (inThisPod: false). '
         + 'Returns each agent\'s runtime kind and state: active (seen in the last '
-        + '10 minutes), idle (last day), stale (silent for over a day), '
+        + '5 minutes), idle (last day), stale (silent for over a day), '
         + 'never-connected (a local/BYO seat whose runtime has never '
         + 'authenticated — the user still needs to link it from the connect '
         + 'page), or ready (a native agent; it runs when addressed and has no '
@@ -596,7 +615,7 @@ const LIST_TASKS_LIMIT = 25;
 // re-sends its context on every model round, so the model sees the start.
 const MAX_FETCHED_TEXT_CHARS = 24_000;
 // Posting in this pod is the one way out the narrowing keeps, and a pod
-// bridged to an external chat relays its posts there (Rhea on #2244). So in a
+// bridged to an external chat relays its posts there. So in a
 // bridged pod, search is not offered, and a turn that has read the web does
 // not post: the same bridge condition that keeps outsider-writable connector
 // grants out of such a pod (podIsBridged, #2211).
@@ -702,8 +721,8 @@ export const threadRootOfTrigger = (payload: unknown): number | undefined => {
 // the agent's own pod posts. Not its names: a display name drifts by design (a
 // collision adds " (Instance)", a missing mirror row reads "Unknown User"), and
 // a post whose author name drifted read back as another author's, so an
-// address the agent had written itself became one it could open (Cofounder's
-// security read on #2249). Null on any failure, which byOtherAuthors treats as
+// address the agent had written itself became one it could open (#2249).
+// Null on any failure, which byOtherAuthors treats as
 // "every message may be the agent's own".
 export const resolveOwnUserId = async (agentName: string, instanceId: string): Promise<string | null> => {
   try {
@@ -723,7 +742,7 @@ export const resolveOwnUserId = async (agentName: string, instanceId: string): P
 // Only a HUMAN's message gives an address, never an agent's, this one's or
 // another's: two agents steered by the same injected text could otherwise
 // pass an address between them, and another instance of this agent posts
-// under a different user (Cofounder's security read on #2249). Fails closed
+// under a different user. Fails closed
 // three times: an unresolved own id admits no message, and a message whose
 // author id or whose bot flag is unknown gives no address. Ids compare
 // lowercased.
@@ -927,7 +946,7 @@ export async function dispatchTool(
         const agentName = args.name
           ? String(args.name)
           : defaultByoHandoffName(owner?.username, adapter);
-        const payload = buildByoHandoffPayload({
+        let payload = buildByoHandoffPayload({
           adapter,
           os: args.os,
           podId: ctx.podId,
@@ -937,6 +956,24 @@ export async function dispatchTool(
         });
         if ('error' in payload) {
           return { content: { ok: false, error: payload.error }, error: 'handoff_invalid' };
+        }
+        if (!args.name) {
+          // Fail toward posting: if the lookup fails or every candidate is taken,
+          // keep the default name. Attach still enforces ownership on that name.
+          try {
+            const { AgentRegistry } = require('../models/AgentRegistry');
+            const availableName = await withDeadline(availableByoHandoffName(
+              payload.agentName,
+              async (name) => Boolean(await AgentRegistry.exists({ agentName: name })),
+            ), BYO_NAME_LOOKUP_TIMEOUT_MS);
+            const availablePayload = buildByoHandoffPayload({
+              adapter, os: args.os, podId: ctx.podId, agentName: availableName,
+              memoryFrom: ctx.agentName, memoryInstance: ctx.instanceId || 'default',
+            });
+            if (!('error' in availablePayload)) payload = availablePayload;
+          } catch (err) {
+            console.warn('[byo-handoff] free-name lookup failed; posting default name', (err as Error).message);
+          }
         }
         const AgentMessageService = require('./agentMessageService');
         const result = await AgentMessageService.postMessage({
@@ -991,6 +1028,8 @@ export async function dispatchTool(
           notes: args.notes ? String(args.notes) : null,
           status: 'pending',
           source: 'agent',
+          // The creator stamp (TASK-669): the seat that wrote the row, as an API create would stamp it.
+          createdByUserId: (await resolveSeatUserId(ctx.podId, ctx.agentName, ctx.instanceId)) || null,
         });
         return {
           content: {
@@ -1191,12 +1230,41 @@ export async function dispatchTool(
         // Raft-comparison P4 rule: never fork status vocabulary per surface.
         const { AgentInstallation } = require('../models/AgentRegistry');
         const { collectPodAgentActivity, deriveActivityBucket } = require('./agentStateService');
-        const installations = await AgentInstallation.find({
-          podId: ctx.podId,
-          status: 'active',
-        }).select('agentName instanceId displayName config').lean();
-        const activity = await collectPodAgentActivity(String(ctx.podId), installations);
-        const agents = (installations as Array<Record<string, any>>).map((i) => {
+        const mongoose = require('mongoose');
+        // This pod's agents, plus the ones the person asking installed in
+        // other pods: someone who connected an agent from another pod still
+        // asks Scout here whether it is running. Only their own installs, and
+        // only name and state, never the other pod. This pod is read uncapped,
+        // as the roster reads it; only the asker's installs elsewhere are
+        // capped, so a busy asker never pushes an agent here out of the answer.
+        const requesterId = ctx.computerRequesterId;
+        const fields = 'agentName instanceId displayName config podId runtimeTokens.lastUsedAt';
+        const podRows = await AgentInstallation.find({ status: 'active', podId: ctx.podId }).select(fields).lean();
+        const otherRows = requesterId && mongoose.Types.ObjectId.isValid(requesterId)
+          ? await AgentInstallation.find({ status: 'active', installedBy: requesterId, podId: { $ne: ctx.podId } })
+            .select(fields).sort({ _id: 1 }).limit(100).lean()
+          : [];
+        const seen = new Set<string>();
+        // This pod's rows come first, so a duplicate keeps its in-pod copy.
+        const installations = ([...podRows, ...otherRows] as Array<Record<string, any>>)
+          .filter((i) => {
+            const key = `${i.agentName}:${i.instanceId || 'default'}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        const byPod = new Map<string, Array<Record<string, any>>>();
+        for (const i of installations) {
+          const podKey = String(i.podId);
+          byPod.set(podKey, [...(byPod.get(podKey) || []), i]);
+        }
+        const activity = new Map<string, Date | null>();
+        for (const [podKey, group] of byPod) {
+          // eslint-disable-next-line no-await-in-loop
+          const podActivity = await collectPodAgentActivity(podKey, group as never);
+          for (const [key, value] of podActivity) activity.set(key, value);
+        }
+        const agents = installations.map((i) => {
           const key = `${i.agentName}:${i.instanceId || 'default'}`;
           const lastActiveAt = activity.get(key) || null;
           const runtimeType = String(i.config?.runtime?.runtimeType || '') || 'unknown';
@@ -1207,6 +1275,7 @@ export async function dispatchTool(
             // A hosted agent on the native engine is ready in the same sense.
             state: deriveActivityBucket(lastActiveAt, hostedRunsNative(i) ? 'native' : runtimeType),
             lastActiveAt: lastActiveAt ? new Date(lastActiveAt).toISOString() : null,
+            inThisPod: String(i.podId) === String(ctx.podId),
           };
         });
         return { content: { agents } };
@@ -1303,7 +1372,7 @@ const SENDER_WRITTEN_EVENT_TYPES: ReadonlySet<string> = new Set([...MENTION_RAW_
  * only when it is one message (it names a messageId) that a known HUMAN wrote.
  * Another agent can write a mention, a DM or a pod message too, and two agents
  * steered by the same injected text could otherwise pass an address between
- * them through the trigger itself (Cofounder's security read on #2261). Board
+ * them through the trigger itself. Board
  * wakes and server cues name no message and list text others wrote (task
  * titles), so they never give one. Fails closed: an unknown sender, a missing
  * or non-boolean bot flag, or a failed lookup gives none.
@@ -1497,7 +1566,7 @@ function extractCallId(data: LiteLLMResponse, headers: Record<string, unknown>):
 // two-hop chain). The proxy restamps the body's `model` to the requested group
 // unless a fallback happened, so the body comes second. When neither names a
 // model, nothing was measured and the field stays unset; every reader falls
-// back to the requested model. Native calls send disable_fallbacks (D81), so
+// back to the requested model. Native calls send disable_fallbacks, so
 // the two differ only if something overrode it, such as a key whose metadata
 // sets disable_fallbacks.
 function servedModelOf(
@@ -1545,14 +1614,14 @@ function failedResult(
  * The bot User `_id` for this seat — the id a grant carries in `audience`.
  *
  * Read from the database, never from anything the model can influence: the
- * audience check in `assertGrantUsable` is only as good as this field (vera
- * 73751). Resolved by `username`, because that is the row this run POSTS as —
+ * audience check in `assertGrantUsable` is only as good as this field.
+ * Resolved by `username`, because that is the row this run POSTS as —
  * `getOrCreateAgentUser` finds-or-creates by exactly this key, derived from the
  * same two functions — and `username` is the only unique key on a bot User.
  * `(botMetadata.agentName, botMetadata.instanceId)` has no uniqueness
  * constraint, so a name-pair query can match several rows and answer with one
  * the conversation never names, which would put the ToolCall trail on the wrong
- * seat (wren 73887). One row or none.
+ * seat. One row or none.
  */
 export const resolveSeatUserId = async (
   podId: string,
@@ -1580,7 +1649,7 @@ export const resolveSeatUserId = async (
     // carries no pod condition in `grantBrokerProjectionService`), so a row
     // outside this pod must not resolve here. Empty ⇒ no broker assembled ⇒ no
     // capability, the in-process analogue of the daemon path's
-    // `401 agent_identity_required` (vera 73884). Every exit from this function
+    // `401 agent_identity_required`. Every exit from this function
     // is a member's id or empty; none of them guesses.
     const pod = await Pod.findById(podId).select('members').lean() as { members?: unknown[] } | null;
     const memberIds = new Set((pod?.members || []).map((member) => String(member)));
@@ -1592,7 +1661,7 @@ export const resolveSeatUserId = async (
 };
 
 /**
- * The pod's most recent messages, oldest first. PG first, Mongo fallback — the
+ * The pod's most recent messages, oldest first, from the one configured store — the
  * single read behind both `commonly_read_context` and the inline recent-messages
  * block, so the two can never disagree about what the room said.
  */
@@ -1796,8 +1865,8 @@ export async function runAgent(
   }
 
   // ADR-018 D3: native is one of OUR drivers — deterministic claim-before-act,
-  // the same rule the CLI wrapper enforces (#894). Fleet audit (Sharpen msg
-  // 53016) found this gap: the event queue pre-claims DELIVERY, but nothing
+  // the same rule the CLI wrapper enforces (#894). An audit
+  // found this gap: the event queue pre-claims DELIVERY, but nothing
   // claimed the MESSAGE, so two concurrent native agents could both act on
   // one trigger. A lost CAS is a complete, silent stand-down — no AgentRun
   // row, deliberately: a stand-down is not an execution, and the acked event
@@ -2047,8 +2116,7 @@ export async function runAgent(
   // once-per-run assembly safe and what lets a mid-run revocation refuse the
   // next call. Caching the grant document, the member set or the usability
   // verdict here — the natural thing to do when someone notices a Mongo read
-  // per tool call — would silently reopen that window for the rest of the run
-  // (vera 73751).
+  // per tool call — would silently reopen that window for the rest of the run.
   const seatUserId = await resolveSeatUserId(podId, agentName, instanceId);
   let broker: HostedBrokerProjection = { tools: [], dispatch: new Map() };
   if (seatUserId) {
@@ -2073,6 +2141,9 @@ export async function runAgent(
   const webResults: Array<{ round: number; index: number }> = [];
   const roundEnds: number[] = [];
   let webSetAside = false;
+  // Set when the recovery round was stopped too, and every web result left
+  // was set aside for one last round.
+  let webSetAsideAll = false;
   // Returns how many results were set aside, and how many web results the
   // turn lost in all (those plus the ones in the dropped rounds).
   const setAsideStoppedWebResult = async (): Promise<{ setAside: number; removed: number }> => {
@@ -2128,7 +2199,7 @@ export async function runAgent(
       // The allowlist is enforced at dispatch too, not only in what the model
       // is offered: a model can name a tool it was never given, and an
       // undeclared commonly_run_code (or commonly_propose_action) must not run
-      // because it was asked for (Rhea on #2232).
+      // because it was asked for.
       // After a web search returns, connector tools leave the offer too
       // (TASK-267a): only in-pod read and post, and searching, remain.
       const webTainted = Boolean(dispatchCtx.webTainted);
@@ -2147,13 +2218,13 @@ export async function runAgent(
           `${litellm.baseUrl}/chat/completions`,
           {
             model,
-            // D81: a failed model must not silently substitute another vendor.
+            // A failed model must not silently substitute another vendor.
             disable_fallbacks: true,
             messages,
             // ADR-020 D1: the manifest's tool allowlist, enforced.
             // The manifest's allowlist, plus the grant broker's read tools for
             // THIS run. The broker is deliberately not reachable through
-            // `TOOLS`/`toolsForConfig` (wren 73742): it is not the agent's
+            // `TOOLS`/`toolsForConfig`: it is not the agent's
             // declared capability, it is a live grant that can be revoked
             // between runs, and it is assembled once per run above.
             tools: offeredTools,
@@ -2188,6 +2259,25 @@ export async function runAgent(
                 run.webSetAside = removed;
                 continue;
               }
+            } else if (webSetAside && !webSetAsideAll && !postedViaTool && webResults.length > 0) {
+              // The recovery round was stopped too, though every result it
+              // kept passed the check on its own: the guard stops on them
+              // together. One outside user's research turns failed this way 6
+              // times in a day (10-25). Set aside the rest of the web results
+              // and give the same single round once more.
+              webResults.forEach(({ index }) => {
+                messages[index] = { ...messages[index], content: JSON.stringify({ ok: false, error: WEB_SET_ASIDE_NOTICE }) };
+              });
+              // The model's own text after the first web result may quote it.
+              // Keep its tool calls, so every tool result still has its call.
+              const firstWeb = Math.min(...webResults.map(({ index }) => index));
+              for (let i = firstWeb + 1; i < messages.length; i += 1) {
+                if (messages[i]?.role === 'assistant' && messages[i].content) messages[i] = { ...messages[i], content: null };
+              }
+              run.webSetAside = Number(run.webSetAside || 0) + webResults.length;
+              webResults.splice(0, webResults.length);
+              webSetAsideAll = true;
+              continue;
             }
             run.status = 'failed';
             run.errorKind = 'guardrail_blocked';
@@ -2277,7 +2367,7 @@ export async function runAgent(
             // A broker call records its callId and outcome and nothing else:
             // the ToolCall row the broker writes is the trail for what was
             // asked and returned, and an `AgentRun` must not become a second
-            // copy of pod content (wren 73743).
+            // copy of pod content.
             turn.toolCalls.push({
               name: toolName,
               callId: brokerCall.callId,
@@ -2411,7 +2501,7 @@ export async function runAgent(
 
       const textOut = typeof msg.content === 'string' ? msg.content.trim() : '';
       // The fallback post is a post like any other: after an external result,
-      // re-read the bridge before letting it through (Rhea on #2244).
+      // re-read the bridge before letting it through.
       const fallbackBlocked = Boolean(textOut && !postedViaTool
         && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow());
       if (fallbackBlocked) {
@@ -2445,7 +2535,7 @@ export async function runAgent(
           if (!postResult?.skipped) finalMessage = textOut;
         } catch (postErr) {
           // The reply did not reach the pod, so the run did not answer: it
-          // fails, and a hosted one gets the fixed handling below (vera on #2305).
+          // fails, and a hosted one gets the fixed handling below.
           run.status = 'failed';
           run.errorMessage = (postErr as Error).message;
           run.errorKind = 'tool_error';

@@ -10,7 +10,8 @@
  * Resolution order for each skillId:
  *   1. Local bundle: `commonly-bundled-skills/<skillId>/SKILL.md`
  *      Used for skills not yet in the upstream catalog (today: officecli).
- *   2. Catalog index: `docs/skills/awesome-agent-skills-index.json` entry's
+ *   2. Catalog index (`resolveSkillsCatalogPath`, bundled copy at
+ *      `backend/docs/skills/awesome-agent-skills-index.json`): the entry's
  *      `sourceUrl` field — content fetched via `fetchSkillContentFromSource`.
  *   3. Skip with a warning if neither is found.
  *
@@ -29,15 +30,10 @@ import {
   fetchSkillBundleFromClawHub,
   parseLegacyOpenclawSkillsUrl,
 } from './skillsCatalogService';
+import { resolveSkillsCatalogPath } from './skillsCatalogPath';
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const BUNDLED_SKILLS_DIR = path.join(REPO_ROOT, 'commonly-bundled-skills');
-const CATALOG_INDEX_PATH = path.join(
-  REPO_ROOT,
-  'docs',
-  'skills',
-  'awesome-agent-skills-index.json',
-);
 
 interface CatalogEntry {
   id: string;
@@ -61,7 +57,7 @@ const warnedClawhubFailFor = new Set<string>();
 const loadCatalog = async (): Promise<Map<string, CatalogEntry[]>> => {
   if (catalogCache) return catalogCache;
   try {
-    const raw = await fs.readFile(CATALOG_INDEX_PATH, 'utf8');
+    const raw = await fs.readFile(resolveSkillsCatalogPath(), 'utf8');
     const parsed = JSON.parse(raw);
     const items: CatalogEntry[] = Array.isArray(parsed?.items) ? parsed.items : [];
     const grouped = new Map<string, CatalogEntry[]>();

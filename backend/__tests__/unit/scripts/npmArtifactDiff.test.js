@@ -1,7 +1,7 @@
 /**
  * Guards scripts/npm-artifact-diff.sh, which decides whether main holds
  * anything npm does not (TASK-466). npm-publish.yml reads exit 1 as permission
- * to publish, so exit 1 must mean ONLY "compared, and the files differ". Sable's
+ * to publish, so exit 1 must mean ONLY "compared, and the files differ". A review
  * HOLD on #2610 reproduced the opposite: a failing prepublishOnly and a diff
  * I/O error both came out as 1, and the decision step published on a
  * comparison that never finished. Every failure before the verdict is a 2.
@@ -94,7 +94,7 @@ describe('npm-artifact-diff.sh', () => {
     ['the registry tarball cannot be fetched', { STUB_FETCH_FAIL: '1' }],
     ['diff hits an I/O error (exit 2)', { STUB_DIFF_EXIT: '2' }],
     ['diff exits with anything else', { STUB_DIFF_EXIT: '3' }],
-    // Sable, #2610 at bc515eea: the redirect failing returns 1 without diff.
+    // The redirect failing returns 1 without diff.
     ['the diff output cannot be opened', { STUB_DIFF_OUT_BLOCKED: '1' }],
   ])('%s: exit 2, never 1', (_label, env) => {
     expect(run(setup(), env).status).toBe(2);
@@ -140,7 +140,7 @@ describe('npm-publish.yml decision step', () => {
   });
 
   test('a missing tag is retagged even when no tag with that prefix exists yet', () => {
-    // Sable, #2610 at bc515eea: "no tags at all" is also the state after the
+    // "no tags at all" is also the state after the
     // first publish whose tag push failed, so it must not mean "skip".
     const step = body();
     expect(step).toMatch(/case "\$t" in\n\s+0\) echo "action=skip" >> "\$GITHUB_OUTPUT" ;;\n(\s+#.*\n)*\s+2\) echo "· \$name: \$reg_v is published but/);

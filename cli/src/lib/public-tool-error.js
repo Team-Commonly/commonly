@@ -1,6 +1,6 @@
 /**
  * Which failed Commonly tool calls a public seat's model may answer in plain
- * words. Everything else withholds the turn (#2374, Vera 79595, Wren 79596).
+ * words. Everything else withholds the turn (#2374).
  *
  * The rule is inverted on purpose. Matching known connection failures let an
  * API 5xx through: the shipped MCP turns a non-2xx into a tool error carrying

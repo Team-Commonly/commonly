@@ -33,7 +33,7 @@ const agentUser = async (username, botMetadata) => {
 // no zone on file that is 06:00 UTC. Today's 06:00 UTC, so the windows built
 // from Date.now() in these fixtures still hold.
 const digestHourUtc = () => { const at = new Date(); at.setUTCHours(6, 0, 0, 0); return at; };
-// 15:01 UTC is 08:01 in Los Angeles under daylight time (Mar-Nov) only.
+// Guards the table rows below: which UTC hour is 08:00 there depends on the date.
 const localHourIsEight = (at) => require('../../../utils/timeZone').localHour('America/Los_Angeles', at) === 8;
 
 const podWithSummary = async (owner, name, options = {}) => {
@@ -292,7 +292,7 @@ test('the scheduled run skips someone active in the last 20 hours; an on-demand 
   spy.mockRestore();
 });
 
-// Cofounder's condition on #2210: no digest may carry another pod's activity.
+// No digest may carry another pod's activity.
 // Chat summaries are no longer an input at all, so another pod's summary (or
 // a pod-less one) cannot reach anyone's digest.
 test("a digest never carries another pod's summary: summaries are not an input", async () => {
@@ -331,20 +331,30 @@ describe('the digest hour', () => {
     expect(DailyDigestService.dueAt({ timezone }, new Date(at))).toBe(due);
   });
 
-  it('a scheduled run takes only the people for whom it is the hour', async () => {
-    const la = await person(new Date(Date.now() - 2 * 86400000));
+  // Fixed instants, never today: "15:01 UTC is 08:00 in Los Angeles" holds only
+  // under PDT, so a test that built 15:01 on the current date went red the day
+  // daylight saving ended (2026-11-01) and would have stayed red until March.
+  it.each([
+    ['in summer, 15:01 UTC is 08:01 PDT: Los Angeles is due', '2026-10-17T15:01:00Z', true, false],
+    ['in winter, 15:01 UTC is 07:01 PST: Los Angeles is not due', '2026-12-15T15:01:00Z', false, false],
+    ['in winter, 16:01 UTC is 08:01 PST: Los Angeles is due', '2026-12-15T16:01:00Z', true, false],
+    ['at 06:01 UTC only the person with no zone is due', '2026-12-15T06:01:00Z', false, true],
+  ])('a scheduled run takes only the people for whom it is the hour: %s', async (_label, iso, laDue, nozoneDue) => {
+    const at = new Date(iso);
+    const twoDaysBefore = new Date(at.getTime() - 2 * 86400000);
+    const la = await person(twoDaysBefore);
     await User.updateOne({ _id: la._id }, { $set: { timezone: 'America/Los_Angeles' } });
-    const nozone = await person(new Date(Date.now() - 2 * 86400000));
+    const nozone = await person(twoDaysBefore);
     const service = new DailyDigestService();
     const generate = jest.spyOn(service, 'generateUserDailyDigest').mockResolvedValue({ _id: 'digest-1' });
-    const laEight = new Date(); laEight.setUTCHours(15, 1, 0, 0);
 
-    await service.generateAllDailyDigests({ at: laEight });
+    await service.generateAllDailyDigests({ at });
 
     const called = generate.mock.calls.map(([id]) => String(id));
-    expect(laEight.getUTCHours() === 15 && localHourIsEight(laEight)).toBe(true);
-    expect(called).toContain(String(la._id));
-    expect(called).not.toContain(String(nozone._id));
+    expect(localHourIsEight(at)).toBe(laDue);
+    expect(called.includes(String(la._id))).toBe(laDue);
+    // 06:00 UTC is the hour for someone with no zone.
+    expect(called.includes(String(nozone._id))).toBe(nozoneDue);
   });
 
   it('nobody gets a second digest within 20 hours, even if their hour comes round again', async () => {
@@ -365,7 +375,7 @@ describe('the digest hour', () => {
   });
 });
 
-// Cofounder on #2286: two real hourly runs within 20 hours never digest the
+// Two real hourly runs within 20 hours never digest the
 // same person twice, here when their zone is captured between the runs and
 // makes the second run their hour too.
 test('two scheduled runs within 20 hours never digest the same person twice', async () => {

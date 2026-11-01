@@ -23,10 +23,12 @@ const JSONL = [
   line(4, 'harness.switched', null),
 ].join('\n').concat('\n');
 const recordUrl = `/api/pods/${POD}/record/tasks/TASK-7`;
+// The first page the view asks for; later pages add `after` by the last seq.
+const pageUrl = `${recordUrl}?after=0&limit=1000`;
 
 const wire = (record: () => Promise<unknown>, otlp: () => Promise<unknown> = () => Promise.resolve({ resourceSpans: [] })) => {
   mockGet.mockImplementation((url: string) => {
-    if (url === recordUrl) return record();
+    if (url === pageUrl) return record();
     if (url === `${recordUrl}?format=otlp`) return otlp();
     if (url === `/api/pods/${POD}`) return Promise.resolve({ members: [{ _id: HUMAN, username: 'ana', displayName: 'Ana' }, { _id: AGENT, username: 'scout' }] });
     return Promise.reject(new Error(`unexpected ${url}`));
@@ -85,13 +87,29 @@ test('ids that name Object properties show as ids, never as an inherited value',
   expect(screen.getByText('constructor')).toBeInTheDocument();
 });
 
+test('keeps reading past a full page, so a long chain is not shown short', async () => {
+  const page = (from: number, count: number) => Array.from({ length: count }, (_, i) => line(from + i, 'task.claimed', { id: AGENT, type: 'agent' }))
+    .join('\n').concat('\n');
+  const second = `${recordUrl}?after=1000&limit=1000`;
+  mockGet.mockImplementation((url: string) => {
+    if (url === pageUrl) return Promise.resolve(page(1, 1000));
+    if (url === second) return Promise.resolve(page(1001, 2));
+    if (url === `/api/pods/${POD}`) return Promise.resolve({ members: [] });
+    return Promise.reject(new Error(`unexpected ${url}`));
+  });
+  setup();
+  await waitFor(() => expect(mockGet).toHaveBeenCalledWith(second, expect.anything()));
+  // A short second page ends the read: no third request.
+  expect(mockGet.mock.calls.filter(([url]) => url.startsWith(recordUrl))).toHaveLength(2);
+});
+
 test('reads the JSONL as text and shows every entry with member names, unknown kinds by name', async () => {
   wire(() => Promise.resolve(JSONL));
   setup();
   expect(await screen.findByText('Claimed')).toBeInTheDocument();
-  expect(mockGet).toHaveBeenCalledWith(recordUrl, expect.objectContaining({ responseType: 'text' }));
+  expect(mockGet).toHaveBeenCalledWith(pageUrl, expect.objectContaining({ responseType: 'text' }));
   // A one-line record is still text: the transform must not parse it as JSON.
-  const config = mockGet.mock.calls.find(([url]) => url === recordUrl)[1];
+  const config = mockGet.mock.calls.find(([url]) => url === pageUrl)[1];
   expect(config.transformResponse[0](line(1, 'task.done', null))).toBe(line(1, 'task.done', null));
   expect(screen.getByText('4 entries')).toBeInTheDocument();
   expect(screen.getByText(`Run ${RUN}`)).toBeInTheDocument();

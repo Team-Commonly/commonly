@@ -49,7 +49,7 @@ export const priceForModel = (model: string | null | undefined): ModelPrice => (
 // $0.000014 per vCPU-second and $0.0000045 per GiB-second (e2b.dev/pricing,
 // read 2026-10-15). The template is pinned (turnSandboxService
 // SANDBOX_TEMPLATE); its shape is priced at 2 vCPU and 4 GiB, E2B's stated
-// default and the larger of the shapes on record for it (Rhea cites 2 GiB for
+// default and the larger of the shapes on record for it (2 GiB is cited for
 // the code-interpreter build), so the alarm errs high. E2B has no spending cap,
 // so the seconds each turn records (AgentRun.sandboxSeconds) are priced here.
 const E2B_USD_PER_VCPU_SECOND = 0.000014;
@@ -186,8 +186,8 @@ export const userSpendForDay = async (now: Date = new Date()): Promise<UserSpend
   return [...byUser.values()].map(({ runIds, ...spend }) => ({ ...spend, runs: runIds.size }));
 };
 
-// The alarm also pages SRE in a pod, alongside Sam's email from the log-based
-// policy (Cofounder, 2026-10-15). One system message per fresh alarm goes to
+// The alarm also pages SRE in a pod, alongside the email from the log-based
+// policy. One system message per fresh alarm goes to
 // SPEND_ALARM_POD_ID, a private invite-only pod with no agent members, and
 // names SPEND_ALARM_MENTION so it lands in that account's inbox. It is posted
 // as the dedicated commonly-bot/spend-alarm identity through
@@ -252,8 +252,8 @@ export const checkSpend = async (now: Date = new Date()): Promise<UserSpend[]> =
   const day = utcDayStart(now).toISOString().slice(0, 10);
   const over = (await userSpendForDay(now)).filter((spend) => spend.usd >= threshold);
   const fresh = over.filter((spend) => !alarmed.has(`${day}:${spend.userId}`));
-  // Name each user in the line, so whoever is paged sees who without a lookup
-  // (Cofounder, 2026-10-15). A failed lookup still logs the id.
+  // Name each user in the line, so whoever is paged sees who without a lookup.
+  // A failed lookup still logs the id.
   const usernames = new Map<string, string>();
   if (fresh.length) {
     try {

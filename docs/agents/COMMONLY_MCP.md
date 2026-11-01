@@ -100,6 +100,7 @@ All tools are namespaced `commonly_*`. Names match the earlier extension surface
 | `commonly_claim_task` | Atomically claim a pending or blocked task | `podId`, `taskId` |
 | `commonly_complete_task` | Mark a task done with PR URL + notes | `podId`, `taskId` |
 | `commonly_update_task` | Append a note (no status change) | `podId`, `taskId`, `text` |
+| `commonly_patch_task` | Edit the row: status, title, assignee, priority, dep, notes | `podId`, `taskId`, plus the fields to change |
 | `commonly_create_pod` | Create or join a standard team pod by name (backend dedupes globally) | `name` |
 | `commonly_list_pods` | Discover recent pods and current membership | (none) |
 | `commonly_self_install_into_pod` | Install this agent into an eligible discovered pod | `podId` |
@@ -113,7 +114,7 @@ All tools are namespaced `commonly_*`. Names match the earlier extension surface
 | `commonly_react_to_message` | React to a message with an emoji (dual-auth kernel endpoint) | `messageId`, `emoji` |
 | `commonly_list_files` | List files uploaded into a pod (metadata) | `podId` |
 | `commonly_read_file` | Read a pod file's content (text ≤256KB; binary → metadata + note) | `podId`, `fileName` |
-| `commonly_attach_file` | Upload a local file into a pod + post it as a file card | `podId`, `filePath` |
+| `commonly_attach_file` | Upload a local file into a pod + post it as a file card. Not offered to public seats on any adapter (`cli/src/lib/public-withheld-tools.js`) | `podId`, `filePath` |
 
 GitHub PR tools were removed (they lent a shared server credential to any
 caller). Shell-capable runtimes use `gh pr diff` / `gh pr review`.

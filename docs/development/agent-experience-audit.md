@@ -4220,3 +4220,35 @@ Measured with `createParser(catalogue).parse(source)`: a `Text` body of 601 char
 **Repair:** inspect every statement/call before accepting source, then validate the materialized element tree with a full JSON Schema validator. Element wrappers preserve component identity when following child/helper references. `backend/__tests__/unit/services/uiCardValidation.test.js` pins string/array/number limits, helper placement and cross-item rules as well as dormant unsafe calls.
 
 **Lesson:** accepting a schema as a parser input does not establish which schema constraints it enforces. Probe the actual boundary values before making the parser an authorization or resource-limit boundary.
+
+## 86. A native-runtime `HTTP 401` named the model, but the 401 came from a guardrail's upstream call (2026-10-31, sre)
+
+*Origin: the Scout-staging incident. Sam: "is scout not working? I saw it not responding in staging." Button clicks in the onboarding pod enqueued native-runtime turns that all failed; the scripted welcome still posted, so the pod looked half-alive. Fixed across #3077 (litellm was not deployed in `commonly-staging`) and #3079 (the guardrail below).*
+
+After #3077 brought litellm up healthy in staging, Scout turns still failed. The `AgentRun` carried `errorKind="llm_error"`, `errorMessage="Model deepseek-v4-flash: HTTP 401"` — which reads as a bad DeepSeek key or a model-routing problem. It was neither. `nativeRuntimeService.ts` opts every native turn into the guardrail pair `openai-moderation-enforce,injection-guard` (overridable via `NATIVE_RUNTIME_GUARDRAILS`). `openai-moderation-enforce` calls OpenAI's moderation API (`https://api.openai.com/v1/moderations`) with `OPENAI_API_KEY`, as a `during_call` check **before** the model call. Staging's `api-keys.openai-api-key` is an 11-byte placeholder (prod's was the literal `"placeholder"`), so the guardrail 401'd and litellm returned 401 for the whole `/chat/completions`. The decisive evidence was only in **litellm's own pod logs** — `Client error '401 Unauthorized' for url 'https://api.openai.com/v1/moderations'` — not in the AgentRun error, which attributed the 401 to `deepseek-v4-flash`. The DeepSeek key was valid (35 bytes) the whole time.
+
+**Repair:** per env without a real OpenAI moderation key, set `backend.env.nativeRuntimeGuardrails: "injection-guard"` (LiteLLM-native, no external key). Prod (`values-dev.yaml`) already carried this; staging was simply missing it — the same omission class as the missing litellm stanza. Root-cause follow-up (tracked, not in these PRs): flip the service default in `nativeRuntimeService.ts` to `injection-guard` so a new/unconfigured env does not inherit the keyless 401. The sibling `llmService` path is only safe via a Helm-env hardcode (`LLMSERVICE_GUARDRAILS: "injection-guard"`, `backend-deployment.yaml:573`) — `llmService.ts`'s own *code* default is the same unsafe pair, so the thing to copy is the deployment override, not the sibling's code default. Guard test: `backend/__tests__/unit/helm/litellmStagingEnabled.test.js`.
+
+**Lesson:** a native-runtime error names the model it was trying to reach, not the dependency that actually failed. A `"Model <X>: HTTP 401"` can be a pre-call guardrail's upstream 401 (a different vendor, a different key) — read litellm's own pod logs for the failing URL before concluding the model's key is wrong. And "litellm is up" is necessary, not sufficient, for a native agent to reply: the guardrail is an independent failure surface on the same turn.
+
+## 87. A stalled codex turn ends only at the group SIGKILL, because the adapter ignores the abort (2026-10-31, swe)
+
+*Origin: the walk that unblocked turning supervised runs on by default for codex (#2769 follow-up). A real `codex exec` (codex-cli 0.162.1) under cli 0.1.211 ran with `COMMONLY_SUPERVISE_RUNS=1`, a 30 s stall window, and a local provider that accepts the connection and never answers.*
+
+Every turn was named `stuck`, and every turn took the full window plus the cancel grace. After 30 s of silence the supervisor aborts the run (`controller.abort`, which sends no signal to any process). The codex adapter does not act on the abort, so the 15 s cancel grace (`CANCEL_GRACE_MS`, `cli/src/lib/supervised-turn.js`) runs out and the supervisor SIGKILLs the process group (`packages/seats/src/supervisor.js`, `process-group.js`). The failure detail says so: `the adapter did not settle within 15000ms of cancellation`. In 3 of 3 turns the turn line read `signal: "SIGKILL"`, `childLeftRunning: false`, and no codex process remained after the agent stopped. One more detail: once the provider went away mid-turn, codex's reconnect attempts wrote progress events, so that turn ran 111 s before it was named. A retrying CLI looks alive to a stdout-progress check.
+
+An earlier draft of this entry said codex "ignores SIGTERM". The walk shows nothing of the kind: on the stall path no SIGTERM is sent at all. The only SIGTERM in the codex adapter is its own run timeout.
+
+**Repair:** none needed. The group SIGKILL after a bounded grace is what ends a stalled codex or claude turn, and it works. This entry is here so nobody shortens or removes that step thinking the abort is enough.
+
+**Lesson:** for the codex and claude adapters the abort is advisory, and only the group SIGKILL ends a stalled turn. Read a stall's duration as window + grace, not window. And name the mechanism you observed: "the process ignored SIGTERM" and "nothing sent SIGTERM" look identical from the outside.
+
+## 88. The claude first-output watchdog catches a turn that never starts, not a turn whose provider never answers (2026-10-31, swe)
+
+*Origin: proving that no seat turn hangs silently. `spawn_stalled` (cli 0.1.199+, on by default, 180 s) reads like a liveness check for claude seats.*
+
+It is not one. The watchdog counts a spawn as started when it writes any stdout or stderr byte, or when its session transcript grows. `claude -p` writes the transcript's first row about a second after it spawns, before it has heard anything from the model. Walked on the seats' build (cli 0.1.200) with `COMMONLY_FIRST_OUTPUT_WINDOW_MS=20000` and a provider that accepts the connection and never answers: claude connected twice, wrote its transcript, and was never named `spawn_stalled`. It ran to the run timeout and failed as `claude timed out after 150000ms`, the unnamed failure the watchdog was written to replace. The watchdog's own header says what it was built for: the locked-console hang, where `claude -p` writes no transcript row at all.
+
+**Repair:** none in this entry. A claude turn whose provider hangs is bounded only by `COMMONLY_AGENT_RUN_TIMEOUT_MS` (45 min on seats), and the supervised path keeps claude's stall window off because its stdout is silent until the reply is done.
+
+**Lesson:** "first output" and "still making progress" are different signals. Before citing a watchdog as hang coverage, name the exact signal it reads and check which hang shapes produce that signal. A transcript row written before the first network round trip proves the process started, not that the model is answering.

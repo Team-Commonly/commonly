@@ -1,8 +1,7 @@
 /**
  * Who posted in a pod since a time: the assigned-task wake reads this to decide
- * whether a person acted. On PostgreSQL a post that fell back to MongoDB is only
- * in MongoDB until it is reconciled, so both stores are read. One store failing
- * keeps the other's authors; both failing throws, and the wake fails closed.
+ * whether a person acted. One store answers, by the PG_HOST gate the message
+ * writes use (TASK-503). A failed read throws, and the wake fails closed.
  */
 const AgentMessageService = require('../../../services/agentMessageService');
 const Message = require('../../../models/Message');
@@ -24,36 +23,23 @@ describe('authorIdsSince', () => {
     else process.env.PG_HOST = origPgHost;
   });
 
-  test('on PostgreSQL, includes an author whose post is still in the MongoDB fallback', async () => {
+  test('on PostgreSQL, reads PostgreSQL only', async () => {
     process.env.PG_HOST = 'localhost';
-    PGMessage.findAuthorIdsSince.mockResolvedValue(['agent-1', 'person-1']);
-    Message.distinct.mockResolvedValue(['person-2', 'person-1']);
-    const ids = await AgentMessageService.authorIdsSince('pod-1', SINCE);
-    expect(ids.sort()).toEqual(['agent-1', 'person-1', 'person-2']);
-    expect(Message.distinct).toHaveBeenCalledWith('userId', expect.objectContaining({ createdAt: { $gt: SINCE } }));
+    PGMessage.findAuthorIdsSince.mockResolvedValue(['agent-1', 'person-1', 'person-1']);
+    Message.distinct.mockResolvedValue(['person-2']);
+    expect(await AgentMessageService.authorIdsSince('pod-1', SINCE)).toEqual(['agent-1', 'person-1']);
+    expect(Message.distinct).not.toHaveBeenCalled();
   });
 
-  // An author either store returns did post. During a PostgreSQL outage the
-  // posts land in MongoDB, so that read is the one that sees them.
-  test('a failed PostgreSQL read keeps the MongoDB authors', async () => {
+  // With PostgreSQL configured nothing writes MongoDB messages (TASK-503), so
+  // MongoDB cannot stand in for a failed read. The wake fails closed instead.
+  test('a failed PostgreSQL read throws and does not read MongoDB', async () => {
     process.env.PG_HOST = 'localhost';
     PGMessage.findAuthorIdsSince.mockRejectedValue(new Error('pg down'));
     Message.distinct.mockResolvedValue(['person-2']);
-    expect(await AgentMessageService.authorIdsSince('pod-1', SINCE)).toEqual(['person-2']);
-  });
-
-  test('a failed MongoDB read keeps the PostgreSQL authors', async () => {
-    process.env.PG_HOST = 'localhost';
-    PGMessage.findAuthorIdsSince.mockResolvedValue(['person-1']);
-    Message.distinct.mockRejectedValue(new Error('mongo down'));
-    expect(await AgentMessageService.authorIdsSince('pod-1', SINCE)).toEqual(['person-1']);
-  });
-
-  test('both reads failing throws', async () => {
-    process.env.PG_HOST = 'localhost';
-    PGMessage.findAuthorIdsSince.mockRejectedValue(new Error('pg down'));
-    Message.distinct.mockRejectedValue(new Error('mongo down'));
-    await expect(AgentMessageService.authorIdsSince('pod-1', SINCE)).rejects.toThrow('pg down');
+    await expect(AgentMessageService.authorIdsSince('pod-1', SINCE))
+      .rejects.toMatchObject({ code: 'MESSAGE_STORE_UNAVAILABLE', statusCode: 503 });
+    expect(Message.distinct).not.toHaveBeenCalled();
   });
 
   test('without PostgreSQL, reads MongoDB only', async () => {

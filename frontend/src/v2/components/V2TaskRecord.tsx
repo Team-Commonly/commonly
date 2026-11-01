@@ -29,6 +29,9 @@ const KNOWN_KINDS = new Set([
 // Data fields that hold a user id, shown by member name where one is known.
 const PERSON_FIELDS = new Set(['doneBy', 'decidedBy', 'issuedBy']);
 
+// The server's MAX_PAGE_LINES. A page this long may have more after it.
+const RECORD_PAGE_LINES = 1000;
+
 type LoadError = 'access' | 'members' | 'store' | 'error' | 'unreadable';
 const STATUS_ERRORS: Record<number, LoadError> = { 403: 'members', 404: 'access', 503: 'store' };
 
@@ -82,11 +85,26 @@ const V2TaskRecord: React.FC = () => {
     let live = true;
     setJsonl(null); setLines([]); setError(null); setDownloadError(false);
     if (!valid) { setError('access'); return undefined; }
-    // Text as served: one JSON object per line, never parsed as a whole.
-    api.get<string>(recordUrl, { responseType: 'text', transformResponse: [(body: unknown) => body] })
-      .then((body) => {
+    // Text as served: one JSON object per line, never parsed as a whole. The
+    // server pages the chain, and a full page means more may follow, so keep
+    // reading from the last seq until a page comes back short.
+    const readText = async (): Promise<string> => {
+      const options = { responseType: 'text' as const, transformResponse: [(body: unknown) => body] };
+      let text = '';
+      for (let after = 0; ;) {
+        const page = await api.get<string>(`${recordUrl}?after=${after}&limit=${RECORD_PAGE_LINES}`, options);
+        const body = typeof page === 'string' ? page : '';
+        if (!body) break;
+        text += body;
+        const lines = body.trimEnd().split('\n');
+        if (lines.length < RECORD_PAGE_LINES) break;
+        after = (JSON.parse(lines[lines.length - 1]) as RecordLine).seq;
+      }
+      return text;
+    };
+    readText()
+      .then((text) => {
         if (!live) return;
-        const text = typeof body === 'string' ? body : '';
         try { setLines(parseRecord(text)); setJsonl(text); } catch { setError('unreadable'); }
       })
       .catch((err: { response?: { status?: number } }) => {
