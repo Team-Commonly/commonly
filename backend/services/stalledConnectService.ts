@@ -126,8 +126,8 @@ const botTokensFor = async (agentName: string, instanceId: string) => {
     isBot: true,
     'botMetadata.agentName': agentName,
     'botMetadata.instanceId': instanceId,
-  }).select('agentRuntimeTokens.lastUsedAt agentRuntimeTokens.createdAt').lean() as
-    { agentRuntimeTokens?: Array<{ lastUsedAt?: Date; createdAt?: Date }> } | null;
+  }).select('agentRuntimeTokens.lastListenedAt agentRuntimeTokens.createdAt').lean() as
+    { agentRuntimeTokens?: Array<{ lastListenedAt?: Date; createdAt?: Date }> } | null;
   return row?.agentRuntimeTokens || [];
 };
 
@@ -377,7 +377,7 @@ const resolveConnected = async ({
     const handle = buildAgentUsername
       ? buildAgentUsername(String(ep.agentName), String(ep.instanceId))
       : String(ep.agentName);
-    // `lastUsedAt` leaving null is a PERMANENT transition, so this timestamp
+    // `lastListenedAt` leaving null is a PERMANENT transition, so this timestamp
     // survives a wrapper that connected and stopped again between passes —
     // which is why the confirmation needs no time bound (ux-lead, 53307).
     const firstSeenAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : now;

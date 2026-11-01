@@ -147,7 +147,13 @@ describe('agentWebSocketService', () => {
       });
       expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
         { _id: 'install-1', 'runtimeTokens.tokenHash': hash(token) },
-        { $set: { 'runtimeTokens.$.lastUsedAt': expect.any(Date) } },
+        // An installation-bound token is stamped as a listener check-in too (TASK-721).
+        {
+          $set: {
+            'runtimeTokens.$.lastUsedAt': expect.any(Date),
+            'runtimeTokens.$.lastListenedAt': expect.any(Date),
+          },
+        },
       );
       expect(result).toEqual({
         agentName: 'openclaw',

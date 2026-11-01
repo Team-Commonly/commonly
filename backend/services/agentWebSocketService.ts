@@ -82,7 +82,7 @@ interface InstallationDoc {
   status?: string;
   displayName?: string;
   config?: { runtime?: { runtimeType?: string; host?: string; webhookUrl?: string } };
-  runtimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date }>;
+  runtimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date; lastListenedAt?: Date }>;
 }
 
 const normalizeTokenIdentityValue = (value: unknown): string => (
@@ -449,9 +449,16 @@ class AgentWebSocketService {
             .find((t: { tokenHash?: string; lastUsedAt?: Date }) => t.tokenHash === tokenHash);
           const isFirstLegacyUse = !wsInstallTokenRecord?.lastUsedAt;
           try {
+            // Same as the User-row copy above: a connect is a listener check-in.
+            const connectedAt = new Date();
             await AgentInstallation.updateOne(
               { _id: installation._id, 'runtimeTokens.tokenHash': tokenHash },
-              { $set: { 'runtimeTokens.$.lastUsedAt': new Date() } },
+              {
+                $set: {
+                  'runtimeTokens.$.lastUsedAt': connectedAt,
+                  'runtimeTokens.$.lastListenedAt': connectedAt,
+                },
+              },
             );
           } catch (err) {
             console.warn('Failed to update agent token usage:', (err as Error).message);

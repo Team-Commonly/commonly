@@ -88,7 +88,7 @@ it('stays silent for a bot sender', async () => {
 });
 
 it('stays silent once the agent has a live credential use', async () => {
-  mockFindBot.mockReturnValue(chain(botRow([{ lastUsedAt: new Date(NOW.getTime() - 60 * 1000) }])));
+  mockFindBot.mockReturnValue(chain(botRow([{ lastListenedAt: new Date(NOW.getTime() - 60 * 1000) }])));
   expect(await noteNeverConnectedMention(args)).toBe(false);
   expect(mockEmitNotConnected).not.toHaveBeenCalled();
 });

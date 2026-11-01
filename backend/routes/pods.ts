@@ -569,9 +569,9 @@ router.get('/:podId/agent-states', agentStatesRateLimit, auth, async (req: AuthR
       'botMetadata.instanceId': String(inst.instanceId || 'default'),
     }));
     const agentUsers = await User.find({ isBot: true, $or: identityFilters })
-      .select('botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastUsedAt')
+      .select('botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt')
       .lean();
-    const userTokensByIdentity = new Map<string, Array<{ lastUsedAt?: Date }>>();
+    const userTokensByIdentity = new Map<string, Array<{ lastListenedAt?: Date }>>();
     (agentUsers || []).forEach((u: any) => {
       const key = `${String(u.botMetadata?.agentName || '').toLowerCase()}:${String(u.botMetadata?.instanceId || 'default').toLowerCase()}`;
       userTokensByIdentity.set(key, u.agentRuntimeTokens || []);
