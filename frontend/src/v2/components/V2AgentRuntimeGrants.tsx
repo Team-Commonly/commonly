@@ -4,7 +4,7 @@ import { machineDisplayName } from '../utils/machineLabel';
 import { useV2Api } from '../hooks/useV2Api';
 import V2AgentProviderKey from './V2AgentProviderKey';
 import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
-import ConnectorLogo from '../connectors/ConnectorLogo';
+import ConnectorLogo, { connectorName } from '../connectors/ConnectorLogo';
 import V2RuntimeControls, { RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 
@@ -258,7 +258,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
               <div key={grant.grantId} className={`lrow v2-agent-settings-page__grant${ended ? ' is-ended' : ''}`}>
                 <span className="lg">{connector ? <ConnectorLogo type={connector} size={28} /> : null}</span>
                 <span className="v2-agent-settings-page__grantname">
-                  <strong title={grant.tools.join(', ')}>{connector || t('agentManage.grants.tool', { defaultValue: 'Tool' })}</strong>
+                  <strong title={grant.tools.join(', ')}>{connector ? connectorName(connector) : t('agentManage.grants.tool', { defaultValue: 'Tool' })}</strong>
                   <span className="mo">{grant.podName || t('agentManage.grants.direct', { defaultValue: 'Direct to this agent' })} · {t('agentManage.grants.by', { defaultValue: 'Granted by' })} {grant.grantedBy || t('agentManage.grants.unknown', { defaultValue: 'unknown' })} · {dateLabel(grant.createdAt)}</span>
                 </span>
                 <span className="ac">

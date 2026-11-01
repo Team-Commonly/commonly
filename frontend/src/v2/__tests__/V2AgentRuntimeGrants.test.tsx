@@ -232,3 +232,11 @@ test('the inline confirm swaps back to Revoke on Cancel, and the title counts ac
   expect(screen.queryByRole('button', { name: 'Yes, revoke it' })).toBeNull();
   expect(axios.post).not.toHaveBeenCalled();
 });
+
+test('names a grant by its connector brand, not its id', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
+    : { grants: [{ ...response.grants[0], connector: 'github', tools: ['github.list_issues'] }] } }));
+  renderSection();
+  expect(await screen.findByText('GitHub')).toBeInTheDocument();
+});

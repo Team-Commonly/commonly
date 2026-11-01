@@ -55,6 +55,15 @@ const LOGOS: Record<string, React.ReactNode> = {
 // The connector id a catalog row uses is not always the logo's name.
 const ALIASES: Record<string, string> = { 'github-mcp': 'github' };
 
+// Brand spellings for the ids above, for surfaces that show a bare connector id.
+const NAMES: Record<string, string> = {
+  slack: 'Slack', telegram: 'Telegram', github: 'GitHub', linear: 'Linear',
+  atlassian: 'Atlassian', airtable: 'Airtable', sentry: 'Sentry',
+};
+
+/** A connector id as its brand writes it; an unknown id is returned as is. */
+export const connectorName = (type: string): string => NAMES[ALIASES[type] || type] || type;
+
 interface Props {
   type: string;
   size?: number;
