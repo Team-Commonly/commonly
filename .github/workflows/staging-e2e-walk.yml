@@ -71,3 +71,15 @@ jobs:
             output: { title: "Staging first-user walk", summary: $summary, text: $text }
           }' > "$RUNNER_TEMP/check.json"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" --input "$RUNNER_TEMP/check.json" >/dev/null
+
+      # The walk writes the hosted-agent ids SRE needs for the admin purge into
+      # COMMONLY_WALK_STATE_DIR, which the runner discards. Keep it on every
+      # outcome, including a failed walk. It holds ids only, never credentials.
+      - name: Keep the walk manifest for SRE's purge
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-e2e-walk-manifest-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/walk-state
+          if-no-files-found: warn
+          retention-days: 30
