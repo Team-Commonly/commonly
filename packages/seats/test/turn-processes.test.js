@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isRunning, readPids, reap, waitFor } from '../test-support/processes.js';
@@ -98,7 +98,8 @@ test('the check is on unless COMMONLY_TURN_REAP=0, and a child with no pid is ne
   assert.match(describeTurnReap({ termed: [7, 8] }), /stopped 2 processes .*pid 7, 8.*COMMONLY_KEEP_PROCESS=1/);
 });
 
-// The turn writes "<leftover>,<kept>,<stubborn>" and exits.
+// The turn writes "<leftover>,<kept>,<stubborn>" and exits. The stubborn one
+// writes the ready file once its SIGTERM handler is in, so no SIGTERM can beat it.
 const TURN = `
 const { spawn } = require('child_process');
 const start = (env, script) => {
@@ -107,11 +108,12 @@ const start = (env, script) => {
   return c.pid;
 };
 const idle = 'setInterval(() => {}, 1000);';
-const stubborn = "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);";
+const stubborn = "process.on('SIGTERM', () => {}); "
+  + "require('fs').writeFileSync(process.env.TURN_READY_FILE, '1'); setInterval(() => {}, 1000);";
 const pids = [
   start(process.env, idle),
   start({ ...process.env, ${KEEP_PROCESS_ENV}: '1' }, idle),
-  start(process.env, stubborn),
+  start({ ...process.env, TURN_READY_FILE: process.argv[2] }, stubborn),
 ];
 require('fs').writeFileSync(process.argv[1], pids.join(','));
 `;
@@ -119,17 +121,19 @@ require('fs').writeFileSync(process.argv[1], pids.join(','));
 test('a turn that detaches children leaves none running, except the one it kept', { skip: !POSIX }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'turn-processes-'));
   const pidFile = join(dir, 'pids');
+  const readyFile = join(dir, 'ready');
   const turn = markTurn({ ...process.env }, { enabled: true, graceMs: 500 });
   // Started in the turn's window, without the mark: another seat's process.
   const bystander = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000);'], { stdio: 'ignore' });
   let pids = [];
   try {
-    const child = spawn(process.execPath, ['-e', TURN, pidFile], { env: turn.env, stdio: 'ignore' });
+    const child = spawn(process.execPath, ['-e', TURN, pidFile, readyFile], { env: turn.env, stdio: 'ignore' });
     await once(child, 'close');
     pids = await readPids(pidFile, 3);
     const [leftover, kept, stubborn] = pids;
-    // Each one is up before the reap looks.
+    // Each one is up before the reap looks, and the stubborn one is ignoring SIGTERM.
     assert.ok(await waitFor(() => pids.every((pid) => readProcess(pid))));
+    assert.ok(await waitFor(() => existsSync(readyFile)), 'the stubborn one has its handler in');
 
     const result = turn.reap(child);
 

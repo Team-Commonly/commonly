@@ -94,7 +94,9 @@ describe.each([['claude', claude], ['codex', codex]])('%s: what a turn leaves ru
   (POSIX ? test : test.skip)('runs on when the check is off', async () => {
     let pids = {};
     try {
-      pids = await runTurn(adapter, { _turnReap: false });
+      // Without the marker of any turn this suite itself runs in.
+      const { [TURN_MARK_ENV]: _outerMark, ...outside } = process.env;
+      pids = await runTurn(adapter, { _turnReap: false, env: { ...outside, HOME: home } });
 
       expect(pids.markedEnv[TURN_MARK_ENV]).toBeUndefined();
       await new Promise((resolve) => { setTimeout(resolve, 300); });

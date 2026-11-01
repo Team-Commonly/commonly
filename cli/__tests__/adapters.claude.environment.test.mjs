@@ -1105,6 +1105,7 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
     expect(promptArg).toContain('=== Fresh session ===');
     expect(promptArg).not.toContain('=== Working a row ===');
     expect(promptArg).not.toContain('Agent tool');
+    expect(promptArg).not.toContain('COMMONLY_KEEP_PROCESS');
   });
 
   test('a private seat loads skills natively and gets no appended prompt', async () => {
