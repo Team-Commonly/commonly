@@ -480,7 +480,8 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     try {
       await runAgent(hostedInstall(), mention);
       const offered = axios.post.mock.calls[0][1].tools.map((tool) => tool.function.name).sort();
-      expect(offered).toEqual(['commonly_post_message', 'commonly_read_context']);
+      // The claim stays (F40): a task-bound grant waits on it, and the grant itself narrows the turn.
+      expect(offered).toEqual(['commonly_claim_task', 'commonly_post_message', 'commonly_read_context']);
     } finally {
       podHasOutsiderWritableGrant.mockResolvedValue(false);
     }

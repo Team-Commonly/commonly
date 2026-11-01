@@ -594,6 +594,23 @@ const toolAvailable = (name: string): boolean => {
 // predate tool lists (no cfg.tools) keep the pre-gate surface minus
 // approval proposing, which is opt-in by declaration only.
 const IN_POD_NATIVE_TOOLS = new Set(['commonly_read_context', 'commonly_post_message']);
+// F40: a task-bound grant can be used only once its task is claimed, and a pod
+// holding any live grant keeps every turn in-pod-only. Without the claim here, a
+// grant minted before the claim could never be used. A claim changes only this
+// pod's board. It stays only until a granted tool has answered in the turn, so a
+// connector result in this turn never picks the task (pod messages from earlier
+// turns can still be read, so this is not a promise about all outsider text).
+// The narrowing is re-read every round, so the withdrawal follows the broker
+// result, not the grant: a grant that lapses after its tool answered does not
+// bring the claim back. Web taint still refuses it: WEB_TAINTED_TOOLS is built
+// from IN_POD_NATIVE_TOOLS alone.
+const IN_POD_BOARD_TOOLS: ReadonlySet<string> = new Set(['commonly_claim_task']);
+const keptInPod = (name: string, brokerCallSeen: boolean): boolean => (
+  IN_POD_NATIVE_TOOLS.has(name) || (!brokerCallSeen && IN_POD_BOARD_TOOLS.has(name))
+);
+const withdrawnAfterBroker = (name: string, brokerCallSeen: boolean): boolean => (
+  brokerCallSeen && IN_POD_BOARD_TOOLS.has(name)
+);
 
 // TASK-267a: web results are third-party text that can carry instructions.
 // Once a search has returned in a turn, the rest of that turn can read and
@@ -652,15 +669,17 @@ const POSTING_NATIVE_TOOLS: ReadonlySet<string> = new Set([
 export const toolsForConfig = (
   cfg: { tools?: unknown } | null | undefined,
   inPodOnly = false,
-  { webTainted = false, computerReadSeen = false, podBridged = false }:
-  { webTainted?: boolean; computerReadSeen?: boolean; podBridged?: boolean } = {},
+  {
+    webTainted = false, computerReadSeen = false, podBridged = false, brokerCallSeen = false,
+  }: { webTainted?: boolean; computerReadSeen?: boolean; podBridged?: boolean; brokerCallSeen?: boolean } = {},
 ): readonly (typeof TOOLS)[number][] => {
   const declared = Array.isArray(cfg?.tools) ? (cfg?.tools as string[]) : null;
   return TOOLS.filter((t) => (declared
     ? declared.includes(t.function.name)
     : !OPT_IN_TOOLS.has(t.function.name))
     && toolAvailable(t.function.name)
-    && (!inPodOnly || IN_POD_NATIVE_TOOLS.has(t.function.name))
+    && (!inPodOnly || keptInPod(t.function.name, brokerCallSeen))
+    && !withdrawnAfterBroker(t.function.name, brokerCallSeen)
     && (!webTainted || allowedAfterTaint(t.function.name, computerReadSeen))
     && (!podBridged || !WEB_LOOKUP_TOOLS.has(t.function.name)));
 };
@@ -793,9 +812,13 @@ export async function dispatchTool(
 ): Promise<DispatchResult> {
   // The model may emit a name it was not offered. The live grant boundary is
   // enforced at dispatch as well as in the advertised tool list.
-  if (ctx.inPodOnly && !IN_POD_NATIVE_TOOLS.has(name)) {
+  if ((ctx.inPodOnly && !keptInPod(name, Boolean(ctx.brokerCallSeen)))
+    || withdrawnAfterBroker(name, Boolean(ctx.brokerCallSeen))) {
+    const reason = IN_POD_BOARD_TOOLS.has(name)
+      ? 'for the rest of this turn because a granted tool has answered in it'
+      : 'while this pod holds an outsider-writable grant';
     return {
-      content: { ok: false, error: `${name} is unavailable while this pod holds an outsider-writable grant` },
+      content: { ok: false, error: `${name} is unavailable ${reason}` },
       error: 'outsider_writable_grant_tool_denied',
     };
   }
@@ -2262,7 +2285,12 @@ export async function runAgent(
       const recoveryRound = webSetAside;
       offeredBroker = broker;
       const offeredTools = [
-        ...toolsForConfig(cfg, inPodOnly, { webTainted, computerReadSeen: dispatchCtx.computerReadSeen, podBridged })
+        ...toolsForConfig(cfg, inPodOnly, {
+          webTainted,
+          computerReadSeen: dispatchCtx.computerReadSeen,
+          podBridged,
+          brokerCallSeen: Boolean(dispatchCtx.brokerCallSeen),
+        })
           .filter((tool) => !recoveryRound || tool.function.name === 'commonly_post_message'),
         ...(webTainted || recoveryRound ? [] : offeredBroker.tools),
       ];
@@ -2449,7 +2477,9 @@ export async function runAgent(
           }
           // A tool the narrowing removed goes to dispatchTool, which refuses it
           // naming the grant; any other tool not offered this turn is refused here.
-          const narrowedAway = Boolean(dispatchCtx.inPodOnly) && !IN_POD_NATIVE_TOOLS.has(toolName);
+          const narrowedAway = (Boolean(dispatchCtx.inPodOnly)
+            && !keptInPod(toolName, Boolean(dispatchCtx.brokerCallSeen)))
+            || withdrawnAfterBroker(toolName, Boolean(dispatchCtx.brokerCallSeen));
           const notOffered = `${toolName || 'That tool'} is not available to you in this turn.`;
           // The recovery round posts at most one reply.
           const replied = recoveryRound && postedViaTool ? RECOVERY_REPLIED_REFUSAL : '';

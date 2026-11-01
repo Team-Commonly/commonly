@@ -284,6 +284,22 @@ describe('a hosted-MCP grant through the broker', () => {
     },
   );
 
+  // F40 review: a task-bound grant is usable from a hosted turn only inside its
+  // task's pod. A seat grant reaches the agent everywhere; its claim is checked
+  // against the task's pod, not the run's.
+  it('refuses a task-bound grant from a hosted turn in another pod, before any vendor call', async () => {
+    const bound = hostedGrant({ binding: { podId: 'pod-task', taskId: 'TASK-001' } });
+    mockRoomGrant.findOne.mockResolvedValue(bound);
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {},
+      hostedTurn: true, runPodId: 'pod-elsewhere',
+    })).rejects.toMatchObject({ code: 'task_pod_mismatch' });
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: {}, hostedTurn: true,
+    })).rejects.toMatchObject({ code: 'task_pod_mismatch' });
+    expect(toolCalls()).toHaveLength(0);
+  });
+
   // TASK-255: a tool the vendor lists but the entry does not pin is not a
   // write-with-confirm tool by default, it is no tool at all. Offering and minting
   // already refuse it (hostedMcpEntry.test.js, grants.mint.test.js); this is the
