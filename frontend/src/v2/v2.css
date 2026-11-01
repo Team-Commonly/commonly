@@ -3574,31 +3574,17 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-msg__mention {
-  background: transparent;
+  background: color-mix(in srgb, var(--v2-accent) 10%, transparent);
   color: var(--v2-accent-text);
-  padding: 1px 5px;
-  border-radius: 5px;
+  padding: 0 4px;
+  border-radius: var(--v2-r-6);
   font-weight: 500;
   white-space: nowrap;
 }
 
-/* A mention is a tinted system signal, not a separate card or accent rail. */
-.v2-msg--mention {
-  background: var(--v2-surface-hover);
-  border-radius: var(--v2-radius-sm);
-  padding: 8px 10px 8px 10px;
-}
-
-/* The wash bleeds one padding past the row on BOTH sides so the mention
-   TEXT sits exactly on the shared grid like every other row (
-   2026-08-23 — mentions sat off-grid while messages aligned; the old
-   bleed was -12px against 10px padding, 2px off). The bleed lands inside
-   the pane's 24px gutter. 0-2-0 beats the `> *` width rule regardless of
-   source order. */
-.v2-chat__messages > .v2-msg--mention {
-  width: calc(100% + 20px);
-  margin-inline: -10px;
-}
+/* A message that mentions you gets no row highlight: the tint lives on the
+   @handle chip only (D224). The class stays as a hook for tests and selectors. */
+.v2-msg--mention { background: none; }
 
 .v2-msg__content ul,
 .v2-msg__content ol {
@@ -13344,12 +13330,12 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-root button.v2-thread-replies__follow--on { color: var(--v2-accent-text); }
 
 /* Mention token: wash + cobalt (ux-lead 64476 (7)); the row tint stays. */
-.v2-thread .v2-msg__mention { background: #e8ecfb; color: var(--v2-accent-text); border-radius: 3px; padding: 0 4px; }
 
 /* Transcript avatars are two-tone squares (ux-lead 64476 (1)): human tint +
    #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
 .v2-thread .v2-avatar--flat { border: 0; box-shadow: 0 0 0 1px var(--v2-av-ring, rgba(16, 24, 40, 0.08)); border-radius: var(--v2-r-9, 9px); font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
 .v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
+.v2-thread .v2-msg__mention { background: #e8ecfb; color: var(--v2-accent-text); border-radius: 3px; padding: 0 4px; }
 .v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: var(--v2-bg); }
 .v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { border-radius: var(--v2-r-6, 6px); font: 650 12px/1 var(--v2-font); }
 .v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }

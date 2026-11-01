@@ -1011,13 +1011,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(composer).toContain('className="v2p-b v2p-b-g v2p-ib v2-composer__plus"');
     // Nothing in the column may escape the shared edge (2026-08-23:
     // mentions and threads sat off-grid while messages aligned).
-    // Mentions: the wash bleed must equal the padding (the old -12px against
-    // 10px padding put mention TEXT 2px off-grid), widening the wash by one
-    // padding per side into the pane gutter.
-    expect(ruleBody(v2, '.v2-chat__messages > .v2-msg--mention'))
-      .toContain('margin-inline: -10px');
-    expect(ruleBody(v2, '.v2-chat__messages > .v2-msg--mention'))
-      .toContain('width: calc(100% + 20px)');
+    // Mentions: no row wash and no bleed (D224); the tint is on the chip only.
+    expect(v2).not.toContain('.v2-chat__messages > .v2-msg--mention');
     // Threads (ux-lead 64476 (2)): the ROOT now renders inside the block, so
     // the block itself is a full-width child like any message and the INDENT
     // moved to the inner wrap (chip + rail at the text column, 36px avatar +
@@ -1347,14 +1342,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
   });
 
-  test('mention treatment is a neutral wash, never a message rail', () => {
+  test('mention treatment is a tight chip on the handle, never a row wash or rail', () => {
     // Accent rails made otherwise ordinary cards look like generic callouts.
     // Message rows retain a neutral semantic wash, while quote edges stay
     // neutral structural affordances.
     expect(v2).not.toMatch(/border-left:\s*[^;]*var\(--v2-accent\)/);
-    const mention = ruleBody(v2, '.v2-msg--mention');
-    expect(mention).toContain('background: var(--v2-surface-hover)');
-    expect(mention).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(v2, '.v2-msg--mention')).toContain('background: none');
+    const chip = ruleBody(v2, '.v2-msg__mention');
+    expect(chip).toContain('background: color-mix(in srgb, var(--v2-accent) 10%, transparent)');
+    expect(chip).toContain('padding: 0 4px');
   });
 
   test('quote edges share the same neutral 3px structural weight', () => {
