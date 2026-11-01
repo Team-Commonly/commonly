@@ -33,7 +33,7 @@ const agentUser = async (username, botMetadata) => {
 // no zone on file that is 06:00 UTC. Today's 06:00 UTC, so the windows built
 // from Date.now() in these fixtures still hold.
 const digestHourUtc = () => { const at = new Date(); at.setUTCHours(6, 0, 0, 0); return at; };
-// 15:01 UTC is 08:01 in Los Angeles under daylight time (Mar-Nov) only.
+// Guards the table rows below: which UTC hour is 08:00 there depends on the date.
 const localHourIsEight = (at) => require('../../../utils/timeZone').localHour('America/Los_Angeles', at) === 8;
 
 const podWithSummary = async (owner, name, options = {}) => {
@@ -335,10 +335,11 @@ describe('the digest hour', () => {
   // under PDT, so a test that built 15:01 on the current date went red the day
   // daylight saving ended (2026-11-01) and would have stayed red until March.
   it.each([
-    ['in summer, 15:01 UTC is 08:01 PDT: Los Angeles is due', '2026-10-17T15:01:00Z', true],
-    ['in winter, 15:01 UTC is 07:01 PST: Los Angeles is not due', '2026-12-15T15:01:00Z', false],
-    ['in winter, 16:01 UTC is 08:01 PST: Los Angeles is due', '2026-12-15T16:01:00Z', true],
-  ])('a scheduled run takes only the people for whom it is the hour: %s', async (_label, iso, laDue) => {
+    ['in summer, 15:01 UTC is 08:01 PDT: Los Angeles is due', '2026-10-17T15:01:00Z', true, false],
+    ['in winter, 15:01 UTC is 07:01 PST: Los Angeles is not due', '2026-12-15T15:01:00Z', false, false],
+    ['in winter, 16:01 UTC is 08:01 PST: Los Angeles is due', '2026-12-15T16:01:00Z', true, false],
+    ['at 06:01 UTC only the person with no zone is due', '2026-12-15T06:01:00Z', false, true],
+  ])('a scheduled run takes only the people for whom it is the hour: %s', async (_label, iso, laDue, nozoneDue) => {
     const at = new Date(iso);
     const twoDaysBefore = new Date(at.getTime() - 2 * 86400000);
     const la = await person(twoDaysBefore);
@@ -351,10 +352,9 @@ describe('the digest hour', () => {
 
     const called = generate.mock.calls.map(([id]) => String(id));
     expect(localHourIsEight(at)).toBe(laDue);
-    if (laDue) expect(called).toContain(String(la._id));
-    else expect(called).not.toContain(String(la._id));
-    // 06:00 UTC is the no-zone hour, and none of these instants is 06:00 UTC.
-    expect(called).not.toContain(String(nozone._id));
+    expect(called.includes(String(la._id))).toBe(laDue);
+    // 06:00 UTC is the hour for someone with no zone.
+    expect(called.includes(String(nozone._id))).toBe(nozoneDue);
   });
 
   it('nobody gets a second digest within 20 hours, even if their hour comes round again', async () => {
