@@ -35,6 +35,8 @@ const Integration = require('../models/Integration');
 const connectorSecrets = require('../services/connectorSecrets');
 const { secretWriteGeneration } = require('../services/hostedMcpSecretGeneration');
 // eslint-disable-next-line global-require
+const { REFRESH_LEASE_MS } = require('../services/hostedMcpCredentialService');
+// eslint-disable-next-line global-require
 const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../services/connectorSecretKinds');
 // eslint-disable-next-line global-require
 const { revokeConnectionGrants } = require('../services/roomGrantService');
@@ -414,7 +416,80 @@ interface CallbackFlow {
   connectedRowId?: string;
   credentialWriteStarted?: boolean;
   authGeneration?: number;
+  /**
+   * The write lease this callback took at its retire write, released when it
+   * stops writing. `inherited` is the lease the retire write displaced: a
+   * refresh of the previous pair still in flight, handed back on release.
+   */
+  writeLease?: { rowId: string; until: Date; inherited: Date | null };
 }
+
+/**
+ * Release the write lease a callback took, and only that one: a newer writer's
+ * lease carries a different expiry. What it releases to is the lease it
+ * displaced, so a refresh that was mid-flight at the retire write still holds a
+ * removal off until its own lease and overrun have passed. A failed release
+ * costs a removal at most one lease's wait, so it never fails the callback.
+ */
+const releaseWriteLease = async (lease: CallbackFlow['writeLease']) => {
+  if (!lease) return;
+  try {
+    await Integration.updateOne(
+      { _id: lease.rowId, 'config.refreshingUntil': lease.until },
+      { $set: { 'config.refreshingUntil': lease.inherited } },
+    );
+  } catch {
+    // The lease expires on its own.
+  }
+};
+
+const revokedAtMs = (value: unknown): number | null => (value ? new Date(value as Date).getTime() : null);
+
+/**
+ * Whether the retire write lost to a removal (F34) rather than only to a newer
+ * `/start`. A row that is gone was removed. A removal holding the row, or one
+ * that stamped a new `revokedAt` after this callback consumed its state, means
+ * the person removed the connection while this grant was being issued; that
+ * holds even if they started a reconnect since, which is a new flow with its
+ * own grant. `/start` alone never touches `revokedAt` or the removal lease.
+ * `'unknown'` when the row could not be read: neither revoking (it may have been
+ * a newer `/start`) nor saying nothing (it may have been a removal) is safe.
+ */
+const lostToRemoval = async (rowId: unknown, consumedRevokedAt: unknown): Promise<boolean | 'unknown'> => {
+  try {
+    const current = await Integration.findById(rowId).select('revokedAt config.removingUntil').lean() as {
+      revokedAt?: Date | null;
+      config?: { removingUntil?: Date | null };
+    } | null;
+    if (!current) return true;
+    if (current.config?.removingUntil && new Date(current.config.removingUntil).getTime() > Date.now()) return true;
+    return Boolean(current.revokedAt) && revokedAtMs(current.revokedAt) !== revokedAtMs(consumedRevokedAt);
+  } catch (error) {
+    console.error('[hosted-mcp] removal check failed', JSON.stringify({ error: (error as Error)?.name || 'Error' }));
+    return 'unknown';
+  }
+};
+
+/**
+ * What a callback that could not store its grant does about it. Lost to a
+ * removal: revoke it, since nothing will. Lost to a newer `/start` alone: leave
+ * it, since some vendors end every grant for the account and client together
+ * and would end the newer flow's too. Unknown: the vendor's page, so the person
+ * can decide, and nothing sent.
+ */
+const settleUnstoredGrant = async (
+  lost: boolean | 'unknown',
+  entry: HostedMcpOAuthEntry,
+  client: { clientId: string; clientSecret?: string },
+  tokens: TokenResponse,
+): Promise<{ manualRevoke?: { entryId: string; revokeAt: string } } | undefined> => {
+  if (lost === true) return revokeRefusedGrant(entry, client, tokens);
+  if (lost === 'unknown') {
+    const page = hostedMcpRevokeTarget(entry)?.page;
+    return page ? { manualRevoke: { entryId: entry.id, revokeAt: page } } : undefined;
+  }
+  return undefined;
+};
 
 const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
@@ -638,13 +713,33 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   const generationFilter = flow.authGeneration === undefined
     ? { 'config.authGeneration': { $exists: false } }
     : { 'config.authGeneration': authGeneration };
+  // The retire write also takes the row's write lease, the one a refresh takes
+  // at its fence: until this callback publishes or gives up, a removal refuses
+  // rather than read refs this callback is about to put new material behind.
+  const writeLease = new Date(Date.now() + REFRESH_LEASE_MS);
   const retired = await Integration.findOneAndUpdate(
-    { _id: consumed._id, ...generationFilter, 'config.pendingAuth': { $exists: false } },
+    {
+      _id: consumed._id,
+      ...generationFilter,
+      'config.pendingAuth': { $exists: false },
+      // A removal holding the row is revoking and sweeping what is behind its
+      // refs; a `/start` begun after that removal's fence must not put new
+      // material there (F34).
+      $or: [
+        { 'config.removingUntil': { $exists: false } },
+        { 'config.removingUntil': null },
+        { 'config.removingUntil': { $lte: new Date() } },
+      ],
+    },
     {
       $set: {
         status: 'error',
         errorMessage: 'Connection could not be completed. Try again.',
         errorMessageUserFacing: true,
+        'config.refreshingUntil': writeLease,
+        // Only a lapsed removal lease gets this far. Cleared, so that removal
+        // cannot renew it and sweep what this callback is about to put.
+        'config.removingUntil': null,
       },
       // A half-finished removal's provider-revoked mark describes the token it
       // revoked, not the one about to replace it behind the same refs. Cleared
@@ -653,9 +748,25 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
       // for the same reason).
       $unset: { [`config.${PROVIDER_REVOKED_MARK}`]: '' },
     },
-    { new: true },
+    // The row BEFORE this write: the lease it replaced may belong to a refresh
+    // of the previous pair that is still calling the vendor, and its puts are
+    // upserts no row write fences. That lease is handed back, not dropped.
+    { new: false },
   );
-  if (!retired) return callbackRedirect(res, 'error', 'state_consumed');
+  if (!retired) {
+    // The vendor has already issued this grant, and nothing will store it. When
+    // a removal is what fenced it out, it is revoked here; otherwise that
+    // removal's `providerRevoked` would speak for the old token only, while
+    // this one stays live with no copy anywhere. A loss to a newer `/start`
+    // alone is left as it was, because some vendors revoke every grant for the
+    // account and client together and would end the newer flow's grant too.
+    const revoked = await settleUnstoredGrant(
+      await lostToRemoval(consumed._id, consumed.revokedAt), entry, client, tokens,
+    );
+    return callbackRedirect(res, 'error', 'state_consumed', revoked);
+  }
+  const displacedLease = retired.config?.refreshingUntil ? new Date(retired.config.refreshingUntil) : null;
+  flow.writeLease = { rowId: String(consumed._id), until: writeLease, inherited: displacedLease };
   // Clear the old-grant assessment before replacement begins.
   forgetHostedMcpDrift(String(consumed._id));
   flow.credentialWriteStarted = true;
@@ -712,13 +823,30 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
         // account that held the row in between. Cleared, the comparison is two
         // unknowns and revokes, which is the safe reading.
         'config.providerSubject': providerSubject || null,
+        // Released with the write it guarded, so the first refresh of the new
+        // pair is not turned away by this callback's own lease. Released to
+        // the lease the retire write displaced, if any: a refresh of the old
+        // pair still in flight keeps the removal off until its puts land.
+        'config.refreshingUntil': displacedLease,
         revokedAt: null,
         errorMessage: null,
       },
     },
     { new: true },
   );
-  if (!published) return callbackRedirect(res, 'error', 'state_consumed');
+  if (!published) {
+    // A removal moved the generation while the pair was being stored. Only
+    // this write records refs, so what was just put may have none: a first
+    // refresh token on a row whose old grant had no refresh token, or both
+    // halves on a row first connecting. A removal's retry cannot send what no
+    // ref names, so the grant is revoked here, as on a lost retire write. A
+    // second revoke of the same token by that retry is harmless.
+    const revoked = await settleUnstoredGrant(
+      await lostToRemoval(consumed._id, consumed.revokedAt), entry, client, tokens,
+    );
+    await releaseWriteLease(flow.writeLease);
+    return callbackRedirect(res, 'error', 'state_consumed', revoked);
+  }
 
   // Also discard any assessment started during the exchange, before the row
   // update made the new grant visible.
@@ -788,6 +916,9 @@ router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Re
         // Keep the HTTP callback contained even if recovery storage fails.
       }
     }
+    // Whatever this callback managed to put stays behind the refs; it writes
+    // nothing more, so a removal need not wait out its lease.
+    await releaseWriteLease(flow.writeLease);
     console.error('[hosted-mcp] callback failed', JSON.stringify({ entryId: req.params.entryId }));
     if (!res.headersSent) callbackRedirect(res, 'error', 'connector_unavailable');
   }

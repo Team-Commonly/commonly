@@ -54,6 +54,7 @@ jest.mock('../../../middleware/integrationRateLimit', () => ({
 jest.mock('../../../models/Integration', () => ({
   findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
+  updateOne: jest.fn(),
 }));
 jest.mock('../../../services/hostedMcpDcrRegistry', () => ({
   ensureDcrClient: jest.fn(),
@@ -248,17 +249,102 @@ describe('hosted-mcp connect: callback', () => {
           _id: 'row-1',
           'config.authGeneration': { $exists: false },
           'config.pendingAuth': { $exists: false },
+          // Refused while a removal holds the row (F34).
+          $or: [
+            { 'config.removingUntil': { $exists: false } },
+            { 'config.removingUntil': null },
+            { 'config.removingUntil': { $lte: expect.any(Date) } },
+          ],
         },
         {
-          $set: { status: 'error', errorMessage: 'Connection could not be completed. Try again.', errorMessageUserFacing: true },
+          $set: {
+            status: 'error',
+            errorMessage: 'Connection could not be completed. Try again.',
+            errorMessageUserFacing: true,
+            // The write lease a removal waits out while the pair is stored (F34).
+            'config.refreshingUntil': expect.any(Date),
+            // A lapsed removal lease it got past can no longer be renewed.
+            'config.removingUntil': null,
+          },
           // The old token's provider-revoked mark goes before new material does (F28).
           $unset: { 'config.providerRevokedAt': '' },
         },
-        { new: true },
+        // The row before the write, so the lease it displaced can be handed back.
+        { new: false },
       ]);
+      // It stopped writing, so it releases its own lease, and only its own.
+      const lease = Integration.findOneAndUpdate.mock.calls[1][1].$set['config.refreshingUntil'];
+      expect(Integration.updateOne).toHaveBeenCalledWith(
+        { _id: 'row-1', 'config.refreshingUntil': lease },
+        { $set: { 'config.refreshingUntil': null } },
+      );
     } finally {
       log.mockRestore();
     }
+  });
+
+  it('hands the lease it displaced back to the refresh that held it when it stops writing', async () => {
+    const refreshLease = new Date(Date.now() + 10 * 1000);
+    const connected = {
+      ...storedRow({ credentialRef: 'ref-old-access', refreshingUntil: refreshLease }),
+      status: 'connected',
+    };
+    Integration.findOne.mockResolvedValue(connected);
+    Integration.findOneAndUpdate.mockReset()
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValueOnce(connected);
+    connectorSecrets.put.mockReset().mockRejectedValue(new Error('secret store failed'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await callback();
+      const lease = Integration.findOneAndUpdate.mock.calls[1][1].$set['config.refreshingUntil'];
+      expect(Integration.updateOne).toHaveBeenCalledWith(
+        { _id: 'row-1', 'config.refreshingUntil': lease },
+        { $set: { 'config.refreshingUntil': refreshLease } },
+      );
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  // CodeRabbit on #3252: a failed removal check used to read as a loss to a
+  // newer /start, which leaves the grant live and says nothing. It may have
+  // been a removal, so the person gets the vendor's page; nothing is sent,
+  // because it may also have been a newer /start.
+  describe('a retire write that lost, read against the row', () => {
+    const lostRetire = () => {
+      const connected = { ...storedRow({ credentialRef: 'ref-old-access' }), status: 'connected' };
+      Integration.findOne.mockResolvedValue(connected);
+      Integration.findOneAndUpdate.mockReset()
+        .mockResolvedValueOnce(connected)
+        .mockResolvedValueOnce(null);
+    };
+    afterEach(() => { delete Integration.findById; });
+
+    it('hands back the vendor page, sending nothing, when the row cannot be read', async () => {
+      lostRetire();
+      Integration.findById = jest.fn(() => { throw new Error('mongo unavailable'); });
+      const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const res = await callback();
+        expect(outcome(res)).toEqual({
+          status: 302, hostedMcp: 'error', code: 'state_consumed', entryId: 'linear', revokeAt: 'https://linear.app/settings/security',
+        });
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+        expect(JSON.stringify(log.mock.calls)).toContain('removal check failed');
+        expect(JSON.stringify(log.mock.calls)).not.toContain('mongo unavailable');
+      } finally {
+        log.mockRestore();
+      }
+    });
+
+    it('says nothing when the row shows only a newer /start', async () => {
+      lostRetire();
+      Integration.findById = jest.fn(() => ({ select: () => ({ lean: async () => ({ revokedAt: null, config: {} }) }) }));
+      const res = await callback();
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'state_consumed' });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('retires a connected row when only the refresh-token write fails', async () => {

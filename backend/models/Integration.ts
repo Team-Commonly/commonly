@@ -188,6 +188,7 @@ export interface IIntegration extends Document {
     authGeneration?: number;
     credentialAuthGeneration?: number;
     refreshingUntil?: Date;
+    removingUntil?: Date;
     credentialHint?: string;
     pendingAuth?: { state?: string; codeVerifier?: string; expiresAt?: Date; clientId?: string };
   };
@@ -403,6 +404,11 @@ const IntegrationSchema = new Schema<IIntegration>(
       // is STRICT — an undeclared path is dropped in silence, so the lease would
       // simply never land and the fence would read worse than it behaves.
       refreshingUntil: Date,
+      // The removal's lease (F34, `connectionRemovalService.takeRemovalLease`):
+      // while it is in the future the OAuth callback's retire write refuses,
+      // so no new material lands behind the refs a removal is revoking and
+      // sweeping. Declared for the same reason as the lease above.
+      removingUntil: Date,
       credentialHint: String,
       // The two keys the REMOVAL step writes (TASK-172 §10 step 6,
       // `services/connectionRemovalService`). `providerRevokedAt` is the mark
