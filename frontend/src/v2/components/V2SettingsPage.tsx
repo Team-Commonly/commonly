@@ -35,16 +35,8 @@ interface SettingsSectionProps {
   children: React.ReactNode;
 }
 
-const SETTINGS_SECTIONS = [
-  { id: 'account', title: 'Account' },
-  { id: 'plan', title: 'Plan' },
-  { id: 'devices', title: 'Devices' },
-  { id: 'api-token', title: 'API token' },
-  { id: 'connected-apps', title: 'Connected apps' },
-  // D215 (TASK-691): Look holds the language and theme segments. The language
-  // switch moved here from the rail.
-  { id: 'look', title: 'Look' },
-] as const;
+// D215 (TASK-688): three groups on one screen, no jump nav. Language and theme
+// sit under Look; sign-out-everywhere and delete account fold into Account actions.
 
 // Custom "Developer apps" (AppsManagement) stays hidden until every path
 // (create, edit, delete, use) is walked live. Default off (TASK-674, D215).
@@ -68,20 +60,22 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({ id, title, children }
     aria-labelledby={`${settingsSectionId(id)}-label`}
   >
     <h2 className="v2-settings__label" id={`${settingsSectionId(id)}-label`}>{title}</h2>
-    <div className="v2-settings__section-body">{children}</div>
+    <div className="v2-settings__group">{children}</div>
   </section>
 );
 
-const V2SettingsLinkRow: React.FC<{ to: string; label: string; detail: string }> = ({ to, label, detail }) => (
-  <Link className="v2-settings__link-row" to={to}>
-    <span className="v2-settings__link-row-label">{label}</span>
-    <span className="v2-settings__link-row-detail">{detail}</span>
-    <span className="v2-settings__link-row-arrow" aria-hidden="true">→</span>
-  </Link>
+const Svg: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <svg className="v2-settings__icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>
 );
+const Pencil = () => <Svg><path d="M4 20h4l10-10-4-4L4 16v4zM13 7l4 4" /></Svg>;
+const Chevron = () => <Svg><path d="m6 9 6 6 6-6" /></Svg>;
+const Key = () => <Svg><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8M16 7l2 2" /></Svg>;
+const Plug = () => <Svg><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0V8zM12 17v4" /></Svg>;
+const Warn = () => <Svg><path d="M12 4 3 20h18L12 4zM12 10v4M12 17v.5" /></Svg>;
 
 const V2AccountSection: React.FC = () => {
-  const { currentUser, updateProfile, updateUsername, logout } = useAuth();
+  const { currentUser, updateProfile, updateUsername } = useAuth();
   const { t } = useTranslation();
   const accountName = String(currentUser?.displayName || currentUser?.username || 'Your account');
   const accountUsername = String(currentUser?.username || '');
@@ -94,7 +88,7 @@ const V2AccountSection: React.FC = () => {
   const [savedUsername, setSavedUsername] = useState(accountUsername);
   const [email, setEmail] = useState(accountEmail);
   const [busy, setBusy] = useState(false);
-  const [revokingSessions, setRevokingSessions] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [usernameBusy, setUsernameBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,19 +160,6 @@ const V2AccountSection: React.FC = () => {
     }
   };
 
-  const signOutEverywhere = async () => {
-    if (!window.confirm(t('settings.sessions.confirm'))) return;
-    setRevokingSessions(true);
-    setError(null);
-    try {
-      await axios.post('/api/auth/sessions/revoke');
-      logout();
-    } catch {
-      setError(t('settings.sessions.failed'));
-      setRevokingSessions(false);
-    }
-  };
-
   const handleUsernameKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Enter') return;
     event.preventDefault();
@@ -246,7 +227,7 @@ const V2AccountSection: React.FC = () => {
 
   return (
     <form className="v2-settings__account" onSubmit={save}>
-      <div className="v2-settings__account-row">
+      <div className="v2-settings__row v2-settings__account-row">
         <V2Avatar
           className="v2-settings__avatar"
           name={name || accountName}
@@ -257,10 +238,36 @@ const V2AccountSection: React.FC = () => {
         />
         <div className="v2-settings__account-copy">
           <div className="v2-settings__account-name">{name || accountName}</div>
-          <div className="v2-settings__meta">@{savedUsername}</div>
+          <div className="v2-settings__meta">
+            <span>@{savedUsername}</span> · {currentUser?.role === 'admin' ? 'administrator' : 'member'}
+          </div>
         </div>
-        <div className="v2-settings__account-type">{currentUser?.role === 'admin' ? 'administrator' : 'member'}</div>
+        <button
+          type="button"
+          className="v2-settings__icon-btn"
+          aria-label="Edit profile"
+          aria-expanded={editing}
+          aria-controls="v2-settings-profile-edit"
+          onClick={() => setEditing((open) => !open)}
+        >
+          <Pencil />
+        </button>
       </div>
+      <div className="v2-settings__row">
+        <span className="v2-settings__row-label">Email</span>
+        <span className="v2-settings__row-value v2-settings__row-value--mono">{accountEmail || '—'}</span>
+        <button
+          type="button"
+          className="v2-settings__icon-btn"
+          aria-label="Edit email"
+          aria-expanded={editing}
+          aria-controls="v2-settings-profile-edit"
+          onClick={() => setEditing((open) => !open)}
+        >
+          <Pencil />
+        </button>
+      </div>
+      <div className={`v2-settings__edit${editing ? '' : ' v2-settings__edit--closed'}`} id="v2-settings-profile-edit">
       <input
         ref={fileInputRef}
         className="v2-settings__avatar-file-input"
@@ -340,10 +347,7 @@ const V2AccountSection: React.FC = () => {
       {notice && <p className="v2-settings__message" role="status">{notice}</p>}
       <div className="v2-settings__actions">
         <button className="v2-settings__primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
-        <button className="v2-settings__secondary" type="button" disabled={revokingSessions}
-          onClick={() => { void signOutEverywhere(); }}>
-          {t('settings.sessions.signOutEverywhere')}
-        </button>
+      </div>
       </div>
       {avatarFile && (
         <V2AvatarCropDialog
@@ -356,6 +360,45 @@ const V2AccountSection: React.FC = () => {
         />
       )}
     </form>
+  );
+};
+
+const V2AccountActions: React.FC = () => {
+  const { logout } = useAuth();
+  const { t } = useTranslation();
+  const [revokingSessions, setRevokingSessions] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const signOutEverywhere = async () => {
+    if (!window.confirm(t('settings.sessions.confirm'))) return;
+    setRevokingSessions(true);
+    setError(null);
+    try {
+      await axios.post('/api/auth/sessions/revoke');
+      logout();
+    } catch {
+      setError(t('settings.sessions.failed'));
+      setRevokingSessions(false);
+    }
+  };
+
+  return (
+    <details className="v2-settings__fold v2-settings__fold--actions">
+      <summary className="v2-settings__row v2-settings__summary">
+        <Warn />
+        <span className="v2-settings__row-label">Account actions</span>
+        <Chevron />
+      </summary>
+      <div className="v2-settings__fold-body">
+        {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
+        <div className="v2-settings__actions">
+          <button className="v2-settings__secondary" type="button" disabled={revokingSessions}
+            onClick={() => { void signOutEverywhere(); }}>
+            {t('settings.sessions.signOutEverywhere')}
+          </button>
+        </div>
+        <V2DeleteAccount />
+      </div>
+    </details>
   );
 };
 
@@ -440,39 +483,50 @@ const V2ApiTokenSection: React.FC = () => {
   const maskedToken = '••••••••••••••••••••••••••••••••';
   const createdLabel = createdAt ? formatTokenCreatedAt(createdAt) : null;
 
+  const statusLabel = hasToken ? 'Active' : 'None';
+
   return (
     <div className="v2-settings__token">
-      {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
-      {notice && <p className="v2-settings__message" role="status">{notice}</p>}
-      {hasToken ? (
-        <>
-          <div className="v2-settings__token-value">
-            <code>{token && showToken ? token : maskedToken}</code>
-            {token && (
-              <>
-                <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
-                  {showToken ? 'Hide' : 'Show'}
-                </button>
-                <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
-              </>
-            )}
-          </div>
-          {!token && <p className="v2-settings__token-meta">Shown once, when generated.{last4 ? ` Ends in ${last4}.` : ''}</p>}
-          {createdLabel && <p className="v2-settings__token-meta">{createdLabel}</p>}
-          <div className="v2-settings__actions">
+      <div className="v2-settings__row">
+        <Key />
+        <span className="v2-settings__row-label">API token</span>
+        <span className="v2-settings__row-value">{statusLabel}</span>
+        {hasToken ? (
+          <span className="v2-settings__row-actions">
             <button type="button" className="v2-settings__secondary" onClick={() => void generate()} disabled={busy !== null}>
               {busy === 'generate' ? 'Regenerating…' : 'Regenerate'}
             </button>
             <button type="button" className="v2-settings__secondary" onClick={() => void revoke()} disabled={busy !== null}>
               {busy === 'revoke' ? 'Revoking…' : 'Revoke'}
             </button>
-          </div>
-        </>
-      ) : (
-        <div className="v2-settings__actions">
-          <button type="button" className="v2-settings__primary" onClick={() => void generate()} disabled={busy !== null}>
+          </span>
+        ) : (
+          <button type="button" className="v2-settings__secondary" onClick={() => void generate()} disabled={busy !== null}>
             {busy === 'generate' ? 'Generating…' : 'Generate API token'}
           </button>
+        )}
+      </div>
+      {(error || notice || hasToken) && (
+        <div className="v2-settings__token-detail">
+          {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
+          {notice && <p className="v2-settings__message" role="status">{notice}</p>}
+          {hasToken && (
+            <>
+              <div className="v2-settings__token-value">
+                <code>{token && showToken ? token : maskedToken}</code>
+                {token && (
+                  <>
+                    <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
+                      {showToken ? 'Hide' : 'Show'}
+                    </button>
+                    <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
+                  </>
+                )}
+              </div>
+              {!token && <p className="v2-settings__token-meta">Shown once, when generated.{last4 ? ` Ends in ${last4}.` : ''}</p>}
+              {createdLabel && <p className="v2-settings__token-meta">{createdLabel}</p>}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -490,8 +544,8 @@ const V2LanguageSection: React.FC = () => {
 
   return (
     <div className="v2-settings__look">
-      <div className="v2-settings__look-row">
-        <span className="v2-settings__look-label">{t('common.language.label')}</span>
+      <div className="v2-settings__row">
+        <span className="v2-settings__row-label">{t('common.language.label')}</span>
         <V2Segmented
           size="sm"
           ariaLabel={t('common.language.label')}
@@ -500,8 +554,8 @@ const V2LanguageSection: React.FC = () => {
           options={LANGUAGE_REGISTRY.map((language) => ({ value: language.code, label: language.label }))}
         />
       </div>
-      <div className="v2-settings__look-row">
-        <span className="v2-settings__look-label">{t('common.theme.label')}</span>
+      <div className="v2-settings__row">
+        <span className="v2-settings__row-label">{t('common.theme.label')}</span>
         <V2Segmented
           size="sm"
           ariaLabel={t('common.theme.label')}
@@ -528,53 +582,28 @@ const V2AdminSection: React.FC = () => (
 const V2SettingsPage: React.FC = () => {
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
-  const sections = isAdmin ? [...SETTINGS_SECTIONS, ADMIN_SECTION] : [...SETTINGS_SECTIONS];
-  const [activeSection, setActiveSection] = useState<string>('account');
-
-  useEffect(() => {
-    const syncActiveSection = () => {
-      const matchingSection = sections.find(({ id }) => `#${settingsSectionId(id)}` === window.location.hash);
-      if (matchingSection) setActiveSection(matchingSection.id);
-    };
-    syncActiveSection();
-    window.addEventListener('hashchange', syncActiveSection);
-    return () => window.removeEventListener('hashchange', syncActiveSection);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
 
   return (
     <div className="v2-settings" aria-label="Settings">
       <div className="v2-settings__layout">
         <h1 className="v2-settings__title">Settings</h1>
-        <nav className="v2-settings__nav" aria-label="Settings sections">
-          <div className="v2-settings__nav-list">
-            {sections.map(({ id, title }) => (
-              <a
-                key={id}
-                className={`v2-settings__nav-link${activeSection === id ? ' v2-settings__nav-link--active' : ''}`}
-                href={`#${settingsSectionId(id)}`}
-                aria-current={activeSection === id ? 'location' : undefined}
-                onClick={() => setActiveSection(id)}
-              >
-                {title}
-              </a>
-            ))}
-          </div>
-        </nav>
         <div className="v2-settings__content">
           <SettingsSection id="account" title="Account">
             <V2AccountSection />
-            <V2DeleteAccount />
+            <div className="v2-settings__row v2-settings__row--plan">
+              <span className="v2-settings__row-label">Plan</span>
+              <V2BillingPanel showHeading={false} />
+            </div>
           </SettingsSection>
-          <SettingsSection id="plan" title="Plan"><V2BillingPanel showHeading={false} /></SettingsSection>
-          <SettingsSection id="devices" title="Devices"><V2DevicesPanel showHeading={false} /></SettingsSection>
-          <SettingsSection id="api-token" title="API token"><V2ApiTokenSection /></SettingsSection>
-          <SettingsSection id="connected-apps" title="Connected apps">
-            <V2SettingsLinkRow
-              to="/v2/connectors"
-              label="Connectors"
-              detail="Manage connected services and channels"
-            />
+          <SettingsSection id="access" title="Access">
+            <V2DevicesPanel showHeading={false} asFold />
+            <V2ApiTokenSection />
+            <Link className="v2-settings__row v2-settings__row--link" to="/v2/connectors">
+              <Plug />
+              <span className="v2-settings__row-label">Connectors</span>
+              <span className="v2-settings__row-value">Manage connected services</span>
+              <span className="v2-settings__row-arrow" aria-hidden="true">›</span>
+            </Link>
             {developerAppsEnabled() && (
               <details className="v2-settings__developer-disclosure">
                 <summary>Developer apps</summary>
@@ -583,6 +612,7 @@ const V2SettingsPage: React.FC = () => {
             )}
           </SettingsSection>
           <SettingsSection id="look" title="Look"><V2LanguageSection /></SettingsSection>
+          <V2AccountActions />
           {isAdmin && (
             <SettingsSection id={ADMIN_SECTION.id} title={ADMIN_SECTION.title}><V2AdminSection /></SettingsSection>
           )}

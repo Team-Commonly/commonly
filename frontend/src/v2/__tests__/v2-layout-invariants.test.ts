@@ -1171,10 +1171,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // positive controls below pin both the new destination and the public
     // profile route that must remain available.
     expect(settingsPage).toContain('<SettingsSection id="account" title="Account">');
-    expect(settingsPage).toContain('<SettingsSection id="plan" title="Plan">');
-    expect(settingsPage).toContain('<SettingsSection id="devices" title="Devices">');
-    expect(settingsPage).toContain('<SettingsSection id="api-token" title="API token">');
-    expect(settingsPage).toContain('<SettingsSection id="connected-apps" title="Connected apps">');
+    // D215 (TASK-688): Plan, Devices, API token and Connectors are rows in Account / Access.
+    expect(settingsPage).toContain('<SettingsSection id="access" title="Access">');
     // D215: the language segment lives under Look, beside the theme.
     expect(settingsPage).toContain('<SettingsSection id="look" title="Look">');
     expect(settingsPage).toContain('className="v2-settings__avatar"');
@@ -1184,8 +1182,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('to="/v2/connectors"');
     expect(settingsPage).toContain('<summary>Developer apps</summary>');
     expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
-    expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} />');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 64px');
+    expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
+    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 40px');
     expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
     expect(ruleBody(v2, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
     expect(avatar).toContain("borderRadius: 'inherit'");
@@ -1196,14 +1194,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(app).toContain('<Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />');
   });
 
-  test('Settings section labels navigate to their own anchored sections', () => {
-    expect(settingsPage).toContain('className="v2-settings__nav"');
-    expect(settingsPage).toContain('className={`v2-settings__nav-link${activeSection === id');
-    expect(settingsPage).toContain('href={`#${settingsSectionId(id)}`}');
-    expect(ruleBody(v2, '.v2-settings__section')).toContain('scroll-margin-top: 24px');
-    expect(ruleBody(v2, '.v2-root a.v2-settings__nav-link:focus-visible')).toContain('outline: 2px solid var(--v2-accent)');
-    expect(ruleBody(v2, '.v2-root a.v2-settings__nav-link--active')).toContain('background: var(--v2-bg-subtle)');
-    expect(ruleBody(v2, '.v2-settings__nav')).toContain('position: sticky');
+  test('Settings is one screen: grouped cards, no jump nav', () => {
+    expect(settingsPage).not.toContain('v2-settings__nav');
+    expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 640px)');
+    expect(ruleBody(v2, '.v2-settings__edit--closed')).toContain('display: none');
   });
 
   test('Settings saves a display name while allowing handle changes and exposing the email change affordance', () => {
@@ -1232,8 +1226,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('Settings avatar controls keep the account face square and the crop step usable on phones', () => {
     const avatar = ruleBody(v2, '.v2-settings__avatar');
-    expect(avatar).toContain('width: 64px');
-    expect(avatar).toContain('height: 64px');
+    expect(avatar).toContain('width: 40px');
+    expect(avatar).toContain('height: 40px');
     expect(avatar).toContain('border-radius: var(--v2-radius-sm)');
     expect(ruleBody(v2, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
     expect(avatarCropDialog).toContain('className="v2-root v2-modal__overlay v2-settings__avatar-overlay"');

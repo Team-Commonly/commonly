@@ -142,17 +142,11 @@ describe('V2SettingsPage', () => {
     renderSettings();
 
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: 'Account' })).getByRole('button', { name: 'Delete account' })).toBeInTheDocument();
-    for (const section of [
-      { id: 'account', title: 'Account' },
-      { id: 'plan', title: 'Plan' },
-      { id: 'devices', title: 'Devices' },
-      { id: 'api-token', title: 'API token' },
-      { id: 'connected-apps', title: 'Connected apps' },
-      { id: 'look', title: 'Look' },
-    ]) {
-      expect(screen.getByRole('heading', { name: section.title })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: section.title })).toHaveAttribute('href', `#v2-settings-${section.id}`);
+    expect(screen.getByText('Account actions').closest('details')).toContainElement(
+      screen.getByRole('button', { name: 'Delete account' }),
+    );
+    for (const title of ['Account', 'Access', 'Look']) {
+      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument();
     }
     expect(screen.getByText('lily')).toBeInTheDocument();
     expect(screen.getByText('Plan controls')).toBeInTheDocument();
@@ -191,17 +185,28 @@ describe('V2SettingsPage', () => {
     }
   });
 
-  test('uses a left navigation column to target Settings sections', () => {
+  test('has three labelled groups on one screen and no jump navigation', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();
 
-    expect(document.getElementById('v2-settings-account')).toHaveAttribute('aria-labelledby', 'v2-settings-account-label');
-    expect(document.getElementById('v2-settings-connected-apps')).toHaveAttribute('aria-labelledby', 'v2-settings-connected-apps-label');
-    expect(screen.getByRole('navigation', { name: 'Settings sections' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Account' })).toHaveAttribute('aria-current', 'location');
+    for (const id of ['account', 'access', 'look']) {
+      expect(document.getElementById(`v2-settings-${id}`)).toHaveAttribute('aria-labelledby', `v2-settings-${id}-label`);
+    }
+    expect(screen.queryByRole('navigation', { name: 'Settings sections' })).toBeNull();
+  });
 
-    fireEvent.click(screen.getByRole('link', { name: 'Plan' }));
-    expect(screen.getByRole('link', { name: 'Plan' })).toHaveAttribute('aria-current', 'location');
+  test('the pencil opens the profile editor and closes it again', () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    const edit = screen.getByRole('button', { name: 'Edit profile' });
+    expect(edit).toHaveAttribute('aria-expanded', 'false');
+    expect(document.getElementById('v2-settings-profile-edit')).toHaveClass('v2-settings__edit--closed');
+    fireEvent.click(edit);
+    expect(edit).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById('v2-settings-profile-edit')).not.toHaveClass('v2-settings__edit--closed');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit email' }));
+    expect(document.getElementById('v2-settings-profile-edit')).toHaveClass('v2-settings__edit--closed');
   });
 
   test('generates and reveals a new API token without leaving Settings', async () => {
@@ -478,7 +483,7 @@ describe('V2SettingsPage', () => {
     // The routes survived the Settings consolidation (#1544); the way in did
     // not, so both admin pages were reachable only by URL.
     const { unmount } = renderSettings();
-    expect(screen.queryByRole('link', { name: 'Administration' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Administration' })).toBeNull();
     expect(screen.queryByText('Usage analytics')).toBeNull();
     unmount();
     const adminAuth = { ...auth, currentUser: { ...auth.currentUser, role: 'admin' }, user: { ...auth.user, role: 'admin' } };
@@ -487,7 +492,7 @@ describe('V2SettingsPage', () => {
         <MemoryRouter><V2SettingsPage /></MemoryRouter>
       </AuthContext.Provider>,
     );
-    expect(screen.getByRole('link', { name: 'Administration' })).toHaveAttribute('href', '#v2-settings-admin');
+    expect(screen.getByRole('heading', { name: 'Administration' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Users/ })).toHaveAttribute('href', '/v2/admin/users');
     expect(screen.getByRole('link', { name: /^Usage analytics/ })).toHaveAttribute('href', '/v2/admin/analytics');
   });
