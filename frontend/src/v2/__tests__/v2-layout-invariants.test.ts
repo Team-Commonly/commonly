@@ -2532,6 +2532,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(cx).toMatch(/\.v2-feature--connectors > \.v2-feature__body \{[^}]*padding: 0;/);
     });
 
+    it('the phone page is a 52px head, then a 12px-padded body of 104px tiles', () => {
+      expect(mediaBlock(640)).toMatch(/\.v2-cx-head \{[^}]*height: 52px/);
+      expect(mediaBlock(640)).toMatch(/\.v2-cx-body \{[^}]*padding: 12px/);
+      expect(mediaBlock(640)).toMatch(/\.v2-cx-tile \{[^}]*height: 104px/);
+    });
+
     it('the grid is six columns, three on a phone', () => {
       expect(baseBody('.v2-cx-grid')).toContain('grid-template-columns: repeat(6, minmax(0, 1fr))');
       expect(mediaBlock(640)).toMatch(/\.v2-cx-grid \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
