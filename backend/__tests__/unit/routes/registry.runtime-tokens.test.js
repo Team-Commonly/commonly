@@ -537,6 +537,32 @@ describe('agent runtime tokens', () => {
     expect(res.body.scopeMode).toBe('all');
   });
 
+  it('reports a digest-only user token, which the route reads only by selecting the digest', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] }),
+    });
+    AgentInstallation.findOne.mockResolvedValue({ agentName: 'clawd-bot', podId: 'pod-1', status: 'active' });
+    // Both credential fields are select:false, so the row carries the digest
+    // only when the query asks for it.
+    let projection = '';
+    const query = {
+      select: jest.fn((fields) => { projection = String(fields); return query; }),
+      lean: jest.fn(async () => ({
+        username: 'clawd-bot',
+        ...(projection.split(/\s+/).includes('+apiTokenHash') ? { apiTokenHash: 'digest' } : {}),
+        apiTokenCreatedAt: new Date('2026-01-01T00:00:00Z'),
+        apiTokenScopes: ['agent:context:read'],
+      })),
+    };
+    User.findOne.mockReturnValue(query);
+
+    const res = await request(app).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ hasToken: true, scopes: ['agent:context:read'], scopeMode: 'scoped' });
+    expect(JSON.stringify(res.body)).not.toContain('digest');
+  });
+
   it('revokes user token for an installed agent', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
