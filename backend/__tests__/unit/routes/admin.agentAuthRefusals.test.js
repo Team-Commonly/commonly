@@ -48,10 +48,10 @@ describe('GET /api/admin/agent-auth/refusals (TASK-712)', () => {
 
   test('an admin gets the per-reason counts since process start', async () => {
     recordAgentAuthRefusal({
-      reason: 'invalid_token', route: '/api/agents/runtime/context', method: 'GET', tokenHash: 'abcdef0123456789',
+      reason: 'invalid_token', route: '/api/agents/runtime/context', method: 'GET', tokenHash: 'token-hash-fixture',
     });
     recordAgentAuthRefusal({
-      reason: 'invalid_token', route: '/api/agents/runtime/context', method: 'GET', tokenHash: 'abcdef0123456789',
+      reason: 'invalid_token', route: '/api/agents/runtime/context', method: 'GET', tokenHash: 'token-hash-fixture',
     });
 
     const res = await request(buildApp())
