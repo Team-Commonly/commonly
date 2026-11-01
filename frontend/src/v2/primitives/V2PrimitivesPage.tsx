@@ -43,7 +43,7 @@ const V2PrimitivesPage: React.FC = () => (
               <summary>
                 <span className="lb">How it runs</span>
                 <span className="vl">CLI · webhook</span>
-                <span className="chev" aria-hidden="true">⌄</span>
+                <svg className="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </summary>
               <div className="v2p-body">Detail sits behind the row and is closed by default.</div>
             </details>

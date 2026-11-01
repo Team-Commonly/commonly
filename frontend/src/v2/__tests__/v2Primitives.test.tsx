@@ -65,5 +65,6 @@ describe('D223 primitives', () => {
     expect(css).toMatch(/@media \(max-width: 480px\)[\s\S]*details\.v2p-disc > summary \{ grid-template-columns: minmax\(0, 1fr\) auto auto;/);
     const { container } = render(<V2PrimitivesPage />);
     expect(container.querySelector('details.v2p-disc')).not.toBeNull();
+    expect(container.querySelector('details.v2p-disc svg.chev path')?.getAttribute('d')).toBe('m6 9 6 6 6-6');
   });
 });

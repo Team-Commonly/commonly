@@ -196,7 +196,7 @@
 details.v2p-disc { border-top: 1px solid var(--v2-border-soft); }
 details.v2p-disc > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; align-items: center; gap: 14px; min-height: 52px; padding: 8px 14px 8px 16px; }
 details.v2p-disc > summary::-webkit-details-marker { display: none; }
-details.v2p-disc > summary .chev { color: var(--v2-text-placeholder); transition: transform 160ms; }
+details.v2p-disc > summary .chev { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; color: var(--v2-text-placeholder); transition: transform 160ms; }
 details.v2p-disc[open] > summary .chev { transform: rotate(180deg); }
 details.v2p-disc > summary .lb { font-size: 13px; font-weight: 600; color: var(--v2-text-primary); display: flex; align-items: center; gap: 8px; }
 details.v2p-disc > summary .vl { font-size: 13.5px; color: var(--v2-ink-2); min-width: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
