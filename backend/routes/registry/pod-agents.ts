@@ -13,6 +13,7 @@ const { hostedRunsNative } = require('../../services/hostedEngine');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
+const { agentsWithMultipleOutsiderGrantPods } = require('../../services/nativeOutsiderGrantPolicy');
 const { revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 const {
   getUserId,
@@ -177,6 +178,16 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
 
     const installations = await AgentInstallation.getInstalledAgents(podId);
+    let multiGrantPodAgents = new Set<string>();
+    let runtimeNarrowingUnavailable = false;
+    try {
+      multiGrantPodAgents = await agentsWithMultipleOutsiderGrantPods(installations);
+    } catch (narrowingErr) {
+      // The roster is advisory. The runtime middleware independently fails
+      // closed; the Connectors page must not claim the seat can post on a bad read.
+      console.warn('[pod-agents] runtime narrowing lookup failed:', (narrowingErr as Error).message);
+      runtimeNarrowingUnavailable = true;
+    }
 
     // One derivation for proof-of-life (heartbeats ∪ runs ∪ token use) —
     // shared with the native runtime's commonly_agent_status tool via
@@ -362,7 +373,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         const username = AgentIdentityService.buildAgentUsername(i.agentName, i.instanceId || 'default');
         const user = userByUsername.get(username) || null;
         const lastActiveAt = activityMap.get(instanceKey) || null;
-        const payload = buildAgentInstallationPayload(i, {
+        const basePayload = buildAgentInstallationPayload(i, {
           profile,
           iconUrl: templateIcon || iconMap.get(i.agentName) || '',
           lastHeartbeatAt: heartbeatMap.get(instanceKey) || null,
@@ -372,6 +383,13 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           revealWebhookUrl: viewerIsAdmin || installedByViewer(i),
           runtimeIdentity: seatRuntimeIdentities.get(instanceKey) || null,
         });
+        // Every return path below carries the narrowing state: a boolean per
+        // seat, never the ids of the other pods its grants reach.
+        const payload = basePayload && {
+          ...basePayload,
+          runtimeNarrowedByMultipleGrantPods: multiGrantPodAgents.has(instanceKey),
+          runtimeNarrowingUnavailable,
+        };
         const runtimeType = payload?.runtime?.runtimeType;
         // A provisioned in-process seat needs no external connection. Its
         // runtime is available by construction, without a credential ledger.

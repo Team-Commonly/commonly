@@ -2638,6 +2638,8 @@
     "reviewProviderAccess": "Review access at {{label}}",
     "removedReviewProvider": "Connection removed. Review its access at {{label}}.",
     "removedStillListed": "Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.",
+    "multiGrantPodPostingBlocked": "{{agents}} cannot post in any pod while connectors reach more than one of their pods. End a grant until only one pod has connector access.",
+    "runtimePostingStatusUnavailable": "Could not check whether connector grants limit agent posting. Try again shortly.",
     "openProviderSettings": "Open provider settings",
     "noConnection": "install the GitHub App first · an admin does this once",
     "noSeats": "no agent in this pod yet",

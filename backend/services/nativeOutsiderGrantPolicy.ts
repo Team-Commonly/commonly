@@ -6,7 +6,9 @@
 import Integration from '../models/Integration';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
+import { AgentInstallation } from '../models/AgentRegistry';
 import { GRANT_BROKER_ID } from './installable/toolInstallables';
+import { installationIdentityFilter } from './agentInstallationIdentity';
 
 interface CandidateGrant {
   connectionId?: unknown;
@@ -74,4 +76,34 @@ export const podsWithOutsiderWritableGrants = async (podIds: string[]): Promise<
     [String(connection._id), ...(connection.type === 'github-app' ? [String(connection.installationId || '')] : [])]));
   return new Set(candidates.filter((candidate) => matched.has(candidate.connectionId))
     .map((candidate) => candidate.podId));
+};
+
+/** Human roster projection of the same identity-wide boundary enforced by
+ * agentRuntimeAuth. Return only a boolean; other pod ids remain private. */
+export const agentsWithMultipleOutsiderGrantPods = async (
+  identities: Array<{ agentName: string; instanceId?: string }>,
+): Promise<Set<string>> => {
+  const unique = [...new Map(identities.map((identity) => {
+    const instanceId = identity.instanceId || 'default';
+    return [`${identity.agentName}:${instanceId}`, installationIdentityFilter(identity.agentName, instanceId)];
+  })).values()];
+  if (!unique.length) return new Set();
+  const installations = await AgentInstallation.find({
+    status: 'active', $or: unique,
+  }).select('agentName instanceId podId').lean() as Array<{
+    agentName: string; instanceId?: string; podId?: unknown;
+  }>;
+  const podIds = [...new Set(installations.map((row) => objectId(row.podId)).filter((id): id is string => Boolean(id)))];
+  // The human roster reports an unavailable status on census failure. Runtime
+  // authentication applies its own fail-closed policy to the same failure.
+  const narrowed = await podsWithOutsiderWritableGrants(podIds);
+  const counts = new Map<string, Set<string>>();
+  for (const row of installations) {
+    const podId = objectId(row.podId);
+    if (!podId || !narrowed.has(podId)) continue;
+    const key = `${row.agentName}:${row.instanceId || 'default'}`;
+    if (!counts.has(key)) counts.set(key, new Set());
+    counts.get(key)!.add(podId);
+  }
+  return new Set([...counts].filter(([, pods]) => pods.size >= 2).map(([key]) => key));
 };

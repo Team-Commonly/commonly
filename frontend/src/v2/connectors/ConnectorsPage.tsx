@@ -535,6 +535,21 @@ const ConnectorsPage: React.FC = () => {
           )}
         </p>
       )}
+      {m.blockedSeatNames.length > 0 && (
+        <p className="v2-cx-note" role="status">
+          {t('tools.multiGrantPodPostingBlocked', {
+            defaultValue: '{{agents}} cannot post in any pod while connectors reach more than one of their pods. End a grant until only one pod has connector access.',
+            agents: m.blockedSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
+          })}
+        </p>
+      )}
+      {m.narrowingStatusUnavailable && (
+        <p className="v2-cx-note" role="status">
+          {t('tools.runtimePostingStatusUnavailable', {
+            defaultValue: 'Could not check whether connector grants limit agent posting. Try again shortly.',
+          })}
+        </p>
+      )}
       {m.removedHiddenNotice && (
         <p className="v2-cx-note" role="status">
           {m.removedHiddenNotice.revokePage

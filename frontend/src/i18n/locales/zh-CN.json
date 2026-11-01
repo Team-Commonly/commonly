@@ -2641,6 +2641,8 @@
     "reviewProviderAccess": "查看 {{label}} 的授权",
     "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",
     "removedStillListed": "已在此处断开 {{label}}，但 {{label}} 仍显示 Commonly，请到那里一并移除。",
+    "multiGrantPodPostingBlocked": "{{agents}} 所在的多个 Pod 都有连接器授权，因此暂时无法在任何 Pod 发消息。结束多余的授权，只留一个 Pod 可用连接器即可恢复。",
+    "runtimePostingStatusUnavailable": "暂时无法确认连接器授权是否限制了智能体发消息，请稍后重试。",
     "openProviderSettings": "打开服务提供方设置",
     "noConnection": "请先安装 GitHub App · 管理员只需安装一次",
     "noSeats": "此 Pod 中还没有智能体",

@@ -43,6 +43,7 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
   const [disconnectedHere, setDisconnectedHere] = useState<string[]>([]);
   const [hiddenConnections, setHiddenConnections] = useState<HiddenToolConnection[]>([]);
   const [seats, setSeats] = useState<Record<string, PodSeat[]>>({});
+  const [seatLookupFailed, setSeatLookupFailed] = useState(false);
   const [lastUse, setLastUse] = useState<Record<string, string | null>>({});
   const [trail, setTrail] = useState<ToolTrail | null>(null);
   const [trailError, setTrailError] = useState(false);
@@ -83,6 +84,16 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
 
   const podIds = useMemo(() => pods.map((pod) => String(pod._id)), [pods]);
 
+  // Seats a runtime-token boundary currently stops from posting anywhere.
+  // Named by display name, once each, never by the pods their grants reach.
+  const blockedSeatNames = useMemo(() => [...new Map(Object.values(seats).flat()
+    .filter((seat) => seat.runtimeNarrowedByMultipleGrantPods)
+    .map((seat) => [seat.userId || seat.name, seat.displayName || seat.name])).values()], [seats]);
+  // An unreadable roster, or a roster whose census failed, leaves posting
+  // status unknown. The page says so rather than implying posting works.
+  const narrowingStatusUnavailable = seatLookupFailed || Object.values(seats).flat()
+    .some((seat) => seat.runtimeNarrowingUnavailable);
+
   const load = useCallback(async () => {
     const catalogRes = await api.get<{ installables?: ToolCatalogEntry[]; hiddenToolConnections?: HiddenToolConnection[] }>('/api/installables').catch(() => null);
     setCatalog((catalogRes?.installables || []).filter((entry) => entry.list === 'tools'));
@@ -91,13 +102,14 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
       api.get<{ grants: ToolGrant[] }>('/api/grants', { params: { connectionOwner: 'me' } }).catch(() => null),
       Promise.all(podIds.map(async (podId) => {
         const res = await api.get<{ agents?: PodSeat[] }>(`/api/registry/pods/${podId}/agents`).catch(() => null);
-        return [podId, (res?.agents ?? []).filter((seat) => !seat.internal)] as const;
+        return { podId, seats: (res?.agents ?? []).filter((seat) => !seat.internal), failed: !res };
       })),
     ]);
     const ownedGrants = grantRes?.grants || [];
     // A failed read must not blank a list the person is looking at.
     if (grantRes) setGrants(ownedGrants); else setGrants((current) => current ?? []);
-    setSeats(Object.fromEntries(seatResults));
+    setSeats(Object.fromEntries(seatResults.map((row) => [row.podId, row.seats])));
+    setSeatLookupFailed(seatResults.some((row) => row.failed));
     // "used in the last 10 min" reads the newest trail row's `at` (§6).
     const uses = await Promise.all(ownedGrants.filter((grant) => !isDead(grant)).map(async (grant) => {
       const res = await api.get<ToolTrail>(`/api/grants/${grant.grantId}/calls`, { params: { limit: 1 } }).catch(() => null);
@@ -560,6 +572,8 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     setHiddenConnections,
     seats,
     setSeats,
+    blockedSeatNames,
+    narrowingStatusUnavailable,
     lastUse,
     setLastUse,
     trail,
