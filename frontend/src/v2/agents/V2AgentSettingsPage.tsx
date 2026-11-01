@@ -261,6 +261,7 @@ const V2AgentSettingsPage: React.FC = () => {
       </nav>
       <AgentControlLoader agentName={agentName} instanceId={instanceId}
         refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
+      <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
       <section className="v2-agent-settings__section" aria-labelledby="agent-keys-title">
         <div className="v2-agent-settings__section-head">
           <h2 id="agent-keys-title">{t('agentSettings.key')}</h2>
@@ -301,7 +302,6 @@ const V2AgentSettingsPage: React.FC = () => {
         )}
       </section>
       {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
-      <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
       <V2AgentRuntimeGrants
         key={`runtime:${agentName}:${instanceId}`}
         name={agentName}
