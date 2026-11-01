@@ -6,11 +6,12 @@ import { useAuth } from '../../context/AuthContext';
 /**
  * Plan panel on /v2/settings.
  */
-interface V2BillingPanelProps {
-  showHeading?: boolean;
-}
+const Card = () => (
+  <svg className="v2-settings__icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+    strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18v12H3zM3 10h18" /></svg>
+);
 
-const V2BillingPanel: React.FC<V2BillingPanelProps> = ({ showHeading = true }) => {
+const V2BillingPanel: React.FC = () => {
   const { t } = useTranslation();
   const { currentUser } = useAuth();
   const [busy, setBusy] = useState(false);
@@ -33,25 +34,23 @@ const V2BillingPanel: React.FC<V2BillingPanelProps> = ({ showHeading = true }) =
   };
 
   return (
-    <section className="v2-billing" aria-labelledby="v2-billing-title">
-      <div className="v2-billing__head">
-        {showHeading && <h2 className="v2-billing__title" id="v2-billing-title">{t('billing.title')}</h2>}
-        <span className={`v2-billing__badge v2-billing__badge--${isPro ? 'pro' : 'free'}`}>
-          {t(isPro ? 'billing.tier.pro' : 'billing.tier.free')}
-        </span>
-      </div>
-      {error && <p className="v2-billing__error" role="alert">{error}</p>}
-      <div className="v2-billing__actions">
+    <div className="v2p-lrow">
+      <span className="lb"><Card />Plan</span>
+      <span className="vl">
+        <span className="v2-settings__plan">{t(isPro ? 'billing.tier.pro' : 'billing.tier.free')}</span>
+        {error && <span className="v2-settings__error" role="alert">{error}</span>}
+      </span>
+      <span className="ac">
         <button
-          className={`v2-billing__btn${isPro ? '' : ' v2-billing__btn--primary'}`}
+          className={`v2p-b v2p-b-sm ${isPro ? 'v2p-b-g' : 'v2p-b-p'}`}
           type="button"
           onClick={() => void openBilling()}
           disabled={busy}
         >
           {busy ? t('billing.opening') : t(isPro ? 'billing.manage' : 'billing.upgrade')}
         </button>
-      </div>
-    </section>
+      </span>
+    </div>
   );
 };
 

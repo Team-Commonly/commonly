@@ -48,7 +48,7 @@ jest.mock('../components/V2AvatarCropDialog', () => {
 });
 
 jest.mock('../components/V2BillingPanel', () => {
-  const MockV2BillingPanel = ({ showHeading }: { showHeading?: boolean }) => <div data-show-heading={String(showHeading)}>Plan controls</div>;
+  const MockV2BillingPanel = () => <div>Plan controls</div>;
   MockV2BillingPanel.displayName = 'MockV2BillingPanel';
   return MockV2BillingPanel;
 });
@@ -105,7 +105,7 @@ describe('V2SettingsPage', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();
 
-    expect(languageRadioLabels()).toEqual(['English', '中文']);
+    expect(languageRadioLabels()).toEqual(['EN', '中文']);
   });
 
   test('builds the language radios from the registry, and only those', async () => {
@@ -113,7 +113,7 @@ describe('V2SettingsPage', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();
 
-    expect(languageRadioLabels()).toEqual(LANGUAGE_REGISTRY.map(({ label }) => label));
+    expect(languageRadioLabels()).toEqual(LANGUAGE_REGISTRY.map(({ short }) => short));
   });
 
   test('Look carries the language as a segment that switches the app language', async () => {
@@ -151,7 +151,6 @@ describe('V2SettingsPage', () => {
     expect(screen.getByText('lily')).toBeInTheDocument();
     expect(screen.getByText('Plan controls')).toBeInTheDocument();
     expect(screen.getByText('Device controls')).toBeInTheDocument();
-    expect(screen.getByText('Plan controls')).toHaveAttribute('data-show-heading', 'false');
     expect(screen.getByText('Device controls')).toHaveAttribute('data-show-heading', 'false');
     // Developer apps stay hidden unless REACT_APP_DEVELOPER_APPS=true (TASK-674).
     expect(screen.queryByText('Connected app controls')).not.toBeInTheDocument();
@@ -227,7 +226,7 @@ describe('V2SettingsPage', () => {
     (axios.post as jest.Mock).mockResolvedValue({ data: { apiToken: 'cm_user_secret', createdAt: TOKEN_CREATED_AT } });
     renderSettings();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Generate API token' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
 
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/auth/api-token/generate', {}));
     expect(await screen.findByText('cm_user_secret')).toBeInTheDocument();

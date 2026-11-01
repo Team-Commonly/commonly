@@ -321,10 +321,10 @@ const V2AvatarCropDialog: React.FC<V2AvatarCropDialogProps> = ({
               ))}
             </div>
             <div className="v2-settings__avatar-dialog-actions">
-              <button ref={cancelButtonRef} type="button" className="v2-settings__secondary" onClick={onCancel} disabled={saving}>
+              <button ref={cancelButtonRef} type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={onCancel} disabled={saving}>
                 {t('settings.avatar.cancel')}
               </button>
-              <button type="button" className="v2-settings__primary" onClick={() => void save()} disabled={!image} aria-disabled={saving}>
+              <button type="button" className="v2p-b v2p-b-p" onClick={() => void save()} disabled={!image} aria-disabled={saving}>
                 {saving ? t('settings.avatar.savingPhoto') : t('settings.avatar.savePhoto')}
               </button>
             </div>

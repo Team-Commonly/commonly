@@ -66,7 +66,7 @@ const V2DeleteAccount: React.FC = () => {
       <button
         ref={triggerRef}
         type="button"
-        className="v2-settings__secondary"
+        className="v2p-b v2p-b-s v2p-b-sm"
         aria-expanded={open}
         aria-controls="v2-delete-account"
         onClick={() => { if (!open) setOpen(true); }}
@@ -120,12 +120,12 @@ const V2DeleteAccount: React.FC = () => {
           <div className="v2-settings__actions">
             <button
               type="submit"
-              className="v2-settings__primary"
+              className="v2p-b v2p-b-p"
               disabled={busy || confirmation !== 'DELETE' || (passwordRequired && !password)}
             >
               {t(busy ? 'settings.deleteAccount.deleting' : 'settings.deleteAccount.confirm')}
             </button>
-            <button type="button" className="v2-settings__secondary" onClick={cancel} disabled={busy}>
+            <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={cancel} disabled={busy}>
               {t('settings.deleteAccount.cancel')}
             </button>
           </div>
