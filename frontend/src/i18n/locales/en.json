@@ -1605,10 +1605,9 @@
       "defaultPriority": "default"
     },
     "owner": {
-      "left": "{{holder}} · <minutes>{{minutes}}m left</minutes>",
-      "assigned": "{{assignee}} · not claimed",
-      "expired": "lease expired · {{holder}}",
-      "claimed": "{{holder}} · claimed"
+      "leaseShort": "{{minutes}}m",
+      "expiredShort": "expired",
+      "claimedShort": "claimed"
     },
     "filter": {
       "label": "Filters",
