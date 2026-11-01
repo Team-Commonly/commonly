@@ -284,6 +284,30 @@ describe('a hosted-MCP grant through the broker', () => {
     },
   );
 
+  // TASK-255: a tool the vendor lists but the entry does not pin is not a
+  // write-with-confirm tool by default, it is no tool at all. Offering and minting
+  // already refuse it (hostedMcpEntry.test.js, grants.mint.test.js); this is the
+  // call, for a grant row that names it anyway.
+  it.each(['linear.delete_issue', 'linear.deleteIssue'])(
+    'refuses %s, which the vendor lists and the entry does not pin, before any vendor call',
+    async (tool) => {
+      upstreamTools.push({
+        name: 'deleteIssue',
+        inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+        annotations: { readOnlyHint: false, destructiveHint: true },
+      });
+      mockRoomGrant.findOne.mockResolvedValue(hostedGrant({ tools: [tool], writeMode: 'write' }));
+
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool, args: { id: 'ISS-1' }, hostedTurn: true,
+      })).rejects.toMatchObject({ code: 'tool_not_found' });
+      expect(toolCalls()).toHaveLength(0);
+      expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+      expect(mockProposeAction).not.toHaveBeenCalled();
+      expect(allToolDefinitions().map((definition) => definition.name)).not.toContain(tool);
+    },
+  );
+
   it('refuses an undeclared top-level argument before vendor call or budget, recording only its digest', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant({ budget: { calls: 3 } }));
     const args = { limit: 3, unexpected: 'private value' };
