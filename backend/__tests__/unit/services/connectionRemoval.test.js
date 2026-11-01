@@ -185,7 +185,7 @@ describe('removeConnection (a hosted-MCP row)', () => {
     const result = await remove(hostedRow(), deps, revokeGrants);
     expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
     expect(calls).toEqual([
-      'grants', 'row', 'get:refresh-ref', 'provider', 'get:access-ref', 'provider',
+      'grants', 'row', 'get:refresh-ref', 'get:access-ref', 'provider', 'provider',
       'material:refresh-ref', 'material:access-ref', 'delete',
     ]);
     expect(deps.revokeAtVendor.mock.calls.map(([input]) => [input.tokenTypeHint, input.token])).toEqual([
@@ -204,6 +204,34 @@ describe('removeConnection (a hosted-MCP row)', () => {
     const result = await remove(hostedRow(), deps, revokeGrants);
     expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
     expect(deps.remove).toHaveBeenCalled();
+  });
+
+  it('keeps the row, sending nothing, when a mixed pair\'s access token cannot be read', async () => {
+    const { calls, deps, revokeGrants } = mixedPair();
+    deps.secrets.get = jest.fn(async (ref) => {
+      calls.push(`get:${ref}`);
+      if (ref === 'access-ref') throw codedError('connector_secret_key_missing');
+      return 'refresh-token-value';
+    });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toEqual(expect.objectContaining({ removed: false, code: 'provider_revoke_failed', revokeAt: PAGE }));
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
+    expect(deps.secrets.revoke).not.toHaveBeenCalled();
+    expect(deps.markProviderRevoked).not.toHaveBeenCalled();
+    expect(deps.remove).not.toHaveBeenCalled();
+  });
+
+  it('sends the refresh token alone when a mixed pair\'s access token is gone, and still claims nothing', async () => {
+    const { calls, deps, revokeGrants } = mixedPair();
+    deps.secrets.get = jest.fn(async (ref) => {
+      calls.push(`get:${ref}`);
+      if (ref === 'access-ref') throw codedError('connector_secret_not_found');
+      return 'refresh-token-value';
+    });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
+    expect(deps.revokeAtVendor.mock.calls.map(([input]) => input.tokenTypeHint)).toEqual(['refresh_token']);
+    expect(deps.markProviderRevoked).not.toHaveBeenCalled();
   });
 
   it('keeps the row, sending nothing, when a half cannot be read for its generation', async () => {

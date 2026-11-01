@@ -477,8 +477,19 @@ const revokeThenSweep = async (input: {
       // can never succeed — so the removal still finishes below, and the person
       // gets the page. Only an UNREADABLE secret refuses.
       let token: string | null = null;
+      // A mixed pair also sends its access token. It is read here, before
+      // anything is sent, under the same rule: gone sends nothing for it,
+      // unreadable keeps the row.
+      let accessToken: string | null = null;
       try {
         token = tokenRef ? await deps.secrets.get(tokenRef) : null;
+        if (mixedPair) {
+          try {
+            accessToken = await deps.secrets.get(credentialRef as string);
+          } catch (error) {
+            if (!holdsNothingToRevoke(error)) throw error;
+          }
+        }
       } catch (error) {
         if (!holdsNothingToRevoke(error)) {
           // `connector_secret_configuration_invalid` and
@@ -534,17 +545,19 @@ const revokeThenSweep = async (input: {
           // authorization is gone: no mark, `providerRevoked` stays false, and
           // the person is sent to the page. A refusal changes none of that,
           // and must not hold the row, which no retry could then finish.
-          try {
-            await deps.revokeAtVendor({
-              entry,
-              clientId: clientId as string,
-              ...(clientSecret ? { clientSecret } : {}),
-              ...(tokenEndpointAuthMethod ? { tokenEndpointAuthMethod } : {}),
-              token: await deps.secrets.get(credentialRef as string),
-              tokenTypeHint: 'access_token',
-            });
-          } catch {
-            // The page carries what this call could not end.
+          if (accessToken) {
+            try {
+              await deps.revokeAtVendor({
+                entry,
+                clientId: clientId as string,
+                ...(clientSecret ? { clientSecret } : {}),
+                ...(tokenEndpointAuthMethod ? { tokenEndpointAuthMethod } : {}),
+                token: accessToken,
+                tokenTypeHint: 'access_token',
+              });
+            } catch {
+              // The page carries what this call could not end.
+            }
           }
         } else if (clientMatches) {
           revokedNow = true;
