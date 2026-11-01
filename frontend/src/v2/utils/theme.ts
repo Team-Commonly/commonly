@@ -23,9 +23,15 @@ const listeners = new Set<() => void>();
 
 // Lets every mounted control (the Settings picker, the rail switch) follow the
 // one stored preference instead of keeping a copy of it.
+// It also fires when the OS flips light/dark, so an 'auto' preference stays current.
 export function subscribeV2Theme(listener: () => void): () => void {
   listeners.add(listener);
-  return () => { listeners.delete(listener); };
+  const mql = typeof window !== 'undefined' ? window.matchMedia?.('(prefers-color-scheme: dark)') : undefined;
+  mql?.addEventListener?.('change', listener);
+  return () => {
+    listeners.delete(listener);
+    mql?.removeEventListener?.('change', listener);
+  };
 }
 
 // 'auto' follows the OS; the rail switch needs the set actually showing.

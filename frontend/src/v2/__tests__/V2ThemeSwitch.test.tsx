@@ -30,4 +30,23 @@ describe('V2ThemeSwitch', () => {
     act(() => setV2Theme('light'));
     expect(screen.getByRole('button', { name: /light/i })).toHaveAttribute('aria-pressed', 'true');
   });
+
+  test('in Auto, an OS light/dark flip moves the switch', () => {
+    let dark = false;
+    let fire: () => void = () => {};
+    const original = window.matchMedia;
+    window.matchMedia = jest.fn().mockImplementation(() => ({
+      get matches() { return dark; },
+      addEventListener: (_: string, cb: () => void) => { fire = cb; },
+      removeEventListener: jest.fn(),
+    })) as unknown as typeof window.matchMedia;
+    try {
+      render(<V2ThemeSwitch />);
+      expect(screen.getByRole('button', { name: /light/i })).toHaveAttribute('aria-pressed', 'true');
+      act(() => { dark = true; fire(); });
+      expect(screen.getByRole('button', { name: /dark/i })).toHaveAttribute('aria-pressed', 'true');
+    } finally {
+      window.matchMedia = original;
+    }
+  });
 });

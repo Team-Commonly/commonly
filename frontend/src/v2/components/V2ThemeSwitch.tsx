@@ -1,7 +1,6 @@
-import React from 'react';
+import React, { useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
-import useV2ThemePref from '../hooks/useV2ThemePref';
-import { resolveV2Theme, setV2Theme } from '../utils/theme';
+import { getV2Theme, resolveV2Theme, setV2Theme, subscribeV2Theme } from '../utils/theme';
 import './v2-theme-switch.css';
 
 const Sun = () => (
@@ -19,7 +18,11 @@ const Moon = () => (
 // explicit.
 const V2ThemeSwitch: React.FC = () => {
   const { t } = useTranslation();
-  const active = resolveV2Theme(useV2ThemePref());
+  const active = useSyncExternalStore(
+    subscribeV2Theme,
+    () => resolveV2Theme(getV2Theme()),
+    () => 'light',
+  );
   return (
     <div className="seg seg--ic seg--rail" role="group" aria-label={t('common.theme.label')}>
       <button type="button" data-t="light" title={t('common.theme.light')} aria-label={t('common.theme.light')}
