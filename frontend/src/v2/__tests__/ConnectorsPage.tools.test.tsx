@@ -1393,3 +1393,25 @@ describe('Connectors page: tools', () => {
     });
   });
 });
+
+describe('Linear write reconnect note', () => {
+  afterEach(async () => { await act(async () => { await i18n.changeLanguage('en'); }); });
+
+  it.each(['en', 'zh-CN'])('a connected Linear drawer says older connections must reconnect to write, in %s', async (language) => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage(language); });
+    mockTools({ entries: [githubEntry, linearEntry], grants: [grantLinear] });
+    renderPage();
+    const drawer = await openTool('Linear');
+    const note = within(drawer).getByRole('note');
+    expect(note).toHaveTextContent(language === 'en' ? 'removed and connected again to enable writes' : '先移除再重新连接');
+    expect(note).toHaveTextContent(language === 'en' ? 'Each write requires your approval' : '每次写入都需要你批准');
+  });
+
+  it('no other drawer carries it', async () => {
+    mockTools({ entries: [githubEntry, linearEntry], grants: [grantLive] });
+    renderPage();
+    const drawer = await openTool('GitHub');
+    expect(within(drawer).queryByRole('note')).not.toBeInTheDocument();
+  });
+});

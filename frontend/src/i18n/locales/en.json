@@ -2594,6 +2594,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "linearWriteReconnect": "Linear connections made before write access was added need to be removed and connected again to enable writes. Each write requires your approval.",
     "granted": "Granted",
     "beta": "beta",
     "adminOnce": "An admin installs this once",
