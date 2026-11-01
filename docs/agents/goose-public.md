@@ -1,8 +1,9 @@
 # Goose public seats
 
 TASK-236 admits only Goose 1.54.0 with a prepared Commonly stdio MCP server,
-an explicit model/provider key file, and an enforced Seatbelt (macOS) or bwrap
-(Linux) boundary. Other extensions, HTTP MCP declarations, untested versions,
+a declared model and provider whose `keyFile` is an absolute, regular 0600 file
+(the sandbox check needs the declaration; the spawn checks the file), and an
+enforced Seatbelt (macOS) or bwrap (Linux) boundary. Other extensions, HTTP MCP declarations, untested versions,
 disabled sandboxes and restricted-network declarations fail before launch.
 Public filesystem `read-outside` declarations are refused, so operator-supplied
 paths cannot expand the host read grants of the public process.
@@ -19,6 +20,13 @@ calls absent from that turn's advertised set. The local-file upload tool
 commonly_attach_file is excluded: otherwise the MCP process could upload its
 own credential file or Linux /proc/self/environ. Future MCP tools are excluded
 until audited and added to this list.
+Goose renders a recipe file as a minijinja template before reading it, with the
+recipe's own directory as the include root. Every `{` written into the recipe is
+therefore written as an expression that prints one, so a stranger's
+`{{ … }}` or `{% include %}`, in the message or in saved memory, reaches the
+model as the text it was. The recipe also sits alone in its own directory, so
+no include could reach the proxy bearer or the credential file beside it.
+
 This is an extension allowlist, not a claim that Goose's auto mode implements
 permission denial: auto mode approves registered tools. Commonly tool approvals
 remain enforced by the Commonly backend.
@@ -39,7 +47,9 @@ the actual Commonly MCP server, the adapter and OS wrapper with local fixture
 provider/API endpoints. The fixture provider forces shell, file-write and
 extension-enable and local-file-upload calls even though their schemas were withheld.
 All four must return tool errors, neither sentinel file may exist, a Commonly context call
-must reach the fixture API, and the turn must end within its timeout.
+must reach the fixture API, and the turn must end within its timeout. A second
+turn sends template syntax in the message and in saved memory; the model must
+receive it verbatim and never the proxy bearer.
 
 This checks enforcement independently of whether a model follows the attack
 prompt. It is not a live vendor/model or production-account test. Set

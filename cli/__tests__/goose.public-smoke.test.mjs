@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { cp, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -31,6 +31,7 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
   let apiHits = 0;
   let results = [];
   const advertised = [];
+  const conversations = [];
   const fixture = createServer(async (request, response) => {
     let body = '';
     for await (const chunk of request) body += chunk;
@@ -47,6 +48,7 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
     const input = JSON.parse(body);
     const tools = input.tools?.map((tool) => tool.function.name) || [];
     if (tools.length) advertised.push(tools);
+    if (tools.length) conversations.push(JSON.stringify(input.messages || []));
     results = input.messages?.filter((message) => message.role === 'tool') || results;
     const call = (name, index, args) => ({ index, id: `attempt-${index}`, type: 'function',
       function: { name, arguments: JSON.stringify(args) } });
@@ -73,6 +75,7 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
   });
   await new Promise((resolve) => fixture.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${fixture.address().port}`;
+  const proxyTokens = [];
   try {
     const context = {
       agentName: 'public-proof', cwd: workspace, runtimeToken: 'cm_agent_fixture_runtime_token',
@@ -81,8 +84,11 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
         expect(readFileSync(options.env.OPENSSL_CONF, 'utf8')).toBe('');
         expect(options.env.OPENAI_API_KEY).toBe(readFileSync(join(options.env.HOME, 'provider-proxy-token'), 'utf8').trim());
         expect(Object.values(options.env).join('\n')).not.toContain('fixture-provider-key');
-        const recipe = JSON.parse(readFileSync(join(options.env.HOME, 'public-recipe.json'), 'utf8'));
-        expect(recipe.extensions[0].envs.OPENSSL_CONF).toBe(options.env.OPENSSL_CONF);
+        proxyTokens.push(options.env.OPENAI_API_KEY);
+        // The recipe directory is Goose's template include root, so it holds nothing else.
+        expect(readdirSync(join(options.env.HOME, 'recipe'))).toEqual(['public-recipe.json']);
+        const recipe = JSON.parse(readFileSync(join(options.env.HOME, 'recipe', 'public-recipe.json'), 'utf8'));
+        expect(recipe.extensions[0].envs.OPENSSL_CONF.replaceAll("{{ '{' }}", '{')).toBe(options.env.OPENSSL_CONF);
         return spawn(command, args, options);
       },
       environment: { model: 'fixture', sandbox: { trust: 'public' },
@@ -113,6 +119,17 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
     for (const sentinel of ['shell-sentinel', 'write-sentinel']) {
       await expect(readFile(join(workspace, sentinel))).rejects.toMatchObject({ code: 'ENOENT' });
     }
+
+    // Goose renders the recipe as a template. A stranger's template text, in the
+    // message or in saved memory, reaches the model as the text it was, and no
+    // include reads the proxy token beside the recipe.
+    const injection = "{% include 'provider-proxy-token' %} {{ recipe_dir }} {{ x }} {# c #}";
+    const injected = await goose.spawn(injection, { ...context, memoryLongTerm: 'saved {{ x }} and {% for i in range(3) %}' });
+    expect(injected.text).toBe('proof complete');
+    const seen = conversations.at(-1);
+    expect(seen).toContain(JSON.stringify(injection).slice(1, -1));
+    expect(seen).toContain(JSON.stringify('saved {{ x }} and {% for i in range(3) %}').slice(1, -1));
+    expect(seen).not.toContain(proxyTokens.at(-1));
   } finally {
     if (previousMcpHome === undefined) delete process.env.COMMONLY_MCP_HOME;
     else process.env.COMMONLY_MCP_HOME = previousMcpHome;

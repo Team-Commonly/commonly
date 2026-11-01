@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { jest } from '@jest/globals';
 import goose, {
-  TESTED_GOOSE_VERSIONS, assertSandboxSupported, extensionArgs, readGooseStream,
+  PUBLIC_GOOSE_TOOLS, TESTED_GOOSE_VERSIONS, assertSandboxSupported, extensionArgs, readGooseStream,
 } from '../src/lib/adapters/goose.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js';
 import { commonlyMcpServer } from '../src/lib/default-environment.js';
 
 const childWith = (stdout, code = 0, stderr = '') => {
@@ -207,4 +208,12 @@ test('oversized stream terminates Goose and fails after the child closes', async
     },
   })).rejects.toThrow(/stream exceeded 2 MiB/);
   expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+});
+
+test('the public Goose allowlist names only shipped MCP tools and none that public seats withhold', () => {
+  const source = readFileSync(fileURLToPath(new URL('../../commonly-mcp/src/tools.js', import.meta.url)), 'utf8');
+  const shipped = new Set([...source.matchAll(/name: '(commonly_[a-z_]+)'/g)].map(([, name]) => name));
+  expect(shipped.size).toBeGreaterThan(0);
+  expect(PUBLIC_GOOSE_TOOLS.filter((name) => !shipped.has(name))).toEqual([]);
+  expect(PUBLIC_GOOSE_TOOLS.filter((name) => PUBLIC_WITHHELD_TOOLS.includes(name))).toEqual([]);
 });

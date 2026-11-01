@@ -1,7 +1,7 @@
 /** Goose 1.54.0 wrapper. Public seats expose only the Commonly MCP extension. */
 import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -25,6 +25,19 @@ const DEFAULT_PROVIDER_HOST = 'https://litellm.commonly.me';
 const DEFAULT_PROVIDER_KEY = 'COMMONLY_LITELLM_KEY';
 const PLACEHOLDER_RE = /\$\{(COMMONLY_[A-Z_]+)\}/g;
 const SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
+const safeEnv = (env) => Object.fromEntries(Object.entries(env).filter(([name]) => SAFE_ENV.test(name)));
+
+// Goose renders a recipe file as a template before it reads it, so a stranger's
+// `{{ … }}` or `{% include %}` in the prompt would run. Every `{` is written as
+// an expression that prints one, which renders back to exactly the given text.
+const templateLiteral = (value) => {
+  if (typeof value === 'string') return value.replace(/\{/g, "{{ '{' }}");
+  if (Array.isArray(value)) return value.map(templateLiteral);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, templateLiteral(item)]));
+  }
+  return value;
+};
 // Explicit API-only list: new MCP tools do not silently gain public authority.
 // attach_file reads this process's filesystem, including its credential file.
 export const PUBLIC_GOOSE_TOOLS = Object.freeze([
@@ -261,7 +274,10 @@ export default {
       ? String(spawnSync('which', ['goose'], { encoding: 'utf8', env: sourceEnv }).stdout || '').trim()
       : 'goose');
     if (isPublic && !isAbsolute(binary)) throw new Error('goose adapter: public seats require an absolute Goose executable');
-    const version = ctx._version || versionOf(spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 5000 }).stdout);
+    // A cold first launch can take several seconds while macOS scans the binary.
+    const version = ctx._version || versionOf(spawnSync(binary, ['--version'], {
+      encoding: 'utf8', timeout: 30000, env: safeEnv(sourceEnv),
+    }).stdout);
     if (!TESTED_GOOSE_VERSIONS.includes(version)) {
       if (isPublic) throw new Error(`goose adapter: public seats refuse untested version ${version || 'unknown'}`);
       // eslint-disable-next-line no-console
@@ -275,6 +291,7 @@ export default {
       });
       if (isPublic) proxy = await startProviderProxy({
         provider: configured, keyFile, tokenFile: join(home, 'provider-proxy-token'), adapterLabel: 'Goose',
+        pinnedModel: model,
       });
       const mcpReadDirectories = [];
       const publicExtensions = [];
@@ -283,7 +300,10 @@ export default {
       // Node's bundled TLS roots, instead of granting host configuration reads.
       const opensslConfig = join(home, 'openssl.cnf');
       if (isPublic) await writeFile(opensslConfig, '', { mode: 0o600 });
-      const recipePath = join(home, 'public-recipe.json');
+      // The recipe's own directory is the template include root, so it holds
+      // the recipe alone, never the proxy token or the credential file.
+      const recipeDir = join(home, 'recipe');
+      const recipePath = join(recipeDir, 'public-recipe.json');
       const args = [
         'run', '--no-session', ...(!isPublic ? ['--no-profile', '--with-builtin', 'developer'] : []),
         ...(isPublic ? ['--recipe', recipePath] : []),
@@ -295,16 +315,17 @@ export default {
         }),
         ...(!isPublic ? ['-t', buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true })] : []),
       ];
-      if (isPublic) await writeFile(recipePath, JSON.stringify({ version: '1.0.0',
+      if (isPublic) await mkdir(recipeDir, { mode: 0o700 });
+      if (isPublic) await writeFile(recipePath, JSON.stringify(templateLiteral({ version: '1.0.0',
         title: 'Commonly public seat', description: 'Only audited Commonly API tools are available.',
         instructions: 'Respond to the user using the available Commonly tools.',
         extensions: publicExtensions.map((extension) => ({ ...extension,
           envs: { ...extension.envs, OPENSSL_CONF: opensslConfig },
         })),
         prompt: buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true }),
-      }), { mode: 0o600 });
+      })), { mode: 0o600 });
       const env = {
-        ...Object.fromEntries(Object.entries(sourceEnv).filter(([name]) => SAFE_ENV.test(name))),
+        ...safeEnv(sourceEnv),
         HOME: home,
         TMPDIR: home,
         XDG_CONFIG_HOME: join(home, 'config'),
