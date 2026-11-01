@@ -14,7 +14,8 @@ import V2AvatarCropDialog from './V2AvatarCropDialog';
 import V2Segmented from './V2Segmented';
 import { nextPaperAvatarPreset } from '../utils/avatarPresets';
 import { LANGUAGE_REGISTRY } from '../../i18n';
-import { V2_THEMES, V2ThemePref, getV2Theme, setV2Theme } from '../utils/theme';
+import { V2_THEMES, V2ThemePref, setV2Theme } from '../utils/theme';
+import useV2ThemePref from '../hooks/useV2ThemePref';
 
 type TokenStatus = {
   hasToken?: boolean;
@@ -537,11 +538,8 @@ const V2ApiTokenSection: React.FC = () => {
 const V2LanguageSection: React.FC = () => {
   const { i18n, t } = useTranslation();
   const active = i18n.resolvedLanguage || i18n.language || 'en';
-  const [theme, setTheme] = useState<V2ThemePref>(() => getV2Theme());
-  const chooseTheme = (pref: V2ThemePref) => {
-    setTheme(pref);
-    setV2Theme(pref);
-  };
+  const theme = useV2ThemePref();
+  const chooseTheme = (pref: V2ThemePref) => setV2Theme(pref);
 
   return (
     <div className="v2-settings__look">
