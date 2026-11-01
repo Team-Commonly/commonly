@@ -85,6 +85,32 @@ it('offers trust mode for the canonical BYO runtime shape', async () => {
   expect(screen.getByRole('radio', { name: 'Read only' })).toBeChecked();
 });
 
+it('a viewer without access is told plainly, not shown an error to retry', async () => {
+  axios.get.mockImplementation((url) => url.endsWith('/editable')
+    ? Promise.reject({ response: { status: 403, data: { error: 'Forbidden' } } })
+    : Promise.resolve({ data: { turnCap: 30, userRunCeiling: 120 } }));
+  renderPolicy();
+  expect(await screen.findByText("Only this agent's owner and admins can edit its memory.")).toBeInTheDocument();
+  expect(screen.queryByText('Forbidden')).toBeNull();
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+});
+
+it('a retry that comes back forbidden reads as owner-only, not as the raw error', async () => {
+  let memoryCalls = 0;
+  axios.get.mockImplementation((url) => {
+    if (!url.endsWith('/editable')) return Promise.resolve({ data: { turnCap: 30, userRunCeiling: 120 } });
+    memoryCalls += 1;
+    return Promise.reject(memoryCalls === 1 ? new Error('Network Error')
+      : { response: { status: 403, data: { error: 'Forbidden' } } });
+  });
+  renderPolicy();
+  fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+  expect(await screen.findByText("Only this agent's owner and admins can edit its memory.")).toBeInTheDocument();
+  expect(screen.queryByText('Forbidden')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+});
+
 it('shows a retry in Memory when loading fails, then opens the editor', async () => {
   axios.get.mockImplementation((url) => url.endsWith('/editable')
     ? Promise.reject(new Error('Memory offline'))

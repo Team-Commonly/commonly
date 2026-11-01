@@ -2815,7 +2815,8 @@
       "revokeError": "Could not revoke the grant.",
       "activeCount": "{{count}} active",
       "endedCount": "{{count}} ended",
-      "retry": "Try again"
+      "retry": "Try again",
+      "private": "Owner and admins only"
     },
     "controls": {
       "title": "How it runs",
@@ -3019,7 +3020,8 @@
     "userRunCeiling": "Runs per day",
     "loadError": "Could not load policy data.",
     "saveError": "Could not save changes.",
-    "saved": "Saved"
+    "saved": "Saved",
+    "memoryPrivate": "Only this agent's owner and admins can edit its memory."
   },
   "time": {
     "age": {

@@ -226,6 +226,21 @@ test('does not offer revoke when the server says this viewer cannot revoke', asy
   expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
 });
 
+test('grants this viewer may not see read as owner-only, with no alert and no retry', async () => {
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/agent-binding/placement')) return Promise.resolve({ data: { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] } });
+    if (url.includes('/grants')) return Promise.reject({ response: { status: 403, data: { error: 'Forbidden' } } });
+    return Promise.resolve({ data: response });
+  });
+  renderSection();
+  expect(await screen.findByText('Owner and admins only')).toBeInTheDocument();
+  // Not a failure: the list stays closed and nothing offers a retry.
+  expect(screen.queryByRole('region', { name: 'Connector grants' })).toBeNull();
+  expect(screen.queryByText('Could not load connector grants.')).toBeNull();
+  expect(screen.queryByText('None')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+});
+
 test('a failed grant load is one row with Try again, which reloads the list', async () => {
   let fail = true;
   axios.get.mockImplementation((url) => {

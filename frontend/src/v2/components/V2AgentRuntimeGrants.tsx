@@ -209,6 +209,8 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
   const [grants, setGrants] = useState<AgentGrant[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  // A 403 means this viewer may not see the grants; it is said plainly, not as a failure to retry.
+  const [grantsPrivate, setGrantsPrivate] = useState(false);
   const [revokeError, setRevokeError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmGrantId, setConfirmGrantId] = useState<string | null>(null);
@@ -217,13 +219,17 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError('');
+    setGrantsPrivate(false);
     try {
       const next = await api.get<AgentGrantsResponse>(
         `/api/registry/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(instanceId)}/grants`,
       );
       setGrants(next.grants || []);
-    } catch {
-      setLoadError(t('agentManage.grants.loadError', { defaultValue: 'Could not load connector grants.' }));
+    } catch (requestError) {
+      if ((requestError as { response?: { status?: number } })?.response?.status === 403) {
+        setGrants([]);
+        setGrantsPrivate(true);
+      } else setLoadError(t('agentManage.grants.loadError', { defaultValue: 'Could not load connector grants.' }));
     } finally {
       setLoading(false);
     }
@@ -265,7 +271,8 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
         <span className="vl">
           {grants.length > 0 ? [t('agentManage.grants.activeCount', { count: activeGrants }),
             endedGrants > 0 && t('agentManage.grants.endedCount', { count: endedGrants })].filter(Boolean).join(' · ')
-            : !loadError && <span className="mu">{loading ? t('agentManage.grants.loading', { defaultValue: 'Loading grants…' }) : t('agentSettings.none')}</span>}
+            : grantsPrivate ? <span className="mu">{t('agentManage.grants.private')}</span>
+              : !loadError && <span className="mu">{loading ? t('agentManage.grants.loading', { defaultValue: 'Loading grants…' }) : t('agentSettings.none')}</span>}
         </span>
         <span className="ac">
           <Link className="b b-g ib b-sm" to="/v2/connectors" title={t('agentSettings.grantConnector')} aria-label={t('agentSettings.grantConnector')}>
@@ -282,7 +289,7 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
           {loading && !grants.length && <div className="lrow v2-agent-settings-page__plain">
             <span className="vl" role="status">{t('agentManage.grants.loading', { defaultValue: 'Loading grants…' })}</span>
           </div>}
-          {!loading && !loadError && grants.length === 0 && <div className="lrow v2-agent-settings-page__plain">
+          {!loading && !loadError && !grantsPrivate && grants.length === 0 && <div className="lrow v2-agent-settings-page__plain">
             <span className="vl">{t('agentManage.grants.empty', { defaultValue: 'This agent has no connector grants.' })}</span>
           </div>}
           {(grants.length > 0 || revokeError) && <>
