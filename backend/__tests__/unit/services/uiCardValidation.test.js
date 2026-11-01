@@ -23,7 +23,7 @@ describe('untrusted UI card write validation', () => {
     expect(() => validateAgentCardPayload(type, undefined, 'hello')).toThrow('text or card');
   });
   it('accepts the Linear, Sentry and Atlassian site links the renderer opens', () => {
-    for (const url of ['https://linear.app/x', 'https://sentry.io/x', 'https://acme.atlassian.net/x']) {
+    for (const url of ['https://linear.app/x', 'https://sentry.io/x', 'https://acme.atlassian.net/x', 'https://my-organization.sentry.io/issues/123/']) {
       expect(() => validate(card(`root = Text("hello")\nunused = Action(@OpenUrl("${url}"))`))).not.toThrow();
     }
   });
@@ -37,7 +37,7 @@ describe('untrusted UI card write validation', () => {
   });
   it.each([
     'https://linear.app.evil.com', 'https://evilatlassian.net', 'https://atlassian.net.evil.com',
-    'https://sentry.io.evil.com', 'http://linear.app/x', 'https://user:pw@linear.app', 'https://linear.app:8443',
+    'https://sentry.io.evil.com', 'https://a.b.sentry.io/issues/1/', 'http://linear.app/x', 'https://user:pw@linear.app', 'https://linear.app:8443',
   ])('refuses the unapproved link %s', (url) => {
     expect(() => validate(card(`root = Text("hello")\nunused = Action(@OpenUrl("${url}"))`))).toThrow(expect.objectContaining({
       statusCode: 400, code: 'invalid_ui_card',

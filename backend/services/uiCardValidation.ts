@@ -21,12 +21,12 @@ export const UI_CARD_SOURCE_CONNECTORS: readonly string[] = Object.freeze(
 // Mirrors frontend/src/v2/cards/cardLinks.ts: the same hosts the renderer opens,
 // so a card the server accepts is one the client will not render as unavailable.
 const UI_LINK_HOSTS = new Set(['commonly.me', 'staging.commonly.me', 'docs.commonly.me', 'github.com', 'linear.app', 'sentry.io']);
-const ATLASSIAN_SITE = /^[a-z0-9-]+\.atlassian\.net$/;
+const SITE_SUFFIX = /^[a-z0-9-]+\.(atlassian\.net|sentry\.io)$/;
 export function isApprovedCardLink(raw: string): boolean {
   try {
     const url = new URL(raw);
     return url.protocol === 'https:' && !url.username && !url.password && !url.port
-      && (UI_LINK_HOSTS.has(url.hostname) || ATLASSIAN_SITE.test(url.hostname));
+      && (UI_LINK_HOSTS.has(url.hostname) || SITE_SUFFIX.test(url.hostname));
   } catch { return false; }
 }
 
