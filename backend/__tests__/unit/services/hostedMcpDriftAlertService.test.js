@@ -7,7 +7,9 @@ const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../../../integration
 
 const sentry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
 const row = { connectionId: 'row-1' };
-const config = { recipientUserId: 'operator', podId: 'pod-ops' };
+const OPERATOR = '6a1b2c3d4e5f60718293a4b5';
+const POD = '6a8f6dc7a1dccf2e02f31f99';
+const config = { recipientUserId: OPERATOR, podId: POD };
 const drifted = (name) => ({
   name, namespacedName: `sentry.${name}`, verdict: 'tool_drift',
   detail: `upstream inputSchema for ${name} differs from the pin`,
@@ -38,11 +40,12 @@ describe('a drifted pin becomes one card for the operator', () => {
 
     expect(record).toHaveBeenCalledTimes(1);
     const [card] = record.mock.calls[0];
-    expect(card).toMatchObject({ recipientUserId: 'operator', podId: 'pod-ops' });
+    expect(card).toMatchObject({ recipientUserId: OPERATOR, podId: POD });
     expect(card.sourceId).toMatch(/^drift:sentry:[0-9a-f]{16}$/);
     expect(card.title).toBe('Sentry: 2 pinned tools changed upstream');
     expect(card.detail).toContain('search_issues, search_errors');
     expect(card.detail).toContain('row-1');
+    expect(card.detail).not.toMatch(/first seen/i);
     expect(card.detail).not.toContain('find_organizations');
   });
 
@@ -52,12 +55,31 @@ describe('a drifted pin becomes one card for the operator', () => {
     expect(record.mock.calls[0][0].title).toBe('Sentry: 1 pinned tool changed upstream');
   });
 
-  test('the same pin set files once per process, however often it is assessed', async () => {
+  test('the same drift files once per process, however often and on however many rows', async () => {
     const { alert, record, readConfig } = setup();
     await alert(row, sentry, [drifted('search_issues')]);
-    await alert({ connectionId: 'row-2' }, sentry, [drifted('search_issues'), drifted('search_logs')]);
+    await alert(row, sentry, [drifted('search_issues')]);
+    await alert({ connectionId: 'row-2' }, sentry, [drifted('search_issues')]);
     expect(record).toHaveBeenCalledTimes(1);
     expect(readConfig).toHaveBeenCalledTimes(1);
+  });
+
+  // Review on c7d2fa765: a key of the pin set alone lost a second tool's drift
+  // under the same pins, and a drift only another row's consent can see.
+  test('another tool drifting under the same pins files its own card', async () => {
+    const { alert, record } = setup();
+    await alert(row, sentry, [drifted('search_issues')]);
+    await alert({ connectionId: 'row-2' }, sentry, [drifted('search_issues'), drifted('update_issue')]);
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(record.mock.calls[1][0].sourceId).not.toBe(record.mock.calls[0][0].sourceId);
+    expect(record.mock.calls[1][0].detail).toContain('search_issues, update_issue');
+  });
+
+  test('the key does not depend on the order the tools were assessed in', async () => {
+    const { alert, record } = setup();
+    await alert(row, sentry, [drifted('search_issues'), drifted('search_errors')]);
+    await alert(row, sentry, [drifted('search_errors'), drifted('search_issues')]);
+    expect(record).toHaveBeenCalledTimes(1);
   });
 
   test('a re-pinned entry is a new pin set, so its drift files again', async () => {
@@ -97,10 +119,48 @@ describe('a drift that cannot be delivered says so, loudly', () => {
   });
 
   test('a half-written config is unconfigured, not a card to nobody', async () => {
-    const { alert, record } = setup({ readConfig: jest.fn(async () => ({ recipientUserId: 'operator' })) });
+    const { alert, record } = setup({ readConfig: jest.fn(async () => ({ recipientUserId: OPERATOR })) });
     await alert(row, sentry, [drifted('search_issues')]);
     expect(record).not.toHaveBeenCalled();
     expect(logged()[0]).toMatchObject({ delivery: 'unconfigured' });
+  });
+
+  // Review on c7d2fa765: a bad id threw a CastError, which logged `failed` and
+  // retried on every fresh assessment of every drifted row.
+  test('a malformed id is unconfigured, not a failure retried forever', async () => {
+    const { alert, record } = setup({ readConfig: jest.fn(async () => ({ recipientUserId: 'connector-ops', podId: POD })) });
+    await alert(row, sentry, [drifted('search_issues')]);
+    await alert(row, sentry, [drifted('search_issues')]);
+    expect(record).not.toHaveBeenCalled();
+    expect(logged()).toEqual([expect.objectContaining({ delivery: 'unconfigured' })]);
+  });
+
+  // Review on c7d2fa765: memoized until restart, so an operator who set the
+  // config after the first error never got the card.
+  test('an undeliverable drift checks the config again an hour later', async () => {
+    let clock = 1000;
+    const readConfig = jest.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(config);
+    const { alert, record } = setup({ readConfig, now: () => clock });
+    await alert(row, sentry, [drifted('search_issues')]);
+    clock += 59 * 60 * 1000;
+    await alert(row, sentry, [drifted('search_issues')]);
+    expect(record).not.toHaveBeenCalled();
+    clock += 2 * 60 * 1000;
+    await alert(row, sentry, [drifted('search_issues')]);
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  // Review on c7d2fa765: two replicas inserting at once make one upsert lose
+  // on the unique index. The card exists, so that is not a failure.
+  test('losing an insert race to another replica counts as filed', async () => {
+    const record = jest.fn(async () => { throw Object.assign(new Error('E11000 duplicate key'), { code: 11000 }); });
+    const { alert } = setup({ record });
+    await alert(row, sentry, [drifted('search_issues')]);
+    await alert(row, sentry, [drifted('search_issues')]);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(error).not.toHaveBeenCalled();
   });
 
   test('an operator the pod does not list: an error line naming why', async () => {

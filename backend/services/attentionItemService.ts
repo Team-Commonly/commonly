@@ -666,8 +666,8 @@ export const recordInitiativeStall = async (stall: {
 // operator, in a pod that operator is listed in, because the queue hides a row
 // whose recipient cannot open its pod. No email: the queue is the delivery, and
 // the operator account's mailbox may be someone else's. The source id carries
-// the pin set, so each drift of each pin set is one card; it stays until the
-// operator acknowledges it, since another row may still see the drift.
+// the pin set and the drifted tools, so each drift is one card; it stays until
+// the operator acknowledges it, since another row may still see the drift.
 export const recordHostedMcpDrift = async (drift: {
   recipientUserId: unknown; podId: unknown; sourceId: string; title: string; detail: string;
 }): Promise<{ recorded: boolean; reason?: 'recipient_not_member' }> => {
