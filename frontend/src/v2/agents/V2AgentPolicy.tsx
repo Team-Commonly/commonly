@@ -57,6 +57,11 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     if (!preserveDraft) setContent(response.data.sections[section]?.content || '');
   }, [memoryUrl, section]);
 
+  const memoryFailed = (requestError: unknown) => {
+    if (forbidden(requestError)) setMemoryPrivate(true);
+    else setMemoryLoadError(message(requestError, t('agentPolicy.loadError')));
+  };
+
   useEffect(() => {
     let current = true;
     setDocuments(null);
@@ -68,11 +73,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         setDocuments(response.data.sections);
         setContent(response.data.sections.long_term?.content || '');
       }
-    }).catch((requestError) => {
-      if (!current) return;
-      if (forbidden(requestError)) setMemoryPrivate(true);
-      else setMemoryLoadError(message(requestError, t('agentPolicy.loadError')));
-    });
+    }).catch((requestError) => { if (current) memoryFailed(requestError); });
     void axios.get<{ turnCap: number; userRunCeiling: number | null }>(
       `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`, { params: { instanceId } },
     ).then((response) => { if (current) setQuota(response.data); })
@@ -180,7 +181,7 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
         : memoryLoadError ? <>
         <p role="alert" className="v2-agent-policy__error">{memoryLoadError}</p>
         <button type="button" onClick={() => { setMemoryLoadError(null);
-          void loadMemory().catch((requestError) => setMemoryLoadError(message(requestError, t('agentPolicy.loadError'))));
+          void loadMemory().catch(memoryFailed);
         }}>{t('agentPolicy.retry')}</button>
       </> : <p className="v2-agent-policy__muted">{t('agentPolicy.loadingMemory')}</p>}
       {groupFeedback('memory')}

@@ -226,8 +226,10 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
       );
       setGrants(next.grants || []);
     } catch (requestError) {
-      if ((requestError as { response?: { status?: number } })?.response?.status === 403) setGrantsPrivate(true);
-      else setLoadError(t('agentManage.grants.loadError', { defaultValue: 'Could not load connector grants.' }));
+      if ((requestError as { response?: { status?: number } })?.response?.status === 403) {
+        setGrants([]);
+        setGrantsPrivate(true);
+      } else setLoadError(t('agentManage.grants.loadError', { defaultValue: 'Could not load connector grants.' }));
     } finally {
       setLoading(false);
     }
