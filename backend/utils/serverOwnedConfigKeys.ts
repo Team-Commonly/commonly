@@ -92,7 +92,7 @@ export const SERVER_OWNED_CONFIG_KEYS = [
   // is a single-use nonce — a supplied one is a state the callback would accept
   // from whoever wrote it. `intake` and `credentialHint` are here for the same
   // reason at lower stakes: no browser decides how a credential is obtained.
-  'entryId', 'intake', 'clientId', 'clientSecret', 'providerSubject', 'grantedScope', 'expiresAt',
+  'entryId', 'agentId', 'intake', 'clientId', 'clientSecret', 'providerSubject', 'grantedScope', 'expiresAt',
   'credentialRef', 'refreshTokenRef', 'refreshGeneration', 'authGeneration', 'credentialHint', 'pendingAuth',
   // The mark step 3b of the removal sequence records (`connectionRemovalService`)
   // after the provider revoke TAKES. A body that could write it would make a

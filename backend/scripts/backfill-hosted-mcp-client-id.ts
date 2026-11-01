@@ -3,6 +3,7 @@
 import mongoose from 'mongoose';
 import Integration from '../models/Integration';
 import { HOSTED_MCP_ENTRIES } from '../integrations/hostedMcp/entries';
+import { isOAuthEntry } from '../services/hostedMcpEntryService';
 import { resolvedClientId } from '../services/hostedMcpIntakeService';
 import {
   backfillHostedMcpClientIds,
@@ -36,7 +37,7 @@ const main = async (): Promise<void> => {
       .select('_id config.entryId config.clientId config.credentialRef config.refreshTokenRef')
       .lean();
 
-    const entries = new Map(HOSTED_MCP_ENTRIES.map((entry) => [entry.id, entry]));
+    const entries = new Map(HOSTED_MCP_ENTRIES.filter(isOAuthEntry).map((entry) => [entry.id, entry]));
     const result = await backfillHostedMcpClientIds({
       findLegacyRows: async () => rows as unknown as HostedMcpClientIdBackfillRow[],
       entryFor: (entryId) => (LEGACY_ENTRY_IDS.has(entryId) ? entries.get(entryId) : undefined),

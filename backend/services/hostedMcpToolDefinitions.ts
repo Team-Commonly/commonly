@@ -75,7 +75,7 @@ const messageOf = (error: unknown): string => (
 // Loaded lazily, like the model and the credential service below: the frontend
 // glyph-catalogue test imports this module for its pure projection, and must
 // not pull the guard's node:dns and node:http transport in with it.
-const guardedFetch: typeof fetch = (input, init) => {
+export const guardedFetch: typeof fetch = (input, init) => {
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const { hostedVendorFetch } = require('./hostedVendorFetch');
   return hostedVendorFetch(input, init);
@@ -426,11 +426,25 @@ const listUpstreamTools = async (
   const entry = findHostedMcpEntry(entries, String(row.config?.entryId || ''));
   if (!entry) throw new RoomGrantError('connection_mismatch', 'hosted-MCP entry is unavailable', 403);
   const { token } = await deps.credentialFor(row);
+  return listHostedMcpTools(entry, token, deps.fetcher);
+};
+
+/**
+ * The vendor's full tools/list for an entry under one bearer. Shared by the
+ * broker's drift check and by operator-key intake (TASK-330), which must prove
+ * a pasted key against the same client the calls will use. Errors are the
+ * broker's RoomGrantErrors, with any token already redacted from vendor text.
+ */
+export const listHostedMcpTools = async (
+  entry: HostedMcpEntry,
+  token: string,
+  fetcher: typeof fetch,
+): Promise<HostedMcpUpstreamTool[]> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HOSTED_MCP_CALL_TIMEOUT_MS);
   let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
   try {
-    session = await openHostedMcpSession(entry.resource, token, deps.fetcher, controller.signal);
+    session = await openHostedMcpSession(entry.resource, token, fetcher, controller.signal);
     const allTools: HostedMcpUpstreamTool[] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;

@@ -368,6 +368,20 @@ describe('hosted-mcp connect: start', () => {
     entries.HOSTED_MCP_ENTRIES.pop();
   });
 
+  it('refuses an operator-key entry before any client, discovery or row read', async () => {
+    const entries = jest.requireMock('../../../integrations/hostedMcp/entries');
+    entries.HOSTED_MCP_ENTRIES.push({
+      ...FIXTURE_ENTRY, id: 'latchkey', credentialMode: 'operator_key', client: undefined,
+    });
+    const res = await start('latchkey');
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'unknown_entry' });
+    expect(intake.discoverAuthorizationServer).not.toHaveBeenCalled();
+    expect(Integration.findOne).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    entries.HOSTED_MCP_ENTRIES.pop();
+  });
+
   it('requires a person, because it is the person who will be consenting', async () => {
     mockAuthedUser = undefined;
     const res = await start();
