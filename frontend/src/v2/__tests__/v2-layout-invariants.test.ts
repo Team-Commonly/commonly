@@ -329,33 +329,36 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     }
   });
 
-  test('the compact rail uses the artboard’s 32px square marks inside the 56px column', () => {
+  test('the compact rail uses the artboard’s 36px logo and bare 38px nav glyphs (D223, TASK-735)', () => {
     const rail = ruleBody(v2, '.v2-rail');
     const brand = ruleBody(v2, '.v2-rail__brand-icon');
     const item = ruleBody(v2, '.v2-root button.v2-rail__item');
     const active = ruleBody(v2, '.v2-root button.v2-rail__item--active');
     expect(rail).toContain('padding: 6px 10px');
-    expect(brand).toContain('width: 32px');
-    expect(brand).toContain('height: 32px');
-    expect(item).toContain('width: 32px');
-    expect(item).toContain('height: 32px');
-    expect(item).toContain('border-radius: var(--v2-radius)');
+    expect(brand).toContain('width: 36px');
+    expect(brand).toContain('height: 36px');
+    expect(item).toContain('width: 38px');
+    expect(item).toContain('height: 38px');
+    expect(item).toContain('border-radius: var(--v2-r-10, 10px)');
+    // At rest a glyph has no box behind it; only the active item is filled.
+    expect(item).toContain('background: transparent');
     expect(active).toContain('background: var(--v2-ink)');
+    expect(active).toContain('linear-gradient(180deg, var(--v2-fill-a, var(--v2-ink)), var(--v2-fill-b, var(--v2-ink)))');
     // TASK-701: inactive glyphs read a token, so the dark set can lift them.
     expect(item).toContain('color: var(--v2-rail-icon)');
   });
 
-  test('the rail account avatar matches the nav-mark axis as a 32px hard-edged square', () => {
+  test('the rail account avatar is the artboard’s 36px square with a hairline ring', () => {
     const accountButton = lastRuleBody(v2, '.v2-rail__account');
     const accountAvatar = lastRuleBody(v2, '.v2-rail__account .v2-avatar');
     const accountCluster = ruleBody(v2, '.v2-rail__user');
-    expect(accountButton).toContain('width: 32px');
-    expect(accountButton).toContain('height: 32px');
-    expect(accountAvatar).toContain('width: 32px');
-    expect(accountAvatar).toContain('height: 32px');
-    expect(accountAvatar).toContain('border-radius: var(--v2-radius-sm)');
+    expect(accountButton).toContain('width: 36px');
+    expect(accountButton).toContain('height: 36px');
+    expect(accountAvatar).toContain('width: 36px');
+    expect(accountAvatar).toContain('height: 36px');
+    expect(accountAvatar).toContain('border-radius: var(--v2-r-9, 9px)');
     expect(accountAvatar).toContain('border: 0');
-    expect(accountAvatar).toContain('box-shadow: none');
+    expect(accountAvatar).toContain('box-shadow: 0 0 0 1px var(--v2-av-ring, var(--v2-border-soft))');
     expect(accountCluster).toContain('align-items: center');
   });
 
@@ -370,25 +373,33 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const pill = ruleBody(v2, '.v2-pods__row-pill');
     const search = lastRuleBody(v2, '.v2-pods__search');
 
-    expect(panel).toContain('border: 1px solid var(--v2-border)');
+    // D223 (TASK-735): the artboard's .pane.pods, a 14px card ringed by a
+    // shadow rather than a border, its rows inset by 10px.
+    expect(panel).toContain('border: 0');
+    expect(panel).toContain('padding: 12px 10px');
+    expect(panel).toContain('border-radius: var(--v2-r-14, 14px)');
+    expect(panel).toContain('box-shadow: var(--v2-shadow-pane, 0 0 0 1px var(--v2-border-soft))');
     expect(panel).toContain('background: var(--v2-surface)');
     expect(head).toContain('font: 600 12px/16px var(--v2-font)');
-    expect(search).toContain('height: 32px');
-    // The + square shares the search box's 32px so the two tools sit on one
-    // baseline (the 28/32 mismatch was caught on the first walk, 2026-09-06).
+    expect(search).toContain('height: 34px');
+    expect(podsSidebar).toContain('<ShellGlyph name="search" size={15} />');
+    // The + is the artboard's 32px raised key, a glyph rather than a character.
     expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('height: 32px');
     expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('width: 32px');
-    expect(row).toContain('grid-template-columns: 22px minmax(0, 1fr) auto');
-    expect(row).toContain('min-height: 34px');
-    // The selected block runs edge to edge: no radius, no inset.
-    expect(row).toContain('border-radius: 0');
-    expect(mark).toContain('width: 22px');
-    expect(mark).toContain('height: 22px');
+    expect(podsSidebar).toContain('<ShellGlyph name="plus" size={17} />');
+    expect(row).toContain('grid-template-columns: 24px minmax(0, 1fr) auto');
+    expect(row).toContain('min-height: 36px');
+    // Rows are inset with 8px corners; the selected one is not a full-bleed block.
+    expect(row).toContain('border-radius: var(--v2-r-8, 8px)');
+    expect(mark).toContain('width: 24px');
+    expect(mark).toContain('height: 24px');
+    expect(mark).toContain('font: 600 11px/1 var(--v2-font-mono)');
     const directMark = ruleBody(v2, '.v2-pods__row-mark.v2-avatar');
     expect(directMark).toContain('border: 0');
-    expect(directMark).toContain('border-radius: 4px');
-    expect(meta).toContain('font: 400 11px/16px var(--v2-font-mono)');
+    expect(directMark).toContain('border-radius: var(--v2-r-6, 6px)');
+    expect(meta).toContain('font: 500 11px/16px var(--v2-font-mono)');
     expect(pill).toContain('background: var(--v2-ink)');
+    expect(pill).toContain('height: 18px');
     expect(podsSidebar).toContain("'podsSidebar.workspace.recent'");
     // D215 (TASK-691): one segment replaced the Pinned / Recent headings and the
     // "Everything ▸" fold.
@@ -430,25 +441,31 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toContain('.v2-pods__channel-dot');
   });
 
-  test('pod list rows and marks reach mobile targets at 760px and below', () => {
+  test('pod list rows keep a 44px touch target at 760px and below, with the artboard mark', () => {
     const mobile = blockContaining(v2, '@media (max-width: 760px)', '.v2-root button.v2-pods__row');
     const row = ruleBody(v2, '.v2-root button.v2-pods__row', { within: mobile });
-    const mark = ruleBody(v2, '.v2-pods__row-mark', { within: mobile });
-    const avatar = ruleBody(v2, '.v2-pods__row-mark.v2-avatar', { within: mobile });
-    const name = ruleBody(v2, '.v2-pods__row-name', { within: mobile });
     const pin = ruleBody(v2, '.v2-root button.v2-pods__pin', { within: mobile });
 
     expect(mobile).not.toBe('');
     expect(row).toContain('min-height: 44px');
-    expect(row).toContain('grid-template-columns: 28px minmax(0, 1fr) auto');
-    expect(mark).toContain('width: 28px');
-    expect(mark).toContain('height: 28px');
-    expect(mark).toContain('font-size: 13px');
-    expect(avatar).toContain('width: 28px');
-    expect(avatar).toContain('height: 28px');
-    expect(name).toContain('font-size: 16px');
+    // D223 (TASK-735): the 24px mark and the 13.5px name hold at 390, as drawn.
+    expect(row).toContain('grid-template-columns: 24px minmax(0, 1fr) auto');
+    expect(ruleBody(v2, '.v2-pods__row-mark', { within: mobile })).toBe('');
+    expect(ruleBody(v2, '.v2-pods__row-name', { within: mobile })).toBe('');
     expect(pin).toContain('width: 28px');
     expect(pin).toContain('height: 28px');
+  });
+
+  test('phone tab labels keep text contrast while the glyphs take the artboard grey (D223)', () => {
+    expect(v2).toContain('.v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }');
+  });
+
+  test('the phone pods page leads with the artboard title bar, search behind an icon (D223)', () => {
+    expect(podsSidebar).toContain('className="v2-pods__bar"');
+    expect(podsSidebar).toContain('v2-pods__search-open');
+    expect(podsSidebar).toContain("size={isPage ? 'md' : 'sm'}");
+    expect(ruleBody(v2, '.v2-pods__bar')).toContain('height: 52px');
+    expect(ruleBody(v2, '.v2-pods__page-title')).toContain('font: 800 21px/1 var(--v2-font-display, var(--v2-font))');
   });
 
   test('pod search shortcut hint hides on narrow and touch-only screens', () => {
@@ -478,7 +495,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the selected pod fills from the row token, so dark can go neutral (TASK-701)', () => {
     const selected = selectorRuleBody(v2, '.v2-root button.v2-pods__row--selected');
     expect(selected).toContain('background: var(--v2-row-active)');
-    expect(selected).toContain('box-shadow: inset 3px 0 0 var(--v2-accent)');
+    // D223 (TASK-735): the artboard's .pod.on carries no accent bar.
+    expect(selected).not.toContain('inset 3px 0 0');
     expect(selected).toContain('font-weight: 600');
     expect(podsSidebar).not.toContain('v2-pods__item--active');
     expect(podsSidebar).not.toContain('v2-pods__item-dot');
@@ -834,8 +852,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(workspaceInspector).not.toContain('v2-inspector__progress');
 
     const card = ruleBody(v2, '.v2-workspace-inspector__card');
-    expect(card).toContain('border: 1px solid var(--v2-border)');
-    expect(card).toContain('border-radius: 6px');
+    // D223 (TASK-735): the artboard's details.grp, a 14px card ringed by the pane shadow.
+    expect(card).toContain('border: 0');
+    expect(card).toContain('box-shadow: var(--v2-shadow-pane, 0 0 0 1px var(--v2-border-soft))');
+    expect(card).toContain('border-radius: var(--v2-r-14, 14px)');
     expect(ruleBody(v2, '.v2-workspace-inspector__state--needs-you')).toContain('background: var(--v2-accent)');
     expect(ruleBody(v2, '.v2-workspace-inspector__state--working')).toContain('animation: v2-pulse');
     const stateDot = ruleBody(v2, '.v2-workspace-inspector__state');
@@ -2049,6 +2069,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // live-channel dot is no longer a cobalt background in the shell.
       expect(cobalt).toEqual([
         '.v2-rail__brand-icon',
+        // D223 (TASK-735): the rail's needs-you count is the artboard's filled
+        // cobalt badge.
+        '.v2-rail__item-icon .MuiBadge-badge',
         '.v2-root button.v2-decision-card__choice--primary',
         // Direction C (walk-3 miss 62, ux-lead 64476 (1)): an agent's transcript
         // avatar is a flat cobalt square with white initials — the mark that
@@ -2707,11 +2730,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // Other… is cobalt text; the handoff act is ink (no bordered modifier).
       expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--other')).toContain('color: var(--v2-accent-text)');
       expect(activityPage).toContain('<button type="button" onClick={() => markHandoffHandled(item)}');
-      // The rail badge is the exact count at any width: mono, bordered, never clipped.
+      // The rail badge is the exact count at any width, in mono and never clipped.
+      // D223 (TASK-735): the artboard's .nav .bd, a filled cobalt count ringed
+      // by the shell ground, replaced the bordered surface badge.
       const badge = ruleBody(v2, '.v2-rail__item-icon .MuiBadge-badge');
       expect(badge).toContain('var(--v2-font-mono)');
-      expect(badge).toContain('color: var(--v2-accent-text)');
-      expect(badge).toContain('border: 1px solid var(--v2-border)');
+      expect(badge).toContain('background: var(--v2-accent)');
+      expect(badge).toContain('box-shadow: 0 0 0 2px var(--v2-shell-bg)');
       // Moved forward: no section count; N more in <pod>.
       expect(activityPage).toContain("pod: shortPodName(group.name)");
       // ≤760: toggles stack, actions drop to 44px full width.
@@ -5229,9 +5254,9 @@ describe('v2 board on a phone (TASK-576)', () => {
 
   test('feature panes reserve the tab bar height so the body stops above the fixed nav', () => {
     const css = read('../v2.css');
-    const phone = mediaBlockContaining(css, 'padding-bottom: 56px');
-    expect(ruleBody(phone, '.v2-feature')).toContain('padding-bottom: 56px');
-    expect(ruleBody(phone, '.v2-mobile-tabs')).toContain('height: 56px');
+    const phone = mediaBlockContaining(css, 'padding-bottom: 58px');
+    expect(ruleBody(phone, '.v2-feature')).toContain('padding-bottom: 58px');
+    expect(ruleBody(phone, '.v2-mobile-tabs')).toContain('height: 58px');
   });
 
   test('hosted meter track keeps its flex width and clips the fill inside the card', () => {
@@ -5253,6 +5278,16 @@ describe('v2 board on a phone (TASK-576)', () => {
     expect(page).toContain('const attention = useV2PodAttention();');
     expect(page).toContain('<V2NavRail needsYouCount={attention.count} />');
     expect(page).toContain('<V2MobileTabs needsYouCount={attention.count ?? 0} />');
+  });
+});
+
+describe('claim run summary (TASK-692)', () => {
+  test('the toggle is a real button styled as a control, with its state on aria-expanded', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
+    const toggle = css.match(/\.v2-root button\.v2-claim-run__toggle \{[^}]*\}/);
+    expect(toggle).not.toBeNull();
+    expect(toggle![0]).toMatch(/box-shadow: inset 0 0 0 1px var\(--v2-border\)/);
+    expect(css).toMatch(/\.v2-claim-run__toggle\[aria-expanded='true'\]::after/);
   });
 });
 

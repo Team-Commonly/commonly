@@ -34,11 +34,12 @@ body.modern-ui.v2-canvas {
      sets below. */
   --v2-rail-icon: #374151;
   --v2-control-outline: #667085;
-  /* Light keeps the cobalt block; dark swaps it for a neutral row. */
-  --v2-row-active: var(--v2-accent-fill);
-  --v2-row-active-text: var(--v2-on-accent);
-  --v2-row-active-mute: rgba(255, 255, 255, 0.85);
-  --v2-row-active-mark: rgba(255, 255, 255, 0.22);
+  /* D223 (TASK-735): the artboard's .pod.on in both themes, a neutral tint
+     row whose mark alone turns cobalt. */
+  --v2-row-active: #f2f4f7;
+  --v2-row-active-text: #101828;
+  --v2-row-active-mute: #667085;
+  --v2-row-active-mark: #1d3fd1;
   --v2-text-secondary: #475467;
   --v2-text-tertiary: #667085;
   --v2-text-muted: #667085;
@@ -267,7 +268,7 @@ body.modern-ui.v2-canvas {
     --v2-prio-p0-bg: #f97066;
     --v2-prio-p0-fg: #0b0e13;
     --v2-prio-p2-fg: #8b94a5;
-    --v2-status-pending: var(--v2-border-strong);
+    --v2-status-pending: #7c8696;
     --v2-status-blocked: #f97066;
     --v2-status-blocked-edge: #f97066;
     --v2-text-primary: #e8ebf1;
@@ -276,8 +277,8 @@ body.modern-ui.v2-canvas {
     --v2-control-outline: #737e92;
     --v2-row-active: #1e2531;
     --v2-row-active-text: #e8ebf1;
-    --v2-row-active-mute: #aeb6c4;
-    --v2-row-active-mark: #2a3342;
+    --v2-row-active-mute: #8b94a5;
+    --v2-row-active-mark: #6680ff;
     --v2-text-secondary: #aeb6c4;
     --v2-text-tertiary: #8b94a5;
     --v2-text-muted: #8b94a5;
@@ -341,7 +342,7 @@ body.modern-ui.v2-canvas {
       --v2-prio-p0-bg: #f97066;
       --v2-prio-p0-fg: #0b0e13;
       --v2-prio-p2-fg: #8b94a5;
-      --v2-status-pending: var(--v2-border-strong);
+      --v2-status-pending: #7c8696;
       --v2-status-blocked: #f97066;
       --v2-status-blocked-edge: #f97066;
       --v2-text-primary: #e8ebf1;
@@ -350,8 +351,8 @@ body.modern-ui.v2-canvas {
       --v2-control-outline: #737e92;
       --v2-row-active: #1e2531;
       --v2-row-active-text: #e8ebf1;
-      --v2-row-active-mute: #aeb6c4;
-      --v2-row-active-mark: #2a3342;
+      --v2-row-active-mute: #8b94a5;
+      --v2-row-active-mark: #6680ff;
       --v2-text-secondary: #aeb6c4;
       --v2-text-tertiary: #8b94a5;
       --v2-text-muted: #8b94a5;
@@ -841,21 +842,24 @@ body.modern-ui.v2-canvas {
   font-weight: 700;
   font-size: 17px;
   padding: 0;
-  margin-bottom: 16px;
+  margin-bottom: 8px;
   color: var(--v2-text-primary);
   letter-spacing: -0.02em;
-  height: 32px;
+  height: 36px;
 }
 
 .v2-rail__brand > span:not(.v2-rail__brand-icon) {
   display: none;
 }
 
+/* D223 (TASK-735): the artboard's .logo, a 36px cobalt key. */
 .v2-rail__brand-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--v2-radius-sm);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--v2-r-10, 10px);
   background: var(--v2-accent);
+  background: linear-gradient(180deg, var(--v2-accent-fill-a, var(--v2-accent)), var(--v2-accent-fill-b, var(--v2-accent)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 6px 12px -6px rgba(29, 63, 209, 0.5);
   color: #fff;
   display: grid;
   place-items: center;
@@ -867,13 +871,13 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   min-height: 0;
   overflow: visible;
   padding-right: 0;
 }
 
-/* Below the rail's fixed chrome (245px) plus six nav items (212px), scroll
+/* Below the rail's fixed chrome (245px) plus six nav items (268px), scroll
    the nav vertically while keeping its horizontal overflow hidden. */
 @media (max-height: 460px) {
   .v2-rail__nav {
@@ -888,16 +892,18 @@ body.modern-ui.v2-canvas {
   align-items: center;
   justify-content: center;
   gap: 0;
-  width: 32px;
-  min-height: 32px;
-  height: 32px;
+  /* D223 (TASK-735): the artboard's .nav, a bare 38px glyph at rest. The
+     glyph colour stays the TASK-701 token, so dark keeps its lift. */
+  width: 38px;
+  min-height: 38px;
+  height: 38px;
   align-self: center;
   padding: 0;
-  border-radius: var(--v2-radius);
+  border-radius: var(--v2-r-10, 10px);
   font-size: 14px;
   font-weight: 600;
   color: var(--v2-rail-icon);
-  background: var(--v2-surface-hover);
+  background: transparent;
   text-align: left;
   transition: background 80ms ease;
 }
@@ -927,7 +933,9 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-rail__item--active {
   background: var(--v2-ink);
-  color: var(--v2-on-ink);
+  background: linear-gradient(180deg, var(--v2-fill-a, var(--v2-ink)), var(--v2-fill-b, var(--v2-ink)));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 4px 10px -3px rgba(16, 24, 40, 0.3);
+  color: var(--v2-on-fill, var(--v2-on-ink));
   font-weight: 600;
 }
 
@@ -995,17 +1003,18 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-rail__account {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   padding: 0;
 }
 
+/* The artboard's .av--36: a 36px square, 9px corners, a hairline ring. */
 .v2-rail__account .v2-avatar {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: 0;
-  border-radius: var(--v2-radius-sm);
-  box-shadow: none;
+  border-radius: var(--v2-r-9, 9px);
+  box-shadow: 0 0 0 1px var(--v2-av-ring, var(--v2-border-soft));
   pointer-events: none;
 }
 
@@ -3044,6 +3053,37 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-placeholder);
   font: 400 11px/16px var(--v2-font-mono);
 }
+
+/* A run of claim lines folds to one row. The toggle is a control, so it
+   carries the same chevron pattern as the long-message Show more. */
+.v2-root button.v2-claim-run__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin: 4px 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--v2-surface);
+  color: var(--v2-text-secondary);
+  box-shadow: inset 0 0 0 1px var(--v2-border);
+  font: 500 12px/1 var(--v2-font);
+  cursor: pointer;
+}
+.v2-root button.v2-claim-run__toggle:hover { background: var(--v2-surface-hover); }
+.v2-root button.v2-claim-run__toggle:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--v2-accent-text); }
+.v2-claim-run__toggle::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 160ms;
+}
+.v2-claim-run__toggle[aria-expanded='true']::after { transform: rotate(225deg) translateY(-2px); }
 
 /* §3.8 system event card — replaces the regular author/avatar bubble for
    commonly-bot announcements like "Pixel and codex started a DM". One-row,
@@ -10874,6 +10914,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-team-card__name,
 .v2-root:lang(zh) .v2-team__empty-title,
 .v2-root:lang(zh) .v2-pods__title,
+.v2-root:lang(zh) .v2-pods__page-title,
 .v2-root:lang(zh) .v2-chat__title,
 .v2-root:lang(zh) .v2-thread__title h1,
 .v2-root:lang(zh) .v2-first-run__title,
@@ -11451,7 +11492,7 @@ body.modern-ui.v2-canvas {
   min-height: 0;
   height: 100%;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   overflow-y: auto;
   background: var(--v2-shell-bg);
 }
@@ -11464,9 +11505,10 @@ body.modern-ui.v2-canvas {
 
 .v2-workspace-inspector__card {
   min-width: 0;
-  border: 1px solid var(--v2-border);
-  border-radius: 6px;
+  border: 0;
+  border-radius: var(--v2-r-14, 14px);
   background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pane, 0 0 0 1px var(--v2-border-soft));
   padding: 12px;
 }
 
@@ -11488,7 +11530,8 @@ body.modern-ui.v2-canvas {
   flex: none;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 6px;
+  padding: 8px 10px 0;
 }
 
 .v2-workspace-inspector__card.v2-workspace-inspector__group { flex: none; padding: 0; overflow: hidden; }
@@ -11505,7 +11548,7 @@ body.modern-ui.v2-canvas {
   border-radius: 0;
   background: transparent;
   color: var(--v2-text-primary);
-  font: 600 13px/18px var(--v2-font);
+  font: 600 13.5px/18px var(--v2-font);
   text-align: left;
   cursor: pointer;
 }
@@ -11515,13 +11558,13 @@ body.modern-ui.v2-canvas {
 
 .v2-workspace-inspector__fold-icon { display: grid; flex: none; place-items: center; color: var(--v2-text-secondary); }
 .v2-workspace-inspector__fold-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.v2-workspace-inspector__fold-count { color: var(--v2-text-muted); font: 500 11px/1 var(--v2-font-mono); }
+.v2-workspace-inspector__fold-count { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
 
 .v2-workspace-inspector__fold-stack { display: flex; margin-left: auto; padding-left: 6px; }
 .v2-workspace-inspector__fold-avatar.v2-avatar {
-  width: 22px;
-  height: 22px;
-  margin-left: -5px;
+  width: 24px;
+  height: 24px;
+  margin-left: -6px;
   border: 2px solid var(--v2-surface);
   border-radius: 6px;
   box-shadow: none;
@@ -11539,7 +11582,7 @@ body.modern-ui.v2-canvas {
 .v2-workspace-inspector__fold-stack + .v2-workspace-inspector__fold-chevron { margin-left: 0; }
 .v2-workspace-inspector__fold[aria-expanded="true"] .v2-workspace-inspector__fold-chevron { transform: rotate(180deg); }
 
-.v2-workspace-inspector__group-body { padding: 0 12px 12px; }
+.v2-workspace-inspector__group-body { padding: 0 14px 12px; }
 
 .v2-workspace-inspector__group-body .v2-pod-join-settings { margin: 0; padding: 0; border: 0; }
 
@@ -12098,23 +12141,60 @@ body.modern-ui.v2-canvas {
   background: var(--v2-shell-bg);
 }
 
+/* D223 (TASK-735): the artboard's .pane.pods. A 14px card on the shell
+   ground, its edge a shadow ring rather than a border, with the rows inset. */
 .v2-pods {
   display: flex;
   min-height: 0;
   height: 100%;
   flex-direction: column;
-  padding: 0;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-content-radius);
+  padding: 12px 10px;
+  border: 0;
+  border-radius: var(--v2-r-14, 14px);
   background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pane, 0 0 0 1px var(--v2-border-soft));
   overflow: hidden;
 }
 
+/* The phone page is the whole screen: no card, a 52px title bar (.mtop). */
+.v2-pods-aside--page .v2-pods {
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.v2-pods__bar {
+  display: flex;
+  flex: none;
+  height: 52px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid var(--v2-border-soft);
+}
+
 .v2-pods__page-title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  padding: 14px 14px 4px;
+  overflow: hidden;
   color: var(--v2-text-primary);
-  font: 600 17px/24px var(--v2-font);
+  font: 800 21px/1 var(--v2-font-display, var(--v2-font));
+  letter-spacing: -0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-pods-aside--page .v2-pods__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.v2-pods__body {
+  display: contents;
 }
 
 .v2-pods__tools {
@@ -12122,7 +12202,7 @@ body.modern-ui.v2-canvas {
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  padding: 10px 10px 6px;
+  padding: 0 2px 10px;
 }
 
 .v2-pods__search {
@@ -12130,14 +12210,18 @@ body.modern-ui.v2-canvas {
   min-width: 0;
   flex: 1;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   margin: 0;
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid var(--v2-border);
-  border-radius: 4px;
-  background: var(--v2-surface);
+  height: 34px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: var(--v2-r-10, 10px);
+  background: var(--v2-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  color: var(--v2-text-placeholder);
 }
+
+.v2-pods__search > svg { flex: none; }
 
 .v2-pods__search:focus-within {
   border-color: var(--v2-border-strong);
@@ -12165,30 +12249,32 @@ body.modern-ui.v2-canvas {
 
 .v2-pods__search-kbd {
   flex: 0 0 auto;
-  padding: 0 4px;
-  border: 1px solid var(--v2-border-soft);
-  border-radius: 3px;
+  padding: 3px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--v2-surface);
+  box-shadow: 0 0 0 1px var(--v2-border-soft);
   color: var(--v2-text-muted);
-  font: 500 11px/16px var(--v2-font-mono);
+  font: 500 11px/1 var(--v2-font-mono);
 }
 
 @media (max-width: 760px), (hover: none) and (pointer: coarse) {
   .v2-pods__search-kbd { display: none; }
 }
 
+/* The artboard's .b.b-s.ib: a 32px raised key holding a plus glyph. */
 .v2-root button.v2-pods__new {
   display: inline-grid;
-  /* Same 32px as the search box beside it — the two tools share one baseline. */
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
   padding: 0;
   place-items: center;
-  border: 1px solid var(--v2-border);
-  border-radius: 4px;
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  font: 500 16px/1 var(--v2-font);
+  border: 1px solid var(--v2-key-edge, var(--v2-border));
+  border-radius: var(--v2-r-8, 8px);
+  background: linear-gradient(180deg, var(--v2-key-a, var(--v2-surface)), var(--v2-key-b, var(--v2-surface)));
+  box-shadow: var(--v2-key-inset, none);
+  color: var(--v2-text-primary);
 }
 
 .v2-root button.v2-pods__new:hover:not(:disabled),
@@ -12196,6 +12282,8 @@ body.modern-ui.v2-canvas {
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
 }
+
+.v2-root button.v2-pods__new:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 
 /* ---------- D215 sidebar controls (TASK-691) ----------
    Controls look like controls: an icon button, a chip or a segment, never grey
@@ -12279,7 +12367,9 @@ body.modern-ui.v2-canvas {
   box-shadow: var(--v2-focus-ring);
 }
 
-.v2-pods__view { padding: 2px 10px 8px; }
+.v2-pods__view { padding: 2px 2px 8px; }
+
+.v2-pods-aside--page .v2-pods__view { padding: 0 0 10px; }
 
 .v2-pods__list {
   display: flex;
@@ -12287,7 +12377,7 @@ body.modern-ui.v2-canvas {
   flex: 1;
   flex-direction: column;
   gap: 0;
-  padding: 0 0 8px;
+  padding: 0;
   overflow-y: auto;
   /* The minute poll re-reads /api/pods and the rows re-sort by lastMessage, so
      a message to any pod moves a row and native anchoring drags the list to
@@ -12343,23 +12433,24 @@ body.modern-ui.v2-canvas {
 .v2-pods__rows {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 2px;
 }
 
+/* The artboard's .pod: a 36px inset row with 8px corners. */
 .v2-root button.v2-pods__row {
   display: grid;
   width: 100%;
   min-width: 0;
-  min-height: 34px;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  min-height: 36px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 9px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--v2-r-8, 8px);
   background: transparent;
-  color: var(--v2-text-primary);
-  font: 500 14px/18px var(--v2-font);
+  color: var(--v2-ink-2, var(--v2-text-primary));
+  font: 500 13.5px/18px var(--v2-font);
   text-align: left;
 }
 
@@ -12371,15 +12462,15 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-pods__pin {
   position: absolute;
   top: 50%;
-  right: 8px;
+  right: 6px;
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   place-items: center;
   padding: 0;
   transform: translateY(-50%);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--v2-r-8, 8px);
   background: var(--v2-surface-tint);
   color: var(--v2-text-secondary);
   visibility: hidden;
@@ -12415,40 +12506,40 @@ body.modern-ui.v2-canvas {
   box-shadow: inset 0 0 0 2px var(--v2-accent);
 }
 
-/* Dark swaps the cobalt block for a neutral row. The accent bar on the leading
-   edge carries "selected" when the fill alone is too close to the pane. */
+/* D223 (TASK-735): the artboard's .pod.on, in both themes. The row goes to
+   the neutral tint and the mark alone turns cobalt; no full-row block, no
+   accent bar. */
 .v2-root button.v2-pods__row--selected,
 .v2-root button.v2-pods__row--selected:hover {
   background: var(--v2-row-active);
   color: var(--v2-row-active-text);
-  box-shadow: inset 3px 0 0 var(--v2-accent);
   font-weight: 600;
 }
 
 .v2-pods__row-mark {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   place-items: center;
-  border-radius: 4px;
+  border-radius: var(--v2-r-6, 6px);
   background: var(--v2-surface-tint);
   color: var(--v2-text-secondary);
-  /* 11px is the mono floor (walk-1 ruling h); two letters fit the 22px square. */
-  font: 500 11px/1 var(--v2-font-mono);
+  /* The artboard's .mk draws 600 10px mono; 11px is the mono floor (ruling h). */
+  font: 600 11px/1 var(--v2-font-mono);
 }
 
-/* A DM row carries the peer's avatar in the same 22px slot. */
+/* A DM row carries the peer's avatar in the same 24px slot. */
 .v2-pods__row-mark.v2-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--v2-r-6, 6px);
   border: 0;
   font-size: 11px;
 }
 
-.v2-root button.v2-pods__row--selected .v2-pods__row-mark {
+.v2-root button.v2-pods__row--selected .v2-pods__row-mark:not(.v2-avatar) {
   background: var(--v2-row-active-mark);
-  color: var(--v2-row-active-text);
+  color: var(--v2-on-accent);
 }
 
 .v2-pods__row-name {
@@ -12466,57 +12557,41 @@ body.modern-ui.v2-canvas {
   align-items: center;
   gap: 6px;
   color: var(--v2-text-muted);
-  font: 400 11px/16px var(--v2-font-mono);
+  font: 500 11px/16px var(--v2-font-mono);
 }
 
 .v2-root button.v2-pods__row--selected .v2-pods__row-meta { color: var(--v2-row-active-mute); }
 
-/* Keyboard focus on the selected row keeps its accent edge beside the ring. */
 .v2-root button.v2-pods__row--selected:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--v2-accent), inset 3px 0 0 var(--v2-accent);
+  box-shadow: inset 0 0 0 2px var(--v2-accent);
 }
 
+/* The artboard's .un: an 18px ink pill, the same on the selected row. */
 .v2-pods__row-pill {
   display: grid;
-  min-width: 16px;
-  height: 16px;
+  min-width: 18px;
+  height: 18px;
   padding: 0 5px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--v2-ink);
   color: var(--v2-on-ink);
-  font: 700 11px/1 var(--v2-font-mono);
+  font: 600 11px/18px var(--v2-font-mono);
 }
 
-/* Keep row targets aligned with the sidebar's mobile drawer breakpoint. */
+/* At 760px and below the row keeps a 44px touch target. The artboard draws
+   36px rows at 390; its 24px mark and 13.5px name hold, the row height does
+   not (TASK-735: a deliberate touch floor, flagged for UX Lead). */
 @media (max-width: 760px) {
   .v2-root button.v2-pods__row {
     min-height: 44px;
-    grid-template-columns: 28px minmax(0, 1fr) auto;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
   }
-
-  .v2-pods__row-mark {
-    width: 28px;
-    height: 28px;
-    font-size: 13px;
-  }
-
-  .v2-pods__row-mark.v2-avatar {
-    width: 28px;
-    height: 28px;
-  }
-
-  .v2-pods__row-name { font-size: 16px; }
 
   .v2-root button.v2-pods__pin {
     width: 28px;
     height: 28px;
   }
-}
-
-.v2-root button.v2-pods__row--selected .v2-pods__row-pill {
-  background: var(--v2-bg);
-  color: var(--v2-accent);
 }
 
 .v2-pods__create {
@@ -12647,7 +12722,7 @@ body.modern-ui.v2-canvas {
     display: flex;
     flex-direction: column;
     gap: 0;
-    padding: 0 0 56px;
+    padding: 0 0 58px;
   }
 
   .v2-shell--list .v2-pods-aside--page {
@@ -12702,14 +12777,15 @@ body.modern-ui.v2-canvas {
 
   /* Tab bar with labels; the count lives inside the label, one counter. */
   .v2-mobile-tabs {
-    height: 56px;
+    height: 58px;
     padding: 6px 8px 4px;
+    border-top-color: var(--v2-border-soft);
   }
 
   /* Feature pages mount this same bar (V2FeaturePage). Reserve its height on
      the pane so a scrolling body stops above the fixed bar, not under it. */
   .v2-feature {
-    padding-bottom: 56px;
+    padding-bottom: 58px;
   }
 
   .v2-root button.v2-mobile-tabs__item {
@@ -12722,7 +12798,7 @@ body.modern-ui.v2-canvas {
     gap: 3px;
     padding: 0 6px;
     background: transparent;
-    color: var(--v2-text-muted);
+    color: var(--v2-text-placeholder);
   }
 
   .v2-root button.v2-mobile-tabs__item--active,
@@ -12745,7 +12821,9 @@ body.modern-ui.v2-canvas {
     white-space: nowrap;
   }
 
-  .v2-root button.v2-mobile-tabs__item--active .v2-mobile-tabs__label { font-weight: 700; }
+  /* The artboard greys the whole tab at rest; only the glyph takes that
+     placeholder grey here, so the label text keeps 4.5:1. */
+  .v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }
 
   /* D215: the needs-you count is a cobalt badge on the icon, not a sentence
      in the label. */
@@ -13524,16 +13602,17 @@ body.modern-ui.v2-canvas {
 .v2-root .v2-activity__queue-actions button.v2-activity__option { min-height: 32px; border-radius: var(--v2-radius-sm); }
 /* Rail badge (66390): the exact count at any size — 118 reads as 118. Mono, bordered, cobalt, no clip. */
 .v2-rail__item-icon .MuiBadge-badge {
-  top: -8px;
+  top: -7px;
   right: -14px;
-  height: 16px;
+  height: 15px;
   min-width: 16px;
-  padding: 0 4px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  color: var(--v2-accent-text);
-  font: 500 11px/14px var(--v2-font-mono);
+  padding: 0 3px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--v2-accent);
+  box-shadow: 0 0 0 2px var(--v2-shell-bg);
+  color: var(--v2-on-accent);
+  font: 600 11px/15px var(--v2-font-mono);
   transform: none;
   white-space: nowrap;
 }
