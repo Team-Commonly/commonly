@@ -33,6 +33,18 @@ jobs:
       COMMONLY_WALK_PASSWORD: ${{ secrets.COMMONLY_WALK_PASSWORD }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      # A short sha is read by checkout as a branch name and fails at checkout
+      # (run 41278291280, 2026-11-01). Reject anything that is not a full sha
+      # here, so the next bad dispatch fails at this step with a clear error.
+      - name: Validate the sha input
+        env:
+          SHA_INPUT: ${{ inputs.sha }}
+        run: |
+          if [ -n "$SHA_INPUT" ] && ! echo "$SHA_INPUT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::sha input must be a full 40-character commit SHA, got '$SHA_INPUT'. Leave it empty to walk main's head."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.HEAD_SHA }}
