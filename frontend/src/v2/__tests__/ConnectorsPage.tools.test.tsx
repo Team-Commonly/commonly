@@ -1404,8 +1404,24 @@ describe('Linear write reconnect note', () => {
     renderPage();
     const drawer = await openTool('Linear');
     const note = within(drawer).getByRole('note');
-    expect(note).toHaveTextContent(language === 'en' ? 'removed and connected again to enable writes' : '先移除再重新连接');
+    expect(note).toHaveTextContent(language === 'en' ? 'disconnected and connected again to enable writes' : '先断开再重新连接');
     expect(note).toHaveTextContent(language === 'en' ? 'Each write requires your approval' : '每次写入都需要你批准');
+  });
+
+  it('a connected Linear with no grant shows it once in the popover, before Add', async () => {
+    mockTools({ entries: [githubEntry, linearEntry], grants: [] });
+    renderPage();
+    const pop = await openToolPopover('Linear');
+    expect(within(pop).getAllByRole('note')).toHaveLength(1);
+    expect(within(pop).getByRole('note')).toHaveTextContent('disconnected and connected again to enable writes');
+  });
+
+  it('a Linear drawer with only an ended grant shows it once, in the offer', async () => {
+    const ended = { ...grantLinear, revokedAt: iso(-600000), revokedBy: 'u1' };
+    mockTools({ entries: [githubEntry, linearEntry], grants: [ended] });
+    renderPage();
+    const drawer = await openTool('Linear');
+    expect(within(drawer).getAllByRole('note')).toHaveLength(1);
   });
 
   it('no other drawer carries it', async () => {

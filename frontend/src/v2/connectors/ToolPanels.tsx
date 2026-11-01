@@ -333,6 +333,14 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
 
   // The one line under an entry's name that says what is left to do before it
   // works: connect your own account, ask an admin, or the modes it grants.
+  // A Linear connection made before write access cannot write until it is
+  // disconnected and connected again; the server refuses writes on it.
+  const renderLinearWriteNote = (entry: ToolCatalogEntry) => (
+    entry.connectionType === 'hosted-mcp' && entry.entryId === 'linear' && entry.connections.length > 0
+      ? <p className="v2-cx-note" role="note">{t('tools.linearWriteReconnect')}</p>
+      : null
+  );
+
   const renderEntryNote = (entry: ToolCatalogEntry) => {
     const isHosted = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId);
     const canConnectHosted = Boolean(isHosted) && entry.available && entry.connections.length === 0;
@@ -347,6 +355,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               : entryModeCopy(entry)}
           </p>
         )}
+        {renderLinearWriteNote(entry)}
         {canConnectHosted && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
         {isHosted && entry.available && entry.accessPage && <p className="v2-cx-note">{renderAccessLink(entry)}</p>}
         {renderManualRevokeNotice(entry)}
@@ -612,5 +621,5 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  return { renderManualRevokeNotice, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
+  return { renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
 };
