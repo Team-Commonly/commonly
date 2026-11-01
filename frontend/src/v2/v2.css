@@ -11536,9 +11536,11 @@ body.modern-ui.v2-canvas {
 
 .v2-workspace-inspector__head-spacer { flex: 1; }
 
-/* Hide panel is the desktop key; the phone sheet keeps its close X. */
+/* Hide panel is the desktop key; the phone sheet keeps its close X. The key
+   also carries .v2-icon-button, whose later `display` rule ties at (0,2,1),
+   so this selector names both classes to outrank it. */
 @media (max-width: 760px) {
-  .v2-root button.v2-workspace-inspector__hide { display: none; }
+  .v2-root button.v2-icon-button.v2-workspace-inspector__hide { display: none; }
 }
 
 .v2-workspace-inspector__threads { display: grid; gap: 2px; align-content: start; }
@@ -12045,6 +12047,8 @@ body.modern-ui.v2-canvas {
 /* The runtime and the time read as one mono line: "claude · 1:16 AM". */
 .v2-thread .v2-msg__time { font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-thread .v2-msg__avatar-btn { border-radius: var(--v2-r-9, 9px); }
+/* The typing line keeps small faces; the 36px message face is not its size. */
+.v2-thread .v2-chat__typing-avatars .v2-avatar { width: 20px; height: 20px; border-radius: var(--v2-r-6, 6px); }
 .v2-thread .v2-msg__actions { border-radius: 4px; box-shadow: none; }
 
 .v2-message-row--decision { padding: 8px 0; }

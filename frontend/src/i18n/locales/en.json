@@ -1372,7 +1372,7 @@
       "viewPod": "Pod",
       "viewThreads": "Threads",
       "hidePanel": "Hide panel",
-      "noThreads": "No threads yet."
+      "noThreads": "No threads in the loaded messages."
     },
     "goal": {
       "title": "Goal",

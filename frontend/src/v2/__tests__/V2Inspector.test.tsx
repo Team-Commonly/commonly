@@ -180,7 +180,7 @@ describe('V2Inspector', () => {
   test('the threads view says so when the pod has none', () => {
     renderInspector();
     fireEvent.click(screen.getByRole('radio', { name: 'Threads' }));
-    expect(screen.getByText('No threads yet.')).toBeInTheDocument();
+    expect(screen.getByText('No threads in the loaded messages.')).toBeInTheDocument();
   });
 
   test('the open panel carries its own Hide panel key', () => {

@@ -1367,7 +1367,7 @@
       "viewPod": "Pod",
       "viewThreads": "话题",
       "hidePanel": "收起面板",
-      "noThreads": "还没有话题。"
+      "noThreads": "已加载的消息里没有话题。"
     },
     "goal": {
       "title": "目标",

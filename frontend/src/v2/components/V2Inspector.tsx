@@ -162,6 +162,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   const [openGroups, setOpenGroups] = useState<Set<InspectorGroup>>(() => readOpenGroups());
   // D215 (TASK-734): the panel head switches between the pod and its threads.
   const [view, setView] = useState<InspectorView>('pod');
+  useEffect(() => { setView('pod'); }, [pod?._id]);
   const threads = useMemo(() => threadRowsFrom(detail.messages || []), [detail.messages]);
   const toggleGroup = (group: InspectorGroup) => {
     setOpenGroups((current) => {

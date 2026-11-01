@@ -571,6 +571,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-thread .v2-msg')).toContain('grid-template-columns: 36px');
     expect(ruleBody(v2, '.v2-thread .v2-msg__avatar-ghost')).toContain('width: 36px');
     expect(ruleBody(v2, '.v2-msg__gutter-time')).toContain('width: 36px');
+    // The typing line is not a message row; its faces stay small.
+    expect(ruleBody(v2, '.v2-thread .v2-chat__typing-avatars .v2-avatar')).toContain('width: 20px');
+    // The phone hides the panel's Hide key. It also carries .v2-icon-button,
+    // whose later display rule ties a one-class selector, so the hide rule
+    // must name both classes or it never applies.
+    expect(mediaBlockContaining(v2, '.v2-workspace-inspector__hide')).toMatch(/\.v2-root button\.v2-icon-button\.v2-workspace-inspector__hide \{ display: none; \}/);
     expect(v2).toContain('.v2-msg--grouped');
   });
 
