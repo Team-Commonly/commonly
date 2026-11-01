@@ -26,6 +26,8 @@ confirm, for example against `lastActive` or whether they sent a message
 | `firstStartAt` + `firstStartId` | their first message in a pod they created matches a start's label, or the server resolves a click on their own "Run an agent here" | they acted, and which choice |
 | `byoOpenedAt` | they first load Bring your own (`GET /api/hosted/availability`) | they looked at setup |
 | `byoOpenedOs` | written with `byoOpenedAt`, from the `?os=` the page sends: `mac`, `linux`, `windows` or `other`. Unset for anyone who opened the page before it shipped, and for an unknown value | whether the listener path (Mac only) could have worked for them |
+| `byoCommandCopiedAt` + `byoCommandType` | the first setup command they copy on Bring your own, `mcp` or `cli`; never overwritten, and never the command itself | they started setup, and with which kind |
+| `byoMcpCopiedAt`, `byoCliCopiedAt` | the first copy of each kind, written once each (TASK-721). Unset for copies made before they shipped; the stalled-connect nudge then falls back to the pair above. The marks are per person, not per agent, so the nudge counts a kind only when it falls after the stalled token was issued | whether they copied the MCP snippet and never the listener command |
 
 Read them together with whether the person sent a message in their workspace,
 and when (timestamps and ids).

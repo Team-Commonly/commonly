@@ -45,6 +45,7 @@ const podOpenedMarked = new Set<string>();
 const startPickedMarked = new Set<string>();
 const byoOpenedMarked = new Set<string>();
 const byoCommandCopiedMarked = new Set<string>();
+const byoCommandKindMarked = new Set<string>();
 const byoConnectionAttemptMarked = new Set<string>();
 const surfaceMarked = new Map<SurfaceMark, Set<string>>();
 
@@ -146,10 +147,31 @@ export function markByoOpened(userId: unknown, os?: unknown): void {
  *
  * Only the fixed command kind is kept. The command itself contains a runtime
  * token, so it must never cross this boundary or be written to telemetry.
+ *
+ * Two shapes are written. `byoCommandCopiedAt` / `byoCommandType` keep the
+ * FIRST copy of either kind, as before. `byoMcpCopiedAt` / `byoCliCopiedAt`
+ * keep the first copy of EACH kind, so "copied the MCP snippet and never the
+ * listener command" (TASK-721) is distinguishable from "MCP first, listener
+ * second", which the first-copy pair cannot tell apart.
  */
 export function markByoCommandCopied(userId: unknown, commandType: 'mcp' | 'cli'): void {
   const id = String(userId || '');
   if (!id || !['mcp', 'cli'].includes(commandType)) return;
+  const kindField = commandType === 'mcp' ? 'onboarding.byoMcpCopiedAt' : 'onboarding.byoCliCopiedAt';
+  if (!byoCommandKindMarked.has(`${id}:${commandType}`)) {
+    byoCommandKindMarked.add(`${id}:${commandType}`);
+    try {
+      User.updateOne(
+        { _id: id, isBot: { $ne: true }, [kindField]: { $exists: false } },
+        { $set: { [kindField]: new Date() } },
+      ).catch(() => {
+        byoCommandKindMarked.delete(`${id}:${commandType}`);
+      });
+    } catch {
+      // Telemetry fails open: it must never break the copy flow.
+      byoCommandKindMarked.delete(`${id}:${commandType}`);
+    }
+  }
   if (byoCommandCopiedMarked.has(id)) return;
   byoCommandCopiedMarked.add(id);
   try {
@@ -239,6 +261,7 @@ export function resetOnboardingMarksForTest(): void {
   startPickedMarked.clear();
   byoOpenedMarked.clear();
   byoCommandCopiedMarked.clear();
+  byoCommandKindMarked.clear();
   byoConnectionAttemptMarked.clear();
   surfaceMarked.clear();
 }
