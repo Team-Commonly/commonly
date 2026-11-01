@@ -5134,10 +5134,28 @@ describe('task priority and lease signals (TASK-443)', () => {
     expect(css).toMatch(/--v2-status-live:\s*var\(--v2-accent\)/);
     expect(ruleBody(css, '.v2-board__priority--p2')).toContain('color: var(--v2-prio-p2-fg)');
   });
-  test('blocked is red with a thin edge on blocked cards only', () => {
+  test('blocked shows through the column dot and P0 badge, not a card rail', () => {
     expect(css).toMatch(/--v2-status-blocked:\s*#d92d20/);
-    expect(ruleBody(css, '.v2-board__card--blocked')).toContain('box-shadow: inset 3px 0 0 var(--v2-status-blocked-edge)');
+    expect(css).not.toContain('--v2-status-blocked-edge');
+    expect(css).not.toMatch(/\.v2-board__card--blocked\s*[,{]/);
     expect(ruleBody(css, '.v2-board__col--blocked .v2-board__col-name')).toContain('color: var(--v2-status-blocked)');
+  });
+  // D225: a status rail down the side of a card reads as generated UI. A card is
+  // told apart by its column and badge, never by an inset side shadow or a
+  // coloured border-left. Quote and thread rails are typographic and exempt.
+  test('no card selector draws a status rail (inset side shadow or coloured border-left >= 2px)', () => {
+    const offenders: string[] = [];
+    for (const match of css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
+      const selector = match[1].trim();
+      const body = match[2];
+      if (!/card/i.test(selector) || /quote|thread/i.test(selector)) continue;
+      const insetRail = /box-shadow:[^;]*\binset\s+-?[1-9]\d*(?:\.\d+)?px\s+0(?:px)?\s+0/.test(body)
+        || /box-shadow:[^;]*\binset\s+0(?:px)?\s+-?[1-9]\d*(?:\.\d+)?px\s+0(?:px)?\s+0/.test(body);
+      const leftBorder = /border-left(?:-width)?:\s*([2-9]|\d{2,})(?:\.\d+)?px/.exec(body);
+      const leftColoured = leftBorder && !/border-left(?:-color)?:[^;]*(transparent|none)/.test(body);
+      if (insetRail || leftColoured) offenders.push(selector);
+    }
+    expect(offenders).toEqual([]);
   });
   test('live, unclaimed and expired ownership retain distinct dots', () => {
     expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-status-live)');

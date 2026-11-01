@@ -140,7 +140,6 @@ body.modern-ui.v2-canvas {
   --v2-status-idle: var(--v2-border-strong);
   --v2-status-pending: #667085;
   --v2-status-blocked: #d92d20;
-  --v2-status-blocked-edge: #d92d20;
 
   /* Agent role colors */
   --v2-pink: #f472b6;
@@ -274,7 +273,6 @@ body.modern-ui.v2-canvas {
     --v2-prio-p2-fg: #8b94a5;
     --v2-status-pending: #7c8696;
     --v2-status-blocked: #f97066;
-    --v2-status-blocked-edge: #f97066;
     --v2-text-primary: #e8ebf1;
     --v2-message-text: #e8ebf1;
     --v2-rail-icon: #5f6979;
@@ -348,7 +346,6 @@ body.modern-ui.v2-canvas {
       --v2-prio-p2-fg: #8b94a5;
       --v2-status-pending: #7c8696;
       --v2-status-blocked: #f97066;
-      --v2-status-blocked-edge: #f97066;
       --v2-text-primary: #e8ebf1;
       --v2-message-text: #e8ebf1;
       --v2-rail-icon: #5f6979;
@@ -13817,7 +13814,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-board__priority--p0 { background: var(--v2-prio-p0-bg); border-color: var(--v2-prio-p0-bg); color: var(--v2-prio-p0-fg); }
 .v2-board__priority--p2 { color: var(--v2-prio-p2-fg); }
 .v2-board__col--blocked .v2-board__col-name { color: var(--v2-status-blocked); }
-.v2-board__card--blocked { box-shadow: inset 3px 0 0 var(--v2-status-blocked-edge); }
 .v2-board__card-title { font-size: 14px; line-height: 20px; }
 .v2-board__owner-line { display: flex; align-items: center; gap: 6px; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-secondary); }
 .v2-board__owner-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
