@@ -255,6 +255,20 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBe(false);
     });
 
+    // The extra call was given because the model meant to answer, so silence
+    // from it is a failed reply, not a decline.
+    test('an empty extra call ends the run with the fixed line', async () => {
+      chatReplies = [toolCalls(fetchCall('c1', STOPPED_URL)), guardStop, toolCalls(fetchCall('c2', STOPPED_URL)), reply(''), neverAsked];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+      expect(savedRun.errorMessage).toMatch(/ended without a reply: its extra call returned nothing\.$/);
+      expect(chatBodies).toHaveLength(4);
+      expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      expect(savedRun.metered).toBe(false);
+    });
+
     test('a post refused in that call ends the run, with no second call', async () => {
       // The bridge is added once the page is in the turn, so the post is refused.
       mockBridged.mockImplementation(async () => mockGetPage.mock.calls.length > 0);

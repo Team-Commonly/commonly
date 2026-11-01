@@ -2657,6 +2657,14 @@ export async function runAgent(
           run.errorKind = 'tool_error';
         }
       }
+      // The extra recovery call was given because the model meant to answer,
+      // so an empty one is a reply that never came, not a decline.
+      if (recoveryRetried && !textOut && !postedViaTool) {
+        run.status = 'failed';
+        run.errorKind = 'guardrail_blocked';
+        run.errorMessage = 'A content filter set web results aside, and the round after it ended without a reply: '
+          + 'its extra call returned nothing.';
+      }
 
       run.status = run.status === 'running' ? 'succeeded' : run.status;
       break;
