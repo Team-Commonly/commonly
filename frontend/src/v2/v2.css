@@ -225,7 +225,6 @@ body.modern-ui.v2-canvas {
     --v2-prio-p0-bg: #f97066;
     --v2-prio-p0-fg: #0b0e13;
     --v2-prio-p2-fg: #8b94a5;
-    /* B-lite dark pending ring: 4.79:1 on #141922 (was border-strong #5f6979, 3.17:1). */
     --v2-status-pending: #7c8696;
     --v2-status-blocked: #f97066;
     --v2-status-blocked-edge: #f97066;
