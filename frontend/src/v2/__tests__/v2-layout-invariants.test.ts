@@ -1198,6 +1198,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).not.toContain('v2-settings__nav');
     expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 640px)');
     expect(ruleBody(v2, '.v2-settings__edit--closed')).toContain('display: none');
+    expect(ruleBody(v2, '.v2-settings__group,\n.v2-settings__fold')).toContain('overflow: hidden');
+    expect(ruleBody(v2, '.v2-settings__row > .v2-settings__row-value')).toContain('min-width: 0');
   });
 
   test('Settings saves a display name while allowing handle changes and exposing the email change affordance', () => {

@@ -185,6 +185,19 @@ describe('V2SettingsPage', () => {
     }
   });
 
+  test('Account actions opens and reaches Sign out everywhere and Delete account', () => {
+    (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
+    renderSettings();
+
+    const fold = screen.getByText('Account actions').closest('details') as HTMLDetailsElement;
+    expect(fold.open).toBe(false);
+    fireEvent.click(screen.getByText('Account actions').closest('summary') as HTMLElement);
+    fold.open = true;
+    expect(within(fold).getByRole('button', { name: 'Sign out everywhere' })).toBeInTheDocument();
+    fireEvent.click(within(fold).getByRole('button', { name: 'Delete account' }));
+    expect(screen.getByRole('textbox', { name: /DELETE|confirm/i })).toBeInTheDocument();
+  });
+
   test('has three labelled groups on one screen and no jump navigation', () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: { hasToken: false } });
     renderSettings();
