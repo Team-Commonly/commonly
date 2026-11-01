@@ -12,6 +12,7 @@
  * (`cli-claude-mcp-home-`) leaked 29 MB unseen: a detached MCP warm that a test
  * started kept writing into it after Jest exited, and the only symptom was this
  * script's final rm failing with ENOTEMPTY on whichever PR was in the queue.
+ * That rm still fails the run, now naming what was still being written.
  */
 import { spawn } from 'node:child_process';
 import { lstat, mkdtemp, readdir, rm } from 'node:fs/promises';
@@ -83,11 +84,18 @@ try {
     }
   }
 } finally {
-  // Both leak checks have run by now, so a cleanup that still can't finish is
-  // reported, not failed: it is this script's own scratch root.
   try {
     await rm(probeRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   } catch (error) {
-    console.log(`::warning::CLI temp cleanup could not remove ${probeRoot} (${error.code || error.message}); a process the tests started may still be writing there`);
+    // A root that won't go is a leak the snapshots missed. ENOTEMPTY after the
+    // retries means something kept writing after the last snapshot, the
+    // detached-child case above. exitCode, not a throw, so a leak check's own
+    // error stays the one reported when both happen.
+    const left = await readdir(probeRoot).catch(() => []);
+    const hint = error.code === 'ENOTEMPTY'
+      ? ' Something kept writing there after the last snapshot, usually a process a test started that outlived Jest.'
+      : '';
+    console.error(`CLI temp cleanup could not remove ${probeRoot} (${error.code || error.message}); left in it: ${left.join(', ') || 'nothing readable'}.${hint}`);
+    process.exitCode = 1;
   }
 }
