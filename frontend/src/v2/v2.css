@@ -12757,6 +12757,9 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-root button.v2-composer__plus::before { content: '+'; font: 500 18px/1 var(--v2-font); }
 /* Look from the D223 primitives (primitives.css): v2p-b v2p-b-g v2p-ib; the open menu keeps the hover tint. */
 .v2-root button.v2-composer__plus[aria-expanded="true"] { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+/* Disabled while a file uploads: the primitive's ghost hover has no :disabled guard. */
+.v2-root button.v2-composer__plus:disabled { cursor: progress; }
+.v2-root button.v2-composer__plus:disabled:hover { background: transparent; color: var(--v2-text-secondary); }
 
 .v2-composer__menu {
   position: absolute;

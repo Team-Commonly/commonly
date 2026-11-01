@@ -1438,6 +1438,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // which only draw because the shell loads primitives.css after v2.css.
     expect(read('../V2App.tsx')).toMatch(/import '\.\/v2\.css';\n[^\n]*\nimport '\.\/primitives\/primitives\.css';/);
     expect(composer).toContain('className="v2p-b v2p-b-g v2p-ib v2-composer__plus"');
+    // The ghost hover has no :disabled guard, so the uploading plus restates rest.
+    expect(ruleBody(v2, '.v2-root button.v2-composer__plus:disabled:hover')).toContain('background: transparent');
     expect(ruleBody(primitives, '.v2p-ib')).toContain('border-radius: var(--v2-r-8)');
     // The menu opens above the 32px plus, not over it.
     expect(ruleBody(v2, '.v2-composer__menu')).toContain('bottom: 40px');
