@@ -909,6 +909,19 @@ describe('Connectors page: tools', () => {
     expect(meta()).toHaveTextContent('0 on · 0 available');
   });
 
+  it('TASK-752: a revoked grant whose catalogue entry is gone is not listed in Tools, only the live one is', async () => {
+    // No catalogue entry covers either grant, so both are orphans. Only the live one is
+    // still access; the revoked one must not draw a row beside it.
+    mockTools({ entries: [], grants: [grantLive, grantRevoked] });
+    renderPage();
+
+    const tools = await screen.findByRole('region', { name: 'Tools' });
+    await settle();
+    const rows = tools.querySelectorAll('.v2-connector-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveClass('v2-connector-row--dead');
+  });
+
   /**
    * Scope §4, step 7's named test: "the page's call to start is credentialed".
    *
