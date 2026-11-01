@@ -118,9 +118,11 @@ describe('API token storage rollout', () => {
     const token = 'cm_cli-secret-sentinel';
     await users().updateOne({ _id: user._id }, { $set: { apiToken: token } });
     const uri = `mongodb://${mongoose.connection.host}:${mongoose.connection.port}/${mongoose.connection.name}`;
+    // NODE_NO_WARNINGS keeps Node's own deprecation notices from a dependency
+    // off stderr; the script's own output is what this holds to counts only.
     const result = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register'),
       path.resolve(__dirname, '../../scripts/backfill-api-token-storage.ts'), ...(apply ? ['--apply'] : []),
-    ], { cwd: path.resolve(__dirname, '../..'), env: { ...process.env, MONGO_URI: uri }, encoding: 'utf8', timeout: 15000 });
+    ], { cwd: path.resolve(__dirname, '../..'), env: { ...process.env, MONGO_URI: uri, NODE_NO_WARNINGS: '1' }, encoding: 'utf8', timeout: 15000 });
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
     expect(JSON.parse(result.stdout)).toMatchObject({ mode: apply ? 'APPLY' : 'DRY-RUN', migrated: apply ? 1 : 0 });
@@ -157,7 +159,7 @@ describe('API token storage rollout', () => {
     const sentinel = 'cm_not-for-output';
     const result = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register'),
       path.resolve(__dirname, '../../scripts/backfill-api-token-storage.ts'), sentinel,
-    ], { cwd: path.resolve(__dirname, '../..'), env: { ...process.env, MONGO_URI: sentinel }, encoding: 'utf8', timeout: 15000 });
+    ], { cwd: path.resolve(__dirname, '../..'), env: { ...process.env, MONGO_URI: sentinel, NODE_NO_WARNINGS: '1' }, encoding: 'utf8', timeout: 15000 });
     expect(result.status).toBe(1);
     expect(result.stdout).toBe('');
     expect(result.stderr).toBe('[api-token-storage] Failed. No values logged; rerun dry-run to inspect counts.\n');
