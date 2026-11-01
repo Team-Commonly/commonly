@@ -218,8 +218,17 @@ export const lingerFile = (username) => join('/var/lib/systemd/linger', cescape(
 const shellWord = (value) => (/^[A-Za-z0-9._@%+=:,/-]+$/.test(value)
   ? value : `'${value.replace(/'/g, "'\\''")}'`);
 
+// logind before v253 passes the escaped file name to manager_add_user_by_name at
+// boot, so it never starts a user whose name needs escaping. The version isn't read,
+// so for such a name the file alone doesn't prove a boot start.
+const lingeringStartsAtBoot = (username, warn) => {
+  if (cescape(username) === username) return true;
+  warn(`Lingering is on for ${username}, but systemd before v253 cannot start a user whose name needs escaping at boot, so the daemon is only sure to start when ${username} logs in.`);
+  return false;
+};
+
 const ensureLinger = async ({ username, existsFile, execCmd, warn }) => {
-  if (existsFile(lingerFile(username))) return true;
+  if (existsFile(lingerFile(username))) return lingeringStartsAtBoot(username, warn);
   let failure = '';
   try {
     // --no-ask-password: the install must not stop at a polkit prompt; a refusal
@@ -228,7 +237,7 @@ const ensureLinger = async ({ username, existsFile, execCmd, warn }) => {
   } catch (error) {
     failure = ` (${error.message})`;
   }
-  if (existsFile(lingerFile(username))) return true;
+  if (existsFile(lingerFile(username))) return lingeringStartsAtBoot(username, warn);
   warn(`Lingering is off for ${username}${failure}, so the daemon starts when ${username} logs in, not at boot. On a machine nobody logs in to, it stays down after a reboot. To start it at boot, run: sudo loginctl enable-linger ${shellWord(username)}`);
   return false;
 };

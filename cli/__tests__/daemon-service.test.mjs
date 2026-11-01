@@ -227,16 +227,23 @@ describe('install', () => {
       expect(lingerFile('é\t\x7f')).toBe('/var/lib/systemd/linger/\\303\\251\\t\\177');
     });
 
-    test('lingering turned on for an escaped user name is seen as on', async () => {
+    // CodeRabbit on #3261: logind before v253 hands the escaped file name to
+    // manager_add_user_by_name at boot, so the file alone doesn't prove a boot start.
+    test('lingering turned on for an escaped user name is seen, but no boot start is claimed', async () => {
       const deps = makeDeps();
       let lingering = false;
       const escaped = "/var/lib/systemd/linger/o\\'brien x";
       deps.existsFile = jest.fn((path) => (path === escaped ? lingering : false));
       deps.execCmd = jest.fn(async (argv) => { if (argv[0] === 'loginctl') lingering = true; });
+      const warn = jest.fn();
       const result = await installDaemonService({
-        platform: 'linux', home, nodePath, cliPath, username: "o'brien x", ...deps,
+        platform: 'linux', home, nodePath, cliPath, username: "o'brien x", ...deps, warn,
       });
-      expect(result.startsAtBoot).toBe(true);
+      expect(deps.execCmd).toHaveBeenCalledWith(['loginctl', '--no-ask-password', 'enable-linger', "o'brien x"]);
+      expect(result.startsAtBoot).toBe(false);
+      const warned = warn.mock.calls.map(([line]) => line).join('\n');
+      expect(warned).not.toMatch(/Lingering is off/);
+      expect(warned).toMatch(/v253/);
     });
 
     test('the printed command quotes a user name the shell would split', async () => {
