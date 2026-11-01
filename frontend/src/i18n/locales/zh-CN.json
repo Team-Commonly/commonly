@@ -2789,6 +2789,11 @@
   },
   "agentSettings": {
     "identityTitle": "身份",
+    "identityAccess": "身份与访问",
+    "keyActive": "已启用",
+    "openMemory": "打开记忆",
+    "heartbeatOff": "关闭",
+    "connection": "连接",
     "displayName": "显示名称",
     "persona": "角色设定",
     "tone": "语气",

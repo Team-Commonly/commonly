@@ -209,7 +209,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('agent Settings buttons retain their chrome over the v2 button reset', () => {
-    const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root)');
+    const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.ib):not(.seg > button)');
     expect(button).toContain('border: 1px solid var(--v2-border)');
     expect(button).toContain('background: var(--v2-surface)');
     expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');

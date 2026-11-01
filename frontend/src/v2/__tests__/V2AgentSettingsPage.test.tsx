@@ -463,7 +463,7 @@ test('runtime editor writes environment controls through the shared settings hoo
   // D215 artboard: Wake first, then Identity & access (Key, Identity).
   expect(at('Wake')).toBeLessThan(at('Key'));
   expect(at('Key')).toBeLessThan(at('Identity'));
-  expect(at('How it runs')).toBeLessThan(at('Identity'));
+  expect(at('Identity')).toBeLessThan(at('How it runs'));
   expect(at('Wake')).toBeLessThan(at('How it runs'));
   expect(at('How it runs')).toBeLessThan(at('Connector grants'));
   expect(at('Connector grants')).toBeLessThan(at('Policy'));

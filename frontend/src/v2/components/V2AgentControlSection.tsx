@@ -20,7 +20,7 @@ const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, 
   const canRegenerateMachineKey = runtimeType === 'wrapper' && connection.state === 'connected';
   return (
     <div className="lrow" data-testid="agent-control-section">
-      <span className="lb">{t('agentSettings.connection', { defaultValue: 'Connection' })}</span>
+      <span className="lb">{t('agentSettings.connection')}</span>
       <span className="vl">{connectionLabel(connection, t)}</span>
       <span className="ac">
         {(needsReconnect || canRegenerateMachineKey) && (
@@ -93,7 +93,7 @@ export const AgentControlLoader: React.FC<{
 
   if (status) return <V2AgentControlSection {...status} />;
   return <div className="lrow" data-testid="agent-control-section">
-    <span className="lb">{t('agentSettings.connection', { defaultValue: 'Connection' })}</span>
+    <span className="lb">{t('agentSettings.connection')}</span>
     <span className="vl" role={unavailable ? 'alert' : 'status'}>
       {t(unavailable ? 'agentConnection.unavailable' : 'agentConnection.checking')}
     </span>

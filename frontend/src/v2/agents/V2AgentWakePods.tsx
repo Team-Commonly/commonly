@@ -268,7 +268,7 @@ const V2AgentWakePods: React.FC<{
                                 setDraftOff((current) => ({ ...current, [entry.podId]: value === 'off' }));
                                 if (value !== 'off') setDraftMinutes((current) => ({ ...current, [entry.podId]: Number(value) }));
                               }}>
-                              <option value="off">{t('agentSettings.heartbeatOff', { defaultValue: 'Off' })}</option>
+                              <option value="off">{t('agentSettings.heartbeatOff')}</option>
                               {[...new Set([15, 30, 60, 120, 360, 720, 1440, entry.heartbeatMinutes])]
                                 .sort((a, b) => a - b).map((value) => (
                                   <option value={value} key={value}>{t('agentSettings.everyMinutes', { count: value })}</option>

@@ -271,13 +271,13 @@ const V2AgentSettingsPage: React.FC = () => {
       <div className="pbody">
         <div className="v2-agent-settings-page__col">
           <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
-          <h2 className="gtitle">{t('agentSettings.identityAccess', { defaultValue: 'Identity & access' })}</h2>
+          <h2 className="gtitle">{t('agentSettings.identityAccess')}</h2>
           <div className="list">
             <AgentControlLoader agentName={agentName} instanceId={instanceId}
               refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
             <div className="lrow">
               <span className="lb"><span className={`dot${keysForbidden || disconnected ? ' dot--off' : ''}`} aria-hidden="true" /><svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 9.2-9.2M17 6l3 3M15 8l2 2" /></svg>{t('agentSettings.key')}</span>
-              <span className="vl">{keysForbidden ? t('agentSettings.keyUnavailable') : activeKeys.length ? t('agentSettings.keyActive', { defaultValue: 'active' }) : t('agentSettings.noActiveKeys')}</span>
+              <span className="vl">{keysForbidden ? t('agentSettings.keyUnavailable') : activeKeys.length ? t('agentSettings.keyActive') : t('agentSettings.noActiveKeys')}</span>
               <span className="ac">
                 {keysForbidden ? null : installation?.runtime?.runtimeType === 'wrapper' ? (
                   <span>{t('agentSettings.wrapperReconnect')}</span>
@@ -322,19 +322,12 @@ const V2AgentSettingsPage: React.FC = () => {
               <span className="vl" />
               <span className="ac">
                 <Link className="b b-g ib b-sm" to={`/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`}
-                  aria-label={t('agentSettings.openMemory', { defaultValue: 'Open memory' })}
-                  title={t('agentSettings.openMemory', { defaultValue: 'Open memory' })}>
+                  aria-label={t('agentSettings.openMemory')}
+                  title={t('agentSettings.openMemory')}>
                   <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
                 </Link>
               </span>
             </div>
-            <details className="disc">
-              <summary>
-                <span className="lb"><svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" /><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" /></svg>{t('agentSettings.howItRuns', { defaultValue: 'How it runs' })}</span>
-                <span className="vl">{installation?.runtime?.runtimeType || t('agentSettings.notReported', { defaultValue: 'not reported' })}</span>
-                <span className="ac"><svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></span>
-              </summary>
-            </details>
           </div>
         {installation && <V2AgentIdentitySection key={`${agentName}:${instanceId}`} installation={installation} update={update} />}
         <V2AgentRuntimeGrants
