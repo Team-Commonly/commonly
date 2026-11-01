@@ -114,6 +114,7 @@ describe('dev command helpers', () => {
           return { token: 'cm_agent_fresh' };
         }
         if (route === '/api/registry/pods/pod-1/agents/openclaw/user-token') {
+          expect(body).toEqual(expect.objectContaining({ instanceId: 'local', force: true }));
           return { token: 'cm_user_fresh' };
         }
         throw new Error(`unexpected POST ${route}`);

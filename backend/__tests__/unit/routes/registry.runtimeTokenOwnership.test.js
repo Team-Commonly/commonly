@@ -240,3 +240,15 @@ describe('the agent user token takes the same rule', () => {
     expect(agentRow.revokeApiToken).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('API user-token force rotation follows identity ownership', () => {
+  test.each(['other-owner', 'shared'])('refuses %s without touching the credential', async (kind) => {
+    mockInstalls = kind === 'shared'
+      ? [install('user-a', 'pod-a'), install('user-b', 'pod-b')]
+      : [install('user-b', 'pod-a')];
+    const response = await request(app).post('/api/registry/pods/pod-a/agents/quire/user-token').send({ force: true });
+    expect(response.status).toBe(403);
+    expect(mockIssueUser).not.toHaveBeenCalled();
+    expect(User.findOne).not.toHaveBeenCalled();
+  });
+});
