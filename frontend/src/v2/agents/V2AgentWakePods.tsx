@@ -188,17 +188,20 @@ const V2AgentWakePods: React.FC<{
         {installations.map((entry) => (
           <div className="v2-agent-wake-pods__pod" key={entry.podId}>
             <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
-            <fieldset className="v2-agent-wake-pods__choice" aria-busy={busyPod === entry.podId}>
-              <legend>{t('agentSettings.messageWake')}</legend>
-              {MESSAGE_WAKE_CHOICES.map((choice) => (
-                <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow" key={choice}>
-                  <span>{t(`agentSettings.messageWake_${choice}`)}</span>
-                  <input type="radio" name={`message-wake-${entry.podId}`} value={choice}
-                    checked={messageWakeChoice(entry) === choice}
-                    onChange={() => { void save(entry, MESSAGE_WAKE_SETTINGS[choice]); }} />
-                </label>
-              ))}
-            </fieldset>
+            <div className="v2-agent-wake-pods__choice" role="group" aria-busy={busyPod === entry.podId}
+              aria-labelledby={`message-wake-label-${entry.podId}`}>
+              <span id={`message-wake-label-${entry.podId}`}>{t('agentSettings.messageWake')}</span>
+              <div className="v2-agent-wake-pods__segment">
+                {MESSAGE_WAKE_CHOICES.map((choice) => (
+                  <label className="v2-agent-wake-pods__option" key={choice}>
+                    <input type="radio" name={`message-wake-${entry.podId}`} value={choice}
+                      checked={messageWakeChoice(entry) === choice}
+                      onChange={() => { void save(entry, MESSAGE_WAKE_SETTINGS[choice]); }} />
+                    <span>{t(`agentSettings.messageWake_${choice}`)}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <label className="v2-agent-wake-pods__row">
               <span>{t('agentSettings.boardWake')}</span>
               <input type="checkbox" checked={entry.boardWake} disabled={busyPod === entry.podId}

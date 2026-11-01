@@ -196,7 +196,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const podModel = read('../../../../backend/models/Pod.ts');
 
   test('agent Settings key metadata wraps within the page at phone width', () => {
-    expect(ruleBody(agentSettings, '.v2-agent-settings')).toContain('width: min(100%, 960px)');
+    expect(ruleBody(agentSettings, '.v2-agent-settings__column')).toContain('width: min(100%, 960px)');
     expect(ruleBody(agentSettings, '.v2-agent-settings__key-meta')).toContain('flex-wrap: wrap');
     expect(mediaBlockContaining(agentSettings, '.v2-agent-settings__key-meta')).toContain('display: grid');
   });
@@ -5058,6 +5058,12 @@ describe('agent Wake and Pods controls', () => {
     expect(save).toContain('background: var(--v2-surface)');
     expect(remove).toContain('background: var(--v2-surface)');
     expect(remove).toContain('border: 1px solid var(--v2-border)');
+  });
+
+  test('message-wake segment wraps its options instead of overflowing the row', () => {
+    const segment = ruleBody(css, '.v2-agent-wake-pods__segment');
+    expect(segment).toContain('display: flex');
+    expect(segment).toContain('flex-wrap: wrap');
   });
 });
 
