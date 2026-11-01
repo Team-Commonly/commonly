@@ -289,6 +289,7 @@ describe('Connectors page: the tile surface', () => {
     await findTile('GitHub');
     const row = await screen.findByRole('button', { name: /View Atlassian/ });
     expect(row.querySelector('.v2-connector-row__glyph svg')).not.toBeNull();
+    expect(row).toHaveTextContent('read in testing');
     expect(screen.queryByRole('button', { name: /View Unknown connector/ })).toBeNull();
     fireEvent.click(row);
     expect(await findDrawer(/Atlassian/)).toBeInTheDocument();
