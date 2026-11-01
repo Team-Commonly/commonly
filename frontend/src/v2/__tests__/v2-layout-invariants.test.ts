@@ -458,6 +458,16 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('phone tab labels keep text contrast while the glyphs take the artboard grey (D223)', () => {
     expect(v2).toContain('.v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }');
+    // The glyph half: inactive tabs take the artboard's placeholder grey.
+    const phone = blockContaining(v2, '@media (max-width: 760px)', '.v2-mobile-tabs__label {');
+    expect(ruleBody(v2, '.v2-root button.v2-mobile-tabs__item', { within: phone })).toContain('color: var(--v2-text-placeholder)');
+    // D223 ruling: the artboard's sans family at the 12px sans floor.
+    expect(ruleBody(v2, '.v2-mobile-tabs__label', { within: phone })).toContain('font: 500 12px/14px var(--v2-font)');
+  });
+
+  test('rail glyphs at rest are the artboard placeholder grey in both themes (D223 ruling)', () => {
+    expect(v2).toContain('--v2-rail-icon: #98a2b3;');
+    expect(v2.match(/--v2-rail-icon: #5f6979;/g) || []).toHaveLength(2);
   });
 
   test('the phone pods page leads with the artboard title bar, search behind an icon (D223)', () => {
