@@ -1478,3 +1478,49 @@ describe('Connectors page: tools', () => {
     });
   });
 });
+
+describe('Linear write reconnect note', () => {
+  afterEach(async () => { await act(async () => { await i18n.changeLanguage('en'); }); });
+
+  it.each(['en', 'zh-CN'])('a connected Linear drawer says older connections must reconnect to write, in %s', async (language) => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage(language); });
+    mockTools({ entries: [githubEntry, linearEntry], grants: [grantLinear] });
+    renderPage();
+    const drawer = await openTool('Linear');
+    const note = within(drawer).getByRole('note');
+    expect(note).toHaveTextContent(language === 'en' ? 'disconnect it and connect it again to turn on writes' : '先断开再重新连接');
+    expect(note).toHaveTextContent(language === 'en' ? 'Each write asks for your approval first' : '每次写入都需要你批准');
+  });
+
+  it('a connected Linear with no grant shows it once in the popover, before Add', async () => {
+    mockTools({ entries: [githubEntry, linearEntry], grants: [] });
+    renderPage();
+    const pop = await openToolPopover('Linear');
+    expect(within(pop).getAllByRole('note')).toHaveLength(1);
+    expect(within(pop).getByRole('note')).toHaveTextContent('disconnect it and connect it again to turn on writes');
+  });
+
+  it('a Linear drawer with only an ended grant shows it once, in the offer', async () => {
+    const ended = { ...grantLinear, revokedAt: iso(-600000), revokedBy: 'u1' };
+    mockTools({ entries: [githubEntry, linearEntry], grants: [ended] });
+    renderPage();
+    const drawer = await openTool('Linear');
+    expect(within(drawer).getAllByRole('note')).toHaveLength(1);
+  });
+
+  it('no other drawer carries it', async () => {
+    mockTools({ entries: [githubEntry, linearEntry], grants: [grantLive] });
+    renderPage();
+    const drawer = await openTool('GitHub');
+    expect(within(drawer).queryByRole('note')).not.toBeInTheDocument();
+  });
+
+  it('another connected hosted connector does not carry it', async () => {
+    const atlassian = { ...linearEntry, installableId: 'atlassian', entryId: 'atlassian', label: 'Atlassian', connections: [{ connectionId: 'conn-atl', owner: '', repo: '' }] };
+    mockTools({ entries: [atlassian], grants: [] });
+    renderPage();
+    const pop = await openToolPopover('Atlassian');
+    expect(within(pop).queryByRole('note')).not.toBeInTheDocument();
+  });
+});

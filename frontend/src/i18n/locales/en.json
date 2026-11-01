@@ -2594,6 +2594,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "linearWriteReconnect": "If you connected Linear before it could write, disconnect it and connect it again to turn on writes. Each write asks for your approval first.",
     "granted": "Granted",
     "beta": "beta",
     "adminOnce": "An admin installs this once",

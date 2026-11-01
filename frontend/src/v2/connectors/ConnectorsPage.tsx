@@ -463,6 +463,8 @@ const ConnectorsPage: React.FC = () => {
     const deadGrants = entryGrants.filter((grant) => isDead(grant, m.now));
     return (
       <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
+        {/* Ungranted, the offer below carries the note through renderEntryNote. */}
+        {toolGranted(toolEntry) && tp.renderLinearWriteNote(toolEntry)}
         {!toolGranted(toolEntry) && (
           <div className="v2-cx-drawer__offer">
             <p>{catalogDescription(i18n, toolEntry.installableId, toolEntry.description)}</p>

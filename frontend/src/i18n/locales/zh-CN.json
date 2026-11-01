@@ -2597,6 +2597,7 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
+    "linearWriteReconnect": "如果你是在支持写入之前连接的 Linear，需要先断开再重新连接，才能写入。每次写入都需要你批准。",
     "granted": "已授权",
     "beta": "测试版",
     "adminOnce": "需管理员安装一次",
