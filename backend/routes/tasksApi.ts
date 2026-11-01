@@ -31,7 +31,7 @@ const { recordTaskAttention, resolveTaskAttention } = require('../services/atten
 // eslint-disable-next-line global-require
 const { parseAssignee, toSingleLineTitle } = require('../utils/taskFieldNormalization');
 // eslint-disable-next-line global-require
-const { canonicalAssignee } = require('../services/taskAssigneeService');
+const { boardNameOf, canonicalAssignee } = require('../services/taskAssigneeService');
 // eslint-disable-next-line global-require
 const { isRecordEnabled, isRecordReader, requestActor } = require('../services/recordService');
 // eslint-disable-next-line global-require
@@ -1056,11 +1056,21 @@ router.post('/:podId/:taskId/updates', taskWriteRateLimit(60), auth, async (req:
     // string 'openclaw' for every OpenClaw seat, so making it matchable would
     // let one agent restore another's lapsed row. The agent path gets the
     // same single term the human path gets.
+    //
+    // One exception, and it is the BOARD NAME, not either raw field (F45). The
+    // board stores an agent assignee by its board name (the instanceId, or the
+    // agentName when the instance is "default"), and the sweep writes the
+    // assignee into lapsedFrom first. For openclaw/nova that is `nova`, which is
+    // neither its id nor its username, so its own lapsed rows never restored.
+    // The board name is what the assigned-task wake already matches, so this
+    // restores to the seat the board treats as assigned and no other. A shared
+    // agentName like 'openclaw' is still unmatchable for any non-default seat.
     const identities = [
       claimKey,
       userId?.toString(),
       req.user?.username,
       req.agentUser?.username,
+      req.agentUser?.botMetadata?.agentName ? boardNameOf(req.agentUser.botMetadata) : undefined,
     ].filter((v): v is string => typeof v === 'string' && v.length > 0);
 
     if (!task && identities.length) {

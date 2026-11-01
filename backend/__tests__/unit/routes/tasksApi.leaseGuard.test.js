@@ -63,7 +63,10 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
 const POD_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 
 // The assignee resolver reads real pod members; it is covered in tasks.assignee-handle.test.js.
-jest.mock('../../../services/taskAssigneeService', () => ({ canonicalAssignee: async (_podId, typed) => typed }));
+jest.mock('../../../services/taskAssigneeService', () => ({
+  ...jest.requireActual('../../../services/taskAssigneeService'),
+  canonicalAssignee: async (_podId, typed) => typed,
+}));
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(() => ({
     lean: jest.fn().mockResolvedValue({

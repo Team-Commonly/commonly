@@ -50,7 +50,10 @@ jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => {
     req.agentUser = {
       _id: req.get('x-test-user'),
       username: asAgent,
-      botMetadata: { agentName: asAgent, instanceId: 'default' },
+      // `x-test-agent-instance` is "agentName/instanceId" for a non-default seat.
+      botMetadata: req.get('x-test-agent-instance')
+        ? { agentName: req.get('x-test-agent-instance').split('/')[0], instanceId: req.get('x-test-agent-instance').split('/')[1] }
+        : { agentName: asAgent, instanceId: 'default' },
     };
   }
   next();
@@ -580,6 +583,28 @@ describe('the AGENT request shape resolves too', () => {
     });
     const res = await postAsAgent('6a693bfbe833c668acdce53b', 'pod-architect');
     expect(res.body.leaseRenewed).toBe(true);
+  });
+
+  // F45: the board stores an agent assignee by its board name, and the sweep
+  // writes the assignee into lapsedFrom. For openclaw/nova that is `nova`, which
+  // is neither its id nor its username `openclaw-nova`.
+  const postAsSeat = (userId, username, seat) => postAsAgent(userId, username).set('x-test-agent-instance', seat);
+
+  it('restores when lapsedFrom holds the caller\'s board name', async () => {
+    await seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: 'nova' });
+
+    const res = await postAsSeat('6a693bfbe833c668acdce53b', 'openclaw-nova', 'openclaw/nova');
+
+    expect(res.body.leaseRenewed).toBe(true);
+    expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('claimed');
+  });
+
+  it('but NOT when lapsedFrom holds an agentName the caller shares with other seats', async () => {
+    await seed({ status: 'pending', claimedBy: null, claimExpiresAt: null, lapsedFrom: 'openclaw' });
+
+    const res = await postAsSeat('6a693bfbe833c668acdce53b', 'openclaw-nova', 'openclaw/nova');
+
+    expect(res.body.leaseRenewed).toBe(false);
   });
 
   it('but NOT for a different agent', async () => {
