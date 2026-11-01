@@ -139,6 +139,28 @@ describe('markByoOpened', () => {
     expect(update.$set['onboarding.byoOpenedAt']).toBeInstanceOf(Date);
   });
 
+  test('records the OS the page detected in the same write-once update', () => {
+    markByoOpened('u1', 'windows');
+    const [filter, update] = mockUpdateOne.mock.calls[0];
+    expect(filter).toEqual({ _id: 'u1', isBot: { $ne: true }, 'onboarding.byoOpenedAt': { $exists: false } });
+    expect(Object.keys(update.$set)).toEqual(['onboarding.byoOpenedAt', 'onboarding.byoOpenedOs']);
+    expect(update.$set['onboarding.byoOpenedOs']).toBe('windows');
+  });
+
+  test.each(['mac', 'linux', 'windows', 'other'])('keeps os=%s', (os) => {
+    markByoOpened('u1', os);
+    expect(mockUpdateOne.mock.calls[0][1].$set['onboarding.byoOpenedOs']).toBe(os);
+  });
+
+  test.each([['ios'], ['Mac'], [''], [['mac']], [{ os: 'mac' }], [42]])(
+    'any other os value (%p) records the visit without an OS',
+    (os) => {
+      markByoOpened('u1', os);
+      expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+      expect(Object.keys(mockUpdateOne.mock.calls[0][1].$set)).toEqual(['onboarding.byoOpenedAt']);
+    },
+  );
+
   test('no person, no write', () => {
     markByoOpened('');
     markByoOpened(undefined);
@@ -172,14 +194,48 @@ describe('BYO setup marks', () => {
         'onboarding.byoCommandType': 'mcp',
       } },
     );
-    expect(JSON.stringify(mockUpdateOne.mock.calls[0])).not.toMatch(/cm_agent|command text/i);
+    expect(JSON.stringify(mockUpdateOne.mock.calls)).not.toMatch(/cm_agent|command text/i);
   });
 
-  test('keeps only the first command kind and refuses invalid kinds', () => {
+  test('keeps the first-copy pair to the first kind and refuses invalid kinds', () => {
     markByoCommandCopied('u1', 'cli');
     markByoCommandCopied('u1', 'mcp');
     markByoCommandCopied('u1', 'shell');
-    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    const firstCopyWrites = mockUpdateOne.mock.calls.filter(
+      ([filter]) => filter['onboarding.byoCommandCopiedAt'],
+    );
+    expect(firstCopyWrites).toHaveLength(1);
+    expect(firstCopyWrites[0][1].$set['onboarding.byoCommandType']).toBe('cli');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(3);
+  });
+
+  test('records each command kind once, so MCP-then-listener is not read as MCP-only (TASK-721)', () => {
+    markByoCommandCopied('u1', 'mcp');
+    markByoCommandCopied('u1', 'mcp');
+    markByoCommandCopied('u1', 'cli');
+    markByoCommandCopied('u1', 'cli');
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'u1', isBot: { $ne: true }, 'onboarding.byoMcpCopiedAt': { $exists: false } },
+      { $set: { 'onboarding.byoMcpCopiedAt': expect.any(Date) } },
+    );
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'u1', isBot: { $ne: true }, 'onboarding.byoCliCopiedAt': { $exists: false } },
+      { $set: { 'onboarding.byoCliCopiedAt': expect.any(Date) } },
+    );
+    // one first-copy write + one per kind, however often each button is pressed
+    expect(mockUpdateOne).toHaveBeenCalledTimes(3);
+  });
+
+  test('a failed per-kind write is retried on the next copy', async () => {
+    mockUpdateOne.mockRejectedValueOnce(new Error('down'));
+    markByoCommandCopied('u1', 'cli');
+    await flush();
+    mockUpdateOne.mockClear();
+    markByoCommandCopied('u1', 'cli');
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      expect.objectContaining({ 'onboarding.byoCliCopiedAt': { $exists: false } }),
+      expect.anything(),
+    );
   });
 
   test('records a first BYO runtime attempt for the human installer, not the bot', () => {
@@ -203,7 +259,7 @@ describe('BYO setup marks', () => {
   });
 });
 
-describe('markSurface (D139)', () => {
+describe('markSurface', () => {
   test.each(['inviteCardShownAt', 'inviteCardDismissedAt', 'byoOfferShownAt'])('%s is write-once in the filter, never for bots', (mark) => {
     markSurface('u1', mark);
     expect(mockUpdateOne).toHaveBeenCalledTimes(1);
@@ -253,7 +309,8 @@ describe('the onboarding marks together', () => {
     expect(mockUpdateOne.mock.calls.map(fieldOf))
       .toEqual([
         'onboarding.podOpenedAt', 'onboarding.firstStartAt', 'onboarding.byoOpenedAt',
-        'onboarding.byoCommandCopiedAt', 'onboarding.byoFirstConnectionAttemptAt',
+        'onboarding.byoCliCopiedAt', 'onboarding.byoCommandCopiedAt',
+        'onboarding.byoFirstConnectionAttemptAt',
       ]);
   });
 
@@ -269,6 +326,6 @@ describe('the onboarding marks together', () => {
     markByoOpened('u1');
     markByoCommandCopied('u1', 'cli');
     markByoConnectionAttempt('u1', { config: { runtime: { host: 'byo' } } });
-    expect(mockUpdateOne).toHaveBeenCalledTimes(10);
+    expect(mockUpdateOne).toHaveBeenCalledTimes(12);
   });
 });

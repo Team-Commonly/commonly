@@ -129,8 +129,8 @@ class ActivityService {
     // made the pod, and `leavePod` keeps it after unlisting them, so reading it
     // as membership handed a departed creator this pod's recap.
     // TASK-170: `{ 'members.userId': userId }` sat beside the live term as a
-    // second spelling of membership. No pod has a `members.userId` entry (Vera,
-    // 0 of 424, 2026-09-27), so it selected nothing while teaching that a member
+    // second spelling of membership. No pod has a `members.userId` entry (0
+    // of 424, 2026-09-27), so it selected nothing while teaching that a member
     // is an object carrying a `userId` — the belief behind the `getPodFeed`
     // defect TASK-166 fixed. Deleted rather than kept as a fallback.
     const pods: PodDoc[] = await Pod.find({ members: userId }).select('_id name type').lean();

@@ -133,7 +133,7 @@ let warn;
 beforeEach(() => { warn = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
 afterEach(() => { warn.mockRestore(); });
 
-test('a confined writer gets the developer tools read-only, so git works inside the sandbox (D106)', async () => {
+test('a confined writer gets the developer tools read-only, so git works inside the sandbox', async () => {
   await withSeat(async ({ ctx, wraps, pkg, mcpDir, root, report }) => {
     const tools = join(root, 'CommandLineTools');
     mkdirSync(tools);

@@ -1,6 +1,6 @@
 import { TASK_PRIORITY_ORDER } from '../utils/taskPriority';
 /**
- * Kernel work sweep (#1044, ruled by fable-lead).
+ * Kernel work sweep (#1044).
  *
  * The ruling this implements, verbatim: "a timer that spends a model turn to
  * discover nothing is wrong at any breadth — the fix isn't a better tick, it's
@@ -263,6 +263,7 @@ class KernelWorkSweepService {
             status: 'pending',
             assignee: null,
             claimedBy: null,
+            claimedByUserId: null,
             claimedAt: null,
             claimExpiresAt: null,
             rescueDeferrals: 0,

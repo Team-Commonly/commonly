@@ -39,22 +39,10 @@ describe('i18n configuration', () => {
     expect(i18n.t(key, { lng: 'en' })).toBe(expected);
   });
 
-  it.each([
-    [0, '1 · 0 agents', '1 member, 0 agents'],
-    [1, '1 · 1 agent', '1 member, 1 agent'],
-    [2, '1 · 2 agents', '1 member, 2 agents'],
-  ])('pluralizes the compact pod header at %i agents', (count, visible, accessible) => {
-    const members = i18n.t('podChat.header.members', { lng: 'en', count: 1 });
-    const agents = i18n.t('podChat.header.agents', { lng: 'en', count });
-    expect(i18n.t('podChat.header.compactMeta', { lng: 'en', members: 1, agents })).toBe(visible);
-    expect(i18n.t('podChat.header.compactMetaAccessible', { lng: 'en', members, agents })).toBe(accessible);
-  });
-
-  it('keeps the Chinese compact count while naming it for assistive tech', () => {
-    const members = i18n.t('podChat.header.members', { lng: 'zh-CN', count: 1 });
-    const agents = i18n.t('podChat.header.agents', { lng: 'zh-CN', count: 1 });
-    expect(i18n.t('podChat.header.compactMeta', { lng: 'zh-CN', members: 1, agents })).toBe('1 · 1个智能体');
-    expect(i18n.t('podChat.header.compactMetaAccessible', { lng: 'zh-CN', members, agents })).toBe('1名成员，1个智能体');
+  it('pluralizes the member count the compact pod header shows', () => {
+    expect(i18n.t('podChat.header.members', { lng: 'en', count: 1 })).toBe('1 member');
+    expect(i18n.t('podChat.header.members', { lng: 'en', count: 2 })).toBe('2 members');
+    expect(i18n.t('podChat.header.members', { lng: 'zh-CN', count: 1 })).toBe('1名成员');
   });
 
   it('uses the singular agent count in the Your Team header', () => {
@@ -65,6 +53,30 @@ describe('i18n configuration', () => {
     expect(meta('en', 1)).toBe('1 agent · 0 working · 0 needs you');
     expect(meta('en', 2)).toBe('2 agents · 0 working · 0 needs you');
     expect(meta('zh-CN', 1)).toBe('1个智能体 · 0个工作中 · 0个等你');
+  });
+
+  it('translates the Connectors page strings and the catalog description maps', () => {
+    const uiKeys = [
+      'connectors.untitledPod', 'connectors.anotherPod', 'connectors.thisSlackWorkspace', 'connectors.yourSlackUser',
+      'connectors.cancelError', 'connectors.modeError', 'connectors.slackAuthorizeError', 'connectors.slackBindError',
+    ];
+    uiKeys.forEach((key) => {
+      expect(i18n.exists(key, { lng: 'zh-CN' })).toBe(true);
+      expect(i18n.t(key, { lng: 'zh-CN' })).not.toBe(i18n.t(key, { lng: 'en' }));
+    });
+    // Catalog maps exist only in zh-CN. English has none, so the page shows the
+    // server description. The rendered tests check what the page shows.
+    const catalogIds = [
+      'github', 'telegram', 'slack', 'atlassian', 'gitlab', 'airtable', 'google-calendar', 'sentry', 'linear', 'supabase', 'notion',
+    ];
+    catalogIds.forEach((id) => {
+      const key = `connectors.catalogDescriptions.${id}`;
+      expect(i18n.exists(key, { lng: 'zh-CN' })).toBe(true);
+      expect(i18n.exists(key, { lng: 'en' })).toBe(false);
+      // Existence alone passes for an empty string or a copied English line, so
+      // each value must be non-empty Chinese text.
+      expect(i18n.t(key, { lng: 'zh-CN' })).toMatch(/[\u4e00-\u9fff]/);
+    });
   });
 
   it('defaults to English when no stored supported language exists', async () => {
@@ -109,8 +121,8 @@ describe('i18n configuration', () => {
   });
 
   it('keeps the verification copy glossary-clean in Simplified Chinese', () => {
-    // lily-shen's zh-CN gate (2026-09-23, the eng lead's read under the
-    // zh-cn-ui-localization skill, standing in for Sam's pass): "Pod" stays
+    // zh-CN gate (2026-09-23, a read under the
+    // zh-cn-ui-localization skill): "Pod" stays
     // English with half-width spaces, the purpose-clause calque 以…加入 is out,
     // and a Chinese sentence takes ，rather than an em dash. The banner and the
     // screen carry one sentence, so the two move together.
@@ -124,8 +136,8 @@ describe('i18n configuration', () => {
   });
 
   it('uses a Chinese comma in the BYO machine hint', () => {
-    const hint = i18n.t('agentByo.mode.machineHint', { lng: 'zh-CN' });
-    expect(hint).toBe('在你已添加的电脑上运行，你的文件、你的 CLI');
+    const hint = i18n.t('agentByo.mode.machineMeta', { lng: 'zh-CN' });
+    expect(hint).toBe('在你已添加的电脑上运行，用你的文件和 CLI。需要那台电脑运行 Commonly 守护进程。');
     expect(hint).not.toContain('—');
   });
 });

@@ -24,6 +24,9 @@ describe('runtimeChipLabel (TASK-471)', () => {
   it('TASK-317: a BYO seat names the CLI it reported, after any declared adapter', () => {
     expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'byo', reportedCli: 'claude' })).toBe('claude');
     expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'byo', reportedCli: 'pi' })).toBe('pi');
+    // TASK-704: a stale codex declaration on a seat that polls claude shows the poller.
+    expect(runtimeChipLabel({ runtimeType: 'codex', host: 'byo', reportedCli: 'claude' })).toBe('claude');
+    expect(runtimeChipLabel({ runtimeType: 'codex', host: 'byo' })).toBe('codex');
     expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'byo', adapter: 'codex', reportedCli: 'claude' })).toBe('codex');
     expect(runtimeChipLabel({ runtimeType: 'local-cli', wrappedCli: 'codex', reportedCli: 'claude' })).toBe('codex');
     expect(runtimeChipLabel({ runtimeType: 'hosted', reportedCli: 'claude' })).toBe('hosted');

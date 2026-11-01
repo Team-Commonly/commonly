@@ -32,8 +32,8 @@ beforeEach(async () => {
   delete process.env.HOSTED_TURNS_PER_DAY;
   await Promise.all([User.deleteMany({}), Pod.deleteMany({}), RoomGrant.deleteMany({}), AgentRun.deleteMany({})]);
   owner = await User.create({ username: 'grant-owner', email: 'grant-owner@example.test', password: 'test-password' });
-  seat = await User.create({ username: 'cto-walk-1016', email: 'cto-walk-1016@agents.commonly.local',
-    password: 'test-password', isBot: true, botMetadata: { agentName: 'cto-walk-1016', instanceId: 'default' } });
+  seat = await User.create({ username: 'hosted-seat', email: 'hosted-seat@agents.commonly.local',
+    password: 'test-password', isBot: true, botMetadata: { agentName: 'hosted-seat', instanceId: 'default' } });
   pod = await Pod.create({ name: 'Hosted grant service test', type: 'team', createdBy: owner._id,
     members: [owner._id, seat._id], publicRead: false, joinPolicy: 'invite-only' });
   axios.post.mockReset().mockResolvedValue({ data: {
@@ -49,18 +49,18 @@ const grant = (over = {}) => RoomGrant.create({
   audience: [String(seat._id)], tools: ['sentry.find_organizations'], writeMode: 'read',
   expiresAt: new Date(Date.now() + 86400000), brokerId: GRANT_BROKER_ID, ...over,
 });
-const run = (instanceId = 'default') => runAgent({ podId: pod._id, agentName: 'cto-walk-1016', instanceId,
-  installedBy: owner._id, displayName: 'CTO walk',
+const run = (instanceId = 'default') => runAgent({ podId: pod._id, agentName: 'hosted-seat', instanceId,
+  installedBy: owner._id, displayName: 'Hosted seat',
   config: { runtime: { runtimeType: 'hosted' }, hosted: { engine: 'native', provisionedAt: new Date() } },
 }, { type: 'chat.mention', payload: { content: 'List available tools.' } });
 const names = () => axios.post.mock.calls[0][1].tools.map((tool) => tool.function.name);
 
-test.each(['default', 'cto-walk'])('a pod-targeted Sentry read grant reaches native hosted instance %s', async (instanceId) => {
-  seat.username = AgentIdentityService.buildAgentUsername('cto-walk-1016', instanceId);
+test.each(['default', 'hosted'])('a pod-targeted Sentry read grant reaches native hosted instance %s', async (instanceId) => {
+  seat.username = AgentIdentityService.buildAgentUsername('hosted-seat', instanceId);
   seat.botMetadata.instanceId = instanceId;
   await seat.save();
   await grant();
-  expect(await resolveSeatUserId(String(pod._id), 'cto-walk-1016', instanceId)).toBe(String(seat._id));
+  expect(await resolveSeatUserId(String(pod._id), 'hosted-seat', instanceId)).toBe(String(seat._id));
   expect(await run(instanceId)).toMatchObject({ status: 'succeeded' });
   expect(names()).toContain('sentry_find_organizations');
 });

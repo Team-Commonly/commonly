@@ -104,7 +104,12 @@ async function recordCatchUp(
   return { skippedCount };
 }
 
-async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hold> {
+// A delivered event names the message that woke the agent. That message is the
+// one the reply answers, so it is treated as seen: only messages after it hold.
+// Without this, an inline webhook reply always counts its own trigger as unseen.
+async function unseenMessages(
+  agentUserId: unknown, podId: unknown, { seenThroughMessageId = null }: { seenThroughMessageId?: unknown } = {},
+): Promise<Hold> {
   const cursor = await Cursor.getReadWatermark(agentUserId, podId);
   const after = cursor?.readAt || new Date(0);
   const afterRevision = cursor?.readRevision ?? -1;
@@ -113,6 +118,7 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
   let messages: Preview[];
 
   if (pool && process.env.PG_HOST) {
+    const seenPgId = /^\d+$/.test(String(seenThroughMessageId ?? '')) ? Number(seenThroughMessageId) : null;
     const result = await pool.query(`
         SELECT m.id, m.content, m.created_at, COALESCE(u.username, 'Unknown') AS author,
           COUNT(*) OVER ()::integer AS unseen_count
@@ -120,8 +126,9 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
         WHERE m.pod_id = $1 AND m.freshness_revision > $2
           AND (m.user_id IS DISTINCT FROM $3 OR m.author_kind = 'kernel')
           AND NOT (m.message_type = 'system' AND COALESCE(m.payload->>'kind', '') = 'system-action')
+          AND ($4::integer IS NULL OR m.id > $4)
         ORDER BY m.freshness_revision DESC, m.id DESC LIMIT 3
-      `, [String(podId), afterRevision, ownId]);
+      `, [String(podId), afterRevision, ownId, seenPgId]);
     unseenCount = Number(result.rows[0]?.unseen_count || 0);
     messages = result.rows.map((row: Record<string, unknown>) => ({
       id: String(row.id),
@@ -130,7 +137,8 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
       createdAt: row.created_at,
     }));
   } else {
-    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after));
+    const seenMongoId = /^[a-f\d]{24}$/i.test(String(seenThroughMessageId ?? '')) ? String(seenThroughMessageId) : null;
+    ({ unseenCount, messages } = await unseenFromMongo(podId, ownId, after, seenMongoId));
   }
 
   if (!unseenCount) return null;
@@ -145,9 +153,12 @@ async function unseenMessages(agentUserId: unknown, podId: unknown): Promise<Hol
   };
 }
 
-async function unseenFromMongo(podId: unknown, ownId: string, after: Date): Promise<{ unseenCount: number; messages: Preview[] }> {
+async function unseenFromMongo(
+  podId: unknown, ownId: string, after: Date, seenMongoId: string | null,
+): Promise<{ unseenCount: number; messages: Preview[] }> {
   const query = {
     podId,
+    ...(seenMongoId ? { _id: { $gt: seenMongoId } } : {}),
     $nor: [{ messageType: 'system', 'payload.kind': 'system-action' }],
     $and: [
       { $or: [{ userId: { $ne: ownId } }, { authorKind: 'kernel' }] },

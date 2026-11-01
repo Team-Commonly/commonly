@@ -152,6 +152,14 @@ describe('placement request', () => {
     expect((await User.findById(bot._id)).botMetadata).toMatchObject({ machineId: null, requestedMachineId: 'machine-b' });
   });
 
+  it('returns when each active computer was added, so a shared name can be told apart', async () => {
+    const placement = await request(app).get('/api/agent-binding/placement').query({ agentName: 'wren-test' }).expect(200);
+    const machineA = await Machine.findOne({ machineId: 'machine-a' }).lean();
+    expect(placement.body.activeMachines).toContainEqual({
+      machineId: 'machine-a', name: 'Mac A', createdAt: machineA.createdAt.toISOString(),
+    });
+  });
+
   it('does not offer or select an expired daemon credential', async () => {
     await User.updateOne({ _id: bot._id }, { $set: { 'botMetadata.machineId': 'machine-a' } });
     await AgentCredential.updateOne({ machineId: 'machine-b' }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
@@ -255,7 +263,7 @@ describe('placement request', () => {
     expect(res.status).toBe(403);
   });
 
-  // C14 rehearsal follow-up (sprint-review on #2365): "On my computer" with
+  // C14 rehearsal follow-up: "On my computer" with
   // the name of the person's hosted agent stamped a placement the daemon's
   // runtime-token mint then refused, so the page said "requested" and nothing
   // ran. Refused up front with the mint's own code, and nothing is stamped.
@@ -614,7 +622,7 @@ describe('daemon work list', () => {
   });
 
   // The ordering clause is witnessable at this tier after all, and this is the
-  // shape that does it (Vera, on the fold at 59d99388): in-memory Mongo returns
+  // shape that does it (on the fold at 59d99388): in-memory Mongo returns
   // documents in INSERTION order, so a fixture inserted in `_id` order cannot
   // tell a sorted find from an unsorted one. Creating the ObjectIds explicitly
   // and inserting the NEWER row FIRST makes insertion order and `_id` order
@@ -747,7 +755,7 @@ describe('runtime-token mint', () => {
     }
   });
 
-  // Rhea on #2224, Wren for plain native: a daemon cannot mint a token for an
+  // A daemon cannot mint a token for an
   // agent Commonly runs in-process, whatever the binding says.
   it.each([
     ['native', { runtimeType: 'native' }, {}],

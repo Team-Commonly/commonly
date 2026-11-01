@@ -19,7 +19,7 @@
  * D3.1 beta floor; charging against credits needs the worker's own counts.
  * Counting by ack time rather than createdAt matters at the UTC boundary:
  * an event created 23:59 and acked 00:01 must land in today's bucket, or
- * anything queued across midnight is free (Otto on #1355).
+ * anything queued across midnight is free.
  * When the daily cap is reached the events feed returns empty for that agent
  * BEFORE list() claims anything (see agentsRuntime GET /events), so capped
  * events stay pending and un-attempted; GC only touches 'delivered' rows.

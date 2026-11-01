@@ -183,7 +183,7 @@ test('the projection misses the hosted row because the key is ABSENT, not empty'
   expect('installationId' in raw).toBe(false);
 });
 
-describe('the admin user delete refuses while the user owns a hosted row (wren 75845)', () => {
+describe('the admin user delete refuses while the user owns a hosted row', () => {
   // `DELETE /api/admin/users/:userId` (`routes/admin/users.ts:267`) references
   // Integration nowhere but this guard. Deleting the person leaves their hosted
   // rows owned by an account that no longer exists — and the reason is the GAP,
@@ -216,7 +216,7 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
     User.findById.mockResolvedValue(target);
     User.findOneAndDelete.mockResolvedValue(target);
     const live = await Integration.create(hostedFor(target._id));
-    // The case the predicate exists for (vera 75850): the provider step failed,
+    // The case the predicate exists for: the provider step failed,
     // so the row sits at step 2 of the removal — `disconnected`, its material
     // not yet gone. A guard keyed on `connected` waves this one through.
     const stranded = await Integration.create(hostedFor(target._id, {
@@ -255,7 +255,7 @@ describe('the admin user delete refuses while the user owns a hosted row (wren 7
   });
 
   it('refuses for a row that is mid-exchange, which carries no ref yet', async () => {
-    // Wren 75857: the costly shape, and the one a material-keyed predicate waves
+    // The costly shape, and the one a material-keyed predicate waves
     // past. The callback unsets `config.pendingAuth` at `hostedMcpConnect.ts:341`
     // and does not write `config.credentialRef` until `:427`, so for the length
     // of its upstream calls the row carries neither — and every failure branch

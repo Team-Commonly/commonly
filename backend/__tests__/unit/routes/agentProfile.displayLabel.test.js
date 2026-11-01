@@ -40,6 +40,7 @@ describe('public agent profile display label', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     User.findOne.mockReturnValue(selectLeanResult({
+      _id: 'bot-user-1',
       username: 'vale',
       profilePicture: 'default',
       isBot: true,
@@ -71,5 +72,15 @@ describe('public agent profile display label', () => {
       agent: expect.objectContaining({ displayName: 'Vale', runtime: null }),
     }));
     expect(resolveAgentDisplayLabel).not.toHaveBeenCalled();
+  });
+
+  it('returns the bot user id so the profile seeds the same face as chat', async () => {
+    const res = response();
+
+    await getProfile({ params: { agentName: 'openclaw', instanceId: 'vale' } }, res);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+      agent: expect.objectContaining({ userId: 'bot-user-1' }),
+    }));
   });
 });

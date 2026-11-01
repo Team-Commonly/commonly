@@ -93,7 +93,7 @@ const V2CliAuthorize: React.FC = () => {
   const next = `/cli/authorize${code ? `?code=${encodeURIComponent(code)}` : ''}`;
 
   return (
-    <main className="v2-cli-authorize">
+    <main className="v2-root v2-cli-authorize">
       <section className="v2-cli-authorize__card" aria-live="polite">
         <div className="v2-cli-authorize__mark" aria-hidden="true">C</div>
         <p className="v2-cli-authorize__eyebrow">CLI SIGN-IN</p>

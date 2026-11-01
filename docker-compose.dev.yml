@@ -139,7 +139,7 @@ services:
       # Mount marketplace manifest from repo root
       - ./packages/commonly-marketplace:/app/packages/commonly-marketplace:ro
       # Mount skills catalog index
-      - ./docs/skills:/app/docs/skills:ro
+      - ./backend/docs/skills:/app/docs/skills:ro
       # Mount agent service manifests for auto-registration
       - ./external/commonly-agent-services:/app/external/commonly-agent-services:ro
       # Mount agent runtime config state for provisioning

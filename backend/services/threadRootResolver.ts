@@ -42,7 +42,7 @@ export class ThreadRootError extends Error {
  * A reply's target must be a message in the reply's own pod. Nothing checked
  * it when no threadRootId was sent: a reply in one pod could name a message in
  * another, join that pod's thread, and show that message's text and author as
- * its preview to everyone who can read the first pod (Cofounder's security
+ * its preview to everyone who can read the first pod (security
  * read, 2026-10-16, TASK-278). Every write path calls this before it writes,
  * and the INSERT in models/pg/Message re-checks it.
  *

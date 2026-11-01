@@ -1017,7 +1017,7 @@ const V2ActivityPage: React.FC = () => {
     }
   };
 
-  // Reply-in-place (Sam, 2026-09-01: "a way to really work with these agents
+  // Reply-in-place (2026-09-01: "a way to really work with these agents
   // more easily… and tell them what is on my mind"). The reply posts into
   // the SAME thread the mention came from, addressed to the message, through
   // the ordinary messages route — so the agent gets the normal implicit-reply
@@ -1265,7 +1265,7 @@ const V2ActivityPage: React.FC = () => {
               <div className="v2-activity__queue">
                 {visibleQueue.map((item) => (
                   <article key={item.id} data-activity-item-id={item.id} data-attention-id={item.attentionItemId} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
-                    {/* The kind is a category, so it is a mark (Sam 2026-09-11, direction A); the word stays for
+                    {/* The kind is a category, so it is a mark (direction A); the word stays for
                         assistive tech. The mark's colour still says who is asking: an agent is cobalt. */}
                     <span className={`v2-activity__queue-mark${item.actorName ? (isAgentActor(item) ? ' v2-activity__queue-mark--agent' : ' v2-activity__queue-mark--human') : ''}`} role="img" aria-label={t(`activity.needsYou.kinds.${item.kind}`)} title={t(`activity.needsYou.kinds.${item.kind}`)}>
                       <KindGlyph kind={item.kind} />

@@ -1,6 +1,6 @@
 # README benchmark: seven open-source front doors
 
-**Status:** brief for TASK-422, 2026-10-24. Owner: Lumen. Gates: ux-lead for visuals and brand, Cofounder for accuracy.
+**Status:** brief for TASK-422, 2026-10-24. Gates: ux-lead for visuals and brand.
 **Purpose:** the next README pass starts here, not from scratch. Part 1 records what seven well-regarded projects actually put in their README. Part 2 lists patterns across them. Part 3 is the rules our README follows. Part 4 checks today's README against those rules.
 
 Every row cites the README at a pinned commit, so a later reader can tell whether a project has changed since. Counts come from the raw file at that commit, not from the rendered page.
@@ -89,7 +89,7 @@ Every row cites its source: `backend/config/native-agents/scout.ts` pinned at `b
 
 | Claim | Walked status |
 |---|---|
-| Your own Claude Code joins as a teammate that answers @mentions | **Mac only.** Not Linux, WSL or native Windows (sandbox, Linux run 38982219348). [scout.ts:140-148](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L140-L148) |
+| Your own Claude Code joins as a teammate that answers @mentions | **Mac, and Linux or WSL in invite-only pods** (TASK-027). Not native Windows (no sandbox). Earlier: Mac only (Linux run 38982219348). [scout.ts:140-148](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L140-L148) |
 | Your own Codex joins as a teammate | Mac and Linux, WSL included. Not native Windows. [scout.ts:144-147](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L144-L147) |
 | OpenCode (any provider, e.g. DeepSeek) | Via `docs/cli/opencode.md`, walked on a Mac only. [scout.ts:114-123](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L114-L123) |
 | DeepSeek Harness (dsh) | Attached as your own agent in a **private pod**, via its attach guide. Walked on macOS; other OSs unverified. [scout.ts:145-146](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L145-L146), [scout.ts:165-171](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L165-L171) |
@@ -111,7 +111,7 @@ Every row cites its source: `backend/config/native-agents/scout.ts` pinned at `b
 | 4 Images | Four 880 px screenshots | Cut to one, or two at most |
 | 5 Claims | "Claude Code, Codex, OpenCode CLI, Hermes or DeepSeek Harness from your machine" | Platform limits are missing (Claude Code is Mac-only as a teammate). **Hermes:** keep it, worded only as "Hermes (CLI adapter)" (§3.1). Scout now lists it, via #2569 (TASK-429). Today's README doesn't qualify it as the CLI adapter |
 | 5/6 MCP | "Bring your own" leads with the MCP command and "Then ask it for real work" | Accurate for your own session, but it reads as if this makes the agent a teammate. Per the truth table, MCP alone does not answer @mentions. The teammate path is `commonly agent run` |
-| 9 Community | Footer link only (`discord.gg/NsS3fzsJDw`, last line) | The Discord exists. It had a README badge from #694/#695 (2026-07-19) until #2477 dropped it, which Sam flagged. **Restored in the hero by this PR.** The rewrite keeps it there (rule 9), and TASK-430 guards it |
+| 9 Community | Footer link only (`discord.gg/NsS3fzsJDw`, last line) | The Discord exists. It had a README badge from #694/#695 (2026-07-19) until #2477 dropped it. **Restored in the hero by this PR.** The rewrite keeps it there (rule 9), and TASK-430 guards it |
 | 7 Badges | None | Fine. Add up to four signal badges |
 | 10 Length | 109 lines | Within range |
 
@@ -119,5 +119,5 @@ Every row cites its source: `backend/config/native-agents/scout.ts` pinned at `b
 
 ## 5. Next
 
-- **Draft (due Sun 18:00):** README to the rules above, in a PR against this doc, using ux-lead's hero and social card once TASK-423 lands. ux-lead gates visuals and Cofounder gates accuracy.
+- **Draft (due Sun 18:00):** README to the rules above, in a PR against this doc, using ux-lead's hero and social card once TASK-423 lands. ux-lead gates visuals.
 - **Docs pages** get the same pass afterwards (TASK-422 notes). `docs/audits/TASK-003-docs-site-audit.md` already lists unwalked pages.

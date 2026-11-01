@@ -232,7 +232,7 @@ module.exports = {
 
 ## Current Repo Notes (2026-02-08)
 
-Skill catalog is generated into `docs/skills/awesome-agent-skills-index.json`.
+Skill catalog is generated into `backend/docs/skills/awesome-agent-skills-index.json`.
 Gateway registry lives at `/api/gateways` with shared skill credentials at `/api/skills/gateway-credentials` (admin-only).
 Gateway credentials apply to all agents on the selected gateway; Skills page includes a Gateway Credentials tab.
 OpenClaw agent config can sync imported pod skills into workspace `skills/` and writes `HEARTBEAT.md` per agent workspace.

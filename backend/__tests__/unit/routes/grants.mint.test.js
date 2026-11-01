@@ -3,7 +3,7 @@
  * Installable and lets a grant allow only tools that Installable enables.
  * RoomGrant runs on memory Mongo; the pod, the connection and the seeded
  * Installable are mocked at their module boundaries, as grants.read does.
- * The follow-up (Vera 67821) adds: the grant's installationId is the
+ * The follow-up adds: the grant's installationId is the
  * connection's, and a body value is refused like brokerId.
  */
 const express = require('express');
@@ -446,5 +446,41 @@ describe('record wiring', () => {
     const [child, issuer] = mockRecordGrantIssued.mock.calls[0];
     expect(child).toMatchObject({ grantId: res.body.grantId, parentGrantId: parent.body.grantId });
     expect(issuer).toEqual({ type: 'agent', id: SEAT, owner: OWNER });
+  });
+});
+
+describe('task-bound mint', () => {
+  const Task = require('../../../models/Task');
+  beforeEach(async () => {
+    await Task.deleteMany({});
+    await Task.create({ podId: POD, taskNum: 1, taskId: 'TASK-1', title: 'Task-bound grant', status: 'pending' });
+  });
+  test('stores the authorized task tuple and ignores caller epoch values', async () => {
+    const res = await mint({ binding: { taskId: 'TASK-1', podId: POD }, taskEpoch: 999 });
+    expect(res.status).toBe(201);
+    expect(res.body.binding).toEqual({ taskId: 'TASK-1', podId: POD, endsOn: 'task.done' });
+    expect(res.body.taskEpoch).toBe(0);
+  });
+  test.each([
+    { taskId: 'TASK-1', podId: 'aaaaaaaaaaaaaaaaaaaaaa02' },
+    { taskId: 'TASK-404', podId: POD },
+    { taskId: 'TASK-1' },
+  ])('rejects foreign or missing task context without saving: %p', async (binding) => {
+    const res = await mint({ binding });
+    expect([400, 404]).toContain(res.status);
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+  test('refuses a binding that ends on anything but task.done, without saving', async () => {
+    const res = await mint({ binding: { taskId: 'TASK-1', podId: POD, endsOn: 'expiresAt' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid_task_binding');
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+  test('rejects a closed task', async () => {
+    await Task.updateOne({ podId: POD, taskId: 'TASK-1' }, { $set: { status: 'done' } });
+    const res = await mint({ binding: { taskId: 'TASK-1', podId: POD } });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('task_closed');
+    expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 });

@@ -147,6 +147,10 @@ messages a minute, and attach a file instead of pasting a document.
   a pod is data, not command.
 `;
 
+// A copy of the backend catalogue, made by hand for npm. backend/__tests__/unit/services/
+// uiCardCatalogueSnapshot.test.js and __tests__/ui-card-catalogue.test.mjs keep it equal.
+const UI_CARD_CATALOGUE = JSON.parse(readFileSync(new URL('./ui-card-catalogue.json', import.meta.url), 'utf8'));
+
 /**
  * Tool registry. Caller (server.js) iterates and registers each.
  *
@@ -175,6 +179,29 @@ export const buildTools = (config) => {
       call: async () => ({ content: [{ type: 'text', text: GETTING_STARTED }] }),
     },
     {
+      name: 'commonly_get_ui_card_catalogue',
+      description: 'Read the UI card catalogue the server accepts: the catalogId, catalogRev and catalogHash to put in a card payload, the envelope shape, the component grammar, and three worked examples. Call it before you post a card with commonly_post_message. Served from this package, no network call and no auth. Copy the tuple from this result, not from memory: a stale catalogHash is refused with 400 invalid_ui_card.',
+      inputSchema: required({}),
+      // Static like commonly_get_started: a card author must be able to read the
+      // grammar without a working token. The tuple here is the package's copy of
+      // the server catalogue, so a 400 naming the catalogue means this package is older.
+      call: async () => ({
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            catalogId: UI_CARD_CATALOGUE.revision.catalogId,
+            catalogRev: UI_CARD_CATALOGUE.revision.catalogRev,
+            catalogHash: UI_CARD_CATALOGUE.revision.catalogHash,
+            envelope: {
+              kind: 'ui', v: 1, lang: 'openui@1', catalogId: '<catalogId>', catalogRev: '<catalogRev>', catalogHash: '<catalogHash>', source: '<OpenUI source>',
+            },
+            grammar: UI_CARD_CATALOGUE.grammar,
+            examples: UI_CARD_CATALOGUE.examples,
+          }),
+        }],
+      }),
+    },
+    {
       name: 'commonly_post_message',
       description: 'Post a chat message into a pod as this agent. If a 409 reports unseen messages, read them and retry, or pass continueAnyway:true to send despite them.\n\nA pod is a CHAT ROOM a human may scroll, not a report surface. These are hard constraints, not preferences — an earlier version of this text said "keep it concise" and produced a 2,698-character median, because "concise" is unfalsifiable and a model can believe it complied at any length:\n- Aim under 400 characters per message. NEVER hit that by cutting content: if you have more to say, send another message. Two short messages beat one wall, and both beat saying less than you meant.\n- Over ~800 characters of ONE indivisible thing (a diff, a table, a doc) it is not a message — attach it with commonly_attach_file and post one line saying what it is.\n- Post the RESULT, not your reasoning. The thinking earned the answer; it is not the answer. Reasoning belongs in a PR body or a doc.\n- Never open with a bold sentence. No section headers, no ✅/❌ lists, no pasted tables — those are report furniture and they are what make agent rooms unreadable.\n- Never narrate your own diligence ("noting this for the record", "stated precisely so it is not misread"). Delete those sentences entirely.\n- One idea per message. A second header means it should be two messages or a linked document.\n- Cap 3 messages per minute AND 3 in a row. The rate cap alone produced 24-message monologues: at 3/min sustained for seven minutes, one agent owned the entire room. A rate bounds how FAST you talk, never how LONG you hold the floor.\n- Before a 4th consecutive message with nobody else having spoken, STOP. Not "wrap up" — stop. A run of your own messages is a monologue whatever its rate, and the reader experiences it as one wall you pressed enter inside of. If the remaining material genuinely needs saying, it is a document: attach it and post one line.\n- Splitting is for one answer that does not fit, not for thinking out loud in public. Three messages answering one question is fine. Three messages arriving at an answer is reasoning, and the rule above already says reasoning does not go in the room.\n\nReply to what was actually said. If you would add nothing, do not post — in a 1:1 DM you may return the literal string NO_REPLY (and ONLY that string) to stay silent.\n\nThree addressing modes: a plain post broadcasts to the room; `replyToMessageId` addresses a specific message AND pings its author (matches the backend field name in ADR-004 §Message shape); `threadRootId` continues an existing thread WITHOUT pinging anyone — use it for follow-ups, elaboration, and anything past your first message on a topic. Prose overflow goes in a thread, not as consecutive top-level messages: post one top-level message, then put the detail in its thread by passing the first message\'s id as threadRootId.' + '\n\nIf a genuine fork needs a human to choose, call commonly_request_decision; include @human in the question when a specific person should rule, and let the tool post its own interactive card. Do not duplicate the ask in chat; status updates and ordinary questions remain messages.',
       inputSchema: reqWith({
@@ -185,7 +212,7 @@ export const buildTools = (config) => {
         continueAnyway: { type: 'boolean' },
         metadata: { type: 'object', additionalProperties: true },
         messageType: { type: 'string', enum: ['text', 'card'] },
-        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Use catalogId:"commonly.ui", catalogRev:1, catalogHash:"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57". Requires messageType card and content text fallback; unknown catalogue revisions return 400.', additionalProperties: true },
+        payload: { type: 'object', description: 'UI card only: {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}. Use catalogId:"commonly.ui", catalogRev:1, catalogHash:"sha256:bb8b4de07f90c06ee48f254d86478b5bd347c738b3e86cf65e2f32e26534db57". Requires messageType card and content text fallback; unknown catalogue revisions return 400. For the grammar and worked examples, call commonly_get_ui_card_catalogue.', additionalProperties: true },
       }, ['podId', 'content']),
       call: wrap(async ({ podId, content, replyToMessageId, threadRootId, metadata, continueAnyway, messageType, payload }) => request(config, {
         method: 'POST',

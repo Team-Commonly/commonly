@@ -189,7 +189,7 @@ describe('registry list pod agents config payload', () => {
     expect(res.body.agents[0].runtime).not.toHaveProperty('webhookSecret');
   });
 
-  // Cofounder's hardening ruling (2026-10-21): every pod member reads this
+  // Hardening ruling (2026-10-21): every pod member reads this
   // roster, and a push webhook's URL can carry a credential in its query
   // string, so only the installer and instance admins see it.
   describe('a push webhook URL is shown only to its installer and instance admins', () => {

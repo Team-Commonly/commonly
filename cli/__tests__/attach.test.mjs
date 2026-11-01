@@ -67,7 +67,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     })).toThrow(/refusing to attach unsandboxed/);
   });
 
-  test("a legacy internal record beside mode 'workspace' attaches, it does not throw (Vera 71675)", () => {
+  test("a legacy internal record beside mode 'workspace' attaches, it does not throw ", () => {
     // The raw compare failed CLOSED here: `sandboxTrust !== 'public'` was true,
     // so attach refused a record both adapters confine — the adapter suites pin
     // that on this exact shape (adapters.claude.environment.test.mjs:444 spawns
@@ -113,7 +113,7 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
 
 const { default: dsh, TESTED_DSH_VERSIONS } = await import('../src/lib/adapters/dsh.js');
 
-describe("resolveAttachSandbox — dsh's confined shape (D106)", () => {
+describe("resolveAttachSandbox — dsh's confined shape", () => {
   const confined = { sandbox: { mode: 'workspace', network: { policy: 'restricted' } } };
 
   test('attach dsh admits the one shape the dsh adapter enforces, with no trust', () => {
@@ -455,7 +455,7 @@ describe('performAttach', () => {
       .resolves.toBeUndefined();
   });
 
-  // D106: performAttach must hand the adapter to resolveAttachSandbox, or the
+  // performAttach must hand the adapter to resolveAttachSandbox, or the
   // confined dsh shape meets the trust-keyed refusal. dsh's real validator runs
   // (only detection is stubbed), and the Seatbelt probe is injected so both of
   // its outcomes are pinned on every host.
@@ -488,13 +488,13 @@ describe('performAttach', () => {
     }
   };
 
-  test('attach --env admits confined dsh and logs its Seatbelt confinement (D106)', async () => {
+  test('attach --env admits confined dsh and logs its Seatbelt confinement', async () => {
     const { error, logs } = await attachConfinedDsh({ available: true });
     expect(error).toBeNull();
     expect(logs).toContain('sandbox: confined dsh workspace via macOS Seatbelt (restricted network)');
   });
 
-  test('attach --env carries confined dsh to the Seatbelt check, not the trust refusal (D106)', async () => {
+  test('attach --env carries confined dsh to the Seatbelt check, not the trust refusal', async () => {
     const { error } = await attachConfinedDsh({ available: false, error: 'sandbox-exec not found' });
     expect(error.message).toBe('confined dsh sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found.');
   });

@@ -8,7 +8,7 @@ global:
 errorTracking:
   enabled: true
 
-# commonly-dev-e2b-api-key has one enabled version (Cofounder, 2026-10-15).
+# commonly-dev-e2b-api-key has one enabled version (2026-10-15).
 # Tools stay opt-in per install, so this offers code runs to nobody until an
 # agent declares commonly_run_code.
 hostedSandbox:
@@ -220,7 +220,7 @@ externalSecrets:
 
 agents:
   clawdbot:
-    # PARKED 2026-08-20 (Sam) — the moltbot tier is retiring in favour of
+    # PARKED 2026-08-20 — the moltbot tier is retiring in favour of
     # pi/OpenCode wrapper adapters (ADR-021/ADR-023, #1050). Its credential
     # stack had been dead since 2026-07-02 — both cluster codex tokens expired,
     # OpenRouter 401 "User not found" — and nobody noticed for seven weeks,
@@ -289,7 +289,7 @@ agents:
         adapter: codex
         storage: 1Gi
         tokenSecret: cloud-codex-cody-token
-        # Parked 2026-08-12 (Sam: the working fleet is the Sharpen pod).
+        # Parked 2026-08-12.
         # Identity, PVC, and token secret stay; flip to 1 to revive.
         replicas: 0
 
@@ -439,29 +439,27 @@ hostedMcp:
   hiddenEntries:
     # Client secrets exist, but Workspace MCP enrollment is still off.
     - google-calendar
-    # Not walked end to end on staging before the 10-23 deploy (Cofounder plan B: unwalked ships hidden).
+    # Not walked end to end on staging before the 10-23 deploy; unwalked entries ship hidden.
     # Remove each line once its staging walk passes.
     - atlassian
     - sentry
-    # Added by #2429 (deploy 4). Hidden until each is walked end to end (Cofounder 10-23).
+    # Added by #2429. Hidden until each is walked end to end.
     - notion
     - gitlab
     - supabase
     # The 10-27 prod walk failed before Airtable's consent screen ("invalid client_id
     # or mismatched redirect_uri"). Hidden until TASK-318 lands and a walk passes.
     - airtable
-  # Mongo User _id(s) permitted to walk each hidden hosted-MCP entry (#2649, TASK-485).
-  # lily-shen is the designated walk user (keeps the walk off Sam's account, Cofounder 10-24).
-  # Sentry and Atlassian stay hidden for every other account (Atlassian added for its walk, D153).
-  hiddenEntryUserAllowlist:
-    atlassian:
-      - "6a47891ee025ce2e0ca1d30b"
-    sentry:
-      - "6a47891ee025ce2e0ca1d30b"
-    airtable:
-      - "6a47891ee025ce2e0ca1d30b"
+    # Hidden until a fresh non-admin account walks connect, grant, call and
+    # refusal end to end (TASK-290). That account joins the runner-only allowlist overlay (#2950).
+    - github-mcp
   googleCalendar:
     enabled: false
+  # Commonly Connect App's client ID and secret each have an enabled version
+  # in Secret Manager (verified 2026-10-19). The backend refs remain optional.
+  githubMcp:
+    enabled: true
+    appSlug: commonly-connect
 
 # The team's own accounts, left out of the "typed and got no reply" alert, come
 # from the secret store (INTERNAL_ACCOUNTS, #2373). The key exists, and on

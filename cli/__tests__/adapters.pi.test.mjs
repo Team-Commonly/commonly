@@ -424,7 +424,7 @@ describe('helpers', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const tokenHeader = { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}' };
     try {
-      // TASK-063's daemon-side half (wren's ruling): pi confines on no host, so
+      // TASK-063's daemon-side half: pi confines on no host, so
       // the broker's reach is refused here as well as at the server's
       // projection. The broker as `grantBrokerServer` builds it:
       expect(resolveMcpServers([{ name: 'commonly-grant-broker', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/g1', headers: tokenHeader }], ctx)).toEqual([]);
@@ -432,9 +432,9 @@ describe('helpers', () => {
       expect(resolveMcpServers([{ name: 'commonly', transport: 'http', url: '${COMMONLY_API_URL}/api/mcp/grants/other', headers: tokenHeader }], ctx)).toEqual([]);
       // And the uppercased spelling of that path, which the express route serves
       // from the same handler — the spelling a case-sensitive predicate let
-      // through with the real token attached (Vera 69839).
+      // through with the real token attached.
       expect(resolveMcpServers([{ name: 'commonly-grant-broker', transport: 'http', url: '${COMMONLY_API_URL}/API/MCP/GRANTS/g1', headers: tokenHeader }], ctx)).toEqual([]);
-      // All three refusals state the reason the server gives (wren 69829), so the
+      // All three refusals state the reason the server gives, so the
       // log line and the grant read can be read side by side.
       expect(warn.mock.calls.filter(([line]) => line.includes(GRANT_BROKER_REFUSAL))).toHaveLength(3);
       // CONTROL: the name alone refuses nothing. An entry CALLED
@@ -450,7 +450,7 @@ describe('helpers', () => {
     }
   });
 
-  // The declaration below is the bypass Vera measured (Connectors 69774): the
+  // The declaration below is the measured bypass: the
   // daemon's audit classifies by `transport` and its http rule judges ONLY the
   // url origin, so this entry passes the guard — and a presence-classifier then
   // ran the command as stdio with the seat's real token substituted. The url is
@@ -566,8 +566,7 @@ describe('sandbox — fail closed: pi cannot enforce one', () => {
     expect(calls).toHaveLength(0);
   });
   // TASK-114. This gate read `trust` raw, so it was the one site in the package
-  // that failed OPEN: a stored `internal` means `public` (Vera 69592, Wren
-  // 69585) and every other gate resolves it that way, but here both checks
+  // that failed OPEN: a stored `internal` means `public` and every other gate resolves it that way, but here both checks
   // passed and the seat started with no confinement — pi confines on no host,
   // so that is the whole of its confinement. Read through the shared reader.
   test('a legacy `internal` record is refused too — it means public, and pi reads it that way', async () => {

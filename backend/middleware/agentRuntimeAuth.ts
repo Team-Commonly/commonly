@@ -9,8 +9,12 @@ import { touchLastActive } from './auth';
 import Pod from '../models/Pod';
 import AgentCredential from '../models/AgentCredential';
 import { markByoConnectionAttempt } from '../services/onboardingMarks';
+import { recordByoEvent, seatRegisteredKey } from '../services/byoTelemetry';
 import { isSpawnCredential } from '../services/spawnCredentialService';
 import { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } from '../services/runtimeCredentialGate';
+import {
+  credentialRefusalReason, recordAgentAuthRefusal, refusalRoute, type AgentAuthRefusalReason,
+} from '../services/agentAuthRefusals';
 
 // eslint-disable-next-line global-require
 const { hash } = require('../utils/secret') as { hash: (value: string) => string };
@@ -45,11 +49,24 @@ const extractToken = (req: Request): string | undefined => {
   return req.header('x-commonly-agent-token');
 };
 
+// Every 401 goes through here, so each refusal is logged and counted with its
+// reason (TASK-712). The response is unchanged: same status, same message.
+const refuse = (
+  req: Request,
+  res: Response,
+  reason: AgentAuthRefusalReason,
+  message: string,
+  tokenHash?: string,
+): Response => {
+  recordAgentAuthRefusal({ reason, route: refusalRoute(req), method: req.method, tokenHash });
+  return res.status(401).json({ message });
+};
+
 export default async function agentRuntimeAuth(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
   try {
     const token = extractToken(req);
     if (!token || !token.startsWith('cm_agent_')) {
-      return res.status(401).json({ message: 'Missing agent token' });
+      return refuse(req, res, 'missing_token', 'Missing agent token');
     }
 
     const tokenHash = hash(token);
@@ -71,7 +88,9 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     const credential = await AgentCredential.findOne({ tokenHash });
     if (credential) {
       const refusal = await runtimeCredentialRefusalReason(credential);
-      if (refusal) return res.status(401).json({ message: refusal });
+      if (refusal) {
+        return refuse(req, res, credentialRefusalReason(refusal), refusal, tokenHash);
+      }
       try {
         // Settings reads this ledger row. A successful authenticated request
         // must be visible to the next credential read, including first use.
@@ -94,7 +113,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
 
     if (agentUser) {
       if (embeddedRuntimeTokenExpired(agentUser, tokenHash)) {
-        return res.status(401).json({ message: 'Session token expired' });
+        return refuse(req, res, 'session_expired', 'Session token expired', tokenHash);
       }
       const tokenRecord = agentUser.agentRuntimeTokens.find((t) => t.tokenHash === tokenHash);
       // Pre-update value: a token with no lastUsedAt is authenticating for
@@ -126,7 +145,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       // Old uninstall paths left User-row tokens behind. Even before a data
       // cleanup, a token with no active installation must not authenticate.
       if (installations.length === 0) {
-        return res.status(401).json({ message: 'Agent not installed' });
+        return refuse(req, res, 'agent_not_installed', 'Agent not installed', tokenHash);
       }
       const installationPodIds = installations
         .map((inst) => inst?.podId?.toString())
@@ -148,6 +167,8 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
         for (const installationRow of installations) {
           markByoConnectionAttempt(installationRow.installedBy, installationRow);
         }
+        // One row per token, not per installation: the seat is the token.
+        void recordByoEvent(installations[0]?.installedBy, 'seat-registered', {}, seatRegisteredKey(tokenHash));
         // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
         const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
         void completeConnectAgentStarterTask({
@@ -164,7 +185,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     });
 
     if (!installation) {
-      return res.status(401).json({ message: 'Invalid agent token' });
+      return refuse(req, res, 'invalid_token', 'Invalid agent token', tokenHash);
     }
 
     // Same first-use observation as the User-token path above (#916).
@@ -205,6 +226,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
 
     if (isFirstLegacyTokenUse) {
       markByoConnectionAttempt(installation.installedBy, installation);
+      void recordByoEvent(installation.installedBy, 'seat-registered', {}, seatRegisteredKey(tokenHash));
       // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
       const { completeConnectAgentStarterTask } = require('../services/starterTaskService');
       void completeConnectAgentStarterTask({

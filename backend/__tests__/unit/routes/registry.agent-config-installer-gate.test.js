@@ -4,7 +4,7 @@ jest.mock('../../../services/runtimeControlValidation', () => ({ runtimeControlR
 // OWNER's daemon as the seat's declared environment — plus the AgentProfile.
 // A plain member could therefore make another member's machine run a declared
 // command and mail that seat's runtime token to a host of their choosing
-// (Vera 69500, measured on 23e00668: non-owner PATCH returned 200).
+// (measured on 23e00668: non-owner PATCH returned 200).
 const request = require('supertest');
 const express = require('express');
 
@@ -512,6 +512,30 @@ describe('agent config PATCH — installer gate', () => {
     expect(AgentProfile.updateMany).not.toHaveBeenCalled();
   });
 
+  it('refuses a rename that collides with another installer\'s card in the same pod', async () => {
+    const primary = installation({ installedBy: MEMBER, displayName: 'Curator' });
+    const otherOwnersCard = installation({
+      agentName: 'guide', instanceId: 'u1234567890', podId: 'pod-1',
+      installedBy: INSTALLER, displayName: 'Scout',
+    });
+    setPod();
+    AgentInstallation.findOne.mockResolvedValue(primary);
+    AgentInstallation.find.mockResolvedValueOnce([primary]).mockResolvedValueOnce([primary, otherOwnersCard]);
+
+    const res = await request(app)
+      .patch('/api/registry/pods/pod-1/agents/openclaw')
+      .send({ instanceId: 'curator', displayName: 'scout' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('agent_display_name_taken');
+    expect(AgentIdentityService.renameAgentDisplayName).not.toHaveBeenCalled();
+    expect(primary.save).not.toHaveBeenCalled();
+    expect(AgentInstallation.find).toHaveBeenLastCalledWith({
+      $or: [{ podId: { $in: ['pod-1'] } }, { installedBy: { $in: [MEMBER] } }],
+      status: 'active',
+    });
+  });
+
   it('refuses an admin rename that collides with the target installer\'s visible card', async () => {
     const primary = installation({ installedBy: INSTALLER, displayName: 'Curator' });
     const other = installation({
@@ -530,7 +554,8 @@ describe('agent config PATCH — installer gate', () => {
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('agent_display_name_taken');
     expect(AgentInstallation.find).toHaveBeenLastCalledWith({
-      installedBy: { $in: [INSTALLER] }, status: 'active',
+      $or: [{ podId: { $in: ['pod-1'] } }, { installedBy: { $in: [INSTALLER] } }],
+      status: 'active',
     });
     expect(primary.displayName).toBe('Curator');
     expect(primary.save).not.toHaveBeenCalled();
@@ -561,7 +586,8 @@ describe('agent config PATCH — installer gate', () => {
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('agent_display_name_taken');
     expect(AgentInstallation.find).toHaveBeenLastCalledWith({
-      installedBy: { $in: [INSTALLER, 'other-installer'] }, status: 'active',
+      $or: [{ podId: { $in: ['pod-1', 'pod-2'] } }, { installedBy: { $in: [INSTALLER, 'other-installer'] } }],
+      status: 'active',
     });
     expect(primary.save).not.toHaveBeenCalled();
     expect(peer.save).not.toHaveBeenCalled();
@@ -623,10 +649,10 @@ describe('agent config PATCH — installer gate', () => {
   });
 
   it('lets an instance admin who IS the installer write every row, because authority is a role', async () => {
-    // Wren 69565: installing the seat here is the narrower claim. An admin's
+    // Installing the seat here is the narrower claim. An admin's
     // reach is instance-wide whether or not they happen to have created this
     // row, so the same admin must not get two different scopes depending on
-    // which of two rows they opened (Sam 69582 filed this as the follow-up).
+    // which of two rows they opened.
     const primary = installation({ installedBy: MEMBER });
     const otherOwnersRow = installation({
       podId: 'pod-2', installedBy: INSTALLER, config: new Map(),

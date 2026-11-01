@@ -42,9 +42,34 @@ export type StalledConnectCopyEvidence = {
   commandCopiedAt?: Date | string | null;
   /** Fixed enum only; command contents and tokens never enter copy. */
   commandType?: 'mcp' | 'cli' | null;
+  /**
+   * First copy of each command kind (TASK-721). When either is present they
+   * win over the first-copy pair above: only they can say a person copied the
+   * MCP snippet and never the Terminal command.
+   */
+  mcpCopiedAt?: Date | string | null;
+  cliCopiedAt?: Date | string | null;
   /** Token issue time for the current stalled episode. */
   tokenIssuedAt?: Date | string | null;
+  /** OS the Bring your own page detected on the first open (byoOpenedOs). */
+  openedOs?: 'mac' | 'linux' | 'windows' | 'other' | null;
 };
+
+/**
+ * The listener answers @mentions only on a Mac for now (V2AgentBYO's
+ * listenerRunsOn), for a different reason per adapter: Commonly's sandbox
+ * cannot run Claude Code on Linux or Windows, and Codex there is not yet
+ * tested (agentByo.listen.unavailableClaude / unavailableCodex). The server
+ * never learns which adapter the copied command named, so the copy names the
+ * listener, not the CLI, and states only what is true for both: Mac only.
+ *
+ * It hedges, unlike the rest of this file. The page shows the listener command
+ * only on its Mac tab, so a copy from a Linux or Windows browser means the
+ * person picked Mac there: they may have run it on a Mac, or on the machine
+ * they were browsing from. byoOpenedOs is the browser's OS, not where the
+ * command ran, so the sentence is conditional on it.
+ */
+const LISTENER_UNAVAILABLE_OS: Record<string, string> = { linux: 'Linux', windows: 'Windows' };
 
 const copiedAtOffsetSeconds = (evidence: StalledConnectCopyEvidence): number | null => {
   if (!evidence.commandCopiedAt || !evidence.tokenIssuedAt) return null;
@@ -77,16 +102,82 @@ export const composeStalledConnectNudge = ({
   locale?: NudgeLocale;
   evidence?: StalledConnectCopyEvidence;
 }): string => {
-  const offsetSeconds = copiedAtOffsetSeconds(evidence);
+  // Per-kind copies say which command is missing (TASK-721). A per-kind mark
+  // is the FIRST copy of that kind ever, per USER, so it can prove a copy
+  // happened but never that none did. Two readings follow:
+  //  - `rawTime`: any copy of the kind, on any date. A kind with no raw time at
+  //    all was never copied, the only case where "you missed it" is true.
+  //  - `inEpisode`: the copy falls at or after this token was issued. Only
+  //    that one can be described as part of this setup.
+  // A missing or unparseable per-kind time is filled from the older first-copy
+  // pair when the pair names the same kind: a copy made before the per-kind
+  // marks shipped, or one whose per-kind write failed, must not read as "never".
+  const hasKindEvidence = Boolean(evidence.mcpCopiedAt || evidence.cliCopiedAt);
+  const issuedMs = evidence.tokenIssuedAt ? new Date(evidence.tokenIssuedAt).getTime() : NaN;
+  const parse = (value: Date | string | null | undefined): Date | null => {
+    if (!value) return null;
+    const at = new Date(value);
+    return Number.isNaN(at.getTime()) ? null : at;
+  };
+  const kindTimes = (kind: 'mcp' | 'cli'): { rawTime: Date | null; inEpisode: Date | null } => {
+    const own = parse(kind === 'mcp' ? evidence.mcpCopiedAt : evidence.cliCopiedAt);
+    const fromPair = evidence.commandType === kind ? parse(evidence.commandCopiedAt) : null;
+    const rawTime = own || fromPair;
+    const inEpisode = rawTime && (Number.isNaN(issuedMs) || rawTime.getTime() >= issuedMs) ? rawTime : null;
+    return { rawTime, inEpisode };
+  };
+  const mcp = hasKindEvidence ? kindTimes('mcp') : { rawTime: null, inEpisode: null };
+  const cli = hasKindEvidence ? kindTimes('cli') : { rawTime: null, inEpisode: null };
+  const mcpAt = mcp.inEpisode;
+  const cliAt = cli.inEpisode;
+  // True only when a listener command was never copied at all.
+  const mcpOnly = hasKindEvidence && mcpAt !== null && cli.rawTime === null;
+  const effective: StalledConnectCopyEvidence = hasKindEvidence
+    ? {
+      ...evidence,
+      commandType: cliAt ? 'cli' : mcpAt ? 'mcp' : null,
+      commandCopiedAt: cliAt || mcpAt,
+    }
+    : evidence;
+  const offsetSeconds = copiedAtOffsetSeconds(effective);
+  if (mcpOnly && offsetSeconds !== null) {
+    const unavailableOs = evidence.openedOs ? LISTENER_UNAVAILABLE_OS[evidence.openedOs] : undefined;
+    const when = copiedAtDescription(offsetSeconds);
+    if (unavailableOs) {
+      // The page offers the listener command on its Mac tab only, so do not
+      // tell this person they missed a command their browser never showed.
+      return `@${installerName} — you copied the MCP command ${when}. `
+        + `MCP-only clients can call Commonly, but they do not answer @mentions. `
+        + `The listener that does runs only from a Mac for now, and you first opened this page on ${unavailableOs}. `
+        + `Run \`${fixCommand}\` in a Terminal on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
+        + `I'll post here the moment I connect.`;
+    }
+    return `@${installerName} — you copied the MCP command ${when}, but not the listener command that starts me. `
+      + `MCP-only clients can call Commonly, but they do not answer @mentions, `
+      + `so nothing is listening for @${handle} yet. `
+      + `Run \`${fixCommand}\` in a Terminal on the machine where I should live. `
+      + `I'll post here the moment I connect.`;
+  }
   if (offsetSeconds !== null) {
-    const copiedThing = evidence.commandType === 'mcp'
+    const copiedThing = effective.commandType === 'mcp'
       ? 'MCP command'
-      : evidence.commandType === 'cli' ? 'listener command' : 'command';
+      : effective.commandType === 'cli' ? 'listener command' : 'command';
+    const unavailableOs = effective.commandType === 'cli' && effective.openedOs
+      ? LISTENER_UNAVAILABLE_OS[effective.openedOs]
+      : undefined;
+    if (unavailableOs) {
+      return `@${installerName} — you copied the listener command `
+        + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
+        + `If you ran it on ${unavailableOs}, that's likely why: the listener answers @mentions `
+        + `only from a Mac for now. `
+        + `Run \`${fixCommand}\` on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
+        + `I'll post here the moment I connect.`;
+    }
     return `@${installerName} — you copied the ${copiedThing} `
       + `${copiedAtDescription(offsetSeconds)}; `
-      + `no connection arrived — here is the one thing to check for your OS: `
+      + `no connection arrived — here is the one thing to check: `
       + `run \`${fixCommand}\` on the machine where I should live.`
-      + (evidence.commandType === 'mcp'
+      + (effective.commandType === 'mcp'
         ? ' MCP-only clients can call Commonly, but they do not answer @mentions.'
         : '')
       + ` I'll post here the moment I connect.`;

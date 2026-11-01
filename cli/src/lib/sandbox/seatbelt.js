@@ -45,7 +45,8 @@ const PLATFORM_BASELINE = String.raw`
     (path "/dev/null")
     (vnode-type CHARACTER-DEVICE)))
 
-; Loader + standard system resources.
+; Loader + standard system resources. Node opens this one macOS OpenSSL config
+; file at startup; the macOS adapter job's Node was denied it without this rule.
 (allow file-read* file-test-existence
   (subpath "/Library/Apple")
   (subpath "/Library/Filesystems/NetFSPlugins")
@@ -54,8 +55,8 @@ const PLATFORM_BASELINE = String.raw`
   (subpath "/private/var/db/timezone")
   (subpath "/usr/lib")
   (subpath "/usr/share")
+  (literal "/System/Library/OpenSSL/openssl.cnf")
   (subpath "/Library/Preferences")
-  (subpath "/Library/Keychains")
   (subpath "/var/db")
   (subpath "/private/var/db"))
 (allow file-read* file-test-existence
@@ -301,7 +302,7 @@ const OPEN_NETWORK = String.raw`
 // Resolver is constructed. Denied, that lookup does not always fail: at
 // times it blocks the main thread forever. dsh builds a Resolver as it loads,
 // so confined turns ran to their 900 s timeout without sending a request
-// (D106). Admitted, resolution fails fast, because mDNSResponder and port 53
+// Admitted, resolution fails fast, because mDNSResponder and port 53
 // stay unreachable in a loopback profile. The service returns configuration
 // and opens no channel out.
 const RESOLVER_CONFIG = String.raw`

@@ -94,6 +94,19 @@ describe('Your Team (direction C)', () => {
     expect(within(cardOf('Local')).getByRole('button', { name: 'Talk to Local one-to-one' })).toBeInTheDocument();
   });
 
+  test('a never-connected card shows the run command when the server sends one, and not otherwise', async () => {
+    renderPage({ p1Agents: [
+      { name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user', installedBy: 'u1',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null },
+        fixCommand: 'commonly agent run local' },
+      { name: 'mate', instanceId: 'default', displayName: 'Mate', userId: 'mate-user', installedBy: 'u2',
+        runtime: { runtimeType: 'webhook' }, connection: { state: 'never', lastSeenAt: null } },
+    ] });
+    await waitFor(() => expect(screen.getByText('Local')).toBeInTheDocument());
+    expect(within(cardOf('Local')).getByTestId('team-card-fix-command')).toHaveTextContent('commonly agent run local');
+    expect(within(cardOf('Mate')).queryByTestId('team-card-fix-command')).toBeNull();
+  });
+
   test('a stale BYO listener shows elapsed minutes and Reconnect', async () => {
     renderPage({ p1Agents: [{
       name: 'local', instanceId: 'default', displayName: 'Local', userId: 'local-user',
@@ -237,7 +250,7 @@ describe('Your Team (direction C)', () => {
     fireEvent.click(within(cardOf('Kai')).getByRole('button', { name: 'Talk to Kai one-to-one' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/agents/runtime/room', { agentName: 'kai', instanceId: 'default', podId: 'p1' }, { headers: { Authorization: 'Bearer jwt' } }));
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/v2/pods/room-kai'));
-    expect(screen.getByText('Hiring an agent from the catalog needs an invitation code during beta.')).toBeInTheDocument();
+    expect(screen.getByText('Hiring an agent from the catalog needs an invitation code during beta. Bringing your own agent doesn’t need one.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Hire an agent' }));
     expect(screen.getByPlaceholderText('Invitation code')).toBeInTheDocument();
   });

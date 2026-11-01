@@ -229,6 +229,24 @@ describe('one tool Installable per catalogue entry', () => {
     expect(metas['google-calendar'].readiness()).toEqual({ available: false, reason: 'not_configured' });
   });
 
+  test('the pending GitHub MCP entry stays unavailable until both App client values exist', () => {
+    const noConfig = toolInstallableMetas(HOSTED_MCP_ENTRIES, {});
+    expect(noConfig['github-mcp']).toMatchObject({
+      connectionType: 'hosted-mcp',
+      entryId: 'github-mcp',
+    });
+    expect(noConfig['github-mcp'].readiness()).toEqual({ available: false, reason: 'not_configured' });
+
+    const idOnly = toolInstallableMetas(HOSTED_MCP_ENTRIES, { GITHUB_MCP_CLIENT_ID: 'app-client' });
+    expect(idOnly['github-mcp'].readiness()).toEqual({ available: false, reason: 'not_configured' });
+
+    const configured = toolInstallableMetas(HOSTED_MCP_ENTRIES, {
+      GITHUB_MCP_CLIENT_ID: 'app-client',
+      GITHUB_MCP_CLIENT_SECRET: 'app-secret',
+    });
+    expect(configured['github-mcp'].readiness()).toEqual({ available: true });
+  });
+
   test('a hosted entry cannot shadow the builtin GitHub Installable meta', () => {
     expect(() => toolInstallableMetas([{ ...LINEAR_ENTRY, id: 'github' }]))
       .toThrow(/collides with a builtin tool installable: github/);

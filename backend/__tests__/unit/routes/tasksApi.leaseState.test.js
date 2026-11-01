@@ -288,6 +288,28 @@ describe('task leaseState', () => {
     expect(res.status).toBe(409);
   });
 
+  // TASK-640: a seat defers broadcasts only while it holds a row, so the list
+  // must say whose claim each row is, in the claim route's own holder id.
+  it('marks claimedByMe for the holder and for no one else', async () => {
+    const asHolder = await request(app).get(`/api/v1/tasks/${POD_ID}`).set('x-test-user', 'holder');
+    const mine = asHolder.body.tasks.filter((t) => t.claimedByMe).map((t) => t.taskId);
+    expect(mine).toContain('TASK-002');
+    expect(asHolder.body.tasks.every((t) => t.claimedByMe === (t.claimedBy === 'holder'))).toBe(true);
+
+    const byId = await listed();
+    expect([...byId.values()].some((t) => t.claimedByMe)).toBe(false);
+  });
+
+  it('marks a fresh claim as the claimant\'s own on the next read', async () => {
+    const claim = await request(app)
+      .post(`/api/v1/tasks/${POD_ID}/TASK-001/claim`)
+      .set('x-test-user', 'stranger')
+      .send({});
+    expect(claim.status).toBe(200);
+    const byId = await listed();
+    expect(byId.get('TASK-001').claimedByMe).toBe(true);
+  });
+
   it('a blocked row resumes through claim and receives a lease', async () => {
     const res = await request(app)
       .post(`/api/v1/tasks/${POD_ID}/TASK-008/claim`)

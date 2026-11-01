@@ -10,12 +10,6 @@
     "**/*.test.ts",
     "**/*.test.js",
     "**/*.spec.ts",
-    "jest.config.js",
-    "cleanup-test-data.ts",
-    "test-discord-commands.ts",
-    "test-discord-integration.ts",
-    "test-discord-interactions.ts",
-    "testPgConnection.ts",
-    "testPG.ts"
+    "jest.config.js"
   ]
 }

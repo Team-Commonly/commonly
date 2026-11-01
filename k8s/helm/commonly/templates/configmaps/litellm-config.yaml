@@ -47,9 +47,9 @@ data:
       # V4.1 for compatibility. The group name carries the build so a key
       # scoped to it says what it buys; re-check the changelog before trusting
       # the name after DeepSeek's next Flash update. Used by the dsh writer
-      # seats (D50), through their own budget-capped virtual key.
+      # seats, through their own budget-capped virtual key.
       #
-      # Budget (Sam, D50: the DeepSeek writers are budget-capped). Two caps:
+      # Budget (the DeepSeek writers are budget-capped). Two caps:
       #   1. This deployment: $200 per month across EVERY caller of the group.
       #      Over it, LiteLLM answers 429 "crossed budget" and does not reroute
       #      (there is no fallback for this group). Spend for this cap is
@@ -59,8 +59,8 @@ data:
       #   2. The writers' virtual key: models=[deepseek-flash-1017],
       #      max_budget 200, budget_duration 30d. Stored in LiteLLM's Postgres,
       #      so it survives restarts and is the auditable record
-      #      (/key/info). Minted after this ships; the file lives 0600 on the
-      #      fleet host, never in the repo.
+      #      (/key/info). Minted after this ships; the key lives 0600 with
+      #      its operator, never in the repo.
       - model_name: deepseek-flash-1017
         litellm_params:
           model: deepseek/deepseek-flash
@@ -90,30 +90,42 @@ data:
           model: gemini/gemini-2.5-flash
           api_key: os.environ/GEMINI_API_KEY
 
-      # --- OpenRouter (free tier, community agents) ---
+      # --- nemotron aliases (community agents / gateway) ---
       # Registered with both prefixed and un-prefixed model names:
       # - openrouter/* used when gateway calls via openai-codex/gpt-5.4 fallback path
-      # - nvidia/* / arcee-ai/* used when gateway uses openrouter:default profile
+      # - nvidia/* used when gateway uses openrouter:default profile
       #   (OpenClaw strips the "openrouter/" prefix before sending to the provider)
-      # One OpenRouter key. A second key (OPENROUTER_API_KEY_2) once doubled
-      # free-tier capacity; it expired unnoticed and was removed 2026-10-25.
-      # Both keys had expired, so every call here failed over silently.
+      # D78 (2026-10-27): the OpenRouter route is DEAD — OpenRouter retired the free
+      # tier for this model (404 "This model is unavailable for free; use slug
+      # nvidia/nemotron-3-super-120b-a12b"). The OpenRouter key authenticates, but
+      # every call to the :free slug 404s and then fell back to deepseek-v4-flash.
+      # Rather than buy the paid slug (a new spend line) or keep the 404 hop, these
+      # aliases now point STRAIGHT at the deepseek-v4-flash backend (D111 made it our
+      # default). Callers keep their nemotron model_name but get DeepSeek with no
+      # OpenRouter round-trip. Model-level $60/mo cap mirrors the deepseek-v4-flash
+      # entry: the clawdbot gateway calls LiteLLM with the uncapped MASTER key, and
+      # removing the 404-then-fallback hop also removes the cap it inherited, so the
+      # cap moves onto the alias itself.
       - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
-          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          max_budget: 60
+          budget_duration: 1mo
 
       - model_name: nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
-          model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-          api_key: os.environ/OPENROUTER_API_KEY
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          max_budget: 60
+          budget_duration: 1mo
 
       # NOTE: arcee-ai/trinity-large-preview:free was deregistered at OpenRouter
       # (404 No endpoints found) on 2026-05-03. Removed from model_list and from
       # all fallback chains below. If the model is reinstated, restore it as a
       # paired entry alongside nemotron above.
 
-      # --- D111 (2026-10-27): GPT/Codex access revoked. Every chatgpt/* alias below is
+      # --- 2026-10-27: GPT/Codex access revoked. Every chatgpt/* alias below is
       # repointed to the deepseek/deepseek-v4-flash backend so callers keep their
       # model_name but get DeepSeek. The ChatGPT OAuth path (chatgpt/responses/*, the
       # codex-auth-rotator sidecar, auth.json) is dormant until GPT access returns;
@@ -194,7 +206,7 @@ data:
           model: openai/gpt-image-1
           api_key: os.environ/OPENAI_API_KEY
 
-      # Direct Anthropic routes removed under D76. Claude on hosted runtimes
+      # Direct Anthropic routes removed. Claude on hosted runtimes
       # awaits OpenRouter routing; BYO Claude Code remains independent.
 
     router_settings:
@@ -203,7 +215,7 @@ data:
       # (writes /chatgpt-auth/rotate-now → sidecar polls and swaps auth.json).
       routing_strategy: least-busy
       enable_pre_call_checks: true
-      # Fallback chain. Under D111 (2026-10-27) the gpt-5.4*/openai-codex/* Codex
+      # Fallback chain. Since 2026-10-27 the gpt-5.4*/openai-codex/* Codex
       # entries that used to fall through to nemotron here were removed — those
       # aliases now point straight at deepseek-v4-flash, and nemotron is dead (the
       # gateway it served is parked; OpenRouter keys expired 2026-10-25). The only
@@ -221,7 +233,7 @@ data:
       # callers" alert fires (docs/runbooks/alerting.md#litellm-failing). There is
       # no nemotron or Codex tier behind it any more.
       fallbacks:
-        # D111 (2026-10-27): gpt-5.4*/openai-codex/*/codex-cli gpt->nemotron fallbacks
+        # 2026-10-27: gpt-5.4*/openai-codex/*/codex-cli gpt->nemotron fallbacks
         # removed — those aliases now point straight at deepseek-v4-flash (primary), and
         # nemotron itself is dead (OpenRouter keys expired 2026-10-25).
         # Dead routes fall back to deepseek-v4-flash (2026-10-15). Probing every
@@ -243,7 +255,7 @@ data:
         - {"nvidia/nemotron-3-super-120b-a12b:free": ["deepseek-v4-flash"]}
       # One retry on rate-limit with a deliberate 1s delay. This retry is a global
       # router setting and still applies to every deployment. The Codex auth.json
-      # rotation it was originally written for is dormant post-D111 (no chatgpt/*
+      # rotation it was originally written for is dormant since 2026-10-27 (no chatgpt/*
       # route consumes the rotator now); for the repointed aliases a 429 simply
       # retries the same deepseek-v4-flash deployment after 1s, then fails fast.
       #

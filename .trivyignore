@@ -1,0 +1,8 @@
+# Accepted / deferred CVEs for the CVE Scan gate (D95). Review before 11-02.
+# The gate runs with --ignore-unfixed, so upstream-unfixed CVEs already do not
+# fire; these lines document the notable ones found in the 2026-10-26 baseline
+# so a future fix (a new base image) is a conscious removal, not a surprise.
+#
+# backend image, no upstream fix as of 2026-10-26:
+CVE-2026-58016   # libglib2.0 — no fixed version published
+CVE-2023-6879    # libaom3 — no fixed version published

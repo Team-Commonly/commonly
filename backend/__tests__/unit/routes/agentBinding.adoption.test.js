@@ -105,7 +105,7 @@ describe('adoption CAS', () => {
     expect(res.body.message).toMatch(/lacks scope/);
   });
 
-  it('sole-installer: an identity ALSO installed by someone else cannot be adopted (Vera ruling)', async () => {
+  it('sole-installer: an identity ALSO installed by someone else cannot be adopted', async () => {
     const other = await User.create({ username: 'oth', email: 'oth@x.com', password: 'x'.repeat(12) });
     await AgentInstallation.create({
       agentName: 'wren-test', instanceId: 'default', podId: new mongoose.Types.ObjectId(),
