@@ -37,7 +37,7 @@ describe('runAgentList', () => {
     const { get, log, deps } = fakeDeps(async () => ({
       agents: [
         {
-          agentName: 'ember',
+          name: 'ember',
           instanceId: 'default',
           status: 'active',
           runtime: { runtimeType: 'wrapper', host: 'byo' },
@@ -53,6 +53,7 @@ describe('runAgentList', () => {
     expect(get).toHaveBeenCalledWith('/api/registry/pods/pod-42/agents');
     const printed = log.mock.calls.map((c) => c[0]).join('\n');
     expect(printed).toMatch(/ember\s+default\s+wrapper/);
+    expect(printed).not.toMatch(/undefined/);
   });
 
   test('a non-member 403 on --pod exits 1 with one Failed line', async () => {

@@ -558,11 +558,13 @@ export const runAgentList = async (opts = {}, deps = {}) => {
     log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
     log('─'.repeat(80));
     rows.forEach((inst) => {
+      // The pod roster names the agent `name`; the admin route uses `agentName`.
+      const displayName = opts.pod ? (inst.name || inst.agentName) : inst.agentName;
       const runtimeType = inst.config?.runtime?.runtimeType || inst.runtime?.runtimeType || inst.runtimeType || '?';
       const host = inst.config?.runtime?.host || inst.runtime?.host || '';
-      const seen = inst.usage?.lastUsedAt || inst.connection?.lastSeenAt;
+      const seen = inst.lastActiveAt || inst.usage?.lastUsedAt || inst.connection?.lastSeenAt;
       const lastSeen = seen ? new Date(seen).toLocaleString() : 'never';
-      log(`${col(inst.agentName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
+      log(`${col(displayName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
     });
     return 0;
   } catch (err) {
