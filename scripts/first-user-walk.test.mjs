@@ -20,8 +20,9 @@ const SHARED_EMAIL = 'walk-shared@commonly.test';
 //   password      the password the fake account accepts
 //   echoRegister  a refused register echoes the request body back, as a bad error would
 //   seeded        the account already exists (the shared staging sign-in account)
-//   hostedProvision  status of POST /api/hosted/provision (503 = no worker on
-//                    this instance, so the hosted steps skip rather than fail)
+//   hostedProvision  status of POST /api/hosted/provision. 503 (unconfigured) and
+//                    502 (unreachable) are "no worker yet" -> the hosted steps skip;
+//                    any other 5xx is a real error with no not-ready code -> they fail.
 const fakeBackend = ({
   preview = 200, create = 'ok', password = PASSWORD, echoRegister = false, seeded = false,
   hostedProvision = 200,
@@ -73,9 +74,13 @@ const fakeBackend = ({
     }
     if (method === 'POST' && p === '/api/registry/install') return reply(200, {});
     if (method === 'POST' && p === '/api/hosted/provision') {
-      return hostedProvision === 200
-        ? reply(200, { provisioned: true })
-        : reply(hostedProvision, { error: 'hosted_runtime_unconfigured' });
+      // The backend's real shapes: 200 provisioned; 503 hosted_runtime_unconfigured
+      // (URL/token unset); 502 hosted_runtime_unreachable (worker not deployed). Any
+      // other 5xx is a genuine error with NO not-ready code, which must still fail.
+      if (hostedProvision === 200) return reply(200, { provisioned: true });
+      if (hostedProvision === 503) return reply(503, { code: 'hosted_runtime_unconfigured', message: 'not ready' });
+      if (hostedProvision === 502) return reply(502, { code: 'hosted_runtime_unreachable', message: 'not ready' });
+      return reply(hostedProvision, { message: 'Hosted runtime request failed' });
     }
     if (method === 'POST' && p === '/api/hosted/deprovision') return reply(404, {});
     if (method === 'DELETE' && p.startsWith('/api/registry/agents/')) return reply(404, {});
@@ -142,24 +147,39 @@ test('a clean run writes the machine-readable signal: every covered step passes,
   assert.equal(state.pods.length, 0);
 });
 
-test('no hosted worker (provision 503): the hosted steps are skipped, not failed, and overall stays incomplete', async () => {
+// Both not-ready shapes skip: 503 (URL/token unset) and 502 (configured but the
+// worker is not deployed — the state values-staging.yaml actually creates before
+// the operator runs `wrangler deploy --env staging`). Neither may go red.
+for (const status of [503, 502]) {
+  test(`no hosted worker (provision ${status}): the hosted steps are skipped, not failed, and overall stays incomplete`, async () => {
+    const dirsFor = dirs();
+    const { fetchImpl, state } = fakeBackend({ hostedProvision: status });
+    const { exitCode, result } = await run(fetchImpl, dirsFor);
+
+    // Incomplete (byo not-covered), never fail: a not-ready worker is not a defect.
+    assert.equal(exitCode, 2);
+    assert.equal(result.overall, 'incomplete');
+
+    const byName = Object.fromEntries(result.steps.map((s) => [s.name, s.result]));
+    assert.equal(byName['hosted-install'], 'skipped');
+    assert.equal(byName['hosted-reply'], 'skipped');
+    const skipReason = result.steps.find((s) => s.name === 'hosted-install').reason;
+    assert.match(skipReason, /no staging worker/);
+    // No fail anywhere; the other covered steps still pass.
+    assert.ok(result.steps.every((s) => s.result !== 'fail'));
+    // Cleanup still runs and the account is removed.
+    assert.equal(state.accountExists, false);
+  });
+}
+
+test('a real provision error (500, no not-ready code) still FAILS — the skip never masks a defect', async () => {
   const dirsFor = dirs();
-  const { fetchImpl, state } = fakeBackend({ hostedProvision: 503 });
+  const { fetchImpl } = fakeBackend({ hostedProvision: 500 });
   const { exitCode, result } = await run(fetchImpl, dirsFor);
 
-  // Incomplete (byo not-covered), never fail: a missing worker is not a defect.
-  assert.equal(exitCode, 2);
-  assert.equal(result.overall, 'incomplete');
-
-  const byName = Object.fromEntries(result.steps.map((s) => [s.name, s.result]));
-  assert.equal(byName['hosted-install'], 'skipped');
-  assert.equal(byName['hosted-reply'], 'skipped');
-  const skipReason = result.steps.find((s) => s.name === 'hosted-install').reason;
-  assert.match(skipReason, /no staging worker/);
-  // No fail anywhere; the other covered steps still pass.
-  assert.ok(result.steps.every((s) => s.result !== 'fail'));
-  // Cleanup still runs and the account is removed.
-  assert.equal(state.accountExists, false);
+  assert.equal(exitCode, 1);
+  assert.equal(result.overall, 'fail');
+  assert.equal(result.steps.find((s) => s.name === 'hosted-install').result, 'fail');
 });
 
 test('a forced step failure writes overall fail, names the step, and exits 1', async () => {

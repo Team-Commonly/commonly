@@ -62,7 +62,8 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 // A step can decline to run rather than fail. runStep records a SkipStep as
 // result 'skipped' and does not rethrow, so the run continues and stays
 // incomplete rather than going red. Used when the hosted runtime worker is not
-// configured on this instance (staging before its worker is deployed).
+// ready on this instance — staging before its worker is deployed, where
+// provision returns 503 hosted_runtime_unconfigured or 502 hosted_runtime_unreachable.
 class SkipStep extends Error { constructor(message) { super(message); this.skip = true; } }
 
 /**
@@ -354,16 +355,23 @@ export const runWalk = async ({
         });
         expect(r.status < 400, `install ${r.status}: ${JSON.stringify(r.data)}`);
         const p = await api('POST', '/api/hosted/provision', { token, body: { agentName } });
-        // No hosted worker on this instance (staging before its worker is deployed):
-        // the backend returns 503 hosted_runtime_unconfigured. That is a missing
-        // worker, not a product defect, so the hosted steps are SKIPPED rather
-        // than failed — once the staging worker is live the 503 becomes a 200 and
-        // they run for real.
-        if (p.status === 503) { hostedSkipped = true; throw new SkipStep('no staging worker (hosted_runtime_unconfigured)'); }
+        // The hosted runtime worker is not ready on this instance (staging before
+        // its worker is deployed). Provision then comes back not-ready in one of two
+        // shapes: 503 hosted_runtime_unconfigured (URL or admin token unset) or 502
+        // hosted_runtime_unreachable (configured, but the worker is not deployed yet —
+        // the backend maps every worker fetch/non-ok to 502, see hostedRuntimeService).
+        // Either is a missing worker, not a product defect, so the hosted steps are
+        // SKIPPED, not failed. Keyed on the error CODE, so a genuine 500
+        // (token_mint_failed, unexpected error) still fails. Once the worker is live
+        // provision returns 200 and the steps run for real. This walk is advisory —
+        // staging-smoke, not it, gates the deploy.
+        const notReady = p.status >= 400
+          && (p.data?.code === 'hosted_runtime_unconfigured' || p.data?.code === 'hosted_runtime_unreachable');
+        if (notReady) { hostedSkipped = true; throw new SkipStep(`no staging worker (${p.data.code})`); }
         expect(p.status === 200 && p.data?.provisioned, `provision ${p.status}: ${JSON.stringify(p.data)}`);
       });
 
-      if (hostedSkipped) skipStep('hosted-reply', 'no staging worker (hosted_runtime_unconfigured)');
+      if (hostedSkipped) skipStep('hosted-reply', 'no staging worker (hosted runtime not ready)');
       else await runStep('hosted-reply', async () => {
         const m = await api('POST', `/api/messages/${pod._id}`, {
           token,
