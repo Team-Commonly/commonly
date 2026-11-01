@@ -452,8 +452,10 @@ const revokedAtMs = (value: unknown): number | null => (value ? new Date(value a
  * the person removed the connection while this grant was being issued; that
  * holds even if they started a reconnect since, which is a new flow with its
  * own grant. `/start` alone never touches `revokedAt` or the removal lease.
+ * `'unknown'` when the row could not be read: neither revoking (it may have been
+ * a newer `/start`) nor saying nothing (it may have been a removal) is safe.
  */
-const lostToRemoval = async (rowId: unknown, consumedRevokedAt: unknown): Promise<boolean> => {
+const lostToRemoval = async (rowId: unknown, consumedRevokedAt: unknown): Promise<boolean | 'unknown'> => {
   try {
     const current = await Integration.findById(rowId).select('revokedAt config.removingUntil').lean() as {
       revokedAt?: Date | null;
@@ -462,9 +464,31 @@ const lostToRemoval = async (rowId: unknown, consumedRevokedAt: unknown): Promis
     if (!current) return true;
     if (current.config?.removingUntil && new Date(current.config.removingUntil).getTime() > Date.now()) return true;
     return Boolean(current.revokedAt) && revokedAtMs(current.revokedAt) !== revokedAtMs(consumedRevokedAt);
-  } catch {
-    return false;
+  } catch (error) {
+    console.error('[hosted-mcp] removal check failed', JSON.stringify({ error: (error as Error)?.name || 'Error' }));
+    return 'unknown';
   }
+};
+
+/**
+ * What a callback that could not store its grant does about it. Lost to a
+ * removal: revoke it, since nothing will. Lost to a newer `/start` alone: leave
+ * it, since some vendors end every grant for the account and client together
+ * and would end the newer flow's too. Unknown: the vendor's page, so the person
+ * can decide, and nothing sent.
+ */
+const settleUnstoredGrant = async (
+  lost: boolean | 'unknown',
+  entry: HostedMcpOAuthEntry,
+  client: { clientId: string; clientSecret?: string },
+  tokens: TokenResponse,
+): Promise<{ manualRevoke?: { entryId: string; revokeAt: string } } | undefined> => {
+  if (lost === true) return revokeRefusedGrant(entry, client, tokens);
+  if (lost === 'unknown') {
+    const page = hostedMcpRevokeTarget(entry)?.page;
+    return page ? { manualRevoke: { entryId: entry.id, revokeAt: page } } : undefined;
+  }
+  return undefined;
 };
 
 const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) => {
@@ -713,6 +737,9 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
         errorMessage: 'Connection could not be completed. Try again.',
         errorMessageUserFacing: true,
         'config.refreshingUntil': writeLease,
+        // Only a lapsed removal lease gets this far. Cleared, so that removal
+        // cannot renew it and sweep what this callback is about to put.
+        'config.removingUntil': null,
       },
       // A half-finished removal's provider-revoked mark describes the token it
       // revoked, not the one about to replace it behind the same refs. Cleared
@@ -733,9 +760,9 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
     // this one stays live with no copy anywhere. A loss to a newer `/start`
     // alone is left as it was, because some vendors revoke every grant for the
     // account and client together and would end the newer flow's grant too.
-    const revoked = await lostToRemoval(consumed._id, consumed.revokedAt)
-      ? await revokeRefusedGrant(entry, client, tokens)
-      : undefined;
+    const revoked = await settleUnstoredGrant(
+      await lostToRemoval(consumed._id, consumed.revokedAt), entry, client, tokens,
+    );
     return callbackRedirect(res, 'error', 'state_consumed', revoked);
   }
   const displacedLease = retired.config?.refreshingUntil ? new Date(retired.config.refreshingUntil) : null;
@@ -814,9 +841,9 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
     // halves on a row first connecting. A removal's retry cannot send what no
     // ref names, so the grant is revoked here, as on a lost retire write. A
     // second revoke of the same token by that retry is harmless.
-    const revoked = await lostToRemoval(consumed._id, consumed.revokedAt)
-      ? await revokeRefusedGrant(entry, client, tokens)
-      : undefined;
+    const revoked = await settleUnstoredGrant(
+      await lostToRemoval(consumed._id, consumed.revokedAt), entry, client, tokens,
+    );
     await releaseWriteLease(flow.writeLease);
     return callbackRedirect(res, 'error', 'state_consumed', revoked);
   }

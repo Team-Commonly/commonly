@@ -78,6 +78,7 @@ const recorder = (over = {}) => {
     // Silent in `calls`: the order arms are about the removal's steps, and
     // the lease brackets all of them.
     takeRemovalLease: jest.fn(async () => true),
+    renewRemovalLease: jest.fn(async () => true),
     releaseRemovalLease: jest.fn(async () => {}),
     markProviderRevoked: jest.fn(async () => { calls.push('mark'); }),
     entryFor: jest.fn(() => ENTRY),
@@ -510,6 +511,42 @@ describe('removeConnection (a hosted-MCP row)', () => {
       const until = deps.takeRemovalLease.mock.calls[0][2];
       expect(deps.releaseRemovalLease).toHaveBeenCalledWith('row-1', until);
     }
+  });
+
+  // CodeRabbit on #3252: the vendor calls can outlast the lease, and a
+  // `/start` let through by the lapse can publish new material behind the same
+  // refs. Nothing is marked, swept or deleted unless the lease was renewed.
+  it('writes nothing after the vendor call when its lease could not be renewed', async () => {
+    const { calls, deps, revokeGrants } = recorder({ renewRemovalLease: jest.fn(async () => false) });
+    const result = await remove(hostedRow({ config: {
+      entryId: 'linear', credentialRef: 'access-ref', refreshTokenRef: 'refresh-ref', authGeneration: 7,
+    } }), deps, revokeGrants);
+    expect(result).toEqual(expect.objectContaining({ removed: false, code: 'removal_busy', revokeAt: PAGE }));
+    expect(calls).toEqual(['grants', 'row', 'get:refresh-ref', 'provider']);
+    const held = deps.takeRemovalLease.mock.calls[0][2];
+    expect(deps.renewRemovalLease).toHaveBeenCalledWith('row-1', held, expect.any(Date));
+  });
+
+  it('renews the lease it holds before writing, and releases the renewed one', async () => {
+    const { deps, revokeGrants } = recorder();
+    await remove(hostedRow(), deps, revokeGrants);
+    const held = deps.takeRemovalLease.mock.calls[0][2];
+    const [, renewedFrom, renewedTo] = deps.renewRemovalLease.mock.calls[0];
+    expect(renewedFrom).toBe(held);
+    expect(deps.releaseRemovalLease).toHaveBeenCalledWith('row-1', renewedTo);
+    expect(deps.renewRemovalLease.mock.invocationCallOrder[0])
+      .toBeLessThan(deps.markProviderRevoked.mock.invocationCallOrder[0]);
+  });
+
+  it('the default renewal matches the exact lease held, and nothing else', async () => {
+    const deps = defaultDeps();
+    const held = new Date('2026-09-29T23:01:00.000Z');
+    const until = new Date('2026-09-29T23:02:00.000Z');
+    await deps.renewRemovalLease('row-1', held, until);
+    const [filter, update] = Integration.findOneAndUpdate.mock.calls[0];
+    expect(filter).toEqual({ _id: 'row-1', 'config.removingUntil': held });
+    expect(update).toEqual({ $set: { 'config.removingUntil': until } });
+    Integration.findOneAndUpdate.mockClear();
   });
 
   it('the default lease is taken only at the fenced generation, past every writer lease plus the overrun', async () => {

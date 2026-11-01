@@ -131,6 +131,13 @@ export interface RemovalDeps {
    * no writer or other removal holds a lease. False means try again.
    */
   takeRemovalLease: (id: unknown, generation: number | undefined, until: Date, now: Date) => Promise<boolean>;
+  /**
+   * Renews this removal's lease, only while the row still carries exactly
+   * `held`. False means the lease lapsed and something reached the row: another
+   * removal took its own lease, or a callback's retire write (which clears the
+   * lease it got past) is putting or has published new material behind the refs.
+   */
+  renewRemovalLease: (id: unknown, held: Date, until: Date) => Promise<boolean>;
   /** Releases this removal's lease and no other; never throws. */
   releaseRemovalLease: (id: unknown, until: Date) => Promise<void>;
   /** Step 3b, between the provider revoke and any material going. Idempotent. */
@@ -175,7 +182,10 @@ export type RemovalResult =
      * references and a retry still holds the token to send.
      * `removal_busy` — a writer was storing a new token, or another removal
      * held the row (F34). Nothing was read or sent; the row is `disconnected`
-     * and its grants are revoked, and a retry finishes it.
+     * and its grants are revoked, and a retry finishes it. Also answered when
+     * the lease lapsed during the vendor call and the row moved on: the old
+     * token may have been sent, but nothing was marked or swept, and the retry
+     * reads whatever refs the row now carries.
      * `provider_revoked_removal_incomplete` — step 3 is behind us and steps 4
      * or 5 failed; the retry finds the mark, skips the vendor, and finishes.
      * "Behind us" includes a step 3 that never called the vendor (a page-only
@@ -311,6 +321,14 @@ export const defaultDeps = (): RemovalDeps => ({
     ).select('_id').lean();
     return taken !== null;
   },
+  renewRemovalLease: async (id, held, until) => {
+    const renewed = await Integration.findOneAndUpdate(
+      { _id: id, 'config.removingUntil': held },
+      { $set: { 'config.removingUntil': until } },
+      { new: true },
+    ).select('_id').lean();
+    return renewed !== null;
+  },
   releaseRemovalLease: async (id, until) => {
     try {
       await Integration.updateOne(
@@ -362,9 +380,11 @@ const revokeThenSweep = async (input: {
   config: NonNullable<RemovableConnection['config']>;
   grantsRevoked: number;
   revokePage: string;
+  /** The lease this removal holds; renewed in place before anything is written. */
+  lease: { until: Date };
 }): Promise<RemovalResult> => {
   const {
-    deps, id, entry, target, config, grantsRevoked, revokePage,
+    deps, id, entry, target, config, grantsRevoked, revokePage, lease,
   } = input;
   const refreshTokenRef = config.refreshTokenRef ? String(config.refreshTokenRef) : undefined;
   const credentialRef = config.credentialRef ? String(config.credentialRef) : undefined;
@@ -373,6 +393,7 @@ const revokeThenSweep = async (input: {
   // the material may be half-swept, and the token is already dead.
   const alreadyRevokedAtVendor = Boolean(config[PROVIDER_REVOKED_MARK]);
   let providerRevoked = alreadyRevokedAtVendor;
+  let revokedNow = false;
 
   // Only OAuth entries have a vendor revoke. An operator key is a static bearer
   // with no refresh token, so it is never sent to an RFC 7009 endpoint.
@@ -480,14 +501,36 @@ const revokeThenSweep = async (input: {
           }
         }
 
-        // The provider revoke took. Record it BEFORE any material goes, so a
-        // crash here leaves a row the retry finishes by skipping the vendor.
-        if (clientMatches) {
-          await deps.markProviderRevoked(id, deps.now());
-          providerRevoked = true;
-        }
+        if (clientMatches) revokedNow = true;
       }
     }
+  }
+
+  // The vendor calls can take as long as the lease. A lease that lapsed meanwhile
+  // lets a callback's retire write through, and that callback can publish new
+  // material behind these same refs: marking, sweeping and deleting now would
+  // end it and leave its grant live. So the removal writes nothing until it has
+  // renewed the exact lease it took, which that retire write clears. A `/start`
+  // alone moves the generation but cannot get past a held lease, so it does not
+  // count. The renewal also covers the writes below. Refused, the removal
+  // answers busy, and the retry reads whatever refs the row then carries.
+  const renewed = new Date(deps.now().getTime() + REMOVAL_LEASE_MS);
+  if (!await deps.renewRemovalLease(id, lease.until, renewed)) {
+    return {
+      removed: false,
+      code: 'removal_busy',
+      message: 'this connection changed while it was being removed; try again',
+      grantsRevoked,
+      revokeAt: revokePage,
+    };
+  }
+  lease.until = renewed;
+
+  // The provider revoke took. Record it BEFORE any material goes, so a crash
+  // here leaves a row the retry finishes by skipping the vendor.
+  if (revokedNow) {
+    await deps.markProviderRevoked(id, deps.now());
+    providerRevoked = true;
   }
 
   try {
@@ -586,8 +629,8 @@ export const removeConnection = async (options: {
   // callback's retire write refuses, so a `/start` begun after the fence cannot
   // put anything either. A writer's lease counts until one vendor timeout past
   // its expiry, because a refresh's two vendor calls can use all of it.
-  const removalLease = new Date(deps.now().getTime() + REMOVAL_LEASE_MS);
-  const leased = await deps.takeRemovalLease(id, config.authGeneration, removalLease, deps.now());
+  const lease = { until: new Date(deps.now().getTime() + REMOVAL_LEASE_MS) };
+  const leased = await deps.takeRemovalLease(id, config.authGeneration, lease.until, deps.now());
   if (!leased) {
     return {
       removed: false,
@@ -599,10 +642,10 @@ export const removeConnection = async (options: {
   }
   try {
     return await revokeThenSweep({
-      deps, id, entry, target, config, grantsRevoked, revokePage,
+      deps, id, entry, target, config, grantsRevoked, revokePage, lease,
     });
   } finally {
-    await deps.releaseRemovalLease(id, removalLease);
+    await deps.releaseRemovalLease(id, lease.until);
   }
 };
 

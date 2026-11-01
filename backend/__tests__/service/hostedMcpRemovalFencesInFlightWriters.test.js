@@ -112,7 +112,9 @@ const Integration = require('../../models/Integration');
 const connectorSecrets = require('../../services/connectorSecrets');
 const intake = require('../../services/hostedMcpIntakeService');
 const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../../services/connectorSecretKinds');
-const { removeConnection, PROVIDER_REVOKED_MARK, WRITER_LEASE_OVERRUN_MS } = require('../../services/connectionRemovalService');
+const {
+  removeConnection, PROVIDER_REVOKED_MARK, WRITER_LEASE_OVERRUN_MS, REMOVAL_LEASE_MS,
+} = require('../../services/connectionRemovalService');
 const { credentialFor, REFRESH_LEASE_MS } = require('../../services/hostedMcpCredentialService');
 const connectRoutes = require('../../routes/hostedMcpConnect');
 
@@ -433,6 +435,41 @@ describe('a removal racing the writers that put a token', () => {
     const retry = await remove({ now: afterTheLease });
     expect(retry).toEqual(expect.objectContaining({ removed: true }));
     expect(await Integration.findById(rowId).lean()).toBeNull();
+    expect(storedTokens()).toEqual([]);
+  });
+
+  // CodeRabbit on #3252: the removal's vendor calls can outlast its lease, and
+  // the lapse lets a `/start` through whose callback publishes new material
+  // behind the same refs. Marking, sweeping and deleting then would end the new
+  // material and leave its grant live at the vendor.
+  it('a removal whose lease lapsed during its vendor call writes nothing over a reconnect that published meanwhile', async () => {
+    const rowId = await seedConnectedRow();
+    const vendorGate = makeGate();
+    // A removal running behind the clock: the lease it takes has already lapsed.
+    const removal = remove({
+      now: () => new Date(Date.now() - REMOVAL_LEASE_MS - 1000),
+      vendor: async ({ token }) => {
+        revokedAtVendor.push(token);
+        vendorGate.arrive();
+        await vendorGate.opened;
+      },
+    });
+    await vendorGate.arrived;
+
+    await startReconnect(rowId);
+    expect((await sendCallback()).get('hostedMcp')).toBe('connected');
+
+    vendorGate.open();
+    expect(await removal).toEqual(expect.objectContaining({ removed: false, code: 'removal_busy' }));
+    expect(revokedAtVendor).toEqual(['refresh-1']);
+    const row = await Integration.findById(rowId).lean();
+    expect(row.status).toBe('connected');
+    expect(row.config[PROVIDER_REVOKED_MARK]).toBeFalsy();
+    expect(storedTokens()).toEqual(expect.arrayContaining(['access-2', 'refresh-2']));
+
+    const retry = await remove();
+    expect(revokedAtVendor).toEqual(['refresh-1', 'refresh-2']);
+    expect(retry).toEqual(expect.objectContaining({ removed: true, providerRevoked: true }));
     expect(storedTokens()).toEqual([]);
   });
 
