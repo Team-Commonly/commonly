@@ -26,6 +26,26 @@ export const isRunBot = (member, agentName, { scout = true } = {}) => {
   return member?.isBot === true && (name === agentName || name.startsWith(`${agentName}-`) || isScout);
 };
 
+// After an ambiguous pod create (an error, or a reply without an id), the pod
+// may exist. Find this run's pods by their unique name and record them, so
+// cleanup removes them. Returns false when the list cannot be read, which means
+// the caller must report the name as an unresolved survivor.
+export const recoverRunPods = async ({ api, token, userId, podName, podIds }) => {
+  try {
+    const list = await api('GET', '/api/pods', { token });
+    if (list.status !== 200) return false;
+    const pods = ids(list.data);
+    for (const p of pods) {
+      if (p.name === podName && ownerOf(p) === String(userId) && !podIds.includes(String(p._id))) {
+        podIds.push(String(p._id));
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 // `api` is the walk's request helper: (method, path, { token, body }) => { status, data }.
 // `podIds` are the pods the walk recorded as created in its manifest. They are
 // removed and verified even when the owner match misses them, so a filter

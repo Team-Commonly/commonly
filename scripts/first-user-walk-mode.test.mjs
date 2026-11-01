@@ -7,12 +7,12 @@ const STAGING = 'https://api-staging.commonly.me';
 const PROD = 'https://api.commonly.me';
 
 test('staging with COMMONLY_WALK_EMAIL takes the sign-in path', () => {
-  assert.deepEqual(chooseWalkMode({ base: STAGING, env: { COMMONLY_WALK_EMAIL: 'walk@commonly.me' } }), { mode: 'signin', email: 'walk@commonly.me' });
+  assert.deepEqual(chooseWalkMode({ base: STAGING, env: { COMMONLY_WALK_EMAIL: 'walk@commonly.me' } }), { mode: 'signin', email: 'walk@commonly.me', deleteAccount: false });
 });
 
-test('no COMMONLY_WALK_EMAIL signs up a fresh account, on any target', () => {
-  assert.deepEqual(chooseWalkMode({ base: PROD, env: {} }), { mode: 'signup' });
-  assert.deepEqual(chooseWalkMode({ base: STAGING, env: {} }), { mode: 'signup' });
+test('no COMMONLY_WALK_EMAIL signs up a fresh account, on any target, and that account is deleted', () => {
+  assert.deepEqual(chooseWalkMode({ base: PROD, env: {} }), { mode: 'signup', deleteAccount: true });
+  assert.deepEqual(chooseWalkMode({ base: STAGING, env: {} }), { mode: 'signup', deleteAccount: true });
 });
 
 test('the shared sign-in account is refused on prod', () => {

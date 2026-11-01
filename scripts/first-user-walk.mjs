@@ -28,7 +28,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { cleanupRun, ownerOf } from './first-user-walk-cleanup.mjs';
+import { cleanupRun, ownerOf, recoverRunPods } from './first-user-walk-cleanup.mjs';
 import { chooseWalkMode } from './first-user-walk-mode.mjs';
 
 const WALK_PREFIX = 'walk-';
@@ -64,6 +64,8 @@ const api = async (method, path, { token, body } = {}) => {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
+    // A redirect would replay the JSON body, shared password included, to another origin.
+    redirect: 'error',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   let data = null;
@@ -96,7 +98,10 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 const STATE_DIR = process.env.COMMONLY_WALK_STATE_DIR || path.join(homedir(), '.commonly', 'state', 'walk-706');
 // Signup returns no user id, so the manifest carries the exact username instead:
 // SRE finds the account by that name, not by a prefix. Never the email.
-const manifest = { mode: null, userId: null, username: null, podIds: [], agentName: null, botIds: [], survivors: [], status: 'running' };
+const manifest = { mode: null, userId: null, username: null, podIds: [], unresolvedPodNames: [], agentName: null, botIds: [], survivors: [], status: 'running' };
+// A pod whose create outcome could not be checked. Its name is unique to the run,
+// so SRE can find it by exact name, the same way as the account.
+const unresolvedSurvivors = () => manifest.unresolvedPodNames.map((name) => `pod named "${name}" (create outcome unknown)`);
 const writeManifest = () => {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(path.join(STATE_DIR, `${stamp}.json`), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
@@ -122,6 +127,7 @@ const cleanup = async (token, password) => {
     manifest.survivors = [
       ...manifest.podIds.map((id) => `pod:${id} (no sign-in for cleanup)`),
       ...(accountMayExist ? [`account ${manifest.username} (no sign-in for cleanup)`] : []),
+      ...unresolvedSurvivors(),
     ];
     manifest.status = manifest.survivors.length ? 'needs-admin-purge' : 'clean';
     writeManifest();
@@ -137,7 +143,7 @@ const cleanup = async (token, password) => {
       userId: manifest.userId,
       agentName,
       podIds: manifest.podIds,
-      deleteAccount: walkMode.mode === 'signup',
+      deleteAccount: walkMode.deleteAccount,
       // Persist each pod's bot ids before that pod is deleted, so a throw
       // later in the loop still leaves the ids SRE needs.
       onBotIds: (podId, bots) => {
@@ -145,9 +151,9 @@ const cleanup = async (token, password) => {
         writeManifest();
       },
     });
-    manifest.survivors = result.survivors;
+    manifest.survivors = [...result.survivors, ...unresolvedSurvivors()];
     manifest.botIds = [...new Set([...manifest.botIds, ...result.botIds])];
-    manifest.status = result.ok ? 'clean' : 'needs-admin-purge';
+    manifest.status = result.ok && manifest.survivors.length === 0 ? 'clean' : 'needs-admin-purge';
   } catch (error) {
     manifest.survivors = [`cleanup error: ${error.message}`];
     manifest.status = 'needs-admin-purge';
@@ -212,21 +218,24 @@ const main = async () => {
 
     const pod = await runStep('first-pod', async () => {
       const podName = `${username} workspace`;
-      const r = await api('POST', '/api/pods', { token, body: { name: podName, type: 'team' } });
-      const created = r.data?.pod || r.data;
-      if (r.status < 300 && !created?._id) {
-        // The create may have landed without an id in the reply. Record any pod
-        // this run made, matched by its unique name, before the step fails, so
-        // cleanup still removes it.
-        const list = await api('GET', '/api/pods', { token });
-        const pods = Array.isArray(list.data) ? list.data : (list.data?.pods || []);
-        for (const p of pods) {
-          if (p.name === podName && ownerOf(p) === manifest.userId && !manifest.podIds.includes(String(p._id))) {
-            manifest.podIds.push(String(p._id));
-          }
+      // An error, or a reply without an id, may still mean the pod was made.
+      // Look for it by its unique name before the step can fail, so cleanup
+      // removes it, or the name is reported as unresolved.
+      const recover = async () => {
+        if (!await recoverRunPods({ api, token, userId: manifest.userId, podName, podIds: manifest.podIds })) {
+          manifest.unresolvedPodNames.push(podName);
         }
         writeManifest();
+      };
+      let r;
+      try {
+        r = await api('POST', '/api/pods', { token, body: { name: podName, type: 'team' } });
+      } catch (error) {
+        await recover();
+        throw error;
       }
+      const created = r.data?.pod || r.data;
+      if (r.status < 300 && !created?._id) await recover();
       expect(r.status < 300 && created?._id, `pod create ${r.status}: ${JSON.stringify(r.data)}`);
       manifest.podIds.push(String(created._id));
       writeManifest();

@@ -1,7 +1,8 @@
 // Run: node --test scripts/first-user-walk-cleanup.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanupRun } from './first-user-walk-cleanup.mjs';
+import { cleanupRun, recoverRunPods } from './first-user-walk-cleanup.mjs';
+import { chooseWalkMode } from './first-user-walk-mode.mjs';
 
 const USER = 'user-walk';
 const OTHER = 'user-other';
@@ -234,4 +235,39 @@ test('a signup run still records the Scout it created', async () => {
   const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER, members }] });
   const result = await run(backend);
   assert.deepEqual(result.botIds, ['run-scout']);
+});
+
+test('handoff: the staging sign-in mode reaches cleanup as deleteAccount false, and the account is never deleted', async () => {
+  const { deleteAccount } = chooseWalkMode({ base: 'https://api-staging.commonly.me', env: { COMMONLY_WALK_EMAIL: 'walk@commonly.me' } });
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }] });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount });
+  assert.equal(result.ok, true);
+  assert.ok(!backend.state.calls.includes('DELETE /api/users/me'), 'the shared account must not be deleted');
+});
+
+test('handoff: a signup run reaches cleanup as deleteAccount true, and the account is deleted', async () => {
+  const { deleteAccount } = chooseWalkMode({ base: 'https://api-staging.commonly.me', env: {} });
+  const backend = fakeBackend({ pods: [] });
+  await run(backend, { deleteAccount });
+  assert.ok(backend.state.calls.includes('DELETE /api/users/me'));
+});
+
+test('recoverRunPods records this run\'s pod by its unique name, never another owner\'s', async () => {
+  const backend = fakeBackend({ pods: [
+    { _id: 'mine', name: 'walk-x workspace', createdBy: USER },
+    { _id: 'theirs', name: 'walk-x workspace', createdBy: OTHER },
+    { _id: 'other-name', name: 'Team', createdBy: USER },
+  ] });
+  const podIds = [];
+  const ok = await recoverRunPods({ api: backend.api, token: 'tok', userId: USER, podName: 'walk-x workspace', podIds });
+  assert.equal(ok, true);
+  assert.deepEqual(podIds, ['mine']);
+});
+
+test('recoverRunPods reports failure when the list cannot be read, so the name is unresolved', async () => {
+  const backend = fakeBackend({ pods: [], listFails: true });
+  const podIds = [];
+  const ok = await recoverRunPods({ api: backend.api, token: 'tok', userId: USER, podName: 'walk-x workspace', podIds });
+  assert.equal(ok, false);
+  assert.deepEqual(podIds, []);
 });

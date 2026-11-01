@@ -6,12 +6,14 @@
 // any host whose name contains "staging".
 const STAGING_HOSTS = new Set(['api-staging.commonly.me']);
 
+// `deleteAccount` is the one value main() hands to cleanup, so the mode decides
+// the account's fate here and nowhere else.
 export const chooseWalkMode = ({ base, env }) => {
   const email = env.COMMONLY_WALK_EMAIL || '';
-  if (!email) return { mode: 'signup' };
+  if (!email) return { mode: 'signup', deleteAccount: true };
   const url = new URL(base);
   if (url.protocol !== 'https:' || !STAGING_HOSTS.has(url.hostname)) {
     throw new Error('COMMONLY_WALK_EMAIL is set but the target is not the staging API over https; the shared sign-in account exists on staging only');
   }
-  return { mode: 'signin', email };
+  return { mode: 'signin', email, deleteAccount: false };
 };
