@@ -25,9 +25,9 @@ import path from 'path';
  * longer violates). Target is an empty list.
  */
 // v2.css plus the per-surface sheets lifted out of it, so a rule that moved
-// file is still held to the floors (R04 moved the BYO page's rules, R05 the
-// Connect page's).
-const CSS = ['../v2.css', '../components/V2AgentBYO.css', '../components/V2ConnectPage.css']
+// file is still held to the floors (R04 moved the BYO page's rules, S4 the
+// board's, R05 the Connect page's).
+const CSS = ['../v2.css', '../components/V2AgentBYO.css', '../components/V2PodBoard.css', '../components/V2ConnectPage.css']
   .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))
   .join('\n');
 
@@ -153,8 +153,6 @@ const ALLOWLIST: string[] = [
   // with the Connect lift, so its entry left this list.
   '.v2-approval__badge', // 10.5px — mono-below-floor
   '.v2-approval__time', // 11.5px — no-mono-family
-  '.v2-board__card-id', // 10.5px — no-mono-family
-  '.v2-board__detail-update-author', // 11.5px — no-mono-family
   '.v2-filter-count', // 11.0px — no-mono-family
   '.v2-invite-card__meta', // 11.0px — no-mono-family
   '.v2-invite-link', // 11.0px — no-mono-family

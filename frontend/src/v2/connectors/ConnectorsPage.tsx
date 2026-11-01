@@ -446,7 +446,9 @@ const ConnectorsPage: React.FC = () => {
       {m.removedHiddenNotice && (
         <p className="v2-cx-note" role="status">
           {m.removedHiddenNotice.revokePage
-            ? <>{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: m.removedHiddenNotice.label })} <a href={m.removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></>
+            ? <>{m.removedHiddenNotice.stillListed
+              ? t('tools.removedStillListed', { defaultValue: 'Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.', label: m.removedHiddenNotice.label })
+              : t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: m.removedHiddenNotice.label })} <a href={m.removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></>
             : t('tools.disconnected', { defaultValue: 'Disconnected {{label}}.', label: m.removedHiddenNotice.label })}
         </p>
       )}

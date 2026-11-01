@@ -120,6 +120,7 @@ describe('dark-safe surfaces (TASK-681)', () => {
     });
   });
   test('the board drawer scrim is --v2-scrim', () => {
-    expect(rd('../v2.css')).toMatch(/\.v2-board__overlay\s*\{\s*background:\s*var\(--v2-scrim\)/);
+    // S4: the board's rules live in its own sheet; the scrim backs the phone sheet.
+    expect(rd('../components/V2PodBoard.css')).toMatch(/\.v2-board__overlay\s*\{\s*background:\s*var\(--v2-scrim\)/);
   });
 });

@@ -14,7 +14,15 @@
  *
  * Atlassian does not offer openid, so reconnect subject continuity is not
  * available. offline_access yields a refresh token; prompt=consent re-issues
- * it. The capture observed HTTP 200 revocations for both tokens.
+ * it.
+ *
+ * Revoke is page-only (TASK-339). Atlassian answers our CIMD client's RFC 7009
+ * revoke at /oauth/revoke with 401, so a removal that waited on it could never
+ * finish. The 200s the two tool captures saw (10-09, 10-19) came from a DCR
+ * client they registered for themselves, not from the client this entry uses.
+ * Both of those authorizations were still listed on the person's Atlassian
+ * apps page on 11-01, so a 200 from that endpoint does not remove the app
+ * either. Removal ends on our side and hands the person the page.
  */
 import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
 import { hostedMcpApiBase } from '../../services/hostedMcpIntakeService';
@@ -71,10 +79,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
     'write:confluence:agent-interface',
     'search:confluence:agent-interface',
   ],
-  revoke: {
-    page: 'https://id.atlassian.com/manage-profile/apps',
-    endpoint: 'https://auth.atlassian.com/oauth/revoke',
-  },
+  revoke: { page: 'https://id.atlassian.com/manage-profile/apps' },
   tools: [
     readTool(
       "get_accessible_atlassian_resources",
