@@ -469,7 +469,14 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               />
             )}
             {!collapsed && (
-              <div className="v2-thread-replies">
+              <div
+                className="v2-thread-replies"
+                role="group"
+                aria-label={t('podChat.thread.groupLabel', {
+                  count: item.replyCount,
+                  unit: item.replyCount === 1 ? t('podChat.thread.replyOne') : t('podChat.thread.replyOther'),
+                })}
+              >
                 {hiddenReplies > 0 && (
                   <button type="button" className="v2-thread-replies__more" onClick={() => setExpandedAll((current) => new Set(current).add(item.rootId))}>
                     {t('podChat.thread.moreReplies', { count: hiddenReplies })}
@@ -499,20 +506,22 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                   </React.Fragment>
                 ))}
                 <div className="v2-thread-replies__foot">
-                  <button type="button" className="v2-thread-replies__collapse" onClick={() => setOpen(item.rootId, false)}>
-                    {t('podChat.thread.collapse')}
-                  </button>
-                  <span className="v2-thread-replies__count">{item.replyCount} {item.replyCount === 1 ? t('podChat.thread.replyOne') : t('podChat.thread.replyOther')}</span>
                   {onReply && (
                     <button
                       type="button"
-                      className="v2-thread-replies__aim"
+                      className="v2p-b v2p-b-s v2p-b-sm v2-thread-replies__aim"
                       aria-label={t('podChat.thread.replyFromExpandedThread')}
                       onClick={() => onAimAtThread(item.rootId, rootPreview(item.rootId))}
                     >
+                      <ShellGlyph name="reply" size={16} />
                       {t('podChat.thread.replyInThread')}
                     </button>
                   )}
+                  <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2-thread-replies__collapse" onClick={() => setOpen(item.rootId, false)}>
+                    <ShellGlyph name="chevron" size={16} />
+                    {t('podChat.thread.collapse')}
+                  </button>
+                  <span className="v2-thread-replies__count">{item.replyCount} {item.replyCount === 1 ? t('podChat.thread.replyOne') : t('podChat.thread.replyOther')}</span>
                   <button
                     type="button"
                     className={`v2-thread-replies__follow${following === true ? ' v2-thread-replies__follow--on' : ''}${following === false ? ' v2-thread-replies__follow--muted' : ''}`}

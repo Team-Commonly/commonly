@@ -7,6 +7,7 @@ import path from 'path';
 export const V2_CSS_FILES = [
   'v2.css',
   'chat/chat-message.css',
+  'chat/chat-pane.css',
 ];
 
 export const readV2Css = (): string => V2_CSS_FILES

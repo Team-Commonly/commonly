@@ -766,6 +766,7 @@
       "startThread": "Thread",
       "replyInThread": "Reply in thread",
       "replyFromExpandedThread": "Reply from expanded thread",
+      "groupLabel": "Thread, {{count}} {{unit}}",
       "replyingInThread": "Replying in thread ·",
       "last": "last",
       "collapse": "Collapse",
