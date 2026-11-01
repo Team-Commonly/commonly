@@ -22,12 +22,14 @@ export const UI_CARD_SOURCE_CONNECTORS: readonly string[] = Object.freeze(
 // so a card the server accepts is one the client will not render as unavailable.
 const UI_LINK_HOSTS = new Set(['commonly.me', 'staging.commonly.me', 'docs.commonly.me', 'github.com', 'linear.app', 'sentry.io']);
 const SITE_SUFFIX = /^[a-z0-9-]+\.(atlassian\.net|sentry\.io)$/;
-export function isApprovedCardLink(raw: string): boolean {
-  try {
-    const url = new URL(raw);
-    return url.protocol === 'https:' && !url.username && !url.password && !url.port
-      && (UI_LINK_HOSTS.has(url.hostname) || SITE_SUFFIX.test(url.hostname));
-  } catch { return false; }
+/** Scheme, credential and port faults refuse the card; an unknown host is the only UnapprovedHostError. */
+function assertApprovedCardLink(raw: string, refusal: string): void {
+  let url: URL;
+  try { url = new URL(raw); } catch { refuse(refusal); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) refuse(refusal);
+  if (!UI_LINK_HOSTS.has(url.hostname) && !SITE_SUFFIX.test(url.hostname)) {
+    refuseHost(`${refusal} (host is not approved)`);
+  }
 }
 
 export const UI_CARD_MAX_BYTES = 32 * 1024;
@@ -94,7 +96,7 @@ function validatePresentation(root: ElementNode): void {
     const { props } = node;
     if (node.typeName === 'Source') sources += 1;
     if (node.typeName === 'Link') {
-      if (!isApprovedCardLink(String(props.url))) refuse('Link requires an approved credential-free https URL');
+      assertApprovedCardLink(String(props.url), 'Link requires an approved credential-free https URL');
       if (props.as !== 'text') buttons += 1;
       if (props.as === 'primary') primary += 1;
     }
@@ -137,6 +139,13 @@ function refuse(message: string): never {
   throw new UICardValidationError(message);
 }
 
+/** A link to a host the renderer does not open. Agent cards fall back to text for this alone. */
+export class UnapprovedHostError extends UICardValidationError {}
+
+function refuseHost(message: string): never {
+  throw new UnapprovedHostError(message);
+}
+
 /** Bound reference substitution before lang-core allocates a materialized tree. */
 function validateExpansionBudget(expressions: Map<string, ASTNode>): void {
   type Cost = { nodes: number; depth: number };
@@ -176,13 +185,23 @@ function validateExpansionBudget(expressions: Map<string, ASTNode>): void {
   }
 }
 
-/** Validate untrusted CAP input, never privileged kernel-composed payloads. */
+/**
+ * Validate untrusted CAP input, never privileged kernel-composed payloads.
+ * Returns true when the card was refused only for an unapproved link host, so
+ * the route posts the text fallback instead of dropping the whole message.
+ */
 export function validateAgentCardPayload(
   messageType: unknown,
   payload: unknown,
   content: unknown,
-): void {
-  validateCardPayload(messageType, payload, content, false);
+): boolean {
+  try {
+    validateCardPayload(messageType, payload, content, false);
+    return false;
+  } catch (error) {
+    if (error instanceof UnapprovedHostError) return true;
+    throw error;
+  }
 }
 
 function validateCardPayload(
@@ -293,7 +312,7 @@ function validateCardSource(source: string, rev: CardRevision, serverStamped: bo
           if (node.name === 'OpenUrl') {
             const [url] = node.args;
             if (node.args.length !== 1 || url?.k !== 'Str') refuse('OpenUrl requires a literal https URL');
-            if (!isApprovedCardLink(url.v)) refuse('OpenUrl requires an approved literal https URL');
+            assertApprovedCardLink(url.v, 'OpenUrl requires an approved literal https URL');
           }
         } else if (node.k === 'Ref' && ['Query', 'Mutation', 'Run', 'Action', 'OpenUrl'].includes(node.n)) {
           refuse(`UI card capability is not allowed: ${node.n}`);
