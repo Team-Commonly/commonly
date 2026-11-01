@@ -208,6 +208,19 @@ export const get = async (ref: string): Promise<string> => {
   return decrypt(secret, parseKeyRing());
 };
 
+/**
+ * The write generation the material behind `ref` was stored at, or null for a
+ * secret stored without one. A writer puts both halves of a token pair at ONE
+ * generation, so halves that disagree came from two writes, and the second of
+ * them stopped between its puts (F35). Reads no material.
+ */
+export const writeGenerationOf = async (ref: string): Promise<number | null> => {
+  const secret = await ConnectorSecret.findById(ref).select('writeGeneration').lean() as
+    Pick<IConnectorSecret, 'writeGeneration'> | null;
+  if (!secret) throw new ConnectorSecretNotFoundError(ref);
+  return typeof secret.writeGeneration === 'number' ? secret.writeGeneration : null;
+};
+
 export const revoke = async (ref: string | undefined): Promise<void> => {
   if (!ref) return;
   await ConnectorSecret.deleteOne({ _id: ref });
@@ -247,6 +260,7 @@ module.exports = {
   put,
   putIfAbsent,
   get,
+  writeGenerationOf,
   revoke,
   revokeOwnWrite,
   rewrap,

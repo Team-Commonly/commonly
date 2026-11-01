@@ -156,7 +156,7 @@ export interface RemovalDeps {
     token: string;
     tokenTypeHint: 'refresh_token' | 'access_token';
   }) => Promise<void>;
-  secrets: Pick<typeof connectorSecrets, 'get' | 'revoke'>;
+  secrets: Pick<typeof connectorSecrets, 'get' | 'revoke' | 'writeGenerationOf'>;
   /** Step 5. */
   remove: (id: unknown) => Promise<void>;
 }
@@ -446,6 +446,31 @@ const revokeThenSweep = async (input: {
       const tokenRef = refreshTokenRef || credentialRef;
       const tokenTypeHint = refreshTokenRef ? 'refresh_token' : 'access_token';
 
+      // A writer puts both halves of a pair at one generation. Halves that
+      // disagree are a MIXED pair (F35): a callback or a refresh stopped between
+      // its two puts, and left its new access token beside the refresh token of
+      // the grant before it. That refresh token speaks for the old grant only,
+      // and the new grant's own refresh token is held by nobody.
+      let mixedPair = false;
+      if (refreshTokenRef && credentialRef) {
+        try {
+          mixedPair = await deps.secrets.writeGenerationOf(refreshTokenRef)
+            !== await deps.secrets.writeGenerationOf(credentialRef);
+        } catch (error) {
+          // A half that is not there leaves nothing to compare, and the read
+          // below decides what is sent. Anything else is the unreadable store.
+          if (!holdsNothingToRevoke(error)) {
+            return {
+              removed: false,
+              code: 'provider_revoke_failed',
+              message: (error as { message?: string })?.message || 'connector secret unreadable',
+              grantsRevoked,
+              revokeAt: revokePage,
+            };
+          }
+        }
+      }
+
       // Both of the ways this stays null mean the same thing and take the same
       // path: no reference to read, or a secret that is not there. Nothing we
       // hold can revoke at the vendor, and a kept row only waits for a retry that
@@ -501,7 +526,29 @@ const revokeThenSweep = async (input: {
           }
         }
 
-        if (clientMatches) revokedNow = true;
+        if (clientMatches && mixedPair) {
+          // The old grant is ended; the new one may not be. Its access token is
+          // the only part of it we hold, so it is sent too. RFC 7009 says a
+          // server only SHOULD revoke access tokens, and whether revoking one
+          // ends its grant is the server's policy. So nothing here claims the
+          // authorization is gone: no mark, `providerRevoked` stays false, and
+          // the person is sent to the page. A refusal changes none of that,
+          // and must not hold the row, which no retry could then finish.
+          try {
+            await deps.revokeAtVendor({
+              entry,
+              clientId: clientId as string,
+              ...(clientSecret ? { clientSecret } : {}),
+              ...(tokenEndpointAuthMethod ? { tokenEndpointAuthMethod } : {}),
+              token: await deps.secrets.get(credentialRef as string),
+              tokenTypeHint: 'access_token',
+            });
+          } catch {
+            // The page carries what this call could not end.
+          }
+        } else if (clientMatches) {
+          revokedNow = true;
+        }
       }
     }
   }
