@@ -5072,6 +5072,9 @@ describe('agent settings surface (D223 lift)', () => {
     expect(ruleBody(css, '.v2-agent-settings-page .ib svg.i')).toContain('width: 17px');
     expect(ruleBody(css, '.v2-agent-settings-page details.disc > summary .lb svg.i')).toContain('width: 16px');
     expect(ruleBody(css, '.v2-agent-settings-page .b svg.i, .v2-agent-settings-page .ib svg.i')).toContain('flex: none');
+    expect(ruleBody(css, '.v2-agent-settings-page .lrow')).toContain('grid-template-columns: 180px minmax(0, 1fr) auto');
+    expect(css).toContain('.v2-agent-settings-page .lrow { grid-template-columns: minmax(0, 1fr) auto;');
+    expect(css).toContain('.v2-agent-settings-page .ph { flex-wrap: wrap;');
   });
 });
 

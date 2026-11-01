@@ -123,6 +123,13 @@
 .v2-agent-settings-page .v2-agent-wake-pods__empty { margin: 0; padding: 16px 14px; color: var(--se); font-size: 13px; }
 .v2-agent-settings-page .v2-agent-wake-pods__loading { padding: 16px 0; color: var(--se); }
 @media (max-width: 600px) {
+  .v2-agent-settings-page .ph { flex-wrap: wrap; min-height: 0; padding: 14px 16px; row-gap: 10px; }
+  .v2-agent-settings-page .ph h1 { white-space: normal; overflow-wrap: anywhere; }
+  .v2-agent-settings-page .ph .sp { display: none; }
+  .v2-agent-settings-page .lrow { grid-template-columns: minmax(0, 1fr) auto; min-height: 48px; padding: 8px 12px; }
+  .v2-agent-settings-page .lrow .lb { font-weight: 500; }
+}
+@media (max-width: 600px) {
   .v2-agent-settings-page .wt thead { display: none; }
   .v2-agent-settings-page .wt, .v2-agent-settings-page .wt tbody, .v2-agent-settings-page .wt tr, .v2-agent-settings-page .wt td { display: block; width: 100%; }
 }
