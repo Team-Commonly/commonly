@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import V2ApprovalCard from '../components/V2ApprovalCard';
 import en from '../../i18n/locales/en.json';
@@ -201,6 +201,26 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.getByText(en.approvalCard.toolCall.expiredPending)).toBeInTheDocument();
     expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
     expect(screen.getByText(en.approvalCard.decline)).toBeDisabled();
+  });
+
+  test('a parked call that expires while the card is on screen stops being decidable at that moment', () => {
+    jest.useFakeTimers();
+    // The owner's card reads the pending index while the call is live.
+    mockGet.mockReturnValue(new Promise(() => {}));
+    try {
+      renderCard({
+        kind: 'approval-card', approvalId: 'tool-expiring', status: 'flagged',
+        ownerUserId: 'viewer-1', actionType: 'tool_call', toolCall: { tool: 'github.create_issue' },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+      expect(screen.queryByText(en.approvalCard.toolCall.expiredPending)).not.toBeInTheDocument();
+      act(() => { jest.advanceTimersByTime(60_001); });
+      expect(screen.getByText(en.approvalCard.toolCall.expiredPending)).toBeInTheDocument();
+      expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+      expect(screen.getByText(en.approvalCard.decline)).toBeDisabled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('a resolved tool call renders its broker ending and code instead of generic success', () => {

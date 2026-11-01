@@ -103,8 +103,18 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
   const status = payload.status || 'flagged';
   const isOwner = !!currentUser?._id && String(currentUser._id) === String(payload.ownerUserId || '');
   const isToolCall = payload.actionType === 'tool_call';
-  const aged = status === 'flagged' && !!payload.expiresAt
-    && new Date(payload.expiresAt).getTime() < Date.now();
+  // The card re-renders itself at the expiry moment. Its row is memoized, so
+  // nothing else is guaranteed to render it again while the pod stays open.
+  const expiresMs = status === 'flagged' && payload.expiresAt ? new Date(payload.expiresAt).getTime() : NaN;
+  const [expiryTick, setExpiryTick] = useState(0);
+  useEffect(() => {
+    const wait = expiresMs - Date.now();
+    if (!Number.isFinite(wait) || wait < 0) return undefined;
+    // setTimeout caps near 24.8 days; a longer wait re-arms on the tick.
+    const timer = window.setTimeout(() => setExpiryTick((n) => n + 1), Math.min(wait + 1, 2 ** 31 - 1));
+    return () => window.clearTimeout(timer);
+  }, [expiresMs, expiryTick]);
+  const aged = Number.isFinite(expiresMs) && expiresMs < Date.now();
   const needsToolCall = isOwner && status === 'flagged' && isToolCall && !aged;
   const [pendingToolCall, setPendingToolCall] = useState<ToolCallEnvelope | null>(null);
   const [toolCallLoading, setToolCallLoading] = useState(false);
