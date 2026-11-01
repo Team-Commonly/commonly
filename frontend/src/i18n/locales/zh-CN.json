@@ -2059,7 +2059,21 @@
         "daily": "每日记录",
         "relationships": "关系"
       },
-      "none": "尚无记忆记录。"
+      "none": "尚无记忆记录。",
+      "search": "搜索记忆",
+      "moreAbout": "了解更多",
+      "privacy": "记忆只对你和这个智能体可见，由智能体自己写入。",
+      "groups": {
+        "rules": "规则",
+        "how": "工作方式",
+        "journal": "日志",
+        "identity": "身份",
+        "shared": "共享"
+      },
+      "private": "只有 {{name}} 的所有者和管理员能查看它的记忆。",
+      "loadFailed": "记忆没加载出来，刷新页面再试一次。",
+      "noMatch": "没有和“{{query}}”匹配的记录。",
+      "noEntry": "无记录"
     },
     "activity": {
       "title": "近期活动",

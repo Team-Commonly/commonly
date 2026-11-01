@@ -2,7 +2,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import V2AgentMemory, { groupSections } from '../agents/V2AgentMemory';
+import V2AgentMemory, { groupSections, journalDay } from '../agents/V2AgentMemory';
 
 jest.mock('axios', () => {
   const mock = {
@@ -20,12 +20,22 @@ const section = (key, notes = 1) => ({
 const named = (key, headers) => ({
   key, label: key, kind: 'doc', notes: headers.map((h) => ({ header: h, snippet: '' })),
 });
+const renderPage = () => render(
+  <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+    <Routes>
+      <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+    </Routes>
+  </MemoryRouter>,
+);
 const headersOf = (groups, id) => groups.find((g) => g.id === id).sections.flatMap((s) => s.notes.map((n) => n.header));
 
 describe('groupSections', () => {
-  it('puts soul first in Rules and journal sections in Journal', () => {
-    const groups = groupSections([section('daily'), section('soul'), section('cycles')]);
-    expect(headersOf(groups, 'rules')).toEqual(['soul 0']);
+  it('gives soul its own Identity group, shared its own Shared group, and journal sections to Journal', () => {
+    const groups = groupSections([section('daily'), section('soul'), section('cycles'), section('shared')]);
+    expect(groups.map((g) => g.id)).toEqual(['rules', 'how', 'journal', 'identity', 'shared']);
+    expect(headersOf(groups, 'rules')).toEqual([]);
+    expect(headersOf(groups, 'identity')).toEqual(['soul 0']);
+    expect(headersOf(groups, 'shared')).toEqual(['shared 0']);
     expect(headersOf(groups, 'journal')).toEqual(['daily 0', 'cycles 0']);
   });
 
@@ -112,8 +122,10 @@ describe('V2AgentMemory', () => {
     expect(document.querySelectorAll('.v2m-mnote .v2m-saved')).toHaveLength(0);
   });
 
-  it('keeps the agent header, tabs and nav when the viewer cannot read entries, with the empty state inside', async () => {
-    axios.get.mockRejectedValue(new Error('403'));
+  it('keeps the agent header, tabs and nav when the viewer cannot read entries, and says the memory is private', async () => {
+    axios.get.mockImplementation((url) => (url.startsWith('/api/agent-memory')
+      ? Promise.reject(Object.assign(new Error('403'), { response: { status: 403 } }))
+      : Promise.resolve({ data: { agent: { displayName: 'Maya' }, pods: { count: 2 } } })));
     render(
       <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
         <Routes>
@@ -126,6 +138,43 @@ describe('V2AgentMemory', () => {
     expect(screen.getByRole('button', { name: 'Profile' })).toBeInTheDocument();
     expect(document.querySelector('.v2m-mnav')).not.toBeNull();
     expect(document.querySelector('.v2m-body [role="status"]')).not.toBeNull();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent("Only Maya's owner and admins can read its memory."));
+    expect(screen.queryByText('No memory recorded yet.')).toBeNull();
+  });
+
+  it('says the load failed, not that the agent has no memory, when the request errors', async () => {
+    axios.get.mockRejectedValue(new Error('Network Error'));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent("Memory didn't load. Refresh to try again."));
+  });
+
+  it('says no memory is recorded when the agent has none, and dashes every empty group', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 0, sections: [] } });
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('No memory recorded yet.'));
+    const counts = Array.from(document.querySelectorAll('.v2m-mnav .mo')).map((n) => n.textContent);
+    expect(counts).toEqual(['—', '—', '—', '—', '—']);
+    expect(document.querySelectorAll('.v2m-mnav a')).toHaveLength(0);
+  });
+
+  it('says nothing matches when a search empties every group', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 1, sections: [section('daily', 1)] } });
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zebra' } });
+    expect(screen.getByRole('status')).toHaveTextContent('No notes match “zebra”.');
+  });
+
+  it('prints journal days the way the frame does, and marks an empty day', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 2, sections: [{
+      key: 'daily', label: 'Daily journal', kind: 'log',
+      notes: [{ header: '2026-10-28', snippet: '#401 approved' }, { header: '2026-10-25', snippet: '' }],
+    }] } });
+    renderPage();
+    await waitFor(() => expect(screen.getByText('#401 approved')).toBeInTheDocument());
+    const days = Array.from(document.querySelectorAll('.v2m-jday .mo')).map((n) => n.textContent);
+    expect(days).toEqual(['Oct 28', 'Oct 25']);
+    expect(document.querySelector('.v2m-jday .v2m-mu')).toHaveTextContent('No entry');
   });
 
   it('Talk to opens the agent room and navigates to it', async () => {
@@ -175,5 +224,46 @@ describe('V2AgentMemory', () => {
     expect(current()).toEqual(['Rules1']);
     fireEvent.click(screen.getByRole('link', { name: /Journal/ }));
     expect(current()).toEqual(['Journal1']);
+  });
+});
+
+describe('journalDay', () => {
+  it('formats an ISO day for the reader and leaves anything else alone', () => {
+    expect(journalDay('2026-10-28', 'en')).toBe('Oct 28');
+    expect(journalDay('2026-10-28', 'zh-CN')).toBe('10月28日');
+    expect(journalDay('Heartbeat 12', 'en')).toBe('Heartbeat 12');
+  });
+});
+
+describe('V2AgentMemory on a phone', () => {
+  const realMatchMedia = window.matchMedia;
+  beforeEach(() => {
+    window.matchMedia = jest.fn().mockImplementation((query) => ({
+      matches: query === '(max-width: 767px)', media: query,
+      addEventListener: jest.fn(), removeEventListener: jest.fn(), addListener: jest.fn(), removeListener: jest.fn(),
+    }));
+  });
+  afterEach(() => { window.matchMedia = realMatchMedia; });
+
+  it('puts the tabs in a row below the bar, with a back button to Your team', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 1, sections: [section('daily', 1)] } });
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    expect(document.querySelector('.v2p-ph .v2p-seg')).toBeNull();
+    expect(document.querySelector('.v2m-pbody > .v2p-seg')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Your team' })).toBeInTheDocument();
+  });
+
+  it('opens only the first group, and titles carry the count and the latest journal day', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 4, sections: [
+      named('long_term', ['Rules', 'Host notes']),
+      { key: 'daily', label: 'Daily journal', kind: 'log', notes: [{ header: '2026-10-28', snippet: 'a' }, { header: '2026-10-27', snippet: 'b' }] },
+    ] } });
+    renderPage();
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    const open = Array.from(document.querySelectorAll('details.v2m-grp')).map((d) => [d.id, d.open]);
+    expect(open).toEqual([['memory-group-rules', true], ['memory-group-how', false], ['memory-group-journal', false]]);
+    expect(Array.from(document.querySelectorAll('.v2m-ct')).map((n) => n.textContent)).toEqual(['1', '1', '2']);
+    expect(document.querySelector('#memory-group-journal .v2m-latest')).toHaveTextContent('Oct 28');
   });
 });
