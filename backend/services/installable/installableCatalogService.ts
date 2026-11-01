@@ -177,6 +177,7 @@ const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hid
       description: row.description || '',
       ...(hostedEntry?.connectNotice ? { connectNotice: hostedEntry.connectNotice } : {}),
       ...(hostedEntry?.accessPage ? { accessPage: hostedEntry.accessPage } : {}),
+      ...(hostedEntry?.revoke?.page ? { revokePage: hostedEntry.revoke.page } : {}),
       connectionType: meta.connectionType,
       ...(meta.entryId ? { entryId: meta.entryId } : {}),
       available: readiness.available,

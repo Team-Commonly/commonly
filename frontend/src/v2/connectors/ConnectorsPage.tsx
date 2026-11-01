@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
 import { ADD_PLATFORMS, TYPE_LABELS } from './channelModel';
 import type { ListItem } from './channelModel';
-import { entryCovers, entryIsGranted, isDead } from './toolModel';
+import { PER_ENTRY_REVOKE_COPY, entryCovers, entryIsGranted, isDead } from './toolModel';
 import type { ToolCatalogEntry, ToolGrant } from './toolModel';
 import { useChannelConnectors } from './useChannelConnectors';
 import { useToolConnectors } from './useToolConnectors';
@@ -505,9 +505,36 @@ const ConnectorsPage: React.FC = () => {
   const errorText = c.hostedMcpCallbackError || c.error || c.slackCallbackError || (
     !m.draft && !m.selected && !m.githubAppSetup ? m.error : null
   );
+  // A refused connect that may have left a grant live at the provider. The
+  // callback error leads errorText, so this always sits beside its own notice.
+  const callbackRevoke = c.hostedMcpCallbackError ? c.hostedMcpCallbackRevoke : null;
+  // Per-entry copy names what that vendor's page lists, and what removing it there ends.
+  const callbackRevokeContext = callbackRevoke && PER_ENTRY_REVOKE_COPY.has(callbackRevoke.entryId)
+    ? callbackRevoke.entryId : undefined;
   const noticeBlock = (
     <>
-      {errorText && <p className="v2-cx-error" role="alert">{errorText}</p>}
+      {errorText && (
+        <p className="v2-cx-error" role="alert">
+          {errorText}
+          {callbackRevoke && (
+            <>
+              {' '}
+              {t('connectors.hostedMcpRefusedStillListed', {
+                defaultValue: '{{provider}} may still list Commonly as connected. Remove it there.',
+                context: callbackRevokeContext,
+                provider: callbackRevoke.provider,
+              })}{' '}
+              <a href={callbackRevoke.revokePage} target="_blank" rel="noopener noreferrer">
+                {t('connectors.hostedMcpReviewAuthorization', {
+                  defaultValue: "Open {{provider}}'s connected apps",
+                  context: callbackRevokeContext,
+                  provider: callbackRevoke.provider,
+                })}
+              </a>
+            </>
+          )}
+        </p>
+      )}
       {m.removedHiddenNotice && (
         <p className="v2-cx-note" role="status">
           {m.removedHiddenNotice.revokePage
