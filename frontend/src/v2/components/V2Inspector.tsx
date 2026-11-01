@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import CloseIcon from '@mui/icons-material/Close';
+import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
@@ -35,6 +36,37 @@ const whenLabel = (value: string | null | undefined): string => {
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
   return days < 30 ? `${days}d` : `${Math.floor(days / 30)}mo`;
+};
+
+type InspectorView = 'pod' | 'threads';
+
+interface ThreadRow { rootId: string; author: string; snippet: string; lastAt: string | null }
+
+/**
+ * The pod's threads, newest activity first, from the messages already loaded.
+ * A root outside the loaded window has no text to show, so it waits until
+ * history reaches it rather than rendering as a blank row.
+ */
+export const threadRowsFrom = (messages: UseV2PodDetailResult['messages']): ThreadRow[] => {
+  const byId = new Map(messages.map((message) => [String(message.id), message]));
+  const lastAt = new Map<string, string>();
+  messages.forEach((message) => {
+    if (message.thread_root_id === null || message.thread_root_id === undefined) return;
+    const rootId = String(message.thread_root_id);
+    const at = message.created_at || message.createdAt || '';
+    if (!lastAt.has(rootId) || at > (lastAt.get(rootId) || '')) lastAt.set(rootId, at);
+  });
+  const rows: ThreadRow[] = [];
+  lastAt.forEach((at, rootId) => {
+    const root = byId.get(rootId);
+    if (!root) return;
+    const author = root.user?.username
+      || (typeof root.userId === 'object' ? root.userId?.username : undefined)
+      || '';
+    const snippet = String(root.content || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    rows.push({ rootId, author, snippet, lastAt: at || null });
+  });
+  return rows.sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));
 };
 
 interface TaskItem {
@@ -128,6 +160,9 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   const [policyBusy, setPolicyBusy] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Set<InspectorGroup>>(() => readOpenGroups());
+  // D215 (TASK-734): the panel head switches between the pod and its threads.
+  const [view, setView] = useState<InspectorView>('pod');
+  const threads = useMemo(() => threadRowsFrom(detail.messages || []), [detail.messages]);
   const toggleGroup = (group: InspectorGroup) => {
     setOpenGroups((current) => {
       const next = new Set(current);
@@ -247,8 +282,20 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
   return (
     <aside className="v2-pane v2-pane--inspector" aria-label={t('inspector.workspace.ariaLabel')}>
       <div className="v2-workspace-inspector">
-        {/* D215: "members · manage" left the footer for two icon buttons here. */}
+        {/* D215: a Pod | Threads segment, then members, manage and Hide panel. */}
         <div className="v2-workspace-inspector__head">
+          <V2Segmented<InspectorView>
+            className="v2-workspace-inspector__view"
+            ariaLabel={t('inspector.workspace.viewLabel')}
+            size="sm"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'pod', label: t('inspector.workspace.viewPod') },
+              { value: 'threads', label: t('inspector.workspace.viewThreads') },
+            ]}
+          />
+          <span className="v2-workspace-inspector__head-spacer" aria-hidden="true" />
           {onOpenInvite && (
             <button
               type="button"
@@ -272,6 +319,17 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           {onClose && (
             <button
               type="button"
+              className="v2-icon-button v2-workspace-inspector__head-button v2-workspace-inspector__hide"
+              onClick={onClose}
+              aria-label={t('inspector.workspace.hidePanel')}
+              title={t('inspector.workspace.hidePanel')}
+            >
+              <ViewSidebarOutlinedIcon fontSize="small" aria-hidden="true" />
+            </button>
+          )}
+          {onClose && (
+            <button
+              type="button"
               className="v2-workspace-inspector__close"
               onClick={onClose}
               aria-label={t('inspector.workspace.close')}
@@ -281,6 +339,28 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
             </button>
           )}
         </div>
+
+        {view === 'threads' && (
+          <div className="v2-workspace-inspector__threads">
+            {threads.length === 0 && <p className="v2-workspace-inspector__empty">{t('inspector.workspace.noThreads')}</p>}
+            {threads.map((thread) => (
+              <button
+                key={thread.rootId}
+                type="button"
+                className="v2-workspace-inspector__thread"
+                onClick={() => navigate(`/v2/pods/${pod._id}#message-${thread.rootId}`)}
+              >
+                <span className="v2-workspace-inspector__thread-head">
+                  <span className="v2-workspace-inspector__thread-author">{thread.author}</span>
+                  {thread.lastAt && <span className="v2-workspace-inspector__thread-when">{whenLabel(thread.lastAt)}</span>}
+                </span>
+                <span className="v2-workspace-inspector__thread-text">{thread.snippet}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {view === 'pod' && (<>
 
         {renderGroup('needs-you', 'inbox', t('inspector.workspace.needsYou'), needsYouTotal, (
           <div className="v2-workspace-inspector__rows">
@@ -397,6 +477,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
             {policyError && <p className="v2-pod-join-settings__error" role="alert">{policyError}</p>}
           </div>
         ))}
+        </>)}
 
         {lightbox && <V2Lightbox images={[{ src: `/api/uploads/${lightbox.fileName}`, name: lightbox.name }]} index={0} onClose={() => setLightbox(null)} />}
       </div>

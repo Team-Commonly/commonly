@@ -85,7 +85,7 @@ const renderChat = (detail) => render(
 );
 
 describe('V2Composer send button', () => {
-  test('the pod header carries the direction-C meta (members · agents), not a working count', () => {
+  test('the pod header carries member faces labelled with the counts (D215), not a working count', () => {
     const view = renderChat(makeDetail({
       pod: { _id: 'p1', name: 'My Workspace', type: 'chat', description: 'Team discussion' },
       members: [{ _id: 'u1', username: 'alice', isBot: false }, { _id: 'u2', username: 'bob', isBot: false }],
@@ -97,9 +97,12 @@ describe('V2Composer send button', () => {
     expect(header.querySelector('h1')).toHaveTextContent('My Workspace');
     expect(header.querySelector('.v2-hint__content')).toHaveTextContent('Team discussion');
     const meta = header.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
-    expect(meta).toHaveTextContent('2 members');
-    expect(meta).toHaveTextContent('1 agent');
-    expect(header.querySelector('.v2-pod-header__meta--compact')).toHaveTextContent('2 members');
+    const faces = meta.querySelector('.v2-pod-header__faces');
+    expect(faces).toHaveAttribute('aria-label', '2 members, 1 agent');
+    expect(faces.querySelector('.v2-pod-header__stack').children).toHaveLength(2);
+    expect(meta.querySelector('.v2-pod-header__more')).toBeNull();
+    // With no board count there is nothing for the phone head to carry.
+    expect(header.querySelector('.v2-pod-header__meta--compact')).toBeNull();
     expect(view.container.querySelector('.v2-thread__working')).toBeNull();
   });
 
