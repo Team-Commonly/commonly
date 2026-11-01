@@ -198,6 +198,29 @@ describe('the timeout covers the whole response, and only renames its own abort'
   });
 });
 
+describe('without AbortSignal.any (Node 20.0 to 20.2)', () => {
+  const realAny = AbortSignal.any;
+  afterEach(() => { AbortSignal.any = realAny; });
+
+  test("a caller's longer signal does not replace the hard timeout", async () => {
+    stub = await startStub(() => 'hang');
+    AbortSignal.any = undefined;
+    const client = createClient({ instance: stub.url, token: 'cm_agent_test', timeoutMs: 150 });
+    await expect(client.get('/api/agents/runtime/events', {}, { signal: AbortSignal.timeout(5000) }))
+      .rejects.toMatchObject({ code: 'cap_timeout', timeoutMs: 150 });
+  });
+
+  test("a caller's shorter timeout still keeps its own error", async () => {
+    stub = await startStub(() => 'hang');
+    AbortSignal.any = undefined;
+    const client = createClient({ instance: stub.url, token: 'cm_agent_test', timeoutMs: 5000 });
+    const err = await client.get('/api/agents/runtime/events', {}, { signal: AbortSignal.timeout(50) })
+      .catch((e) => e);
+    expect(err.name).toBe('TimeoutError');
+    expect(err.code).not.toBe('cap_timeout');
+  });
+});
+
 describe('agent run: the inbox loop survives a hung poll', () => {
   test('504, then a hang, then healthy: the loop backs off and recovers, with no stall exit', async () => {
     process.env.COMMONLY_CAP_TIMEOUT_MS = '150';

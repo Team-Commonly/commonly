@@ -78,11 +78,21 @@ export const capTimeoutMs = (kind, { baseMs, env = process.env } = {}) => {
 
 // A caller's own signal (doctor, and the 5s identity and skills reads in the
 // run loop) still applies; the hard timeout is added beside it, never instead.
-// AbortSignal.any is Node 20.3+; before that the caller's signal stands alone,
-// and every caller that passes one passes a shorter timeout.
+// AbortSignal.any is Node 20.3+, and `engines` allows 20.0, so the fallback
+// joins the two by hand. Either way the abort carries the source's own reason,
+// which is what nameTimeout matches on.
 const capSignal = (capTimeout, callerSignal) => {
   if (!callerSignal) return capTimeout;
-  return typeof AbortSignal.any === 'function' ? AbortSignal.any([callerSignal, capTimeout]) : callerSignal;
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any([callerSignal, capTimeout]);
+  const joined = new AbortController();
+  for (const source of [callerSignal, capTimeout]) {
+    if (source.aborted) {
+      joined.abort(source.reason);
+      break;
+    }
+    source.addEventListener('abort', () => joined.abort(source.reason), { once: true });
+  }
+  return joined.signal;
 };
 
 export const formatLimit = (ms) => (ms < 1000 ? `${ms}ms` : `${Math.round(ms / 1000)}s`);
