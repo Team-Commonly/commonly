@@ -5050,29 +5050,22 @@ describe('GitHub gig card fits the chat column', () => {
   });
 });
 
-describe('agent Wake and Pods controls', () => {
-  const css = read('../agents/v2-agent-wake-pods.css');
-  test('action buttons keep a visible surface over the v2 button reset', () => {
-    const save = ruleBody(css, '.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__pod button');
-    const remove = ruleBody(css, '.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__remove');
-    expect(save).toContain('background: var(--v2-surface)');
-    expect(remove).toContain('background: var(--v2-surface)');
-    expect(remove).toContain('border: 1px solid var(--v2-border)');
+describe('agent settings surface (D223 lift)', () => {
+  const css = read('../agents/v2-agent-settings-surface.css');
+  test('the Save action keeps a visible surface over the v2 button reset', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .b-s')).toContain('background: linear-gradient');
   });
 
-  test('message-wake segment wraps its options instead of overflowing the row', () => {
-    const segment = ruleBody(css, '.v2-agent-wake-pods__segment');
-    expect(segment).toContain('display: flex');
+  test('message-wake segment wraps its options instead of overflowing the Wake row', () => {
+    const segment = ruleBody(css, '.v2-agent-settings-page .wt .seg');
+    expect(segment).toContain('display: inline-flex');
     expect(segment).toContain('flex-wrap: wrap');
   });
 
-  it('keeps the settings header on one row with the tabs at its end', () => {
-    const css = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
-    const head = ruleBody(css, '.v2-agent-settings__head');
-    expect(head).toContain('display: flex');
-    expect(head).toContain('align-items: center');
-    expect(ruleBody(css, '.v2-agent-settings__head .v2-agent-settings__seg')).toContain('margin-left: auto');
-    expect(ruleBody(css, '.v2-agent-settings__head .v2-agent-settings__seg [aria-current="page"]')).toContain('border-bottom: 0');
+  test('the avatar header, Identity & access rows and Wake table keep their frame layout', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .ph')).toContain('min-height: 76px');
+    expect(ruleBody(css, '.v2-agent-settings-page .lrow')).toContain('grid-template-columns: 180px minmax(0, 1fr) auto');
+    expect(ruleBody(css, '.v2-agent-settings-page .wt')).toContain('border-collapse: collapse');
   });
 });
 

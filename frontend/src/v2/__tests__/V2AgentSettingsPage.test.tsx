@@ -421,10 +421,10 @@ test('selects an installation the owner can manage without exposing a foreign po
   );
   expect(screen.getByText('Pod · My pod')).toBeInTheDocument();
   expect(screen.queryByText('Pod · Other pod')).not.toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Key' }).compareDocumentPosition(
+  expect(screen.getByText('Key', { selector: '.lb' }).compareDocumentPosition(
     screen.getByRole('heading', { name: 'Skills' }),
   ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'Wake' }).compareDocumentPosition(
+  expect(screen.getByRole('heading', { name: /^Wake/ }).compareDocumentPosition(
     screen.getByRole('heading', { name: 'Skills' }),
   ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
@@ -452,19 +452,22 @@ test('runtime editor writes environment controls through the shared settings hoo
   });
   renderPage();
   const model = await screen.findByLabelText('model');
-  await screen.findByRole('heading', { name: 'Wake' });
+  await screen.findByRole('heading', { name: /^Wake/ });
   await screen.findByRole('heading', { name: 'Policy' });
   await screen.findByRole('heading', { name: 'Skills' });
-  const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2')).map((node) => node.textContent);
+  // Headings and row labels, in document order. The Wake title carries its tooltip text, so match it by prefix.
+  const sections = Array.from(document.querySelectorAll('.v2-agent-settings h2, .v2-agent-settings .lb'))
+    .map((node) => node.textContent.trim());
+  const at = (label) => sections.findIndex((text) => (label === 'Wake' ? text.startsWith('Wake') : text === label));
   expect(sections).toEqual(expect.arrayContaining(['Identity', 'Policy', 'Skills']));
   // D215 artboard: Wake first, then Identity & access (Key, Identity).
-  expect(sections.indexOf('Wake')).toBeLessThan(sections.indexOf('Key'));
-  expect(sections.indexOf('Key')).toBeLessThan(sections.indexOf('Identity'));
-  expect(sections.indexOf('Identity')).toBeLessThan(sections.indexOf('How it runs'));
-  expect(sections.indexOf('Wake')).toBeLessThan(sections.indexOf('How it runs'));
-  expect(sections.indexOf('How it runs')).toBeLessThan(sections.indexOf('Connector grants'));
-  expect(sections.indexOf('Connector grants')).toBeLessThan(sections.indexOf('Policy'));
-  expect(sections.indexOf('Policy')).toBeLessThan(sections.indexOf('Skills'));
+  expect(at('Wake')).toBeLessThan(at('Key'));
+  expect(at('Key')).toBeLessThan(at('Identity'));
+  expect(at('How it runs')).toBeLessThan(at('Identity'));
+  expect(at('Wake')).toBeLessThan(at('How it runs'));
+  expect(at('How it runs')).toBeLessThan(at('Connector grants'));
+  expect(at('Connector grants')).toBeLessThan(at('Policy'));
+  expect(at('Policy')).toBeLessThan(at('Skills'));
   fireEvent.change(model, { target: { value: 'new-model' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(

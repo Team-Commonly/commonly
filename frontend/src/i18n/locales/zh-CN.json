@@ -2884,7 +2884,15 @@
     "revoke": "撤销",
     "updateError": "无法更新密钥，请重试。",
     "noPod": "此智能体没有活跃的 Pod。",
-    "missingReplacement": "未返回新密钥。"
+    "missingReplacement": "未返回新密钥。",
+    "colMessages": "消息",
+    "colBoard": "看板",
+    "colHeartbeat": "心跳",
+    "messageWakeShort_mentions": "仅提及",
+    "messageWakeShort_human": "人",
+    "messageWakeShort_all": "全部",
+    "turnsUsed": "{{used}} / {{cap}} 次/天",
+    "turnsUsedNoCap": "{{used}} 次/天 · 上限不可用"
   },
   "agentPolicy": {
     "title": "策略",
