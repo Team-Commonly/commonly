@@ -2348,6 +2348,11 @@ const provisionOpenClawAccount = async ({
   if (!resolvedRuntimeToken) {
     throw new Error('Missing runtime token for OpenClaw account provisioning');
   }
+  if (!resolvedUserToken) {
+    // A stored user token is a hash, so an account with no saved copy cannot
+    // be given the existing one back.
+    console.warn(`[k8s-provisioner] Account ${accountId} has no user token; provision it with force to issue one.`);
+  }
 
   const normalizeKey = (value: any, fallback: any) => {
     const normalized = String(value ?? fallback ?? '').trim().toLowerCase();
@@ -2681,9 +2686,12 @@ const provisionCommonlyBotAccount = async ({
 
   const config = await readConfigMap(configMapName, configKey);
   config.accounts = config.accounts || {};
+  // A stored token is a hash, so an existing one is reissued without a bearer;
+  // keep the saved one, as the OpenClaw account writer does.
+  const existing = config.accounts[accountId] || {};
   config.accounts[accountId] = {
-    runtimeToken,
-    userToken,
+    runtimeToken: runtimeToken || existing.runtimeToken || null,
+    userToken: userToken || existing.userToken || null,
     agentName,
     instanceId,
   };

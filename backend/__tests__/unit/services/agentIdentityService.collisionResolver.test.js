@@ -701,3 +701,20 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     expect(mockSaved[0].botMetadata.displayName).toBe('Cody (Cody-Bot)');
   });
 });
+
+
+describe('parenthetical display-name suffix scan', () => {
+  test.each([
+    { label: 'normal suffix', name: 'Pixel (Demo)', suffix: true },
+    { label: 'nested opening', name: '(a()', suffix: true },
+    { label: 'trailing second close', name: '(x))', suffix: false },
+    { label: 'empty parentheses', name: '()', suffix: false },
+    { label: 'trimmed suffix', name: 'Pixel (Demo)  ', suffix: true },
+    { label: 'long opening run', name: '('.repeat(100000), suffix: false },
+  ])('$label keeps suffix recognition semantics', async ({ name, suffix }) => {
+    reset();
+    mockPeers = [{ _id: 'peer', botMetadata: { displayName: name.trim(), instanceId: 'a' } }];
+    await AgentIdentityService.getOrCreateAgentUser('openclaw', { instanceId: 'probe-instance', displayName: name });
+    expect(mockSaved[0].botMetadata.displayName).toBe(suffix ? name.trim() : `${name.trim()} (Probe-Instance)`);
+  });
+});

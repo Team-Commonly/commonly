@@ -28,7 +28,7 @@ const revokeOwnedAccess = async (userId: string): Promise<void> => {
   disconnectUserSessionSockets(userId);
   await User.updateOne({ _id: userId }, {
     $set: { deviceTokens: [] },
-    $unset: { apiToken: 1, apiTokenCreatedAt: 1, apiTokenScopes: 1 },
+    $unset: { apiToken: 1, apiTokenHash: 1, apiTokenLast4: 1, apiTokenCreatedAt: 1, apiTokenScopes: 1 },
   });
 
   const credentials = await AgentCredential.find({ ownerUserId: userId }).select('_id').lean();

@@ -130,6 +130,8 @@ export interface IUser extends Document {
     proEndedAt?: Date;
   };
   apiToken?: string;
+  apiTokenHash?: string;
+  apiTokenLast4?: string;
   apiTokenCreatedAt?: Date;
   apiTokenScopes: string[];
   isBot: boolean;
@@ -325,17 +327,13 @@ const userSchema = new Schema<IUser>({
     // Indexed: the nightly retention run queries lapsed-but-in-grace accounts.
     proEndedAt: { type: Date, index: true, sparse: true },
   },
-  // `select: false` so a live bearer credential can never ride along on an
-  // incidental `findById().select('-password')` or a populate(). Queries that
-  // FILTER on this field still work (projection is separate from the filter),
-  // so token authentication in middleware/auth.ts is unaffected. Any code that
-  // needs to READ the value back must ask for it explicitly with
-  // `.select('+apiToken')` — see agentIdentityService.getOrCreateAgentUser,
-  // where failing to do so would make an existing agent token look absent and
-  // silently rotate it out from under every running wrapper.
+  // All credential material is hidden from incidental profile reads. apiToken
+  // is read only during the TASK-558 migration window; new writes use SHA-256.
   apiToken: {
     type: String, unique: true, sparse: true, select: false,
   },
+  apiTokenHash: { type: String, select: false },
+  apiTokenLast4: { type: String, select: false },
   apiTokenCreatedAt: { type: Date },
   apiTokenScopes: [{ type: String }],
   isBot: { type: Boolean, default: false },
@@ -542,14 +540,21 @@ userSchema.methods.comparePassword = async function (password: string): Promise<
   return bcrypt.compare(password, this.password);
 };
 
+userSchema.index({ apiTokenHash: 1 }, { unique: true, partialFilterExpression: { apiTokenHash: { $type: 'string' } } });
+
 userSchema.methods.generateApiToken = function (): string {
-  this.apiToken = `cm_${crypto.randomBytes(32).toString('hex')}`;
+  const token = `cm_${crypto.randomBytes(32).toString('hex')}`;
+  this.apiTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  this.apiTokenLast4 = token.slice(-4);
+  this.apiToken = undefined;
   this.apiTokenCreatedAt = new Date();
-  return this.apiToken;
+  return token;
 };
 
 userSchema.methods.revokeApiToken = function (): void {
   this.apiToken = undefined;
+  this.apiTokenHash = undefined;
+  this.apiTokenLast4 = undefined;
   this.apiTokenCreatedAt = undefined;
 };
 

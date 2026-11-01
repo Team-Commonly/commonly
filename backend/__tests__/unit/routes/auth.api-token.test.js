@@ -2,8 +2,9 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 't'), verify: jest.fn(), decode: jest.fn() }));
+let mockCurrentUserId = 'user-1';
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
-  req.user = { id: 'user-1' };
+  req.user = { id: mockCurrentUserId };
   req.authType = 'jwt';
   next();
 });
@@ -48,7 +49,7 @@ app.use(express.json());
 app.use('/api/auth', router);
 
 describe('GET /api/auth/api-token', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => { jest.clearAllMocks(); mockCurrentUserId = 'user-1'; });
 
   it('returns status metadata and never re-serves the raw bearer', async () => {
     const rawToken = 'cm_user_secret_should_not_leave_the_store';
@@ -74,4 +75,33 @@ describe('GET /api/auth/api-token', () => {
     expect(JSON.stringify(response.body)).not.toContain(rawToken);
     expect(User.findById).toHaveBeenCalledWith('user-1');
   });
+  it('reports digest-only metadata without returning the digest', async () => {
+    User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({
+      apiTokenHash: 'a'.repeat(64), apiTokenLast4: '1234', apiTokenScopes: [],
+    }) });
+    const response = await request(app).get('/api/auth/api-token');
+    expect(response.body).toEqual({ hasToken: true, createdAt: null, scopes: [], last4: '1234' });
+    expect(JSON.stringify(response.body)).not.toContain('a'.repeat(64));
+  });
+
+  it('reads digest-only metadata with the actual Mongo projection', async () => {
+    const RealUser = jest.requireActual('../../../models/User');
+    const { setupMongoDb, closeMongoDb } = require('../../utils/testUtils');
+    await setupMongoDb();
+    try {
+      const user = new RealUser({ username: 'metadata-probe', email: 'metadata@example.test', password: 'test-password' });
+      const token = user.generateApiToken();
+      await user.save();
+      mockCurrentUserId = String(user._id);
+      User.findById.mockImplementation((id) => RealUser.findById(id));
+      const response = await request(app).get('/api/auth/api-token');
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ hasToken: true, last4: token.slice(-4) });
+      expect(response.body).not.toHaveProperty('apiTokenHash');
+      expect(JSON.stringify(response.body)).not.toContain(token);
+    } finally {
+      await closeMongoDb();
+    }
+  });
+
 });
