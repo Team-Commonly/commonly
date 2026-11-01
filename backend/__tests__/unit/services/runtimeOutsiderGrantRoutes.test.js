@@ -127,6 +127,31 @@ test('unscoped posts resolve no pod and broker calls retain their own gate', asy
   expect((await classify('/api/agents/runtime', 'POST', '/events/:id/ack')).routeClass).toBe('own_state');
 });
 
+test('a thread comment resolves its stored post pod; a podless post is outward', async () => {
+  const Post = require('../../../models/Post');
+  const req = {
+    baseUrl: '/api/agents/runtime', method: 'POST',
+    route: { path: '/threads/:threadId/comments' },
+    params: { threadId: 'thread-1' }, body: { podId: 'pod-a' },
+  };
+  Post.findById.mockReturnValue({ select: () => ({ lean: async () => ({ podId: 'pod-b' }) }) });
+  expect(await classifyRuntimeOutsiderGrantRoute(req)).toEqual({ routeClass: 'pod_write', podId: 'pod-b' });
+  expect(Post.findById).toHaveBeenCalledWith('thread-1');
+  Post.findById.mockReturnValue({ select: () => ({ lean: async () => ({ podId: null }) }) });
+  expect(await classifyRuntimeOutsiderGrantRoute(req)).toEqual({ routeClass: 'outward', podId: null });
+});
+
+test('an ask response resolves the stored ask pod, not the body', async () => {
+  const AgentAsk = require('../../../models/AgentAsk');
+  AgentAsk.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ podId: 'pod-b' }) }) });
+  const route = await classifyRuntimeOutsiderGrantRoute({
+    baseUrl: '/api/agents/runtime', method: 'POST', route: { path: '/asks/:requestId/respond' },
+    params: { requestId: 'ask-1' }, body: { podId: 'pod-a' },
+  });
+  expect(AgentAsk.findOne).toHaveBeenCalledWith({ requestId: 'ask-1' });
+  expect(route).toEqual({ routeClass: 'pod_write', podId: 'pod-b' });
+});
+
 test('ensemble response resolves the record pod rather than the ignored path pod', async () => {
   mockEnsembleFindById.mockReturnValue({ select: () => ({ lean: async () => ({ podId: 'pod-b' }) }) });
   const route = await classifyRuntimeOutsiderGrantRoute({

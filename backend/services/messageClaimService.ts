@@ -137,7 +137,8 @@ const MESSAGE_ID_MAX = 2147483647;
  * regression this arm exists to prevent.
  *
  * TASK-122 added the comment-id existence check to prevent permanent phantom
- * leases. TASK-213 also scopes that check to the stored Post.podId. The route's
+ * leases. TASK-213 also scopes that check to the stored Post.podId, or to any
+ * authorized pod for a global post's comment (see commentExists). The route's
  * installation check alone cannot establish ownership of this comment. A
  * store failure propagates before SQL mutation: the client may fail open on
  * a non-2xx claim response, but a forged cross-pod lease must not be saved.
@@ -211,7 +212,11 @@ function commentStore() {
  */
 async function commentExists(objectId: string, podId: string): Promise<boolean> {
   try {
-    const found = await commentStore().exists({ podId, 'comments._id': objectId });
+    // A global post (podId null) wakes its comment mentions in the commenter's
+    // first pod (postController's resolveMentionPod), which the comment does
+    // not record, so that claim is accepted in whichever pod the route already
+    // authorized. A pod's own post is claimable only in that pod.
+    const found = await commentStore().exists({ podId: { $in: [podId, null] }, 'comments._id': objectId });
     return Boolean(found);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

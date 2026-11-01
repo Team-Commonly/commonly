@@ -71,6 +71,18 @@ test('batch census checks multiple installation pods with one query per collecti
   expect(mockConnectionFind).toHaveBeenCalledTimes(1);
 });
 
+test('a seat-targeted grant narrows every requested pod containing the seat', async () => {
+  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
+  mockGrantFind.mockReturnValue(chain([grant({ target: { kind: 'seat', id: SEAT }, audience: [SEAT] })]));
+  expect(await podsWithOutsiderWritableGrants([POD, OTHER])).toEqual(new Set([POD, OTHER]));
+});
+
+test('a seat-targeted grant whose audience omits the seat narrows nothing', async () => {
+  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }]));
+  mockGrantFind.mockReturnValue(chain([grant({ target: { kind: 'seat', id: SEAT }, audience: [] })]));
+  expect(await podsWithOutsiderWritableGrants([POD])).toEqual(new Set());
+});
+
 test('a seat grant is in scope only when its seat is a current member and in its audience', async () => {
   mockGrantFind.mockReturnValue(chain([grant({ target: { kind: 'seat', id: SEAT } })]));
   expect(await podHasOutsiderWritableGrant(POD)).toBe(true);
