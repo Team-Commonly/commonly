@@ -91,8 +91,14 @@ const BYO_STEPS = new Set([
   'token-copied', 'listen-confirmed', 'listen-timeout', 'hosted-offer-shown', 'hosted-offer-clicked',
   'invite-card-shown', 'invite-card-dismissed', 'byo-offer-shown',
 ]);
-// Steps that copy a setup command; each carries the copy type the page sent.
-const COPY_STEPS = new Set(['mcp-command-copied', 'cli-command-copied', 'daemon-command-copied', 'token-copied']);
+// Steps that copy a setup command, and the copy types each may carry. A step
+// and its type must agree, so "token-copied" can never set the listen mark.
+const COPY_TYPES_BY_STEP: Record<string, string[]> = {
+  'mcp-command-copied': ['mcp-claude', 'mcp-cursor'],
+  'cli-command-copied': ['listen'],
+  'daemon-command-copied': ['daemon'],
+  'token-copied': ['token'],
+};
 // Onboarding surfaces: each step also sets its write-once onboarding mark.
 const SURFACE_STEPS: Record<string, string> = {
   'invite-card-shown': 'inviteCardShownAt',
@@ -116,9 +122,9 @@ router.post('/byo-step', rateLimit({
     // the copied command, which contains a runtime token.
     markByoCommandCopied(req.userId, step === 'mcp-command-copied' ? 'mcp' : 'cli');
   }
-  if (COPY_STEPS.has(step)) {
-    // The copy type is a fixed name the page sends; the service refuses anything else.
-    markByoCopyType(req.userId, req.body?.copyType);
+  const allowedCopyTypes = COPY_TYPES_BY_STEP[step];
+  if (allowedCopyTypes && allowedCopyTypes.includes(req.body?.copyType)) {
+    markByoCopyType(req.userId, req.body.copyType);
   }
   // The setup the result page showed. The service validates both fields and
   // writes nothing for a missing or malformed value.

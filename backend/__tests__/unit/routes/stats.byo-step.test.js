@@ -133,6 +133,13 @@ describe('POST /api/stats/byo-step', () => {
     expect(mockInsertOne).not.toHaveBeenCalled();
   });
 
+  it('a copy type that does not match its step writes no per-type mark', async () => {
+    await request(app).post('/api/stats/byo-step').send({ step: 'token-copied', copyType: 'listen' });
+    await request(app).post('/api/stats/byo-step').send({ step: 'cli-command-copied', copyType: 'mcp-claude' });
+
+    expect(mockMarkByoCopyType).not.toHaveBeenCalled();
+  });
+
   it('rejects unknown steps without writing a mark or telemetry event', async () => {
     const res = await request(app)
       .post('/api/stats/byo-step')
