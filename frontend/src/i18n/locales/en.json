@@ -1500,7 +1500,8 @@
       "reviewLatest": "Review latest",
       "latestReviewed": "Latest reviewed",
       "discard": "Discard your unsaved focus changes?",
-      "saveError": "Focus could not be saved. Try again."
+      "saveError": "Focus could not be saved. Try again.",
+      "progress": "{{done}}/{{total}} done"
     },
     "loadErrorTitle": "Couldn't load the board",
     "loadErrorText": "Check your connection and try again.",
@@ -1561,6 +1562,20 @@
       "assigned": "{{assignee}} · not claimed",
       "expired": "lease expired · {{holder}}",
       "claimed": "{{holder}} · claimed"
+    },
+    "filter": {
+      "label": "Filters",
+      "mine": "Mine",
+      "p0": "P0",
+      "unclaimed": "Unclaimed"
+    },
+    "search": {
+      "label": "Search tasks",
+      "placeholder": "Search tasks"
+    },
+    "doneRail": {
+      "show": "Show",
+      "hide": "Hide"
     }
   },
   "approvalCard": {

@@ -5285,4 +5285,10 @@ describe('pod board column scroll (TASK-698)', () => {
     expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip-path:\s*inset\(50%\)/);
     expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*28px/);
   });
+
+  test('the board keeps three columns plus a 120px done rail, and tabs only on phones (TASK-687)', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
+    expect(css).toMatch(/\.v2-board__columns \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\) 120px/);
+    expect(css).toMatch(/\.v2-board__tabs \{ display: none; \}/);
+  });
 });

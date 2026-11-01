@@ -17,6 +17,8 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import SearchIcon from '@mui/icons-material/Search';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useV2Api } from '../hooks/useV2Api';
 import { useSocket } from '../../context/SocketContext';
 import V2Avatar from './V2Avatar';
@@ -26,6 +28,13 @@ type TaskPriority = 'P0' | 'P1' | 'P2' | 'P3';
 const PRIORITIES: TaskPriority[] = ['P0', 'P1', 'P2', 'P3'];
 
 type CanonicalStatus = 'pending' | 'claimed' | 'blocked' | 'done';
+type BoardFilter = 'mine' | 'p0' | 'unclaimed';
+const FILTERS: Array<{ key: BoardFilter; labelKey: string }> = [
+  { key: 'mine', labelKey: 'board.filter.mine' },
+  { key: 'p0', labelKey: 'board.filter.p0' },
+  { key: 'unclaimed', labelKey: 'board.filter.unclaimed' },
+];
+const DONE_STATUSES = ['done', 'completed', 'complete'];
 
 interface BoardTask {
   taskId: string;
@@ -623,14 +632,35 @@ const V2PodBoard: React.FC = () => {
     }
   }, [api, podId, newTitle, newAssignee, newPriority, creating, load, t]);
 
+  const [filters, setFilters] = useState<BoardFilter[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [showDone, setShowDone] = useState(false);
+  const [mobileTab, setMobileTab] = useState<CanonicalStatus>('pending');
+  const toggleFilter = (key: BoardFilter) => setFilters((prev) => (
+    prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]
+  ));
+  const visibleTasks = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return tasks.filter((task) => {
+      if (filters.includes('mine')) {
+        const me = [currentUser?.username, currentUser?._id].filter(Boolean);
+        if (!me.some((id) => id === task.assignee || id === task.claimedBy)) return false;
+      }
+      if (filters.includes('p0') && task.priority !== 'P0') return false;
+      if (filters.includes('unclaimed') && (task.claimedBy || task.assignee)) return false;
+      if (needle && !`${task.taskId} ${task.title}`.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [tasks, filters, query, currentUser]);
   const columnTasks = useMemo(() => {
     const byColumn = new Map<CanonicalStatus, BoardTask[]>();
     COLUMNS.forEach((col) => {
-      byColumn.set(col.key, tasks.filter((task) => col.statuses.includes(task.status)).sort((a, b) => (a.priority || 'P2').localeCompare(b.priority || 'P2')
+      byColumn.set(col.key, visibleTasks.filter((task) => col.statuses.includes(task.status)).sort((a, b) => (a.priority || 'P2').localeCompare(b.priority || 'P2')
         || (a.taskNum || 0) - (b.taskNum || 0) || a.taskId.localeCompare(b.taskId)));
     });
     return byColumn;
-  }, [tasks]);
+  }, [visibleTasks]);
 
   return (
     <div className="v2-board" data-testid="v2-board">
@@ -649,28 +679,73 @@ const V2PodBoard: React.FC = () => {
             {t('board.taskCount', { count: tasks.length })}
           </span>
         </div>
+        <div className="v2-board__filters" role="group" aria-label={t('board.filter.label')}>
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={`v2-board__chip${filters.includes(f.key) ? ' is-on' : ''}`}
+              aria-pressed={filters.includes(f.key)}
+              onClick={() => toggleFilter(f.key)}
+            >
+              {t(f.labelKey)}
+            </button>
+          ))}
+        </div>
+        {searchOpen && (
+          <input
+            type="search"
+            className="v2-board__search"
+            value={query}
+            placeholder={t('board.search.placeholder')}
+            aria-label={t('board.search.label')}
+            onChange={(e) => setQuery(e.target.value)}
+            // eslint-disable-next-line jsx-a11y/no-autofocus
+            autoFocus
+          />
+        )}
+        <button
+          type="button"
+          className="v2-board__icon-btn"
+          aria-label={t('board.search.label')}
+          aria-pressed={searchOpen}
+          onClick={() => { setSearchOpen((open) => !open); if (searchOpen) setQuery(''); }}
+        >
+          <SearchIcon fontSize="small" aria-hidden="true" />
+        </button>
         <button
           type="button"
           className="v2-board__new"
+          aria-label={t('board.newTask')}
+          title={t('board.newTask')}
           onClick={openCreateTask}
         >
           <AddIcon fontSize="small" aria-hidden="true" />
-          {t('board.newTask')}
+          <span className="v2-board__new-label">{t('board.newTask')}</span>
         </button>
       </header>
 
-      <section className="v2-board__focus" aria-labelledby="v2-board-focus-title">
-        <div className="v2-board__focus-head">
-          <div>
-            <div className="v2-board__focus-eyebrow">{t('board.focus.eyebrow')}</div>
-            <h2 id="v2-board-focus-title" className="v2-board__focus-title">{t('board.focus.title')}</h2>
-          </div>
+      <details className="v2-board__focus" aria-labelledby="v2-board-focus-title">
+        <summary className="v2-board__focus-strip">
+          <span className="v2-board__focus-eyebrow">{t('board.focus.eyebrow')}</span>
+          <h2 id="v2-board-focus-title" className="v2-board__focus-title">
+            {focusRead?.focus ? focusRead.focus.goal : t('board.focus.title')}
+          </h2>
+          {focusRead?.focus && focusRead.focus.nextTasks.length > 0 && (
+            <span className="v2-board__focus-progress">
+              {t('board.focus.progress', {
+                done: focusRead.focus.nextTasks.filter((task) => DONE_STATUSES.includes(task.status || '')).length,
+                total: focusRead.focus.nextTasks.length,
+              })}
+            </span>
+          )}
           {focusRead?.permissions?.canEdit && (
             <button type="button" className="v2-board__focus-edit" onClick={openFocusEditor}>
               {focusRead.focus ? t('board.focus.edit') : t('board.focus.set')}
             </button>
           )}
-        </div>
+          <ExpandMoreIcon className="v2-board__focus-chevron" fontSize="small" aria-hidden="true" />
+        </summary>
         {focusLoading && !focusRead && <div className="v2-board__focus-muted">{t('board.focus.loading')}</div>}
         {focusError && (
           <div className="v2-board__focus-error">
@@ -683,7 +758,6 @@ const V2PodBoard: React.FC = () => {
         )}
         {focusRead?.focus && (
           <div className="v2-board__focus-body">
-            <p className="v2-board__focus-goal">{focusRead.focus.goal}</p>
             <p className="v2-board__focus-scope">{focusRead.focus.scope}</p>
             <div className="v2-board__focus-meta">
               <span>{t('board.focus.owner')}: <strong>{focusRead.focus.owner.label || focusRead.focus.owner.userId}</strong>{!focusRead.focus.owner.available && ` (${t('board.focus.unavailable')})`}</span>
@@ -712,7 +786,7 @@ const V2PodBoard: React.FC = () => {
             )}
           </div>
         )}
-      </section>
+      </details>
 
       {loading && <div className="v2-empty"><span className="v2-spinner" /></div>}
       {!loading && loadError && (
@@ -723,20 +797,43 @@ const V2PodBoard: React.FC = () => {
       )}
 
       {!loading && !loadError && (
-        <div className="v2-board__columns">
+        <>
+          <div className="v2-board__tabs" role="tablist" aria-label={t('board.title')}>
+            {COLUMNS.map((col) => (
+              <button
+                key={col.key}
+                type="button"
+                role="tab"
+                aria-selected={mobileTab === col.key}
+                className={`v2-board__tab${mobileTab === col.key ? ' is-active' : ''}`}
+                onClick={() => setMobileTab(col.key)}
+              >
+                {t(col.labelKey)}
+                <span className="v2-board__tab-count">{(columnTasks.get(col.key) || []).length}</span>
+              </button>
+            ))}
+          </div>
+          <div className={`v2-board__columns${showDone ? ' is-showdone' : ''}`}>
           {COLUMNS.map((col) => {
             const items = columnTasks.get(col.key) || [];
             return (
-              <section key={col.key} className={`v2-board__col${col.key === 'blocked' ? ' v2-board__col--blocked' : ''}`} aria-label={t(col.labelKey)}>
+              <section key={col.key} className={`v2-board__col v2-board__col--${col.key}${mobileTab === col.key ? ' is-active' : ''}`} aria-label={t(col.labelKey)}>
                 <div className="v2-board__col-head">
+                  <span className={`v2-board__col-dot v2-board__col-dot--${col.key}`} aria-hidden="true" />
                   <span className="v2-board__col-name">{t(col.labelKey)}</span>
                   <span className="v2-board__col-count">{items.length}</span>
+                  {col.key === 'done' && (
+                    <button type="button" className="v2-board__col-add v2-board__col-hide" onClick={() => setShowDone(false)}>
+                      {t('board.doneRail.hide')}
+                    </button>
+                  )}
                 </div>
+                <div className="v2-board__col-body">
                 {items.length === 0 && (
                   <div className="v2-board__col-empty">{t(col.emptyKey)}</div>
                 )}
                 {items.map((task) => (
-                  <article key={task.taskId} className={`v2-board__card${col.key === 'done' ? ' v2-board__card--done' : ''}${col.key === 'blocked' ? ' v2-board__card--blocked' : ''}`}>
+                  <article key={task.taskId} className={`v2-board__card${col.key === 'done' ? ' v2-board__card--done' : ''}${col.key === 'blocked' ? ' v2-board__card--blocked' : ''}${selected?.taskId === task.taskId ? ' is-picked' : ''}`}>
                     <button
                       type="button"
                       className="v2-board__card-main"
@@ -746,9 +843,10 @@ const V2PodBoard: React.FC = () => {
                       <span className="v2-board__card-kicker">
                         <span className="v2-board__card-id">{task.taskId}</span>
                         <span className={`v2-board__priority${task.priority === 'P0' ? ' v2-board__priority--p0' : ''}${(task.priority || 'P2') === 'P2' ? ' v2-board__priority--p2' : ''}`}>{task.priority || 'P2'}</span>
+                        <span className="v2-board__card-spacer" />
+                        {ownerLine(task)}
                       </span>
                       <span className="v2-board__card-title">{task.title}</span>
-                      {ownerLine(task)}
                     </button>
                     <div className="v2-board__card-actions">
                       {col.moves.map((move) => (
@@ -764,10 +862,19 @@ const V2PodBoard: React.FC = () => {
                     </div>
                   </article>
                 ))}
+                </div>
               </section>
             );
           })}
-        </div>
+          <aside className="v2-board__donecol" aria-label={t('board.col.done')}>
+            <span className="v2-board__donecol-label">{t('board.col.done')}</span>
+            <span className="v2-board__donecol-count">{(columnTasks.get('done') || []).length}</span>
+            <button type="button" className="v2-board__donecol-show" onClick={() => setShowDone(true)}>
+              {t('board.doneRail.show')}
+            </button>
+          </aside>
+          </div>
+        </>
       )}
 
       {selected && (

@@ -1492,7 +1492,8 @@
       "reviewLatest": "查看最新内容",
       "latestReviewed": "已查看最新内容",
       "discard": "放弃未保存的焦点更改？",
-      "saveError": "无法保存焦点，请重试。"
+      "saveError": "无法保存焦点，请重试。",
+      "progress": "{{done}}/{{total}}已完成"
     },
     "loadErrorTitle": "看板加载失败",
     "loadErrorText": "请检查网络连接后重试。",
@@ -1553,6 +1554,20 @@
       "assigned": "{{assignee}} · 尚未认领",
       "expired": "认领已到期 · {{holder}}",
       "claimed": "{{holder}} · 已认领"
+    },
+    "filter": {
+      "label": "筛选",
+      "mine": "我的",
+      "p0": "P0",
+      "unclaimed": "未认领"
+    },
+    "search": {
+      "label": "搜索任务",
+      "placeholder": "搜索任务"
+    },
+    "doneRail": {
+      "show": "展开",
+      "hide": "收起"
     }
   },
   "approvalCard": {
