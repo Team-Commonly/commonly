@@ -739,6 +739,36 @@ describe('Connectors page: tools', () => {
       expect(within(popover).getByText('Key · Oct 31')).toBeInTheDocument();
     });
 
+    it('two connections that read the same offer no Disconnect, since neither can be told apart', async () => {
+      const lookAlike = {
+        ...twoNamed,
+        connections: [
+          { connectionId: 'conn-atl-k1', owner: '', repo: '', agentId: 'off-roster-1', connectedAt: '2026-10-31T09:00:00Z' },
+          { connectionId: 'conn-atl-k2', owner: '', repo: '', agentId: 'off-roster-2', connectedAt: '2026-10-31T15:00:00Z' },
+        ],
+      };
+      mockTools({ entries: [lookAlike], grants: [] });
+      renderPage();
+
+      const popover = await openToolPopover('Atlassian');
+      expect(within(popover).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Disconnect/ })).not.toBeInTheDocument();
+    });
+
+    it('a 502 partial removal of one of two connections leaves the grant to the re-read', async () => {
+      mockTools({ entries: [twoNamed], grants: [grantAtl] });
+      axios.delete.mockRejectedValue({ response: { status: 502, data: { code: 'provider_revoke_failed', revokeAt: 'https://id.atlassian.com/manage-profile/apps' } } });
+      renderPage();
+
+      const { aside } = await openRow('Atlassian', 'View Atlassian in Launch pod');
+      fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian: Signed in · Oct 30' }));
+      fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
+      expect(await screen.findByRole('link', { name: 'Open provider settings' })).toBeInTheDocument();
+      const card = await screen.findByRole('complementary', { name: 'Grant details' });
+      expect(within(card).queryByText(/Revoked by/)).not.toBeInTheDocument();
+      expect(within(card).getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+    });
+
     it('GitHub (the instance App connection) never offers Disconnect', async () => {
       renderPage();
       await openTool('GitHub');

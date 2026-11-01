@@ -155,10 +155,12 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
       return variant === 'aside' ? <div className="v2-connector-aside__actions">{button}</div> : button;
     }
     // Several connections: each is named, so each gets its own Disconnect. A
-    // connection the server did not describe cannot be told apart, so none is
-    // offered rather than one that might drop the wrong connection.
+    // connection that cannot be told apart (the server did not describe it, or
+    // it reads the same as another) gets none rather than one that might drop
+    // the wrong connection.
     const labelled = hosted.map((connection) => ({ connection, label: connectionLabel(connection) }));
-    if (labelled.some((row) => !row.label)) return null;
+    const labels = labelled.map((row) => row.label);
+    if (labels.some((label) => !label) || new Set(labels).size < labels.length) return null;
     return (
       <>
         {labelled.map(({ connection, label }) => (variant === 'aside' ? (
