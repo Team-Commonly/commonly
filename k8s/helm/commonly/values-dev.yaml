@@ -481,3 +481,8 @@ opsRunner:
       operator: "Equal"
       value: "spot"
       effect: "NoSchedule"
+
+# GitHub activity gig (#2383, TASK-543). Needs commonly-dev-github-gig-webhook-secret
+# in Secret Manager (created 2026-10-25) and the same secret on the GitHub App webhook.
+githubGig:
+  fromSecret: true
