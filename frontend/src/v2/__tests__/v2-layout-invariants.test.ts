@@ -5053,8 +5053,8 @@ describe('GitHub gig card fits the chat column', () => {
 describe('agent Wake and Pods controls', () => {
   const css = read('../agents/v2-agent-wake-pods.css');
   test('action buttons keep a visible surface over the v2 button reset', () => {
-    const save = ruleBody(css, '.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__pod > button');
-    const remove = ruleBody(css, '.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__pod-row button');
+    const save = ruleBody(css, '.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__pod button');
+    const remove = ruleBody(css, '.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__remove');
     expect(save).toContain('background: var(--v2-surface)');
     expect(remove).toContain('background: var(--v2-surface)');
     expect(remove).toContain('border: 1px solid var(--v2-border)');
