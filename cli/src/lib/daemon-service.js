@@ -201,7 +201,17 @@ WantedBy=default.target
 // headless box nobody logs in to, the daemon would then stay down after every
 // reboot. logind records lingering as one file per user, so that file is what
 // says the daemon starts at boot, not the exit code of the call that asked.
-export const lingerFile = (username) => join('/var/lib/systemd/linger', username);
+// logind names the file cescape(user name) (src/basic/escape.c): the named
+// escapes, and octal for any other byte below a space or from 127 up.
+const NAMED_ESCAPES = {
+  7: 'a', 8: 'b', 12: 'f', 10: 'n', 13: 'r', 9: 't', 11: 'v', 92: '\\', 34: '"', 39: "'",
+};
+const cescape = (value) => [...Buffer.from(value, 'utf8')].map((byte) => {
+  if (NAMED_ESCAPES[byte]) return `\\${NAMED_ESCAPES[byte]}`;
+  if (byte < 32 || byte >= 127) return `\\${byte.toString(8).padStart(3, '0')}`;
+  return String.fromCharCode(byte);
+}).join('');
+export const lingerFile = (username) => join('/var/lib/systemd/linger', cescape(username));
 
 // The command is printed for a person to paste into a shell, so a user name the
 // shell would split or expand is single-quoted. The call above it takes argv.

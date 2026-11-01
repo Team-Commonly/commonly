@@ -219,6 +219,26 @@ describe('install', () => {
       expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('not at boot'));
     });
 
+    // CodeRabbit on #3261: logind names the linger file cescape(user name).
+    test('the linger file uses systemd\'s C-escaped user name', () => {
+      expect(lingerFile('sam')).toBe('/var/lib/systemd/linger/sam');
+      expect(lingerFile("o'brien x")).toBe("/var/lib/systemd/linger/o\\'brien x");
+      expect(lingerFile('a\\b"c')).toBe('/var/lib/systemd/linger/a\\\\b\\"c');
+      expect(lingerFile('é\t\x7f')).toBe('/var/lib/systemd/linger/\\303\\251\\t\\177');
+    });
+
+    test('lingering turned on for an escaped user name is seen as on', async () => {
+      const deps = makeDeps();
+      let lingering = false;
+      const escaped = "/var/lib/systemd/linger/o\\'brien x";
+      deps.existsFile = jest.fn((path) => (path === escaped ? lingering : false));
+      deps.execCmd = jest.fn(async (argv) => { if (argv[0] === 'loginctl') lingering = true; });
+      const result = await installDaemonService({
+        platform: 'linux', home, nodePath, cliPath, username: "o'brien x", ...deps,
+      });
+      expect(result.startsAtBoot).toBe(true);
+    });
+
     test('the printed command quotes a user name the shell would split', async () => {
       const deps = makeDeps();
       deps.existsFile = jest.fn(() => false);
