@@ -93,6 +93,26 @@ beforeEach(async () => {
   await AgentDigestState.deleteMany({});
 });
 
+describe('holdsEvent (the listener check-in on /events/renew)', () => {
+  const make = (over = {}) => AgentEvent.create({
+    agentName: AGENT, instanceId: INSTANCE, podId: POD_ID, type: 'chat.mention', payload: { content: 'q' }, ...over,
+  });
+
+  test('true for this agent\'s delivered and checkpointed events, false for pending, other agents and unknown ids', async () => {
+    const delivered = await make({ status: 'delivered', deliveryNonce: 'n1' });
+    const acked = await make({ status: 'acked', deliveryNonce: null });
+    const pending = await make({ status: 'pending' });
+    const other = await make({ agentName: 'someone-else', status: 'acked' });
+    const unknownId = String(new mongoose.Types.ObjectId());
+    const holds = (id, agent = AGENT) => AgentEventService.holdsEvent(String(id), agent, INSTANCE);
+    expect(await holds(delivered._id)).toBe(true);
+    expect(await holds(acked._id)).toBe(true);
+    expect(await holds(pending._id)).toBe(false);
+    expect(await holds(other._id)).toBe(false);
+    expect(await holds(unknownId)).toBe(false);
+  });
+});
+
 describe('legacy ambient digest bridge', () => {
   test('a push hint does not consume durable inbox state before the reconciling poll', async () => {
     const ws = require('../../../services/agentWebSocketService');
