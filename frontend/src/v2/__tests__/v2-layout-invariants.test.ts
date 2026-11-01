@@ -456,6 +456,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(pin).toContain('height: 28px');
   });
 
+  test('phone tab labels keep text contrast while the glyphs take the artboard grey (D223)', () => {
+    expect(v2).toContain('.v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }');
+  });
+
   test('the phone pods page leads with the artboard title bar, search behind an icon (D223)', () => {
     expect(podsSidebar).toContain('className="v2-pods__bar"');
     expect(podsSidebar).toContain('v2-pods__search-open');

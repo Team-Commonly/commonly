@@ -12732,6 +12732,10 @@ body.modern-ui.v2-canvas {
     white-space: nowrap;
   }
 
+  /* The artboard greys the whole tab at rest; only the glyph takes that
+     placeholder grey here, so the label text keeps 4.5:1. */
+  .v2-root button.v2-mobile-tabs__item:not(.v2-mobile-tabs__item--active) .v2-mobile-tabs__label { color: var(--v2-text-muted); }
+
   /* D215: the needs-you count is a cobalt badge on the icon, not a sentence
      in the label. */
   .v2-mobile-tabs__icon { position: relative; }
