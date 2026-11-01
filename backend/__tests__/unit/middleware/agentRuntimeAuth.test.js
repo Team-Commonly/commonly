@@ -80,6 +80,7 @@ jest.mock('../../../models/Pod', () => ({
 }));
 
 const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
+const { touchLastActive } = require('../../../middleware/auth');
 const { agentAuthRefusalCounts, resetAgentAuthRefusalsForTest } = require('../../../services/agentAuthRefusals');
 
 const buildReq = (token) => {
@@ -191,6 +192,24 @@ describe('TASK-213 runtime token narrowing', () => {
     expect(next).toHaveBeenCalledTimes(2);
     expect(mockMarkByoConnectionAttempt).toHaveBeenCalledTimes(1);
     expect(mockCompleteStarterTask).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refused legacy call leaves the seat\'s last-active time alone', async () => {
+    setupLegacy();
+    touchLastActive.mockClear();
+    mockUserFindOne.mockImplementation(async (query) => (query?.['botMetadata.agentName'] ? { _id: 'bot-rivet' } : null));
+    mockNarrowedPods.mockResolvedValue(new Set(['pod-a']));
+    const req = buildReq('cm_agent_test');
+    Object.assign(req, { method: 'POST', baseUrl: '/api/agents/runtime',
+      route: { path: '/pods/:podId/messages' }, params: { podId: 'pod-b' } });
+    const next = jest.fn();
+    await agentRuntimeAuth(req, buildRes(), next);
+    expect(next).not.toHaveBeenCalled();
+    expect(touchLastActive).not.toHaveBeenCalled();
+    req.params.podId = 'pod-a';
+    await agentRuntimeAuth(req, buildRes(), next);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(touchLastActive).toHaveBeenCalledWith('bot-rivet');
   });
 
   test('allows a write into the one grant pod and refuses another pod', async () => {
@@ -558,6 +577,7 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
   test('refuses an outward call for an embedded User agent token', async () => {
     const bot = buildAgentUser(new Date('2026-08-12T00:00:00Z'));
     mockUserFindOne.mockResolvedValue(bot);
+    touchLastActive.mockClear();
     const req = narrowedRoute();
     const res = buildRes();
     const next = jest.fn();
@@ -571,6 +591,8 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'outsider_grant_runtime_narrowed' }));
     expect(next).not.toHaveBeenCalled();
+    // A refused call is not activity.
+    expect(touchLastActive).not.toHaveBeenCalled();
   });
 
   test('refuses an outward call for a spawn-scoped AgentCredential row', async () => {

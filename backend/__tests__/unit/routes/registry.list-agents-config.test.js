@@ -64,10 +64,6 @@ jest.mock('../../../services/dmService', () => ({
   canViewPod: jest.fn().mockResolvedValue(true),
 }));
 
-jest.mock('../../../services/nativeOutsiderGrantPolicy', () => ({
-  agentsWithMultipleOutsiderGrantPods: jest.fn(),
-}));
-
 // AgentIdentityService surface used by helpers.ts. Two import shapes are
 // consumed: (a) the named export `buildAgentUsername` (used by the route
 // handler to compose user lookup keys) and (b) `.default` (used by
@@ -98,7 +94,6 @@ const AgentProfile = require('../../../models/AgentProfile');
 const AgentTemplate = require('../../../models/AgentTemplate');
 const User = require('../../../models/User');
 const { AgentRegistry, AgentInstallation } = require('../../../models/AgentRegistry');
-const { agentsWithMultipleOutsiderGrantPods } = require('../../../services/nativeOutsiderGrantPolicy');
 const registryRoutes = require('../../../routes/registry');
 
 const app = express();
@@ -108,11 +103,9 @@ app.use('/api/registry', registryRoutes);
 describe('registry list pod agents config payload', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    agentsWithMultipleOutsiderGrantPods.mockResolvedValue(new Set());
   });
 
   it('returns persisted config fields used by agent settings UI', async () => {
-    agentsWithMultipleOutsiderGrantPods.mockResolvedValue(new Set(['openclaw:x-curator']));
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
         _id: 'pod-1',
@@ -171,11 +164,6 @@ describe('registry list pod agents config payload', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.agents).toHaveLength(1);
-    expect(agentsWithMultipleOutsiderGrantPods).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ agentName: 'openclaw', instanceId: 'x-curator' })]),
-    );
-    expect(res.body.agents[0].runtimeNarrowedByMultipleGrantPods).toBe(true);
-    expect(res.body.agents[0].runtimeNarrowingUnavailable).toBe(false);
     expect(res.body.agents[0].config).toEqual({
       presetId: null,
       customizations: null,
@@ -199,17 +187,6 @@ describe('registry list pod agents config payload', () => {
       skillEnvKeys: ['github'],
     }));
     expect(res.body.agents[0].runtime).not.toHaveProperty('webhookSecret');
-
-    agentsWithMultipleOutsiderGrantPods.mockRejectedValueOnce(new Error('grant DB unavailable'));
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      const unavailable = await request(app).get('/api/registry/pods/pod-1/agents');
-      expect(unavailable.status).toBe(200);
-      expect(unavailable.body.agents[0]).toEqual(expect.objectContaining({
-        runtimeNarrowedByMultipleGrantPods: false,
-        runtimeNarrowingUnavailable: true,
-      }));
-    } finally { warn.mockRestore(); }
   });
 
   // Hardening ruling (2026-10-21): every pod member reads this

@@ -13,7 +13,6 @@ const { hostedRunsNative } = require('../../services/hostedEngine');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
 const AgentIdentityService = require('../../services/agentIdentityService');
-const { agentsWithMultipleOutsiderGrantPods } = require('../../services/nativeOutsiderGrantPolicy');
 const { revokeRuntimeTokensAfterLastUninstall } = require('./tokens');
 const {
   getUserId,
@@ -178,16 +177,6 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
 
     const installations = await AgentInstallation.getInstalledAgents(podId);
-    let multiGrantPodAgents = new Set<string>();
-    let runtimeNarrowingUnavailable = false;
-    try {
-      multiGrantPodAgents = await agentsWithMultipleOutsiderGrantPods(installations);
-    } catch (narrowingErr) {
-      // The roster is advisory. The runtime middleware independently fails
-      // closed; the Tools page must not claim the seat can post on a bad read.
-      console.warn('[pod-agents] runtime narrowing lookup failed:', (narrowingErr as Error).message);
-      runtimeNarrowingUnavailable = true;
-    }
 
     // One derivation for proof-of-life (heartbeats ∪ runs ∪ token use) —
     // shared with the native runtime's commonly_agent_status tool via
@@ -383,15 +372,11 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           revealWebhookUrl: viewerIsAdmin || installedByViewer(i),
           runtimeIdentity: seatRuntimeIdentities.get(instanceKey) || null,
         });
-        const narrowing = {
-          runtimeNarrowedByMultipleGrantPods: multiGrantPodAgents.has(instanceKey),
-          runtimeNarrowingUnavailable,
-        };
         const runtimeType = payload?.runtime?.runtimeType;
         // A provisioned in-process seat needs no external connection. Its
         // runtime is available by construction, without a credential ledger.
         if (runtimeType === 'native' || hostedRunsNative(i)) {
-          return { ...payload, ...narrowing, connection: { state: 'available', lastSeenAt: null } };
+          return { ...payload, connection: { state: 'available', lastSeenAt: null } };
         }
         // Legacy local-cli installs are normalized to their harness name
         // (codex/claude-code) in the public payload. Host, not that label,
@@ -419,7 +404,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           || daemonBound
           || (runtimeType === 'webhook' && !payload?.runtime?.host);
         if (!connectionAvailable || !user || !hasRuntimeConnection
-          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return { ...seatPayload, ...narrowing };
+          || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return seatPayload;
         const connection = deriveAgentConnection({
           runtimeType: daemonBound ? 'wrapper' : runtimeType,
           credentials: credentialByAgent.get(String(user._id)) || [],
@@ -435,7 +420,6 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           ? require('../../services/agentStateService').runInstructionFor(i) : null;
         return {
           ...seatPayload,
-          ...narrowing,
           connection,
           ...(fixCommand ? { fixCommand } : {}),
         };

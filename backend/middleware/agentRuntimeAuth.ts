@@ -194,13 +194,13 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       const authorizedPodIds = Array.from(new Set([...installationPodIds, ...dmPodIds]));
 
       req.agentUser = agentUser;
-      touchLastActive(String(agentUser._id));
       req.agentInstallations = installations as never[];
       req.agentAuthorizedPodIds = authorizedPodIds;
       req.agentInstallation = (installations[0] as never) || null;
 
       if (!await checkOutsiderGrantRuntimeNarrowing(req, res, installationPodIds)) return undefined;
 
+      touchLastActive(String(agentUser._id));
       await markCredentialUsed();
 
       try {
@@ -296,6 +296,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     // Guarded by `__tests__/unit/middleware/agentUserShapeContract.test.js`;
     // reviewer-checklist rule 18 is why that guard reads source rather than
     // running the middleware.
+    let legacyBotUser: { _id: unknown } | null = null;
     try {
       const botUser = await User.findOne({
         isBot: true,
@@ -304,7 +305,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       });
       if (botUser) {
         req.agentUser = botUser;
-        touchLastActive(String(botUser._id));
+        legacyBotUser = botUser;
       }
     } catch (err: unknown) {
       console.warn('[agentRuntimeAuth] failed to resolve bot user for legacy token path:', (err as Error).message);
@@ -314,6 +315,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       req, res, identityInstallations.map((inst: { podId?: unknown }) => String(inst.podId || '')),
     )) return undefined;
 
+    if (legacyBotUser) touchLastActive(String(legacyBotUser._id));
     await markCredentialUsed();
 
     try {
