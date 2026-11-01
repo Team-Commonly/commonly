@@ -27,7 +27,7 @@ test('missing model inventory permits text, but missing effort inventory never p
   expect(screen.getByText(/max stays stored, not sent/)).toBeInTheDocument();
   expect(screen.queryByText(/stored choice unsupported/)).toBeNull();
   expect(screen.getByLabelText('effort')).not.toHaveClass('is-unsupported');
-  const effortRow = screen.getByLabelText('effort').closest('.v2-runtime-controls__row')!;
+  const effortRow = screen.getByLabelText('effort').closest('.lrow')!;
   expect(within(effortRow as HTMLElement).queryByLabelText('pending next spawn')).toBeNull();
   fireEvent.change(screen.getByLabelText('model'), { target: { value: 'new-unlisted-model' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save runtime' }));
@@ -70,7 +70,7 @@ test('OpenCode provider qualification alone does not leave a permanent pending m
     inventory: [{ harness: 'opencode', installed: true, version: '1', models: null, efforts: [] }],
     observation: { ...runtime.observation, lastSpawn: { ...receipt, harness: 'opencode', model: 'explicit-provider/saved-model', effort: null } },
   }} onSave={jest.fn()} />);
-  const modelRow = screen.getByLabelText('model').closest('.v2-runtime-controls__row')!;
+  const modelRow = screen.getByLabelText('model').closest('.lrow')!;
   expect(within(modelRow as HTMLElement).queryByLabelText('pending next spawn')).toBeNull();
   expect(screen.getByText('explicit-provider/saved-model')).toBeInTheDocument();
 });
@@ -81,4 +81,48 @@ test('read-only inventory mismatch preserves the saved model without claiming a 
   expect(screen.getByLabelText('model')).toHaveValue('saved-model');
   expect(screen.queryByText(/saved-model · stored/)).toBeNull();
   expect(screen.queryByText(/stored choice unsupported/)).toBeNull();
+});
+
+test('a dot marks only the rows that change on the next spawn', () => {
+  render(<Controls runtime={{ ...runtime, effort: 'high', observation: { ...runtime.observation,
+    lastSpawn: { ...receipt, model: 'older-model' } } }} onSave={jest.fn()} />);
+  const row = (field: string) => screen.getByLabelText(field).closest('.lrow') as HTMLElement;
+  expect(within(row('model')).getByRole('img', { name: 'pending next spawn' })).toBeInTheDocument();
+  expect(within(row('harness')).queryByRole('img', { name: 'pending next spawn' })).toBeNull();
+  expect(within(row('effort')).queryByRole('img', { name: 'pending next spawn' })).toBeNull();
+});
+
+test('a set key rests as a row; a failed save keeps the entry open, empty, with Save disabled', async () => {
+  mockApi.get.mockResolvedValue({ set: true, setAt: at, setBy: 'owner', lastUsedAt: null });
+  mockApi.put.mockRejectedValue(new Error('proxy'));
+  render(<Key name="seat" instanceId="default" editable capability={{ available: true, provider: 'anthropic' }} harness="Claude Code" />);
+  expect(await screen.findByText('never shown again')).toBeInTheDocument();
+  expect(screen.getByText('key for anthropic')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Replace key' }));
+  fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'sk-private-test-value' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save key' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not update the key. Enter it again to retry.');
+  expect(screen.getByLabelText('API key')).toHaveValue('');
+  expect(screen.getByRole('button', { name: 'Save key' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+});
+
+test('a row with no confirmation reads "unconfirmed", never "confirmed unconfirmed"', () => {
+  render(<Controls runtime={runtime} onSave={jest.fn()} />);
+  const row = screen.getByLabelText('model').closest('.lrow') as HTMLElement;
+  expect(row.textContent).toContain('last spawn actual-model · unconfirmed');
+  expect(row.textContent).not.toContain('confirmed unconfirmed');
+});
+test('a set key keeps its date and Remove when the harness cannot take a key, and while replacing it', async () => {
+  mockApi.get.mockResolvedValue({ set: true, setAt: at, setBy: 'owner', lastUsedAt: null });
+  const view = render(<Key name="seat" instanceId="default" editable capability={{ available: false, provider: null }} harness="Hermes" />);
+  expect(await screen.findByText(/^set · /)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+  view.unmount();
+  render(<Key name="seat" instanceId="default" editable capability={{ available: true, provider: 'anthropic' }} harness="Claude Code" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Replace key' }));
+  expect(screen.getByLabelText('API key')).toBeInTheDocument();
+  expect(screen.getByText(/^set · /)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
 });

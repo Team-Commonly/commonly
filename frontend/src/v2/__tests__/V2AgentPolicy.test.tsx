@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import V2AgentPolicy from '../agents/V2AgentPolicy';
 
 jest.mock('axios', () => {
@@ -58,7 +58,7 @@ it('hides stored approval and context settings that no runtime enforces', async 
 it('writes only the chosen trust mode and edits memory with its revision', async () => {
   renderPolicy();
   await screen.findByDisplayValue('Original');
-  fireEvent.change(screen.getByLabelText('Repository access'), { target: { value: 'workspace' } });
+  fireEvent.click(screen.getByRole('radio', { name: 'Allow repository edits' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save trust mode' }));
   await waitFor(() => expect(update).toHaveBeenCalledWith({
     config: { environment: { sandbox: { mode: 'workspace' } } },
@@ -81,7 +81,8 @@ it('shows server quota for hosted agents without editable trust controls', async
 it('offers trust mode for the canonical BYO runtime shape', async () => {
   renderPolicy({ ...installation, runtime: { runtimeType: 'codex', host: 'byo' },
     config: { environment: { sandbox: { mode: 'read-only' } } } });
-  expect(await screen.findByLabelText('Repository access')).toHaveValue('read-only');
+  expect(await screen.findByRole('radiogroup', { name: 'Repository access' })).toBeInTheDocument();
+  expect(screen.getByRole('radio', { name: 'Read only' })).toBeChecked();
 });
 
 it('shows a retry in Memory when loading fails, then opens the editor', async () => {
@@ -96,4 +97,41 @@ it('shows a retry in Memory when loading fails, then opens the editor', async ()
     : Promise.resolve({ data: { turnCap: 30, userRunCeiling: 120 } }));
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   expect(await screen.findByDisplayValue('Original')).toBeInTheDocument();
+});
+
+it('shows Saved in the trust row for a moment, then leaves the button alone', async () => {
+  renderPolicy();
+  await screen.findByDisplayValue('Original');
+  jest.useFakeTimers();
+  try {
+    fireEvent.click(screen.getByRole('radio', { name: 'Allow repository edits' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save trust mode' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved');
+    await act(async () => { jest.advanceTimersByTime(3000); });
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save trust mode' })).toBeInTheDocument();
+  } finally { jest.useRealTimers(); }
+});
+
+it('a failed trust save stays in the action slot', async () => {
+  update.mockRejectedValueOnce(new Error('Could not save changes.'));
+  renderPolicy();
+  await screen.findByDisplayValue('Original');
+  fireEvent.click(screen.getByRole('button', { name: 'Save trust mode' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('Could not save changes.');
+  expect(alert.closest('.ac')).toContainElement(screen.getByRole('button', { name: 'Save trust mode' }));
+});
+
+it('the memory editor keeps its Saved until the next action', async () => {
+  renderPolicy();
+  await screen.findByDisplayValue('Original');
+  jest.useFakeTimers();
+  try {
+    fireEvent.change(screen.getByLabelText('Long-term'), { target: { value: 'Changed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save memory' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved');
+    await act(async () => { jest.advanceTimersByTime(5000); });
+    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+  } finally { jest.useRealTimers(); }
 });

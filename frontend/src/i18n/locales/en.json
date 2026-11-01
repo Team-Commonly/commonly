@@ -2775,7 +2775,8 @@
       "targetUnavailable": "That computer is no longer available. Choose another computer.",
       "placementChanged": "This agent’s computer changed. Review its current placement before moving it.",
       "placementError": "Could not load this agent’s computer placement.",
-      "moveError": "Could not move this agent. Try again."
+      "moveError": "Could not move this agent. Try again.",
+      "machine": "Machine"
     },
     "grants": {
       "title": "Connector grants",
@@ -2791,7 +2792,10 @@
       "confirmRevoke": "Yes, revoke it",
       "cancel": "Cancel",
       "loadError": "Could not load connector grants.",
-      "revokeError": "Could not revoke the grant."
+      "revokeError": "Could not revoke the grant.",
+      "activeCount": "{{count}} active",
+      "endedCount": "{{count}} ended",
+      "retry": "Try again"
     },
     "controls": {
       "title": "How it runs",
@@ -2838,7 +2842,8 @@
       "remove": "Remove",
       "set": "set",
       "loadError": "Could not load key status.",
-      "saveError": "Could not update the key. Enter it again to retry."
+      "saveError": "Could not update the key. Enter it again to retry.",
+      "neverShown": "never shown again"
     }
   },
   "agentSettings": {
@@ -2951,7 +2956,11 @@
     "messageWakeShort_human": "People",
     "messageWakeShort_all": "All",
     "turnsUsed": "{{used}} / {{cap}} turns a day",
-    "turnsUsedNoCap": "{{used}} turns a day · cap unavailable"
+    "turnsUsedNoCap": "{{used}} turns a day · cap unavailable",
+    "specialtyCount_one": "{{count}} specialty",
+    "specialtyCount_other": "{{count}} specialties",
+    "boundaryCount_one": "{{count}} boundary",
+    "boundaryCount_other": "{{count}} boundaries"
   },
   "agentPolicy": {
     "title": "Policy",

@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { machineDisplayName } from '../utils/machineLabel';
 import { useV2Api } from '../hooks/useV2Api';
-import './V2AgentRuntimeGrants.css';
 import V2AgentProviderKey from './V2AgentProviderKey';
+import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
+import ConnectorLogo, { connectorName } from '../connectors/ConnectorLogo';
 import V2RuntimeControls, { RuntimeSettings, RuntimeUpdate } from './V2RuntimeControls';
 import { daemonSetupCommand } from '../utils/daemonSetupCommand';
 
@@ -68,6 +69,8 @@ const dateLabel = (value: string | null): string => {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
 };
 
+const grantEnded = (grant: AgentGrant): boolean => Boolean(grant.revokedAt) || new Date(grant.expiresAt).getTime() <= Date.now();
+
 const V2AgentRuntimeGrants: React.FC<Props> = ({
   name, instanceId, runtime, onSaveRuntime,
 }) => {
@@ -75,7 +78,8 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   const api = useV2Api();
   const [grants, setGrants] = useState<AgentGrant[]>([]);
   const [loading, setLoading] = useState(true);
-  const [grantsError, setGrantsError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [revokeError, setRevokeError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmGrantId, setConfirmGrantId] = useState<string | null>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
@@ -110,14 +114,14 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
 
   const load = useCallback(async () => {
     setLoading(true);
-    setGrantsError('');
+    setLoadError('');
     try {
       const next = await api.get<AgentGrantsResponse>(
         `/api/registry/agents/${encodeURIComponent(name)}/instances/${encodeURIComponent(instanceId)}/grants`,
       );
       setGrants(next.grants || []);
     } catch {
-      setGrantsError(t('agentManage.grants.loadError', { defaultValue: 'Could not load connector grants.' }));
+      setLoadError(t('agentManage.grants.loadError', { defaultValue: 'Could not load connector grants.' }));
     } finally {
       setLoading(false);
     }
@@ -134,7 +138,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
   const details = useMemo(() => describeRuntime(runtime), [runtime]);
   const revoke = async (grantId: string) => {
     setBusy(true);
-    setGrantsError('');
+    setRevokeError('');
     try {
       await api.post(`/api/grants/${encodeURIComponent(grantId)}/revoke`);
       setConfirmGrantId(null);
@@ -143,7 +147,7 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
       )));
       await load();
     } catch {
-      setGrantsError(t('agentManage.grants.revokeError', { defaultValue: 'Could not revoke the grant.' }));
+      setRevokeError(t('agentManage.grants.revokeError', { defaultValue: 'Could not revoke the grant.' }));
     } finally {
       setBusy(false);
     }
@@ -176,66 +180,107 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
     }
   };
 
+  const machineName = (id: string | null) => placement?.activeMachines.find((machine) => machine.machineId === id)?.name || id;
+  const canMove = Boolean(placement && (placement.boundMachineRevoked || !placement.boundMachineId));
+  const machineState = placement && <>
+    {placement.boundMachineRevoked && <span role="status">{t('agentManage.runtime.machineRevoked')}</span>}
+    {!placement.boundMachineRevoked && placement.boundMachineId && <span><span className="dot" aria-hidden="true" />{t('agentManage.runtime.currentMachine', { name: machineName(placement.boundMachineId) })}</span>}
+    {placement.requestedMachineId && !placement.boundMachineId && <span role="status">{t('agentManage.runtime.machineRequested', { name: machineName(placement.requestedMachineId) })}</span>}
+  </>;
+  const alertRow = (text: string, tone?: 'muted', action?: React.ReactNode) => <div className={`lrow v2-agent-settings-page__alert${tone ? ` v2-agent-settings-page__alert--${tone}` : ''}`}>
+    <span className="lb" role="alert"><V2AgentSettingsIcon name="alert" />{text}</span>
+    {action && <span className="ac">{action}</span>}
+  </div>;
+  const activeGrants = grants.filter((grant) => !grantEnded(grant)).length;
+  const endedGrants = grants.length - activeGrants;
+
   return (
-    <div className="v2-agent-runtime-grants">
-      <section className="v2-agent-settings__section" aria-labelledby="agent-runtime-heading">
-        <h2 id="agent-runtime-heading">{t('agentManage.controls.title')}</h2>
-        <V2RuntimeControls runtime={runtime} onSave={onSaveRuntime} />
-        {details.mode === 'daemon' && placement && (
-          <div className="v2-agent-runtime-grants__edit" data-testid="agent-machine-placement">
-            {placement.boundMachineRevoked && <p role="status">{t('agentManage.runtime.machineRevoked')}</p>}
-            {!placement.boundMachineRevoked && placement.boundMachineId && <p>{t('agentManage.runtime.currentMachine', {
-              name: placement.activeMachines.find((machine) => machine.machineId === placement.boundMachineId)?.name || placement.boundMachineId,
-            })}</p>}
-            {placement.requestedMachineId && !placement.boundMachineId && <p role="status">{t('agentManage.runtime.machineRequested', {
-              name: placement.activeMachines.find((machine) => machine.machineId === placement.requestedMachineId)?.name || placement.requestedMachineId,
-            })}</p>}
-            {(placement.boundMachineRevoked || !placement.boundMachineId) && (
-              placement.activeMachines.length > 0 ? <>
-                <label htmlFor="agent-runtime-machine">{t('agentManage.runtime.moveLabel')}</label>
-                <select id="agent-runtime-machine" value={machineChoice} onChange={(event) => setMachineChoice(event.target.value)}>
-                  {placement.activeMachines.map((machine) => <option key={machine.machineId} value={machine.machineId}>{machineDisplayName(machine, placement.activeMachines, t, i18n.language)}</option>)}
-                </select>
-                <button type="button" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
-                  {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
-                </button>
-              </> : <p>{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommand()}</code></p>
-            )}
-          </div>
-        )}
+    <>
+      <section className="v2-agent-settings-page__group" aria-labelledby="agent-runtime-heading">
+        <h2 id="agent-runtime-heading" className="gtitle"><V2AgentSettingsIcon name="cpu" />{t('agentManage.controls.title')}</h2>
+        <div className="list">
+          {details.mode === 'daemon' && placement && (canMove ? (
+            <details className="disc" open data-testid="agent-machine-placement">
+              <summary>
+                <span className="lb"><V2AgentSettingsIcon name="device" />{t('agentManage.runtime.machine')}</span>
+                <span className="vl">{machineState}</span>
+                <V2AgentSettingsIcon name="chev" className="chev" />
+              </summary>
+              <div className="dbody">
+                {placement.activeMachines.length > 0 ? <div className="v2-agent-settings-page__move">
+                  <label className="mu" htmlFor="agent-runtime-machine">{t('agentManage.runtime.moveLabel')}</label>
+                  <span className="sel">
+                    <select id="agent-runtime-machine" value={machineChoice} onChange={(event) => setMachineChoice(event.target.value)}>
+                      {placement.activeMachines.map((machine) => <option key={machine.machineId} value={machine.machineId}>{machineDisplayName(machine, placement.activeMachines, t, i18n.language)}</option>)}
+                    </select>
+                    <V2AgentSettingsIcon name="chev" />
+                  </span>
+                  <button type="button" className="b b-s b-sm" disabled={!machineChoice || moving} onClick={() => { void moveAgent(); }}>
+                    {moving ? t('agentManage.runtime.moving') : t('agentManage.runtime.move')}
+                  </button>
+                </div> : <p className="v2-agent-settings-page__live">{t('agentManage.runtime.noActiveMachine')} <code>{daemonSetupCommand()}</code></p>}
+              </div>
+            </details>
+          ) : (
+            <div className="lrow" data-testid="agent-machine-placement">
+              <span className="lb"><V2AgentSettingsIcon name="device" />{t('agentManage.runtime.machine')}</span>
+              <span className="vl">{machineState}</span>
+              <span className="ac" />
+            </div>
+          ))}
+          {placementError && alertRow(placementError)}
+          <V2RuntimeControls runtime={runtime} onSave={onSaveRuntime} />
+        </div>
         <V2AgentProviderKey key={`${name}/${instanceId}`} name={name} instanceId={instanceId} editable={Boolean(onSaveRuntime && runtime.managed)} capability={runtime.ownKeyCapability} harness={details.adapter || runtime.adapter || ''} />
-        {placementError && <p role="alert">{placementError}</p>}
       </section>
-      <section className="v2-agent-settings__section" aria-labelledby="agent-grants-heading">
-        <h2 id="agent-grants-heading">{t('agentManage.grants.title', { defaultValue: 'Connector grants' })}</h2>
-        {grantsError && <p role="alert">{grantsError}</p>}
-        {loading && <p role="status">{t('agentManage.grants.loading', { defaultValue: 'Loading grants…' })}</p>}
-        {!loading && !grantsError && grants.length === 0 && <p>{t('agentManage.grants.empty', { defaultValue: 'This agent has no connector grants.' })}</p>}
-        <ul className="v2-agent-runtime-grants__list">
+      <section className="v2-agent-settings-page__group" aria-labelledby="agent-grants-heading">
+        {/* One heading; its name is the title alone, so the count beside it stays out of the section's name. */}
+        <h2 className="gtitle" aria-labelledby="agent-grants-heading"><V2AgentSettingsIcon name="plug" />
+          <span id="agent-grants-heading">{t('agentManage.grants.title', { defaultValue: 'Connector grants' })}</span>
+          {grants.length > 0 && <span className="v2-agent-settings-page__count">
+            {[t('agentManage.grants.activeCount', { count: activeGrants }),
+              endedGrants > 0 && t('agentManage.grants.endedCount', { count: endedGrants })].filter(Boolean).join(' · ')}
+          </span>}
+        </h2>
+        {loadError && <div className="list">
+          {alertRow(loadError, 'muted', <button type="button" className="b b-s b-sm" disabled={loading} onClick={() => { void load(); }}>{t('agentManage.grants.retry')}</button>)}
+        </div>}
+        {loading && !grants.length && <div className="list"><div className="lrow v2-agent-settings-page__plain">
+          <span className="vl" role="status">{t('agentManage.grants.loading', { defaultValue: 'Loading grants…' })}</span>
+        </div></div>}
+        {!loading && !loadError && grants.length === 0 && <div className="list"><div className="lrow v2-agent-settings-page__plain">
+          <span className="vl">{t('agentManage.grants.empty', { defaultValue: 'This agent has no connector grants.' })}</span>
+        </div></div>}
+        {(grants.length > 0 || revokeError) && <div className="list">
+          {revokeError && alertRow(revokeError)}
           {grants.map((grant) => {
-            const ended = Boolean(grant.revokedAt) || new Date(grant.expiresAt).getTime() <= Date.now();
+            const ended = grantEnded(grant);
+            const connector = grant.connector || grant.tools[0]?.split('.')[0] || '';
             return (
-              <li key={grant.grantId}>
-                <div>
-                  <strong>{grant.connector || grant.tools[0]?.split('.')[0] || t('agentManage.grants.tool', { defaultValue: 'Tool' })}</strong>
-                  <span>{grant.tools.join(', ')}</span>
-                </div>
-                <p>{grant.podName || t('agentManage.grants.direct', { defaultValue: 'Direct to this agent' })} · {t('agentManage.grants.by', { defaultValue: 'Granted by' })} {grant.grantedBy || t('agentManage.grants.unknown', { defaultValue: 'unknown' })} · {dateLabel(grant.createdAt)}</p>
-                <p>{ended ? t('agentManage.grants.ended', { defaultValue: 'Ended' }) : t('agentManage.grants.ends', { defaultValue: 'Ends' })} {dateLabel(grant.revokedAt || grant.expiresAt)}</p>
-                {!ended && grant.canRevoke && (confirmGrantId === grant.grantId ? (
-                  <div className="v2-agent-runtime-grants__actions">
-                    <button type="button" disabled={busy} onClick={() => { void revoke(grant.grantId); }}>{t('agentManage.grants.confirmRevoke', { defaultValue: 'Yes, revoke it' })}</button>
-                    <button type="button" disabled={busy} onClick={() => setConfirmGrantId(null)}>{t('agentManage.grants.cancel', { defaultValue: 'Cancel' })}</button>
-                  </div>
-                ) : (
-                  <button type="button" disabled={busy} onClick={() => setConfirmGrantId(grant.grantId)}>{t('agentManage.grants.revoke', { defaultValue: 'Revoke' })}</button>
-                ))}
-              </li>
+              <div key={grant.grantId} className={`lrow v2-agent-settings-page__grant${ended ? ' is-ended' : ''}`}>
+                <span className="lg">{connector ? <ConnectorLogo type={connector} size={28} /> : null}</span>
+                <span className="v2-agent-settings-page__grantname">
+                  <strong>{connector ? connectorName(connector) : t('agentManage.grants.tool', { defaultValue: 'Tool' })}</strong>
+                  <span className="mo">{grant.podName || t('agentManage.grants.direct', { defaultValue: 'Direct to this agent' })} · {t('agentManage.grants.by', { defaultValue: 'Granted by' })} {grant.grantedBy || t('agentManage.grants.unknown', { defaultValue: 'unknown' })} · {dateLabel(grant.createdAt)}</span>
+                  <span className="mo v2-agent-settings-page__tools">{grant.tools.join(', ')}</span>
+                </span>
+                <span className="ac">
+                  <span className="mo">{ended ? t('agentManage.grants.ended', { defaultValue: 'Ended' }) : t('agentManage.grants.ends', { defaultValue: 'Ends' })} {dateLabel(grant.revokedAt || grant.expiresAt)}</span>
+                  {!ended && grant.canRevoke && (confirmGrantId === grant.grantId ? (
+                    <span className="v2-agent-settings-page__confirm">
+                      <button type="button" className="b b-p b-sm" disabled={busy} onClick={() => { void revoke(grant.grantId); }}>{t('agentManage.grants.confirmRevoke', { defaultValue: 'Yes, revoke it' })}</button>
+                      <button type="button" className="b b-g b-sm" disabled={busy} onClick={() => { setRevokeError(''); setConfirmGrantId(null); }}>{t('agentManage.grants.cancel', { defaultValue: 'Cancel' })}</button>
+                    </span>
+                  ) : (
+                    <button type="button" className="b b-g b-sm" disabled={busy} onClick={() => { setRevokeError(''); setConfirmGrantId(grant.grantId); }}>{t('agentManage.grants.revoke', { defaultValue: 'Revoke' })}</button>
+                  ))}
+                </span>
+              </div>
             );
           })}
-        </ul>
+        </div>}
       </section>
-    </div>
+    </>
   );
 };
 

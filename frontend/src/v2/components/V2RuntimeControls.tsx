@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import './V2RuntimeControls.css';
+import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
 
 export interface RuntimeReceipt { harness: string; version: string | null; model: string | null; effort: string | null; at: string }
 export interface RuntimeObservation {
@@ -67,14 +67,19 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
       setError((failure as { response?: { data?: { error?: string } } })?.response?.data?.error || k('saveError'));
     } finally { setBusy(false); }
   };
-  return <div className="v2-runtime-controls">
-    <p className="v2-runtime-controls__meta">{editable ? k('nextSpawn')
-      : runtime.host === 'cloud' || ['hosted', 'internal', 'native'].includes(runtime.runtimeType || '') ? k('readOnlyHosted') : k('readOnlyCli')}</p>
-    <div className="v2-runtime-controls__table" role="group" aria-label={k('title')}>
-      <div className="v2-runtime-controls__head"><span />{['saved', 'lastSpawn', 'confirmed'].map((key) => <span key={key}>{k(key)}</span>)}</div>
-      {(['harness', 'model', 'effort'] as const).map((field) => <div className="v2-runtime-controls__row" key={field}>
-        <label htmlFor={`runtime-${field}`}>{pending(field) && <span className="v2-runtime-controls__pending" aria-label={k('pending')} />}{k(field)}</label>
-        <div className="v2-runtime-controls__saved">
+  const icons = { harness: 'cpu', model: 'brain', effort: 'bolt' } as const;
+  const alertRow = (text: string) => <div className="lrow v2-agent-settings-page__alert">
+    <span className="lb"><V2AgentSettingsIcon name="alert" />{text}</span>
+  </div>;
+  const status = runtime.processConnected === true ? k('connected') : runtime.processConnected === false ? k('disconnected') : k('notReported');
+  return <>
+    {(['harness', 'model', 'effort'] as const).map((field) => <div className="lrow v2-agent-settings-page__stack" key={field}>
+      <span className="lb"><V2AgentSettingsIcon name={icons[field]} />
+        {pending(field) && <span className="dot" role="img" aria-label={k('pending')} title={k('pending')} />}
+        <label htmlFor={`runtime-${field}`}>{k(field)}</label>
+      </span>
+      <span className="vl">
+        <span className="sel v2-runtime-controls__control">
           {field === 'harness' ? <select id="runtime-harness" className={unsupportedHarness ? 'is-unsupported' : ''} disabled={!editable || busy} value={harness} onChange={(event) => { setHarness(event.target.value); setEffort(''); }}>
             {!inventory.some((row) => row.harness === harness) && <option value={harness}>{LABELS[harness] || harness || k('unknown')}</option>}
             {inventory.map((row) => <option key={row.harness} value={row.harness} disabled={!row.installed}>{LABELS[row.harness] || row.harness}{row.version ? ` ${row.version}` : ''}{row.installed ? '' : ` · ${k('notInstalled')}`}</option>)}
@@ -88,22 +93,30 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
               {!editable && storedEffort && <option value={effort}>{effort}</option>}
               {levels.map((level) => <option key={level} value={level}>{level}</option>)}
             </select>}
-          {editable && field === 'model' && !models?.length && <small>{k('modelsUnavailable')}</small>}
-          {editable && field === 'effort' && !levels.length && effort && <small>{k('effortUnavailable', { harness: LABELS[harness] || harness, effort })}</small>}
-        </div>
-        <span className="v2-runtime-controls__observed" data-label={k('lastSpawn')}>{value(last, field)}</span>
-        <span className="v2-runtime-controls__observed" data-label={k('confirmed')}>{value(confirmed, field, true)}</span>
-      </div>)}
+          {!(field === 'model' && !models?.length) && <V2AgentSettingsIcon name="chev" />}
+        </span>
+        <span className="mo">{k('lastSpawn')} <span>{value(last, field)}</span> · {confirmed ? <>{k('confirmed')} <span>{value(confirmed, field, true)}</span></> : <span>{k('unconfirmed')}</span>}</span>
+        {editable && field === 'model' && !models?.length && <span className="mo">{k('modelsUnavailable')}</span>}
+        {editable && field === 'effort' && !levels.length && effort && <span className="mo">{k('effortUnavailable', { harness: LABELS[harness] || harness, effort })}</span>}
+      </span>
+      <span className="ac" />
+    </div>)}
+    {(unsupportedHarness || unsupportedModel || unsupportedEffort) && alertRow(k('unsupported', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') }))}
+    {runtime.observation?.lastSpawnOutcome === 'failed' && alertRow(k('spawnFailed', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') }))}
+    <div className="lrow v2-agent-settings-page__stack v2-runtime-controls__status">
+      <span className="lb" />
+      <span className="vl mo">
+        <span>{editable ? k('nextSpawn')
+          : runtime.host === 'cloud' || ['hosted', 'internal', 'native'].includes(runtime.runtimeType || '') ? k('readOnlyHosted') : k('readOnlyCli')}</span>
+        <span><span>{k('process')}</span> {status}{runtime.processConnected && runtime.observation?.connectedAt ? ` · ${new Date(runtime.observation.connectedAt).toLocaleString()}` : ''}</span>
+        <span><span>{k('turn')}</span> {runtime.processConnected == null ? k('notReported') : runtime.processConnected && runtime.observation?.turnRunning ? k('running') : runtime.observation?.lastTurnAt ? new Date(runtime.observation.lastTurnAt).toLocaleString() : k('noTurn')}</span>
+        {last && <span>{k('lastSpawn')} · {new Date(last.at).toLocaleString()}</span>}
+      </span>
+      <span className="ac">
+        {editable && <button type="button" className="b b-p b-sm" aria-label={k('saveRuntime')} disabled={busy || !changed || unsupportedHarness || !model.trim() || unsupportedModel || Boolean(levels.length && unsupportedEffort)} onClick={() => { void save(); }}>{k('save')}</button>}
+        {error && <span role="alert" className="v2-agent-settings-page__note"><V2AgentSettingsIcon name="alert" />{error}</span>}
+      </span>
     </div>
-    {(unsupportedHarness || unsupportedModel || unsupportedEffort) && <p className="v2-runtime-controls__refusal">{k('unsupported', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') })}</p>}
-    {runtime.observation?.lastSpawnOutcome === 'failed' && <p className="v2-runtime-controls__refusal">{k('spawnFailed', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') })}</p>}
-    {error && <p role="alert">{error}</p>}
-    {editable && <button className="v2-runtime-controls__save" aria-label={k('saveRuntime')} disabled={busy || !changed || unsupportedHarness || !model.trim() || unsupportedModel || Boolean(levels.length && unsupportedEffort)} onClick={() => { void save(); }}>{k('save')}</button>}
-    <dl className="v2-runtime-controls__status">
-      <div><dt>{k('process')}</dt><dd>{runtime.processConnected === true ? k('connected') : runtime.processConnected === false ? k('disconnected') : k('notReported')}{runtime.processConnected && runtime.observation?.connectedAt ? ` · ${new Date(runtime.observation.connectedAt).toLocaleString()}` : ''}</dd></div>
-      <div><dt>{k('turn')}</dt><dd>{runtime.processConnected == null ? k('notReported') : runtime.processConnected && runtime.observation?.turnRunning ? k('running') : runtime.observation?.lastTurnAt ? new Date(runtime.observation.lastTurnAt).toLocaleString() : k('noTurn')}</dd></div>
-    </dl>
-    {last && <p className="v2-runtime-controls__meta">{k('lastSpawn')} · {new Date(last.at).toLocaleString()}</p>}
-  </div>;
+  </>;
 };
 export default V2RuntimeControls;
