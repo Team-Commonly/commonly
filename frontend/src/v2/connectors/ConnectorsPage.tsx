@@ -538,7 +538,7 @@ const ConnectorsPage: React.FC = () => {
       {m.blockedSeatNames.length > 0 && (
         <p className="v2-cx-note" role="status">
           {t('tools.multiGrantPodPostingBlocked', {
-            defaultValue: '{{agents}} cannot post in any pod while connectors reach more than one of their pods. End a grant until only one pod has connector access.',
+            defaultValue: '{{agents}} cannot post in any pod while connectors reach more than one of their pods. End grants until at most one of their pods has connector access. While one still does, they can post only in that pod.',
             agents: m.blockedSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
           })}
         </p>

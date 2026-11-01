@@ -98,6 +98,7 @@ export interface PodSeat {
   userId: string | null;
   displayName?: string;
   name: string;
+  instanceId?: string;
   internal?: boolean;
   // Set by the pod roster: connector grants reach more than one of this seat's pods.
   runtimeNarrowedByMultipleGrantPods?: boolean;

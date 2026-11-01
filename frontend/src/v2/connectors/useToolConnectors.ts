@@ -88,7 +88,7 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
   // Named by display name, once each, never by the pods their grants reach.
   const blockedSeatNames = useMemo(() => [...new Map(Object.values(seats).flat()
     .filter((seat) => seat.runtimeNarrowedByMultipleGrantPods)
-    .map((seat) => [seat.userId || seat.name, seat.displayName || seat.name])).values()], [seats]);
+    .map((seat) => [seat.userId || `${seat.name}:${seat.instanceId || 'default'}`, seat.displayName || seat.name])).values()], [seats]);
   // An unreadable roster, or a roster whose census failed, leaves posting
   // status unknown. The page says so rather than implying posting works.
   const narrowingStatusUnavailable = seatLookupFailed || Object.values(seats).flat()

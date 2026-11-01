@@ -39,6 +39,19 @@ describe('Connectors page: posting notice', () => {
     expect(screen.queryByText(UNKNOWN)).not.toBeInTheDocument();
   });
 
+  it('names two instances of one agent separately when neither has a user row', async () => {
+    mockApi({
+      pods,
+      seats: { p1: [
+        { name: 'openclaw', instanceId: 'aria', displayName: 'Aria', userId: null, runtimeNarrowedByMultipleGrantPods: true },
+        { name: 'openclaw', instanceId: 'pixel', displayName: 'Pixel', userId: null, runtimeNarrowedByMultipleGrantPods: true },
+      ] },
+    });
+    renderPage();
+
+    expect(await screen.findByText(BLOCKED)).toHaveTextContent(/^Aria, Pixel cannot post/);
+  });
+
   it('says the status is unknown when a roster read fails', async () => {
     mockApi({
       pods,
