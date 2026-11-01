@@ -168,6 +168,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const aprofile = read('../agents/v2-agent-profile.css');
   const agentSettings = read('../agents/v2-agent-settings.css');
   const byoCss = read('../components/V2AgentBYO.css');
+  // R05 lifted the Connect page onto the d215 frame (V2ConnectPage.css).
+  const connectCss = read('../components/V2ConnectPage.css');
   const landing = read('../landing/v2-landing.css');
   const podChat = read('../components/V2Thread.tsx');
   const podsSidebar = read('../components/V2PodsSidebar.tsx');
@@ -297,8 +299,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   // #2670: the Cursor rule card's header names an unbroken save path; without
   // these two declarations it pushes the Copy button out of the card at 390px.
   test('Cursor rule card header wraps its save path inside the card', () => {
-    expect(ruleBody(v2, '.v2-connect__rule .v2-connect__code-head span')).toContain('min-width: 0');
-    expect(ruleBody(v2, '.v2-connect__rule .v2-connect__code-head code')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(connectCss, '.v2-connect .v2-connect__rule .v2-connect__code-head span')).toContain('min-width: 0');
+    expect(ruleBody(connectCss, '.v2-connect .v2-connect__rule .v2-connect__code-head code')).toContain('overflow-wrap: anywhere');
   });
 
   test('Your Team card name owns its line so the category chip cannot crush it', () => {
@@ -1420,9 +1422,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(columnCount).not.toContain('border-radius:');
     expect(columnCount).not.toContain('padding:');
 
-    const connectCta = lastRuleBody(v2, '.v2-root .v2-connect__cta');
-    expect(connectCta).toContain('background: var(--v2-ink)');
-    expect(connectCta).toContain('color: var(--v2-on-ink)');
+    // R05: Connect's primary act is the frame's ink key, the fill gradient
+    // (--v2-fill-*) with on-fill text, the same key as BYO's submit.
+    const connectCta = lastRuleBody(connectCss, '.v2-connect .v2-connect__cta');
+    expect(connectCta).toContain('background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
+    expect(connectCta).toContain('color: var(--v2-on-fill)');
   });
 
   test('the board craft-pass buttons use icon components instead of unicode glyphs', () => {
@@ -5437,5 +5441,51 @@ describe('pod board column scroll (TASK-698)', () => {
     // The phone tabs are the frame's segment: a tinted track with a raised active key.
     expect(mobile).toMatch(/\.v2-board__tabs \{ display: flex; margin: 12px 12px 0; padding: 2px;/);
     expect(mobile).toMatch(/button\.v2-board__tab\.is-active \{ background: var\(--v2-surface\)/);
+  });
+});
+
+describe('Connect lifted from the d215 frame (R05)', () => {
+  const v2 = read('../v2.css');
+  const connectCss = read('../components/V2ConnectPage.css');
+  const connect = read('../components/V2ConnectPage.tsx');
+
+  test('the page imports its own sheet and v2.css carries no Connect rule', () => {
+    expect(connect).toContain("import './V2ConnectPage.css';");
+    // `v2-connect__` and the bare root; `v2-connector*` is a different surface.
+    expect(v2).not.toMatch(/\.v2-connect(__|[\s,{:])/);
+  });
+
+  // Deviation from the frame: Copy is a 28px key, so on a phone an invisible
+  // ::after ring makes its hit area 44px. With the key's 1px border, `inset`
+  // measures from the 26px padding box, so -9px is what reaches 44.
+  test('on a phone, Copy keeps its 28px key and gains a 44px hit ring', () => {
+    const key = ruleBody(connectCss, '.v2-connect .v2-connect__copy');
+    expect(key).toContain('height: 28px');
+    expect(key).toContain('border: 1px solid var(--v2-key-edge)');
+    expect(key).toContain('position: relative');
+    const phone = mediaBlockContaining(connectCss, '.v2-connect .v2-connect__copy::after');
+    const ring = ruleBody(connectCss, '.v2-connect .v2-connect__copy::after', { within: phone });
+    expect(ring).toContain('content: ""');
+    expect(ring).toContain('position: absolute');
+    expect(ring).toContain('inset: -9px');
+  });
+
+  test('on a phone, links and the agent lane acts are 44px tall', () => {
+    const phone = mediaBlockContaining(connectCss, '.v2-connect .v2-connect__link');
+    expect(ruleBody(connectCss, '.v2-connect .v2-connect__link', { within: phone })).toContain('min-height: 44px');
+    expect(selectorRuleBody(phone, '.v2-connect .v2-connect__cta, ')).toContain('height: 44px');
+  });
+
+  // The v2.css :lang(zh) reset (TASK-055) scans only v2.css, so the entry that
+  // left it with this page is held here: every negative-tracking selector in
+  // the sheet has a zh reset in the same sheet.
+  test('zh-CN: every negative-tracking Connect title is reset under :lang(zh)', () => {
+    const negative = [...connectCss.matchAll(/\n([^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)]
+      .flatMap((m) => m[1].split(',').map((sel) => sel.trim()))
+      .filter(Boolean);
+    expect(negative).toEqual(['.v2-connect .v2-connect__lane h2']);
+    for (const sel of negative) {
+      expect(ruleBody(connectCss, `.v2-root:lang(zh) ${sel}`)).toContain('letter-spacing: 0');
+    }
   });
 });
