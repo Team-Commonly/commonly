@@ -83,7 +83,7 @@
   align-items: center;
   justify-content: space-between;
   height: 72px;
-  background: rgba(255, 255, 255, 0.86);
+  background: color-mix(in srgb, var(--v2-bg) 86%, transparent);
   backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--v2-border-soft);
 }

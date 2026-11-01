@@ -21,7 +21,7 @@
   justify-content: space-between;
   height: 60px;
   padding: 0 max(24px, calc((100% - 1040px) / 2));
-  background: rgba(255, 255, 255, 0.86);
+  background: color-mix(in srgb, var(--v2-bg) 86%, transparent);
   backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--v2-border-soft);
 }

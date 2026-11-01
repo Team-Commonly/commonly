@@ -13774,7 +13774,7 @@ body.modern-ui.v2-canvas {
 .v2-root button.v2-team__byo { height: 36px; padding: 0 14px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team__byo:hover { background: var(--v2-surface-hover); }
 /* Ink acts (signal-identity §2): Hire is the page's one filled control. */
-.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team__hire { height: 36px; padding: 0 14px; border: 1px solid var(--v2-ink); border-radius: 4px; background: var(--v2-ink); color: var(--v2-on-ink); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team__hire:disabled { opacity: 0.5; cursor: default; }
 .v2-team__notice { font-size: 13px; color: var(--v2-text-secondary); }
 .v2-team__notice--ok { color: var(--v2-text-primary); }
@@ -13862,7 +13862,7 @@ body.modern-ui.v2-canvas {
 .v2-team-card__meter-track { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--v2-border-soft); overflow: hidden; }
 .v2-team-card__meter-fill { display: block; height: 100%; background: var(--v2-accent); }
 .v2-team-card__meter-text { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
-.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid #101828; border-radius: 4px; background: #101828; color: #fff; font: 600 13px/1 var(--v2-font); cursor: pointer; }
+.v2-root button.v2-team-card__answer { height: 32px; padding: 0 12px; border: 1px solid var(--v2-ink); border-radius: 4px; background: var(--v2-ink); color: var(--v2-on-ink); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk { height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-surface); color: var(--v2-text-primary); font: 600 13px/1 var(--v2-font); cursor: pointer; }
 .v2-root button.v2-team-card__talk:hover { background: var(--v2-surface-hover); }
 .v2-root button.v2-team-card__talk:disabled { color: var(--v2-text-placeholder); cursor: default; }
@@ -13975,7 +13975,7 @@ body.modern-ui.v2-canvas {
 .v2-board__card--done { border-color: var(--v2-border-soft); }
 .v2-board__card--done .v2-board__card-title { color: var(--v2-text-secondary); }
 .v2-root button.v2-board__card-move { min-height: 32px; padding: 0 10px; border-radius: 4px; }
-.v2-board__overlay { background: color-mix(in srgb, var(--v2-text-primary) 32%, transparent); align-items: flex-start; padding-top: 72px; }
+.v2-board__overlay { background: var(--v2-scrim); align-items: flex-start; padding-top: 72px; }
 .v2-board .v2-modal { border-radius: 6px; box-shadow: none; }
 .v2-board__detail { width: min(560px, 100%); max-height: calc(100dvh - 96px); }
 .v2-board__detail .v2-modal__head { padding: 20px 24px 16px; border-bottom: 1px solid var(--v2-border-soft); }

@@ -99,3 +99,27 @@ describe('D223 Signal tokens in v2.css', () => {
     expect(valueIn(light, 'v2-shadow-lg')).toBe('none');
   });
 });
+
+// TASK-681: three surfaces were hard-coded to light values and vanished in dark.
+describe('dark-safe surfaces (TASK-681)', () => {
+  const rd = (rel: string): string =>
+    fs.readFileSync(path.join(__dirname, rel), 'utf8');
+  test('the sticky landing and agent-profile bars follow --v2-bg, not white', () => {
+    [rd('../landing/v2-landing.css'), rd('../agents/v2-agent-profile.css')].forEach((css) => {
+      expect(css).not.toMatch(/background:\s*rgba\(255,\s*255,\s*255,\s*0\.86\)/);
+    });
+    expect(rd('../landing/v2-landing.css')).toMatch(/\.v2-landing__bar\s*\{[^}]*color-mix\(in srgb, var\(--v2-bg\) 86%/);
+    expect(rd('../agents/v2-agent-profile.css')).toMatch(/\.v2-aprofile__bar\s*\{[^}]*color-mix\(in srgb, var\(--v2-bg\) 86%/);
+  });
+  test('ink primary buttons take --v2-ink / --v2-on-ink', () => {
+    const css = rd('../v2.css');
+    ['v2-team__hire', 'v2-team-card__answer'].forEach((cls) => {
+      const rule = css.match(new RegExp(`button\\.${cls}\\s*\\{[^}]*\\}`));
+      expect(rule?.[0]).toContain('background: var(--v2-ink)');
+      expect(rule?.[0]).toContain('color: var(--v2-on-ink)');
+    });
+  });
+  test('the board drawer scrim is --v2-scrim', () => {
+    expect(rd('../v2.css')).toMatch(/\.v2-board__overlay\s*\{\s*background:\s*var\(--v2-scrim\)/);
+  });
+});
