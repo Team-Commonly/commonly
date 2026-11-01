@@ -462,7 +462,12 @@ const ConnectorsPage: React.FC = () => {
   const offeredCount = c.items.filter((item) => !channelInactive(item)).length
     + m.catalog.filter((entry) => !toolOff(entry)).length;
   const availableCount = offeredCount - onCount;
-  const meta = t('connectors.meta', { defaultValue: '{{on}} on · {{available}} available', on: onCount, available: Math.max(0, availableCount) });
+  // An orphan grant's tile is live too (TASK-754), so it counts as on. It was
+  // never offered, so it leaves `available` alone.
+  const orphanOn = new Set(grants
+    .filter((grant) => !m.catalog.some((entry) => entryCovers(entry, grant)) && !isDead(grant, m.now))
+    .map((grant) => grant.connector?.id || grant.grantId)).size;
+  const meta = t('connectors.meta', { defaultValue: '{{on}} on · {{available}} available', on: onCount + orphanOn, available: Math.max(0, availableCount) });
 
   const showChannels = filter !== 'tools';
   const showTools = filter !== 'channels';

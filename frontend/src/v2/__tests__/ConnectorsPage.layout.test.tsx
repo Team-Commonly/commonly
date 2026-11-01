@@ -289,6 +289,8 @@ describe('Connectors page: the tile surface', () => {
     const tile = await findTile('Unknown connector');
     expect(tile.parentElement).toBe(github.parentElement);
     expect(within(tile).getByRole('img', { name: 'Granted' })).toBeInTheDocument();
+    // A live tile is counted as on; GitHub, with no grant, is still available.
+    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('1 on · 1 available');
     const tools = screen.getByRole('region', { name: 'Tools' });
     expect(tools.querySelector('.v2-connector-row')).toBeNull();
     expect(tools.querySelector('.v2-connector-row__action--icon')).toBeNull();
