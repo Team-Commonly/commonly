@@ -209,7 +209,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('agent Settings buttons retain their chrome over the v2 button reset', () => {
-    const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.ib):not(.seg > button)');
+    const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button)');
     expect(button).toContain('border: 1px solid var(--v2-border)');
     expect(button).toContain('background: var(--v2-surface)');
     expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');
@@ -5054,6 +5054,15 @@ describe('agent settings surface (D223 lift)', () => {
   const css = read('../agents/v2-agent-settings-surface.css');
   test('the Save action keeps a visible surface over the v2 button reset', () => {
     expect(ruleBody(css, '.v2-agent-settings-page .b-s')).toContain('background: linear-gradient');
+  });
+
+  test('segment tabs keep a keyboard focus ring now that the old base rule skips them', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .seg > button:focus-visible, .v2-agent-settings-page .seg > a:focus-visible'))
+      .toContain('box-shadow: 0 0 0 3px var(--c-soft)');
+  });
+
+  test('lifted .b-sm controls keep their 28px size', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .b-sm')).toContain('height: 28px');
   });
 
   test('message-wake segment wraps its options instead of overflowing the Wake row', () => {
