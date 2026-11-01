@@ -85,6 +85,12 @@ jest.mock('../../services/connectorSecrets', () => {
       if (!store.has(ref)) throw Object.assign(new Error('not found'), { code: 'connector_secret_not_found' });
       return store.get(ref);
     }),
+    // This store records no write generation, so every pair reads as whole.
+    // Mixed pairs are the real-store suite's (hostedMcpRemovalMixedPair).
+    writeGenerationOf: jest.fn(async (ref) => {
+      if (!store.has(ref)) throw Object.assign(new Error('not found'), { code: 'connector_secret_not_found' });
+      return null;
+    }),
     revoke: jest.fn(async (ref) => {
       if (failRevoke.next) {
         failRevoke.next = false;

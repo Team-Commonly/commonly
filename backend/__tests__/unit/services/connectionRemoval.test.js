@@ -92,6 +92,9 @@ const recorder = (over = {}) => {
     remove: jest.fn(async () => { calls.push('delete'); }),
     ...over,
   };
+  // Silent too, and a whole pair unless an arm says otherwise (F35): a writer
+  // puts both halves at one generation. An arm's own `secrets` keeps it.
+  deps.secrets = { writeGenerationOf: jest.fn(async () => 1), ...deps.secrets };
   const revokeGrants = jest.fn(async () => { calls.push('grants'); return 2; });
   return { calls, deps, revokeGrants };
 };
@@ -164,6 +167,90 @@ describe('removeConnection (a hosted-MCP row)', () => {
     expect(deps.secrets.revoke).toHaveBeenCalledWith('refresh-ref');
     expect(deps.remove).toHaveBeenCalled();
   });
+  // F35: halves written at different generations are a mixed pair. The
+  // refresh token speaks for the grant before; the access token is the only
+  // part of the newer grant anyone holds.
+  const mixedPair = (over = {}) => {
+    const rec = recorder(over);
+    rec.deps.secrets.writeGenerationOf = jest.fn(async (ref) => (ref === 'access-ref' ? 2000000 : 1000000));
+    rec.deps.secrets.get = jest.fn(async (ref) => {
+      rec.calls.push(`get:${ref}`);
+      return ref === 'access-ref' ? 'access-token-value' : 'refresh-token-value';
+    });
+    return rec;
+  };
+
+  it('sends both halves of a mixed pair, and claims no vendor revoke and writes no mark', async () => {
+    const { calls, deps, revokeGrants } = mixedPair();
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
+    expect(calls).toEqual([
+      'grants', 'row', 'get:refresh-ref', 'get:access-ref', 'provider', 'provider',
+      'material:refresh-ref', 'material:access-ref', 'delete',
+    ]);
+    expect(deps.revokeAtVendor.mock.calls.map(([input]) => [input.tokenTypeHint, input.token])).toEqual([
+      ['refresh_token', 'refresh-token-value'],
+      ['access_token', 'access-token-value'],
+    ]);
+    expect(deps.markProviderRevoked).not.toHaveBeenCalled();
+  });
+
+  it('finishes a mixed pair whose access token the vendor will not revoke, still claiming nothing', async () => {
+    const { deps, revokeGrants } = mixedPair({
+      revokeAtVendor: jest.fn(async ({ tokenTypeHint }) => {
+        if (tokenTypeHint === 'access_token') throw new Error('provider revoke refused: HTTP 400');
+      }),
+    });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
+    expect(deps.remove).toHaveBeenCalled();
+  });
+
+  it('keeps the row, sending nothing, when a mixed pair\'s access token cannot be read', async () => {
+    const { calls, deps, revokeGrants } = mixedPair();
+    deps.secrets.get = jest.fn(async (ref) => {
+      calls.push(`get:${ref}`);
+      if (ref === 'access-ref') throw codedError('connector_secret_key_missing');
+      return 'refresh-token-value';
+    });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toEqual(expect.objectContaining({ removed: false, code: 'provider_revoke_failed', revokeAt: PAGE }));
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
+    expect(deps.secrets.revoke).not.toHaveBeenCalled();
+    expect(deps.markProviderRevoked).not.toHaveBeenCalled();
+    expect(deps.remove).not.toHaveBeenCalled();
+  });
+
+  it('sends the refresh token alone when a mixed pair\'s access token is gone, and still claims nothing', async () => {
+    const { calls, deps, revokeGrants } = mixedPair();
+    deps.secrets.get = jest.fn(async (ref) => {
+      calls.push(`get:${ref}`);
+      if (ref === 'access-ref') throw codedError('connector_secret_not_found');
+      return 'refresh-token-value';
+    });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: false });
+    expect(deps.revokeAtVendor.mock.calls.map(([input]) => input.tokenTypeHint)).toEqual(['refresh_token']);
+    expect(deps.markProviderRevoked).not.toHaveBeenCalled();
+  });
+
+  it('keeps the row, sending nothing, when a half cannot be read for its generation', async () => {
+    const { deps, revokeGrants } = recorder();
+    deps.secrets.writeGenerationOf = jest.fn(async () => { throw codedError('connector_secret_key_missing'); });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toEqual(expect.objectContaining({ removed: false, code: 'provider_revoke_failed', revokeAt: PAGE }));
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
+    expect(deps.remove).not.toHaveBeenCalled();
+  });
+
+  it('reads a pair with a half gone as no pair, and lets the token read decide', async () => {
+    const { deps, revokeGrants } = recorder();
+    deps.secrets.writeGenerationOf = jest.fn(async () => { throw codedError('connector_secret_not_found'); });
+    const result = await remove(hostedRow(), deps, revokeGrants);
+    expect(result).toEqual({ removed: true, grantsRevoked: 2, revokeAt: PAGE, providerRevoked: true });
+    expect(deps.revokeAtVendor).toHaveBeenCalledTimes(1);
+  });
+
   it('runs grants, row, provider, mark, material, delete in that order', async () => {
     const { calls, deps, revokeGrants } = recorder();
     const result = await remove(hostedRow(), deps, revokeGrants);
