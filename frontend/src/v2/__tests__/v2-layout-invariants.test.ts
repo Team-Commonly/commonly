@@ -2065,6 +2065,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(pitch).toMatch(/font-size: 13px/);
   });
 
+  test('approval consent controls are 44px touch targets on a phone', () => {
+    const phone = blockContaining(v2, '@media (max-width: 480px)', '.v2-approval__btn');
+    expect(ruleBody(v2, '.v2-root button.v2-approval__btn', { within: phone })).toContain('min-height: 44px');
+    expect(ruleBody(v2, '.v2-approval__exact summary', { within: phone })).toContain('padding-block: 12px');
+  });
+
+  test('approval argument blocks scroll within a bounded height', () => {
+    const block = ruleBody(v2, '.v2-approval__arg-value--block');
+    expect(block).toContain('max-height: 12em');
+    expect(block).toContain('overflow-y: auto');
+  });
+
   test('the hosted-to-BYO handoff preserves the server command and has a copy action', () => {
     // The payload is the source of truth: the renderer must branch on the
     // structured handoff kind, and the pre block must preserve line breaks so
