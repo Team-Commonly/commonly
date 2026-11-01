@@ -91,4 +91,38 @@ describe('runAgentList', () => {
     expect(get).not.toHaveBeenCalled();
     expect(error).toHaveBeenCalledWith('Not logged in. Run: commonly login');
   });
+
+  test('a 500 on the roster route exits 1 with one Failed line', async () => {
+    const { log, error, deps } = fakeDeps(async () => {
+      throw httpError(500, 'Failed to list pod agents');
+    });
+
+    const code = await runAgentList({ pod: 'pod-42' }, deps);
+
+    expect(code).toBe(1);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith('Failed: Failed to list pod agents');
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  test('admin mode prints admin rows and falls back to lastActiveAt for LAST SEEN', async () => {
+    const { log, deps } = fakeDeps(async () => ({
+      installations: [
+        {
+          agentName: 'nova',
+          instanceId: 'default',
+          status: 'active',
+          config: { runtime: { runtimeType: 'native', host: '' } },
+          lastActiveAt: '2026-10-31T11:00:00.000Z',
+        },
+      ],
+    }));
+
+    const code = await runAgentList({}, deps);
+
+    expect(code).toBe(0);
+    const printed = log.mock.calls.map((c) => c[0]).join('\n');
+    expect(printed).toMatch(/nova\s+default\s+native/);
+    expect(printed).not.toMatch(/never/);
+  });
 });

@@ -503,19 +503,22 @@ export const bootstrapAgentRecordFromEnv = async ({
 };
 
 /**
- * Enumerate every agent attached on this laptop — i.e. every file in
- * ~/.commonly/tokens/*.json. Cross-references the session store for a
- * "last turn" timestamp per agent so the user sees cold vs. live agents.
- *
- * Returns an array of plain records so the CLI table formatter stays simple
- * and tests can assert on shape directly.
- */
-/**
  * `commonly agent list`. Without --pod it reads the admin installs route, which
  * only a global admin can call. With --pod it reads the member-gated pod roster,
  * so a pod member lists its own seats. Returns the exit code, never exits itself.
+ * Any throw becomes one Failed line and exit 1.
  */
 export const runAgentList = async (opts = {}, deps = {}) => {
+  const { error = console.error } = deps;
+  try {
+    return await listAgents(opts, deps);
+  } catch (err) {
+    error(`Failed: ${err.message}`);
+    return 1;
+  }
+};
+
+const listAgents = async (opts, deps) => {
   const {
     clientFactory = createClient,
     tokenFor = getToken,
@@ -574,6 +577,14 @@ export const runAgentList = async (opts = {}, deps = {}) => {
   }
 };
 
+/**
+ * Enumerate every agent attached on this laptop — i.e. every file in
+ * ~/.commonly/tokens/*.json. Cross-references the session store for a
+ * "last turn" timestamp per agent so the user sees cold vs. live agents.
+ *
+ * Returns an array of plain records so the CLI table formatter stays simple
+ * and tests can assert on shape directly.
+ */
 export const listLocalAgents = () => {
   const dir = tokensDir();
   if (!existsSync(dir)) return [];
