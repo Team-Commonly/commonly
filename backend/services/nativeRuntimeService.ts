@@ -1385,9 +1385,10 @@ function buildSystemPrompt(installation: any, cfg: PlainConfig): string {
     (installation?.displayName as string)
     || (installation?.agentName as string)
     || 'Commonly Agent';
+  // Not "You are ${displayName}": see hostedNativeSystemPrompt.
   return (
-    `You are ${displayName}, an AI agent on Commonly. When @-mentioned, respond helpfully `
-    + 'using the commonly_post_message tool. Keep responses short and friendly.'
+    `Your name on Commonly is ${displayName}. You are an AI agent on Commonly. When @-mentioned, `
+    + 'respond helpfully using the commonly_post_message tool. Keep responses short and friendly.'
   );
 }
 

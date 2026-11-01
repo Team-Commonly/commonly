@@ -208,7 +208,7 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     const body = axios.post.mock.calls[0][1];
     expect(offeredIn(0)).toEqual(BASE_TOOLS);
     expect(body.messages[0].role).toBe('system');
-    expect(body.messages[0].content).toMatch(/You are Maya, a hosted agent on Commonly/);
+    expect(body.messages[0].content).toMatch(/Your name on Commonly is Maya\. You are a hosted agent/);
     expect(body.messages[0].content).toMatch(/Keeps the research log\./);
   });
 
@@ -485,6 +485,39 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
     } finally {
       podHasOutsiderWritableGrant.mockResolvedValue(false);
     }
+  });
+
+  // Prod 2026-11-01: an agent whose name began "dan" failed every turn, because the
+  // prompt opened "You are <name>" and the injection guard blocks the
+  // substring "you are DAN". The keywords are the guard's own, read from the
+  // LiteLLM image this cluster runs.
+  describe('a name the injection guard would read as a jailbreak', () => {
+    const GUARD = require('../../fixtures/litellm/injection-guard-high-keywords-v1.106.2.json');
+    const KEYWORDS = Object.values(GUARD.categories).flat().map((keyword) => keyword.toLowerCase());
+    const NAMES = ['Dan', 'Danny', 'Dante', 'daniel-helper', 'Maya'];
+    const tripped = (prompt) => KEYWORDS.filter((keyword) => prompt.toLowerCase().includes(keyword));
+
+    test.each(NAMES)('a hosted agent named %s gets a prompt the guard passes, and still its name', async (name) => {
+      await runAgent({ ...hostedInstall(), displayName: name }, mention);
+
+      expect(tripped(systemPromptIn(0))).toEqual([]);
+      expect(systemPromptIn(0)).toContain(name);
+    });
+
+    test.each(NAMES)('a native agent named %s gets a default prompt the guard passes, and still its name', async (name) => {
+      await runAgent({
+        podId: POD,
+        agentName: 'maya-agent',
+        instanceId: 'default',
+        displayName: name,
+        installedBy: OWNER,
+        config: { runtime: { runtimeType: 'native' }, tools: ['commonly_post_message'] },
+      }, mention);
+
+      expect(axios.post).toHaveBeenCalled();
+      expect(tripped(systemPromptIn(0))).toEqual([]);
+      expect(systemPromptIn(0)).toContain(name);
+    });
   });
 
   test('the install cannot choose the model, the tools, the prompt or lift the cap', async () => {
