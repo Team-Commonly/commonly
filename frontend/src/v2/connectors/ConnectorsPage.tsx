@@ -31,6 +31,9 @@ interface Pop {
 
 const ASK_HREF = 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request';
 const MAX_CHIPS = 3;
+const FILTERS: Filter[] = ['all', 'channels', 'tools'];
+// A brand name, not translatable copy.
+const GITHUB_BRAND = 'GitHub';
 
 const SearchGlyph = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
@@ -94,13 +97,19 @@ const ConnectorsPage: React.FC = () => {
     !m.catalog.some((entry) => entry.entryId === connection.entryId)
     && (!q || connection.label.toLowerCase().includes(q))
   ));
+  // A grant whose catalogue entry is gone (retired or unreadable) has no tile, but it
+  // is still live access: it stays listed so it can still be seen and revoked.
+  const orphanGrants = grants.filter((grant) => (
+    !m.catalog.some((entry) => entryCovers(entry, grant))
+    && (!q || m.toolLabel(grant).toLowerCase().includes(q))
+  ));
   const toolHasDrawer = (entry: ToolCatalogEntry): boolean => grantsOf(entry).length > 0 || hiddenOf(entry).length > 0;
 
   // ---- what is open ----
   const drawerItem = c.items.find((item) => item.key === c.selectedKey) || null;
   const channelDrawerOpen = c.adding || drawerItem !== null;
   const toolEntry = toolKey ? m.catalog.find((entry) => entry.installableId === toolKey) || null : null;
-  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry);
+  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry || m.selected);
 
   const closeTools = useCallback(() => {
     setToolKey(null);
@@ -220,6 +229,7 @@ const ConnectorsPage: React.FC = () => {
         <ConnectorPopover anchor={pop.anchor} container={container} label={label} onClose={closePop}>
           <div className="v2-cx-pop__head"><ConnectorLogo type={c.itemType(channel)} size={28} />{label}</div>
           {description && <p>{description}</p>}
+          {(row.muted || row.notEnabled) && row.line && <p className="v2-cx-note">{row.line}</p>}
           {row.detail && <p className="v2-cx-note">{row.detail}</p>}
           <div className="v2-cx-pop__acts">
             {row.action === 'connect' && (
@@ -337,12 +347,19 @@ const ConnectorsPage: React.FC = () => {
     }
     if (m.githubAppSetup) {
       return (
-        <ConnectorDrawer type="github" title="GitHub" onClose={closeTools}>
+        <ConnectorDrawer type="github" title={GITHUB_BRAND} onClose={closeTools}>
           {tp.renderGithubAppSetup()}
         </ConnectorDrawer>
       );
     }
-    if (!toolEntry) return null;
+    if (!toolEntry) {
+      if (!m.selected) return null;
+      return (
+        <ConnectorDrawer type={m.selected.tools[0]?.split('.')[0] || 'tools'} title={m.toolLabel(m.selected)} onClose={closeTools}>
+          {tp.renderAside(m.selected)}
+        </ConnectorDrawer>
+      );
+    }
     const entryGrants = grantsOf(toolEntry);
     const liveGrants = entryGrants.filter((grant) => !isDead(grant, m.now));
     const deadGrants = entryGrants.filter((grant) => isDead(grant, m.now));
@@ -350,6 +367,7 @@ const ConnectorsPage: React.FC = () => {
       <ConnectorDrawer type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
         {!toolGranted(toolEntry) && (
           <div className="v2-cx-drawer__offer">
+            <p>{catalogDescription(i18n, toolEntry.installableId, toolEntry.description)}</p>
             {tp.renderEntryNote(toolEntry)}
             <div className="v2-cx-pop__acts">{tp.renderEntryActions(toolEntry)}</div>
           </div>
@@ -381,7 +399,7 @@ const ConnectorsPage: React.FC = () => {
   const errorText = c.hostedMcpCallbackError || c.error || c.slackCallbackError || (
     !m.draft && !m.selected && !m.githubAppSetup ? m.error : null
   );
-  const nothing = !c.loading && q && liveChannels.length + offChannels.length + toolEntries.length + orphanHidden.length === 0;
+  const nothing = !c.loading && q && liveChannels.length + offChannels.length + toolEntries.length + orphanHidden.length + orphanGrants.length === 0;
 
   const offToggle = (group: 'channels' | 'tools', count: number) => (count > 0 ? (
     <button
@@ -411,7 +429,7 @@ const ConnectorsPage: React.FC = () => {
           />
         </label>
         <div className="v2-cx-seg" role="group" aria-label={t('connectors.filterLabel', { defaultValue: 'Show' })}>
-          {(['all', 'channels', 'tools'] as Filter[]).map((value) => (
+          {FILTERS.map((value) => (
             <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>
               {t(`connectors.filter.${value}`, { defaultValue: value === 'all' ? 'All' : value === 'channels' ? 'Channels' : 'Tools' })}
             </button>
@@ -464,6 +482,7 @@ const ConnectorsPage: React.FC = () => {
                   {liveTools.map((entry) => renderToolTile(entry))}
                   {offOpen.tools && offTools.map((entry) => renderToolTile(entry, true))}
                 </div>
+                {orphanGrants.length > 0 && <div className="v2-cx-list">{orphanGrants.map(tp.renderRow)}</div>}
                 {offOpen.tools && orphanHidden.length > 0 && (
                   <div className="v2-cx-list">{orphanHidden.map(tp.renderHiddenConnection)}</div>
                 )}
@@ -472,7 +491,7 @@ const ConnectorsPage: React.FC = () => {
 
             {nothing && <p className="v2-cx-note">{t('tools.nothingMatches', { defaultValue: 'Nothing matches.' })}</p>}
           </div>
-          {renderPopover()}
+          {!channelDrawerOpen && !toolDrawerOpen && renderPopover()}
           {renderChannelDrawer() || (toolDrawerOpen ? renderToolDrawer() : null)}
         </div>
       )}

@@ -10809,7 +10809,6 @@ body.modern-ui.v2-canvas {
  * ------------------------------------------------------------------------ */
 .v2-root:lang(zh) .v2-rail__brand,
 .v2-root:lang(zh) .v2-board__detail .v2-modal__title,
-.v2-root:lang(zh) .v2-tools__title,
 .v2-root:lang(zh) .v2-tools__count strong,
 .v2-root:lang(zh) .v2-artifacts__title,
 .v2-root:lang(zh) .v2-team__title,
@@ -10830,7 +10829,6 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-settings__account-name,
 .v2-root:lang(zh) .v2-settings__section .v2-billing__title,
 .v2-root:lang(zh) .v2-settings__section .v2-devices h2,
-.v2-root:lang(zh) .v2-connectors__header h1,
 .v2-root:lang(zh) .v2-connector-row__name,
 .v2-root:lang(zh) .v2-connector-aside__card h2,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h1,
@@ -10912,55 +10910,9 @@ body.modern-ui.v2-canvas {
   font-size: 12px;
 }
 
-/* ── Connectors — Signal Coverage artboard ──────────────────────────────── */
-.v2-connectors {
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-.v2-connectors__header h1 {
-  margin: 0;
-  color: var(--v2-ink);
-  font-family: var(--v2-font-display);
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 36px;
-}
+/* ── Connectors: the page itself is connectors.css; what is left here is the
+   panels the drawer holds (rows, asides, gates). ──────────────────────────── */
 .v2-connectors__loading { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; }
-.v2-connectors__content { display: grid; grid-template-columns: minmax(min-content, 1fr) minmax(240px, 400px); gap: 40px; align-items: start; }
-.v2-connectors__main { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
-.v2-connectors__rows { overflow: hidden; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); }
-.v2-connectors__inactive-fold { min-width: 0; }
-.v2-root button.v2-connectors__inactive-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 18px; border: 0; background: var(--v2-surface); color: var(--v2-text-tertiary); font: 500 12px/16px var(--v2-font-mono); text-align: left; cursor: pointer; }
-.v2-root button.v2-connectors__inactive-toggle:hover { background: var(--v2-surface-hover); }
-.v2-root button.v2-connectors__inactive-toggle:focus-visible { box-shadow: inset 0 0 0 2px var(--v2-accent); outline: none; }
-.v2-connectors__inactive-caret { width: 7px; height: 7px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
-.v2-root button.v2-connectors__inactive-toggle[aria-expanded="true"] .v2-connectors__inactive-caret { transform: rotate(45deg); }
-.v2-connectors__inactive-rows > .v2-connector-row:last-child { border-bottom: 0; }
-/* TASK-677 slice (a), D215 artboard: channel rows render as a tile grid
-   (auto-fill, 150px minimum, per the 2026-10-31 ruling; the aside stays). Layout
-   only: the same rows, the same act and the same connect flow. Tools rows are not
-   tiled in this slice. The inactive fold spans the grid, and its own rows reuse
-   the same tile template. */
-.v2-connectors__rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; overflow: visible; border: 0; border-radius: 0; }
-.v2-connectors__rows .v2-connector-row { grid-template-columns: minmax(0, 1fr); align-content: center; min-height: 128px; border: 1px solid var(--v2-border-soft); border-radius: 14px; padding: 14px 12px; }
-.v2-connectors__inactive-fold { grid-column: 1 / -1; }
-.v2-connectors__inactive-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 12px 0 0; }
-/* Lumen's 1440 HOLD (review 5722362448): the row's own two-track grid and its
-   spanning placements sized the name, detail and act past a 150px tile. Inside a
-   tile the content stacks in one track and wraps within the tile. */
-.v2-root .v2-connectors__rows button.v2-connector-row__selection { grid-column: 1; grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
-.v2-connectors__rows .v2-connector-row__name { min-width: 0; overflow-wrap: anywhere; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
-.v2-connectors__rows .v2-connector-row__details { min-width: 0; overflow-wrap: anywhere; padding-right: 0; }
-/* The 760px rule reserved 52px beside the icon act (column 2). Inside a tile the
-   icon act is centred under the text, so the reserve only narrowed the text. The
-   specificity here is (0,5,1), above the 760px padding-right rule (0,4,1). */
-.v2-root .v2-connectors__rows .v2-connector-row:has(.v2-connector-row__action--icon) button.v2-connector-row__selection { padding-right: 0; }
-.v2-root .v2-connectors__rows .v2-connector-row__action { grid-column: 1; grid-row: 2; justify-self: stretch; }
-/* The icon act is 32px or 44px wide, so stretch does nothing; centre it under the
-   text. Specificity (0,4,1) beats the 760px icon placement (0,2,1). */
-.v2-root .v2-connectors__rows button.v2-connector-row__action--icon { grid-column: 1; grid-row: 2; justify-self: center; }
 
 .v2-connector-row {
   display: grid;
@@ -10983,7 +10935,6 @@ body.modern-ui.v2-canvas {
 }
 .v2-connector-row:last-child { border-bottom: none; }
 .v2-connector-row--selected { background: var(--v2-surface-tint); }
-.v2-connector-row--not-yet { color: var(--v2-text-tertiary); }
 .v2-root button.v2-connector-row__selection {
   display: grid;
   grid-column: 1 / 3;
@@ -11000,19 +10951,14 @@ body.modern-ui.v2-canvas {
   cursor: pointer;
 }
 .v2-connector-row__name { display: inline-flex; align-items: center; gap: 10px; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
-.v2-connector-row--not-yet .v2-connector-row__name { color: var(--v2-text-tertiary); }
 .v2-connector-row__dot { width: 8px; height: 8px; flex: none; border-radius: var(--v2-radius-sm); background: var(--v2-border-soft); }
 .v2-connector-row__glyph { display: inline-flex; width: 20px; height: 20px; flex: 0 0 20px; color: inherit; }
 .v2-connector-row__glyph svg { width: 20px; height: 20px; }
-.v2-connector-row--not-yet .v2-connector-row__glyph { color: var(--v2-text-placeholder); }
 /* Direction A: the state dot is a mark — ink filled, hollow, dashed, grey — never
    cobalt (cobalt is who asks) and never a status colour (ux-lead 70159). */
 .v2-connector-row__dot--live { background: var(--v2-ink); }
-.v2-connector-row__dot--pending { border: 1px solid var(--v2-border-strong); background: transparent; }
-.v2-connector-row--dead .v2-connector-row__dot, .v2-connector-row__dot--dead { background: var(--v2-text-placeholder); }
+.v2-connector-row--dead .v2-connector-row__dot { background: var(--v2-text-placeholder); }
 .v2-connector-row__dot--empty { border: 1px solid var(--v2-border-strong); background: transparent; }
-.v2-connector-row__dot--idle { background: var(--v2-border-soft); }
-.v2-connector-row__dot--not-yet { border: 1px dashed var(--v2-border-strong); background: transparent; }
 .v2-connector-row__dot--pulse { animation: v2-connector-pulse 1.6s ease-in-out infinite; }
 @keyframes v2-connector-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(16, 24, 40, 0); }
@@ -11024,26 +10970,9 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__details { display: flex; min-width: 0; padding-right: 8px; flex-direction: column; gap: 2px; color: var(--v2-text-secondary); font-size: 13px; line-height: 18px; }
 /* Line 1 wraps like meta does; a sentence never ellipsises at 390. */
 .v2-connector-row__details strong { color: var(--v2-ink); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
-.v2-connector-row__detail, .v2-connector-row__when { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
+.v2-connector-row__detail { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
 /* Meta wraps to a second line; it never ellipsises. */
 .v2-connector-row__detail { overflow-wrap: anywhere; }
-/* TASK-162 (3): line 3 used to be the bare 16px mark, its consequence words
-   reachable only through the glyph's tooltip — and at ≤760 the mark is hidden,
-   so line 3 disappeared entirely on a phone. The consequence is now TEXT beside
-   the mark; the mode word moved onto the mark itself (title + aria-label), and
-   the glyph follows #1782 — it takes the Tools glyph's rule below for layout and
-   colour (gap 6, tertiary, vertical-align -2px) rather than a rule of its own.
-   That rule carries NO dimensions: the 14px is `size={14}` on the call site,
-   held equal to the Tools glyph's own hardcoded 14 (V2ConnectorTools' local `G`)
-   by a same-size pin in V2ConnectorsPage.test.tsx (TASK-177). 16px would grow the
-   line box to 18px beside a 12/16 mono sentence, which is why it is 14 and not
-   the glyph's 16 default. */
-/* TASK-162 (2): the not-yet row lists two channels. Above 760 they stack in the
-   140px name track; at ≤760 they join with ' · ' (the separator is the only
-   element that switches, so nothing here depends on generated content). */
-.v2-connector-row__names { display: flex; flex-direction: column; }
-.v2-connector-row__name-sep { display: none; }
-.v2-connector-row__when { padding-right: 16px; }
 /* Direction A rule 3: `pod · verb age` in mono 11 above line 1, on every row. */
 .v2-connector-row__kicker { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; font-weight: 500; line-height: 16px; text-transform: lowercase; overflow-wrap: anywhere; }
 /* The mode word rides the kicker only where the glyph's tooltip cannot (≤760). */
@@ -11052,7 +10981,7 @@ body.modern-ui.v2-canvas {
    the sentence in title + aria-label — and the mark shares the Tools glyph's rule
    (search `.v2-connector-row__mark, .v2-tools__mode`) for layout and colour. That
    sharing does NOT carry the size: the two agree at 14px through two independent
-   literals in two files, so a same-size pin in V2ConnectorsPage.test.tsx is what
+   literals in two files, so a same-size pin in ConnectorsPage.tools.test.tsx is what
    keeps them from drifting (TASK-177). */
 .v2-root button.v2-connector-row__action,
 .v2-root a.v2-connector-row__action {
@@ -11093,9 +11022,6 @@ body.modern-ui.v2-canvas {
    min-height is what actually releases the 36px clamp. */
 .v2-root button.v2-connector-aside__secondary.v2-connector-aside__icon { display: inline-grid; place-items: center; width: 32px; height: 32px; min-height: 32px; padding: 0; }
 .v2-root button.v2-connector-aside__icon svg { width: 16px; height: 16px; }
-
-.v2-connectors__add { margin-top: 24px; }
-.v2-root button.v2-connectors__connect,
 .v2-root button.v2-connectors__create,
 .v2-root button.v2-connector-aside__primary {
   min-height: 40px;
@@ -11107,12 +11033,10 @@ body.modern-ui.v2-canvas {
   font: 600 13px/18px var(--v2-font);
   cursor: pointer;
 }
-.v2-root button.v2-connectors__connect:hover,
 .v2-root button.v2-connectors__create:hover:not(:disabled),
 .v2-root button.v2-connector-aside__primary:hover:not(:disabled) { background: var(--v2-ink-hover); }
 .v2-root button.v2-connectors__create:disabled,
 .v2-root button.v2-connector-aside__primary:disabled { cursor: progress; opacity: 0.65; }
-.v2-connectors__add > p { margin: 8px 0 0; color: var(--v2-text-tertiary); font-size: 13px; }
 .v2-connectors__new-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(180px, 240px) auto; gap: 10px; margin-top: 16px; }
 .v2-connectors__new-row--aside { grid-template-columns: minmax(0, 1fr) auto; }
 .v2-connectors__new-row--aside .v2-connectors__select { grid-column: 1 / -1; }
@@ -11156,7 +11080,6 @@ body.modern-ui.v2-canvas {
 .v2-connector-row__refusal { grid-column: 1 / -1; margin: 10px 0 0; padding: 8px 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface-tint); color: var(--v2-ink); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
 .v2-connector-row__refusal a,
 .v2-connector-aside__refusal a { color: var(--v2-accent-text); text-decoration: underline; }
-.v2-connectors__error { padding: 10px 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); color: var(--v2-ink); font-size: 13px; }
 
 .v2-connector-aside__note { margin-top: 12px !important; color: var(--v2-text-tertiary) !important; font-size: 12px !important; }
 /* Row C: the refusal the row's own button earned, beside that button in the
@@ -11183,18 +11106,6 @@ body.modern-ui.v2-canvas {
 .v2-connector-gate__switch:disabled { cursor: progress; opacity: 0.65; }
 .v2-connector-gate__more { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0 12px 12px; }
 .v2-connector-gate__lead { min-height: 30px; padding: 0 8px; font-size: 12px; }
-
-/* Tools — the second list (tools plan §6). Rows reuse .v2-connector-row; the
-   aside reuses the connector aside cards. Outcomes are words in muted mono,
-   never a coloured word. A list card is as tall as its rows (TASK-156): neither
-   list stretches, so the page scrolls instead of a card holding empty space. */
-.v2-tools__head { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
-.v2-tools__title { margin: 0; color: var(--v2-ink); font-family: var(--v2-font-display); font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
-.v2-tools__count-line { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
-.v2-tools__search { min-width: 0; flex: 1 1 200px; min-height: 32px; margin-left: auto; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-ink); font: 500 13px var(--v2-font); }
-.v2-tools__search:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 0; }
-.v2-tools__segment { flex: none; }
-.v2-tools__empty { margin: 0; padding: 14px 16px; color: var(--v2-text-tertiary); font-size: 13px; }
 .v2-tools__facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 14px 0 0; }
 .v2-tools__facts dt { margin-top: 8px; color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; text-transform: lowercase; }
 .v2-tools__facts dt:first-child { margin-top: 0; }
@@ -11209,7 +11120,8 @@ body.modern-ui.v2-canvas {
 .v2-tools__trail-line { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--v2-border-soft); color: var(--v2-text-muted); font-family: var(--v2-font-mono); font-size: 12px; line-height: 16px; }
 .v2-tools__trail-line > span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .v2-tools__trail-when { flex: none; }
-.v2-tools__mode, .v2-tools__outcome, .v2-connector-row__mark { display: inline-flex; align-items: center; margin-right: 6px; vertical-align: -2px; color: var(--v2-text-tertiary); }
+.v2-tools__mode,
+.v2-tools__outcome { display: inline-flex; align-items: center; margin-right: 6px; vertical-align: -2px; color: var(--v2-text-tertiary); }
 .v2-tools__form { display: grid; gap: 14px; margin-top: 14px; }
 .v2-tools__field { display: grid; gap: 6px; margin: 0; padding: 0; border: none; min-width: 0; }
 .v2-tools__field > span:first-child, .v2-tools__field > legend { color: var(--v2-text-tertiary); font-family: var(--v2-font-mono); font-size: 11px; line-height: 16px; text-transform: lowercase; padding: 0; }
@@ -11218,24 +11130,15 @@ body.modern-ui.v2-canvas {
 .v2-tools__agents { display: grid; gap: 6px; }
 .v2-tools__hint { color: var(--v2-text-secondary); font-size: 12px; line-height: 18px; }
 .v2-tools__hint code { display: inline-block; margin: 0 6px 4px 0; padding: 1px 6px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius-sm); font-family: var(--v2-font-mono); font-size: 12px; white-space: nowrap; }
-@media (max-width: 1010px) {
-  .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
-}
 @media (max-width: 760px) {
-  .v2-connectors { gap: 24px; margin: -12px -18px 0; }
-  .v2-connectors__content { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .v2-connector-row { grid-template-columns: minmax(0, 1fr) auto; min-height: 0; padding: 14px 12px; }
   .v2-root button.v2-connector-row__selection { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .v2-root button.v2-connector-row__selection .v2-connector-row__name { grid-column: 1; grid-row: 1; }
   .v2-root button.v2-connector-row__selection .v2-connector-row__details { grid-column: 1 / -1; grid-row: 2; }
-  .v2-root button.v2-connector-row__selection .v2-connector-row__when { grid-column: 1 / -1; grid-row: 3; padding-right: 0; }
-  .v2-connector-row--not-yet .v2-connector-row__name { grid-column: 1; grid-row: 1; }
-  .v2-connector-row--not-yet .v2-connector-row__details { grid-column: 1 / -1; grid-row: 2; }
-  .v2-connector-row--not-yet .v2-connector-row__when { grid-column: 1 / -1; grid-row: 3; padding-right: 0; }
   /* A phone keeps the row's REASON. This used to be a blanket hide with
      enumerated exceptions (`:not(.v2-connector-row--dead):not(.v2-connector-row--not-enabled)`),
      which silently swallowed every state the list had not anticipated: the
-     not-yet row that IS available (V2ConnectorTools.tsx:562) lost
+     not-yet row that IS available (ToolPanels.tsx) lost
      "install the GitHub App first" / "read, or read and write", and a stranger
      saw a "not granted" kicker with no reason under it (eng lead 73726).
      Default is now SHOW; if one row ever needs its detail hidden on phones, hide
@@ -11247,9 +11150,6 @@ body.modern-ui.v2-canvas {
   .v2-connector-row { min-height: 72px; }
   .v2-root button.v2-connector-row__selection { grid-row: 1; }
   .v2-connector-row__kicker-mode { display: inline; }
-  .v2-connector-row__mark { display: none; }
-  .v2-connector-row__names { display: block; }
-  .v2-connector-row__name-sep { display: inline; }
   .v2-root button.v2-connector-row__action--icon { width: 44px; min-height: 44px; grid-column: 2; grid-row: 1; justify-self: end; align-self: start; }
   .v2-root button.v2-connector-row__action:not(.v2-connector-row__action--icon), .v2-root a.v2-connector-row__action { display: inline-flex; grid-column: 1 / -1; grid-row: 3; width: 100%; justify-content: center; min-height: 44px; margin-top: 8px; }
   /* The gear sits over the selection button's top-right; keep the kicker out from under it. */
@@ -11259,8 +11159,6 @@ body.modern-ui.v2-canvas {
   .v2-connectors__new-row { grid-template-columns: minmax(0, 1fr); }
   .v2-connectors__providers { width: fit-content; }
   .v2-connector-gate__more { padding-left: 0; }
-  .v2-tools__head { gap: 8px; }
-  .v2-tools__search { flex-basis: 100%; margin-left: 0; }
 }
 
 /* Activity queue: reply-in-place on mention rows (2026-09-01). The

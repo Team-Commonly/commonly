@@ -69,8 +69,13 @@ module.exports = {
         // Connectors + Tools (TASK-164) — the channels list and the grants list
         // rendered English defaults under zh-CN: neither file was in this manifest,
         // so translationKeys.test.ts never saw the keys they were using.
-        'src/v2/components/V2ConnectorsPage.tsx',
-        'src/v2/components/V2ConnectorTools.tsx',
+        // Moved into src/v2/connectors by the tile-grid rebuild (TASK-733).
+        'src/v2/connectors/ChannelPanel.tsx',
+        'src/v2/connectors/ConnectorDrawer.tsx',
+        'src/v2/connectors/ConnectorPopover.tsx',
+        'src/v2/connectors/ConnectorTile.tsx',
+        'src/v2/connectors/ConnectorsPage.tsx',
+        'src/v2/connectors/ToolPanels.tsx',
         'src/v2/utils/localizeRelativeTime.ts',
       ],
       rules: {

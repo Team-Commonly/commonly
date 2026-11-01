@@ -44,7 +44,7 @@ describe('i18n migration manifest', () => {
   );
 
   // Catalog description maps are locale-only: English renders the server's
-  // description, and a locale without a map falls back to it. See V2ConnectorsPage.
+  // description, and a locale without a map falls back to it. See ConnectorsPage.
   const LOCALE_ONLY_PREFIX = 'connectors.catalogDescriptions.';
 
   it('keeps every registered language base key path identical', () => {

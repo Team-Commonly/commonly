@@ -1,6 +1,6 @@
 // Tool connectors: the shapes the installables and grants routes return, and the
-// pure helpers the tool hook and panels share. Moved from the old V2ConnectorTools
-// (TASK-733); nothing here renders.
+// pure helpers the tool hook and panels share. Moved from the retired
+// tools list component (TASK-733); nothing here renders.
 import { relativeParts } from '../utils/localizeRelativeTime';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';

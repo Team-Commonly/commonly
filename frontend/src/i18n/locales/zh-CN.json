@@ -2265,8 +2265,8 @@
     "filterLabel": "显示",
     "channelsGroup": "频道",
     "addChannelTile": "频道",
-    "meta": "{{on}} 个已开启 · {{available}} 个可用",
-    "offCount": "另有 {{n}} 个未开启",
+    "meta": "{{on}}个已开启 · {{available}}个可用",
+    "offCount": "另有{{n}}个未开启",
     "filter": {
       "all": "全部",
       "channels": "频道",
@@ -2327,6 +2327,7 @@
     "availableTelegram": "发一条消息",
     "cancel": "取消",
     "channelDetails": "频道详情",
+    "closeDetails": "关闭",
     "channelSees": "频道可见内容",
     "channels": "你的频道",
     "codeError": "无法生成新的启用码。",

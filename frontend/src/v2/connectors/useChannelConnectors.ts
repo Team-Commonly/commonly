@@ -1,5 +1,5 @@
 // Channel connectors: state, effects and verbs of the connectors page, moved out
-// of the old V2ConnectorsPage so the tile page and its panels share one model
+// of the retired channels page so the tile page and its panels share one model
 // (TASK-733). Behaviour is unchanged; the UI that drew it is gone.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';

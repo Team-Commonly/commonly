@@ -1,6 +1,6 @@
 // Channel connectors: the shapes the integrations and catalog routes return, and
-// the pure helpers the channel hook and panels share. Moved whole from the old
-// V2ConnectorsPage (TASK-733); nothing here renders.
+// the pure helpers the channel hook and panels share. Moved whole from the
+// retired channels page (TASK-733); nothing here renders.
 import { V2Pod, V2PodMember } from '../hooks/useV2Pods';
 import { MarkName } from '../icons/glyphs';
 
