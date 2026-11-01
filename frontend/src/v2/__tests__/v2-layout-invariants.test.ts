@@ -5067,6 +5067,12 @@ describe('agent settings surface (D223 lift)', () => {
     expect(ruleBody(css, '.v2-agent-settings-page .lrow')).toContain('grid-template-columns: 180px minmax(0, 1fr) auto');
     expect(ruleBody(css, '.v2-agent-settings-page .wt')).toContain('border-collapse: collapse');
   });
+
+  test('menu and disclosure glyphs keep their frame size instead of stretching or shrinking', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .ib svg.i')).toContain('width: 17px');
+    expect(ruleBody(css, '.v2-agent-settings-page details.disc > summary .lb svg.i')).toContain('width: 16px');
+    expect(ruleBody(css, '.v2-agent-settings-page .b svg.i, .v2-agent-settings-page .ib svg.i')).toContain('flex: none');
+  });
 });
 
 describe('agent runtime and grants fit the Settings column', () => {

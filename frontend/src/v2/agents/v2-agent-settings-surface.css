@@ -49,6 +49,7 @@
 .v2-agent-settings-page .ib { width: 32px; padding: 0; height: 32px; border-radius: 8px; }
 .v2-agent-settings-page .ib.b-sm { width: 28px; height: 28px; }
 .v2-agent-settings-page .ib svg.i { width: 17px; height: 17px; }
+.v2-agent-settings-page .b svg.i, .v2-agent-settings-page .ib svg.i { flex: none; }
 
 /* segmented control */
 .v2-agent-settings-page .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--t); box-shadow: inset 0 0 0 1px var(--d); flex: none; }
@@ -104,6 +105,7 @@
 .v2-agent-settings-page .wt td { padding: 8px 14px; border-top: 1px solid var(--d); vertical-align: middle; color: var(--ink2); }
 .v2-agent-settings-page .wt td:first-child { font-weight: 600; color: var(--ink); max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .v2-agent-settings-page .wt td:last-child { text-align: right; width: 44px; }
+.v2-agent-settings-page details.disc > summary .lb svg.i { width: 16px; height: 16px; color: var(--se); flex: none; }
 
 /* wake table controls: the message-wake segment, board and heartbeat toggles, the interval select */
 .v2-agent-settings-page .wt .seg { display: inline-flex; flex-wrap: wrap; }
