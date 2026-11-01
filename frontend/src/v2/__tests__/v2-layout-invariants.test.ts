@@ -5327,6 +5327,22 @@ describe('v2 board on a phone (TASK-576)', () => {
     expect(phone).toMatch(/\.v2-feature--board \.v2-board__tabs \{[^}]*padding: 14px 2px 2px;/);
     expect(phone).toMatch(/\.v2-feature--board \.v2-board__tab \{[^}]*height: 28px;/);
     expect(ruleBody(boardCss, '.v2-board__filters', { within: mediaBlockContaining(boardCss, '.v2-board__filters {') })).toContain('padding: 10px 12px 0');
+    // Chips sit 8px apart: the P0 chip's 44px area reaches 7px past each edge.
+    expect(mediaBlockContaining(boardCss, '.v2-board__filters {')).toContain('.v2-feature--board .v2-board__filters { gap: 8px; }');
+    // The drawer's only close control is a 28px key; on a phone it takes touches at 44px.
+    expect(phone).toContain('.v2-feature--board .v2-board__drawer-close::after { content: \'\'; position: absolute; inset: -9px; }');
+  });
+
+  test('a drawer update keeps its author for screen readers though the frame draws only the face', () => {
+    expect(read('../components/V2PodBoard.tsx')).toContain('<span className="v2-board__update-author">{update.author}: </span>');
+    const hidden = ruleBody(boardCss, '.v2-board__update-author');
+    expect(hidden).toContain('clip-path: inset(50%)');
+    expect(hidden).toContain('position: absolute');
+  });
+
+  test('the board\'s filled keys keep a hover state', () => {
+    expect(boardCss).toContain('.v2-feature--board .v2-board__key--ink:hover { background: var(--v2-ink-hover); }');
+    expect(boardCss).toContain('.v2-feature--board .v2-board__key--soft:hover { background: var(--v2-key-b); }');
   });
 
   test('the board drops the feature body gutter, phone included', () => {

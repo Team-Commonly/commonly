@@ -1053,6 +1053,8 @@ const V2PodBoard: React.FC = () => {
                         <li key={index}>
                           {memberAvatar(podMembers.find((member) => memberId(member) === update.authorId) || {}, update.author)}
                           <span className="v2-board__detail-update-text">
+                            {/* The frame draws only the face; the name stays for screen readers. */}
+                            {update.author && <span className="v2-board__update-author">{update.author}: </span>}
                             {update.text}
                             {Number.isFinite(Date.parse(update.createdAt || '')) && (
                               <> <span className="v2-board__update-time">{timeLabel(Date.parse(update.createdAt as string))}</span></>

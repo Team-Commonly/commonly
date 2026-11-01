@@ -28,6 +28,8 @@
 .v2-feature--board .v2-board__key--soft { color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
 .v2-feature--board .v2-board__key--ghost { color: var(--v2-text-secondary); background: transparent; border: 1px solid transparent; }
 .v2-feature--board .v2-board__key--ghost:hover { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+.v2-feature--board .v2-board__key--ink:hover { background: var(--v2-ink-hover); }
+.v2-feature--board .v2-board__key--soft:hover { background: var(--v2-key-b); }
 .v2-feature--board .v2-board__key--sm { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; }
 .v2-feature--board .v2-board__key--icon { width: 32px; padding: 0; height: 32px; border-radius: 8px; }
 .v2-feature--board .v2-board__key--icon.v2-board__key--sm { width: 28px; height: 28px; }
@@ -168,6 +170,9 @@
      where the chips' areas begin. Search and New task sit 12px apart so their areas meet, never overlap. */
   .v2-feature--board .v2-board__tab::after { content: ''; position: absolute; top: -14px; right: 0; bottom: -2px; left: 0; }
   .v2-feature--board .v2-board__head > .v2-board__new { margin-left: 4px; }
+  /* The drawer's only close control on a phone: 28px key, 1px border inside. */
+  .v2-feature--board .v2-board__drawer-close { position: relative; }
+  .v2-feature--board .v2-board__drawer-close::after { content: ''; position: absolute; inset: -9px; }
   .v2-feature--board .v2-board__chip::after { content: ''; position: absolute; top: -10px; bottom: -10px; left: 50%; width: max(100%, 44px); transform: translateX(-50%); }
 }
 
@@ -462,6 +467,19 @@
   white-space: nowrap;
   border: 0;
 }
+/* The frame draws an update's face only; its author's name stays for screen readers. */
+.v2-board__update-author {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .v2-board__focus-actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
 
 .v2-root button.v2-board__focus-save {
@@ -679,6 +697,9 @@
   .v2-board__search { order: 3; flex: 1 1 0; min-width: 0; width: auto; }
   .v2-board__head > .v2-board__new { order: 4; margin-left: 0; }
   .v2-board__filters { padding: 10px 12px 0; }
+  /* Exception: 8px between chips (frame 6px). The P0 chip is narrower than 44px,
+     so its area reaches 7px past each edge; 8px keeps it off Mine and Unclaimed. */
+  .v2-feature--board .v2-board__filters { gap: 8px; }
   /* The frame's phone board has no focus strip; the goal lives on desktop. */
   .v2-board__focus { display: none; }
   .v2-feature--board .v2-board__columns, .v2-feature--board .v2-board__columns.is-showdone { display: block; padding: 10px 12px 0; overflow-y: auto; flex: 1; min-height: 0; }
