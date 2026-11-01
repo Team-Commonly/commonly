@@ -56,7 +56,7 @@ import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolvePublicSandboxMode } from '../sandbox/mode.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
-import { isAnswerableToolError } from '../public-tool-error.js';
+import { isAnswerableToolError, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { startInstanceProxy } from '../instance-proxy.js';
 import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
@@ -390,7 +390,7 @@ const makeEventParser = () => {
 // stays beside the adapter-agnostic readiness witness (TASK-256): it sees the
 // runtime's own view of each call, and the witness sees a server that never
 // started, so each catches what the other cannot.
-export const PUBLIC_TOOL_FAILED_CODE = 'public_tool_failed';
+export { PUBLIC_TOOL_FAILED_CODE };
 
 export const publicToolFailure = (toolErrors, mcpServers) => {
   const prefixes = (Array.isArray(mcpServers) ? mcpServers : [])
