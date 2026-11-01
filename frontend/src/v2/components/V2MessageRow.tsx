@@ -954,4 +954,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   );
 };
 
-export default V2MessageRow;
+// Memoized: a live message appends one row, and every other row's props are
+// unchanged, so only the new row renders. Callers keep the callbacks and maps
+// they pass here stable (V2Thread's aimAtMessageThread reads messages by ref).
+export default React.memo(V2MessageRow);
