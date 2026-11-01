@@ -1251,7 +1251,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('Settings is one screen: grouped cards, no jump nav', () => {
     expect(settingsPage).not.toContain('v2-settings__nav');
-    expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 640px)');
+    expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 760px)');
     expect(ruleBody(v2, '.v2-settings__edit--closed')).toContain('display: none');
     expect(ruleBody(v2, '.v2-settings__group,\n.v2-settings__fold')).toContain('overflow: hidden');
     expect(ruleBody(v2, '.v2-settings__row > .v2-settings__row-value')).toContain('min-width: 0');
