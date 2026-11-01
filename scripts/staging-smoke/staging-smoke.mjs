@@ -120,11 +120,12 @@ async function main() {
   }
 
   // 6) connectors fold — guards the #2504 regression. A FRESH, grant-free account must see at least
-  //    one connectable TOOL as a real row outside the inactive fold. Fail-CLOSED: absent creds, a
-  //    failed login, or a non-grant-free account all FAIL (never skip-green). We match an actual
-  //    .v2-connector-row that has a .v2-connector-row__action (Connect) and is NOT contained by
-  //    .v2-connectors__inactive-fold — NOT an ancestor's textContent (that false-passed when GitHub
-  //    was only inside the fold).
+  //    one connectable TOOL outside the inactive fold. Fail-CLOSED: absent creds, a failed login, or a
+  //    non-grant-free account all FAIL (never skip-green). Since the d215 rebuild (#3143) a tool is a
+  //    .v2-cx-tile in the Tools group, what is not offered folds behind "+N off" (.v2-cx-off) and
+  //    renders --dim only when opened, and the act lives in the tile's reveal (.v2-cx-pop). So we
+  //    open each shown tile and require a real Connect/Install button in its reveal — NOT the tile's
+  //    text alone (a tile is shown even when its reveal offers only "Ask" or needs an admin).
   const FRESH_EMAIL = process.env.SMOKE_FRESH_EMAIL, FRESH_PW = process.env.SMOKE_FRESH_PW;
   if (!FRESH_EMAIL || !FRESH_PW) {
     rec('connectors: fresh user sees a tool row outside the fold', false, 'SMOKE_FRESH_EMAIL/PW not set — fresh-account check could not run (fail-closed)');
@@ -151,30 +152,38 @@ async function main() {
           }
           rec('connectors: fresh account has 0 live grants', bad === null && totalGrants === 0, bad || `pods=${pods.length} tool-grants=${totalGrants}`);
         }
-        // 6b) at least one connectable TOOL row visible OUTSIDE the inactive fold. A real
-        //     .v2-connector-row (never ancestor text) whose action is Connect/Install (not "Ask"
-        //     or "Add") and that is not the unavailable --not-enabled modifier.
-        const fctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+        // 6b) at least one connectable TOOL tile shown OUTSIDE the "+N off" fold, whose reveal
+        //     carries a Connect/Install button (never the secondary "Ask" link, never "Add").
+        // en-US: the Tools group is found by its English label, and zh-CN would read 工具.
+        const fctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'en-US' });
         await fctx.addInitScript(t => { try { localStorage.setItem('token', t); } catch(e){} }, ftoken);
         const page = await fctx.newPage();
         await page.goto(BASE+'/v2/connectors', { waitUntil:'networkidle', timeout: 30000 });
-        await page.waitForTimeout(1800);
-        const r = await page.evaluate(() => {
-          const TOOLS = ['GitHub','Linear','Slack','Notion','Google','Jira','Atlassian','Gmail','Airtable','Sentry'];
-          const fold = document.querySelector('.v2-connectors__inactive-fold');
-          const inFold = el => !!fold && fold.contains(el);
-          const rows = [...document.querySelectorAll('.v2-connector-row')];
-          const visibleToolRows = rows.filter(row => {
-            if (row.offsetParent === null) return false;                               // visible
-            if (inFold(row)) return false;                                             // not in the inactive fold
-            if (row.classList.contains('v2-connector-row--not-enabled')) return false; // exclude unavailable ("Ask") offers
-            const action = (row.querySelector('.v2-connector-row__action')?.textContent || '').trim();
-            if (!/\b(connect|install)\b/i.test(action)) return false;                  // require a connectable action
-            return TOOLS.some(t => (row.textContent || '').includes(t));               // names a known tool
-          }).map(row => TOOLS.find(t => (row.textContent || '').includes(t))).filter(Boolean);
-          return { visibleToolRows, rowsTotal: rows.length, foldedRows: fold ? fold.querySelectorAll('.v2-connector-row').length : 0 };
-        });
-        rec('connectors: fresh user sees a tool row outside the fold', r.visibleToolRows.length >= 1, `visible=[${[...new Set(r.visibleToolRows)].join(',')}] rows=${r.rowsTotal} foldedRows=${r.foldedRows}`);
+        // Wait for the catalogue's first tile rather than a fixed sleep; a timeout falls through to the FAIL detail.
+        await page.locator('section.v2-cx-group[aria-label="Tools"] .v2-cx-tile').first().waitFor({ timeout: 15000 }).catch(() => {});
+        const TOOLS = ['GitHub','Linear','Slack','Notion','Google','Jira','Atlassian','Gmail','Airtable','Sentry'];
+        const tiles = page.locator('section.v2-cx-group[aria-label="Tools"] .v2-cx-tile:not(.v2-cx-tile--add):not(.v2-cx-tile--dim)');
+        const shown = [], connectable = [];
+        for (let i = 0; i < await tiles.count(); i++) {
+          const tile = tiles.nth(i);
+          if (!await tile.isVisible()) continue;
+          const name = (await tile.locator('.v2-cx-tile__name').textContent() || '').trim();
+          const tool = TOOLS.find(t => name.includes(t));
+          if (!tool) continue;
+          shown.push(tool);
+          await tile.click();
+          const pop = page.locator('.v2-cx-pop[role="dialog"]');
+          const opened = await pop.waitFor({ state: 'visible', timeout: 3000 }).then(() => true, () => false);
+          if (opened) {
+            const acts = await pop.locator('button.v2-connector-row__action:not(.v2-connector-row__action--secondary)').allTextContents();
+            if (acts.some(a => /\b(connect|install)\b/i.test(a))) connectable.push(tool);
+            await page.keyboard.press('Escape');
+            await pop.waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+          }
+          if (connectable.length) break;
+        }
+        const offLabel = ((await page.locator('section.v2-cx-group[aria-label="Tools"] .v2-cx-off').allTextContents())[0] || 'none').trim();
+        rec('connectors: fresh user sees a tool row outside the fold', connectable.length >= 1, `connectable=[${connectable.join(',')}] shown=[${shown.join(',')}] off=${offLabel}`);
         await fctx.close();
       }
     } catch (e) { rec('connectors: fresh user sees a tool row outside the fold', false, e.message.slice(0,100)); }
