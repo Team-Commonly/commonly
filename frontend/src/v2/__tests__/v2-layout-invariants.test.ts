@@ -5061,6 +5061,11 @@ describe('agent settings surface (D223 lift)', () => {
       .toContain('box-shadow: 0 0 0 3px var(--c-soft)');
   });
 
+  test('disabled lifted controls still dim, since the old :disabled rule skips .b and seg tabs', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .b:disabled, .v2-agent-settings-page .seg > button:disabled'))
+      .toContain('opacity: .55');
+  });
+
   test('lifted .b-sm controls keep their 28px size', () => {
     expect(ruleBody(css, '.v2-agent-settings-page .b-sm')).toContain('height: 28px');
   });
