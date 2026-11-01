@@ -300,6 +300,31 @@ describe('Connectors page: the tile surface', () => {
     expect(tileNode('Unknown connector')).toHaveAttribute('aria-pressed', 'true');
   });
 
+  // TASK-754 review: two grants on one connector are one tile, counted once,
+  // and its drawer lists both by pod so they can be told apart.
+  it('two live grants on one gone connector are one tile whose drawer lists both', async () => {
+    const iso = (ms) => new Date(Date.now() + ms).toISOString();
+    const orphan = (grantId, podId) => ({
+      grantId, installationId: `inst-${grantId}`, target: { kind: 'pod', id: podId }, tools: ['atlassian.getJiraIssue'],
+      connector: { id: 'atlassian', label: 'Atlassian' },
+      writeMode: 'read', budget: null, effectiveAudience: [], expiresAt: iso(86_400_000), revokedAt: null, revokedBy: null,
+      parentGrantId: null, rootGrantId: null, createdAt: iso(-3_600_000), grantedBy: 'u1',
+    });
+    const twoPods = [...pods, { _id: 'p2', name: 'Ops Room', type: 'chat', members: [] }];
+    mockApi({ installables: [tool('github', 'GitHub')], pods: twoPods, grants: [orphan('g-a1', 'p1'), orphan('g-a2', 'p2')] });
+    renderPage();
+
+    await findTile('GitHub');
+    await findTile('Atlassian');
+    expect(document.querySelectorAll('button.v2-cx-tile[title="Atlassian"]')).toHaveLength(1);
+    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('1 on · 1 available');
+    fireEvent.click(tileNode('Atlassian'));
+    const drawer = await findDrawer(/Atlassian/);
+    expect(within(drawer).getByRole('button', { name: /View Atlassian in Rewire Live Demo/ })).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: /View Atlassian in Ops Room/ })).toBeInTheDocument();
+    expect(tileNode('Atlassian')).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('names a grant whose entry is gone by the connector the server reads from its tools (TASK-753)', async () => {
     const iso = (ms) => new Date(Date.now() + ms).toISOString();
     // A hidden entry is absent from the catalogue, so no row covers this grant;

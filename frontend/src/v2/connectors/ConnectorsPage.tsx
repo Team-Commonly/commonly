@@ -52,6 +52,8 @@ const ConnectorsPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [pop, setPop] = useState<Pop | null>(null);
   const [toolKey, setToolKey] = useState<string | null>(null);
+  // The gone connector whose tile opened its list of grants (TASK-754).
+  const [orphanKey, setOrphanKey] = useState<string | null>(null);
   const [offOpen, setOffOpen] = useState({ channels: false, tools: false });
   const phone = usePhone();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -110,13 +112,22 @@ const ConnectorsPage: React.FC = () => {
     && !isDead(grant, m.now)
     && (!q || m.toolLabel(grant).toLowerCase().includes(q))
   ));
+  // One tile per gone connector, not per grant: two grants on one connector
+  // would otherwise be two tiles with one name (TASK-754).
+  const orphanKeyOf = (grant: ToolGrant): string => grant.connector?.id || grant.tools[0]?.split('.')[0] || grant.grantId;
+  const orphanGroups = new Map<string, ToolGrant[]>();
+  orphanGrants.forEach((grant) => {
+    const key = orphanKeyOf(grant);
+    orphanGroups.set(key, [...(orphanGroups.get(key) || []), grant]);
+  });
+  const orphanGroup = orphanKey ? orphanGroups.get(orphanKey) || null : null;
   const toolHasDrawer = (entry: ToolCatalogEntry): boolean => grantsOf(entry).length > 0 || hiddenOf(entry).length > 0;
 
   // ---- what is open ----
   const drawerItem = c.items.find((item) => item.key === c.selectedKey) || null;
   const channelDrawerOpen = c.adding || drawerItem !== null;
   const toolEntry = toolKey ? m.catalog.find((entry) => entry.installableId === toolKey) || null : null;
-  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry || m.selected);
+  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry || m.selected || orphanGroup);
 
   // Opening the phone search puts the cursor in the box.
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
@@ -150,6 +161,7 @@ const ConnectorsPage: React.FC = () => {
 
   const closeTools = useCallback(() => {
     setToolKey(null);
+    setOrphanKey(null);
     m.setSelectedId(null);
     m.setDraft(null);
     m.setGithubAppSetup(null);
@@ -182,6 +194,7 @@ const ConnectorsPage: React.FC = () => {
     m.setDraft(null);
     m.setGithubAppSetup(null);
     m.setSelectedId(null);
+    setOrphanKey(null);
     if (toolHasDrawer(entry)) {
       setPop(null);
       setToolKey(entry.installableId);
@@ -191,16 +204,22 @@ const ConnectorsPage: React.FC = () => {
     setPop({ key: `tool:${entry.installableId}`, anchor: event.currentTarget });
   };
 
-  // A grant with no catalogue entry has no entry drawer, so its tile opens the
-  // grant's own.
-  const openOrphan = (grant: ToolGrant) => {
+  // A gone connector has no entry drawer. One grant opens its own details;
+  // several open their list, as an entry's tile does.
+  const openOrphan = (key: string, group: ToolGrant[]) => {
     closeChannels();
     setPop(null);
     setToolKey(null);
     m.setDraft(null);
     m.setGithubAppSetup(null);
     m.setConfirmRevoke(null);
-    m.setSelectedId(grant.grantId);
+    if (group.length === 1) {
+      setOrphanKey(null);
+      m.setSelectedId(group[0].grantId);
+      return;
+    }
+    m.setSelectedId(null);
+    setOrphanKey(key);
   };
 
   const openAdd = () => {
@@ -268,17 +287,17 @@ const ConnectorsPage: React.FC = () => {
   // A live grant whose entry is gone is still access (TASK-752), so it keeps a
   // tile in the Tools grid, in the grid's own shape (TASK-754, D223). The
   // server's `connector` names it when the catalogue cannot (TASK-753).
-  const renderOrphanTile = (grant: ToolGrant) => (
+  const renderOrphanTile = ([key, group]: [string, ToolGrant[]]) => (
     <ConnectorTile
-      key={`grant:${grant.grantId}`}
-      type={grant.connector?.id || grant.tools[0]?.split('.')[0] || 'tools'}
-      name={m.toolLabel(grant)}
+      key={`orphan:${key}`}
+      type={key}
+      name={m.toolLabel(group[0])}
       dot={{ kind: 'live', label: t('tools.granted', { defaultValue: 'Granted' }) }}
-      beta={grant.connector?.id === 'atlassian'
+      beta={key === 'atlassian'
         ? { word: t('tools.beta', { defaultValue: 'beta' }), title: t('tools.readInTesting', { defaultValue: 'read in testing' }) }
         : undefined}
-      selected={m.selectedId === grant.grantId}
-      onClick={() => openOrphan(grant)}
+      selected={orphanKey === key || (group.length === 1 && m.selectedId === group[0].grantId)}
+      onClick={() => openOrphan(key, group)}
     />
   );
 
@@ -420,9 +439,17 @@ const ConnectorsPage: React.FC = () => {
       );
     }
     if (!toolEntry) {
+      if (orphanKey && orphanGroup) {
+        return (
+          <ConnectorDrawer notices={noticeBlock} type={orphanKey} title={m.toolLabel(orphanGroup[0])} onClose={closeTools}>
+            <div className="v2-cx-list">{orphanGroup.map(tp.renderRow)}</div>
+            {m.selected && tp.renderAside(m.selected)}
+          </ConnectorDrawer>
+        );
+      }
       if (!m.selected) return null;
       return (
-        <ConnectorDrawer notices={noticeBlock} type={m.selected.tools[0]?.split('.')[0] || 'tools'} title={m.toolLabel(m.selected)} onClose={closeTools}>
+        <ConnectorDrawer notices={noticeBlock} type={orphanKeyOf(m.selected)} title={m.toolLabel(m.selected)} onClose={closeTools}>
           {tp.renderAside(m.selected)}
         </ConnectorDrawer>
       );
@@ -466,7 +493,7 @@ const ConnectorsPage: React.FC = () => {
   // never offered, so it leaves `available` alone.
   const orphanOn = new Set(grants
     .filter((grant) => !m.catalog.some((entry) => entryCovers(entry, grant)) && !isDead(grant, m.now))
-    .map((grant) => grant.connector?.id || grant.grantId)).size;
+    .map(orphanKeyOf)).size;
   const meta = t('connectors.meta', { defaultValue: '{{on}} on · {{available}} available', on: onCount + orphanOn, available: Math.max(0, availableCount) });
 
   const showChannels = filter !== 'tools';
@@ -563,7 +590,7 @@ const ConnectorsPage: React.FC = () => {
                 <div className="v2-cx-grid">
                   {showChannels && liveChannels.map((item) => renderChannelTile(item))}
                   {showTools && liveTools.map((entry) => renderToolTile(entry))}
-                  {showTools && orphanGrants.map(renderOrphanTile)}
+                  {showTools && [...orphanGroups].map(renderOrphanTile)}
                   {phoneOffOpen && showChannels && offChannels.map((item) => renderChannelTile(item, true))}
                   {phoneOffOpen && showTools && offTools.map((entry) => renderToolTile(entry, true))}
                   {showChannels && availableProviders.length > 0 && !q && (
@@ -620,7 +647,7 @@ const ConnectorsPage: React.FC = () => {
                 </h2>
                 <div className="v2-cx-grid">
                   {liveTools.map((entry) => renderToolTile(entry))}
-                  {orphanGrants.map(renderOrphanTile)}
+                  {[...orphanGroups].map(renderOrphanTile)}
                   {offOpen.tools && offTools.map((entry) => renderToolTile(entry, true))}
                 </div>
                 {offOpen.tools && orphanHidden.length > 0 && (
