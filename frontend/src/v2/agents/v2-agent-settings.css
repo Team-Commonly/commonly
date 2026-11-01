@@ -100,41 +100,6 @@
 .v2-agent-settings__reveal { display: grid; gap: 12px; font-size: 13px; }
 .v2-agent-settings__reveal code { display: block; overflow-wrap: anywhere; padding: 10px; background: var(--v2-surface-tint); font-family: var(--v2-font-mono); }
 .v2-agent-settings__reveal button { justify-self: start; }
-.v2-agent-settings__identity { display: grid; gap: 18px; max-width: 680px; margin-top: 20px; }
-.v2-agent-settings__identity label { display: grid; gap: 7px; font-size: 13px; font-weight: 600; }
-.v2-agent-settings__identity fieldset { display: grid; gap: 16px; margin: 0; padding: 18px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius); }
-.v2-agent-settings__identity legend { padding: 0 6px; font-weight: 700; }
-.v2-root .v2-agent-settings .v2-agent-settings__identity input {
-  width: 100%; padding: 9px 10px; border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary);
-  font: inherit; font-weight: 400;
-}
-.v2-root .v2-agent-settings .v2-agent-settings__identity textarea,
-.v2-root .v2-agent-settings .v2-agent-settings__identity select {
-  width: 100%; padding: 9px 10px; border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary);
-  font: inherit; font-weight: 400;
-}
-.v2-agent-settings__identity textarea { resize: vertical; }
-.v2-agent-settings__identity .v2-agent-settings__actions { align-items: center; font-size: 13px; color: var(--v2-text-secondary); }
-.v2-agent-settings__listing { display: grid; gap: 8px; max-width: 680px; margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--v2-border-soft); }
-.v2-agent-settings__listing h3 { margin: 0; font-family: var(--v2-font-display); font-size: 16px; }
-.v2-agent-settings__listing p { margin: 0; color: var(--v2-text-secondary); font-size: 13px; }
-/* Registry owner controls (TASK-419). A wrapping row, not a grid: the grid would
-   stretch each button to the full width. Buttons take the base .v2-agent-settings
-   button style above; only the listing-name input needs its own rule. */
-.v2-agent-settings__owned { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 12px; padding-top: 16px; border-top: 1px solid var(--v2-border-soft); }
-.v2-agent-settings__owned h3 { flex: 0 0 100%; margin: 0; font-family: var(--v2-font-display); font-size: 16px; }
-.v2-agent-settings__owned label { display: grid; flex: 1 1 240px; gap: 7px; min-width: 0; font-size: 13px; font-weight: 600; }
-.v2-root .v2-agent-settings .v2-agent-settings__owned input {
-  width: 100%; padding: 9px 10px; border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary);
-  font: inherit; font-weight: 400;
-}
-.v2-root .v2-agent-settings .v2-agent-settings__owned input:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
-.v2-agent-settings__owned .v2-agent-settings__error { flex: 0 0 100%; margin: 0; color: var(--v2-danger); font-size: 13px; }
-.v2-root .v2-agent-settings .v2-agent-settings__listing a { justify-self: start; color: var(--v2-accent); font-size: 13px; font-weight: 600; }
-.v2-root .v2-agent-settings .v2-agent-settings__listing a:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
 
 @media (max-width: 760px) {
   .v2-agent-settings { padding: 16px; }

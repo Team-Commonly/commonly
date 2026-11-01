@@ -661,3 +661,22 @@ test('key polling pauses while hidden and re-reads on focus', async () => {
     hidden.mockRestore();
   } finally { view.unmount(); jest.useRealTimers(); }
 });
+
+test('a name outside 1–80 characters is refused under the field; other refusals sit by Save', async () => {
+  renderPage();
+  const save = await screen.findByRole('button', { name: 'Save identity' });
+  const name = screen.getByRole('textbox', { name: 'Display name' });
+  fireEvent.change(name, { target: { value: '   ' } });
+  fireEvent.click(save);
+  const error = await screen.findByText('Enter a display name of 1–80 characters.');
+  expect(name).toHaveAttribute('aria-invalid', 'true');
+  expect(name).toHaveAttribute('aria-describedby', error.id);
+  expect(axios.patch).not.toHaveBeenCalled();
+
+  axios.patch.mockRejectedValue({ response: { status: 403, data: {} } });
+  fireEvent.change(name, { target: { value: 'Maya 2' } });
+  fireEvent.click(save);
+  await screen.findByText("You don't have permission to change this agent's identity.");
+  expect(name).not.toHaveAttribute('aria-invalid');
+  expect(screen.queryByText('Enter a display name of 1–80 characters.')).toBeNull();
+});

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import type { AgentSettingsInstallation, AgentSettingsPatch } from './useAgentSettings';
+import V2AgentSettingsIcon from './V2AgentSettingsIcon';
 import './v2-agent-policy.css';
 
 type MemorySection = 'soul' | 'long_term' | 'shared';
@@ -103,23 +104,58 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     setFeedback(null);
   };
 
+  // The check and "Saved" stand in the action slot for a moment, then the slot is the button alone again.
+  useEffect(() => {
+    if (feedback?.kind !== 'saved') return undefined;
+    const timer = window.setTimeout(() => setFeedback((current) => (current === feedback ? null : current)), 2500);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
+
   const groupFeedback = (group: 'trust' | 'memory') => feedback?.group === group && (
     <p role={feedback.kind === 'error' ? 'alert' : 'status'}
       className={feedback.kind === 'error' ? 'v2-agent-policy__error' : 'v2-agent-policy__saved'}>{feedback.text}</p>
   );
+  const trustFeedback = feedback?.group === 'trust' && (
+    <span role={feedback.kind === 'error' ? 'alert' : 'status'} className="v2-agent-settings-page__note">
+      <V2AgentSettingsIcon name={feedback.kind === 'error' ? 'alert' : 'check'} />{feedback.text}
+    </span>
+  );
+  const hasQuota = installation?.runtime?.runtimeType === 'hosted' || installation?.runtime?.runtimeType === 'native';
 
-  return <section className="v2-agent-policy" aria-labelledby="agent-policy-title">
-    <h2 id="agent-policy-title">{t('agentPolicy.title')}</h2>
-    {canSetTrust && <div className="v2-agent-policy__group">
-      <h3>{t('agentPolicy.trust')}</h3>
-      <label>{t('agentPolicy.repoAccess')}<select value={trustMode} onChange={(event) => setTrustMode(event.target.value)}>
-        <option value="">{t('agentPolicy.chooseAccess')}</option>
-        <option value="read-only">{t('agentPolicy.readOnly')}</option>
-        <option value="workspace">{t('agentPolicy.workspace')}</option>
-      </select></label>
-      <button type="button" disabled={busy || !['read-only', 'workspace'].includes(trustMode)} onClick={saveTrust}>{t('agentPolicy.saveTrust')}</button>
-      {groupFeedback('trust')}
+  return <section className="v2-agent-settings-page__group" aria-labelledby="agent-policy-title">
+    <h2 id="agent-policy-title" className="gtitle"><V2AgentSettingsIcon name="rule" />{t('agentPolicy.title')}</h2>
+    {(canSetTrust || hasQuota) && <div className="list">
+      {canSetTrust && <div className="lrow v2-agent-settings-page__stack">
+        <span className="lb" id="agent-policy-trust"><V2AgentSettingsIcon name="lock" />{t('agentPolicy.repoAccess')}</span>
+        <span className="vl">
+          <span className="seg seg--sm" role="radiogroup" aria-labelledby="agent-policy-trust">
+            {(['read-only', 'workspace'] as const).map((mode) => <label key={mode}>
+              <input type="radio" name="agent-policy-trust" value={mode} checked={trustMode === mode}
+                onChange={() => setTrustMode(mode)} />
+              {t(mode === 'read-only' ? 'agentPolicy.readOnly' : 'agentPolicy.workspace')}
+            </label>)}
+          </span>
+        </span>
+        <span className="ac">
+          <button type="button" className="b b-p b-sm" disabled={busy || !['read-only', 'workspace'].includes(trustMode)} onClick={saveTrust}>{t('agentPolicy.saveTrust')}</button>
+          {trustFeedback}
+        </span>
+      </div>}
+      {hasQuota && <>
+        <div className="lrow">
+          <span className="lb"><V2AgentSettingsIcon name="bolt" />{t('agentPolicy.turnsPerDay')}</span>
+          <span className="vl mo v2-agent-settings-page__figure">{quota?.turnCap ?? '—'}</span>
+        </div>
+        <div className="lrow">
+          <span className="lb"><V2AgentSettingsIcon name="play" />{t('agentPolicy.userRunCeiling')}</span>
+          <span className="vl mo v2-agent-settings-page__figure">{quota?.userRunCeiling ?? '—'}</span>
+        </div>
+        {quotaError && <div className="lrow v2-agent-settings-page__alert">
+          <span className="lb" role="alert"><V2AgentSettingsIcon name="alert" />{quotaError}</span>
+        </div>}
+      </>}
     </div>}
+    {/* Memory editing has no frame here yet (the artboard moves it to the Memory tab, which cannot edit yet), so it keeps its live markup. */}
     <div className="v2-agent-policy__group">
       <h3>{t('agentPolicy.memory')}</h3>
       {documents ? <>
@@ -138,14 +174,6 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
       </> : <p className="v2-agent-policy__muted">{t('agentPolicy.loadingMemory')}</p>}
       {groupFeedback('memory')}
     </div>
-    {(installation?.runtime?.runtimeType === 'hosted' || installation?.runtime?.runtimeType === 'native') && (
-      <div className="v2-agent-policy__group">
-        <h3>{t('agentPolicy.quotas')}</h3>
-        <div className="v2-agent-policy__quota"><span>{t('agentPolicy.turnsPerDay')}</span><strong>{quota?.turnCap ?? '—'}</strong></div>
-        <div className="v2-agent-policy__quota"><span>{t('agentPolicy.userRunCeiling')}</span><strong>{quota?.userRunCeiling ?? '—'}</strong></div>
-        {quotaError && <p role="alert" className="v2-agent-policy__error">{quotaError}</p>}
-      </div>
-    )}
   </section>;
 };
 

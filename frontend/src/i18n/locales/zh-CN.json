@@ -2778,7 +2778,8 @@
       "targetUnavailable": "这台电脑已不可用，请选择另一台电脑。",
       "placementChanged": "此智能体的电脑分配已变更。请先查看当前分配，再重新迁移。",
       "placementError": "无法加载此智能体的电脑分配信息。",
-      "moveError": "无法迁移此智能体，请重试。"
+      "moveError": "无法迁移此智能体，请重试。",
+      "machine": "电脑"
     },
     "grants": {
       "title": "连接器授权",
@@ -2794,7 +2795,10 @@
       "confirmRevoke": "确认撤销",
       "cancel": "取消",
       "loadError": "无法加载连接器授权。",
-      "revokeError": "无法撤销授权。"
+      "revokeError": "无法撤销授权。",
+      "activeCount": "{{count}}项生效中",
+      "endedCount": "{{count}}项已结束",
+      "retry": "重试"
     },
     "controls": {
       "title": "运行方式",
@@ -2841,7 +2845,8 @@
       "remove": "移除",
       "set": "已设置",
       "loadError": "无法加载密钥状态。",
-      "saveError": "无法更新密钥。请重新输入后重试。"
+      "saveError": "无法更新密钥。请重新输入后重试。",
+      "neverShown": "保存后不再显示"
     }
   },
   "agentSettings": {
@@ -2954,7 +2959,9 @@
     "messageWakeShort_human": "真人",
     "messageWakeShort_all": "全部",
     "turnsUsed": "{{used}} / {{cap}}次/天",
-    "turnsUsedNoCap": "{{used}}次/天 · 上限不可用"
+    "turnsUsedNoCap": "{{used}}次/天 · 上限不可用",
+    "specialtyCount_other": "{{count}}项专长",
+    "boundaryCount_other": "{{count}}条行为边界"
   },
   "agentPolicy": {
     "title": "策略",

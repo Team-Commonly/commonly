@@ -5139,7 +5139,8 @@ describe('agent settings surface (D223 lift)', () => {
 
   test('segment tabs keep a keyboard focus ring now that the old base rule skips them', () => {
     expect(ruleBody(css, '.v2-agent-settings-page .seg > button:focus-visible, .v2-agent-settings-page .seg > a:focus-visible'))
-      .toContain('box-shadow: 0 0 0 3px var(--c-soft)');
+      .toContain('box-shadow: var(--v2-focus-ring)');
+    expect(css).not.toContain('--v2-accent-soft');
   });
 
   test('disabled lifted controls still dim, since the old :disabled rule skips .b and seg tabs', () => {
@@ -5173,26 +5174,40 @@ describe('agent settings surface (D223 lift)', () => {
   });
 });
 
-describe('agent runtime and grants fit the Settings column', () => {
-  const css = read('../components/V2AgentRuntimeGrants.css');
-  test('facts stack on phones and long grant details wrap', () => {
-    const phone = blockContaining(css, '@media (max-width: 760px)', '.v2-agent-runtime-grants__facts > div');
-    expect(phone).toContain('grid-template-columns: 1fr');
-    expect(ruleBody(css, '.v2-agent-runtime-grants__list li p')).toContain('overflow-wrap: anywhere');
+describe('agent settings sections lifted from #s-agent-states', () => {
+  const css = read('../agents/v2-agent-settings-surface.css');
+  const phone = blockContaining(css, '@media (max-width: 600px)', '.v2-agent-settings-page__stack');
+  const targets = blockContaining(css, '@media (max-width: 760px)', '.v2-agent-settings-page__group .b');
+  test('every lifted control is a 44px target on phones', () => {
+    expect(ruleBody(targets, '.v2-agent-settings-page__group .b, .v2-agent-settings-page__group .b-sm')).toContain('height: 44px');
+    expect(ruleBody(targets, '.v2-agent-settings-page__group .sel, .v2-agent-settings-page__group .field:not(.field--area)')).toContain('height: 44px');
+    expect(ruleBody(targets, '.v2-agent-settings-page__group .seg > label')).toContain('height: 44px');
   });
-});
-
-describe('agent Identity editor', () => {
-  const css = read('../agents/v2-agent-settings.css');
-  test('form fields retain a visible boundary over the v2 input reset', () => {
-    const input = ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__identity input');
-    expect(input).toContain('border: 1px solid var(--v2-border)');
-    expect(input).toContain('background: var(--v2-surface)');
+  test('setting rows stack on phones and keep their value under the label', () => {
+    expect(ruleBody(phone, '.v2-agent-settings-page__group .lrow.v2-agent-settings-page__stack', { within: phone }))
+      .toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(ruleBody(phone, '.v2-agent-settings-page__group .v2-agent-settings-page__stack > .vl, .v2-agent-settings-page__group .v2-agent-settings-page__stack > .ac', { within: phone }))
+      .toContain('grid-row: auto');
+    expect(ruleBody(phone, '.v2-agent-settings-page .dbody', { within: phone })).toContain('padding: 0 12px 12px');
   });
-  test('listing status and public-profile link remain visible in the Settings flow', () => {
-    expect(ruleBody(css, '.v2-agent-settings__listing')).toContain('display: grid');
-    expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a')).toContain('color: var(--v2-accent)');
-    expect(ruleBody(css, '.v2-root .v2-agent-settings .v2-agent-settings__listing a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
+  test('grant rows keep the logo column and long reach lines wrap', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .lrow.v2-agent-settings-page__grant')).toContain('grid-template-columns: 28px minmax(0, 1fr) auto');
+    expect(ruleBody(css, '.v2-agent-settings-page__grantname .mo')).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(css, '.v2-agent-settings-page__grantname')).toContain('min-width: 0');
+  });
+  test('native controls fill the frame box, and the box carries the focus ring', () => {
+    expect(css).toContain('.v2-agent-settings-page .sel input, .v2-agent-settings-page .sel select { all: unset;');
+    expect(ruleBody(css, '.v2-agent-settings-page .field:focus-within, .v2-agent-settings-page .sel:focus-within')).toContain('var(--v2-focus-ring)');
+    expect(ruleBody(css, '.v2-agent-settings-page .sel:has(.is-unsupported)')).toContain('inset 0 0 0 2px var(--ink)');
+  });
+  test('the identity form does not add a box between the list and its rows', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page__form')).toContain('display: contents');
+  });
+  test('the old section sheets are gone', () => {
+    expect(fs.existsSync(path.join(__dirname, '../components/V2AgentRuntimeGrants.css'))).toBe(false);
+    expect(fs.existsSync(path.join(__dirname, '../components/V2RuntimeControls.css'))).toBe(false);
+    expect(read('../agents/v2-agent-settings.css')).not.toMatch(/v2-agent-settings__(identity|listing|owned)/);
+    expect(read('../agents/v2-agent-policy.css')).not.toContain('v2-agent-policy__quota');
   });
 });
 
@@ -5345,15 +5360,6 @@ test('TASK-482 offer follows the final CTA so existing commands and controls can
   // Actual before/after top coordinates are asserted by e2e/byo-offer-layout.spec.ts.
 });
 
-test('TASK-435 runtime columns can shrink on phones without dropping the observed values', () => {
-  const css = read('../components/V2RuntimeControls.css');
-  expect(css).toContain('@media (max-width: 760px)');
-  expect(css).toContain('grid-template-columns: minmax(0, 1fr)');
-  expect(css).toContain('width: 100%; min-height: 44px');
-  expect(ruleBody(css, '.v2-runtime-controls__saved')).toContain('min-width: 0');
-  expect(ruleBody(css, '.v2-runtime-controls__observed')).toContain('overflow-wrap: anywhere');
-  expect(css).toContain('content: attr(data-label)');
-});
 
 test('teammate invite cards keep one-column phone controls at the 44px minimum', () => {
   const css = read('../components/V2BringTeammate.css');

@@ -189,3 +189,46 @@ test('does not offer revoke when the server says this viewer cannot revoke', asy
   expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
 });
+
+test('a failed grant load is one row with Try again, which reloads the list', async () => {
+  let fail = true;
+  axios.get.mockImplementation((url) => {
+    if (url.includes('/agent-binding/placement')) return Promise.resolve({ data: { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] } });
+    if (url.includes('/grants') && fail) return Promise.reject(new Error('offline'));
+    return Promise.resolve({ data: response });
+  });
+  renderSection();
+  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not load connector grants.');
+  fail = false;
+  fireEvent.click(within(grantsSection).getByRole('button', { name: 'Try again' }));
+  expect(await within(grantsSection).findByText(/Work · Granted by Owner/)).toBeInTheDocument();
+  expect(within(grantsSection).queryByRole('alert')).toBeNull();
+});
+
+test('a failed revoke says so above the rows, keeps the grant revocable and offers no reload', async () => {
+  axios.post.mockRejectedValue(new Error('denied'));
+  renderSection();
+  await screen.findByText(/Work · Granted by Owner/);
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
+  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not revoke the grant.');
+  expect(within(grantsSection).queryByRole('button', { name: 'Try again' })).toBeNull();
+  expect(within(grantsSection).getByRole('button', { name: 'Yes, revoke it' })).toBeEnabled();
+});
+
+test('the inline confirm swaps back to Revoke on Cancel, and the title counts active and ended grants', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
+    : { grants: [...response.grants, { ...response.grants[0], grantId: 'grant-2', connector: 'sentry', revokedAt: '2026-10-20T00:00:00Z' }] } }));
+  renderSection();
+  expect(await screen.findByText('1 active · 1 ended')).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'Revoke' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+  expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Yes, revoke it' })).toBeNull();
+  expect(axios.post).not.toHaveBeenCalled();
+});
