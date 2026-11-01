@@ -14,11 +14,14 @@ const { hash } = require('../utils/secret');
 const { markByoConnectionAttempt } = require('./onboardingMarks');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } = require('./runtimeCredentialGate');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { recordListenerCheckIn } = require('./agentListenerCheckIn');
 
 interface AgentSocket {
   agentName: string;
   instanceId: string;
   agentUserId: string | null;
+  tokenHash?: string;
   agentKey: string;
   subscribedPods: Set<string>;
   handshake: { auth?: { token?: string } };
@@ -82,7 +85,7 @@ interface InstallationDoc {
   status?: string;
   displayName?: string;
   config?: { runtime?: { runtimeType?: string; host?: string; webhookUrl?: string } };
-  runtimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date }>;
+  runtimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date; lastListenedAt?: Date }>;
 }
 
 const normalizeTokenIdentityValue = (value: unknown): string => (
@@ -152,6 +155,7 @@ class AgentWebSocketService {
         socket.agentName = agentInfo.agentName;
         socket.instanceId = agentInfo.instanceId || 'default';
         socket.agentUserId = agentInfo.agentUserId || null;
+        socket.tokenHash = token.startsWith('cm_agent_') ? hash(token) : undefined;
         socket.agentKey = `${socket.agentName}:${socket.instanceId}`;
         socket.subscribedPods = new Set();
 
@@ -202,6 +206,10 @@ class AgentWebSocketService {
         // socket refresh the replacement's liveness timestamp.
         if (data?.socket === socket) {
           data.lastPong = Date.now();
+          // A socket that stays connected is still a listener. The connect
+          // stamp alone would age it into gone-dark after the listening window.
+          // The helper throttles per token, so a 30s ping costs one write a minute.
+          recordListenerCheckIn(socket.agentUserId, socket.tokenHash);
         }
       });
 
@@ -449,9 +457,16 @@ class AgentWebSocketService {
             .find((t: { tokenHash?: string; lastUsedAt?: Date }) => t.tokenHash === tokenHash);
           const isFirstLegacyUse = !wsInstallTokenRecord?.lastUsedAt;
           try {
+            // Same as the User-row copy above: a connect is a listener check-in.
+            const connectedAt = new Date();
             await AgentInstallation.updateOne(
               { _id: installation._id, 'runtimeTokens.tokenHash': tokenHash },
-              { $set: { 'runtimeTokens.$.lastUsedAt': new Date() } },
+              {
+                $set: {
+                  'runtimeTokens.$.lastUsedAt': connectedAt,
+                  'runtimeTokens.$.lastListenedAt': connectedAt,
+                },
+              },
             );
           } catch (err) {
             console.warn('Failed to update agent token usage:', (err as Error).message);

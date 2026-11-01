@@ -73,7 +73,12 @@ const setup = ({ installs = [install()], userTokens = [], open = [] } = {}) => {
     limit: () => ({ lean: () => Promise.resolve(installs) }),
   });
   mockUserFindOne.mockReturnValue({
-    select: () => ({ lean: () => Promise.resolve({ agentRuntimeTokens: userTokens }) }),
+    // A mock that ignores its projection hides a dropped field: assert it.
+    select: (fields) => {
+      expect(fields).toContain('agentRuntimeTokens.lastListenedAt');
+      expect(fields).toContain('agentRuntimeTokens.createdAt');
+      return { lean: () => Promise.resolve({ agentRuntimeTokens: userTokens }) };
+    },
   });
   mockUserFindById.mockReturnValue({
     select: () => ({ lean: () => Promise.resolve({ username: 'alice' }) }),
@@ -350,13 +355,39 @@ describe('stalledConnectService.scan', () => {
   it('says nothing when the token has been used — that is not stalled', async () => {
     setup({
       installs: [install({
-        runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: new Date(NOW.getTime() - MINUTE) }],
+        runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: new Date(NOW.getTime() - MINUTE) }],
       })],
     });
     const r = await scan({ now: NOW });
 
     expect(r.nudged).toHaveLength(0);
     expect(r.skippedNotStalled).toBe(1);
+  });
+
+  it('nudges a seat that made MCP calls but never checked in as a listener', async () => {
+    setup({
+      installs: [install({
+        runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: new Date(NOW.getTime() - MINUTE) }],
+      })],
+    });
+    const r = await scan({ now: NOW });
+
+    expect(r.nudged).toHaveLength(1);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not nudge an old seat whose lastListenedAt was backfilled from lastUsedAt', async () => {
+    const lastSeen = new Date(NOW.getTime() - 3 * 24 * 60 * MINUTE);
+    setup({
+      installs: [install({
+        runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: lastSeen, lastListenedAt: lastSeen }],
+      })],
+    });
+    const r = await scan({ now: NOW });
+
+    expect(r.nudged).toHaveLength(0);
+    expect(r.skippedNotStalled).toBe(1);
+    expect(mockPost).not.toHaveBeenCalled();
   });
 
   it('claims the episode BEFORE posting, so a losing race costs a nudge not a duplicate', async () => {
@@ -477,7 +508,7 @@ describe('keeping the forward promise', () => {
     const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
     setup({ installs: [], open: [openEpisode] });
     mockInstallFindById.mockReturnValue({
-      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: usedAt }] })),
+      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] })),
     });
 
     const r = await scan({ now: NOW });
@@ -498,7 +529,7 @@ describe('keeping the forward promise', () => {
     const usedAt = new Date(NOW.getTime() - 180 * MINUTE);
     setup({ installs: [], open: [openEpisode] });
     mockInstallFindById.mockReturnValue({
-      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: usedAt }] })),
+      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] })),
     });
 
     await scan({ now: NOW });
@@ -513,7 +544,7 @@ describe('keeping the forward promise', () => {
     const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
     setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'msg-nudge-1' }] });
     mockInstallFindById.mockReturnValue({
-      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: usedAt }] })),
+      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] })),
     });
 
     await scan({ now: NOW });
@@ -525,7 +556,7 @@ describe('keeping the forward promise', () => {
     const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
     setup({ installs: [], open: [{ ...openEpisode, nudgeMessageId: 'msg-nudge-2' }] });
     mockInstallFindById.mockReturnValue({
-      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: usedAt }] })),
+      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] })),
     });
     mockPost.mockRejectedValueOnce(new Error('post down'));
 

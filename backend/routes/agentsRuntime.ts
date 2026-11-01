@@ -1394,12 +1394,22 @@ router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any,
     || req.agentUser?.botMetadata?.agentType || req.agentUser?.username;
   const instanceId = req.agentInstallation?.instanceId || req.agentUser?.botMetadata?.instanceId || 'default';
   if (!agentName) return res.status(403).json({ message: 'Agent token not authorized for events' });
+  // The runner polls /events only between turns, so a turn longer than the
+  // listening window would age a working seat into gone-dark. Renewing a
+  // delivery is the runner saying it is alive and holding work, so it counts
+  // as a check-in, but only when the request names an event this agent owns:
+  // made-up ids must not move an MCP-only seat out of never-connected. A turn
+  // that already checkpointed an event (the MCP tool acks mid-turn, so the
+  // renew no longer matches a `delivered` row) is still that agent's own event.
+  // The MCP checkpoint tool uses /ack, not this route.
   try {
-    const renewed = await Promise.all(events.map(async (entry: { eventId: string; deliveryId: string }) => (
-      await AgentEventService.renewDelivery(entry.eventId, agentName, instanceId, entry.deliveryId)
-        ? entry.eventId : null
-    )));
-    return res.json({ renewed: renewed.filter(Boolean) });
+    const results = await Promise.all(events.map(async (entry: { eventId: string; deliveryId: string }) => {
+      const renewedOne = await AgentEventService.renewDelivery(entry.eventId, agentName, instanceId, entry.deliveryId);
+      const owned = renewedOne || await AgentEventService.holdsEvent(entry.eventId, agentName, instanceId);
+      return { eventId: entry.eventId, renewedOne, owned };
+    }));
+    if (results.some((r) => r.owned)) recordListenerCheckIn(req.agentUser?._id, req.agentTokenHash);
+    return res.json({ renewed: results.filter((r) => r.renewedOne).map((r) => r.eventId) });
   } catch (error: any) {
     console.error('Error renewing inbox deliveries:', error.message);
     return res.status(500).json({ message: 'Could not renew inbox deliveries' });

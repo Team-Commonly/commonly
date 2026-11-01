@@ -12,6 +12,7 @@ jest.mock('../../../services/agentEventService', () => ({
   list: jest.fn(),
   listInboxPage: jest.fn(),
   renewDelivery: jest.fn(),
+  holdsEvent: jest.fn(),
 }));
 jest.mock('../../../services/agentIdentityService', () => ({
   buildAgentUsername: jest.fn((agentName, instanceId = 'default') => (
@@ -177,6 +178,55 @@ describe('inbox delivery renewal route', () => {
     }, res);
     expect(AgentEventService.renewDelivery).toHaveBeenLastCalledWith(eventId, 'wren', 'writer-instance', 'nonce');
     expect(res.json).toHaveBeenCalledWith({ renewed: [eventId] });
+  });
+  test('a renew is a listener check-in, so a seat inside a long turn stays listening', async () => {
+    AgentEventService.renewDelivery.mockResolvedValue(true);
+    recordListenerCheckIn.mockClear();
+    await getRouteHandler('/events/renew', 'post')({
+      agentInstallation: { agentName: 'wren', instanceId: 'writer-instance' },
+      agentUser: { _id: 'bot-user-1' },
+      agentTokenHash: 'hashed-token',
+      body: { events: [{ eventId, deliveryId: 'nonce' }] },
+    }, response());
+    expect(recordListenerCheckIn).toHaveBeenCalledWith('bot-user-1', 'hashed-token');
+  });
+  test('a renew naming an event this agent does not own is not a check-in', async () => {
+    AgentEventService.renewDelivery.mockResolvedValue(false);
+    AgentEventService.holdsEvent.mockResolvedValue(false);
+    recordListenerCheckIn.mockClear();
+    const res = response();
+    await getRouteHandler('/events/renew', 'post')({
+      agentInstallation: { agentName: 'wren', instanceId: 'writer-instance' },
+      agentUser: { _id: 'bot-user-1' },
+      agentTokenHash: 'hashed-token',
+      body: { events: [{ eventId, deliveryId: 'stale-nonce' }] },
+    }, res);
+    expect(res.json).toHaveBeenCalledWith({ renewed: [] });
+    expect(recordListenerCheckIn).not.toHaveBeenCalled();
+  });
+  test('a renew after the turn checkpointed the event still checks in, though nothing renews', async () => {
+    // commonly_checkpoint_event acks mid-turn: the row is acked, so renewDelivery
+    // matches nothing, but the runner is alive and still working.
+    AgentEventService.renewDelivery.mockResolvedValue(false);
+    AgentEventService.holdsEvent.mockResolvedValue(true);
+    recordListenerCheckIn.mockClear();
+    const res = response();
+    await getRouteHandler('/events/renew', 'post')({
+      agentInstallation: { agentName: 'wren', instanceId: 'writer-instance' },
+      agentUser: { _id: 'bot-user-1' },
+      agentTokenHash: 'hashed-token',
+      body: { events: [{ eventId, deliveryId: 'nonce' }] },
+    }, res);
+    expect(AgentEventService.holdsEvent).toHaveBeenLastCalledWith(eventId, 'wren', 'writer-instance');
+    expect(res.json).toHaveBeenCalledWith({ renewed: [] });
+    expect(recordListenerCheckIn).toHaveBeenCalledWith('bot-user-1', 'hashed-token');
+  });
+  test('a malformed renew is not a check-in', async () => {
+    recordListenerCheckIn.mockClear();
+    await getRouteHandler('/events/renew', 'post')({
+      agentUser: { _id: 'bot-user-1' }, agentTokenHash: 'hashed-token', body: { events: [] },
+    }, response());
+    expect(recordListenerCheckIn).not.toHaveBeenCalled();
   });
   test.each([undefined, [], Array(51).fill({ eventId, deliveryId: 'nonce' }),
     [{ eventId, deliveryId: '' }], [{ eventId: {}, deliveryId: 'nonce' }]])('rejects malformed or unbounded input %j', async (events) => {

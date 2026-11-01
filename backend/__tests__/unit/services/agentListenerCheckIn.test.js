@@ -1,8 +1,10 @@
 // TASK-719: the listener check-in stamp is its own field, written at most once
 // a minute per token, and a failed write retries on the next poll.
 jest.mock('../../../models/User', () => ({ updateOne: jest.fn() }));
+jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { updateMany: jest.fn() } }));
 
 const User = require('../../../models/User');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
 const {
   recordListenerCheckIn,
   resetListenerCheckInThrottle,
@@ -12,6 +14,7 @@ describe('recordListenerCheckIn', () => {
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date('2026-10-31T12:00:00.000Z'));
     User.updateOne.mockReset().mockResolvedValue({});
+    AgentInstallation.updateMany.mockReset().mockResolvedValue({});
     resetListenerCheckInThrottle();
   });
 
@@ -37,11 +40,37 @@ describe('recordListenerCheckIn', () => {
     expect(User.updateOne).toHaveBeenCalledTimes(3);
   });
 
-  it('writes nothing without an agent id or a token hash', () => {
+  it('stamps the installation copy of the token too', () => {
+    recordListenerCheckIn('agent-1', 'hash-1');
+
+    expect(AgentInstallation.updateMany).toHaveBeenCalledWith(
+      { 'runtimeTokens.tokenHash': 'hash-1' },
+      { $set: { 'runtimeTokens.$.lastListenedAt': new Date('2026-10-31T12:00:00.000Z') } },
+    );
+  });
+
+  it('stamps an installation-only token when there is no bot user row', () => {
     recordListenerCheckIn(undefined, 'hash-1');
+
+    expect(User.updateOne).not.toHaveBeenCalled();
+    expect(AgentInstallation.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes nothing without a token hash', () => {
     recordListenerCheckIn('agent-1', undefined);
     recordListenerCheckIn('agent-1', '');
     expect(User.updateOne).not.toHaveBeenCalled();
+    expect(AgentInstallation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('retries on the next poll when only the installation write fails', async () => {
+    AgentInstallation.updateMany.mockRejectedValueOnce(new Error('mongo down'));
+    recordListenerCheckIn('agent-1', 'hash-1');
+    await Promise.resolve();
+    await Promise.resolve();
+
+    recordListenerCheckIn('agent-1', 'hash-1');
+    expect(AgentInstallation.updateMany).toHaveBeenCalledTimes(2);
   });
 
   it('retries on the next poll when the write fails, and never throws', async () => {
