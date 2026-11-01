@@ -214,7 +214,21 @@ describe('install', () => {
       expect(deps.execCmd).toHaveBeenCalledWith(['systemctl', '--user', 'restart', SYSTEMD_UNIT]);
       expect(deps.execCmd.mock.calls.map(([argv]) => argv[0])).not.toContain('loginctl');
       expect(result.startsAtBoot).toBe(false);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('starts at login'));
+      // Lingering may already be on; it could not be checked, so nothing is ruled out.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('could not be checked'));
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('not at boot'));
+    });
+
+    test('the printed command quotes a user name the shell would split', async () => {
+      const deps = makeDeps();
+      deps.existsFile = jest.fn(() => false);
+      deps.execCmd = jest.fn(async (argv) => { if (argv[0] === 'loginctl') throw new Error('refused'); });
+      const warn = jest.fn();
+      await installDaemonService({
+        platform: 'linux', home, nodePath, cliPath, username: "o'brien x", ...deps, warn,
+      });
+      expect(deps.execCmd).toHaveBeenCalledWith(['loginctl', '--no-ask-password', 'enable-linger', "o'brien x"]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("sudo loginctl enable-linger 'o'\\''brien x'"));
     });
 
     test('macOS never runs loginctl and never claims a boot start', async () => {

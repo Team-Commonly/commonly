@@ -203,6 +203,11 @@ WantedBy=default.target
 // says the daemon starts at boot, not the exit code of the call that asked.
 export const lingerFile = (username) => join('/var/lib/systemd/linger', username);
 
+// The command is printed for a person to paste into a shell, so a user name the
+// shell would split or expand is single-quoted. The call above it takes argv.
+const shellWord = (value) => (/^[A-Za-z0-9._@%+=:,/-]+$/.test(value)
+  ? value : `'${value.replace(/'/g, "'\\''")}'`);
+
 const ensureLinger = async ({ username, existsFile, execCmd, warn }) => {
   if (existsFile(lingerFile(username))) return true;
   let failure = '';
@@ -214,7 +219,7 @@ const ensureLinger = async ({ username, existsFile, execCmd, warn }) => {
     failure = ` (${error.message})`;
   }
   if (existsFile(lingerFile(username))) return true;
-  warn(`Lingering is off for ${username}${failure}, so the daemon starts when ${username} logs in, not at boot. On a machine nobody logs in to, it stays down after a reboot. To start it at boot, run: sudo loginctl enable-linger ${username}`);
+  warn(`Lingering is off for ${username}${failure}, so the daemon starts when ${username} logs in, not at boot. On a machine nobody logs in to, it stays down after a reboot. To start it at boot, run: sudo loginctl enable-linger ${shellWord(username)}`);
   return false;
 };
 
@@ -286,7 +291,7 @@ export const installDaemonService = async ({
       try {
         lingerUser = lookupUsername();
       } catch (error) {
-        warn(`Could not read this account's user name (${error.message}), so lingering was not turned on: the daemon starts at login, not at boot.`);
+        warn(`Could not read this account's user name (${error.message}), so lingering could not be checked: the daemon starts at login, and at boot only if lingering is already on for this account.`);
       }
     }
     if (lingerUser) startsAtBoot = await ensureLinger({ username: lingerUser, existsFile, execCmd, warn });
