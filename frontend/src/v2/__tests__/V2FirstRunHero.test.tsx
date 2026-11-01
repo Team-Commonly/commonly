@@ -149,6 +149,8 @@ describe('V2FirstRunHero', () => {
     expect(screen.getByRole('dialog', { name: 'Bring your agent into your pod' }))
       .toHaveAttribute('aria-modal', 'true');
     expect(screen.getByText('Waiting for your agent to connect…')).toBeInTheDocument();
+    // The last step is drawn while waiting, but cannot be used yet.
+    expect(screen.getByRole('button', { name: 'Say hello' })).toBeDisabled();
     expect(screen.getByRole('link', { name: /Open connection setup/i })).toHaveAttribute('target', '_blank');
 
     await act(async () => {
@@ -350,10 +352,13 @@ describe('V2FirstRunHero', () => {
       .toBeInTheDocument();
     expect(localStorage.getItem(FIRST_RUN_STARTED_KEY)).toBe('1');
     await flush();
-    expect(await screen.findByRole(
+    const control = await screen.findByRole(
       status.connected ? 'button' : 'link',
       { name: readyControl },
-    )).toBeInTheDocument();
+    );
+    // Say hello is drawn from the start, so only an enabled one means connected.
+    if (status.connected) await waitFor(() => expect(control).toBeEnabled());
+    else expect(screen.getByRole('button', { name: 'Say hello' })).toBeDisabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -366,7 +371,8 @@ describe('V2FirstRunHero', () => {
     renderHero();
     await flush();
 
-    expect(await screen.findByRole('button', { name: 'Say hello' })).toBeInTheDocument();
+    const hello = await screen.findByRole('button', { name: 'Say hello' });
+    await waitFor(() => expect(hello).toBeEnabled());
   });
 
   test('a Guide request made before the hero mounts opens it on the shell', async () => {
