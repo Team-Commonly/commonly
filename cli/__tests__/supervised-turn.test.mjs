@@ -209,7 +209,10 @@ describe('the turn runner', () => {
     expect(error.kind).toBe('stuck');
     expect(ownGroup).toBe(process.platform !== 'win32');
     expect(Number.isInteger(grandchild)).toBe(true);
-    const deadline = Date.now() + 2000;
+    // 5 s, not 2: the grandchild is detached and dies via the group signal, whose
+    // OS teardown a loaded CI host can take several seconds to finish after the kill
+    // lands — the kill is synchronous, the reap is not. The test timeout is 15 s.
+    const deadline = Date.now() + 5000;
     while ((isRunning(child.pid) || isRunning(grandchild)) && Date.now() < deadline) {
       // eslint-disable-next-line no-await-in-loop
       await new Promise((r) => setTimeout(r, 20));
