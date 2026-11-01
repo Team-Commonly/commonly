@@ -2271,6 +2271,17 @@
     }
   },
   "connectors": {
+    "search": "Search",
+    "filterLabel": "Show",
+    "channelsGroup": "Channels",
+    "addChannelTile": "Channel",
+    "meta": "{{on}} on · {{available}} available",
+    "offCount": "+{{n}} off",
+    "filter": {
+      "all": "All",
+      "channels": "Channels",
+      "tools": "Tools"
+    },
     "about": "About connectors",
     "counts": {
       "connected_one": "{{count}} connected",
@@ -2479,6 +2490,9 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "granted": "Granted",
+    "beta": "beta",
+    "adminOnce": "An admin installs this once",
     "emptyAudienceNotice": "Select at least one agent to grant access.",
     "makePodInviteOnly": "Make this pod invite-only",
     "podInviteOnlyNow": "This pod is invite-only. Select Grant to continue.",

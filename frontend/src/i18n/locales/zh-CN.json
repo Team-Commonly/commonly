@@ -2261,6 +2261,17 @@
     }
   },
   "connectors": {
+    "search": "搜索",
+    "filterLabel": "显示",
+    "channelsGroup": "频道",
+    "addChannelTile": "频道",
+    "meta": "{{on}} 个已开启 · {{available}} 个可用",
+    "offCount": "另有 {{n}} 个未开启",
+    "filter": {
+      "all": "全部",
+      "channels": "频道",
+      "tools": "工具"
+    },
     "about": "关于连接器",
     "counts": {
       "connected_one": "已连接{{count}}个频道",
@@ -2482,6 +2493,9 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
+    "granted": "已授权",
+    "beta": "测试版",
+    "adminOnce": "需管理员安装一次",
     "emptyAudienceNotice": "请至少选择一个智能体以授予访问权限。",
     "makePodInviteOnly": "将此 Pod 设为仅限邀请",
     "podInviteOnlyNow": "此 Pod 现已设为仅限邀请。再次选择“授权”继续。",
