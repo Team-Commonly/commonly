@@ -82,7 +82,9 @@ export const leadsOwnGroup = (child) => !!child
 
 // ── The process table ──────────────────────────────────────────────────────
 
-const PS_ENV = { ...process.env, LC_ALL: 'C' };
+// lstart is printed in local time with no offset, which repeats an hour when
+// daylight saving ends. In UTC it never repeats; `startedMs` reads it as UTC.
+const PS_ENV = { ...process.env, LC_ALL: 'C', TZ: 'UTC' };
 
 const parseTable = (text) => {
   const rows = [];
@@ -100,12 +102,18 @@ const ps = (args) => {
   } catch { return null; }
 };
 
+/** A row's `started` as epoch ms. */
+export const startedMs = (started) => Date.parse(`${started} GMT`);
+
 /** Every process: { pid, ppid, started }. null when ps is unavailable. */
 export const readProcessTable = () => ps(['-A', '-o', 'pid=,ppid=,lstart=']);
 
 /** One process as it is now, or null when it is gone. */
 export const readProcess = (pid) => (ps(['-o', 'pid=,ppid=,lstart=', '-p', String(pid)]) || [])
   .find((row) => row.pid === pid) || null;
+
+/** Several processes as they are now, in one ps call; a gone pid has no row. null when ps is unavailable. */
+export const readProcesses = (pids) => (pids.length ? ps(['-o', 'pid=,ppid=,lstart=', '-p', pids.join(',')]) : []);
 
 /** The descendants of `root` in `table`, deepest first. The root is not included. */
 export const descendantsOf = (table, root) => {

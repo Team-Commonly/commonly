@@ -38,12 +38,13 @@ const renderComposer = (overrides = {}) => {
 describe('V2Composer (direction C)', () => {
   beforeAll(async () => { await i18nReady; await act(async () => { await i18n.changeLanguage('en'); }); });
 
-  test('one row: a 24px plus, a one-line field, no identity line, and no Send until there is text', () => {
+  test('one row: a 24px plus, a one-line field, no identity line, and a disabled Send until there is text', () => {
     const { container } = renderComposer();
     expect(container.querySelector('.v2-composer__row')).toBeTruthy();
     expect(screen.getByRole('textbox')).toHaveAttribute('rows', '1');
     expect(screen.queryByText(/posts as/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Send message' })).not.toBeInTheDocument();
+    // S3c (D215): Send is drawn at rest and disabled with an empty draft.
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Add' })).toHaveAttribute('aria-haspopup', 'menu');
   });
 

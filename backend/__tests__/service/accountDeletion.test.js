@@ -184,7 +184,9 @@ describe('Self-serve account deletion', () => {
     }
     const PodContextService = require('../../services/podContextService');
     const context = await PodContextService.getPodContext({ podId: String(pod._id), userId: String(agent._id), skillMode: 'none' });
-    expect(context.members).toEqual(expect.arrayContaining([{ name: 'Deleted user', isAgent: false, self: false }]));
+    expect(context.members).toEqual(expect.arrayContaining([{
+      name: 'Deleted user', mention: '', isAgent: false, self: false,
+    }]));
   });
 
   it('requires explicit confirmation, the right password and a browser session', async () => {
@@ -338,6 +340,18 @@ describe('Self-serve account deletion', () => {
     expect(await User.findById(user._id)).not.toBeNull();
     await deletion(app, token).expect(204);
     expect(await User.findById(user._id)).toBeNull();
+  });
+
+  it('removes a hashed API token while a failed deletion waits for its retry', async () => {
+    const user = await makeUser(); const apiToken = user.generateApiToken(); await user.save();
+    const token = issueSessionToken(user);
+    jest.spyOn(mockPg, 'query').mockRejectedValueOnce(new Error('PG unavailable'));
+    await deletion(app, token).expect(503);
+    const row = await User.collection.findOne({ _id: user._id });
+    expect(row).not.toBeNull();
+    expect(row).not.toHaveProperty('apiTokenHash');
+    expect(row).not.toHaveProperty('apiTokenLast4');
+    expect(apiToken).toMatch(/^cm_/);
   });
 
   it.each([false, true])('retries late-upload cleanup after User deletion even if File save fails (%s)', async (metadataFails) => {

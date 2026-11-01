@@ -675,7 +675,7 @@ describe('messageExists', () => {
     await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
     // The id is asked of the comment's own store, by the path the comment
     // actually lives under — `comments._id`, a subdocument of Post.
-    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '507f1f77bcf86cd799439011' });
+    expect(Post.exists).toHaveBeenCalledWith({ podId: { $in: ['p1', null] }, 'comments._id': '507f1f77bcf86cd799439011' });
     // ...and NOT of Postgres, which cannot see a comment at all.
     expect(pool.query).not.toHaveBeenCalled();
     // Pod is still required first — the arm does not bypass the scope check
@@ -701,23 +701,27 @@ describe('messageExists', () => {
     await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(false);
     // The store was ASKED: this false is an answer about the comment, not a
     // shape refusal that never reached it.
-    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '123456789012345678901234' });
+    expect(Post.exists).toHaveBeenCalledWith({ podId: { $in: ['p1', null] }, 'comments._id': '123456789012345678901234' });
     expect(pool.query).not.toHaveBeenCalled();
   });
 
-  test('a store that cannot answer passes the id through — refusing would unguard every woken seat', async () => {
-    // The direction is the design: enforcement.js:414 turns the route's non-2xx
-    // into {failOpen: true}, so a refusal for a real comment wake stops the
-    // race deduping and every woken seat proceeds. An unconfirmed id must
-    // therefore degrade to the pre-TASK-122 behaviour (dedupe holds, a phantom
-    // is possible), not to a refusal.
+  test('a real comment in another pod cannot be claimed under this pod', async () => {
+    Post.exists.mockImplementation(async (filter) =>
+      (filter.podId.$in.includes('pod-b') ? { _id: 'post-b' } : null));
+    const commentId = '507f1f77bcf86cd799439011';
+    await expect(MessageClaimService.messageExists(commentId, 'pod-a')).resolves.toBe(false);
+    await expect(MessageClaimService.messageExists(commentId, 'pod-b')).resolves.toBe(true);
+    expect(Post.exists).toHaveBeenCalledWith({ podId: { $in: ['pod-a', null] }, 'comments._id': commentId });
+    expect(Post.exists).toHaveBeenCalledWith({ podId: { $in: ['pod-b', null] }, 'comments._id': commentId });
+  });
+
+  test('a store failure stops an unconfirmed comment claim before SQL mutation', async () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     Post.exists.mockRejectedValue(new Error('MongoServerSelectionError'));
-    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1')).resolves.toBe(true);
+    await expect(MessageClaimService.messageExists('507f1f77bcf86cd799439011', 'p1'))
+      .rejects.toThrow('MongoServerSelectionError');
     expect(Post.exists).toHaveBeenCalledTimes(1);
-    // ...and it SAYS so, on one line, rather than reverting the hardening in
-    // silence. A stored check that quietly stops checking is the failure mode
-    // this whole row is about.
+    expect(pool.query).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toMatch(/comment existence check failed.*MongoServerSelectionError/);
     warn.mockRestore();
@@ -743,7 +747,7 @@ describe('messageExists', () => {
     // costing a real comment wake its dedupe (wren 71962 — order matters).
     await expect(MessageClaimService.messageExists('123456789012345678901234', 'p1')).resolves.toBe(true);
     // Answered by the comment store, never by the range test above it.
-    expect(Post.exists).toHaveBeenCalledWith({ 'comments._id': '123456789012345678901234' });
+    expect(Post.exists).toHaveBeenCalledWith({ podId: { $in: ['p1', null] }, 'comments._id': '123456789012345678901234' });
     expect(pool.query).not.toHaveBeenCalled();
   });
 });

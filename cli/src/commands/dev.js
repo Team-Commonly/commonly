@@ -440,12 +440,15 @@ export const bootstrapClawdbotRuntime = async ({
     throw new Error('Runtime token was not returned by the runtime-tokens route');
   }
 
+  // Rotated like the runtime token above: an existing user token is stored
+  // only as a hash, so asking without force returns none to write here.
   const userIssued = await client.post(
     `/api/registry/pods/${pod.podId}/agents/${CLAWDBOT_AGENT_NAME}/user-token`,
     {
       instanceId,
       displayName,
       scopes: CLAWDBOT_USER_TOKEN_SCOPES,
+      force: true,
     },
   );
   const userToken = userIssued.token;

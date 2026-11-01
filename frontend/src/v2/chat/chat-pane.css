@@ -1,0 +1,789 @@
+/* Pod chat · pane, stream, thread, presence and header (S3b, D223 lift of
+   the d215 chat frame).
+
+   Source: docs/design/artboards/d215/index.html, data-surface="chat" at 1440
+   and 390, product CSS `.ph .stream .thr .rmsg .tfoot .tct .presence .dot`,
+   `.mtop`, `.app.m .stream/.thr`. Token map as in chat-message.css.
+   Imported by V2App.tsx after chat-message.css. */
+
+.v2-chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.v2-chat__header {
+  min-height: 78px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  background: var(--v2-surface);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+}
+
+.v2-chat__header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.v2-chat__messages {
+  flex: 1;
+  overflow-y: auto;
+  /* The transcript never scrolls sideways — wide content (code, tables)
+     manages its own overflow-x inside its message. Without this, any
+     mis-sized row makes the whole pane horizontally swipeable (the
+     thread-block did exactly that; mobile report 2026-08-24). */
+  overflow-x: hidden;
+  /* D215 .stream: 10 28 6; phone 8 12 4 below. */
+  padding: 10px 28px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Only the managed history operation disables native anchoring. Leaving the
+   default on at rest keeps late image loads above a reader's viewport stable;
+   V2Thread measures and compensates the history row itself. */
+.v2-chat__messages[data-history-anchor="active"] {
+  overflow-anchor: none;
+}
+
+/* The transcript is the chat viewport's positioning context. History
+   recovery belongs to this viewport rather than the top of the scrollable
+   message list, otherwise a failure after a deep landing is stranded above
+   the reader's current scroll position. */
+.v2-thread__transcript {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.v2-thread__transcript > .v2-chat__messages {
+  min-height: 0;
+}
+
+/* Conversation width — FIFTH revision of craft rule 2, ruled
+   2026-08-23: FULL-WIDTH, the Slack/Discord model. The measure cap died
+   with its last corner: v1 centered messages alone (island), v2/v4
+   left-anchored the cap (dead space on the right once the inspector
+   closes), v3 centered the whole column (rejected outright). With a line
+   cap, leftover space must pool somewhere — so the cap goes. Rows and
+   text span the pane and wrap at its edge; lines run long on wide
+   windows, the familiar chat tradeoff. What survives every revision:
+   one shared left edge for every conversation row, and margin-inline
+   stays an EXPLICIT 0 so a stray auto cannot re-center a subset. */
+.v2-chat__messages > * {
+  width: 100%;
+  margin-inline: 0;
+}
+
+/* Agent presence (D215 .presence): a chip, not a row. It keeps its slot
+   between the scroller and the composer (moving it into the scroller would
+   touch history anchoring), so its left edge adds the stream's 28px gutter to
+   the frame's 48px text column. The pulsing cobalt dot carries "alive";
+   reduced motion keeps the dot and drops the pulse. */
+.v2-chat__typing {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  padding: 0 9px 0 7px;
+  margin: 0 0 6px 76px;
+  border-radius: 7px;
+  background: var(--v2-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  color: var(--v2-text-secondary);
+  font: 500 11.5px/1 var(--v2-font-mono);
+  flex-shrink: 0;
+}
+
+.v2-chat__typing-label {
+  flex-shrink: 0;
+}
+
+.v2-chat__typing-dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--v2-accent);
+}
+
+.v2-chat__typing-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--v2-accent);
+  opacity: 0;
+  animation: v2-presence-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
+}
+
+@keyframes v2-presence-pulse {
+  0% { transform: scale(0.6); opacity: 0.6; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-chat__typing-dot::after { animation: none; }
+}
+
+@media (max-width: 760px) {
+  .v2-chat__typing { margin-left: 52px; }
+}
+
+@media (max-width: 760px) {
+  .v2-thread__title-line .v2-hint--open { display: contents; }
+  .v2-thread__title-line .v2-hint__content { width: 100%; flex-basis: 100%; order: 1; }
+}
+
+@media (max-width: 760px) {
+  .v2-chat__messages {
+    padding: 8px 12px 4px;
+  }
+  .v2-chat__header-row {
+    flex-wrap: wrap;
+  }
+}
+
+/* Card + rail travel as ONE column row, indented to the message TEXT
+   column like an attachment (2026-08-23): 38px avatar column + 12px
+   gap = 50px, so the thread visibly belongs to the message above it
+   rather than starting a new row at the avatar edge. The bottom margin is
+   the rail's terminator: without it the rail's last pixel abuts the next
+   outer message and reads as connected to it. */
+.v2-thread-block {
+  margin-left: 50px;
+  /* The column's `> *` rule sets width: 100%; with the 50px indent that
+     put every thread 50px past the pane's right edge — the pane became
+     horizontally swipeable, worst on phones (2026-08-24; measured
+     scrollWidth 350 vs clientWidth 326 at 390px). Indent + width must sum
+     to 100%. */
+  width: calc(100% - 50px);
+  margin-bottom: 14px;
+}
+
+.v2-thread-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 0 0; /* brief: no gap > 8px between root and card */
+}
+
+.v2-root button.v2-thread-card__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px; /* brief: 44px min hit height */
+  padding: 6px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #4b5563;
+  transition: border-color 300ms ease;
+}
+
+.v2-root button.v2-thread-card__main:hover {
+  border-color: #d7dce7;
+}
+
+.v2-thread-card__count {
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* The card's ONLY accent, and only when something in the thread addresses me.
+   Ambient activity never colours it — that is the whole point of 3/4's
+   ambient/addressed split being visible in the UI rather than only in the
+   wake path. */
+.v2-thread-card--addressed .v2-thread-card__count {
+  color: var(--v2-accent);
+}
+
+.v2-thread-card__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--v2-accent);
+}
+
+.v2-thread-card__faces {
+  display: inline-flex;
+}
+
+.v2-thread-card__faces > * + * {
+  margin-left: -6px; /* brief: overlapping −6px */
+}
+
+.v2-thread-card__time {
+  color: #7b8494;
+}
+
+.v2-thread-replies {
+  position: relative;
+  transition: height 300ms ease;
+}
+
+@media (max-width: 640px) {
+  .v2-thread-card {
+    flex-wrap: wrap;
+  }
+  /* Follow is not drawn in the frame, so it keeps the 44px touch floor it
+     had. Reply in thread and Collapse are drawn at 32px on phone and take
+     their 44px hit area from a ring (chat-pane.css, 760px block). */
+  .v2-root .v2-thread-replies__foot button.v2-thread-replies__follow {
+    min-height: 44px;
+  }
+  .v2-root button.v2-thread-card__main {
+    flex: 1 1 100%;
+    flex-wrap: wrap; /* brief: card goes to two lines at 390 */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-root button.v2-thread-card__main,
+  .v2-thread-replies {
+    transition: none;
+  }
+}
+
+.v2-root:lang(zh) .v2-thread__title h1 {
+  letter-spacing: 0;
+}
+
+.v2-thread__header {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  /* D215 (TASK-734): the pane head is 64px, title left at 24px. */
+  min-height: 64px;
+  padding: 0 20px 0 24px;
+  border-bottom: 1px solid var(--v2-border-soft);
+  background: var(--v2-surface);
+}
+
+.v2-thread__header-row {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.v2-thread__title {
+  min-width: 0;
+  flex: 1;
+}
+
+.v2-thread__title-line {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 8px;
+}
+
+.v2-thread__title h1 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--v2-text-primary);
+  /* D215 (TASK-734) brings the display face back to the pod title, at 18/700
+     with the artboard's tracking. */
+  font: 700 18px/24px var(--v2-font-display);
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The description gives way before the name truncates (walk-1 §3). */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-g v2p-ib. */
+.v2-root button.v2-thread__inspector-toggle { flex: 0 0 32px; }
+
+/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-s v2p-b-sm. */
+.v2-root button.v2-pod-header__invite { flex: 0 0 auto; }
+
+/* On a phone the label would take the pod name's width, so the button keeps
+   only its glyph, square like the inspector toggle. The label stays in the
+   accessibility tree as the button's name. */
+@media (max-width: 760px) {
+  /* The phone head's keys are ghosts (D215 phone frame), Invite included. */
+  .v2-root button.v2-pod-header__invite {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    justify-content: center;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    color: var(--v2-text-secondary);
+  }
+  /* box-shadow: none above outranks the primitive's focus ring, so the ring
+     is restated for keyboard focus. */
+  .v2-root button.v2-pod-header__invite:focus-visible { box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent); }
+  .v2-root button.v2-pod-header__invite span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+.v2-thread .v2-avatar {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: var(--v2-r-9, 9px);
+  box-shadow: 0 0 0 1px var(--v2-av-ring, rgba(16, 24, 40, 0.08));
+}
+
+@media (max-width: 760px) {
+  .v2-thread__header {
+    min-height: 50px;
+    padding: 0 12px;
+  }
+  .v2-thread__header-row { align-items: center; gap: 8px; }
+  .v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }
+  /* The name takes the free width with a zero basis and truncates, so the
+     "i" hint keeps its place on the line instead of wrapping under it and
+     growing the header (TASK-647 item 3). */
+  .v2-thread__title h1 { font: 600 15px/20px var(--v2-font); flex: 1 1 0; min-width: 0; white-space: nowrap; text-overflow: ellipsis; }
+}
+
+/* Pod header (D215, TASK-734): 64px, display 18/700 title, description
+   inline, then the board chip and the member faces on the right. */
+.v2-pod-header .v2-thread__header-row {
+  min-height: 64px;
+}
+
+.v2-pod-header__meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+  white-space: nowrap;
+}
+
+/* A 1:1 room's header chips, "DM" and "read only" (d215 .chip). */
+.v2-pod-header__chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font: 500 11.5px/1 var(--v2-font-mono);
+  color: var(--v2-text-secondary);
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  white-space: nowrap;
+}
+
+/* The compact meta is the phone's; both carry the base class, so the
+   compact rule must out-rank the base `display: flex` above it. */
+.v2-pod-header__meta.v2-pod-header__meta--compact { display: none; }
+
+/* Three faces, overlapped, then "+N" for the rest of the pod. */
+.v2-pod-header__stack { display: inline-flex; align-items: center; }
+
+.v2-thread .v2-pod-header__stack .v2-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--v2-r-6, 6px);
+  box-shadow: 0 0 0 2px var(--v2-surface);
+  font-size: 12px;
+}
+
+.v2-thread .v2-pod-header__stack .v2-avatar + .v2-avatar { margin-left: -6px; }
+
+.v2-pod-header__more { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
+
+/* D215: the board is a chip, a board glyph and the count. */
+.v2-root button.v2-pod-header__board {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  color: var(--v2-text-secondary);
+  font: 500 11px/1 var(--v2-font-mono);
+  cursor: pointer;
+}
+
+.v2-root button.v2-pod-header__board:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+.v2-root button.v2-pod-header__board:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+
+/* Owner rename (TASK-419): an inline form in the title line. It wraps at phone
+   width; the input takes the spare room and the buttons keep their content width. */
+.v2-pod-header__rename {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.v2-root .v2-pod-header__rename input {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 15px/20px var(--v2-font);
+}
+
+.v2-root .v2-pod-header__rename input:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+
+.v2-root .v2-pod-header__rename button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 12px/16px var(--v2-font);
+  cursor: pointer;
+}
+
+.v2-root .v2-pod-header__rename button[type="submit"] { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
+
+.v2-root .v2-pod-header__rename button:not([type="submit"]):hover:not(:disabled) { background: var(--v2-surface-hover); }
+
+.v2-root .v2-pod-header__rename button[type="submit"]:hover:not(:disabled) { background: var(--v2-ink-hover); color: var(--v2-on-ink); }
+
+.v2-root .v2-pod-header__rename button:disabled { opacity: .55; cursor: default; }
+
+.v2-root .v2-pod-header__rename button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+
+.v2-pod-header__rename-error { flex: 1 0 100%; color: var(--v2-danger); font: 400 12px/16px var(--v2-font); }
+
+/* D215: rename is a pencil on the title, out of sight until the title line is
+   hovered or the pencil has keyboard focus. Touch screens show it at rest. */
+.v2-root button.v2-pod-header__rename-open { opacity: 0; }
+
+.v2-thread__title-line:hover button.v2-pod-header__rename-open,
+.v2-root button.v2-pod-header__rename-open:focus-visible { opacity: 1; }
+
+@media (hover: none) and (pointer: coarse) {
+  .v2-root button.v2-pod-header__rename-open { opacity: 1; }
+}
+
+.v2-root button.v2-thread__back { display: none; }
+
+@media (max-width: 760px) {
+  /* D215 phone head: 52px, back, title, board chip, panel. */
+  .v2-thread__header { min-height: 52px; padding: 0 10px 0 12px; }
+  .v2-pod-header .v2-thread__header-row {
+    box-sizing: border-box;
+    min-height: 52px;
+    padding: 10px 0;
+    /* 12px, not the artboard's 8: the 44px tap areas below reach 6px past
+       each 32px key, and 12px keeps neighbours from overlapping. */
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .v2-root button.v2-thread__back,
+  .v2-root button.v2-pod-header__invite,
+  .v2-root button.v2-thread__inspector-toggle { position: relative; z-index: 1; }
+  .v2-root button.v2-thread__back::after,
+  .v2-root button.v2-pod-header__invite::after,
+  .v2-root button.v2-thread__inspector-toggle::after {
+    content: '';
+    position: absolute;
+    /* From the padding box, inside each key's 1px border: 30 + 2 x 7 = 44. */
+    inset: -7px;
+  }
+  /* The keys are 32px; an open description grows the title block downward
+     while the name stays centred on the keys. */
+  .v2-pod-header .v2-thread__title { display: flex; min-height: 32px; flex-direction: column; justify-content: center; }
+  .v2-thread__title h1 { font: 700 16px/20px var(--v2-font-display); letter-spacing: -0.02em; }
+  .v2-pod-header__meta { display: none; }
+  .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; flex: 0 0 auto; white-space: nowrap; }
+  /* TASK-647 item 3: the board link keeps a 44px tap target without growing
+     the 28px meta row (the hit area is a pseudo-element), the name keeps room
+     for the "i" hint, and the compact meta sits closer to the link. */
+  .v2-root button.v2-pod-header__board--compact { position: relative; }
+  .v2-root button.v2-pod-header__board--compact::before {
+    content: '';
+    position: absolute;
+    /* 6px sideways, not 10: with the 12px header gap, the next key's 44px
+       area reaches 6px toward this one, so 6 + 6 meets without overlap. */
+    inset: -14px -6px;
+  }
+  .v2-thread__title-line > h1 { max-width: calc(100% - 36px); }
+  .v2-pod-header__meta--compact { gap: 4px; }
+  /* Look from the primitives: v2p-b v2p-b-g v2p-ib. */
+  .v2-root button.v2-thread__back { display: inline-flex; flex: 0 0 32px; }
+}
+
+.v2-thread__empty-line {
+  display: block;
+  padding: 12px 0;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+/* History edge + jump pill */
+.v2-thread__edge {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0 10px;
+}
+
+.v2-thread__edge-line {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-thread__edge-line {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+.v2-root button.v2-thread__edge-line { cursor: pointer; }
+
+.v2-root button.v2-thread__edge-line:hover { color: var(--v2-text-primary); }
+
+.v2-thread__history-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 2px 0 10px;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+  text-align: center;
+}
+
+.v2-thread__history-status--error { color: var(--v2-text-secondary); }
+
+.v2-thread__history-status--viewport {
+  position: absolute;
+  top: 8px;
+  left: 24px;
+  right: 24px;
+  z-index: 4;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: var(--v2-radius-sm);
+  background: var(--v2-surface);
+  pointer-events: none;
+}
+
+.v2-thread__history-status--viewport .v2-thread__history-retry {
+  pointer-events: auto;
+}
+
+.v2-root button.v2-thread__history-retry {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* The wrap is the scroller's last child and STICKS to its bottom edge: a
+   0-height wrap with an absolute pill resolved `bottom: 12px` against a box
+   at the end of the transcript, ~1100px below the viewport when the pill
+   mounts a viewport up (ux-lead gate on #1579). Sticky needs real height. */
+.v2-thread__jump-wrap {
+  position: sticky;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  height: 28px;
+  pointer-events: none;
+}
+
+.v2-root button.v2-thread__jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  pointer-events: auto;
+  border: 1px solid #dde0e6;
+  border-radius: 14px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: 600 13px/26px var(--v2-font);
+  white-space: nowrap;
+}
+
+.v2-root button.v2-thread__jump:hover { background: var(--v2-surface-hover); }
+
+.v2-thread__jump-count { color: var(--v2-accent-text); font: 700 11px/16px var(--v2-font-mono); }
+
+/* Thread summary chip: faces · N replies · last age. */
+.v2-thread .v2-thread-card { margin: 4px 0 0; gap: 10px; }
+
+.v2-root .v2-thread button.v2-msg__thread-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px 0 4px;
+  border: 1px solid var(--v2-border-soft);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-accent-text);
+  font: 600 13px/18px var(--v2-font);
+}
+
+.v2-root .v2-thread button.v2-msg__thread-chip:hover { background: var(--v2-surface-hover); border-color: var(--v2-border); }
+
+.v2-thread .v2-thread-card__faces .v2-avatar { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--v2-surface); font: 650 11px/1 var(--v2-font-mono); }
+
+.v2-thread .v2-thread-card__faces > * + * { margin-left: -4px; }
+
+.v2-thread .v2-thread-card__count { color: var(--v2-accent-text); font-weight: 600; }
+
+.v2-thread .v2-thread-card__time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
+
+/* Expanded thread (D215 .thr, #3178 / TASK-745): the root stays a plain
+   transcript row and the replies sit under it in their own card at the text
+   column (36px avatar + 12px gap = 48px). The band that once wrapped root and
+   replies, and the rail beside the replies, are gone. */
+.v2-thread .v2-thread-block { margin: 0 0 10px; width: 100%; }
+
+.v2-thread .v2-thread-block__inner { margin-left: 48px; }
+
+.v2-thread .v2-thread-block .v2-thread-card { margin: 2px 0 0; }
+
+.v2-thread .v2-thread-replies {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 10px 12px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--v2-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+}
+
+/* D215 .thr .rmsg: 24px avatar, 10px gap, 18px head, 13px name, 13.5/20 body. */
+.v2-thread .v2-thread-replies .v2-msg { grid-template-columns: 24px minmax(0, 1fr); gap: 10px; padding: 0; margin: 0; }
+/* A UI card posted as a reply keeps its own 4px stack gap. uiCard.css now loads
+   before this sheet, so the reply rule above would otherwise win the tie. */
+.v2-thread .v2-thread-replies .v2-msg.v2-ui-card { gap: 4px; }
+
+.v2-thread .v2-thread-replies .v2-msg--grouped { padding: 0; }
+
+.v2-thread .v2-thread-replies .v2-msg__head { height: 18px; }
+
+.v2-thread .v2-thread-replies .v2-msg__author,
+.v2-thread .v2-thread-replies .v2-msg__author-btn { font-size: 13px; }
+
+.v2-thread .v2-thread-replies .v2-msg__content { margin-top: 1px; font-size: 13.5px; line-height: 20px; }
+
+.v2-thread .v2-thread-replies .v2-msg:hover { background: transparent; }
+
+.v2-thread .v2-thread-replies .v2-msg .v2-avatar { width: 24px; height: 24px; border-radius: var(--v2-r-6, 6px); font-size: 12px; }
+
+/* D215 .tfoot: Reply in thread (secondary key), Collapse (ghost key, chevron
+   turned up), the count pushed right. Follow is not drawn; it keeps its look
+   and sits after the count. */
+.v2-thread-replies__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+.v2-root .v2-thread-replies__foot .v2p-b-g svg { transform: rotate(180deg); }
+
+.v2-thread-replies__count {
+  margin-left: auto;
+  color: var(--v2-text-muted);
+  font: 500 11.5px/1 var(--v2-font-mono);
+}
+
+.v2-root button.v2-thread-replies__more {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-accent-text);
+  font: 500 13px/18px var(--v2-font);
+  cursor: pointer;
+}
+
+.v2-root button.v2-thread-replies__more { display: block; margin: 2px 0 4px; }
+
+.v2-root button.v2-thread-replies__follow {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+  cursor: pointer;
+}
+
+.v2-root button.v2-thread-replies__follow--on { color: var(--v2-accent-text); }
+
+/* Transcript avatars are two-tone squares (ux-lead 64476 (1)): human tint +
+   #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
+.v2-thread .v2-avatar--flat { border: 0; box-shadow: 0 0 0 1px var(--v2-av-ring, rgba(16, 24, 40, 0.08)); border-radius: var(--v2-r-9, 9px); font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
+
+.v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
+
+.v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: var(--v2-bg); }
+
+.v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { border-radius: var(--v2-r-6, 6px); font: 650 12px/1 var(--v2-font); }
+
+.v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }
+
+@media (max-width: 760px) {
+  .v2-root .v2-thread button.v2-msg__thread-chip { min-height: 32px; }
+  /* D215 .app.m .thr: 40px indent, tighter card, 32px foot keys. The drawn
+     key keeps 32px; an invisible ring takes the hit area to 44px. */
+  .v2-thread .v2-thread-block__inner { margin-left: 40px; }
+  .v2-thread .v2-thread-replies { padding: 8px 10px 8px; }
+  .v2-thread-replies__foot { gap: 12px; }
+  .v2-root .v2-thread-replies__foot .v2p-b-sm { position: relative; height: 32px; }
+  /* From the padding box, inside the key's 1px border: 30 + 2 x 7 = 44; the 12px gap
+     takes 6px of reach from each side, so neighbouring rings meet without overlapping. */
+  .v2-root .v2-thread-replies__foot .v2p-b-sm::after { content: ''; position: absolute; inset: -7px; }
+}

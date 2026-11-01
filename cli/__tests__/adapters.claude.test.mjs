@@ -251,6 +251,7 @@ describe('claude adapter — spawn()', () => {
     expect(promptArg).toContain('=== Working a row ===');
     expect(promptArg).toContain('use the Agent tool');
     expect(promptArg).toContain('commonly_create_task with parentTask');
+    expect(promptArg).toContain('COMMONLY_KEEP_PROCESS=1');
     expect(promptArg.indexOf('=== Working a row ===')).toBeLessThan(promptArg.indexOf('=== Current turn ==='));
   });
 

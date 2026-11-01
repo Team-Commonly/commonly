@@ -605,7 +605,7 @@ const resolveHostedConnection = async (
     revokedAt?: Date | null;
     createdBy?: unknown;
     createdAt?: unknown;
-    config?: { entryId?: unknown };
+    config?: { entryId?: unknown; agentId?: unknown; intake?: unknown };
   } | null;
   if (!row || row.type !== 'hosted-mcp' || row.status !== 'connected' || row.revokedAt) {
     throw new RoomGrantError(
@@ -624,6 +624,22 @@ const resolveHostedConnection = async (
       'grant connection does not belong to this tool\'s entry',
       403,
     );
+  }
+  // An operator-key row is ONE agent's bearer (TASK-330). The mint holds its
+  // grants to exactly that agent; this holds every grant whatever made it, so a
+  // stray or older grant can never spend the key on another agent's turn. The
+  // caller is already inside the grant's audience (`assertGrantUsable`), so an
+  // audience of only the bound agent means the caller is that agent.
+  const boundAgentId = row.config?.agentId ? String(row.config.agentId) : '';
+  if (boundAgentId || row.config?.intake === 'operator_key') {
+    const audience = ((grant as { audience?: unknown }).audience || []) as unknown[];
+    if (!boundAgentId || audience.length === 0 || audience.some((id) => String(id) !== boundAgentId)) {
+      throw new RoomGrantError(
+        'connection_mismatch',
+        'this connection\'s key belongs to one agent, and the grant names another',
+        403,
+      );
+    }
   }
   const grantCreatedAt = createdAtMs((grant as { createdAt?: unknown }).createdAt);
   const rowCreatedAt = createdAtMs(row.createdAt);

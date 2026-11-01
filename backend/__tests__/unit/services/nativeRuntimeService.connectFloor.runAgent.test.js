@@ -168,6 +168,11 @@ describe('connect-intent floor through runAgent', () => {
     // A granted broker tool ran this turn and the pod is bridged. dispatchTool
     // refuses commonly_propose_action here, so the floor must not post it.
     mockBridged.mockResolvedValue(true);
+    // The granted tool is offered: only an offered broker tool is dispatched.
+    brokerProjection.hostedBrokerToolsForRun.mockResolvedValue({
+      tools: [{ type: 'function', function: { name: 'commonly_brokered_lookup', description: 'granted', parameters: { type: 'object', properties: {} } } }],
+      dispatch: new Map([['commonly_brokered_lookup', {}]]),
+    });
     axios.post
       .mockResolvedValueOnce(toolCalls(call('b1', 'commonly_brokered_lookup', {})))
       .mockResolvedValueOnce(modelSays(''));

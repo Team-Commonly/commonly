@@ -31,7 +31,7 @@ describe('V2BillingPanel', () => {
 
   test('can defer the section heading to Settings without hiding the current tier', () => {
     (useAuth as jest.Mock).mockReturnValue({ currentUser: { entitlements: { pro: true } } });
-    render(<V2BillingPanel showHeading={false} />);
+    render(<V2BillingPanel />);
 
     expect(screen.queryByRole('heading', { name: 'Plan' })).not.toBeInTheDocument();
     expect(screen.getByText('Pro · $12 a month')).toBeInTheDocument();

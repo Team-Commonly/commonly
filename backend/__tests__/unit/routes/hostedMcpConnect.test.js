@@ -49,6 +49,7 @@ jest.mock('../../../services/hostedMcpDcrRegistry', () => ({
   ensureDcrClient: jest.fn(),
   dcrClientForRow: jest.fn(),
   refuseDcrClient: jest.fn(),
+  retireDcrClientIfUnknown: jest.fn(),
 }));
 
 const request = require('supertest');
@@ -210,6 +211,48 @@ describe('hosted-mcp connect: start', () => {
     expect(Integration.findOneAndUpdate.mock.calls[0][1].$set['config.pendingAuth'].clientId)
       .toBe('registered-public-client');
   });
+
+  it('asks about the DCR client a member\'s unfinished start used before choosing one', async () => {
+    FIXTURE_ENTRY.client = 'dcr';
+    dcr.ensureDcrClient.mockResolvedValue({ clientId: 'registered-2' });
+    // A first start: nothing to ask about.
+    expect((await start()).status).toBe(200);
+    expect(dcr.retireDcrClientIfUnknown).not.toHaveBeenCalled();
+
+    Integration.findOne.mockReturnValueOnce({
+      select: () => ({ lean: async () => ({ config: { pendingAuth: { clientId: 'registered-1' } } }) }),
+    });
+    expect((await start()).status).toBe(200);
+    // Only the member's own row says what their last start used.
+    expect(Integration.findOne).toHaveBeenCalledWith({
+      type: 'hosted-mcp', createdBy: 'user-1', 'config.entryId': 'linear',
+    });
+    expect(dcr.retireDcrClientIfUnknown).toHaveBeenCalledWith(FIXTURE_ENTRY, AS_METADATA, 'registered-1');
+    expect(dcr.retireDcrClientIfUnknown.mock.invocationCallOrder[0])
+      .toBeLessThan(dcr.ensureDcrClient.mock.invocationCallOrder[1]);
+  });
+
+  it('logs a failed ask about the last DCR client and starts with the current one', async () => {
+    FIXTURE_ENTRY.client = 'dcr';
+    dcr.ensureDcrClient.mockResolvedValue({ clientId: 'registered-1' });
+    const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      Integration.findOne.mockImplementationOnce(() => { throw new Error('mongo unavailable'); });
+      expect((await start()).status).toBe(200);
+
+      Integration.findOne.mockReturnValueOnce({
+        select: () => ({ lean: async () => ({ config: { pendingAuth: { clientId: 'registered-1' } } }) }),
+      });
+      dcr.retireDcrClientIfUnknown.mockRejectedValueOnce(new Error('mongo unavailable'));
+      expect((await start()).status).toBe(200);
+      expect(dcr.ensureDcrClient).toHaveBeenCalledTimes(2);
+      const asks = logged.mock.calls.filter(([line]) => line === '[hosted-mcp] DCR client ask failed');
+      expect(asks).toHaveLength(2);
+      expect(JSON.parse(asks[0][1])).toEqual({ entryId: 'linear', error: 'Error' });
+    } finally {
+      logged.mockRestore();
+    }
+  });
   it('sends the member to the vendor with the entry\'s own resource and a fresh state', async () => {
     const res = await start();
     expect(res.status).toBe(200);
@@ -365,6 +408,20 @@ describe('hosted-mcp connect: start', () => {
     expect(res.status).toBe(503);
     expect(res.body).toEqual({ error: 'client_not_configured' });
     expect(intake.discoverAuthorizationServer).not.toHaveBeenCalled();
+    entries.HOSTED_MCP_ENTRIES.pop();
+  });
+
+  it('refuses an operator-key entry before any client, discovery or row read', async () => {
+    const entries = jest.requireMock('../../../integrations/hostedMcp/entries');
+    entries.HOSTED_MCP_ENTRIES.push({
+      ...FIXTURE_ENTRY, id: 'latchkey', credentialMode: 'operator_key', client: undefined,
+    });
+    const res = await start('latchkey');
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: 'unknown_entry' });
+    expect(intake.discoverAuthorizationServer).not.toHaveBeenCalled();
+    expect(Integration.findOne).not.toHaveBeenCalled();
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
     entries.HOSTED_MCP_ENTRIES.pop();
   });
 

@@ -8,7 +8,7 @@ const validate = (payload = card(), content = 'Text fallback', type = 'card') =>
 
 describe('untrusted UI card write validation', () => {
   it.each([
-    { catalogId: 'other.ui' }, { catalogRev: 2 }, { catalogRev: '1' },
+    { catalogId: 'other.ui' }, { catalogRev: 2 }, { catalogRev: 3 }, { catalogRev: '1' },
     { catalogHash: 'sha256:forged' }, { catalogRev: undefined },
     { catalogId: undefined }, { catalogHash: undefined },
   ])('visibly refuses an unsupported catalogue tuple %#', (fields) => {

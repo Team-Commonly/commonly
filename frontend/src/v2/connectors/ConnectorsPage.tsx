@@ -9,8 +9,8 @@ import { useNavigate } from 'react-router-dom';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
 import { ADD_PLATFORMS, TYPE_LABELS } from './channelModel';
 import type { ListItem } from './channelModel';
-import { entryCovers, entryIsGranted, isDead } from './toolModel';
-import type { ToolCatalogEntry } from './toolModel';
+import { PER_ENTRY_REVOKE_COPY, entryCovers, entryIsGranted, isDead } from './toolModel';
+import type { ToolCatalogEntry, ToolGrant } from './toolModel';
 import { useChannelConnectors } from './useChannelConnectors';
 import { useToolConnectors } from './useToolConnectors';
 import { useToolPanels } from './ToolPanels';
@@ -46,12 +46,14 @@ const ConnectorsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const c = useChannelConnectors();
-  const m = useToolConnectors(c.podList, c.hostedMcpManualRevoke);
+  const m = useToolConnectors(c.podList, c.hostedMcpManualRevoke, c.podListFailed);
   const tp = useToolPanels(m);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [pop, setPop] = useState<Pop | null>(null);
   const [toolKey, setToolKey] = useState<string | null>(null);
+  // The gone connector whose tile opened its list of grants (TASK-754).
+  const [orphanKey, setOrphanKey] = useState<string | null>(null);
   const [offOpen, setOffOpen] = useState({ channels: false, tools: false });
   const phone = usePhone();
   const [searchOpen, setSearchOpen] = useState(false);
@@ -102,18 +104,34 @@ const ConnectorsPage: React.FC = () => {
     && (!q || connection.label.toLowerCase().includes(q))
   ));
   // A grant whose catalogue entry is gone (retired or unreadable) has no tile, but it
-  // is still live access: it stays listed so it can still be seen and revoked.
+  // is still live access: it stays listed so it can still be seen and revoked. A dead
+  // one is not access any more, so it leaves the list (TASK-752); the Connectors trail
+  // keeps the record.
   const orphanGrants = grants.filter((grant) => (
     !m.catalog.some((entry) => entryCovers(entry, grant))
+    && !isDead(grant, m.now)
     && (!q || m.toolLabel(grant).toLowerCase().includes(q))
   ));
+  // One tile per gone connector, not per grant: two grants on one connector
+  // would otherwise be two tiles with one name (TASK-754).
+  const orphanKeyOf = (grant: ToolGrant): string => grant.connector?.id || grant.tools[0]?.split('.')[0] || grant.grantId;
+  const orphanGroups = new Map<string, ToolGrant[]>();
+  orphanGrants.forEach((grant) => {
+    const key = orphanKeyOf(grant);
+    orphanGroups.set(key, [...(orphanGroups.get(key) || []), grant]);
+  });
+  const orphanGroup = orphanKey ? orphanGroups.get(orphanKey) || null : null;
+  // A group the search (or a revoke) took away closes for good, so clearing the
+  // search never reopens a drawer nobody clicked.
+  const orphanKeyGone = Boolean(orphanKey) && !orphanGroup;
+  useEffect(() => { if (orphanKeyGone) setOrphanKey(null); }, [orphanKeyGone]);
   const toolHasDrawer = (entry: ToolCatalogEntry): boolean => grantsOf(entry).length > 0 || hiddenOf(entry).length > 0;
 
   // ---- what is open ----
   const drawerItem = c.items.find((item) => item.key === c.selectedKey) || null;
   const channelDrawerOpen = c.adding || drawerItem !== null;
   const toolEntry = toolKey ? m.catalog.find((entry) => entry.installableId === toolKey) || null : null;
-  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry || m.selected);
+  const toolDrawerOpen = !channelDrawerOpen && Boolean(m.draft || m.githubAppSetup || toolEntry || m.selected || orphanGroup);
 
   // Opening the phone search puts the cursor in the box.
   useEffect(() => { if (searchOpen) searchRef.current?.focus(); }, [searchOpen]);
@@ -147,6 +165,7 @@ const ConnectorsPage: React.FC = () => {
 
   const closeTools = useCallback(() => {
     setToolKey(null);
+    setOrphanKey(null);
     m.setSelectedId(null);
     m.setDraft(null);
     m.setGithubAppSetup(null);
@@ -179,6 +198,7 @@ const ConnectorsPage: React.FC = () => {
     m.setDraft(null);
     m.setGithubAppSetup(null);
     m.setSelectedId(null);
+    setOrphanKey(null);
     if (toolHasDrawer(entry)) {
       setPop(null);
       setToolKey(entry.installableId);
@@ -186,6 +206,24 @@ const ConnectorsPage: React.FC = () => {
     }
     setToolKey(null);
     setPop({ key: `tool:${entry.installableId}`, anchor: event.currentTarget });
+  };
+
+  // A gone connector has no entry drawer. One grant opens its own details;
+  // several open their list, as an entry's tile does.
+  const openOrphan = (key: string, group: ToolGrant[]) => {
+    closeChannels();
+    setPop(null);
+    setToolKey(null);
+    m.setDraft(null);
+    m.setGithubAppSetup(null);
+    m.setConfirmRevoke(null);
+    if (group.length === 1) {
+      setOrphanKey(null);
+      m.setSelectedId(group[0].grantId);
+      return;
+    }
+    m.setSelectedId(null);
+    setOrphanKey(key);
   };
 
   const openAdd = () => {
@@ -247,6 +285,23 @@ const ConnectorsPage: React.FC = () => {
       selected={toolEntry?.installableId === entry.installableId}
       expanded={pop?.key === `tool:${entry.installableId}`}
       onClick={(event) => openTool(entry, event)}
+    />
+  );
+
+  // A live grant whose entry is gone is still access (TASK-752), so it keeps a
+  // tile in the Tools grid, in the grid's own shape (TASK-754, D223). The
+  // server's `connector` names it when the catalogue cannot (TASK-753).
+  const renderOrphanTile = ([key, group]: [string, ToolGrant[]]) => (
+    <ConnectorTile
+      key={`orphan:${key}`}
+      type={key}
+      name={m.toolLabel(group[0])}
+      dot={{ kind: 'live', label: t('tools.granted', { defaultValue: 'Granted' }) }}
+      beta={key === 'atlassian'
+        ? { word: t('tools.beta', { defaultValue: 'beta' }), title: t('tools.readInTesting', { defaultValue: 'read in testing' }) }
+        : undefined}
+      selected={orphanKey === key || (group.length === 1 && m.selectedId === group[0].grantId)}
+      onClick={() => openOrphan(key, group)}
     />
   );
 
@@ -388,9 +443,17 @@ const ConnectorsPage: React.FC = () => {
       );
     }
     if (!toolEntry) {
+      if (orphanKey && orphanGroup) {
+        return (
+          <ConnectorDrawer notices={noticeBlock} type={orphanKey} title={m.toolLabel(orphanGroup[0])} onClose={closeTools}>
+            <div className="v2-cx-list">{orphanGroup.map(tp.renderRow)}</div>
+            {m.selected && tp.renderAside(m.selected)}
+          </ConnectorDrawer>
+        );
+      }
       if (!m.selected) return null;
       return (
-        <ConnectorDrawer notices={noticeBlock} type={m.selected.tools[0]?.split('.')[0] || 'tools'} title={m.toolLabel(m.selected)} onClose={closeTools}>
+        <ConnectorDrawer notices={noticeBlock} type={orphanKeyOf(m.selected)} title={m.toolLabel(m.selected)} onClose={closeTools}>
           {tp.renderAside(m.selected)}
         </ConnectorDrawer>
       );
@@ -400,6 +463,8 @@ const ConnectorsPage: React.FC = () => {
     const deadGrants = entryGrants.filter((grant) => isDead(grant, m.now));
     return (
       <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
+        {/* Ungranted, the offer below carries the note through renderEntryNote. */}
+        {toolGranted(toolEntry) && tp.renderLinearWriteNote(toolEntry)}
         {!toolGranted(toolEntry) && (
           <div className="v2-cx-drawer__offer">
             <p>{catalogDescription(i18n, toolEntry.installableId, toolEntry.description)}</p>
@@ -430,20 +495,77 @@ const ConnectorsPage: React.FC = () => {
   const offeredCount = c.items.filter((item) => !channelInactive(item)).length
     + m.catalog.filter((entry) => !toolOff(entry)).length;
   const availableCount = offeredCount - onCount;
-  const meta = t('connectors.meta', { defaultValue: '{{on}} on · {{available}} available', on: onCount, available: Math.max(0, availableCount) });
+  // An orphan grant's tile is live too (TASK-754), so it counts as on. It was
+  // never offered, so it leaves `available` alone.
+  const orphanOn = new Set(grants
+    .filter((grant) => !m.catalog.some((entry) => entryCovers(entry, grant)) && !isDead(grant, m.now))
+    .map(orphanKeyOf)).size;
+  const meta = t('connectors.meta', { defaultValue: '{{on}} on · {{available}} available', on: onCount + orphanOn, available: Math.max(0, availableCount) });
 
   const showChannels = filter !== 'tools';
   const showTools = filter !== 'channels';
   const errorText = c.hostedMcpCallbackError || c.error || c.slackCallbackError || (
     !m.draft && !m.selected && !m.githubAppSetup ? m.error : null
   );
+  // A refused connect that may have left a grant live at the provider. The
+  // callback error leads errorText, so this always sits beside its own notice.
+  const callbackRevoke = c.hostedMcpCallbackError ? c.hostedMcpCallbackRevoke : null;
+  // Per-entry copy names what that vendor's page lists, and what removing it there ends.
+  const callbackRevokeContext = callbackRevoke && PER_ENTRY_REVOKE_COPY.has(callbackRevoke.entryId)
+    ? callbackRevoke.entryId : undefined;
   const noticeBlock = (
     <>
-      {errorText && <p className="v2-cx-error" role="alert">{errorText}</p>}
+      {errorText && (
+        <p className="v2-cx-error" role="alert">
+          {errorText}
+          {callbackRevoke && (
+            <>
+              {' '}
+              {t('connectors.hostedMcpRefusedStillListed', {
+                defaultValue: '{{provider}} may still list Commonly as connected. Remove it there.',
+                context: callbackRevokeContext,
+                provider: callbackRevoke.provider,
+              })}{' '}
+              <a href={callbackRevoke.revokePage} target="_blank" rel="noopener noreferrer">
+                {t('connectors.hostedMcpReviewAuthorization', {
+                  defaultValue: "Open {{provider}}'s connected apps",
+                  context: callbackRevokeContext,
+                  provider: callbackRevoke.provider,
+                })}
+              </a>
+            </>
+          )}
+        </p>
+      )}
+      {m.blockedSeatNames.length > 0 && (
+        <p className="v2-cx-note" role="status">
+          {t('tools.multiGrantPodPostingBlocked', {
+            defaultValue: '{{agents}} cannot post in any pod while connectors reach more than one of their pods. End grants until at most one of their pods has connector access. While one still does, they can post only in that pod.',
+            agents: m.blockedSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
+          })}
+        </p>
+      )}
+      {m.onePodSeatNames.length > 0 && (
+        <p className="v2-cx-note" role="status">
+          {t('tools.grantPodPostingNarrowed', {
+            defaultValue: '{{agents}} can post only in one of their pods while that pod has connector access.',
+            agents: m.onePodSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
+          })}
+        </p>
+      )}
+      {m.narrowingStatusUnavailable && (
+        <p className="v2-cx-note" role="status">
+          {t('tools.runtimePostingStatusUnavailable', {
+            defaultValue: 'Could not check whether connector grants limit agent posting. Try again shortly.',
+          })}
+        </p>
+      )}
       {m.removedHiddenNotice && (
         <p className="v2-cx-note" role="status">
           {m.removedHiddenNotice.revokePage
-            ? <>{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: m.removedHiddenNotice.label })} <a href={m.removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></>
+            ? <>{m.removedHiddenNotice.stillListed
+              ? t('tools.removedStillListed', { defaultValue: 'Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.', label: m.removedHiddenNotice.label })
+              : t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: m.removedHiddenNotice.label })} <a href={m.removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></>
             : t('tools.disconnected', { defaultValue: 'Disconnected {{label}}.', label: m.removedHiddenNotice.label })}
         </p>
       )}
@@ -526,6 +648,7 @@ const ConnectorsPage: React.FC = () => {
                 <div className="v2-cx-grid">
                   {showChannels && liveChannels.map((item) => renderChannelTile(item))}
                   {showTools && liveTools.map((entry) => renderToolTile(entry))}
+                  {showTools && [...orphanGroups].map(renderOrphanTile)}
                   {phoneOffOpen && showChannels && offChannels.map((item) => renderChannelTile(item, true))}
                   {phoneOffOpen && showTools && offTools.map((entry) => renderToolTile(entry, true))}
                   {showChannels && availableProviders.length > 0 && !q && (
@@ -547,7 +670,6 @@ const ConnectorsPage: React.FC = () => {
                     {t('connectors.offCount', { defaultValue: '+{{n}} off', n: offTotal })}
                   </button>
                 )}
-                {showTools && orphanGrants.length > 0 && <div className="v2-cx-list">{orphanGrants.map(tp.renderRow)}</div>}
                 {showTools && phoneOffOpen && orphanHidden.length > 0 && (
                   <div className="v2-cx-list">{orphanHidden.map(tp.renderHiddenConnection)}</div>
                 )}
@@ -583,9 +705,9 @@ const ConnectorsPage: React.FC = () => {
                 </h2>
                 <div className="v2-cx-grid">
                   {liveTools.map((entry) => renderToolTile(entry))}
+                  {[...orphanGroups].map(renderOrphanTile)}
                   {offOpen.tools && offTools.map((entry) => renderToolTile(entry, true))}
                 </div>
-                {orphanGrants.length > 0 && <div className="v2-cx-list">{orphanGrants.map(tp.renderRow)}</div>}
                 {offOpen.tools && orphanHidden.length > 0 && (
                   <div className="v2-cx-list">{orphanHidden.map(tp.renderHiddenConnection)}</div>
                 )}

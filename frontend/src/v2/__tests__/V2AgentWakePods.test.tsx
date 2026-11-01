@@ -188,30 +188,43 @@ describe('per-agent Wake and Pods settings', () => {
     view.rerender(
       <MemoryRouter><V2AgentWakePods agentName="new-agent" instanceId="default" updatePod={updatePod} /></MemoryRouter>,
     );
-    expect((await screen.findAllByText('New pod')).length).toBe(2);
+    expect((await screen.findAllByText('New pod')).length).toBe(1);
     await act(async () => { finishOld({ data: { installations: [{
       podId: 'pod-old', podName: 'Old pod', wakeOnMessage: true, boardWake: true, heartbeatMinutes: 60,
     }] } }); });
     expect(screen.queryByText('Old pod')).not.toBeInTheDocument();
-    expect(screen.getAllByText('New pod')).toHaveLength(2);
+    expect(screen.getByText('New pod')).toBeInTheDocument();
   });
 
   it('previews heartbeat turns against the plan cap before saving', async () => {
     renderSettings();
-    expect(await screen.findByText('24 turns/day · 30 available')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Interval'), { target: { value: '30' } });
-    expect(screen.getByText(/48 turns\/day · 30 available/)).toBeInTheDocument();
+    expect(await screen.findByText('0 / 30 turns a day')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Heartbeat'), { target: { value: '30' } });
+    expect(screen.getByText('48 / 30 turns a day')).toBeInTheDocument();
     expect(screen.getByText(/This exceeds the daily cap/)).toBeInTheDocument();
     expect(updatePod).not.toHaveBeenCalled();
+  });
+
+  it('totals heartbeat turns across pods, counting an Off pod as zero', async () => {
+    client.get.mockResolvedValue({ data: { turnCap: 30, activePodCount: 2, podCount: 3, installations: [
+      { podId: 'pod-a', podName: 'Alpha', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60 },
+      { podId: 'pod-b', podName: 'Beta', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 30 },
+      { podId: 'pod-c', podName: 'Gamma', status: 'active', wakeOnMessage: false, humanOnly: false,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 30 },
+    ] } });
+    renderSettings();
+    expect(await screen.findByText('72 / 30 turns a day')).toBeInTheDocument();
   });
 
   it('states the daily turn count clearly when the cap is unavailable', async () => {
     client.get.mockResolvedValue({ data: { activePodCount: 1, podCount: 1, installations: [{
         podId: 'pod-1', podName: 'Launch', status: 'active', wakeOnMessage: false, humanOnly: false,
-        boardWake: false, heartbeatEnabled: false, heartbeatMinutes: 60,
+        boardWake: false, heartbeatEnabled: true, heartbeatMinutes: 60,
       }] } });
     renderSettings();
-    expect(await screen.findByText('24 turns/day · plan cap unavailable')).toBeInTheDocument();
+    expect(await screen.findByText('24 turns a day · cap unavailable')).toBeInTheDocument();
   });
 
   it('warns about key revocation when removing the only active installation beside a paused one', async () => {

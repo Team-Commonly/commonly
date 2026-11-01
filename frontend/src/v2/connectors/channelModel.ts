@@ -89,6 +89,10 @@ export interface CatalogEntry {
   unavailableReason?: string;
   // Tool entries provide the provider name for the hosted connection row.
   entryId?: string;
+  // The entry's own revoke page. A refused connect can leave a grant live at
+  // the provider, and the callback's `revokeAt` is linked only when it equals
+  // this server-owned value.
+  revokePage?: string;
   installation: CatalogInstallation | null;
   integration: Connector | null;
 }

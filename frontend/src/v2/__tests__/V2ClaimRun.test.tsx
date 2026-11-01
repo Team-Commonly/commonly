@@ -91,6 +91,20 @@ describe('claim run summary control (TASK-692)', () => {
     expect(claimRowTaskIds(container)).toEqual([]);
   });
 
+  test('the bar draws the D215 summary: board glyph, faces, bold count, range, time, chevron', () => {
+    const { container } = renderClaims();
+    const toggle = screen.getByRole('button', { name: '4 claims · TASK-674 to TASK-678' });
+    // One claimer here, so one face; the faces, label and time are aria-hidden
+    // because the button's accessible name already says the run in one line.
+    expect(toggle.querySelectorAll('.v2-claim-run__faces .v2-avatar')).toHaveLength(1);
+    expect(toggle.querySelector('.v2-claim-run__label b')).toHaveTextContent('4 claims');
+    expect(toggle.querySelector('.v2-claim-run__label')).toHaveTextContent('4 claims · TASK-674 to TASK-678');
+    expect(toggle.querySelector('.v2-claim-run__time')).not.toBeNull();
+    expect(toggle.querySelector('.v2-claim-run__chev svg')).not.toBeNull();
+    act(() => toggle.click());
+    expect(container.querySelectorAll('.v2-claim-run__list .v2-system-action-line')).toHaveLength(4);
+  });
+
   test('the expanded rows sit inside the summary group, below the toggle', () => {
     const { container } = renderClaims();
     act(() => screen.getByRole('button', { name: /4 claims/ }).click());

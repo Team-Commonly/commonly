@@ -108,8 +108,8 @@ describe('V2AgentMemory', () => {
     );
     await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
     // Rules and How I work each carry the long_term time; Journal has none.
-    expect(document.querySelectorAll('.v2-agent-memory__gmeta')).toHaveLength(2);
-    expect(document.querySelectorAll('.v2-agent-memory__mnote .v2-agent-memory__gmeta')).toHaveLength(0);
+    expect(document.querySelectorAll('.v2m-saved')).toHaveLength(2);
+    expect(document.querySelectorAll('.v2m-mnote .v2m-saved')).toHaveLength(0);
   });
 
   it('keeps the agent header, tabs and nav when the viewer cannot read entries, with the empty state inside', async () => {
@@ -123,8 +123,57 @@ describe('V2AgentMemory', () => {
     );
     await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
-    expect(document.querySelector('.v2-agent-memory__nav')).not.toBeNull();
-    expect(document.querySelector('.v2-agent-memory__body [role="status"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Profile' })).toBeInTheDocument();
+    expect(document.querySelector('.v2m-mnav')).not.toBeNull();
+    expect(document.querySelector('.v2m-body [role="status"]')).not.toBeNull();
+  });
+
+  it('Talk to opens the agent room and navigates to it', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 1, sections: [section('daily', 1)] } });
+    axios.post.mockResolvedValue({ data: { room: { _id: 'room1' } } });
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+          <Route path="/v2/pods/:id" element={<div>room opened</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /maya-claude/ }));
+    await waitFor(() => expect(screen.getByText('room opened')).toBeInTheDocument());
+    expect(axios.post).toHaveBeenCalledWith('/api/agents/runtime/room', { agentName: 'maya-claude', instanceId: 'default' });
+  });
+
+  it('shows an error and stays on the page when the room cannot be opened', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 1, sections: [section('daily', 1)] } });
+    axios.post.mockRejectedValue(new Error('500'));
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /maya-claude/ }));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /maya-claude/ })).not.toBeDisabled();
+  });
+
+  it('marks one nav item current: the first with notes, then the one clicked', async () => {
+    axios.get.mockResolvedValue({ data: { viewerRole: 'owner', totalEntries: 3, sections: [named('long_term', ['Rules', 'Host notes']), section('daily', 1)] } });
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    const current = () => Array.from(document.querySelectorAll('.v2m-mnav a[aria-current]')).map((a) => a.textContent);
+    expect(current()).toEqual(['Rules1']);
+    fireEvent.click(screen.getByRole('link', { name: /Journal/ }));
+    expect(current()).toEqual(['Journal1']);
   });
 });

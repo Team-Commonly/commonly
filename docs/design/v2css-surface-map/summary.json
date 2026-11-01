@@ -1,0 +1,77 @@
+{
+ "summary": [
+  {
+   "s": "chat",
+   "title": "Chat (main pane and pod inspector)",
+   "only": 579,
+   "unseen": 285,
+   "wholeRules": 513,
+   "lines": 2578,
+   "trims": 26,
+   "shared": 203
+  },
+  {
+   "s": "sidebar",
+   "title": "Sidebar (nav rail, pods list, phone tab bar)",
+   "only": 148,
+   "unseen": 44,
+   "wholeRules": 130,
+   "lines": 727,
+   "trims": 1,
+   "shared": 72
+  },
+  {
+   "s": "board",
+   "title": "Task board",
+   "only": 282,
+   "unseen": 87,
+   "wholeRules": 247,
+   "lines": 815,
+   "trims": 5,
+   "shared": 87
+  },
+  {
+   "s": "settings",
+   "title": "Settings",
+   "only": 184,
+   "unseen": 81,
+   "wholeRules": 162,
+   "lines": 688,
+   "trims": 5,
+   "shared": 98
+  },
+  {
+   "s": "connectors",
+   "title": "Connectors",
+   "only": 141,
+   "unseen": 137,
+   "wholeRules": 119,
+   "lines": 195,
+   "trims": 3,
+   "shared": 37
+  },
+  {
+   "s": "agentSettings",
+   "title": "Agent settings",
+   "only": 0,
+   "unseen": 0,
+   "wholeRules": 0,
+   "lines": 0,
+   "trims": 0,
+   "shared": 54
+  },
+  {
+   "s": "memory",
+   "title": "Agent memory",
+   "only": 0,
+   "unseen": 0,
+   "wholeRules": 0,
+   "lines": 0,
+   "trims": 0,
+   "shared": 57
+  }
+ ],
+ "dead": 377,
+ "otherOnly": 757,
+ "total": 2754
+}

@@ -48,7 +48,7 @@
 
 import Integration from '../models/Integration';
 import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
-import type { HostedMcpEntry } from './hostedMcpEntryService';
+import type { HostedMcpEntry, HostedMcpOAuthEntry } from './hostedMcpEntryService';
 import {
   buildRefreshRequest,
   discoverAuthorizationServer,
@@ -104,6 +104,7 @@ export interface HostedMcpRow {
     authGeneration?: number;
     credentialAuthGeneration?: number;
     expiresAt?: Date | null;
+    grantedScope?: string;
   };
 }
 
@@ -111,18 +112,20 @@ interface RefreshResult {
   accessToken: string;
   refreshToken?: string;
   expiresIn?: number;
+  /** Absent only when the vendor omitted the scope; empty when it sent an unusable one. */
+  scope?: string;
 }
 
 interface CredentialDeps {
   now: () => Date;
   entryFor: (row: HostedMcpRow) => HostedMcpEntry;
-  clientIdFor: (entry: HostedMcpEntry) => string;
-  clientSecretFor: (entry: HostedMcpEntry) => string | undefined;
+  clientIdFor: (entry: HostedMcpOAuthEntry) => string;
+  clientSecretFor: (entry: HostedMcpOAuthEntry) => string | undefined;
   dcrClientForRow: typeof dcrClientForRow;
   /** Conditional on the client-id snapshot, so a concurrent reconnect wins. */
   markClientMismatch: (id: unknown, recordedClientId: string | undefined, message: string) => Promise<void>;
   refreshAtVendor: (input: {
-    entry: HostedMcpEntry;
+    entry: HostedMcpOAuthEntry;
     clientId: string;
     clientSecret?: string;
     /** A DCR confidential client's registered method (TASK-248); sent as recorded. */
@@ -296,7 +299,23 @@ export const refreshTokenAtVendor = async ({
     accessToken: String(body.access_token),
     refreshToken: body.refresh_token ? String(body.refresh_token) : undefined,
     expiresIn: typeof body.expires_in === 'number' ? body.expires_in : undefined,
+    // A scope that is present but not a string is read as no scope granted, so
+    // a stale write scope cannot outlive it. Only an omitted scope keeps the grant.
+    scope: !Object.prototype.hasOwnProperty.call(body, 'scope') ? undefined
+      : typeof body.scope === 'string' ? body.scope : '',
   };
+};
+
+/**
+ * The scope a refresh leaves the connection holding. A refresh can narrow a
+ * grant but never widen it, so only scopes already granted are kept. A response
+ * that restates no scope keeps the grant as it was (RFC 6749 §5.1).
+ */
+const scopeAfterRefresh = (row: HostedMcpRow, entry: HostedMcpOAuthEntry, scope?: string): string | undefined => {
+  if (scope === undefined) return undefined;
+  const parse = (value: string) => value.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
+  const held = new Set(typeof row.config?.grantedScope === 'string' ? parse(row.config.grantedScope) : entry.scopes || []);
+  return parse(scope).filter((part) => held.has(part)).join(' ');
 };
 
 const defaultDeps = (): CredentialDeps => ({
@@ -396,6 +415,17 @@ export const credentialFor = async (
 
   const id = rowId(row);
   const entry = deps.entryFor(row);
+  if (entry.credentialMode === 'operator_key') {
+    // A pasted key does not expire by a lifetime and cannot be refreshed, so
+    // the mode decides here, never a missing `expiresAt` (which would make an
+    // OAuth row with a lost lifetime serve a dead token). No fence, no lease.
+    assertUsable(row);
+    const keyRef = row.config?.credentialRef;
+    if (!keyRef) {
+      throw new HostedMcpCredentialError('reconnect_required', 'no key is stored for this connection');
+    }
+    return { token: await deps.secrets.get(keyRef), expiresAt: '' };
+  }
   const recordedClientId = row.config?.clientId;
   let clientId: string;
   let clientSecret: string | undefined;
@@ -546,6 +576,7 @@ export const credentialFor = async (
   );
 
   const expiresAt = refreshed.expiresIn ? new Date(now.getTime() + refreshed.expiresIn * 1000) : null;
+  const grantedScope = scopeAfterRefresh(won, entry, refreshed.scope);
   // One write, and it has to stay one: a loser serves the first re-read that
   // passes `servableRef`, so a reference written ahead of its expiry would be
   // served under the old lifetime whenever that one still reads fresh.
@@ -556,6 +587,9 @@ export const credentialFor = async (
     // Released with the write it guarded, so the next refresh is not turned into
     // a loser by a lease whose holder has already finished.
     'config.refreshingUntil': null,
+    // A narrowed scope lands with the pair it came with, so a write grant is
+    // never minted against a scope the vendor has withdrawn.
+    ...(grantedScope === undefined ? {} : { 'config.grantedScope': grantedScope }),
     // Top-level, not `config.*`: the row's error text lives outside the strict
     // subdocument, and clearing it inside one would be dropped in silence.
     errorMessage: null,

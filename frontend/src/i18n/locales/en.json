@@ -600,7 +600,9 @@
       "taskClaimedVerb": "claimed"
     },
     "claimRun": {
-      "label": "{{count}} claims · {{first}} to {{last}}"
+      "label": "{{count}} claims · {{first}} to {{last}}",
+      "count": "{{count}} claims",
+      "range": "{{first}} to {{last}}"
     },
     "starts": {
       "label": "Ways to start",
@@ -628,10 +630,10 @@
     "agentRoomLiveness": {
       "neverConnected": "{{agentName}} isn't connected yet. Messages sent here will wait until it runs.",
       "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
-      "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
       "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation.",
-      "runCommand": "To connect it, run:"
+      "runCommand": "To connect it, run:",
+      "copyCommand": "Copy command"
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",
@@ -711,7 +713,9 @@
       "agents_other": "{{count}} agents",
       "boardOpen": "board {{count}} open",
       "backToPods": "Back to pods",
-      "invite": "Invite"
+      "invite": "Invite",
+      "dm": "DM",
+      "readOnly": "read only"
     },
     "team": {
       "view": "View pod team",
@@ -764,6 +768,7 @@
       "startThread": "Thread",
       "replyInThread": "Reply in thread",
       "replyFromExpandedThread": "Reply from expanded thread",
+      "groupLabel": "Thread, {{count}} {{unit}}",
       "replyingInThread": "Replying in thread ·",
       "last": "last",
       "collapse": "Collapse",
@@ -1513,6 +1518,10 @@
     "title": "Board",
     "backToChat": "Back to chat",
     "newTask": "New task",
+    "addTo": "Add to {{column}}",
+    "card": {
+      "needs": "Needs {{dep}}"
+    },
     "taskCount_one": "{{count}} task",
     "taskCount_other": "{{count}} tasks",
     "focus": {
@@ -1592,7 +1601,9 @@
       "saveError": "Could not save this change. Try again.",
       "statusLabel": "Status",
       "showEarlierUpdates": "Show {{count}} earlier updates",
-      "hideEarlierUpdates": "Hide earlier updates"
+      "hideEarlierUpdates": "Hide earlier updates",
+      "depends": "Depends on",
+      "noDeps": "None"
     },
     "form": {
       "title": "Title",
@@ -1605,10 +1616,9 @@
       "defaultPriority": "default"
     },
     "owner": {
-      "left": "{{holder}} · <minutes>{{minutes}}m left</minutes>",
-      "assigned": "{{assignee}} · not claimed",
-      "expired": "lease expired · {{holder}}",
-      "claimed": "{{holder}} · claimed"
+      "leaseShort": "{{minutes}}m",
+      "expiredShort": "expired",
+      "claimedShort": "claimed"
     },
     "filter": {
       "label": "Filters",
@@ -1641,7 +1651,26 @@
       "failed": "Approved — tool call failed ({{code}}).",
       "refused": "Approved — tool call refused ({{code}}).",
       "pinChanged": "Approved, but the tool changed since this request. Ask again before running it.",
-      "expiredPending": "This tool-call approval has expired."
+      "expiredPending": "This tool-call approval has expired.",
+      "verb": {
+        "mergePullRequest": "Merge pull request #{{number}}",
+        "createIssue": "Open an issue",
+        "commentOnIssue": "Comment on issue #{{number}}",
+        "closeIssue": "Close issue #{{number}}"
+      },
+      "label": {
+        "repository": "Repository",
+        "pullRequest": "Pull request",
+        "issue": "Issue",
+        "head": "Head commit",
+        "mergeMethod": "Merge method",
+        "commitTitle": "Commit title",
+        "commitMessage": "Commit message",
+        "title": "Title",
+        "body": "Body",
+        "labels": "Labels"
+      },
+      "exactArgs": "Exact arguments"
     },
     "approve": "Approve",
     "decline": "Decline",
@@ -2334,6 +2363,20 @@
       "notConfigured": "Billing isn't switched on yet. Please contact us and we'll set you up."
     }
   },
+  "connect": {
+    "cliHeading": "Connect the CLI or MCP",
+    "copy": "Copy",
+    "copied": "Copied",
+    "cursorInstall": "Add Commonly to Cursor",
+    "cursorKeyHint": "Add your agent key in Cursor’s MCP settings.",
+    "cursorRule": "Cursor rule · save as <code>{{path}}</code> in your project",
+    "manageDevices": "Manage connected CLI devices",
+    "agentHeading": "Connect an agent you run",
+    "setUpAgent": "Set up an agent",
+    "manageAgents": "Manage installed agents",
+    "keysHeading": "Instance keys",
+    "openGlobal": "Open global integrations"
+  },
   "connectors": {
     "search": "Search",
     "filterLabel": "Show",
@@ -2416,6 +2459,10 @@
     "hostedMcpManualRevoke_supabase": "Commonly may still be authorized in the Supabase organization you connected before. Removing Commonly under Authorized apps disconnects everyone who connected that organization.",
     "hostedMcpReviewAuthorization": "Open {{provider}}'s connected apps",
     "hostedMcpReviewAuthorization_supabase": "Open Supabase Authorized apps",
+    "hostedMcpRefusedStillListed": "{{provider}} may still list Commonly as connected. Remove it there.",
+    "hostedMcpRefusedStillListed_linear": "Linear may still list this as an MCP grant under its connected apps. Revoke it there.",
+    "hostedMcpRefusedStillListed_sentry": "Sentry may still list its MCP server app as connected. Revoking it there ends every client that server holds for the account, not only Commonly.",
+    "hostedMcpRefusedStillListed_supabase": "Commonly may still be authorized in the Supabase organization you chose. Removing it under Authorized apps disconnects everyone who connected that organization.",
     "hostedMcpAuthenticationRequired": "Sign in to Commonly, then try connecting again.",
     "hostedMcpClientSetup": "This connector’s sign-in setup needs attention. Ask an administrator to check it.",
     "hostedMcpConsentDenied": "You didn’t approve this connection. Nothing was saved.",
@@ -2547,6 +2594,7 @@
     "loadFailed": "Could not load artifacts."
   },
   "tools": {
+    "linearWriteReconnect": "If you connected Linear before it could write, disconnect it and connect it again to turn on writes. Each write asks for your approval first.",
     "granted": "Granted",
     "beta": "beta",
     "adminOnce": "An admin installs this once",
@@ -2625,6 +2673,10 @@
     "disconnected": "Disconnected {{label}}.",
     "reviewProviderAccess": "Review access at {{label}}",
     "removedReviewProvider": "Connection removed. Review its access at {{label}}.",
+    "removedStillListed": "Disconnected {{label}} here, but {{label}} still lists Commonly. Remove it there too.",
+    "multiGrantPodPostingBlocked": "{{agents}} cannot post in any pod while connectors reach more than one of their pods. End grants until at most one of their pods has connector access. While one still does, they can post only in that pod.",
+    "grantPodPostingNarrowed": "{{agents}} can post only in one of their pods while that pod has connector access.",
+    "runtimePostingStatusUnavailable": "Could not check whether connector grants limit agent posting. Try again shortly.",
     "openProviderSettings": "Open provider settings",
     "noConnection": "install the GitHub App first · an admin does this once",
     "noSeats": "no agent in this pod yet",
@@ -2640,6 +2692,26 @@
     "outcomeOk": "ok",
     "outcomeRefused": "refused",
     "outcomeSuperseded": "answered",
+    "reasonNotInAudience": "this seat is outside the grant audience",
+    "reasonToolNotAllowed": "this tool is not on the allow-list",
+    "reasonWriteNotAllowed": "writes are not granted",
+    "reasonGrantRevoked": "the grant was revoked",
+    "reasonGrantExpired": "the grant expired",
+    "reasonBudgetExhausted": "the call budget is spent",
+    "reasonApprovalUnavailable": "no one could be asked to approve it",
+    "reasonApprovalDeclined": "approval was declined",
+    "reasonApprovalExpired": "approval expired before the call ran",
+    "reasonInvalidArgs": "the arguments did not validate",
+    "reasonConnectionMismatch": "the connection no longer matches the grant",
+    "reasonReconnect": "the connection needs reconnecting",
+    "reasonCredentialMissing": "no credential is stored",
+    "reasonCredentialRejected": "the provider rejected the credential",
+    "reasonRefreshUnreachable": "the credential could not be refreshed",
+    "reasonProviderError": "the provider returned an error",
+    "reasonProviderUnreachable": "the provider could not be reached",
+    "reasonUpstreamToolError": "the provider tool returned an error",
+    "reasonBrokerUnavailable": "the broker was unavailable",
+    "reasonBrokerError": "the broker failed",
     "owner": "owner",
     "readInTesting": "read in testing",
     "readOrWrite": "read, or read and write",
@@ -2662,7 +2734,11 @@
     "trailError": "Could not read the trail.",
     "viewGrant": "View {{tool}} in {{pod}}",
     "listSeparator": ", ",
-    "sentenceSeparator": " "
+    "sentenceSeparator": " ",
+    "connectionSeparator": " · ",
+    "connectionSignedIn": "Signed in",
+    "connectionKey": "Key",
+    "disconnectConnectionLabel": "Disconnect {{label}}: {{connection}}"
   },
   "agentManage": {
     "runtime": {
@@ -2767,6 +2843,11 @@
   },
   "agentSettings": {
     "identityTitle": "Identity",
+    "identityAccess": "Identity & access",
+    "keyActive": "active",
+    "openMemory": "Open memory",
+    "heartbeatOff": "Off",
+    "connection": "Connection",
     "displayName": "Display name",
     "persona": "Persona",
     "tone": "Tone",
@@ -2862,7 +2943,15 @@
     "revoke": "Revoke",
     "updateError": "Could not update the key. Try again.",
     "noPod": "This agent has no active pod.",
-    "missingReplacement": "The replacement key was not returned."
+    "missingReplacement": "The replacement key was not returned.",
+    "colMessages": "messages",
+    "colBoard": "board",
+    "colHeartbeat": "heartbeat",
+    "messageWakeShort_mentions": "Mentions",
+    "messageWakeShort_human": "People",
+    "messageWakeShort_all": "All",
+    "turnsUsed": "{{used}} / {{cap}} turns a day",
+    "turnsUsedNoCap": "{{used}} turns a day · cap unavailable"
   },
   "agentPolicy": {
     "title": "Policy",

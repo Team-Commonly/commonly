@@ -1,0 +1,279 @@
+/* Pod chat · composer and mention picker (S3c, D223 lift of the d215 chat
+   frame).
+
+   Source: docs/design/artboards/d215/index.html, data-surface="chat" at 1440
+   and 390, product CSS `.comp`, `.comp .plus`, `.comp .send`, `.app.m .comp`.
+   Token map as in chat-message.css. Imported by V2App.tsx after
+   chat-pane.css. */
+
+/* @-mention dropdown anchored to the composer input wrap. Sits above the
+   composer in DOM order but renders above-and-out via absolute positioning. */
+.v2-mention-dropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 10;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--v2-surface);
+  border: 1px solid var(--v2-border);
+  border-radius: var(--v2-radius);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.v2-mention-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: var(--v2-radius-sm);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  font: inherit;
+  color: var(--v2-text-primary);
+}
+
+.v2-mention-item:hover,
+.v2-mention-item--active {
+  background: var(--v2-surface-hover);
+}
+
+/* Keep an explicit root/button selector for the interaction states. The reset
+   is a low-specificity default now, but these rules document the intended
+   highlight instead of relying on source order or browser defaults. */
+.v2-root button.v2-mention-item:hover {
+  background: var(--v2-surface-hover);
+}
+
+.v2-root button.v2-mention-item--active {
+  background: var(--v2-surface-hover);
+}
+
+/* The dropdown owns the item's 7px 9px padding explicitly. */
+.v2-root .v2-mention-dropdown button.v2-mention-item {
+  padding: 7px 9px;
+}
+
+.v2-mention-item__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.v2-mention-item__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--v2-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-mention-item__sub {
+  font-size: 11px;
+  color: var(--v2-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* TASK-702: the header Invite. Same height and frame as the inspector
+   toggle beside it, with a label so it reads as an action, not decoration. */
+.v2-composer__error {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: #b91c1c;
+  font: 400 12px/16px var(--v2-font);
+}
+
+.v2-composer__warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 10px 8px;
+  color: var(--v2-text-secondary);
+  font: 400 12px/16px var(--v2-font);
+}
+
+@media (max-width: 760px) {
+  /* The phone keys draw at 32px and take touches at 44px (D223 standing
+     rule, 11-01): a pseudo-element extends the hit area, the box stays.
+     z-index keeps it above later positioned siblings such as the transcript. */
+  .v2-root button.v2-composer__plus,
+  .v2-root button.v2-composer__send { position: relative; z-index: 1; }
+  .v2-root button.v2-composer__plus::after,
+  .v2-root button.v2-composer__send::after {
+    content: '';
+    position: absolute;
+    /* From the padding box, inside each key's 1px border: 30 + 2 x 7 = 44. */
+    inset: -7px;
+  }
+}
+
+.v2-composer {
+  flex: 0 0 auto;
+  /* D215 (TASK-734): a floating card, radius 14 on the pop shadow, no border. */
+  margin: 4px 18px 16px;
+  border: 0;
+  border-radius: var(--v2-r-14, 14px);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pop, 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28));
+}
+
+/* Typing or focused, a darker hairline sits over the card's own; the drop stays. */
+.v2-composer--typing,
+.v2-composer:focus-within {
+  box-shadow: 0 0 0 1px var(--v2-border-strong), var(--v2-shadow-pop, 0 18px 36px -14px rgba(16, 24, 40, 0.28));
+}
+
+.v2-composer__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-height: 52px;
+  padding: 10px;
+}
+
+.v2-composer__plus-wrap { position: relative; flex: 0 0 auto; align-self: flex-end; }
+
+
+/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-g v2p-ib; the open menu keeps the hover tint. */
+.v2-root button.v2-composer__plus[aria-expanded="true"] { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+
+/* Disabled while a file uploads: the primitive's ghost hover has no :disabled guard. */
+.v2-root button.v2-composer__plus:disabled { cursor: progress; }
+
+.v2-root button.v2-composer__plus:disabled:hover { background: transparent; color: var(--v2-text-secondary); }
+
+.v2-composer__menu {
+  position: absolute;
+  left: 0;
+  bottom: 40px;
+  z-index: 4;
+  display: flex;
+  min-width: 220px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--v2-r-10, 10px);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pop, 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28));
+}
+
+.v2-root .v2-composer__menu > button {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+  text-align: left;
+}
+
+.v2-root .v2-composer__menu > button:hover,
+.v2-root .v2-composer__menu > button:focus-visible { background: var(--v2-surface-hover); outline: none; }
+
+.v2-composer__tag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  padding: 2px 4px 2px 6px;
+  margin-bottom: 4px;
+  border-radius: 3px;
+  background: var(--v2-accent-soft, #e8ecfb);
+  color: var(--v2-accent-text);
+  font: 500 11px/16px var(--v2-font-mono);
+  text-transform: lowercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-root button.v2-composer__tag-cancel {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.v2-composer__field { position: relative; min-width: 0; flex: 1; }
+
+.v2-composer__file { display: none; }
+
+/* Ruling 7: the frame's --ph measures 2.58:1 on the surface (dark 3.17:1),
+   under 4.5:1 for text; muted measures 4.97:1 (dark 5.77:1). */
+.v2-root .v2-composer__field > textarea::placeholder { color: var(--v2-text-muted); }
+
+/* The row carries the focus state on its border; the field itself draws none. */
+.v2-root .v2-composer__field > textarea:focus,
+.v2-root .v2-composer__field > textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border: 0;
+}
+
+.v2-root .v2-composer__field > textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  max-height: 112px;
+  padding: 6px 4px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 14px/20px var(--v2-font);
+}
+
+.v2-composer__uploading {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--v2-text-muted);
+  font: 400 11px/16px var(--v2-font-mono);
+}
+
+/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-p v2p-ib, with
+   the frame's up-arrow glyph. Empty, Send is disabled but drawn as at rest
+   (D215); while a send is in flight it keeps the old progress look. */
+.v2-root button.v2-composer__send {
+  flex: 0 0 32px;
+  margin-bottom: 0;
+}
+
+.v2-root button.v2-composer__send:disabled { cursor: default; }
+
+.v2-root .v2-composer--typing button.v2-composer__send:disabled { cursor: progress; opacity: 0.6; }
+
+.v2-composer__error,
+.v2-composer__warnings { padding: 0 10px 8px; }
+
+@media (max-width: 760px) {
+  /* Sits above the 56px tab bar; the row itself keeps its desktop shape. */
+  .v2-composer { margin: 4px 10px 64px; }
+  .v2-composer__menu { min-width: 200px; }
+  .v2-composer__tag { max-width: 120px; }
+}
+
+/* Composer aim chip (walk-3 miss 59). */
+.v2-composer__aim { background: var(--v2-accent-soft, #e8ecfb); color: var(--v2-accent-text); }

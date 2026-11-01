@@ -595,6 +595,64 @@ describe('Connectors page: channels', () => {
     expect(screen.queryByText('unrequested_scope')).toBeNull();
   });
 
+  // TASK-344: a refused grant is never stored, so when the vendor revoke can't be
+  // confirmed the grant is still live there. The link comes from the catalogue's
+  // own page for that entry; the callback's value only has to equal it.
+  const refusedReturn = (revokeAt) => (
+    `/v2/connectors?hostedMcp=error&code=unrequested_scope&entryId=linear&revokeAt=${encodeURIComponent(revokeAt)}`
+  );
+
+  it('a refused connect whose grant may still be live links the provider revoke page', async () => {
+    const revokePage = 'https://linear.app/settings/security';
+    window.history.replaceState({}, '', refusedReturn(revokePage));
+    mockGets([], [{ ...hostedLinearCatalogEntry(), connections: [], revokePage }]);
+    renderPage();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("The provider granted access Commonly didn’t ask for, so the connection wasn’t saved.");
+    const link = await within(alert).findByRole('link', { name: "Open Linear's connected apps" });
+    expect(link).toHaveAttribute('href', revokePage);
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(alert).toHaveTextContent('Linear may still list this as an MCP grant under its connected apps. Revoke it there.');
+    expect(window.location.search).toBe('');
+  });
+
+  // Removing Commonly in Supabase ends it for the whole organization, so a
+  // refused connect there must say so rather than just say "remove it".
+  it('a refused Supabase connect warns that removing it there disconnects the organization', async () => {
+    const revokePage = 'https://supabase.com/dashboard/org/_/apps';
+    window.history.replaceState({}, '', `/v2/connectors?hostedMcp=error&code=unrequested_scope&entryId=supabase&revokeAt=${encodeURIComponent(revokePage)}`);
+    mockGets([], [{
+      ...hostedLinearCatalogEntry(), installableId: 'supabase', label: 'Supabase', entryId: 'supabase', connections: [], revokePage,
+    }]);
+    renderPage();
+
+    const alert = await screen.findByRole('alert');
+    const link = await within(alert).findByRole('link', { name: 'Open Supabase Authorized apps' });
+    expect(link).toHaveAttribute('href', revokePage);
+    expect(alert).toHaveTextContent('Removing it under Authorized apps disconnects everyone who connected that organization.');
+  });
+
+  // Equality with the catalogue's page, not a same-origin check: the right
+  // host on another path is as forged as another host.
+  it.each([
+    ['another host', 'https://evil.example/'],
+    ['the provider host on another path', 'https://linear.app/evil-path'],
+    ['a script URL', 'javascript:alert(1)'],
+  ])('a refused connect never links a revoke page the catalogue does not name (%s)', async (_label, forged) => {
+    window.history.replaceState({}, '', refusedReturn(forged));
+    mockGets([], [{ ...hostedLinearCatalogEntry(), connections: [], revokePage: 'https://linear.app/settings/security' }]);
+    renderPage();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent("The provider granted access Commonly didn’t ask for, so the connection wasn’t saved.");
+    await waitFor(() => expect(window.location.search).toBe(''));
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(within(alert).queryByRole('link')).toBeNull();
+    expect(document.body.innerHTML).not.toContain(forged);
+  });
+
   it.each([
     ['unknown_entry', 'hostedMcpUnknownEntry'],
     ['invalid_state', 'hostedMcpInvalidState'],
@@ -1256,6 +1314,16 @@ describe('Connectors page: channels', () => {
       expect(within(drawer).getByRole('group', { name: 'Channel provider' })).toBeInTheDocument();
       expect(within(drawer).getByLabelText('Pod to bridge')).toBeInTheDocument();
       expect(within(drawer).queryByText('No pod yet. Create one, then come back to connect a channel.')).toBeNull();
+      expect(within(drawer).queryByRole('button', { name: 'Create a pod' })).toBeNull();
+    });
+
+    it('keeps the existing picker visible when the pod list read returns something other than a list', async () => {
+      mockCatalog([entry()], [], { error: 'unexpected body' });
+      renderPage();
+
+      fireEvent.click(await findTile('Channel'));
+      const drawer = await findDrawer('Connect a channel');
+      expect(within(drawer).getByLabelText('Pod to bridge')).toBeInTheDocument();
       expect(within(drawer).queryByRole('button', { name: 'Create a pod' })).toBeNull();
     });
 

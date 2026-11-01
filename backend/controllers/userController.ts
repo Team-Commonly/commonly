@@ -17,6 +17,8 @@ const {
 const SECRET_USER_FIELDS = [
   'password',
   'apiToken',
+  'apiTokenHash',
+  'apiTokenLast4',
   'agentRuntimeTokens',
   'deviceTokens',
   'digestUnsubscribeToken',

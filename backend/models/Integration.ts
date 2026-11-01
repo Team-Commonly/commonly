@@ -175,6 +175,8 @@ export interface IIntegration extends Document {
     // this half is what stops a typed write from needing a cast to state the
     // same thing — a cast being the same silence one layer up (#1976 gate).
     entryId?: string;
+    /** The agent an operator key is bound to (TASK-330). Server-owned; see the schema. */
+    agentId?: string;
     intake?: 'oauth';
     clientId?: string;
     providerSubject?: string;
@@ -378,6 +380,11 @@ const IntegrationSchema = new Schema<IIntegration>(
           return this.type === 'hosted-mcp';
         },
       },
+      // The agent an operator key is bound to (TASK-330). Set server-side at
+      // paste intake and never by a body. Absent on every OAuth row, which is
+      // why the unique index below can treat it as one more key without
+      // splitting an OAuth person's single row.
+      agentId: { type: String, trim: true },
       intake: String, // 'oauth' is the only intake for this type
       clientId: String, // id that minted this pair; DCR rows resolve this against held registrations
       providerSubject: String, // the authorization server's stable id for the account
@@ -470,14 +477,20 @@ IntegrationSchema.index({ podId: 1, type: 1 });
 IntegrationSchema.index({ status: 1 });
 IntegrationSchema.index({ createdBy: 1 });
 IntegrationSchema.index({ installationId: 1 }, { unique: true, sparse: true });
-// One `hosted-mcp` row per (person, catalogue entry). The page cannot say which
-// row a grant uses if a person holds two for one vendor, and the two would go
-// through removal separately (scope §2). Partial, not sparse: `config.entryId`
-// is absent on every other type, and every other type has no such key to
-// collide on. A second connect by the same person REUSES the row through the
-// §10.3 fence rather than inserting one.
+// One `hosted-mcp` row per (person, catalogue entry, bound agent). An operator
+// key is one agent's bearer (TASK-330), so one person may hold one row per
+// agent for the same vendor. OAuth rows have no `config.agentId`, index as
+// null, and so still get one row per person per entry, as before. Partial, not
+// sparse: `config.entryId` is absent on every other type. A second OAuth connect
+// by the same person REUSES the row through the §10.3 fence rather than
+// inserting one.
+//
+// This replaces `createdBy_1_config.entryId_1`, which would refuse a second
+// agent's key with E11000. Mongo does not swap an index in place: the old one
+// must be dropped by scripts/migrate-hosted-mcp-agent-index.js before the new
+// key is used on a database that already holds hosted rows.
 IntegrationSchema.index(
-  { createdBy: 1, 'config.entryId': 1 },
+  { createdBy: 1, 'config.entryId': 1, 'config.agentId': 1 },
   { unique: true, partialFilterExpression: { type: 'hosted-mcp' } },
 );
 IntegrationSchema.index({ 'ingestTokens.tokenHash': 1 });

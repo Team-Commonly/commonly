@@ -159,9 +159,10 @@ describe('V2PodBoard', () => {
       claimedBy: 'kai-id', claimExpiresAt: expiresAt,
       updates: [{ text: 'Lease renewed', author: 'Kai', authorId: 'kai-id' }],
     };
+    const assignedOnly = { taskId: 'TASK-271', title: 'Assigned only', status: 'pending', assignee: 'lily-shen', updates: [] };
     jest.useFakeTimers({ now });
     axios.get.mockImplementation((url) => {
-      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: [task, holderFromUpdate] } });
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: [task, holderFromUpdate, assignedOnly] } });
       if (url.endsWith('/focus')) return Promise.resolve({ data: FOCUS });
       if (url.startsWith('/api/pods/')) return Promise.resolve({ data: {
         name: 'My Workspace', members: [{ _id: 'forge-id', username: 'forge', displayName: 'Forge' }],
@@ -173,15 +174,19 @@ describe('V2PodBoard', () => {
       renderBoard();
       await act(async () => { await Promise.resolve(); });
       expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('America/Los_Angeles');
-      expect(screen.getByTitle('TASK-269')).toHaveTextContent('Forge · 1m left');
-      expect(screen.getByTitle('TASK-270')).toHaveTextContent('Kai · 1m left');
+      // The card line is the timer and the claimant's avatar (named by its title); no holder text.
+      expect(screen.getByTitle('TASK-269')).toHaveTextContent('1m');
+      expect(screen.getByTitle('TASK-269')).not.toHaveTextContent('Forge');
+      expect(screen.getByTitle('TASK-270')).toHaveTextContent('1m');
+      expect(screen.getByTitle('Forge')).toBeInTheDocument();
+      // An assigned task nobody has claimed shows no owner line at all.
+      expect(screen.getByTitle('TASK-271')).not.toHaveTextContent(/lily-shen|not claimed/);
 
       act(() => { jest.advanceTimersByTime(59_999); });
-      expect(screen.getByTitle('TASK-269')).toHaveTextContent('Forge · 1m left');
+      expect(screen.getByTitle('TASK-269')).toHaveTextContent('1m');
       act(() => { jest.advanceTimersByTime(1); });
-      expect(screen.queryByText(/1m left/)).not.toBeInTheDocument();
-      expect(screen.getByText('lease expired · Forge')).toBeInTheDocument();
-      expect(screen.getByText('lease expired · Kai')).toBeInTheDocument();
+      expect(screen.getByTitle('TASK-269')).toHaveTextContent('expired');
+      expect(screen.getByTitle('TASK-270')).toHaveTextContent('expired');
       expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/v1/tasks/'))).toHaveLength(1);
     } finally {
       jest.useRealTimers();
@@ -706,11 +711,47 @@ test('detail status is a segment that moves the task, and older updates fold beh
   expect(within(segment).getByRole('radio', { name: 'Pending' })).toHaveAttribute('aria-checked', 'true');
   fireEvent.click(within(segment).getByRole('radio', { name: /in progress/i }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/api/v1/tasks/pod-1/TASK-5', { status: 'claimed' }, expect.any(Object)));
-  // Newest three show; the two oldest fold behind the toggle.
+  // Newest two show, as the d215 frame draws; the three oldest fold behind the toggle.
   expect(within(dialog).queryByText('one')).toBeNull();
-  expect(within(dialog).queryByText('two')).toBeNull();
+  expect(within(dialog).queryByText('three')).toBeNull();
+  expect(within(dialog).getByText('four')).toBeInTheDocument();
   expect(within(dialog).getByText('five')).toBeInTheDocument();
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Show 2 earlier updates' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Show 3 earlier updates' }));
   expect(within(dialog).getByText('one')).toBeInTheDocument();
   expect(within(dialog).getByRole('button', { name: 'Hide earlier updates' })).toHaveAttribute('aria-expanded', 'true');
+});
+
+// S4 (d215 frame): the marks and keys the frame draws.
+test('Add to Pending opens the one create dialog, and the card marks name what they show', async () => {
+  wireAxios([
+    { taskId: 'TASK-2', title: 'Open work', status: 'pending', updates: [] },
+    { taskId: 'TASK-3', title: 'Waiting work', status: 'blocked', dep: 'TASK-2', updates: [] },
+    { taskId: 'TASK-4', title: 'Waiting on nothing named', status: 'blocked', updates: [] },
+  ]);
+  renderBoard();
+  const pending = await screen.findByRole('region', { name: 'Pending' });
+
+  // An open card carries the frame's hollow ring, named, with no visible text.
+  expect(within(pending).getByRole('img', { name: 'Not claimed' })).toBeInTheDocument();
+  expect(screen.getByTitle('TASK-2')).not.toHaveTextContent('Not claimed');
+  // A blocked card shows what it waits on only when the task records it.
+  const blocked = screen.getByRole('region', { name: 'Blocked' });
+  expect(within(blocked).getByRole('img', { name: 'Needs TASK-2' })).toBeInTheDocument();
+  expect(within(blocked).getAllByRole('img')).toHaveLength(1);
+  // Hover keys are icon-only and keep their words as names.
+  expect(within(pending).getByRole('button', { name: 'Start' })).toHaveAttribute('title', 'Start');
+
+  fireEvent.click(within(pending).getByRole('button', { name: 'Add to Pending' }));
+  expect(screen.getByRole('dialog', { name: 'New task' })).toBeInTheDocument();
+});
+
+test('the drawer heads with the id and badge, titles in the body, and lists what the task depends on', async () => {
+  wireAxios([{ taskId: 'TASK-3', title: 'Waiting work', priority: 'P1', status: 'blocked', dep: 'TASK-2', watchers: [], updates: [] }]);
+  renderBoard();
+  fireEvent.click(await screen.findByTitle('TASK-3'));
+  const dialog = screen.getByRole('dialog', { name: 'Waiting work' });
+  expect(within(dialog).getByRole('heading', { level: 2, name: 'Waiting work' })).toBeInTheDocument();
+  expect(within(dialog).getByText('Depends on')).toBeInTheDocument();
+  expect(within(dialog).getByText('TASK-2')).toBeInTheDocument();
+  expect(within(dialog).getByRole('button', { name: 'Close' })).toHaveAttribute('title', 'Close');
 });

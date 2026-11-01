@@ -11,9 +11,13 @@ const { manifests } = require('../../integrations/manifests');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { mcpComponentOf, projectTools, toolInstallableMetas } = require('./toolInstallables');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../../integrations/hostedMcp/entries');
+const {
+  HOSTED_MCP_ENTRIES, findHostedMcpEntry,
+}: typeof import('../../integrations/hostedMcp/entries') = require('../../integrations/hostedMcp/entries');
 const { isHostedMcpEntryHidden } = require('../../integrations/hostedMcp/visibility');
-const { isHostedMcpClientConfigured } = require('../hostedMcpIntakeService');
+const {
+  isHostedMcpClientConfigured,
+}: typeof import('../hostedMcpIntakeService') = require('../hostedMcpIntakeService');
 
 type ProviderReadiness = { available: boolean; reason?: 'not_configured' };
 
@@ -106,10 +110,19 @@ const publicInstallation = (installation: any): unknown => {
 // A Connection the caller may grant from: the mint requires the connection's
 // owner, so only the caller's own rows are offered. `connectionId` is the key
 // the mint takes; owner/repo are the card's evidence of what the grant acts on.
+//
+// A hosted entry can hold several of the caller's rows, an OAuth sign-in and
+// operator keys bound per agent (TASK-330), so a hosted row also carries what
+// tells them apart: when it was connected, and for a key the agent (bot user
+// id) it is bound to.
 const publicConnection = (integration: any) => ({
   connectionId: String(integration.installationId || integration._id || ''),
   owner: String(integration.config?.owner || ''),
   repo: String(integration.config?.repo || ''),
+  ...(integration.type === 'hosted-mcp' ? {
+    ...(integration.createdAt ? { connectedAt: new Date(integration.createdAt).toISOString() } : {}),
+    ...(integration.config?.agentId ? { agentId: String(integration.config.agentId) } : {}),
+  } : {}),
 });
 
 /**
@@ -173,6 +186,7 @@ const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hid
       description: row.description || '',
       ...(hostedEntry?.connectNotice ? { connectNotice: hostedEntry.connectNotice } : {}),
       ...(hostedEntry?.accessPage ? { accessPage: hostedEntry.accessPage } : {}),
+      ...(hostedEntry?.revoke?.page ? { revokePage: hostedEntry.revoke.page } : {}),
       connectionType: meta.connectionType,
       ...(meta.entryId ? { entryId: meta.entryId } : {}),
       available: readiness.available,

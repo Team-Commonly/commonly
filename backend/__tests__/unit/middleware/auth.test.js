@@ -330,4 +330,21 @@ describe('Auth Middleware Tests', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it.each(['MongoNetworkError', 'cm_secret-sentinel'])('logs only closed diagnostics for %s', async (name) => {
+    const error = new Error('cm_secret-sentinel');
+    error.name = name;
+    error.code = 'cm_secret-sentinel';
+    User.findOne.mockReturnValueOnce({ select: jest.fn().mockRejectedValue(error) });
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const req = { header: (header) => header === 'Authorization' ? 'Bearer cm_probe' : null };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await authMiddleware(req, res, jest.fn());
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(log).toHaveBeenCalledWith('API token validation failed', {
+      category: name === 'MongoNetworkError' ? name : 'UnknownError', code: undefined,
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain('cm_secret-sentinel');
+    log.mockRestore();
+  });
+
 });

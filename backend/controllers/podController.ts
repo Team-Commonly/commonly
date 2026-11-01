@@ -156,6 +156,30 @@ const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: an
 };
 
 // Get all pods or filter by type
+// An agent-room outlives its agent's uninstall on purpose: the pod keeps the
+// agent's memory and history, so a reinstall returns the owner to the same
+// room (CLAUDE.md design rule 8). It must not stay in the owner's list while
+// the agent is gone, or the room still offers prompts to nobody. A room is
+// hidden only when it HAS installation rows and every one is uninstalled: a
+// room with no row (a failed install, or a legacy membership-only room) is
+// not evidence its agent was removed, so it stays listed. One aggregate over
+// the rooms in the result, not one query per room.
+const dropUninstalledAgentRooms = async (pods: any[]): Promise<any[]> => {
+  const roomIds = pods.filter((p: any) => p.type === 'agent-room').map((p: any) => p._id);
+  if (roomIds.length === 0) return pods;
+  const rows: Array<{ _id: unknown; liveRows: number }> = await AgentInstallation.aggregate([
+    { $match: { podId: { $in: roomIds } } },
+    {
+      $group: {
+        _id: '$podId',
+        liveRows: { $sum: { $cond: [{ $ne: ['$status', 'uninstalled'] }, 1, 0] } },
+      },
+    },
+  ]);
+  const goneRoomIds = new Set(rows.filter((r) => r.liveRows === 0).map((r) => String(r._id)));
+  return pods.filter((p: any) => p.type !== 'agent-room' || !goneRoomIds.has(String(p._id)));
+};
+
 exports.getAllPods = async (req: any, res: any) => {
   try {
     // `?type=` is a user-supplied value that used to reach the Mongo query
@@ -261,6 +285,11 @@ exports.getAllPods = async (req: any, res: any) => {
       // gone, and the previous `m._id` would throw on it — turning one stale
       // reference anywhere on the instance into a 500 for the whole sidebar.
       pods = pods.filter((p: any) => (p.members || []).some((m: any) => m && String(m._id || m) === uid));
+    }
+
+    // Admin `scope=all` is cross-instance moderation: it keeps every room.
+    if (!isCommunityScope && !isDiscoverScope && scope !== 'all') {
+      pods = await dropUninstalledAgentRooms(pods);
     }
 
     // Attach last-message preview per pod for the sidebar snippet. Single

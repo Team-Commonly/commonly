@@ -26,6 +26,7 @@ const {
 };
 const GlobalModelConfigService = require('../../services/globalModelConfigService');
 const AgentMessageService = require('../../services/agentMessageService');
+const { loadPodMentionMap, routedMentionHandle } = require('../../services/agentMentionService');
 const { deriveAgentState, runInstructionFor } = require('../../services/agentStateService');
 const FirstContactService = require('../../services/firstContactService');
 const HostedRuntime = require('../../services/hostedRuntimeService');
@@ -871,14 +872,27 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
 
-    // The mention handle is the instanceId (what the UI dropdown inserts),
-    // NOT the registry agentName — a BYO user is told their agent's *name*
-    // is e.g. "sam-agent" but the way to mention it is "@scout". Said in the
-    // intro, or in a hosted agent's own greeting, so nobody has to guess (GH
-    // smoke finding 2026-07-05).
-    const handle = normalizedInstanceId && normalizedInstanceId !== 'default'
-      ? normalizedInstanceId
-      : safeAgentName;
+    // The mention handle is what people are told to type, NOT the registry
+    // agentName: a BYO user is told their agent's *name* is e.g. "sam-agent"
+    // but the way to mention it is "@scout". Said in the intro, or in a hosted
+    // agent's own greeting, so nobody has to guess (GH smoke finding
+    // 2026-07-05). It is the handle that routes to this install in this pod
+    // (routedMentionHandle), the same one get_context and get_messages carry:
+    // the agent's username, or its agent-instance key when a sibling of the
+    // same agent leaves the bare name routing nowhere. The username is the
+    // fallback only if the pod's map cannot be read.
+    const canonicalHandle = AgentIdentityService.buildAgentUsername(
+      safeAgentName,
+      normalizedInstanceId || 'default',
+    );
+    let handle = canonicalHandle;
+    try {
+      handle = routedMentionHandle(await loadPodMentionMap(podId), {
+        agentName: safeAgentName, instanceId: normalizedInstanceId || 'default',
+      }) || canonicalHandle;
+    } catch (error) {
+      console.warn('Install intro: pod mention map unavailable:', (error as Error).message);
+    }
     // A hosted agent on the native engine answers its first contact in the
     // same minute, in its own voice. Its greeting is then the one post the
     // room gets: the template intro beside it was a second post before anyone

@@ -288,6 +288,10 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
     expect(linear.connectNotice).toBeUndefined();
     expect(acmeRow.accessPage).toBe(acme.accessPage);
     expect(linear.accessPage).toBeUndefined();
+    // The page a refused connect's error return may name (TASK-344): the
+    // browser shows a link only when the callback's page equals this one.
+    expect(acmeRow.revokePage).toBe(acme.revoke.page);
+    expect(linear.revokePage).toBe(linearEntry.revoke.page);
     // Each row sees its own vendor's connection and not the other's.
     expect(linear.connections).toEqual([
       { connectionId: 'conn-linear', owner: '', repo: '' },
@@ -298,13 +302,48 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
     expect(linear.tools).toEqual(linearEntry.tools.map((tool) => expect.objectContaining({
       name: `linear.${tool.name}`,
       description: tool.description,
-      requiredWriteMode: 'read',
+      requiredWriteMode: tool.class === 'write' ? 'write-with-confirm' : 'read',
       irreversible: Boolean(tool.irreversible),
     })));
     expect(acmeRow.tools).toEqual([{ name: 'acme.list_tickets', description: 'List tickets', requiredWriteMode: 'read', irreversible: false }]);
     expect(Integration.find).toHaveBeenCalledWith(expect.objectContaining({
       type: { $in: ['hosted-mcp'] }, createdBy: userId, status: 'connected', revokedAt: null,
     }));
+  } finally {
+    HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
+  }
+});
+
+it("a hosted entry's connections each say how they differ: when, and for a key its agent", async () => {
+  const shipped = HOSTED_MCP_ENTRIES.slice();
+  const linearEntry = shipped.find((entry) => entry.id === 'linear');
+  try {
+    mockInstallables([], [buildHostedMcpToolInstallable(linearEntry)]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([
+      {
+        _id: 'conn-oauth', type: 'hosted-mcp', status: 'connected', createdBy: userId,
+        createdAt: new Date('2026-10-30T10:00:00Z'),
+        config: { entryId: 'linear', intake: 'oauth', credentialRef: 'ref-oauth', providerSubject: 'subject-1' },
+      },
+      {
+        _id: 'conn-key', type: 'hosted-mcp', status: 'connected', createdBy: userId,
+        createdAt: new Date('2026-10-31T11:00:00Z'),
+        config: { entryId: 'linear', agentId: '6a0000000000000000000007', credentialHint: 'lin…9f', credentialRef: 'ref-key' },
+      },
+    ]));
+
+    const catalog = await catalogFor(userId);
+    const linear = catalog.installables.find((entry) => entry.list === 'tools' && entry.installableId === 'linear');
+
+    expect(linear.connections).toEqual([
+      { connectionId: 'conn-oauth', owner: '', repo: '', connectedAt: '2026-10-30T10:00:00.000Z' },
+      {
+        connectionId: 'conn-key', owner: '', repo: '', connectedAt: '2026-10-31T11:00:00.000Z',
+        agentId: '6a0000000000000000000007',
+      },
+    ]);
+    expect(JSON.stringify(linear.connections)).not.toMatch(/ref-oauth|ref-key|subject-1|lin…9f/);
   } finally {
     HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
   }

@@ -935,11 +935,13 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
           code: result.code,
           message: result.message,
           ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),
+          ...(typeof result.providerRevoked === 'boolean' ? { providerRevoked: result.providerRevoked } : {}),
         });
       }
       return res.json({
         message: 'Integration deleted successfully',
         ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),
+        providerRevoked: result.providerRevoked,
       });
     }
     // §10.5's grants step, and it runs before the row is deleted below. Revoke

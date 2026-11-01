@@ -600,7 +600,9 @@
       "taskClaimedVerb": "认领了"
     },
     "claimRun": {
-      "label": "{{count}}次认领 · {{first}} 至 {{last}}"
+      "label": "{{count}}次认领 · {{first}} 至 {{last}}",
+      "count": "{{count}}次认领",
+      "range": "{{first}} 至 {{last}}"
     },
     "starts": {
       "label": "开始方式",
@@ -628,10 +630,10 @@
     "agentRoomLiveness": {
       "neverConnected": "{{agentName}} 尚未连接。发送到这里的消息会等待该席位连接。",
       "goneDark": "{{agentName}} 最近没有接入，回复可能需要更长时间。",
-      "unknown": "{{agentName}} 的可用状态未知，回复可能需要更长时间。",
       "waiting": "正在等待 {{agentName}} 回复…",
       "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。",
-      "runCommand": "要连接它，请运行："
+      "runCommand": "要连接它，请运行：",
+      "copyCommand": "复制命令"
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
@@ -710,7 +712,9 @@
       "agents_other": "{{count}}个智能体",
       "boardOpen": "看板{{count}}项待办",
       "backToPods": "返回 Pod 列表",
-      "invite": "邀请"
+      "invite": "邀请",
+      "dm": "私信",
+      "readOnly": "只读"
     },
     "team": {
       "view": "查看 Pod 团队",
@@ -763,6 +767,7 @@
       "startThread": "话题",
       "replyInThread": "在话题中回复",
       "replyFromExpandedThread": "在已展开的话题中回复",
+      "groupLabel": "话题，{{count}} {{unit}}",
       "replyingInThread": "正在话题中回复：",
       "last": "最近",
       "collapse": "收起",
@@ -1506,6 +1511,10 @@
     "title": "看板",
     "backToChat": "返回聊天",
     "newTask": "新建任务",
+    "addTo": "添加到{{column}}",
+    "card": {
+      "needs": "依赖 {{dep}}"
+    },
     "taskCount_other": "{{count}}个任务",
     "focus": {
       "eyebrow": "Pod 方向",
@@ -1584,7 +1593,9 @@
       "saveError": "未能保存更改，请重试。",
       "statusLabel": "状态",
       "showEarlierUpdates": "显示{{count}}条更早的更新",
-      "hideEarlierUpdates": "隐藏更早的更新"
+      "hideEarlierUpdates": "隐藏更早的更新",
+      "depends": "依赖",
+      "noDeps": "无"
     },
     "form": {
       "title": "标题",
@@ -1597,10 +1608,9 @@
       "defaultPriority": "默认"
     },
     "owner": {
-      "left": "{{holder}} · <minutes>剩余{{minutes}}分钟</minutes>",
-      "assigned": "{{assignee}} · 尚未认领",
-      "expired": "认领已到期 · {{holder}}",
-      "claimed": "{{holder}} · 已认领"
+      "leaseShort": "{{minutes}}分钟",
+      "expiredShort": "已到期",
+      "claimedShort": "已认领"
     },
     "filter": {
       "label": "筛选",
@@ -1633,12 +1643,31 @@
       "failed": "已批准 — 工具调用失败（{{code}}）。",
       "refused": "已批准 — 工具调用被拒绝（{{code}}）。",
       "pinChanged": "已批准，但工具在请求后已变更。请重新发起请求后再执行。",
-      "expiredPending": "该工具调用批准已过期。"
+      "expiredPending": "该工具调用批准已过期。",
+      "verb": {
+        "mergePullRequest": "合并 PR #{{number}}",
+        "createIssue": "创建 Issue",
+        "commentOnIssue": "评论 Issue #{{number}}",
+        "closeIssue": "关闭 Issue #{{number}}"
+      },
+      "label": {
+        "repository": "仓库",
+        "pullRequest": "PR",
+        "issue": "Issue",
+        "head": "HEAD 提交",
+        "mergeMethod": "合并方式",
+        "commitTitle": "提交标题",
+        "commitMessage": "提交信息",
+        "title": "标题",
+        "body": "正文",
+        "labels": "标签"
+      },
+      "exactArgs": "原始参数"
     },
     "approve": "批准",
     "decline": "拒绝",
     "deciding": "处理中…",
-    "waitingForOwner": "等待工作区所有者决定。",
+    "waitingForOwner": "等待工作空间所有者决定。",
     "aged": "该提议已等待较久 — 请确认它仍然适用。",
     "approved": "✓ 已批准 — 已完成。",
     "approvedButFailed": "已批准，但执行失败：{{error}}",
@@ -2324,6 +2353,20 @@
       "notConfigured": "付款功能尚未开启，请联系我们为你开通。"
     }
   },
+  "connect": {
+    "cliHeading": "连接 CLI 或 MCP",
+    "copy": "复制",
+    "copied": "已复制",
+    "cursorInstall": "添加到 Cursor",
+    "cursorKeyHint": "在 Cursor 的 MCP 设置里填入你的智能体密钥。",
+    "cursorRule": "Cursor 规则 · 在项目中保存为 <code>{{path}}</code>",
+    "manageDevices": "管理已连接的 CLI 设备",
+    "agentHeading": "接入你自己的智能体",
+    "setUpAgent": "接入智能体",
+    "manageAgents": "管理已安装的智能体",
+    "keysHeading": "实例密钥",
+    "openGlobal": "打开全局集成"
+  },
   "connectors": {
     "search": "搜索",
     "filterLabel": "显示",
@@ -2406,6 +2449,10 @@
     "hostedMcpManualRevoke_supabase": "Commonly 可能仍在你之前连接的 Supabase 组织中获得授权。在“已授权应用”中移除 Commonly，会断开所有连接该组织的成员。",
     "hostedMcpReviewAuthorization": "打开 {{provider}} 的已连接应用",
     "hostedMcpReviewAuthorization_supabase": "打开 Supabase 已授权应用",
+    "hostedMcpRefusedStillListed": "{{provider}} 可能仍显示 Commonly 已连接，请到那里移除。",
+    "hostedMcpRefusedStillListed_linear": "Linear 的已连接应用中可能仍有这项 MCP 授权，请到那里撤销。",
+    "hostedMcpRefusedStillListed_sentry": "Sentry 中可能仍显示它的 MCP 服务器应用已连接。在那里撤销，会断开此账号下该服务器的所有客户端，不只是 Commonly。",
+    "hostedMcpRefusedStillListed_supabase": "Commonly 可能仍在你刚才选择的 Supabase 组织中获得授权。在“已授权应用”中移除，会断开所有连接该组织的成员。",
     "hostedMcpAuthenticationRequired": "请先登录 Commonly，再重新连接。",
     "hostedMcpClientSetup": "此连接器的登录配置有问题，请联系管理员检查。",
     "hostedMcpConsentDenied": "你没有同意此次授权。连接未保存。",
@@ -2550,6 +2597,7 @@
     "loadFailed": "无法加载产物。"
   },
   "tools": {
+    "linearWriteReconnect": "如果你是在支持写入之前连接的 Linear，需要先断开再重新连接，才能写入。每次写入都需要你批准。",
     "granted": "已授权",
     "beta": "测试版",
     "adminOnce": "需管理员安装一次",
@@ -2628,6 +2676,10 @@
     "disconnected": "已断开 {{label}}。",
     "reviewProviderAccess": "查看 {{label}} 的授权",
     "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",
+    "removedStillListed": "已在此处断开 {{label}}，但 {{label}} 仍显示 Commonly，请到那里一并移除。",
+    "multiGrantPodPostingBlocked": "{{agents}} 所在的多个 Pod 都有连接器授权，因此暂时无法在任何 Pod 发消息。结束多余的授权，最多只留一个 Pod 可用连接器。只要还有一个 Pod 有授权，它们就只能在那个 Pod 发消息。",
+    "grantPodPostingNarrowed": "{{agents}} 目前只能在有连接器授权的那个 Pod 发消息。",
+    "runtimePostingStatusUnavailable": "暂时无法确认连接器授权是否限制了智能体发消息，请稍后重试。",
     "openProviderSettings": "打开服务提供方设置",
     "noConnection": "请先安装 GitHub App · 管理员只需安装一次",
     "noSeats": "此 Pod 中还没有智能体",
@@ -2643,6 +2695,26 @@
     "outcomeOk": "成功",
     "outcomeRefused": "已拒绝",
     "outcomeSuperseded": "已回答",
+    "reasonNotInAudience": "此席位不在授权范围内",
+    "reasonToolNotAllowed": "此工具不在允许列表中",
+    "reasonWriteNotAllowed": "未授予写入权限",
+    "reasonGrantRevoked": "授权已撤销",
+    "reasonGrantExpired": "授权已过期",
+    "reasonBudgetExhausted": "调用次数已用完",
+    "reasonApprovalUnavailable": "无法请求人工批准",
+    "reasonApprovalDeclined": "审批已被拒绝",
+    "reasonApprovalExpired": "审批在调用运行前已过期",
+    "reasonInvalidArgs": "参数校验未通过",
+    "reasonConnectionMismatch": "连接与授权已不再匹配",
+    "reasonReconnect": "需要重新连接",
+    "reasonCredentialMissing": "未保存凭据",
+    "reasonCredentialRejected": "服务商拒绝了该凭据",
+    "reasonRefreshUnreachable": "无法刷新凭据",
+    "reasonProviderError": "服务商返回了错误",
+    "reasonProviderUnreachable": "无法连接服务商",
+    "reasonUpstreamToolError": "服务商工具返回了错误",
+    "reasonBrokerUnavailable": "代理服务不可用",
+    "reasonBrokerError": "代理服务出错",
     "owner": "所有者",
     "readInTesting": "只读功能测试中",
     "readOrWrite": "读取，或读取和写入",
@@ -2665,7 +2737,11 @@
     "trailError": "无法读取调用记录。",
     "viewGrant": "在 {{pod}} 中查看 {{tool}}",
     "listSeparator": "、",
-    "sentenceSeparator": ""
+    "sentenceSeparator": "",
+    "connectionSeparator": " · ",
+    "connectionSignedIn": "已登录",
+    "connectionKey": "密钥",
+    "disconnectConnectionLabel": "断开 {{label}}：{{connection}}"
   },
   "agentManage": {
     "runtime": {
@@ -2770,6 +2846,11 @@
   },
   "agentSettings": {
     "identityTitle": "身份",
+    "identityAccess": "身份与访问",
+    "keyActive": "已启用",
+    "openMemory": "打开记忆",
+    "heartbeatOff": "关闭",
+    "connection": "连接",
     "displayName": "显示名称",
     "persona": "角色设定",
     "tone": "语气",
@@ -2865,7 +2946,15 @@
     "revoke": "撤销",
     "updateError": "无法更新密钥，请重试。",
     "noPod": "此智能体没有活跃的 Pod。",
-    "missingReplacement": "未返回新密钥。"
+    "missingReplacement": "未返回新密钥。",
+    "colMessages": "消息",
+    "colBoard": "任务板",
+    "colHeartbeat": "心跳",
+    "messageWakeShort_mentions": "仅提及",
+    "messageWakeShort_human": "真人",
+    "messageWakeShort_all": "全部",
+    "turnsUsed": "{{used}} / {{cap}}次/天",
+    "turnsUsedNoCap": "{{used}}次/天 · 上限不可用"
   },
   "agentPolicy": {
     "title": "策略",

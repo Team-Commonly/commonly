@@ -20,6 +20,8 @@ export interface IHostedMcpDcrRegistration extends Document {
   current: boolean;
   retiredAt?: Date | null;
   refusedAt?: Date | null;
+  /** When the vendor was last asked whether it still knows this client (F14). */
+  askedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +39,7 @@ const HostedMcpDcrRegistrationSchema = new Schema<IHostedMcpDcrRegistration>({
   current: { type: Boolean, required: true },
   retiredAt: { type: Date, default: null },
   refusedAt: { type: Date, default: null },
+  askedAt: { type: Date, default: null },
 }, { timestamps: true, collection: 'hosted_mcp_dcr_registrations' });
 
 // Retired clients remain addressable by the rows they minted. Only one client

@@ -261,6 +261,30 @@ const installables = {
       installationId: 'install-leak-1', scope: 'user', type: 'github-app', status: 'connected', createdBy: owner, isActive: true,
       ...withConfig(integrationSecrets(s, 'INST_GITHUBAPP'), { installationId: 'install-leak-1', owner: 'octo', repo: 'demo' }),
     });
+    // A hosted entry with two of the owner's rows, an OAuth sign-in and an
+    // operator key bound to an agent: the catalog labels each row, and no ref,
+    // subject, hint or pending authorization reaches any caller.
+    // eslint-disable-next-line global-require
+    const { HOSTED_MCP_ENTRIES } = require('../../integrations/hostedMcp/entries');
+    // eslint-disable-next-line global-require
+    const { buildHostedMcpToolInstallable } = require('../../services/installable/toolInstallables');
+    await model.Installable().create(buildHostedMcpToolInstallable(HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'linear')));
+    await Integration.create({
+      scope: 'user', type: 'hosted-mcp', status: 'connected', createdBy: owner, isActive: true,
+      config: {
+        entryId: 'linear', intake: 'oauth',
+        credentialRef: s('INST_HOSTED_OAUTH_CREDENTIALREF'), refreshTokenRef: s('INST_HOSTED_OAUTH_REFRESHTOKENREF'),
+        providerSubject: s('INST_HOSTED_OAUTH_PROVIDERSUBJECT'),
+        pendingAuth: { state: s('INST_HOSTED_PENDINGAUTH_STATE'), codeVerifier: s('INST_HOSTED_PENDINGAUTH_CODEVERIFIER') },
+      },
+    });
+    await Integration.create({
+      scope: 'user', type: 'hosted-mcp', status: 'connected', createdBy: owner, isActive: true,
+      config: {
+        entryId: 'linear', agentId: String(new mongoose.Types.ObjectId()),
+        credentialRef: s('INST_HOSTED_KEY_CREDENTIALREF'), credentialHint: s('INST_HOSTED_KEY_CREDENTIALHINT'),
+      },
+    });
     return {
       sentinels: s.all,
       identities: { owner: { user: owner }, stranger: { user: stranger }, admin: { user: admin } },

@@ -140,6 +140,19 @@ describe('claim routes', () => {
     }));
   });
 
+  test('an unavailable comment lookup returns 500 without minting a claim', async () => {
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockMessageExists.mockRejectedValue(new Error('MongoServerSelectionError'));
+    const res = await request(app)
+      .post('/api/agents/runtime/messages/507f1f77bcf86cd799439011/claim')
+      .send({ podId: 'p1' });
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'claim_failed' });
+    expect(mockClaim).not.toHaveBeenCalled();
+    expect(mockTypingStart).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+
   test('missing podId → 400', async () => {
     const res = await request(app).post('/api/agents/runtime/messages/52907/claim').send({});
     expect(res.status).toBe(400);

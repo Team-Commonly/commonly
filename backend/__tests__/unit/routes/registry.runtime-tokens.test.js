@@ -445,6 +445,28 @@ describe('agent runtime tokens', () => {
     expect(agentUser.save).toHaveBeenCalled();
   });
 
+
+  it('preserves an existing digest until explicit rotation', async () => {
+    Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({
+      _id: 'pod-1', createdBy: 'user-1', members: ['user-1'],
+    }) });
+    AgentInstallation.findOne.mockResolvedValue({ agentName: 'clawd-bot', podId: 'pod-1', status: 'active' });
+    const agentUser = {
+      _id: 'agent-1', apiTokenHash: 'a'.repeat(64),
+      generateApiToken: jest.fn().mockReturnValue('cm_new'), save: jest.fn().mockResolvedValue(true),
+    };
+    AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
+    AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+    const existing = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({});
+    expect(existing.body).toMatchObject({ existing: true, token: null, requiresRotation: true });
+    expect(agentUser.generateApiToken).not.toHaveBeenCalled();
+    expect(agentUser.save).toHaveBeenCalledTimes(1);
+    const rotated = await request(app).post('/api/registry/pods/pod-1/agents/clawd-bot/user-token').send({ force: true });
+    expect(rotated.body).toMatchObject({ existing: false, token: 'cm_new' });
+    expect(agentUser.generateApiToken).toHaveBeenCalledTimes(1);
+    expect(agentUser.save).toHaveBeenCalledTimes(2);
+  });
+
   it('returns user token metadata when present', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
@@ -513,6 +535,32 @@ describe('agent runtime tokens', () => {
     expect(res.body.hasToken).toBe(true);
     expect(res.body.scopes).toEqual([]);
     expect(res.body.scopeMode).toBe('all');
+  });
+
+  it('reports a digest-only user token, which the route reads only by selecting the digest', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] }),
+    });
+    AgentInstallation.findOne.mockResolvedValue({ agentName: 'clawd-bot', podId: 'pod-1', status: 'active' });
+    // Both credential fields are select:false, so the row carries the digest
+    // only when the query asks for it.
+    let projection = '';
+    const query = {
+      select: jest.fn((fields) => { projection = String(fields); return query; }),
+      lean: jest.fn(async () => ({
+        username: 'clawd-bot',
+        ...(projection.split(/\s+/).includes('+apiTokenHash') ? { apiTokenHash: 'digest' } : {}),
+        apiTokenCreatedAt: new Date('2026-01-01T00:00:00Z'),
+        apiTokenScopes: ['agent:context:read'],
+      })),
+    };
+    User.findOne.mockReturnValue(query);
+
+    const res = await request(app).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ hasToken: true, scopes: ['agent:context:read'], scopeMode: 'scoped' });
+    expect(JSON.stringify(res.body)).not.toContain('digest');
   });
 
   it('revokes user token for an installed agent', async () => {

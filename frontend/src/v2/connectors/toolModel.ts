@@ -20,6 +20,13 @@ export interface ToolGrant {
   rootGrantId: string | null;
   createdAt: string;
   grantedBy: string | null;
+  /**
+   * The connector the server reads from the grant's tool namespace (TASK-753).
+   * It still names a grant whose catalogue entry is hidden or gone, which
+   * `entryCovers` can no longer match; null when the tools name no single
+   * known connector.
+   */
+  connector?: { id: string; label: string } | null;
 }
 
 /** `superseded` is a DERIVED read-only value the server reports for a parked
@@ -69,7 +76,18 @@ export interface ToolCatalogEntry {
   unavailableReason?: string;
   broker?: { id: string };
   tools: Array<{ name: string; description?: string; requiredWriteMode: GrantWriteMode; irreversible: boolean }>;
-  connections: Array<{ connectionId: string; owner: string; repo: string }>;
+  connections: ToolConnection[];
+}
+
+/** A hosted row also says when it was made and, for an operator key, its agent,
+ *  so two of them can be told apart. */
+export interface ToolConnection {
+  connectionId: string;
+  owner: string;
+  repo: string;
+  connectedAt?: string;
+  /** The bot User a key row is bound to; absent on the OAuth sign-in. */
+  agentId?: string;
 }
 
 export interface HiddenToolConnection {
@@ -87,7 +105,20 @@ export interface HostedMcpManualRevokeNotice {
   revokePage: string;
 }
 
-export interface PodSeat { userId: string | null; displayName?: string; name: string; internal?: boolean }
+export interface PodSeat {
+  userId: string | null;
+  displayName?: string;
+  name: string;
+  instanceId?: string;
+  internal?: boolean;
+  // Set by the pod roster: connector grants reach more than one of this seat's pods.
+  runtimeNarrowedByMultipleGrantPods?: boolean;
+  // Set by the pod roster: exactly one of this seat's several pods has a grant,
+  // so it can post only there.
+  runtimeNarrowedToOnePod?: boolean;
+  // The roster could not run its grant census, so posting status is unknown.
+  runtimeNarrowingUnavailable?: boolean;
+}
 
 
 export interface DraftGrant {

@@ -343,8 +343,8 @@ agentTokensRouter.get('/pods/:podId/agents/:name/user-token', tokenRouteLimit, a
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
     // Needs +apiToken (select:false on the field) to report hasToken correctly.
-    const agentUser = await User.findOne({ username: agentUsername, isBot: true }).select('+apiToken').lean();
-    if (!agentUser || !agentUser.apiToken) {
+    const agentUser = await User.findOne({ username: agentUsername, isBot: true }).select('+apiToken +apiTokenHash').lean();
+    if (!agentUser || !(agentUser.apiTokenHash || agentUser.apiToken)) {
       return res.json({ hasToken: false, scopes: [], scopeMode: 'none' });
     }
     const normalizedScopesArr = normalizeScopes(agentUser.apiTokenScopes || []);
@@ -369,7 +369,7 @@ agentTokensRouter.get('/pods/:podId/agents/:name/user-token', tokenRouteLimit, a
 agentTokensRouter.post('/pods/:podId/agents/:name/user-token', tokenRouteLimit, auth, async (req: any, res: any) => {
   try {
     const { podId, name } = req.params;
-    const { scopes, instanceId, displayName } = req.body || {};
+    const { scopes, instanceId, displayName, force } = req.body || {};
     const userId = getUserId(req);
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -408,8 +408,10 @@ agentTokensRouter.post('/pods/:podId/agents/:name/user-token', tokenRouteLimit, 
     }
 
     // The user token signs in as the agent's User in every pod and room that
-    // User belongs to, and an existing token is returned as-is, so issuing it
-    // takes the same sole-installer rule as the runtime-token routes.
+    // User belongs to. Every call takes the same sole-installer rule as the
+    // runtime-token routes: one without `force` still mints when no token
+    // exists, rewrites the scopes of one that does, and returns a legacy
+    // token that was never hashed.
     const refusal = await credentialRefusal(userId, installation.agentName || name, normalizedInstanceId);
     if (refusal) return res.status(403).json(refusal);
 
@@ -419,6 +421,7 @@ agentTokensRouter.post('/pods/:podId/agents/:name/user-token', tokenRouteLimit, 
       displayName: displayName || installation.displayName,
       podId,
       scopes,
+      force: force === true,
     });
     return res.json({
       ...issued,

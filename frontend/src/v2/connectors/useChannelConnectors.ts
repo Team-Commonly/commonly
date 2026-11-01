@@ -50,6 +50,8 @@ export const useChannelConnectors = () => {
   // empty array is the only confirmed zero-pod state, so it alone may replace
   // the existing picker with the create-a-pod path.
   const [pods, setPods] = useState<V2Pod[] | null>(null);
+  // The pod list could not be read, so nothing downstream can vouch for it.
+  const [podListFailed, setPodListFailed] = useState(false);
   const [newPodId, setNewPodId] = useState('');
   const [addingType, setAddingType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,6 +69,13 @@ export const useChannelConnectors = () => {
   const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
   const [slackLeadChoices, setSlackLeadChoices] = useState<Record<string, string>>({});
   const [hostedMcpCallbackError, setHostedMcpCallbackError] = useState<string | null>(null);
+  // A refused connect whose grant the server could not withdraw. `pending` is
+  // what the callback URL claimed; `hostedMcpCallbackRevoke` is set only once
+  // the catalogue confirms it.
+  const [pendingCallbackRevoke, setPendingCallbackRevoke] = useState<{ entryId: string; revokeAt: string } | null>(null);
+  const [hostedMcpCallbackRevoke, setHostedMcpCallbackRevoke] = useState<{
+    entryId: string; provider: string; revokePage: string;
+  } | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const podPickerRef = useRef<HTMLSelectElement | null>(null);
   // Ages must advance while the page sits open, and the source must be re-read
@@ -135,8 +144,13 @@ export const useChannelConnectors = () => {
     const query = new URLSearchParams(window.location.search);
     if (query.get('hostedMcp') !== 'error') return;
     setHostedMcpCallbackError(hostedMcpErrorNotice(t, query.get('code')));
+    const entryId = query.get('entryId');
+    const revokeAt = query.get('revokeAt');
+    if (entryId && revokeAt) setPendingCallbackRevoke({ entryId, revokeAt });
     query.delete('hostedMcp');
     query.delete('code');
+    query.delete('entryId');
+    query.delete('revokeAt');
     query.delete('extraScope');
     query.delete('error');
     query.delete('error_description');
@@ -170,6 +184,18 @@ export const useChannelConnectors = () => {
       `${window.location.pathname}${remaining ? `?${remaining}` : ''}${window.location.hash}`,
     );
   }, [load, t]);
+
+  // A refused connect has no row to read, so the catalogue entry is the
+  // authority: the page is linked only when it is the one the entry names.
+  useEffect(() => {
+    if (!pendingCallbackRevoke || loading || hostedCatalog === null) return;
+    const entry = hostedCatalog.find((candidate) => candidate.entryId === pendingCallbackRevoke.entryId);
+    const { revokeAt } = pendingCallbackRevoke;
+    if (entry?.label && entry.revokePage === revokeAt && safeProviderRevokePage(revokeAt)) {
+      setHostedMcpCallbackRevoke({ entryId: pendingCallbackRevoke.entryId, provider: entry.label, revokePage: revokeAt });
+    }
+    setPendingCallbackRevoke(null);
+  }, [hostedCatalog, loading, pendingCallbackRevoke]);
 
   // The hosted-MCP callback says when a previous provider authorization may
   // need manual attention. Resolve its page from the authenticated connection
@@ -240,14 +266,19 @@ export const useChannelConnectors = () => {
         // list — built from that same endpoint — offers exactly what those verbs
         // accept (TASK-171).
         const data = await api.get<V2Pod[]>('/api/pods');
-        const eligible = Array.isArray(data) ? data : [];
+        const confirmed = Array.isArray(data);
+        const eligible = confirmed ? data : [];
         if (!cancelled) {
-          setPods(eligible);
+          // A non-array body is not a confirmed pod list either: leave `pods`
+          // unread so the zero-pod CTA never shows for it.
+          setPods(confirmed ? eligible : null);
+          setPodListFailed(!confirmed);
           setNewPodId((current) => current || defaultPodForChannel(eligible));
         }
       } catch {
         // Keep the normal picker visible when membership cannot be read. A
         // zero-pod CTA requires a confirmed `[]`, never an unavailable read.
+        if (!cancelled) setPodListFailed(true);
       }
     })();
     return () => { cancelled = true; };
@@ -977,11 +1008,13 @@ export const useChannelConnectors = () => {
     setSlackLeadChoices,
     hostedMcpCallbackError,
     setHostedMcpCallbackError,
+    hostedMcpCallbackRevoke,
     pollRef,
     podPickerRef,
     now,
     adding,
     podList,
+    podListFailed,
     gateModes,
     load,
     hasPending,

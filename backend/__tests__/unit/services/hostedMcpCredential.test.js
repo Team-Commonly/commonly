@@ -275,6 +275,22 @@ describe('the fast path', () => {
     expect(body.get('refresh_token')).toBe('old-refresh');
   });
 
+  test('a refresh carries a restated scope string and fails closed on any other shape', async () => {
+    const metadata = {
+      issuer: ENTRY.issuer,
+      authorization_endpoint: `${ENTRY.issuer}/authorize`,
+      token_endpoint: `${ENTRY.issuer}/token`,
+    };
+    const refreshWith = (scope) => refreshTokenAtVendor({ entry: ENTRY, clientId: 'c1', refreshToken: 'old-refresh' }, jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => metadata })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ access_token: 'new-access', ...scope }) }));
+    expect((await refreshWith({ scope: 'read' })).scope).toBe('read');
+    // Present but unusable reads as no scope granted; only an omitted one keeps the grant.
+    expect((await refreshWith({ scope: ['read'] })).scope).toBe('');
+    expect((await refreshWith({ scope: null })).scope).toBe('');
+    expect((await refreshWith({})).scope).toBeUndefined();
+  });
+
   test('a refresh refused with HTTP 200 and an error body ends the connection, not a retry', async () => {
     // GitHub answers a revoked or expired refresh token with 200 {"error":"bad_refresh_token"}.
     const metadata = {
@@ -540,6 +556,40 @@ describe('the winner of the fence', () => {
     expect(h.revoke).not.toHaveBeenCalled();
     expect(h.secrets.get(ACCESS_REF)).toBe('new-access');
     expect(h.secrets.get(REFRESH_REF)).toBe('new-refresh');
+  });
+
+  test('a refresh that narrows the scope records it with the pair', async () => {
+    const row = stale({ grantedScope: 'read write openid' });
+    const h = harness({ row, refreshResult: { accessToken: 'new-access', expiresIn: 3600, scope: 'read,openid' } });
+    await credentialFor(row, h.deps);
+
+    const fields = h.commit.mock.calls[0][2];
+    expect(fields['config.grantedScope']).toBe('read openid');
+    expect(undeclaredPaths(DeployedIntegration.schema, Object.keys(fields))).toEqual([]);
+  });
+
+  test('a refresh never widens the scope the connection was granted', async () => {
+    const row = stale({ grantedScope: 'read' });
+    const h = harness({ row, refreshResult: { accessToken: 'new-access', expiresIn: 3600, scope: 'read write admin' } });
+    await credentialFor(row, h.deps);
+
+    expect(h.commit.mock.calls[0][2]['config.grantedScope']).toBe('read');
+  });
+
+  test('a refresh with an empty scope records no scope at all', async () => {
+    const row = stale({ grantedScope: 'read write openid' });
+    const h = harness({ row, refreshResult: { accessToken: 'new-access', expiresIn: 3600, scope: '' } });
+    await credentialFor(row, h.deps);
+
+    expect(h.commit.mock.calls[0][2]['config.grantedScope']).toBe('');
+  });
+
+  test('a refresh that restates no scope leaves the grant as it was', async () => {
+    const row = stale({ grantedScope: 'read write' });
+    const h = harness({ row });
+    await credentialFor(row, h.deps);
+
+    expect(h.commit.mock.calls[0][2]).not.toHaveProperty('config.grantedScope');
   });
 
   test('a vendor that omits expires_in commits no lifetime rather than a guessed one', async () => {

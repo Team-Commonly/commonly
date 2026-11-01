@@ -81,8 +81,9 @@ export const findGreeters = (
  * its own handle answers from its token and gets it wrong, so the cue states
  * it rather than delegating the guess.
  *
- * Mirrors buildMentionMap's resolution order: displayName slug first (what
- * the UI renders and therefore what a person copies), instanceId second.
+ * The displayName slug first (what the UI renders and therefore what a person
+ * copies), instanceId second. The cue names it only while it routes to this
+ * install: see welcomeHandle.
  */
 const slugifyHandle = (value = ''): string => value
   .toString().trim().toLowerCase()
@@ -96,6 +97,23 @@ export const mentionHandleFor = (installation: Record<string, any>): string => {
   const instanceId = String(installation?.instanceId || '');
   if (instanceId && instanceId !== 'default') return slugifyHandle(instanceId);
   return slugifyHandle(String(installation?.agentName || ''));
+};
+
+// Two installs can share a display name, and only one of them owns its slug.
+// The cue then names the handle that does route to this greeter.
+const welcomeHandle = (
+  map: Map<string, { agentName: string; instanceId?: string }> | null,
+  installation: Record<string, any>,
+): string => {
+  const preferred = mentionHandleFor(installation);
+  if (!map) return preferred;
+  // Lazy: agentMentionService requires this module.
+  // eslint-disable-next-line global-require
+  const { routedMentionHandle } = require('./agentMentionService');
+  return routedMentionHandle(map, {
+    agentName: String(installation?.agentName || ''),
+    instanceId: String(installation?.instanceId || 'default'),
+  }, { prefer: [preferred] }) || preferred;
 };
 
 const WELCOME_CUE = (username: string | undefined, handle: string): string => [
@@ -209,6 +227,15 @@ export async function maybeFireWelcomeWake({
     return { claimed: true, woke: [], reason: 'no-greeter' };
   }
 
+  // Read once for every greeter. Without it the cue falls back to the slug.
+  let mentionMap: Map<string, { agentName: string; instanceId?: string }> | null = null;
+  try {
+    // eslint-disable-next-line global-require
+    mentionMap = await require('./agentMentionService').loadPodMentionMap(safePodId);
+  } catch (error) {
+    console.warn('[welcome-wake] pod mention map unavailable:', (error as Error).message);
+  }
+
   const woke: string[] = [];
   await Promise.all(greeters.map(async (installation) => {
     const agentName = String(installation?.agentName || '').toLowerCase();
@@ -234,7 +261,7 @@ export async function maybeFireWelcomeWake({
           // The cue rides inline in content, not in metadata: models
           // deprioritize structured fields and act on the narrative frame.
           // Same rule as the DM cue (ADR-012 §9) and the pod-context cue.
-          content: `${WELCOME_CUE(username, mentionHandleFor(installation))}\n${String(content || '').trim()}`,
+          content: `${WELCOME_CUE(username, welcomeHandle(mentionMap, installation))}\n${String(content || '').trim()}`,
           userId: String(safeUserId),
           username,
           mentions: [],

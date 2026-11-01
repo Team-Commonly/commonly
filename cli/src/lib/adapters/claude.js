@@ -6,6 +6,7 @@ import {
 import {
   descendantsOf, killProcessTree, readProcessTable, spawnInOwnGroup, wantsOwnProcessGroup,
 } from '@commonlyai/seats/process-group';
+import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/turn-processes';
 /**
  * claude adapter — wraps the local `claude` CLI as a Commonly agent.
  *
@@ -92,11 +93,13 @@ import { deliverSeatCredential, withholdRuntimeCredential } from '../mcp-credent
 import {
   prepareMcpSpawn, PUBLIC_MCP_UNAVAILABLE_CODE, publicMcpUnavailableError, selectedMcpVersionDir,
 } from '../mcp-home.js';
-import { buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
+import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
+import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -113,13 +116,14 @@ const buildPrompt = buildMemoryPreamble;
 
 // The working habits a private claude seat is taught on a fresh session
 // (TASK-545). Parallel reads live here because only this CLI has a subagent
-// tool; codex is passed row slicing alone. A public seat is passed neither: its
-// argv allows Read and the MCP under dontAsk, so it has no subagent to spawn,
-// and it answers strangers rather than working board rows.
+// tool; codex is passed row slicing and the background-process cue. A public
+// seat is passed none: its argv allows Read and the MCP under dontAsk, so it
+// has no subagent to spawn or shell to background from, and it answers
+// strangers rather than working board rows.
 const PARALLEL_READS_CUE = 'Parallel reads: when a row needs several files or sources read, '
   + 'use the Agent tool. Spawn read-only subagents in parallel, brief each one with the files '
   + 'to read and the question to answer, and keep only their conclusions.';
-const WORK_CUES = [PARALLEL_READS_CUE, ROW_SLICING_CUE];
+const WORK_CUES = [PARALLEL_READS_CUE, ROW_SLICING_CUE, BACKGROUND_PROCESS_CUE];
 const RUNTIME_CREDENTIAL_PLACEHOLDER = '${COMMONLY_AGENT_TOKEN}';
 
 const QUOTE_SHELL_ARGUMENT = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
@@ -533,6 +537,87 @@ export const claudeResultText = (stdout, { credentials = [] } = {}) => {
     .trim();
 };
 
+// TASK-256: what a public seat's own stream says about its Commonly MCP server.
+// Claude Code reports each server's state in the init event (`connected` or
+// `failed`), and a failed tool call as a `tool_result` with `is_error: true`
+// whose content is the server's text, the shipped MCP's `{status, body,
+// message}` JSON (both measured on Claude Code 2.1.314; `-p` waits for a slow
+// server, so init reports it connected rather than pending). Ready is a positive
+// witness: `connected` in init, or `pending` followed by a Commonly call that
+// returned, since a server may finish starting during the turn. A stream with no
+// init event, or with a Commonly server in any other state, never showed the
+// server working, so the turn is withheld. A failed
+// Commonly call withholds it unless `isAnswerableToolError` names an answer the
+// person can be given (the predicate the OpenCode adapter uses). Only servers
+// that run the shipped Commonly MCP count. Returns the failure, or null.
+const toolResultText = (content) => {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content.filter((part) => part?.type === 'text').map((part) => String(part.text ?? '')).join('');
+};
+
+export const claudePublicMcpWitness = (stdout, mcpServers) => {
+  const names = (Array.isArray(mcpServers) ? mcpServers : [])
+    .filter((server) => server?.name && isShippedCommonlyMcpCommand(server.command))
+    .map((server) => String(server.name));
+  if (!names.length) return null;
+  const events = String(stdout || '').split('\n').map(parseEvent).filter(Boolean);
+  const init = events.find((event) => event.type === 'system' && event.subtype === 'init');
+  const servers = Array.isArray(init?.mcp_servers) ? init.mcp_servers : [];
+  const toolNames = new Map();
+  for (const event of events) {
+    if (event.type !== 'assistant') continue;
+    for (const block of event.message?.content || []) {
+      if (block?.type === 'tool_use' && block.id) toolNames.set(block.id, String(block.name || ''));
+    }
+  }
+  const results = events
+    .filter((event) => event.type === 'user' && Array.isArray(event.message?.content))
+    .flatMap((event) => event.message.content)
+    .filter((block) => block?.type === 'tool_result')
+    .map((block) => ({ block, tool: toolNames.get(block.tool_use_id) || '' }));
+  // Init names a server as declared; tool names carry it with every character
+  // outside [A-Za-z0-9_-] turned to `_` (`commonly.me` → `mcp__commonly_me__`,
+  // measured on 2.1.314).
+  const prefixOf = (name) => `mcp__${name.replace(/[^A-Za-z0-9_-]/g, '_')}__`;
+  for (const name of names) {
+    const status = servers.find((server) => server?.name === name)?.status;
+    const returned = status === 'pending'
+      && results.some(({ block, tool }) => block.is_error !== true && tool.startsWith(prefixOf(name)));
+    if (status !== 'connected' && !returned) {
+      return { code: PUBLIC_MCP_NOT_READY_CODE, tool: name, error: init ? `status ${status || 'absent'}` : 'no init event' };
+    }
+  }
+  const prefixes = names.map(prefixOf);
+  for (const { block, tool } of results) {
+    if (block.is_error !== true || !prefixes.some((prefix) => tool.startsWith(prefix))) continue;
+    const error = toolResultText(block.content);
+    if (!isAnswerableToolError(error)) return { code: PUBLIC_TOOL_FAILED_CODE, tool, error };
+  }
+  return null;
+};
+
+const publicWitnessError = ({ code, tool, error }) => {
+  const reason = String(error).replace(/\s+/g, ' ').slice(0, 160) || '(empty error)';
+  const what = code === PUBLIC_MCP_NOT_READY_CODE
+    ? `Commonly MCP server ${tool} was not shown connected`
+    : `Commonly tool ${tool} failed in a way the model must not narrate`;
+  const failure = new Error(
+    `public seat withheld this turn's reply: ${what} (${reason}), so nothing was posted and the event stays unacked for retry`,
+  );
+  failure.code = code;
+  return failure;
+};
+
+// The reply a turn posts. A public seat's turn is witnessed first (TASK-256).
+const turnReply = (stdout, { credentials, publicMcp }) => {
+  if (publicMcp) {
+    const failure = claudePublicMcpWitness(stdout, publicMcp);
+    if (failure) throw publicWitnessError(failure);
+  }
+  return claudeResultText(stdout, { credentials });
+};
+
 // The failure tail for a non-zero exit. Stream events are mostly system init
 // and status lines, which would push the terminal error past the 2000-char cut,
 // so keep the result text, or the lines that are not system or stream events.
@@ -552,11 +637,14 @@ export const claudeFailureTail = (stdout) => {
 const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
-  processTable = readProcessTable, survivorIo, modelStream = true,
+  processTable = readProcessTable, survivorIo, modelStream = true, turnReap = turnReapEnabled(),
 }) => new Promise((resolve, reject) => {
+  // Every process the turn starts inherits this marker however it detaches,
+  // so what it leaves running is stopped once the turn has closed.
+  const turn = markTurn(env ?? process.env, { enabled: turnReap });
   const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
-    env,
+    env: turn.env,
     stdio: ['ignore', 'pipe', 'pipe'],
   }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
@@ -593,6 +681,13 @@ const runClaude = ({
       const table = Number.isInteger(proc.pid) ? processTable() : null;
       if (table) stallSnapshot = descendantsOf(table, proc.pid);
       killProcessTree(proc, 'SIGTERM', treeIo(() => table));
+      // A stopped process holds a SIGTERM it handles (claude does) until it is
+      // continued, so a turn frozen with SIGSTOP sat out the whole grace below:
+      // 191 s on a 180 s window (rivet, 2026-11-01). SIGCONT lets it act on the
+      // SIGTERM now. A process that is not stopped is unaffected unless it
+      // handles SIGCONT (a job-control shell does); the SIGKILL below still
+      // lands at the grace either way.
+      killProcessTree(proc, 'SIGCONT', treeIo(() => table));
       // A process parked in a system call may not act on SIGTERM. SIGKILL the
       // child, its group when it leads one, and its descendants.
       stallKill = setTimeout(() => {
@@ -621,6 +716,9 @@ const runClaude = ({
     clearTimeout(timer);
     clearTimeout(stallKill);
     watchdog.stop();
+    const reaped = describeTurnReap(turn.reap(proc));
+    // eslint-disable-next-line no-console
+    if (reaped) console.warn(`[claude] ${reaped}`);
     if (stalled) {
       sweepStallSurvivors();
       return reject(stalled);
@@ -1191,6 +1289,10 @@ export default {
     // undefined and '' as absence itself; it does not need a guard, it needs
     // the value.
     const publicTrust = isConfinedTrust(ctx.environment?.sandbox?.trust);
+    // Only a stranger-facing seat is witnessed (TASK-256). A workspace seat is
+    // confined too, but it answers its own team, and an outage it narrates
+    // there is a signal, not a leak.
+    const witnessedMcp = ctx.environment?.sandbox?.trust === 'public' ? ctx.environment?.mcp : null;
     const workCues = publicTrust ? [] : WORK_CUES;
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !isResume,
@@ -1324,18 +1426,23 @@ export default {
         stallKillGraceMs: ctx._stallKillGraceMs,
         processTable: ctx._processTable,
         survivorIo: ctx._survivorIo,
+        turnReap: ctx._turnReap,
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
       const contextTokens = claudeContextTokens({
         cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
       });
-      return { text: claudeResultText(stdout, { credentials: spawnCredentials(spawnCtx) }), newSessionId: sessionId, contextTokens };
+      return {
+        text: turnReply(stdout, { credentials: spawnCredentials(spawnCtx), publicMcp: witnessedMcp }),
+        newSessionId: sessionId,
+        contextTokens,
+      };
     } catch (err) {
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
       // fresh-session retry below (#2247).
-      if (err?.code === PUBLIC_MCP_UNAVAILABLE_CODE) throw err;
+      if ([PUBLIC_MCP_UNAVAILABLE_CODE, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE].includes(err?.code)) throw err;
       // Self-heal against a corrupted session store. If the persisted id is
       // already in use (or claude has forgotten about it), discard it and
       // restart the turn with a fresh UUID. Without this, a single bad
@@ -1388,12 +1495,17 @@ export default {
           stallKillGraceMs: ctx._stallKillGraceMs,
           processTable: ctx._processTable,
           survivorIo: ctx._survivorIo,
+          turnReap: ctx._turnReap,
         });
         const contextTokens = claudeContextTokens({
           cwd: physicalPath(ctx.cwd), sessionId: freshId,
           configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
         });
-        return { text: claudeResultText(stdout, { credentials: spawnCredentials(retryCtx) }), newSessionId: freshId, contextTokens };
+        return {
+          text: turnReply(stdout, { credentials: spawnCredentials(retryCtx), publicMcp: witnessedMcp }),
+          newSessionId: freshId,
+          contextTokens,
+        };
       }
       throw err;
     } finally {

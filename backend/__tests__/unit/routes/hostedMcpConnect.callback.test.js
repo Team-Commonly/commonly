@@ -88,7 +88,7 @@ const intake = require('../../../services/hostedMcpIntakeService');
 const dcr = require('../../../services/hostedMcpDcrRegistry');
 
 const { HOSTED_MCP_ENTRIES: SHIPPED_ENTRIES } = jest.requireActual('../../../integrations/hostedMcp/entries');
-const LINEAR_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-01.json');
+const LINEAR_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-19.json');
 const ATLASSIAN_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_SCOPE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const GOOGLE_CALENDAR_CAPTURE = require('../../fixtures/hostedMcp/google-calendar-tools-list-2026-10-01.json');
@@ -160,6 +160,9 @@ beforeEach(() => {
     issuer: 'https://mcp.linear.app',
     authorization_endpoint: 'https://mcp.linear.app/authorize',
     token_endpoint: TOKEN_ENDPOINT,
+    // A revoke goes only to the endpoint the issuer advertises (TASK-252), so the
+    // stub advertises the one the revoking arms pin, as the real vendors do.
+    revocation_endpoint: 'https://mcp.linear.app/revoke',
   });
   connectorSecrets.put.mockResolvedValueOnce('ref-access').mockResolvedValueOnce('ref-refresh');
   global.fetch = jest.fn().mockResolvedValue(okTokenResponse);
@@ -246,7 +249,11 @@ describe('hosted-mcp connect: callback', () => {
           'config.authGeneration': { $exists: false },
           'config.pendingAuth': { $exists: false },
         },
-        { $set: { status: 'error', errorMessage: 'Connection could not be completed. Try again.', errorMessageUserFacing: true } },
+        {
+          $set: { status: 'error', errorMessage: 'Connection could not be completed. Try again.', errorMessageUserFacing: true },
+          // The old token's provider-revoked mark goes before new material does (F28).
+          $unset: { 'config.providerRevokedAt': '' },
+        },
         { new: true },
       ]);
     } finally {
@@ -339,7 +346,7 @@ describe('hosted-mcp connect: callback', () => {
   });
   it('the captured Linear, Atlassian and Airtable grants match their requested scope sets', () => {
     const captures = [
-      [LINEAR_SCOPE_CAPTURE, 'scope'],
+      [LINEAR_SCOPE_CAPTURE, 'grantedScope'],
       [ATLASSIAN_SCOPE_CAPTURE, 'grantedScope'],
       [AIRTABLE_SCOPE_CAPTURE, 'grantedScope'],
     ];
@@ -445,6 +452,79 @@ describe('hosted-mcp connect: callback', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  // TASK-344: a refused grant is never stored, so when the vendor revoke can't
+  // be confirmed the grant is still live at the vendor and only the person can
+  // remove it there. The redirect names the entry's own page; it says nothing
+  // when the revoke went through (the arm above pins that exact shape).
+  it('a refused overbroad grant whose vendor revoke fails names the vendor revoke page', async () => {
+    FIXTURE_ENTRY.revoke.endpoint = 'https://mcp.linear.app/revoke';
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_token: 'access-overbroad', refresh_token: 'refresh-overbroad', scope: 'read openid write' }),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) });
+
+    try {
+      const res = await callback();
+
+      expect(outcome(res)).toEqual({
+        status: 302,
+        hostedMcp: 'error',
+        code: 'unrequested_scope',
+        entryId: 'linear',
+        revokeAt: FIXTURE_ENTRY.revoke.page,
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(connectorSecrets.put).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('a refused overbroad grant on an entry with no revoke endpoint names the vendor revoke page', async () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ access_token: 'access-overbroad', refresh_token: 'refresh-overbroad', scope: 'read openid write' }),
+    });
+
+    try {
+      const res = await callback();
+
+      expect(outcome(res)).toEqual({
+        status: 302,
+        hostedMcp: 'error',
+        code: 'unrequested_scope',
+        entryId: 'linear',
+        revokeAt: FIXTURE_ENTRY.revoke.page,
+      });
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(connectorSecrets.put).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('an unreadable scope whose grant cannot be revoked names the vendor revoke page', async () => {
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ access_token: 'access-1', refresh_token: 'refresh-1', scope: ['read'] }),
+    });
+
+    const res = await callback();
+
+    expect(outcome(res)).toEqual({
+      status: 302,
+      hostedMcp: 'error',
+      code: 'exchange_invalid_scope',
+      entryId: 'linear',
+      revokeAt: FIXTURE_ENTRY.revoke.page,
+    });
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
   });
 
   it('accepts the exact requested scope set regardless of order or comma separators', async () => {
