@@ -2,7 +2,12 @@ name: Tests
 
 on:
   push:
-    branches: [ v1.0.x ]
+    # main added (tests-slim fast lane): the heavy suites skip on an unrelated
+    # pull_request, but still run on merge_group (so an inter-PR conflict between
+    # two queued PRs is caught in the queue, not as red-on-main — #3186) and here
+    # post-merge as a safety net, with the nightly schedule. v1.0.x stays for
+    # release-branch coverage.
+    branches: [ v1.0.x, main ]
   # No branches filter on pull_request: stacked PRs (base = another feature
   # branch) previously got ZERO test runs — every number on them was
   # single-sourced to the author's local sweep, and the 2026-08-22 threading
@@ -61,6 +66,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which packages a pull_request touches — gates the heavy suites below so a PR
+  # runs only the matrices its changes need (tests-slim fast lane). On push and
+  # schedule the heavy suites run regardless (see their if:), so this is a no-op
+  # there and the outputs stay false.
+  changes:
+    name: Changed packages
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      chart: ${{ steps.filter.outputs.chart }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        run: |
+          backend=false; frontend=false; chart=false
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            files=$(git diff --no-renames --name-only "$base"...HEAD 2>/dev/null || git diff --no-renames --name-only "$base" HEAD)
+            printf '%s\n' "$files"
+            printf '%s\n' "$files" | grep -qE '^(backend/|cli/|packages/|package(-lock)?\.json)' && backend=true
+            printf '%s\n' "$files" | grep -qE '^(frontend/|backend/|README\.md$|docs/assets/|e2e/|docs/adr/|docs/cli/|docs-site/|cli/src/commands/login\.js$|commonly-mcp/src/tools\.js$)' && frontend=true
+            printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|scripts/verify-backend-worker-chart\.sh$|scripts/monitoring/apply-alerting\.py$|docs/runbooks/alerting\.md$|package(-lock)?\.json)' && chart=true
+            # A change to this workflow runs the full suite as a self-test, so a
+            # PR that edits the test pipeline proves every heavy leg still works.
+            if printf '%s\n' "$files" | grep -qE '^\.github/workflows/tests\.yml$'; then
+              backend=true; frontend=true; chart=true
+            fi
+          fi
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "chart=$chart"
+          } >> "$GITHUB_OUTPUT"
+      # Guard the filter regexes: the test reads the three patterns out of this
+      # file and asserts path classification, so a reverted alternative (which
+      # would silently skip a suite for a package it should test) fails CI.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Filter regex regression test
+        run: node --test scripts/changes-filter.test.mjs
+
   # Heavy jobs (backend, frontend, service tests) run on Latchkey runners on
   # merge-queue runs when vars.LATCHKEY_HEAVY is 'on': those runners don't
   # count against the org's 20-concurrent-job cap that made the queue wait
@@ -175,8 +225,11 @@ jobs:
         shard: [1, 2, 3]
     # Routed by latchkey-route (backend on medium, the rest on small; see
     # the route job). Skipped routing leaves the output empty: GitHub-hosted.
-    needs: latchkey-route
-    if: ${{ !cancelled() }}
+    needs: [latchkey-route, changes]
+    # tests-slim fast lane: skipped only on an unrelated PR. Runs on merge_group
+    # (queue catches inter-PR conflicts), post-merge (push:main), nightly, and on
+    # a PR only when backend/cli/packages/deps changed.
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
     runs-on: ${{ needs.latchkey-route.outputs.backend || 'ubuntu-latest' }}
     env:
       JWT_SECRET: test-jwt-secret
@@ -225,8 +278,10 @@ jobs:
   frontend-tests:
     name: Frontend tests
     # Routed by latchkey-route, as backend-tests.
-    needs: latchkey-route
-    if: ${{ !cancelled() }}
+    needs: [latchkey-route, changes]
+    # tests-slim fast lane: post-merge + nightly, and on a PR only when frontend or
+    # backend changed (the frontend typecheck follows imports into backend).
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && needs.changes.outputs.frontend == 'true')) }}
     runs-on: ${{ needs.latchkey-route.outputs.frontend || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
@@ -305,7 +360,7 @@ jobs:
     name: Test & Coverage
     if: always()
     # latchkey-probe is left out on purpose: see the comment above it.
-    needs: [latchkey-route, latchkey-backstop, backend-tests, backend-checks, frontend-tests, tool-tests, service-test, chart-lint]
+    needs: [changes, latchkey-route, latchkey-backstop, backend-tests, backend-checks, frontend-tests, tool-tests, service-test, chart-lint]
     runs-on: ubuntu-latest
     env:
       NEEDS_JSON: ${{ toJSON(needs) }}
@@ -318,12 +373,20 @@ jobs:
             <(printf '%s\n' "$NEEDS_JSON" | jq -r 'keys[]' | sort)
       - name: Verify every check passed
         run: |
-          # Suite jobs run unconditionally; a skipped result is a failed gate.
-          # Only the Latchkey routing jobs may be skipped (off on PR runs).
-          # Revisit this predicate if a later PR adds path-based job skipping.
+          # Light legs (changes, backend-checks, tool-tests) must succeed. Heavy
+          # legs (backend/frontend/service/chart) may be SKIPPED — they run
+          # post-merge (push:main) + nightly, and on a PR only for the touched
+          # package (tests-slim fast lane). Latchkey routing jobs may be skipped too
+          # (off on PR runs). A failure or cancellation of any leg fails the gate.
           echo "$NEEDS_JSON" | jq -e '
-            to_entries | all(.value.result == "success"
-              or ((.key | startswith("latchkey-")) and .value.result == "skipped"))
+            (["backend-tests","frontend-tests","service-test","chart-lint"]) as $heavy
+            | to_entries
+            | all(
+                .key as $k | .value.result as $r
+                | $r == "success"
+                  or ($r == "skipped"
+                      and (($k | startswith("latchkey-")) or ($heavy | index($k) != null)))
+              )
           '
 
   service-test:
@@ -333,8 +396,10 @@ jobs:
       matrix:
         shard: [1, 2]
     # Routed by latchkey-route, as backend-tests.
-    needs: latchkey-route
-    if: ${{ !cancelled() }}
+    needs: [latchkey-route, changes]
+    # tests-slim fast lane: post-merge + nightly, and on a PR only when backend/cli
+    # changed (these are the real-DB Tier-1 integration tests).
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
     runs-on: ${{ needs.latchkey-route.outputs.service || 'ubuntu-latest' }}
 
     services:
@@ -404,6 +469,9 @@ jobs:
 
   chart-lint:
     name: Chart Lint (Tier 1.5)
+    needs: changes
+    # tests-slim fast lane: post-merge + nightly, and on a PR only when charts/k8s changed.
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && needs.changes.outputs.chart == 'true')) }}
     runs-on: ubuntu-latest
 
     env:

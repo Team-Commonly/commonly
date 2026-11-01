@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { CardContext, TaskView, TraceView } from '../cardViews';
+import { CardContext, TaskView, TraceView, fetchedLabel } from '../cardViews';
 const podId = '111111111111111111111111';
 const runId = '012345678901234567890123';
 const mockGet = jest.fn();
@@ -66,4 +66,11 @@ test('trace duration rounds across a minute boundary without 60 seconds', async 
   show(<TraceView limit={1} />);
   expect(await screen.findByText('run · 0 calls · 1m 0s')).toBeInTheDocument();
   expect(screen.queryByText(/0m 60s/)).not.toBeInTheDocument();
+});
+
+test.each([
+  [-5000, 'fetched just now'], [59_000, 'fetched just now'], [2 * 60_000, 'fetched 2 min ago'],
+  [59 * 60_000, 'fetched 59 min ago'], [3 * 3600_000, 'fetched 3 h ago'], [2 * 86400_000, 'fetched 2 d ago'],
+])('Source relative time for %d ms is "%s"', (ms, label) => {
+  expect(fetchedLabel(ms)).toBe(label);
 });

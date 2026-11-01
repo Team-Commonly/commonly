@@ -376,6 +376,16 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
+  // TASK-255: a tool of this same entry that the entry does not pin.
+  test('a hosted grant cannot name a tool its entry does not pin', async () => {
+    Integration.findById.mockResolvedValue(hostedRow());
+    const res = await withCatalog([ENTRY], () => hostedMint({ tools: ['linear.delete_issue'], writeMode: 'write-with-confirm' }));
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_tools' });
+    expect(res.body.message).toMatch(/linear\.delete_issue/);
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
   test('write is refused on a hosted row, and write-with-confirm is not', async () => {
     Integration.findById.mockResolvedValue(hostedRow());
     const refused = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'write' }));
@@ -488,5 +498,55 @@ describe('task-bound mint', () => {
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('task_closed');
     expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+});
+
+/**
+ * TASK-330: an operator-key row is one agent's bearer, so its grant may name
+ * only that agent, and only alone. The helper has its own arms; these run the
+ * mint, so the test goes red if the grants.ts call is removed.
+ */
+describe('POST /api/grants on an operator-key hosted connection', () => {
+  const KEY_ENTRY = { ...ENTRY, id: 'latchkey', title: 'Latchkey', credentialMode: 'operator_key' };
+  const KEY_ID = 'eeeeeeeeeeeeeeeeeeeeee02';
+  const keyRow = (config = {}) => ({
+    _id: KEY_ID, type: 'hosted-mcp', status: 'connected', createdBy: OWNER,
+    config: { entryId: 'latchkey', agentId: SEAT, credentialRef: 'secret-ref-key', ...config },
+  });
+  const keyMint = (body = {}) => mint({ connectionId: KEY_ID, tools: ['latchkey.list_issues'], ...body });
+
+  beforeEach(() => {
+    Integration.findById.mockResolvedValue(keyRow());
+  });
+
+  test('an omitted audience is refused, not defaulted to every pod member', async () => {
+    const res = await withCatalog([KEY_ENTRY], () => keyMint());
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_audience' });
+    expect(res.body.message).toMatch(/omitted audience/);
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
+  test('an audience naming another agent is refused', async () => {
+    const res = await withCatalog([KEY_ENTRY], () => keyMint({ audience: [OWNER] }));
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid_audience', message: `audience must be exactly [${SEAT}]` });
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
+  test('an audience of the bound agent plus another member is refused', async () => {
+    const res = await withCatalog([KEY_ENTRY], () => keyMint({ audience: [SEAT, OWNER] }));
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_audience' });
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
+  test('an audience of exactly the bound agent passes the audience check', async () => {
+    const res = await withCatalog([KEY_ENTRY], () => keyMint({ audience: [SEAT] }));
+    // The mint then reaches the broker, which this harness does not stand up
+    // (see the 503 arm above), so the arm asserts what it names: not refused
+    // for its audience.
+    expect(res.body.error).not.toBe('invalid_audience');
+    expect(res.status).not.toBe(400);
   });
 });

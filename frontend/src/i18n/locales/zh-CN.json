@@ -600,7 +600,9 @@
       "taskClaimedVerb": "认领了"
     },
     "claimRun": {
-      "label": "{{count}}次认领 · {{first}} 至 {{last}}"
+      "label": "{{count}}次认领 · {{first}} 至 {{last}}",
+      "count": "{{count}}次认领",
+      "range": "{{first}} 至 {{last}}"
     },
     "starts": {
       "label": "开始方式",
@@ -763,6 +765,7 @@
       "startThread": "话题",
       "replyInThread": "在话题中回复",
       "replyFromExpandedThread": "在已展开的话题中回复",
+      "groupLabel": "话题，{{count}} {{unit}}",
       "replyingInThread": "正在话题中回复：",
       "last": "最近",
       "collapse": "收起",
@@ -1506,6 +1509,10 @@
     "title": "看板",
     "backToChat": "返回聊天",
     "newTask": "新建任务",
+    "addTo": "添加到{{column}}",
+    "card": {
+      "needs": "依赖 {{dep}}"
+    },
     "taskCount_other": "{{count}}个任务",
     "focus": {
       "eyebrow": "Pod 方向",
@@ -1584,7 +1591,9 @@
       "saveError": "未能保存更改，请重试。",
       "statusLabel": "状态",
       "showEarlierUpdates": "显示{{count}}条更早的更新",
-      "hideEarlierUpdates": "隐藏更早的更新"
+      "hideEarlierUpdates": "隐藏更早的更新",
+      "depends": "依赖",
+      "noDeps": "无"
     },
     "form": {
       "title": "标题",
@@ -2405,6 +2414,10 @@
     "hostedMcpManualRevoke_supabase": "Commonly 可能仍在你之前连接的 Supabase 组织中获得授权。在“已授权应用”中移除 Commonly，会断开所有连接该组织的成员。",
     "hostedMcpReviewAuthorization": "打开 {{provider}} 的已连接应用",
     "hostedMcpReviewAuthorization_supabase": "打开 Supabase 已授权应用",
+    "hostedMcpRefusedStillListed": "{{provider}} 可能仍显示 Commonly 已连接，请到那里移除。",
+    "hostedMcpRefusedStillListed_linear": "Linear 的已连接应用中可能仍有这项 MCP 授权，请到那里撤销。",
+    "hostedMcpRefusedStillListed_sentry": "Sentry 中可能仍显示它的 MCP 服务器应用已连接。在那里撤销，会断开此账号下该服务器的所有客户端，不只是 Commonly。",
+    "hostedMcpRefusedStillListed_supabase": "Commonly 可能仍在你刚才选择的 Supabase 组织中获得授权。在“已授权应用”中移除，会断开所有连接该组织的成员。",
     "hostedMcpAuthenticationRequired": "请先登录 Commonly，再重新连接。",
     "hostedMcpClientSetup": "此连接器的登录配置有问题，请联系管理员检查。",
     "hostedMcpConsentDenied": "你没有同意此次授权。连接未保存。",
@@ -2627,6 +2640,7 @@
     "disconnected": "已断开 {{label}}。",
     "reviewProviderAccess": "查看 {{label}} 的授权",
     "removedReviewProvider": "连接已移除。请检查 {{label}} 中的授权。",
+    "removedStillListed": "已在此处断开 {{label}}，但 {{label}} 仍显示 Commonly，请到那里一并移除。",
     "openProviderSettings": "打开服务提供方设置",
     "noConnection": "请先安装 GitHub App · 管理员只需安装一次",
     "noSeats": "此 Pod 中还没有智能体",
@@ -2642,6 +2656,26 @@
     "outcomeOk": "成功",
     "outcomeRefused": "已拒绝",
     "outcomeSuperseded": "已回答",
+    "reasonNotInAudience": "此席位不在授权范围内",
+    "reasonToolNotAllowed": "此工具不在允许列表中",
+    "reasonWriteNotAllowed": "未授予写入权限",
+    "reasonGrantRevoked": "授权已撤销",
+    "reasonGrantExpired": "授权已过期",
+    "reasonBudgetExhausted": "调用次数已用完",
+    "reasonApprovalUnavailable": "无法请求人工批准",
+    "reasonApprovalDeclined": "审批已被拒绝",
+    "reasonApprovalExpired": "审批在调用运行前已过期",
+    "reasonInvalidArgs": "参数校验未通过",
+    "reasonConnectionMismatch": "连接与授权已不再匹配",
+    "reasonReconnect": "需要重新连接",
+    "reasonCredentialMissing": "未保存凭据",
+    "reasonCredentialRejected": "服务商拒绝了该凭据",
+    "reasonRefreshUnreachable": "无法刷新凭据",
+    "reasonProviderError": "服务商返回了错误",
+    "reasonProviderUnreachable": "无法连接服务商",
+    "reasonUpstreamToolError": "服务商工具返回了错误",
+    "reasonBrokerUnavailable": "代理服务不可用",
+    "reasonBrokerError": "代理服务出错",
     "owner": "所有者",
     "readInTesting": "只读功能测试中",
     "readOrWrite": "读取，或读取和写入",

@@ -184,7 +184,9 @@ describe('Self-serve account deletion', () => {
     }
     const PodContextService = require('../../services/podContextService');
     const context = await PodContextService.getPodContext({ podId: String(pod._id), userId: String(agent._id), skillMode: 'none' });
-    expect(context.members).toEqual(expect.arrayContaining([{ name: 'Deleted user', isAgent: false, self: false }]));
+    expect(context.members).toEqual(expect.arrayContaining([{
+      name: 'Deleted user', mention: '', isAgent: false, self: false,
+    }]));
   });
 
   it('requires explicit confirmation, the right password and a browser session', async () => {

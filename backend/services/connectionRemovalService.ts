@@ -49,7 +49,8 @@ import {
   findHostedMcpEntry,
   hostedMcpRevokeTarget,
 } from '../integrations/hostedMcp/entries';
-import type { HostedMcpEntry } from './hostedMcpEntryService';
+import { isOAuthEntry } from './hostedMcpEntryService';
+import type { HostedMcpEntry, HostedMcpOAuthEntry } from './hostedMcpEntryService';
 import {
   buildRevocationRequest,
   discoverAuthorizationServer,
@@ -103,12 +104,12 @@ export interface RemovalDeps {
   /** Step 3b, between the provider revoke and any material going. Idempotent. */
   markProviderRevoked: (id: unknown, at: Date) => Promise<void>;
   entryFor: (connection: RemovableConnection) => HostedMcpEntry | null;
-  clientIdFor: (entry: HostedMcpEntry) => string;
-  clientSecretFor: (entry: HostedMcpEntry) => string | undefined;
+  clientIdFor: (entry: HostedMcpOAuthEntry) => string;
+  clientSecretFor: (entry: HostedMcpOAuthEntry) => string | undefined;
   dcrClientForRow: typeof dcrClientForRow;
   /** Step 3. Resolves when the authorization is gone; throws when it may still be live. */
   revokeAtVendor: (input: {
-    entry: HostedMcpEntry;
+    entry: HostedMcpOAuthEntry;
     clientId: string;
     clientSecret?: string;
     /** A DCR confidential client's registered method (TASK-248); sent as recorded. */
@@ -127,18 +128,30 @@ export type RemovalResult =
     grantsRevoked: number;
     /** The entry's page, always: where a person revokes by hand, or confirms a revoke took (§3). */
     revokeAt: string;
+    /**
+     * Whether the vendor revoked the authorization, in this call or an earlier
+     * one (the mark). False means the vendor was never told: a page-only entry,
+     * no token left to send, or a client that no longer matches. The person
+     * still has to remove the app at `revokeAt`, and the page must say so.
+     */
+    providerRevoked: boolean;
   }
   | {
     removed: false;
     /**
      * `provider_revoke_failed` — step 3 did not take, the row keeps its
      * references and a retry still holds the token to send.
-     * `provider_revoked_removal_incomplete` — step 3 TOOK and steps 4 or 5
-     * failed; the retry finds the mark, skips the vendor, and finishes.
+     * `provider_revoked_removal_incomplete` — step 3 is behind us and steps 4
+     * or 5 failed; the retry finds the mark, skips the vendor, and finishes.
+     * "Behind us" includes a step 3 that never called the vendor (a page-only
+     * entry), so the name does not say the vendor revoked: `providerRevoked`
+     * does.
      */
     code: 'provider_revoke_failed' | 'provider_revoked_removal_incomplete';
     message: string;
     grantsRevoked: number;
+    /** On `provider_revoked_removal_incomplete` only: as on success. */
+    providerRevoked?: boolean;
     /** Present whenever the entry is known, so a person can act on the refusal itself (§10.5). */
     revokeAt?: string;
   };
@@ -165,7 +178,7 @@ export type RemovalResult =
  * endpoint that refused.
  */
 export const revokeTokenAtVendor = async (input: {
-  entry: HostedMcpEntry;
+  entry: HostedMcpOAuthEntry;
   clientId: string;
   clientSecret?: string;
   tokenEndpointAuthMethod?: HostedMcpClientConfiguration['tokenEndpointAuthMethod'];
@@ -182,12 +195,23 @@ export const revokeTokenAtVendor = async (input: {
     // would answer the empty string 200 for a request that revoked nothing.
     throw new Error('provider revoke refused: no token to revoke');
   }
-  const metadata = input.entry.client === 'pre-registered'
-    ? await discoverAuthorizationServer(input.entry.issuer, fetchImpl)
-    : {};
+  // TASK-252: this request carries the token and, for a registered client, its
+  // secret, so it goes only to the endpoint the issuer itself advertises. The
+  // pin is reviewed by PR, but a vendor can move its endpoint, and an unchecked
+  // pin would keep sending credentials to the old host. The metadata is read
+  // with its identity checked (`discoverAuthorizationServer`), and the compare is
+  // exact, as the issuer's is. Every pin equalled its issuer's
+  // `revocation_endpoint` when this landed (measured 2026-11-01).
+  const metadata = await discoverAuthorizationServer(input.entry.issuer, fetchImpl);
+  if (metadata.revocation_endpoint !== target.endpoint) {
+    throw new Error(
+      `provider revoke refused: ${target.endpoint} is not the revocation_endpoint ${input.entry.issuer} advertises`,
+    );
+  }
   const request = buildRevocationRequest(
     input.entry,
-    metadata,
+    // Only a registered client reads its auth method from the metadata.
+    input.entry.client === 'pre-registered' ? metadata : {},
     {
       clientId: input.clientId,
       ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}),
@@ -317,8 +341,11 @@ export const removeConnection = async (options: {
   // A retry after a completed provider revoke must not call the vendor again:
   // the material may be half-swept, and the token is already dead.
   const alreadyRevokedAtVendor = Boolean(connection?.config?.[PROVIDER_REVOKED_MARK]);
+  let providerRevoked = alreadyRevokedAtVendor;
 
-  if (entry && target?.endpoint && !alreadyRevokedAtVendor) {
+  // Only OAuth entries have a vendor revoke. An operator key is a static bearer
+  // with no refresh token, so it is never sent to an RFC 7009 endpoint.
+  if (entry && isOAuthEntry(entry) && target?.endpoint && !alreadyRevokedAtVendor) {
     // The row records which client minted this pair; the instance's current
     // configuration remains the source for client credentials. A recorded id
     // that differs from the current one must never send a held token under the
@@ -424,7 +451,10 @@ export const removeConnection = async (options: {
 
         // The provider revoke took. Record it BEFORE any material goes, so a
         // crash here leaves a row the retry finishes by skipping the vendor.
-        if (clientMatches) await deps.markProviderRevoked(id, deps.now());
+        if (clientMatches) {
+          await deps.markProviderRevoked(id, deps.now());
+          providerRevoked = true;
+        }
       }
     }
   }
@@ -442,10 +472,11 @@ export const removeConnection = async (options: {
       message: (error as { message?: string })?.message || 'removal incomplete after the provider revoke',
       grantsRevoked,
       revokeAt: revokePage,
+      providerRevoked,
     };
   }
 
-  return { removed: true, grantsRevoked, revokeAt: revokePage };
+  return { removed: true, grantsRevoked, revokeAt: revokePage, providerRevoked };
 };
 
 module.exports = {

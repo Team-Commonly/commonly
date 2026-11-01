@@ -9,6 +9,7 @@ const {
   putIfAbsent,
   rewrap,
   revoke,
+  revokeOwnWrite,
 } = require('../../../services/connectorSecrets');
 const {
   DISCORD_WEBHOOK_URL,
@@ -124,6 +125,21 @@ describe('connectorSecrets', () => {
 
   // TASK-539: the import path. Insert-only, so a secret a live edit stored
   // first is never replaced with an older copy.
+  // A writer cleaning up after itself: the ref is stable per (integration,
+  // kind), so a newer writer may already own it by the time the older one
+  // deletes, and a delete by ref alone would destroy that writer's key.
+  it('revokeOwnWrite deletes a secret only while it still holds that write', async () => {
+    const integrationId = new mongoose.Types.ObjectId().toString();
+    const ref = await put(integrationId, SLACK_BOT_TOKEN, 'older', 1_000_000);
+    expect(await put(integrationId, SLACK_BOT_TOKEN, 'newer', 2_000_000)).toBe(ref);
+
+    await revokeOwnWrite(ref, 1_000_000);
+    await expect(get(ref)).resolves.toBe('newer');
+
+    await revokeOwnWrite(ref, 2_000_000);
+    expect(await ConnectorSecret.findById(ref).lean()).toBeNull();
+  });
+
   it('putIfAbsent inserts when the pair is free and reports it created', async () => {
     const integrationId = new mongoose.Types.ObjectId().toString();
     const { ref, created } = await putIfAbsent(integrationId, GROUPME_ACCESS_TOKEN, 'imported');

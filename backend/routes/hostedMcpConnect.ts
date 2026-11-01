@@ -16,16 +16,19 @@
 const express = require('express');
 import type { Request, Response } from 'express';
 import type { HostedMcpAuthorizationServer } from '../services/hostedMcpIntakeService';
-import type { HostedMcpEntry } from '../services/hostedMcpEntryService';
+import type { HostedMcpOAuthEntry } from '../services/hostedMcpEntryService';
 import rateLimit from 'express-rate-limit';
 // eslint-disable-next-line global-require
 const auth = require('../middleware/auth');
 import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { upstreamFetch } from '../services/upstreamFetch';
-import { dcrClientForRow, ensureDcrClient, refuseDcrClient } from '../services/hostedMcpDcrRegistry';
+import {
+  dcrClientForRow, ensureDcrClient, refuseDcrClient, retireDcrClientIfUnknown,
+} from '../services/hostedMcpDcrRegistry';
 import { forgetHostedMcpDrift } from '../services/hostedMcpToolDefinitions';
 import { publicAppUrl } from '../utils/publicAppUrl';
+import { submitOperatorKey } from './hostedMcpOperatorKey';
 // eslint-disable-next-line global-require
 const Integration = require('../models/Integration');
 // eslint-disable-next-line global-require
@@ -36,9 +39,18 @@ const { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } = require('../servic
 // eslint-disable-next-line global-require
 const { revokeConnectionGrants } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
-const { revokeTokenAtVendor } = require('../services/connectionRemovalService');
+const {
+  revokeTokenAtVendor,
+}: typeof import('../services/connectionRemovalService') = require('../services/connectionRemovalService');
 // eslint-disable-next-line global-require
-const { HOSTED_MCP_ENTRIES, findHostedMcpEntry, hostedMcpRevokeTarget } = require('../integrations/hostedMcp/entries');
+// Typed requires: tsc checks this route against the real module shapes, so an
+// OAuth-only field read on the HostedMcpEntry union fails the build.
+const {
+  HOSTED_MCP_ENTRIES, findHostedMcpEntry, hostedMcpRevokeTarget,
+}: typeof import('../integrations/hostedMcp/entries') = require('../integrations/hostedMcp/entries');
+const {
+  isOAuthEntry,
+}: typeof import('../services/hostedMcpEntryService') = require('../services/hostedMcpEntryService');
 const { isHostedMcpEntryHidden } = require('../integrations/hostedMcp/visibility');
 // eslint-disable-next-line global-require
 const {
@@ -56,7 +68,7 @@ const {
   hostedMcpNonceCookiePath,
   readCookie,
   resolvedHostedMcpClient,
-} = require('../services/hostedMcpIntakeService');
+}: typeof import('../services/hostedMcpIntakeService') = require('../services/hostedMcpIntakeService');
 
 type AuthedRequest = Request & { user?: { id?: string; role?: string } };
 
@@ -95,15 +107,22 @@ const parseScopeSet = (scope: string): Set<string> => new Set(
   scope.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean),
 );
 
-/** A refused grant is never stored; revoke its refresh token when the entry can. */
+/**
+ * A refused grant is never stored; revoke its refresh token when the entry can.
+ * Whatever happens the connect stays refused and no token is kept. When the
+ * vendor did not confirm the revoke, the grant is still live there and only the
+ * person can remove it, so the redirect names the entry's own revoke page
+ * (TASK-344). The page is the server's; the browser never supplies it.
+ */
 const revokeRefusedGrant = async (
-  entry: HostedMcpEntry,
+  entry: HostedMcpOAuthEntry,
   client: { clientId: string; clientSecret?: string },
   tokens: TokenResponse,
-): Promise<void> => {
-  if (!hostedMcpRevokeTarget(entry)?.endpoint) return;
+): Promise<{ manualRevoke?: { entryId: string; revokeAt: string } }> => {
+  const target = hostedMcpRevokeTarget(entry);
+  const leftLive = target?.page ? { manualRevoke: { entryId: entry.id, revokeAt: target.page } } : {};
   const token = tokens.refresh_token || tokens.access_token;
-  if (!token) return;
+  if (!target?.endpoint || !token) return leftLive;
   try {
     await revokeTokenAtVendor({
       entry,
@@ -112,8 +131,9 @@ const revokeRefusedGrant = async (
       token,
       tokenTypeHint: tokens.refresh_token ? 'refresh_token' : 'access_token',
     });
+    return {};
   } catch {
-    // The connect remains refused and no token is retained if vendor revoke fails.
+    return leftLive;
   }
 };
 
@@ -217,7 +237,7 @@ router.get('/:entryId/client-metadata', clientMetadataRateLimit, (req: Request, 
     // still accept as a client with nowhere to send a code.
     return res.status(404).json({ error: 'unknown_entry' });
   }
-  if (entry.client !== 'cimd') {
+  if (!isOAuthEntry(entry) || entry.client !== 'cimd') {
     return res.status(404).json({ error: 'client_metadata_not_used' });
   }
   return res.json(buildClientMetadataDocument(entry));
@@ -240,7 +260,8 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
     return res.status(401).json({ error: 'authentication_required' });
   }
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
-  if (!entry) {
+  // An operator-key entry connects through its own paste route, never this flow.
+  if (!entry || !isOAuthEntry(entry)) {
     return res.status(404).json({ error: 'unknown_entry' });
   }
   if (isHostedMcpEntryHidden(entry.id, process.env, userId)) return res.status(404).json({ error: 'unknown_entry' });
@@ -265,6 +286,21 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
 
   try {
     if (entry.client === 'dcr') {
+      // A pending start still on the member's row is one that didn't finish,
+      // which is how a client the vendor deleted looks from here (F14): ask
+      // about it first. The ask is a repair: when it can't run, it is logged
+      // and this start uses the current client.
+      try {
+        const unfinished = await Integration.findOne({
+          type: 'hosted-mcp', createdBy: userId, 'config.entryId': entry.id,
+        }).select('config.pendingAuth.clientId').lean();
+        const unfinishedClientId = unfinished?.config?.pendingAuth?.clientId;
+        if (unfinishedClientId) await retireDcrClientIfUnknown(entry, authorizationServer, unfinishedClientId);
+      } catch (error) {
+        console.error('[hosted-mcp] DCR client ask failed', JSON.stringify({
+          entryId: entry.id, error: (error as Error)?.name || 'Error',
+        }));
+      }
       client = await ensureDcrClient(entry, authorizationServer, hostedMcpCallbackUrl(entry.id));
     }
   } catch (error) {
@@ -343,6 +379,8 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
   });
 };
 
+router.post('/:entryId/operator-key', writeIntegrationsRateLimit, auth, submitOperatorKey);
+
 router.post('/:entryId/start', writeIntegrationsRateLimit, auth, async (req: AuthedRequest, res: Response) => {
   try {
     await startConnect(req, res);
@@ -379,7 +417,7 @@ interface CallbackFlow {
 
 const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
-  if (!entry) {
+  if (!entry || !isOAuthEntry(entry)) {
     return callbackRedirect(res, 'error', 'unknown_entry');
   }
   const state = typeof req.query.state === 'string' ? req.query.state : '';
@@ -501,8 +539,7 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
 
   const scopeWasReturned = Object.prototype.hasOwnProperty.call(tokens, 'scope');
   if (scopeWasReturned && typeof tokens.scope !== 'string') {
-    await revokeRefusedGrant(entry, client, tokens);
-    return callbackRedirect(res, 'error', 'exchange_invalid_scope');
+    return callbackRedirect(res, 'error', 'exchange_invalid_scope', await revokeRefusedGrant(entry, client, tokens));
   }
   const grantedScope = scopeWasReturned ? tokens.scope as string : entry.scopes.join(' ');
   const grantedScopes: Set<string> = scopeWasReturned
@@ -517,8 +554,7 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
       entryId: entry.id,
       extraScopeCount: extraScopes.length,
     }));
-    await revokeRefusedGrant(entry, client, tokens);
-    return callbackRedirect(res, 'error', 'unrequested_scope');
+    return callbackRedirect(res, 'error', 'unrequested_scope', await revokeRefusedGrant(entry, client, tokens));
   }
   // Store the parsed set in the canonical OAuth space-delimited form. This
   // keeps a vendor's comma-separated response useful to later scope checks.

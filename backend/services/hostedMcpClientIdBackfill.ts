@@ -1,4 +1,4 @@
-import type { HostedMcpEntry } from './hostedMcpEntryService';
+import type { HostedMcpOAuthEntry } from './hostedMcpEntryService';
 
 export interface HostedMcpClientIdBackfillRow {
   _id: unknown;
@@ -12,8 +12,9 @@ export interface HostedMcpClientIdBackfillRow {
 
 export interface HostedMcpClientIdBackfillDeps {
   findLegacyRows: () => Promise<HostedMcpClientIdBackfillRow[]>;
-  entryFor: (entryId: string) => HostedMcpEntry | undefined;
-  clientIdFor: (entry: HostedMcpEntry) => string;
+  /** Legacy rows hold a token pair, so only OAuth entries can be backfilled. */
+  entryFor: (entryId: string) => HostedMcpOAuthEntry | undefined;
+  clientIdFor: (entry: HostedMcpOAuthEntry) => string;
   /** Must update only while `config.clientId` is still absent or blank. */
   updateIfMissing: (row: HostedMcpClientIdBackfillRow, clientId: string) => Promise<number>;
 }

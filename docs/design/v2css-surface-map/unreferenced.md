@@ -1,0 +1,381 @@
+# v2.css map: unreferenced selectors
+
+Generated 2026-11-01 (main `323595193`, prod `9460865ab`). These 377 selectors were never matched on prod in the states walked, and no component source names their subject class. They are deletion candidates for any PR, but grep for a dynamically built class name first. Pins name tests that read v2.css and would need updating.
+
+- L525 `.v2-filter-bar`
+- L537 `.v2-filter-bar--flat`
+- L543 `.v2-filter-bar__search`
+- L548 `.v2-filter-bar__control`
+- L553 `.v2-filter-bar__action`
+- L557 `.v2-filter-bar__summary`
+- L565 `.v2-filter-segment`
+- L571 `.v2-filter-segment__item`
+- L583 `.v2-filter-segment__item:hover`
+- L589 `.v2-root button.v2-filter-segment__item--active`
+- L596 `.v2-filter-count` — pinned by v2-type-floors.test.ts
+- L604 `.v2-active-filter-strip`
+- L798 `.v2-mobile-backdrop`
+- L802 `.v2-pods__mobile-close`
+- L1129 `.v2-rail__user-name`
+- L1134 `.v2-rail__user-status`
+- L1142 `.v2-online-dot`
+- L1159 `.v2-pods__header`
+- L1166 `.v2-pods__title`
+- L1174 `.v2-root button.v2-pods__new-btn`
+- L1190 `.v2-root button.v2-pods__new-btn:hover`
+- L1325 `.v2-pods__filters`
+- L1346 `.v2-root button.v2-pods__filter`
+- L1361 `.v2-pods__filter:hover`
+- L1370 `.v2-root button.v2-pods__filter--active`
+- L1376 `.v2-pods__community-tabs`
+- L1385 `.v2-pods__community-tab`
+- L1397 `.v2-pods__group-label`
+- L1405 `.v2-pods__item` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L1421 `.v2-pods__item:hover` — pinned by v2-layout-invariants.test.ts
+- L1428 `.v2-root button.v2-pods__item--active` — pinned by v2-layout-invariants.test.ts
+- L1434 `.v2-root button.v2-pods__item--active::before` — pinned by v2-layout-invariants.test.ts
+- L1445 `.v2-pods__item-icon` — pinned by v2-type-floors.test.ts
+- L1461 `.v2-pods__item-icon--team`
+- L1467 `.v2-pods__item-icon--private`
+- L1472 `.v2-pods__item--active .v2-pods__item-icon--team` — rule lists 2 selectors
+- L1472 `.v2-pods__item--active .v2-pods__item-icon--private` — rule lists 2 selectors
+- L1479 `.v2-pods__item-body`
+- L1487 `.v2-pods__item-title-row`
+- L1500 `.v2-pods__item-title`
+- L1514 `.v2-pods__item-snippet-row`
+- L1521 `.v2-pods__item-snippet-row .v2-pods__item-snippet`
+- L1523 `.v2-pods__status` — pinned by v2-type-floors.test.ts
+- L1536 `.v2-pods__status--agents`
+- L1541 `.v2-pods__status--empty`
+- L1546 `.v2-pods__status--direct`
+- L1551 `.v2-pods__item--active .v2-pods__item-title`
+- L1557 `.v2-pods__item--unread .v2-pods__item-title`
+- L1562 `.v2-pods__item--unread .v2-pods__item-snippet`
+- L1566 `.v2-pods__item-dot`
+- L1581 `.v2-pods__item-snippet--typing`
+- L1586 `.v2-pods__item-meta`
+- L1594 `.v2-pods__item-snippet`
+- L1608 `.v2-pods__item-time` — pinned by v2-type-floors.test.ts
+- L1628 `.v2-pods__join-notice`
+- L1639 `.v2-pods__discover-row`
+- L1651 `.v2-pods__discover-body`
+- L1658 `.v2-pods__discover-title`
+- L1667 `.v2-pods__discover-description`
+- L1677 `.v2-pods__discover-meta` — pinned by v2-type-floors.test.ts
+- L1682 `.v2-root button.v2-pods__discover-join`
+- L1693 `.v2-root button.v2-pods__discover-join:hover`
+- L1698 `.v2-root button.v2-pods__discover-join:disabled`
+- L1703 `.v2-pods__community`
+- L1712 `.v2-pods__community-title`
+- L1718 `.v2-pods__community-copy`
+- L1725 `.v2-root button.v2-pods__community-button`
+- L1737 `.v2-root button.v2-pods__community-button:hover`
+- L1768 `.v2-chat__title` — pinned by v2-type-floors.test.ts
+- L1779 `.v2-chat__title-mark` — pinned by v2-type-floors.test.ts
+- L1793 `.v2-chat__title-text`
+- L1799 `.v2-chat__avatars` — pinned by v2-type-floors.test.ts
+- L1804 `.v2-chat__avatars > * + *`
+- L1811 `.v2-chat__avatars--button`
+- L1820 `.v2-chat__avatars--button:hover`
+- L1824 `.v2-chat__avatars--active`
+- L1829 `.v2-chat__avatars--active:hover`
+- L1833 `.v2-chat__avatars-more` — pinned by v2-type-floors.test.ts
+- L1846 `.v2-chat__btn` — pinned by v2-layout-invariants.test.ts
+- L1861 `.v2-chat__btn:hover`
+- L1866 `.v2-chat__icon-btn`
+- L1878 `.v2-chat__icon-btn:hover`
+- L1883 `.v2-chat__mode-toggle` — pinned by v2-type-floors.test.ts
+- L1896 `.v2-root button.v2-chat__mode-option` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L1909 `.v2-root button.v2-chat__mode-option:hover` — pinned by v2-type-floors.test.ts
+- L1914 `.v2-root button.v2-chat__mode-option--active` — pinned by v2-layout-invariants.test.ts
+- L1919 `.v2-root button.v2-chat__mode-option--active:hover` — pinned by v2-layout-invariants.test.ts
+- L1924 `.v2-chat__goal`
+- L1933 `.v2-chat__state-strip`
+- L1946 `.v2-chat__state-strip--execute`
+- L1951 `.v2-chat__state-primary`
+- L1959 `.v2-chat__state-copy`
+- L1968 `.v2-chat__state-meta`
+- L1976 `.v2-chat__older`
+- L1977 `.v2-chat__older-btn`
+- L1988 `.v2-chat__older-btn:hover:not(:disabled)`
+- L1992 `.v2-chat__older-btn:disabled`
+- L2117 `.v2-chat__composer > *`
+- L2469 `.v2-chat__system` — pinned by v2-layout-invariants.test.ts
+- L2481 `.v2-chat__system-dot`
+- L2551 `.v2-chat__composer` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2655 `.v2-chat__new-pod-text`
+- L2728 `.v2-chat__new-pod-action-text` — pinned by v2-type-floors.test.ts; rule lists 2 selectors
+- L2814 `.v2-chat__composer-input-wrap` — pinned by v2-layout-invariants.test.ts
+- L2827 `.v2-chat__composer-input-wrap:focus-within` — pinned by v2-layout-invariants.test.ts
+- L2832 `.v2-chat__composer-input` — pinned by v2-layout-invariants.test.ts
+- L2847 `.v2-chat__composer-input:focus`
+- L2852 `.v2-chat__composer-actions`
+- L2861 `.v2-chat__composer-icon-btn`
+- L2872 `.v2-chat__composer-icon-btn:hover`
+- L2879 `.v2-root button.v2-chat__send` — pinned by v2-layout-invariants.test.ts
+- L2893 `.v2-chat__composer-input` — pinned by v2-layout-invariants.test.ts
+- L2897 `.v2-root button.v2-chat__send--execute` — pinned by v2-layout-invariants.test.ts
+- L2902 `.v2-root button.v2-chat__send--execute:hover` — pinned by v2-layout-invariants.test.ts
+- L2906 `.v2-root button.v2-chat__send:hover` — pinned by v2-layout-invariants.test.ts
+- L2910 `.v2-root button.v2-chat__send:disabled` — pinned by v2-layout-invariants.test.ts
+- L2915 `.v2-chat__composer-footer` — pinned by v2-type-floors.test.ts
+- L2927 `.v2-chat__composer-footer-link`
+- L2933 `.v2-chat__composer-error`
+- L2940 `.v2-chat__composer-hint` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L2950 `.v2-chat__composer-hint kbd` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts
+- L3666 `.v2-msg__image-link`
+- L3676 `.v2-msg__image`
+- L3683 `.v2-msg__file` — pinned by v2-type-floors.test.ts
+- L3698 `.v2-msg__file-icon` — pinned by v2-type-floors.test.ts
+- L3709 `.v2-msg__file-meta`
+- L3716 `.v2-msg__file-name`
+- L3724 `.v2-msg__file-size` — pinned by v2-type-floors.test.ts
+- L3770 `.v2-inspector__header`
+- L3777 `.v2-inspector__pod-head`
+- L3783 `.v2-inspector__pod-block`
+- L3791 `.v2-inspector__pod-name`
+- L3800 `.v2-inspector__pod-meta`
+- L3808 `.v2-inspector__sub-title`
+- L3815 `.v2-inspector__back`
+- L3832 `.v2-inspector__back:hover`
+- L3837 `.v2-inspector__close`
+- L3853 `.v2-inspector__close:hover`
+- L3858 `.v2-inspector__body`
+- L3868 `.v2-inspector__tabs`
+- L3880 `.v2-root button.v2-inspector__tab`
+- L3903 `.v2-root button.v2-inspector__tab:hover`
+- L3907 `.v2-root button.v2-inspector__tab--active`
+- L3914 `.v2-inspector__tab-count`
+- L3929 `.v2-root button.v2-inspector__tab--active .v2-inspector__tab-count`
+- L3936 `.v2-inspector__now`
+- L3942 `.v2-inspector__now-eyebrow`
+- L3953 `.v2-inspector__progress-row`
+- L3960 `.v2-inspector__progress-stat`
+- L3966 `.v2-inspector__progress-pct`
+- L3974 `.v2-inspector__progress-track`
+- L3981 `.v2-inspector__progress-bar`
+- L3990 `.v2-inspector__danger`
+- L3995 `.v2-inspector__danger-title`
+- L4002 `.v2-inspector__danger-text`
+- L4009 `.v2-root button.v2-inspector__btn--danger`
+- L4015 `.v2-root button.v2-inspector__btn--danger:hover`
+- L4021 `.v2-inspector__now-title`
+- L4031 `.v2-inspector__now-pulse`
+- L4047 `.v2-inspector__now-meta`
+- L4056 `.v2-inspector__section`
+- L4064 `.v2-inspector__section:last-child`
+- L4068 `.v2-inspector__section--quiet`
+- L4075 `.v2-inspector__section-head`
+- L4085 `.v2-inspector__section-title`
+- L4095 `.v2-inspector__section-head .v2-inspector__section-title`
+- L4099 `.v2-inspector__goal-text`
+- L4105 `.v2-inspector__empty`
+- L4112 `.v2-inspector__link`
+- L4123 `.v2-inspector__link:hover`
+- L4127 `.v2-inspector__link--block`
+- L4133 `.v2-inspector__link--danger`
+- L4139 `.v2-inspector__link--danger:hover`
+- L4148 `.v2-inspector__members-actions`
+- L4154 `.v2-root button.v2-inspector__action` — rule lists 2 selectors
+- L4154 `.v2-inspector__action` — rule lists 2 selectors
+- L4171 `.v2-root button.v2-inspector__action:hover` — rule lists 2 selectors
+- L4171 `.v2-inspector__action:hover` — rule lists 2 selectors
+- L4178 `.v2-root button.v2-inspector__action--primary` — rule lists 2 selectors
+- L4178 `.v2-inspector__action--primary` — rule lists 2 selectors
+- L4187 `.v2-root button.v2-inspector__action--primary:hover` — rule lists 2 selectors
+- L4187 `.v2-inspector__action--primary:hover` — rule lists 2 selectors
+- L4194 `.v2-inspector__artifacts`
+- L4200 `.v2-inspector__artifact-row`
+- L4215 `.v2-inspector__artifact-row:hover`
+- L4219 `.v2-inspector__artifact-icon`
+- L4232 `.v2-inspector__artifact-icon--lg`
+- L4239 `.v2-inspector__artifact-meta`
+- L4246 `.v2-inspector__artifact-title`
+- L4255 `.v2-inspector__artifact-sub`
+- L4268 `.v2-root button.v2-inspector__member-row` — rule lists 2 selectors
+- L4268 `.v2-inspector__member-row` — rule lists 2 selectors
+- L4285 `.v2-inspector__member-row + .v2-inspector__member-row` — rule lists 2 selectors
+- L4285 `.v2-inspector__member-row + .v2-inspector__member-row--static` — rule lists 2 selectors
+- L4290 `.v2-inspector__member-meta`
+- L4294 `.v2-root button.v2-inspector__member-row:hover` — rule lists 2 selectors
+- L4294 `.v2-inspector__member-row:hover` — rule lists 2 selectors
+- L4299 `.v2-inspector__member-row--static`
+- L4303 `.v2-inspector__member-row--static:hover`
+- L4307 `.v2-inspector__member-meta`
+- L4314 `.v2-inspector__member-name`
+- L4323 `.v2-inspector__member-role`
+- L4333 `.v2-inspector__runstate`
+- L4339 `.v2-inspector__runstate-row`
+- L4347 `.v2-inspector__runstate-label`
+- L4351 `.v2-inspector__pill`
+- L4363 `.v2-inspector__pill--blocked`
+- L4368 `.v2-inspector__pill--progress`
+- L4375 `.v2-inspector__pill--complete`
+- L4380 `.v2-inspector__task-list`
+- L4387 `.v2-inspector__section-subtitle`
+- L4396 `.v2-inspector__task-row`
+- L4407 `.v2-inspector__task-title`
+- L4417 `.v2-inspector__task-meta`
+- L4424 `.v2-inspector__task-assignee`
+- L4432 `.v2-inspector__detail`
+- L4439 `.v2-inspector__detail-head`
+- L4448 `.v2-inspector__detail-name`
+- L4456 `.v2-inspector__detail-sub`
+- L4464 `.v2-inspector__detail-actions`
+- L4476 `.v2-root button.v2-inspector__btn` — rule lists 2 selectors
+- L4476 `.v2-root a.v2-inspector__btn` — rule lists 2 selectors
+- L4495 `.v2-root button.v2-inspector__btn:hover` — rule lists 2 selectors
+- L4495 `.v2-root a.v2-inspector__btn:hover` — rule lists 2 selectors
+- L4501 `.v2-root button.v2-inspector__btn--primary` — rule lists 2 selectors
+- L4501 `.v2-root a.v2-inspector__btn--primary` — rule lists 2 selectors
+- L4508 `.v2-root button.v2-inspector__btn--primary:hover` — rule lists 2 selectors
+- L4508 `.v2-root a.v2-inspector__btn--primary:hover` — rule lists 2 selectors
+- L4513 `.v2-inspector__detail-card`
+- L4519 `.v2-inspector__detail-kicker`
+- L4528 `.v2-inspector__detail-body`
+- L4534 `.v2-inspector__chip-row`
+- L4541 `.v2-inspector__chip`
+- L4558 `.v2-inspector__dm-list`
+- L4565 `.v2-root button.v2-inspector__dm-row`
+- L4580 `.v2-root button.v2-inspector__dm-row:hover`
+- L4585 `.v2-inspector__dm-name`
+- L4593 `.v2-inspector__dm-arrow`
+- L4605 `.v2-inspector__detail-runtime`
+- L4613 `.v2-runtime-pill` — pinned by v2-type-floors.test.ts
+- L4628 `.v2-runtime-pill__mono` — pinned by v2-type-floors.test.ts
+- L4640 `.v2-runtime-pill__label`
+- L4644 `.v2-runtime-mono` — pinned by v2-type-floors.test.ts
+- L4663 `.v2-runtime-mono--byo`
+- L4668 `.v2-runtime-mono__byo` — pinned by v2-type-floors.test.ts
+- L4675 `.v2-runtime-host` — pinned by v2-type-floors.test.ts
+- L4694 `.v2-runtime-row` — pinned by v2-type-floors.test.ts
+- L4702 `.v2-runtime-row__label` — pinned by v2-type-floors.test.ts
+- L4717 `.v2-runtime-row__byo` — pinned by v2-type-floors.test.ts
+- L4735 `.v2-role-chip` — pinned by v2-type-floors.test.ts
+- L4856 `.v2-modal__hint--muted` — pinned by v2-type-floors.test.ts
+- L5412 `.v2-login__oauth-form`
+- L6037 `.v2-divider`
+- L6043 `.v2-row`
+- L6049 `.v2-row--between`
+- L6053 `.v2-mute`
+- L6057 `.v2-strong`
+- L6155 `.v2-pods-aside--open` in `@media (max-width: 760px)`
+- L6159 `.v2-mobile-backdrop` in `@media (max-width: 760px)` — rule lists 2 selectors
+- L6175 `.v2-pods__title` in `@media (max-width: 760px)`
+- L6183 `.v2-pods__mobile-close` in `@media (max-width: 760px)`
+- L6195 `.v2-pods__mobile-close:hover` in `@media (max-width: 760px)`
+- L6204 `.v2-chat__state-strip` in `@media (max-width: 760px)`
+- L6211 `.v2-chat__mode-toggle--header` — pinned by v2-type-floors.test.ts
+- L6215 `.v2-chat__mode-toggle--header .v2-chat__mode-option` — pinned by v2-type-floors.test.ts
+- L6219 `.v2-chat__mode-toggle--execute`
+- L6223 `.v2-chat__goal-meta`
+- L7061 `.v2-connect__note` — rule lists 2 selectors
+- L7153 `.v2-connect__note`
+- L7157 `.v2-connect__note code`
+- L7593 `.v2-chat__reply-chip`
+- L7606 `.v2-chat__reply-chip-label`
+- L7607 `.v2-root button.v2-chat__reply-chip-cancel`
+- L7740 `.v2-billing__note`
+- L7746 `.v2-billing__warn`
+- L8168 `.v2-settings__account-type` — rule lists 2 selectors
+- L8193 `.v2-settings__account-type`
+- L8655 `.v2-board__focus-head`
+- L8735 `.v2-board__focus-goal` — pinned by v2-layout-invariants.test.ts
+- L9067 `.v2-board__card-assignee`
+- L9321 `.v2-gig__kv` — rule lists 3 selectors
+- L9324 `.v2-gig__badge`
+- L9325 `.v2-gig__text`
+- L9326 `.v2-gig__kv`
+- L9327 `.v2-gig__kv strong`
+- L9328 `.v2-gig__list`
+- L9329 `.v2-gig__link`
+- L9330 `.v2-gig__link:focus-visible`
+- L9614 `.v2-inspector__approvals`
+- L9620 `.v2-inspector__approval-row`
+- L9631 `.v2-inspector__approval-summary`
+- L9641 `.v2-inspector__approval-meta`
+- L9648 `.v2-inspector__approval-agent`
+- L9654 `.v2-inspector__approval-actions`
+- L9659 `.v2-inspector__approval-waiting`
+- L9821 `.v2-chat__reply-chip--thread .v2-chat__reply-chip-label`
+- L9892 `.v2-activity__agent-card h3` — rule lists 4 selectors
+- L9892 `.v2-activity__board-row h3` — pinned by v2-layout-invariants.test.ts; rule lists 4 selectors
+- L9908 `.v2-activity__agent-topline` — rule lists 4 selectors
+- L9908 `.v2-activity__board-meta` — rule lists 4 selectors
+- L10209 `.v2-activity__eyebrow`
+- L10227 `.v2-activity__board-list`
+- L10262 `.v2-activity__board-row` — pinned by v2-layout-invariants.test.ts
+- L10271 `.v2-activity__board-row + .v2-activity__board-row` — pinned by v2-layout-invariants.test.ts
+- L10359 `.v2-activity__board-main > div` — rule lists 4 selectors
+- L10359 `.v2-activity__agent-card` — rule lists 4 selectors
+- L10359 `.v2-activity__agent-topline > div` — rule lists 4 selectors
+- L10366 `.v2-activity__agent-topline span` — rule lists 7 selectors
+- L10366 `.v2-activity__board-meta` — rule lists 7 selectors
+- L10366 `.v2-activity__task-id` — rule lists 7 selectors
+- L10366 `.v2-activity__update-time` — rule lists 7 selectors
+- L10378 `.v2-activity__board-row h3` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L10378 `.v2-activity__board-row p` — pinned by v2-layout-invariants.test.ts; rule lists 5 selectors
+- L10378 `.v2-activity__update-content` — rule lists 5 selectors
+- L10399 `.v2-activity__board-row p` — pinned by v2-layout-invariants.test.ts; rule lists 2 selectors
+- L10458 `.v2-activity__board-meta button` — rule lists 3 selectors
+- L10466 `.v2-activity__board-meta button` — rule lists 2 selectors
+- L10659 `.v2-activity__updates button:disabled` — rule lists 2 selectors
+- L10665 `.v2-activity__agent-grid` — pinned by v2-layout-invariants.test.ts
+- L10671 `.v2-activity__agent-card`
+- L10678 `.v2-activity__agent-topline`
+- L10682 `.v2-activity__agent-topline h3`
+- L10686 `.v2-activity__agent-topline > div > span`
+- L10691 `.v2-activity__count-chip` — rule lists 2 selectors
+- L10691 `.v2-activity__status` — rule lists 2 selectors
+- L10702 `.v2-activity__count-chip`
+- L10709 `.v2-activity__agent-recap`
+- L10716 `.v2-activity__updates`
+- L10721 `.v2-root .v2-activity__updates button`
+- L10732 `.v2-root .v2-activity__updates button:hover:not(:disabled)`
+- L10736 `.v2-activity__update-pod`
+- L10742 `.v2-activity__update-content`
+- L10748 `.v2-activity__board-row` — pinned by v2-layout-invariants.test.ts
+- L10752 `.v2-activity__board-main`
+- L10759 `.v2-activity__status`
+- L10766 `.v2-activity__status--done`
+- L10767 `.v2-activity__status--blocked`
+- L10768 `.v2-activity__status--claimed`
+- L10770 `.v2-activity__task-id`
+- L10776 `.v2-activity__board-row h3` — pinned by v2-layout-invariants.test.ts
+- L10778 `.v2-activity__board-meta`
+- L10784 `.v2-activity__footer`
+- L10822 `.v2-activity__agent-grid` in `@media (max-width: 640px)` — pinned by v2-layout-invariants.test.ts
+- L10825 `.v2-activity__board-row` in `@media (max-width: 640px)` — pinned by v2-layout-invariants.test.ts
+- L10837 `.v2-activity__board-meta` in `@media (max-width: 640px)`
+- L10843 `.v2-activity__update-time` in `@media (max-width: 640px)`
+- L10863 `.v2-root:lang(zh) .v2-pods__title` — rule lists 39 selectors
+- L10863 `.v2-root:lang(zh) .v2-chat__title` — rule lists 39 selectors
+- L10863 `.v2-root:lang(zh) button.v2-inspector__tab` — rule lists 39 selectors
+- L10863 `.v2-root:lang(zh) .v2-inspector__now-title` — rule lists 39 selectors
+- L10863 `.v2-root:lang(zh) .v2-inspector__detail-name` — rule lists 39 selectors
+- L10863 `.v2-root:lang(zh) .v2-activity__agent-card h3` — rule lists 39 selectors
+- L10863 `.v2-root:lang(zh) .v2-activity__board-row h3` — pinned by v2-layout-invariants.test.ts; rule lists 39 selectors
+- L10930 `.v2-root:lang(zh) .v2-chat__composer-hint` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts; rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-chat__new-pod-text` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-pods__join-notice` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-pods__discover-description` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-pods__community-copy` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-activity__board-row p` — pinned by v2-layout-invariants.test.ts; rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-activity__agent-recap` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-activity__footer` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-inspector__pod-meta` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-inspector__now-meta` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-inspector__goal-text` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-inspector__empty` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-inspector__danger-text` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-inspector__detail-body` — rule lists 29 selectors
+- L10930 `.v2-root:lang(zh) .v2-billing__note` — rule lists 29 selectors
+- L10962 `.v2-root:lang(zh) .v2-chat__composer-hint` — pinned by v2-layout-invariants.test.ts, v2-type-floors.test.ts; rule lists 2 selectors
+- L10962 `.v2-root:lang(zh) button.v2-inspector__tab` — rule lists 2 selectors
+- L11317 `.v2-pods__mobile-close` in `@media (max-width: 760px)`
+- L11487 `.v2-root button.v2-workspace-inspector__board-counts` — rule lists 4 selectors
+- L11508 `.v2-root button.v2-workspace-inspector__board-counts:hover` — rule lists 4 selectors
+- L11587 `.v2-root button.v2-workspace-inspector__board-counts`
+- L11992 `.v2-mobile-tabs__badge` in `@media (max-width: 760px)`
+- L12585 `.v2-mobile-backdrop` in `@media (max-width: 760px)`
+- L13884 `.v2-board__detail-meta .v2-inspector__pill`

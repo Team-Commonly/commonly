@@ -58,7 +58,9 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
   // kept saying "granted" when the reload came back stale or failed.
   const [revokedHere, setRevokedHere] = useState<Record<string, string>>({});
   const [confirmHiddenRemoval, setConfirmHiddenRemoval] = useState<string | null>(null);
-  const [removedHiddenNotice, setRemovedHiddenNotice] = useState<{ label: string; revokePage: string | null } | null>(null);
+  // `stillListed`: the provider was never told (TASK-339), so its own page
+  // still lists Commonly and the notice must say so.
+  const [removedHiddenNotice, setRemovedHiddenNotice] = useState<{ label: string; revokePage: string | null; stillListed?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joinPolicyFixPodId, setJoinPolicyFixPodId] = useState<string | null>(null);
@@ -124,8 +126,10 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
   }, [api, selectedId]);
 
   // The entry a grant belongs to is the one whose namespaced tools it carries.
-  // If the catalogue no longer has that entry, keep the row visibly unknown;
-  // assigning it to GitHub would misstate who owns the grant and its policy.
+  // If the catalogue no longer has that entry, the name comes from the server's
+  // `connector`, read from the same namespace; with neither, the row stays
+  // visibly unknown, because assigning it to GitHub would misstate who owns the
+  // grant and its policy.
   const entryFor = (grant: ToolGrant): ToolCatalogEntry | null => (
     catalog.find((entry) => entryCovers(entry, grant)) || null
   );
@@ -135,6 +139,7 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     && entry.connections.some((connection) => connection.connectionId === manualRevokeNotice.connectionId),
   );
   const toolLabel = (grant: ToolGrant): string => entryFor(grant)?.label
+    || grant.connector?.label
     || t('tools.unknownConnector', { defaultValue: 'Unknown connector' });
 
   const podName = (podId: string): string => pods.find((pod) => String(pod._id) === podId)?.name || t('tools.aPod', { defaultValue: 'a pod' });
@@ -199,6 +204,33 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     superseded: t('tools.outcomeSuperseded', { defaultValue: 'answered' }),
     failed: t('tools.outcomeFailed', { defaultValue: 'failed' }),
   })[outcome] || outcome;
+  // Plain words for why a refused or failed call did not run. An unlabelled code shows as-is.
+  const reasonLabel = (reason: string): string => {
+    const labels: Record<string, string> = {
+      not_in_audience: t('tools.reasonNotInAudience', { defaultValue: 'this seat is outside the grant audience' }),
+      tool_not_allowed: t('tools.reasonToolNotAllowed', { defaultValue: 'this tool is not on the allow-list' }),
+      write_mode_not_allowed: t('tools.reasonWriteNotAllowed', { defaultValue: 'writes are not granted' }),
+      grant_revoked: t('tools.reasonGrantRevoked', { defaultValue: 'the grant was revoked' }),
+      grant_expired: t('tools.reasonGrantExpired', { defaultValue: 'the grant expired' }),
+      budget_exhausted: t('tools.reasonBudgetExhausted', { defaultValue: 'the call budget is spent' }),
+      approval_unavailable: t('tools.reasonApprovalUnavailable', { defaultValue: 'no one could be asked to approve it' }),
+      approval_declined: t('tools.reasonApprovalDeclined', { defaultValue: 'approval was declined' }),
+      approval_expired: t('tools.reasonApprovalExpired', { defaultValue: 'approval expired before the call ran' }),
+      invalid_tool_args: t('tools.reasonInvalidArgs', { defaultValue: 'the arguments did not validate' }),
+      connection_mismatch: t('tools.reasonConnectionMismatch', { defaultValue: 'the connection no longer matches the grant' }),
+      reconnect_required: t('tools.reasonReconnect', { defaultValue: 'the connection needs reconnecting' }),
+      credential_missing: t('tools.reasonCredentialMissing', { defaultValue: 'no credential is stored' }),
+      credential_rejected: t('tools.reasonCredentialRejected', { defaultValue: 'the provider rejected the credential' }),
+      refresh_unreachable: t('tools.reasonRefreshUnreachable', { defaultValue: 'the credential could not be refreshed' }),
+      provider_error: t('tools.reasonProviderError', { defaultValue: 'the provider returned an error' }),
+      provider_unreachable: t('tools.reasonProviderUnreachable', { defaultValue: 'the provider could not be reached' }),
+      upstream_tool_error: t('tools.reasonUpstreamToolError', { defaultValue: 'the provider tool returned an error' }),
+      broker_unavailable: t('tools.reasonBrokerUnavailable', { defaultValue: 'the broker was unavailable' }),
+      broker_error: t('tools.reasonBrokerError', { defaultValue: 'the broker failed' }),
+    };
+    // Own keys only: a code such as `constructor` or `__proto__` must show as itself, not as an inherited member.
+    return Object.prototype.hasOwnProperty.call(labels, reason) ? labels[reason] : reason;
+  };
   const modeLabel = (mode: GrantWriteMode): string => ({
     read: t('tools.modeRead', { defaultValue: 'read' }),
     'write-with-confirm': t('tools.modeWriteConfirm', { defaultValue: 'read and write, ask first' }),
@@ -448,9 +480,11 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     setBusy(true);
     setError(null);
     try {
-      await api.del(`/api/integrations/${encodeURIComponent(connection.connectionId)}`);
+      const res = await api.del<{ providerRevoked?: boolean }>(`/api/integrations/${encodeURIComponent(connection.connectionId)}`);
       setConfirmHiddenRemoval(null);
-      if (connection.revokePage) setRemovedHiddenNotice({ label: connection.label, revokePage: connection.revokePage });
+      if (connection.revokePage) {
+        setRemovedHiddenNotice({ label: connection.label, revokePage: connection.revokePage, stillListed: res?.providerRevoked === false });
+      }
       await load();
     } catch {
       setError(t('tools.removeConnectionError', { defaultValue: 'Could not remove the connection.' }));
@@ -467,21 +501,25 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     setBusy(true);
     setError(null);
     try {
-      const res = await api.del<{ revokeAt?: string }>(`/api/integrations/${encodeURIComponent(connectionId)}`);
+      const res = await api.del<{ revokeAt?: string; providerRevoked?: boolean }>(`/api/integrations/${encodeURIComponent(connectionId)}`);
       setConfirmDisconnect(null);
       setDisconnectedHere((current) => [...current, connectionId]);
       // The removal revokes every grant on the connection, so the page says so
       // now rather than waiting on a re-read that may fail.
       const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
       setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
-      setRemovedHiddenNotice({ label: entry.label, revokePage: safeProviderRevokePage(res?.revokeAt) ? res.revokeAt : null });
+      setRemovedHiddenNotice({
+        label: entry.label,
+        revokePage: safeProviderRevokePage(res?.revokeAt) ? res.revokeAt : null,
+        stillListed: res?.providerRevoked === false,
+      });
       await load();
     } catch (err) {
       // The route answers 502 with one of these codes when the grants are already
       // revoked and the row is disconnected, and only the provider's own revoke
       // failed. A bare 502 (ingress, a pod restarting) reached nothing, so it takes
       // the plain error below and marks nothing revoked.
-      const response = (err as { response?: { status?: number; data?: { code?: string; revokeAt?: string } } })?.response;
+      const response = (err as { response?: { status?: number; data?: { code?: string; revokeAt?: string; providerRevoked?: boolean } } })?.response;
       const partial = response?.status === 502
         && (response.data?.code === 'provider_revoke_failed' || response.data?.code === 'provider_revoked_removal_incomplete');
       if (partial) {
@@ -491,7 +529,14 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
         setDisconnectedHere((current) => [...current, connectionId]);
         await load();
         if (safeProviderRevokePage(response?.data?.revokeAt)) {
-          setRemovedHiddenNotice({ label: entry.label, revokePage: response?.data?.revokeAt as string });
+          // `provider_revoke_failed`: the vendor did not take the revoke, so its
+          // app is still listed. The other code can follow a step 3 that never
+          // called the vendor (a page-only entry), so it carries the answer.
+          setRemovedHiddenNotice({
+            label: entry.label,
+            revokePage: response?.data?.revokeAt as string,
+            stillListed: response?.data?.code === 'provider_revoke_failed' || response?.data?.providerRevoked === false,
+          });
         } else {
           setError(t('tools.disconnectPartial', { defaultValue: 'Disconnected {{label}} here, but {{label}} did not confirm. Remove Commonly in its connected apps.', label: entry.label }));
         }
@@ -566,6 +611,7 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     irreversibleTools,
     asksFirst,
     outcomeLabel,
+    reasonLabel,
     modeLabel,
     entryGrantModes,
     entryModeCopy,

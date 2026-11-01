@@ -7,9 +7,18 @@ jest.mock('../../../models/PodMemberFirstMessage', () => ({
 jest.mock('../../../services/agentEventService', () => ({
   enqueue: jest.fn(),
 }));
+// The pod rows the welcome cue's mention map is read from; routing itself is
+// the real agentMentionService.
+jest.mock('../../../models/AgentRegistry', () => ({
+  AgentRegistry: {},
+  AgentInstallation: { find: jest.fn() },
+}));
+jest.mock('../../../models/AgentProfile', () => ({ find: jest.fn() }));
 
 const PodMemberFirstMessage = require('../../../models/PodMemberFirstMessage');
 const AgentEventService = require('../../../services/agentEventService');
+const { AgentInstallation } = require('../../../models/AgentRegistry');
+const AgentProfile = require('../../../models/AgentProfile');
 const {
   maybeFireWelcomeWake,
   isDesignatedGreeter,
@@ -49,9 +58,13 @@ const opts = (over = {}) => ({
   ...over,
 });
 
+const lean = (value) => ({ lean: jest.fn().mockResolvedValue(value) });
+
 describe('welcomeWakeService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    AgentInstallation.find.mockReturnValue(lean([]));
+    AgentProfile.find.mockReturnValue(lean([]));
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     PodMemberFirstMessage.findOneAndUpdate.mockResolvedValue(firstInsert());
     AgentEventService.enqueue.mockResolvedValue(undefined);
@@ -241,6 +254,32 @@ describe('welcomeWakeService', () => {
       await maybeFireWelcomeWake(opts({
         installations: [greeter({ displayName: 'Commonly Support' })],
       }));
+      const [event] = AgentEventService.enqueue.mock.calls[0];
+      expect(event.payload.content).toContain('@commonly-support');
+    });
+
+    // Two installs can share a display name; routing gives the slug to the
+    // later one, so naming it would send the member to the other agent.
+    test('names a handle that routes to this greeter when its display slug belongs to another install', async () => {
+      const first = greeter({ agentName: 'codex', instanceId: 'helper', displayName: 'Assistant' });
+      const second = plainInstall({ agentName: 'claude', instanceId: 'desk', displayName: 'Assistant' });
+      AgentInstallation.find.mockReturnValue(lean([first, second]));
+
+      await maybeFireWelcomeWake(opts({ installations: [first, second] }));
+
+      const [event] = AgentEventService.enqueue.mock.calls[0];
+      expect(event.agentName).toBe('codex');
+      expect(event.payload.content).toContain('@codex-helper');
+      expect(event.payload.content).not.toMatch(/@assistant\b/);
+    });
+
+    test('keeps the display slug when the pod map cannot be read', async () => {
+      AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('db down')) });
+
+      await maybeFireWelcomeWake(opts({
+        installations: [greeter({ displayName: 'Commonly Support' })],
+      }));
+
       const [event] = AgentEventService.enqueue.mock.calls[0];
       expect(event.payload.content).toContain('@commonly-support');
     });

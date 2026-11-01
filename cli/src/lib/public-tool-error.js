@@ -33,6 +33,12 @@
 
 export const ANSWERABLE_API_STATUSES = new Set([400, 403, 404, 409, 410, 413, 422]);
 
+// The two ways a public turn is withheld over its Commonly MCP server: a tool
+// call failed in a way the model must not narrate, or the server was never shown
+// working. Both leave the event unacked for retry.
+export const PUBLIC_TOOL_FAILED_CODE = 'public_tool_failed';
+export const PUBLIC_MCP_NOT_READY_CODE = 'public_mcp_not_ready';
+
 const INVALID_ARGUMENTS_RE = /^The \S+ tool was called with invalid arguments: /;
 
 const parsePayload = (text) => {

@@ -6,17 +6,20 @@ import Ajv from 'ajv';
 import { createHash } from 'crypto';
 import catalogue from '../config/uiCardCatalogue.json';
 import revision from '../config/uiCardCatalogueRevision.json';
+import catalogueRev2 from '../config/uiCardCatalogue.rev2.json';
+import revisionRev2 from '../config/uiCardCatalogueRevision.rev2.json';
 
 // A revision is immutable: property insertion order is OpenUI's positional ABI.
+// Agents author revision 1 (the MCP snapshot serves it). Revision 2 adds only
+// Source, which the server stamps; an agent-written Source is always refused.
 export const UI_CARD_CATALOGUE = Object.freeze({ ...revision });
-const catalogueHash = `sha256:${createHash('sha256').update(JSON.stringify(catalogue)).digest('hex')}`;
-if (catalogueHash !== revision.catalogHash) throw new Error('UI catalogue revision hash mismatch');
+export const UI_CARD_SOURCE_CATALOGUE = Object.freeze({ ...revisionRev2 });
+export const UI_CARD_SOURCE_CONNECTORS: readonly string[] = Object.freeze(
+  [...catalogueRev2.$defs.Source.properties.connector.enum],
+);
 
 export const UI_CARD_MAX_BYTES = 32 * 1024;
 export const UI_CARD_MAX_EXPANDED_NODES = 2048;
-const schema = catalogue as LibraryJSONSchema;
-const parser = createParser(schema);
-const componentNames = new Set(Object.keys(schema.properties || {}));
 const bracketTokens = tokenize('()[]{}');
 const closingTokens = new Map([
   [bracketTokens[0].t, bracketTokens[1].t],
@@ -24,34 +27,60 @@ const closingTokens = new Map([
   [bracketTokens[4].t, bracketTokens[5].t],
 ]);
 const openParenToken = bracketTokens[0].t;
-const allowedCall = (name: string) => componentNames.has(name) || ['Action', 'OpenUrl'].includes(name);
-const helpers = new Set(['Step', 'File', 'Pair', 'Col']);
-// lang-core validates prop types but ignores JSON Schema bounds (maxLength,
-// minItems, minimum, etc.). Validate its materialized tree as well. References
-// name element wrappers so helper/child identity is checked, not only prop shape.
-const validateTree = new Ajv({ strict: false }).compile({
-  $defs: Object.fromEntries(Object.entries(catalogue.$defs).map(([name, props]) => [name, {
-    type: 'object',
-    properties: {
-      type: { const: 'element' }, typeName: { const: name }, props,
-      partial: { type: 'boolean' }, hasDynamicProps: { type: 'boolean' }, statementId: { type: 'string' },
-    },
-    required: ['type', 'typeName', 'props'],
-    additionalProperties: false,
-  }])),
-  anyOf: Object.keys(catalogue.properties).filter((name) => !helpers.has(name))
-    .map((name) => ({ $ref: `#/$defs/${name}` })),
-});
+// Components that only ever appear inside a parent, never as the card root.
+const notRoot = new Set(['Step', 'File', 'Pair', 'Col', 'Source']);
+
+type Grammar = typeof catalogue;
+interface CardRevision {
+  pin: typeof revision;
+  grammar: Grammar;
+  parser: ReturnType<typeof createParser>;
+  componentNames: Set<string>;
+  validateTree: ReturnType<Ajv['compile']>;
+}
+function loadRevision(grammar: Grammar, pin: typeof revision): CardRevision {
+  const hash = `sha256:${createHash('sha256').update(JSON.stringify(grammar)).digest('hex')}`;
+  if (hash !== pin.catalogHash) throw new Error(`UI catalogue revision ${pin.catalogRev} hash mismatch`);
+  const schema = grammar as LibraryJSONSchema;
+  return {
+    pin,
+    grammar,
+    parser: createParser(schema),
+    componentNames: new Set(Object.keys(schema.properties || {})),
+    // lang-core validates prop types but ignores JSON Schema bounds (maxLength,
+    // minItems, minimum, etc.). Validate its materialized tree as well. References
+    // name element wrappers so helper/child identity is checked, not only prop shape.
+    validateTree: new Ajv({ strict: false }).compile({
+      $defs: Object.fromEntries(Object.entries(grammar.$defs).map(([name, props]) => [name, {
+        type: 'object',
+        properties: {
+          type: { const: 'element' }, typeName: { const: name }, props,
+          partial: { type: 'boolean' }, hasDynamicProps: { type: 'boolean' }, statementId: { type: 'string' },
+        },
+        required: ['type', 'typeName', 'props'],
+        additionalProperties: false,
+      }])),
+      anyOf: Object.keys(grammar.properties).filter((name) => !notRoot.has(name))
+        .map((name) => ({ $ref: `#/$defs/${name}` })),
+    }),
+  };
+}
+const revisions = [loadRevision(catalogue, revision), loadRevision(catalogueRev2 as Grammar, revisionRev2)];
+const allowedCall = (rev: CardRevision, name: string) => (
+  rev.componentNames.has(name) || ['Action', 'OpenUrl'].includes(name)
+);
 
 function validatePresentation(root: ElementNode): void {
   let buttons = 0;
   let primary = 0;
+  let sources = 0;
   function visit(value: unknown): void {
     if (Array.isArray(value)) { value.forEach(visit); return; }
     if (!value || typeof value !== 'object') return;
     const node = value as ElementNode;
     if (node.type !== 'element') return;
     const { props } = node;
+    if (node.typeName === 'Source') sources += 1;
     if (node.typeName === 'Link') {
       const url = new URL(props.url as string);
       if (url.protocol !== 'https:' || url.username || url.password) refuse('Link requires a credential-free https URL');
@@ -81,6 +110,9 @@ function validatePresentation(root: ElementNode): void {
   }
   visit(root);
   if (buttons > 2 || primary > 1) refuse('UI card permits at most two buttons and one primary link');
+  const topLevelSources = root.typeName === 'Card'
+    ? (root.props.children as ElementNode[]).filter((child) => child.typeName === 'Source').length : 0;
+  if (sources > 1 || sources !== topLevelSources) refuse('UI card permits one Source, on the top-level Card');
 }
 
 
@@ -139,10 +171,19 @@ export function validateAgentCardPayload(
   payload: unknown,
   content: unknown,
 ): void {
+  validateCardPayload(messageType, payload, content, false);
+}
+
+function validateCardPayload(
+  messageType: unknown,
+  payload: unknown,
+  content: unknown,
+  serverStamped: boolean,
+): ElementNode | undefined {
   if (messageType !== undefined && messageType !== 'text' && messageType !== 'card') {
     refuse('Agent messageType must be text or card');
   }
-  if (payload === undefined && messageType !== 'card') return;
+  if (payload === undefined && messageType !== 'card') return undefined;
   if (messageType !== 'card') refuse('UI payload requires messageType card');
   if (typeof content !== 'string' || !content.trim()) refuse('UI card requires a content text fallback');
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) refuse('UI card payload must be an object');
@@ -153,13 +194,23 @@ export function validateAgentCardPayload(
     refuse('Expected {kind:"ui",v:1,lang:"openui@1",catalogId,catalogRev,catalogHash,source}');
   }
   if (envelope.catalogId !== revision.catalogId) refuse('Unsupported UI catalogId');
-  if (envelope.catalogRev !== revision.catalogRev) refuse('Unsupported UI catalogRev');
-  if (envelope.catalogHash !== revision.catalogHash) refuse('UI catalogHash does not match catalogRev');
+  const rev = revisions.find((candidate) => candidate.pin.catalogRev === envelope.catalogRev);
+  if (!rev) refuse('Unsupported UI catalogRev');
+  if (envelope.catalogHash !== rev.pin.catalogHash) refuse('UI catalogHash does not match catalogRev');
   if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > UI_CARD_MAX_BYTES) {
     refuse('UI card payload exceeds 32 KB');
   }
+  return validateCardSource(envelope.source as string, rev, serverStamped);
+}
+
+function validateCardSource(source: string, rev: CardRevision, serverStamped: boolean): ElementNode {
+  // Source names a vendor origin. Only stampCardSource writes it, so an agent
+  // cannot claim a card came from Linear or Sentry, under any revision.
+  const callable = (name: string) => {
+    if (name === 'Source' && !serverStamped) refuse('UI card Source is stamped by the server, not written by agents');
+    return allowedCall(rev, name);
+  };
   try {
-    const source = envelope.source as string;
     // The lexer drops unknown characters. Reject those in the original source,
     // while leaving quoted prose (including Unicode and escapes) untouched.
     let quote = '';
@@ -190,7 +241,7 @@ export function validateAgentCardPayload(
         refuse('UI card contains unmatched brackets');
       }
       if (typeof token.v === 'string' && tokens[index + 1]?.t === openParenToken
-        && parseExpression([token]).k !== 'Str' && !allowedCall(token.v)) {
+        && parseExpression([token]).k !== 'Str' && !callable(token.v)) {
         refuse(`UI card call is not allowed: ${token.v}`);
       }
     });
@@ -220,7 +271,7 @@ export function validateAgentCardPayload(
       expressions.set(statement.id, expression);
       walkAST(expression, (node) => {
         if (node.k === 'Comp') {
-          if (!allowedCall(node.name)) {
+          if (!callable(node.name)) {
             refuse(`UI card call is not allowed: ${node.name}`);
           }
           if (node.fn) refuse('UI card functions are not allowed');
@@ -248,16 +299,84 @@ export function validateAgentCardPayload(
       });
     });
     validateExpansionBudget(expressions);
-    const result = parser.parse(source);
+    const result = rev.parser.parse(source);
     if (!result.root || result.meta.incomplete || result.meta.unresolved.length
       || result.meta.errors.length || result.queryStatements.length || result.mutationStatements.length
       || Object.keys(result.stateDeclarations).length) {
       refuse('UI card source is incomplete or invalid for the Commonly catalogue');
     }
-    if (!validateTree(result.root)) refuse('UI card props violate the Commonly catalogue');
+    if (!rev.validateTree(result.root)) refuse('UI card props violate the Commonly catalogue');
     validatePresentation(result.root);
+    return result.root;
   } catch (error) {
     if (error instanceof UICardValidationError) throw error;
     refuse('UI card source could not be parsed');
   }
+}
+
+export interface UICardEnvelope {
+  kind: 'ui';
+  v: 1;
+  lang: 'openui@1';
+  source: string;
+  catalogId: string;
+  catalogRev: number;
+  catalogHash: string;
+}
+
+/** Print a validated, static element tree back to positional OpenUI source. */
+function printNode(value: unknown, grammar: Grammar): string {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return `[${value.map((item) => printNode(item, grammar)).join(', ')}]`;
+  const node = value as ElementNode;
+  const definition = (grammar.$defs as Record<string, { properties: Record<string, unknown> }>)[node.typeName];
+  if (node.type !== 'element' || !definition) refuse('UI card Source stamping met an unknown node');
+  const args = Object.keys(definition.properties).map((key) => node.props[key]);
+  while (args.length && args[args.length - 1] === undefined) args.pop();
+  return `${node.typeName}(${args.map((arg) => printNode(arg, grammar)).join(', ')})`;
+}
+
+/**
+ * Server-only: append Source(connector, fetchedAt) to a card built from a
+ * recorded connector call and return a revision 2 envelope. The input is held
+ * to the agent rules first, so vendor data cannot smuggle in its own Source.
+ */
+export function stampCardSource(
+  source: string,
+  content: string,
+  stamp: { connector: string; fetchedAt: Date | string },
+): UICardEnvelope {
+  const root = validateCardPayload('card', {
+    kind: 'ui', v: 1, lang: 'openui@1', source, ...UI_CARD_CATALOGUE,
+  }, content, false)!;
+  if (!UI_CARD_SOURCE_CONNECTORS.includes(stamp.connector)) refuse('Unknown UI card Source connector');
+  // A Date from the server clock, or its exact ISO form. Date() reads a loose
+  // string such as "1" as 2001 and rolls 02-30 over to 03-02, so a string must
+  // survive the round trip unchanged.
+  const raw = stamp.fetchedAt;
+  const fetchedAt = raw instanceof Date ? raw : new Date(typeof raw === 'string' ? raw : Number.NaN);
+  if (Number.isNaN(fetchedAt.getTime()) || (!(raw instanceof Date) && fetchedAt.toISOString() !== raw)) {
+    refuse('UI card Source requires a valid fetchedAt');
+  }
+  if (root.typeName !== 'Card') refuse('UI card Source is stamped on a Card root');
+  const children = root.props.children as unknown[];
+  const rev = revisions.find((candidate) => candidate.pin.catalogRev === UI_CARD_SOURCE_CATALOGUE.catalogRev)!;
+  const stamped: ElementNode = {
+    ...root,
+    props: {
+      ...root.props,
+      children: [...children, {
+        type: 'element', typeName: 'Source', props: { connector: stamp.connector, fetchedAt: fetchedAt.toISOString() },
+      }],
+    },
+  } as ElementNode;
+  const envelope: UICardEnvelope = {
+    kind: 'ui', v: 1, lang: 'openui@1', ...UI_CARD_SOURCE_CATALOGUE,
+    source: `root = ${printNode(stamped, rev.grammar)}`,
+  };
+  // The Card's own bounds (six children, 32 KB) still apply after the stamp.
+  validateCardPayload('card', envelope, content, true);
+  return envelope;
 }

@@ -43,6 +43,9 @@ const shape = (overrides = {}) => ({
 // failure names the key that was dropped rather than the object that lost it.
 const RECORD_KEYS = {
   'config.entryId': 'linear',
+  // The agent an operator key is bound to (TASK-330). Declared, so a $set the
+  // schema drops is caught here and not by a mint that refuses "not bound".
+  'config.agentId': 'agent-a',
   'config.intake': 'oauth',
   'config.clientId': 'https://api.commonly.me/api/integrations/connect/hosted-mcp/linear/client-metadata',
   'config.providerSubject': 'subject-1',
@@ -156,6 +159,28 @@ describe('the hosted-mcp connection row', () => {
     await expect(Integration.create(shape({ config: { entryId: ENTRY_B, intake: 'oauth' } })))
       .resolves.toBeDefined();
     await expect(Integration.create(shape({ createdBy: OWNER_B }))).resolves.toBeDefined();
+  });
+
+  test('one owner holds one key per bound agent, and an OAuth row co-exists with them', async () => {
+    // TASK-330: an operator key is one agent's bearer, so the second agent's
+    // key for the same vendor is a second row, not an E11000. A second key for
+    // the SAME agent is still one row, and an OAuth row (no agentId) is its own
+    // row beside them. Each is per (person, entry, agent).
+    const keyFor = (agentId) => shape({ config: { entryId: ENTRY_A, intake: 'operator_key', agentId } });
+
+    await expect(Integration.create(keyFor('agent-a'))).resolves.toBeDefined();
+    await expect(Integration.create(keyFor('agent-b'))).resolves.toBeDefined();
+    await expect(Integration.create(keyFor('agent-a'))).rejects.toMatchObject({ code: 11000 });
+    await expect(Integration.create(shape())).resolves.toBeDefined();
+    await expect(Integration.create(shape())).rejects.toMatchObject({ code: 11000 });
+  });
+
+  test('the declared index keys on the bound agent as well as the person and entry', () => {
+    const declared = Integration.schema.indexes().find(([keys, options]) => (
+      keys.createdBy === 1 && options.partialFilterExpression?.type === 'hosted-mcp'
+    ));
+    expect(declared[0]).toEqual({ createdBy: 1, 'config.entryId': 1, 'config.agentId': 1 });
+    expect(declared[1].unique).toBe(true);
   });
 
   test('positive control: the index is PARTIAL, not a unique index on createdBy', async () => {

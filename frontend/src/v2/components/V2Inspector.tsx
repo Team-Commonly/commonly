@@ -184,9 +184,20 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
     setJoinPolicy(pod?.joinPolicy === 'invite-only' ? 'invite-only' : 'open');
     setPolicyError(null);
   }, [pod?._id, pod?.joinPolicy]);
+  // The workspace queue is a global newest-first slice, so filtering it to this pod
+  // can come back empty while the per-pod count is not. Ask for this pod's own rows.
+  const [podAttention, setPodAttention] = useState<V2AttentionItem[] | null>(null);
+  useEffect(() => {
+    if (!pod?._id) { setPodAttention(null); return undefined; }
+    let active = true;
+    api.get<{ items?: V2AttentionItem[] }>(`/api/activity/decision-queue?podId=${encodeURIComponent(pod._id)}&limit=50`)
+      .then((data) => { if (active) setPodAttention(Array.isArray(data?.items) ? data.items : null); })
+      .catch(() => { if (active) setPodAttention(null); });
+    return () => { active = false; };
+  }, [api, pod?._id, attentionCount]);
   const attention = useMemo(
-    () => attentionItems.filter((item) => item.podId === pod?._id),
-    [attentionItems, pod?._id],
+    () => podAttention ?? attentionItems.filter((item) => item.podId === pod?._id),
+    [podAttention, attentionItems, pod?._id],
   );
 
   useEffect(() => {
@@ -380,8 +391,9 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
               </button>
             )}
             {attention.map((item) => (
-              <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention" onClick={() => openAttention(item)}>
-                <span>{item.title}</span>
+              <button key={`${item.kind}:${item.id}`} type="button" className="v2-workspace-inspector__attention v2-workspace-inspector__attention--item" onClick={() => openAttention(item)}>
+                <ShellGlyph name="inbox" size={16} />
+                <span className="v2-workspace-inspector__attention-title">{item.title}</span>
                 {item.actorName && (
                   <span className="v2-workspace-inspector__actor">
                     {labelForAttentionActor(agents, item.actorName, t('common.agent'))}
@@ -469,7 +481,12 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           </div>
         ))}
 
-        {isOwner && !['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && renderGroup('join', 'lock', t('podsSidebar.create.whoCanJoin'), null, (
+        {!['agent-room', 'agent-dm', 'agent-admin'].includes(String(pod.type)) && renderGroup('join', 'lock', t('podsSidebar.create.whoCanJoin'), null, !isOwner ? (
+          // Members see the policy; only the owner can change it.
+          <p className="v2-pods__join-policy-hint">
+            {joinPolicy === 'open' ? t('inspector.workspace.joinOpen') : t('podsSidebar.create.privateOption')}
+          </p>
+        ) : (
           <div className="v2-pod-join-settings">
             {/* D215: two exclusive values read better side by side than as radios. */}
             <V2Segmented

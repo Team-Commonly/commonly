@@ -8,11 +8,11 @@
   "innerRatio": 1
  },
  "chat-1440": {
-  "helperWords": 35,
+  "helperWords": 38,
   "innerRatio": 5.32
  },
  "chat-390": {
-  "helperWords": 5,
+  "helperWords": 7,
   "innerRatio": 6.28
  },
  "board-1440": {
@@ -53,6 +53,70 @@
  },
  "connectors-390": {
   "helperWords": 1,
+  "innerRatio": 1
+ },
+ "byo-1440": {
+  "helperWords": 39,
+  "innerRatio": 1
+ },
+ "byo-handoff-1440": {
+  "helperWords": 141,
+  "innerRatio": 1
+ },
+ "byo-390": {
+  "helperWords": 28,
+  "innerRatio": 1.03
+ },
+ "byo-handoff-390": {
+  "helperWords": 106,
+  "innerRatio": 1.52
+ },
+ "connect-1440": {
+  "helperWords": 20,
+  "innerRatio": 1.09
+ },
+ "connect-390": {
+  "helperWords": 20,
+  "innerRatio": 1.77
+ },
+ "team-1440": {
+  "helperWords": 56,
+  "innerRatio": 1
+ },
+ "team-390": {
+  "helperWords": 34,
+  "innerRatio": 1.93
+ },
+ "firstrun-welcome-1440": {
+  "helperWords": 16,
+  "innerRatio": 1
+ },
+ "firstrun-waiting-1440": {
+  "helperWords": 68,
+  "innerRatio": 1
+ },
+ "firstrun-connected-1440": {
+  "helperWords": 62,
+  "innerRatio": 1
+ },
+ "firstrun-error-1440": {
+  "helperWords": 62,
+  "innerRatio": 1
+ },
+ "firstrun-welcome-390": {
+  "helperWords": 12,
+  "innerRatio": 1
+ },
+ "firstrun-waiting-390": {
+  "helperWords": 64,
+  "innerRatio": 1
+ },
+ "firstrun-connected-390": {
+  "helperWords": 58,
+  "innerRatio": 1
+ },
+ "firstrun-error-390": {
+  "helperWords": 58,
   "innerRatio": 1
  }
 }

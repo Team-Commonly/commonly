@@ -194,15 +194,8 @@ const TypingIndicator: React.FC<{ agents: TypingAgentEntry[] }> = ({ agents }) =
       });
   return (
     <div className="v2-chat__typing" aria-live="polite">
-      <div className="v2-chat__typing-avatars">
-        {agents.slice(0, 3).map((a) => (
-          <V2Avatar key={a.key} name={a.displayName || a.agentName} src={a.avatar} size="sm" />
-        ))}
-      </div>
+      <span className="v2-chat__typing-dot" aria-hidden="true" />
       <span className="v2-chat__typing-label">{label}</span>
-      <span className="v2-chat__typing-dots" aria-hidden="true">
-        <span /><span /><span />
-      </span>
     </div>
   );
 };

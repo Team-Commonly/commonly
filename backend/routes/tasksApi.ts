@@ -71,9 +71,11 @@ const actorOf = (req: any) => {
  * into the route and turned every board write into a 500: strictly worse than
  * the silent fan-out this exists to fix.
  */
-const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string, previousTask?: unknown) => {
+const notifyAgentsAs = (
+  actor: ReturnType<typeof actorOf>, podId: unknown, task: unknown, kind: string, previousTask?: unknown,
+) => {
   try {
-    const pending = notifyPodAgents(podId, task, kind, actorOf(req), previousTask);
+    const pending = notifyPodAgents(podId, task, kind, actor, previousTask);
     if (pending?.catch) {
       pending.catch((e: Error) => console.warn('[tasks] agent notify failed:', e.message));
     }
@@ -81,6 +83,9 @@ const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string, pre
     console.warn('[tasks] agent notify threw:', (e as Error).message);
   }
 };
+const notifyAgents = (req: any, podId: unknown, task: unknown, kind: string, previousTask?: unknown) => (
+  notifyAgentsAs(actorOf(req), podId, task, kind, previousTask)
+);
 
 interface AuthReq {
   userId?: string;
@@ -629,29 +634,47 @@ const writableLeaseCondition = (
   ] };
 };
 
-router.post('/:podId/:taskId/claim', rateLimit({
-  windowMs: 60_000,
-  // Higher than task-create's 20: a claimant renews by re-claiming, and a
-  // busy agent can be racing several tasks in a minute. Still low enough
-  // that a runaway loop hits the wall inside one lease window.
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: taskWriteRateLimitKey,
-  handler: (_req: Request, res: Response) => res.status(429).json({ error: 'rate limit exceeded: 30 task claims per 60s' }),
-}), auth, async (req: AuthReq, res: Res) => {
-  try {
-    const { podId, taskId } = req.params || {};
-    const userId = req.userId || req.user?._id || req.agentUser?._id;
-    const agentId = resolveAgentInstanceId(req);
-    const claimedBy = agentId || userId?.toString() || '';
-    const author = await resolveAuthor(req);
-    const access = await requirePodMember(podId || '', userId, { write: true });
-    if (access.error) return res.status(access.status || 500).json({ error: access.error });
-    if (actorOf(req).isAgent && req.body?.continueAnyway !== true) {
-      const hold = await AgentSendFreshness.unseenMessages(userId, podId);
-      if (hold) return res.status(409).json(hold);
-    }
+/**
+ * Who a claim is written as. `userId` is the authenticated User and becomes
+ * `claimedByUserId`, the field `assertGrantUsable` reads as a task-bound grant's
+ * authority, so it must come from authentication, never from a body or a model.
+ */
+interface TaskClaimant {
+  userId: string;
+  claimedBy: string;
+  author: string;
+  actorUser: AuthReq['agentUser'] | AuthReq['user'] | null;
+  notifyAs: ReturnType<typeof actorOf>;
+  recordAs: ReturnType<typeof requestActor>;
+}
+
+// One derivation from an authenticated caller, so a hosted agent's claim is
+// keyed exactly as the same bot's claim through this route would be.
+const claimantOf = async (req: AuthReq): Promise<TaskClaimant> => {
+  const userId = String(req.userId || req.user?._id || req.agentUser?._id || '');
+  return {
+    userId,
+    claimedBy: resolveAgentInstanceId(req) || userId,
+    author: await resolveAuthor(req),
+    actorUser: req.agentUser || req.user || null,
+    notifyAs: actorOf(req),
+    recordAs: requestActor(req),
+  };
+};
+
+type TaskClaimResult = { status: 200; task: unknown } | { status: number; body: Record<string, unknown> };
+
+/**
+ * The claim: the membership write check, the CAS, and what a claim tells the
+ * room. The route and the native runtime's `commonly_claim_task` both call it,
+ * so a hosted agent claims by exactly the rules a seat does (TASK-340). The
+ * freshness hold stays in the route: it reads a CAP caller's read cursor, which
+ * a hosted agent does not keep, since its turn is handed the pod's recent messages.
+ */
+const claimTaskAs = async (podId: string, taskId: string, claimant: TaskClaimant): Promise<TaskClaimResult> => {
+  const access = await requirePodMember(podId, claimant.userId, { write: true });
+  if (access.error) return { status: access.status || 500, body: { error: access.error } };
+  const { userId, claimedBy, author } = claimant;
     const now = new Date();
     // Classify the current holder only after this claim's CAS wins:
     // a same-holder continuation (renewal, or re-take after the holder's own
@@ -664,7 +687,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     // The deferral budget is per-lease, not per-task: a seat that renews
     // normally must never inherit a predecessor's spent budget, or the third
     // holder of a hot task gets rescued on its first lapse.
-    const update = { $set: { status: 'claimed', claimedBy, claimedByUserId: userId?.toString() || null, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0, lapsedFrom: null }, $push: { updates: { text: `Claimed by ${author}`, author, authorId: userId?.toString() || null, createdAt: now } } };
+    const update = { $set: { status: 'claimed', claimedBy, claimedByUserId: userId || null, claimedAt: now, claimExpiresAt: new Date(now.getTime() + TASK_CLAIM_LEASE_MS), rescueDeferrals: 0, lapsedFrom: null }, $push: { updates: { text: `Claimed by ${author}`, author, authorId: userId || null, createdAt: now } } };
     // The primary CAS stamps authenticated ownership. Five ways to win: the task is unclaimed; the caller already
     // holds it (renewal); the holder's lease lapsed; the claim predates
     // leases entirely (claimExpiresAt null) and is older than one lease; or
@@ -672,7 +695,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
     // derived from claimedAt, so no migration and no instant steal of work
     // someone claimed minutes ago.
     let result = await updateTaskWithRevisionSnapshot({
-      podId: mongoose.Types.ObjectId.createFromHexString(podId || ''),
+      podId: mongoose.Types.ObjectId.createFromHexString(podId),
       taskId,
       // A blocked row is deliberately resumable only when a seat names its
       // task id. Do not add it to claimableConditions: that predicate also
@@ -681,33 +704,36 @@ router.post('/:podId/:taskId/claim', rateLimit({
       $or: [
         ...claimableConditions(now),
         { status: 'claimed', claimedBy, $or: [
-          { claimedByUserId: userId?.toString() },
+          { claimedByUserId: userId },
           // Legacy runtime-bearer claims already used this immutable ID.
-          { claimedByUserId: null, claimedBy: userId?.toString() },
+          { claimedByUserId: null, claimedBy: userId },
         ] },
         { status: 'blocked' },
       ],
     }, update);
-    if (!result && claimedBy !== userId?.toString()) {
+    if (!result && claimedBy !== userId) {
       // Preserve name-only legacy renewal, but never promote a display key to
       // authenticated grant authority. A fresh claim after release/expiry does.
       result = await updateTaskWithRevisionSnapshot({
-        podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId,
+        podId: mongoose.Types.ObjectId.createFromHexString(podId), taskId,
         status: 'claimed', claimedBy, claimedByUserId: null,
       }, { ...update, $set: { ...update.$set, claimedByUserId: null } });
     }
     if (!result) {
-      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId || ''), taskId }).lean() as { claimedBy?: string; status?: string; claimExpiresAt?: Date | null } | null;
-      if (!existing) return res.status(404).json({ error: 'Task not found' });
+      const existing = await Task.findOne({ podId: mongoose.Types.ObjectId.createFromHexString(podId), taskId }).lean() as { claimedBy?: string; status?: string; claimExpiresAt?: Date | null } | null;
+      if (!existing) return { status: 404, body: { error: 'Task not found' } };
       // Name the live holder AND when the lease frees — a loser standing
       // down should know when racing again is legitimate (D3: informed, not
       // blind).
-      return res.status(409).json({
-        error: 'Task already claimed',
-        claimedBy: existing.claimedBy,
-        status: existing.status,
-        claimExpiresAt: existing.claimExpiresAt || null,
-      });
+      return {
+        status: 409,
+        body: {
+          error: 'Task already claimed',
+          claimedBy: existing.claimedBy,
+          status: existing.status,
+          claimExpiresAt: existing.claimExpiresAt || null,
+        },
+      };
     }
     const { task, previous: preClaim } = result;
     emitTaskUpdated(podId, task, 'updated');
@@ -717,7 +743,7 @@ router.post('/:podId/:taskId/claim', rateLimit({
       from: preClaim?.status,
       to: 'claimed',
       at: now,
-      actor: requestActor(req),
+      actor: claimant.recordAs,
       leaseUntil: task.claimExpiresAt,
       renewal: preClaim?.status === 'claimed' && preClaim.claimedBy === claimedBy,
     });
@@ -728,8 +754,8 @@ router.post('/:podId/:taskId/claim', rateLimit({
     const isSameHolderContinuation = !!preClaim
       && (preClaim.claimedBy === claimedBy || preClaim.lapsedFrom === claimedBy);
     if (!isSameHolderContinuation) {
-      notifyAgents(req, podId, task, 'updated', preClaim);
-      const actorUser = req.agentUser || req.user;
+      notifyAgentsAs(claimant.notifyAs, podId, task, 'updated', preClaim);
+      const { actorUser } = claimant;
       const actorName = actorUser?.isBot
         ? resolveAgentDisplayLabel(actorUser, author)
         : actorUser?.username || author;
@@ -746,7 +772,34 @@ router.post('/:podId/:taskId/claim', rateLimit({
         taskId: String(task.taskId || taskId),
       }).catch((error: Error) => console.warn('[tasks] system action line failed:', error.message));
     }
-    return res.json({ task });
+    return { status: 200, task };
+};
+
+router.post('/:podId/:taskId/claim', rateLimit({
+  windowMs: 60_000,
+  // Higher than task-create's 20: a claimant renews by re-claiming, and a
+  // busy agent can be racing several tasks in a minute. Still low enough
+  // that a runaway loop hits the wall inside one lease window.
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: taskWriteRateLimitKey,
+  handler: (_req: Request, res: Response) => res.status(429).json({ error: 'rate limit exceeded: 30 task claims per 60s' }),
+}), auth, async (req: AuthReq, res: Res) => {
+  try {
+    const { podId, taskId } = req.params || {};
+    const userId = req.userId || req.user?._id || req.agentUser?._id;
+    // Checked here as well as in claimTaskAs: the freshness hold below answers
+    // with previews of pod messages, so membership must gate it first.
+    const access = await requirePodMember(podId || '', userId, { write: true });
+    if (access.error) return res.status(access.status || 500).json({ error: access.error });
+    if (actorOf(req).isAgent && req.body?.continueAnyway !== true) {
+      const hold = await AgentSendFreshness.unseenMessages(userId, podId);
+      if (hold) return res.status(409).json(hold);
+    }
+    const result = await claimTaskAs(podId || '', taskId || '', await claimantOf(req));
+    if ('body' in result) return res.status(result.status).json(result.body);
+    return res.json({ task: result.task });
   } catch (err) {
     console.error('POST /tasks/claim error:', err);
     return res.status(500).json({ error: 'Failed to claim task' });
@@ -1261,5 +1314,8 @@ module.exports = router;
 // export had been unreachable since #1022 shipped it). Re-attached explicitly
 // so the single definition of "claimable" is actually consumable.
 module.exports.claimableConditions = claimableConditions;
+// The native runtime's commonly_claim_task claims through the same function (TASK-340).
+module.exports.claimTaskAs = claimTaskAs;
+module.exports.claimantOf = claimantOf;
 
 export {};

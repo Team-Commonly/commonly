@@ -11,9 +11,13 @@ const { manifests } = require('../../integrations/manifests');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { mcpComponentOf, projectTools, toolInstallableMetas } = require('./toolInstallables');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../../integrations/hostedMcp/entries');
+const {
+  HOSTED_MCP_ENTRIES, findHostedMcpEntry,
+}: typeof import('../../integrations/hostedMcp/entries') = require('../../integrations/hostedMcp/entries');
 const { isHostedMcpEntryHidden } = require('../../integrations/hostedMcp/visibility');
-const { isHostedMcpClientConfigured } = require('../hostedMcpIntakeService');
+const {
+  isHostedMcpClientConfigured,
+}: typeof import('../hostedMcpIntakeService') = require('../hostedMcpIntakeService');
 
 type ProviderReadiness = { available: boolean; reason?: 'not_configured' };
 
@@ -173,6 +177,7 @@ const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hid
       description: row.description || '',
       ...(hostedEntry?.connectNotice ? { connectNotice: hostedEntry.connectNotice } : {}),
       ...(hostedEntry?.accessPage ? { accessPage: hostedEntry.accessPage } : {}),
+      ...(hostedEntry?.revoke?.page ? { revokePage: hostedEntry.revoke.page } : {}),
       connectionType: meta.connectionType,
       ...(meta.entryId ? { entryId: meta.entryId } : {}),
       available: readiness.available,

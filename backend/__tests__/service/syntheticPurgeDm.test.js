@@ -90,7 +90,9 @@ describe('Synthetic purge DM preservation', () => {
       expect(projected.members.find((m) => String(m._id) === String(human._id)).username).toBe('Deleted user');
       expect(await require('../../services/dmService').canViewPod(String(agent._id), projected)).toBe(true);
       const context = await require('../../services/podContextService').getPodContext({ podId: String(pod._id), userId: String(agent._id), skillMode: 'none' });
-      expect(context.members).toEqual(expect.arrayContaining([{ name: 'Deleted user', isAgent: false, self: false }]));
+      expect(context.members).toEqual(expect.arrayContaining([{
+        name: 'Deleted user', mention: '', isAgent: false, self: false,
+      }]));
     });
   it('refuses to delete a disposable Scout that another DM depends on', async () => {
     const human = await insertUser({ username: 'eng-smoke-journey-1015124709', email: 'journey@ops.commonly.invalid', isBot: false });

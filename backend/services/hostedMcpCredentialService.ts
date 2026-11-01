@@ -48,7 +48,7 @@
 
 import Integration from '../models/Integration';
 import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
-import type { HostedMcpEntry } from './hostedMcpEntryService';
+import type { HostedMcpEntry, HostedMcpOAuthEntry } from './hostedMcpEntryService';
 import {
   buildRefreshRequest,
   discoverAuthorizationServer,
@@ -116,13 +116,13 @@ interface RefreshResult {
 interface CredentialDeps {
   now: () => Date;
   entryFor: (row: HostedMcpRow) => HostedMcpEntry;
-  clientIdFor: (entry: HostedMcpEntry) => string;
-  clientSecretFor: (entry: HostedMcpEntry) => string | undefined;
+  clientIdFor: (entry: HostedMcpOAuthEntry) => string;
+  clientSecretFor: (entry: HostedMcpOAuthEntry) => string | undefined;
   dcrClientForRow: typeof dcrClientForRow;
   /** Conditional on the client-id snapshot, so a concurrent reconnect wins. */
   markClientMismatch: (id: unknown, recordedClientId: string | undefined, message: string) => Promise<void>;
   refreshAtVendor: (input: {
-    entry: HostedMcpEntry;
+    entry: HostedMcpOAuthEntry;
     clientId: string;
     clientSecret?: string;
     /** A DCR confidential client's registered method (TASK-248); sent as recorded. */
@@ -396,6 +396,17 @@ export const credentialFor = async (
 
   const id = rowId(row);
   const entry = deps.entryFor(row);
+  if (entry.credentialMode === 'operator_key') {
+    // A pasted key does not expire by a lifetime and cannot be refreshed, so
+    // the mode decides here, never a missing `expiresAt` (which would make an
+    // OAuth row with a lost lifetime serve a dead token). No fence, no lease.
+    assertUsable(row);
+    const keyRef = row.config?.credentialRef;
+    if (!keyRef) {
+      throw new HostedMcpCredentialError('reconnect_required', 'no key is stored for this connection');
+    }
+    return { token: await deps.secrets.get(keyRef), expiresAt: '' };
+  }
   const recordedClientId = row.config?.clientId;
   let clientId: string;
   let clientSecret: string | undefined;
