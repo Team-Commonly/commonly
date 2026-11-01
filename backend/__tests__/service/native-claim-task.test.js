@@ -39,7 +39,7 @@ const AgentIdentityService = require('../../services/agentIdentityService');
 const { mintGrant } = require('../../services/roomGrantService');
 const { selectLiveGrantsForIdentities } = require('../../services/grantBrokerProjectionService');
 const { GRANT_BROKER_ID } = require('../../services/installable/toolInstallables');
-const { dispatchTool } = require('../../services/nativeRuntimeService');
+const { dispatchTool, toolsForConfig } = require('../../services/nativeRuntimeService');
 const { HOSTED_NATIVE_TOOLS } = require('../../services/hostedEngine');
 
 jest.setTimeout(60000);
@@ -150,5 +150,49 @@ describe('commonly_claim_task (TASK-340)', () => {
 
   it('is offered to hosted agents', () => {
     expect(HOSTED_NATIVE_TOOLS).toContain('commonly_claim_task');
+  });
+
+  // F40, seen on the TASK-340 prod walk (11-01): a live grant in the pod puts every
+  // turn in in-pod-only mode, and that mode used to drop this tool. So a grant
+  // minted before its task was claimed could never be used: the agent the grant
+  // names could not take the claim the grant waits on.
+  describe('in a pod holding an outsider-writable grant', () => {
+    const offered = (opts) => toolsForConfig({ tools: [...HOSTED_NATIVE_TOOLS] }, true, opts)
+      .map((tool) => tool.function.name);
+    const claimInPod = (args, extra = {}) => dispatchTool('commonly_claim_task', args, {
+      podId: String(pod._id), agentName: AGENT_NAME, instanceId: INSTANCE, displayName: 'Claim seat',
+      installationConfig: {}, runId: 'run-claim', inPodOnly: true, ...extra,
+    });
+
+    it('is offered, and nothing else beyond reading and posting', () => {
+      expect(offered().sort()).toEqual(['commonly_claim_task', 'commonly_post_message', 'commonly_read_context']);
+    });
+
+    it('claims, and the grant bound to that task then reaches it', async () => {
+      await mintGrant({
+        connectionId: 'fixture', installationId: 'fixture', target: { kind: 'pod', id: String(pod._id) },
+        tools: ['github.list_issues'], writeMode: 'read', audience: [String(bot._id)],
+        expiresAt: new Date(Date.now() + 3600000), brokerId: GRANT_BROKER_ID,
+        binding: { podId: String(pod._id), taskId: 'TASK-001' },
+      });
+      const result = await claimInPod({ taskId: 'TASK-001' });
+      expect(result.error).toBeUndefined();
+      expect(result.content).toMatchObject({ ok: true, taskId: 'TASK-001', status: 'claimed' });
+      expect(await liveGrants()).toHaveLength(1);
+    });
+
+    it('is withdrawn once a granted tool has answered in the turn, and refused if called', async () => {
+      expect(offered({ brokerCallSeen: true })).not.toContain('commonly_claim_task');
+      const result = await claimInPod({ taskId: 'TASK-001' }, { brokerCallSeen: true });
+      expect(result.error).toBe('outsider_writable_grant_tool_denied');
+      expect(await Task.findOne({ taskId: 'TASK-001' }).lean()).toMatchObject({ status: 'pending' });
+    });
+
+    it('stays out of a turn that has read the web', async () => {
+      expect(offered({ webTainted: true })).not.toContain('commonly_claim_task');
+      const result = await claimInPod({ taskId: 'TASK-001' }, { webTainted: true });
+      expect(result.error).toBe('web_tainted_tool_denied');
+      expect(await Task.findOne({ taskId: 'TASK-001' }).lean()).toMatchObject({ status: 'pending' });
+    });
   });
 });

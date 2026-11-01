@@ -143,4 +143,28 @@ describe('a claim mid-turn re-reads the grant projection (TASK-340)', () => {
     expect(brokerProjection.hostedBrokerToolsForRun).toHaveBeenCalledTimes(1);
     expect(offeredIn(1)).not.toContain('sentry_find_organizations');
   });
+  // F40: a pod holding a grant narrows the turn, and the claim stays in the offer
+  // only until a granted tool has answered: after that, outsider-written text is
+  // in the turn, and it must not pick which task is claimed.
+  test('in a pod holding a grant, the claim is offered until a granted tool has answered', async () => {
+    const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    brokerProjection.hostedBrokerToolsForRun.mockReset();
+    brokerProjection.hostedBrokerToolsForRun
+      .mockResolvedValue({ tools: [GRANTED], dispatch: new Map([['sentry_find_organizations', {}]]) });
+    brokerProjection.dispatchHostedBrokerTool.mockResolvedValue({ callId: 'b', outcome: 'ok', content: { ok: true } });
+    axios.post.mockReset();
+    axios.post
+      .mockResolvedValueOnce(toolCalls(call('c1', 'sentry_find_organizations', {})))
+      .mockResolvedValueOnce(modelSays('One org.'));
+    try {
+      await runAgent(SEAT, MENTION);
+      expect(offeredIn(0)).toEqual(expect.arrayContaining(['commonly_claim_task', 'sentry_find_organizations']));
+      expect(offeredIn(1)).toContain('sentry_find_organizations');
+      expect(offeredIn(1)).not.toContain('commonly_claim_task');
+      expect(mockClaimTaskAs).not.toHaveBeenCalled();
+    } finally {
+      podHasOutsiderWritableGrant.mockResolvedValue(false);
+    }
+  });
 });
