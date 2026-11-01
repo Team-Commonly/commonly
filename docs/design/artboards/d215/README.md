@@ -3,6 +3,7 @@
 The spec for D215 (artboard v2). Open `index.html` in a browser. The toggle at the top switches it between light and dark, and every D215 surface has a frame at 1440 and at 390.
 
 - `index.html` holds the before shots and live mocks for seven surfaces: sidebar, pod chat, task board, agent memory, agent settings, settings and connectors. The mock's names, messages and task titles are neutral samples. Counts and times come from the captures.
+- A second block under agent settings draws the states of that page (policy and machine, identity edit, connector grants) at 1440 and 390. Those frames carry `data-state`, so `measure_after.js` skips them and `targets.json` does not move.
 - `before/` holds prod captures from 2026-10-31, blurred so they show layout and density only.
 - `targets.json` holds the helper-word and scroll targets per frame. `cap/measure_after.js` writes it from `index.html`.
 - `cap/` holds the measuring scripts. See the header of `measure_after.js` for its env.

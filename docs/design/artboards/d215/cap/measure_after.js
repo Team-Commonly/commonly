@@ -59,7 +59,7 @@ async function artboard() {
   await p.waitForTimeout(800);
   const res = await p.evaluate(() => {
     const out = {};
-    document.querySelectorAll('.frame').forEach(f => {
+    document.querySelectorAll('.frame:not([data-state])').forEach(f => {
       const app = f.querySelector('.app'); f.style.setProperty('--s', 1); f.style.overflow = 'visible'; f.style.aspectRatio = 'auto'; f.style.height = app.offsetHeight + 'px'; f.style.width = app.offsetWidth + 'px'; f.style.maxWidth = 'none';
       let words = 0;
       const w = document.createTreeWalker(app, NodeFilter.SHOW_TEXT);
