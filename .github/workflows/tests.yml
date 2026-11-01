@@ -88,7 +88,7 @@ jobs:
             printf '%s\n' "$files"
             printf '%s\n' "$files" | grep -qE '^(backend/|cli/|package(-lock)?\.json)' && backend=true
             printf '%s\n' "$files" | grep -qE '^(frontend/|backend/)' && frontend=true
-            printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|package(-lock)?\.json)' && chart=true
+            printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|scripts/verify-backend-worker-chart\.sh$|scripts/monitoring/apply-alerting\.py$|docs/runbooks/alerting\.md$|package(-lock)?\.json)' && chart=true
             # A change to this workflow runs the full suite as a self-test, so a
             # PR that edits the test pipeline proves every heavy leg still works.
             if printf '%s\n' "$files" | grep -qE '^\.github/workflows/tests\.yml$'; then
