@@ -2650,6 +2650,8 @@
     "reasonGrantExpired": "授权已过期",
     "reasonBudgetExhausted": "调用次数已用完",
     "reasonApprovalUnavailable": "无法请求人工批准",
+    "reasonApprovalDeclined": "审批已被拒绝",
+    "reasonApprovalExpired": "审批在调用运行前已过期",
     "reasonInvalidArgs": "参数校验未通过",
     "reasonConnectionMismatch": "连接与授权已不再匹配",
     "reasonReconnect": "需要重新连接",

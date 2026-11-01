@@ -412,17 +412,19 @@ describe('Connectors page: tools', () => {
       calls: [
         { ...trail.calls[0], callId: 'f1', outcome: 'failed', reason: 'upstream_tool_error', at: iso(-120000) },
         { ...trail.calls[0], callId: 'f2', outcome: 'failed', reason: 'some_new_code', at: iso(-300000) },
-        { ...trail.calls[0], callId: 'f3', outcome: 'ok', reason: null, at: iso(-420000) },
+        { ...trail.calls[0], callId: 'f3', outcome: 'ok', reason: 'provider_unreachable', at: iso(-420000) },
+        { ...trail.calls[0], callId: 'f4', outcome: 'failed', reason: 'constructor', at: iso(-600000) },
       ],
     };
     mockTools({ trails: { grant_live: failed } });
     renderPage();
     const { aside } = await openRow('GitHub', 'View GitHub in Launch pod');
-    await waitFor(() => expect(within(aside).getAllByRole('listitem')).toHaveLength(3));
+    await waitFor(() => expect(within(aside).getAllByRole('listitem')).toHaveLength(4));
     expect(within(aside).getAllByRole('listitem').map((line) => line.textContent)).toEqual([
       'Scout · github.list_issues · failed · the provider tool returned an error2m ago',
       'Scout · github.list_issues · failed · some_new_code5m ago',
       'Scout · github.list_issues · ok7m ago',
+      'Scout · github.list_issues · failed · constructor10m ago',
     ]);
   });
 

@@ -2647,6 +2647,8 @@
     "reasonGrantExpired": "the grant expired",
     "reasonBudgetExhausted": "the call budget is spent",
     "reasonApprovalUnavailable": "no one could be asked to approve it",
+    "reasonApprovalDeclined": "approval was declined",
+    "reasonApprovalExpired": "approval expired before the call ran",
     "reasonInvalidArgs": "the arguments did not validate",
     "reasonConnectionMismatch": "the connection no longer matches the grant",
     "reasonReconnect": "the connection needs reconnecting",
