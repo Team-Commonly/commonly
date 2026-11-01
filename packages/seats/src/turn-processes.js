@@ -36,6 +36,11 @@ export const TURN_MARK_ENV = 'COMMONLY_TURN_ID';
 export const KEEP_PROCESS_ENV = 'COMMONLY_KEEP_PROCESS';
 export const TURN_REAP_ENV = 'COMMONLY_TURN_REAP';
 export const TURN_REAP_GRACE_MS = 5_000;
+// How far before the turn a process's recorded start may read and still be
+// looked at. lstart has one-second resolution, and on Linux ps derives it from
+// the boot time, which drifts from the wall clock by a second or more. The
+// window only bounds what is read; the marker decides.
+export const TURN_START_SLACK_MS = 60_000;
 
 export const turnReapEnabled = (env = process.env) => PROCESS_GROUPS_SUPPORTED && env?.[TURN_REAP_ENV] !== '0';
 
@@ -94,8 +99,7 @@ export const findTurnProcesses = (mark, since, io = {}) => {
   const rows = table();
   if (!rows) return [];
   const skip = selfAndAncestors(rows, self);
-  // lstart has one-second resolution.
-  const floor = Number(since) - 1000;
+  const floor = Number(since) - TURN_START_SLACK_MS;
   const recent = rows.filter((row) => !skip.has(row.pid) && Date.parse(row.started) >= floor);
   const environments = envs(recent.map((row) => row.pid));
   const marked = `${TURN_MARK_ENV}=${mark}`;

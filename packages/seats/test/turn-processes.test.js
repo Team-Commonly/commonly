@@ -11,7 +11,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isRunning, readPids, reap, waitFor } from '../test-support/processes.js';
 import {
-  describeTurnReap, findTurnProcesses, KEEP_PROCESS_ENV, markTurn, reapTurnProcesses, TURN_MARK_ENV, turnReapEnabled,
+  describeTurnReap, findTurnProcesses, KEEP_PROCESS_ENV, markTurn, reapTurnProcesses, TURN_MARK_ENV,
+  TURN_START_SLACK_MS, turnReapEnabled,
 } from '../src/turn-processes.js';
 import { readProcess, readProcesses } from '../src/process-group.js';
 
@@ -29,7 +30,7 @@ test('findTurnProcesses takes the marked, their descendants, and nothing kept, o
     { pid: 610, ppid: 1, started: fresh }, // kept
     { pid: 611, ppid: 610, started: fresh }, // kept by inheritance
     { pid: 620, ppid: 1, started: fresh }, // another seat's process
-    { pid: 630, ppid: 1, started: at(since - 30_000) }, // carries the mark, started before the turn
+    { pid: 630, ppid: 1, started: at(since - TURN_START_SLACK_MS - 1_000) }, // carries the mark, started before the window
   ];
   const mark = 'm-1';
   const pair = `${TURN_MARK_ENV}=${mark}`;
@@ -52,6 +53,24 @@ test('findTurnProcesses takes the marked, their descendants, and nothing kept, o
   // Only processes started since the turn began are read, never us or our parent.
   assert.deepEqual(asked.sort(), [600, 601, 610, 611, 620]);
   assert.deepEqual(findTurnProcesses(null, since, { table, envs, self: 500 }), []);
+});
+
+test('a leftover whose recorded start reads a few seconds early is still found', () => {
+  // Linux ps derives lstart from the boot time, which drifts from the wall
+  // clock: a process started during the turn can read as started before it.
+  const since = Date.parse('2026-11-01T12:00:00Z');
+  const table = () => [
+    { pid: 800, ppid: 1, started: at(since - 3_000) }, // drifted, carries the mark
+    { pid: 801, ppid: 1, started: at(since - TURN_START_SLACK_MS - 1_000) }, // outside the window
+  ];
+  const pair = `${TURN_MARK_ENV}=m-3`;
+  const asked = [];
+  const envs = (pids) => { asked.push(...pids); return new Map(pids.map((pid) => [pid, new Set([pair])])); };
+
+  const found = findTurnProcesses('m-3', since, { table, envs, self: 500 });
+
+  assert.deepEqual(found.map((row) => row.pid), [800]);
+  assert.deepEqual(asked, [800]);
 });
 
 test('a kept process keeps everything under it, even a child whose environment cannot be read', () => {
