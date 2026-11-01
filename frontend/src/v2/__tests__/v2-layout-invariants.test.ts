@@ -1331,9 +1331,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
     const title = ruleBody(v2, '.v2-board__card-title');
     expect(title).toContain('display: -webkit-box');
-    expect(title).toContain('-webkit-line-clamp: 3');
+    expect(title).toContain('-webkit-line-clamp: 2');
     expect(title).toContain('-webkit-box-orient: vertical');
     expect(title).toContain('overflow: hidden');
+  });
+
+  test('board cards match the D215 artboard: two-line titles, 8/10/9 padding, 9px radius', () => {
+    // Artboard .tc: 13px/18px title clamped to two lines, padding 8px 10px 9px,
+    // gap 4px, radius 9px. The 1440 and 390 measure targets depend on these.
+    expect(ruleBody(v2, '.v2-board__card-title')).toContain('-webkit-line-clamp: 2');
+    expect(v2).toContain('.v2-board__card-title { font-size: 13px; line-height: 18px; }');
+    // ruleBody returns the first match, which is the base rule; these override rules sit later in the file.
+    expect(v2).toContain('.v2-board__card { border-radius: 9px; }');
+    expect(v2).toContain('.v2-root button.v2-board__card-main { gap: 4px; padding: 8px 10px 9px; }');
   });
 
   test('a board claim lease reads as secondary status rather than a blue mention', () => {
