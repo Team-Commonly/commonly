@@ -3,6 +3,8 @@
 The spec for D215 (artboard v2). Open `index.html` in a browser. The toggle at the top switches it between light and dark, and every D215 surface has a frame at 1440 and at 390.
 
 - `index.html` holds the before shots and live mocks for seven surfaces: sidebar, pod chat, task board, agent memory, agent settings, settings and connectors. The mock's names, messages and task titles are neutral samples. Counts and times come from the captures.
+- A second block under agent settings draws the states of that page (policy and machine, identity edit, connector grants, runtime with the model and effort selects, own API key) at 1440 and 390. The runtime and key frames follow V2RuntimeControls and V2AgentProviderKey, including the stored-model refusal and the key-save error. Those frames carry `data-state`, so `measure_after.js` skips them and `targets.json` does not move.
+- A block under Settings draws the free-plan Plan row and the administrator-only Administration group (`data-state="admin-free"`, 1440 and 390, also skipped by the scorer).
 - The theme switch (sun / moon, D224) sits in the rail above the avatar at 1440. At 390 there is no rail, so the same switch rides the Pods top bar, left of Search. It is a two-item segment: the item for the theme in effect is the white key.
 - `before/` holds prod captures from 2026-10-31, blurred so they show layout and density only.
 - `targets.json` holds the helper-word and scroll targets per frame. `cap/measure_after.js` writes it from `index.html`.
