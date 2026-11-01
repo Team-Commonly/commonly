@@ -13,7 +13,7 @@ import { isRunning, readPids, reap, waitFor } from '../test-support/processes.js
 import {
   describeTurnReap, findTurnProcesses, KEEP_PROCESS_ENV, markTurn, reapTurnProcesses, TURN_MARK_ENV, turnReapEnabled,
 } from '../src/turn-processes.js';
-import { readProcess } from '../src/process-group.js';
+import { readProcess, readProcesses } from '../src/process-group.js';
 
 const POSIX = process.platform !== 'win32';
 const at = (ms) => new Date(ms).toUTCString();
@@ -54,6 +54,32 @@ test('findTurnProcesses takes the marked, their descendants, and nothing kept, o
   assert.deepEqual(findTurnProcesses(null, since, { table, envs, self: 500 }), []);
 });
 
+test('a kept process keeps everything under it, even a child whose environment cannot be read', () => {
+  const since = Date.parse('2026-11-01T12:00:00Z');
+  const fresh = at(since + 5_000);
+  // A marked shell runs `COMMONLY_KEEP_PROCESS=1 npm run dev`: npm -> sh -c vite -> vite.
+  const table = () => [
+    { pid: 700, ppid: 1, started: fresh }, // the marked shell
+    { pid: 701, ppid: 700, started: fresh }, // npm, kept
+    { pid: 702, ppid: 701, started: fresh }, // sh, environment unreadable
+    { pid: 703, ppid: 702, started: fresh }, // vite, kept by inheritance
+    { pid: 704, ppid: 700, started: fresh }, // the shell's other child, environment unreadable
+  ];
+  const pair = `${TURN_MARK_ENV}=m-2`;
+  const keep = `${KEEP_PROCESS_ENV}=1`;
+  const envs = () => new Map([
+    [700, new Set([pair])],
+    [701, new Set([pair, keep])],
+    [702, new Set(['sh'])],
+    [703, new Set([pair, keep])],
+    [704, new Set(['sleep'])],
+  ]);
+
+  const found = findTurnProcesses('m-2', since, { table, envs, self: 500 });
+
+  assert.deepEqual(found.map((row) => row.pid).sort(), [700, 704]);
+});
+
 test('the check is on unless COMMONLY_TURN_REAP=0, and a child with no pid is never reaped', () => {
   assert.equal(turnReapEnabled({}), POSIX);
   assert.equal(turnReapEnabled({ COMMONLY_TURN_REAP: '0' }), false);
@@ -64,6 +90,10 @@ test('the check is on unless COMMONLY_TURN_REAP=0, and a child with no pid is ne
   assert.equal(on.env[TURN_MARK_ENV], on.mark);
   assert.equal(on.env.A, '1');
   assert.equal(on.reap({}), null);
+  // A keep setting the seat was started with is not handed to its turns.
+  const seatKept = markTurn({ A: '1', [KEEP_PROCESS_ENV]: '1' }, { enabled: true });
+  assert.equal(seatKept.env[KEEP_PROCESS_ENV], undefined);
+  assert.equal(seatKept.env.A, '1');
   assert.equal(describeTurnReap({ termed: [] }), null);
   assert.match(describeTurnReap({ termed: [7, 8] }), /stopped 2 processes .*pid 7, 8.*COMMONLY_KEEP_PROCESS=1/);
 });
@@ -123,7 +153,7 @@ test('a pid whose start time changed since it was found is not signalled', { ski
   try {
     assert.ok(await waitFor(() => readProcess(child.pid)));
     const result = reapTurnProcesses(turn.mark, Date.now() - 2_000, {
-      io: { read: (pid) => ({ ...readProcess(pid), started: 'Thu Jan  1 00:00:00 1970' }) },
+      io: { read: (pids) => readProcesses(pids).map((row) => ({ ...row, started: 'Thu Jan  1 00:00:00 1970' })) },
     });
     assert.deepEqual(result.termed, []);
     assert.ok(isRunning(child.pid));

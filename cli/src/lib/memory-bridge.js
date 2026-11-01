@@ -39,7 +39,8 @@ export const ROW_SLICING_CUE = 'Slicing: when a row is too large for one turn, s
 // The turn's leftovers are stopped when it ends (@commonlyai/seats/turn-processes),
 // so a seat that means to reuse a server has to say so when it starts it.
 export const BACKGROUND_PROCESS_CUE = 'Background processes: anything you start in the background is '
-  + 'stopped when this turn ends. To keep one for a later turn, such as a dev server you will reuse, start it '
+  + 'stopped when this turn ends, including a server that starts on first use, such as tmux, and an agent you '
+  + 'restart with nohup. To keep one for a later turn, such as a dev server you will reuse, start it '
   + `with ${KEEP_PROCESS_ENV}=1 set, and stop it yourself when you are done with it.`;
 
 /**

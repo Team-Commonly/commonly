@@ -10,9 +10,11 @@
  * So a turn's child is started with a fresh marker in its environment, which
  * every process it starts inherits however it detaches. When the child has
  * closed, the processes still carrying the marker are stopped: SIGTERM, then
- * SIGKILL after a grace for any still alive. A process started with
- * COMMONLY_KEEP_PROCESS=1 is left running, and so is anything it starts, since
- * they inherit the setting. COMMONLY_TURN_REAP=0 turns the whole check off.
+ * SIGKILL after a grace for any still alive. That includes a lasting server
+ * the turn started on first use, such as tmux, and a seat it restarted. A
+ * process started with COMMONLY_KEEP_PROCESS=1 is left running, and so is
+ * anything it starts, since they inherit the setting; the turn's child itself
+ * never inherits it. COMMONLY_TURN_REAP=0 turns the whole check off.
  *
  * Only processes started since the turn began are read, and each one's
  * environment is only compared against the marker and the keep setting. Each
@@ -28,9 +30,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import {
-  descendantsOf, PROCESS_GROUPS_SUPPORTED, readProcess, readProcessTable,
-} from './process-group.js';
+import { PROCESS_GROUPS_SUPPORTED, readProcesses, readProcessTable } from './process-group.js';
 
 export const TURN_MARK_ENV = 'COMMONLY_TURN_ID';
 export const KEEP_PROCESS_ENV = 'COMMONLY_KEEP_PROCESS';
@@ -83,8 +83,10 @@ const selfAndAncestors = (table, pid) => {
 /**
  * The processes still carrying `mark`, as { pid, ppid, started }: started at
  * or after `since` (ms), neither this process nor an ancestor of it, and not
- * kept. Each one brings its descendants, unless a descendant is kept. `io` is
- * a test seam ({ table, envs, self }).
+ * kept. Each one brings its descendants, except a kept one and everything
+ * under it, whose environments may be unreadable. The start-time window only
+ * limits what is read; the marker is what decides. `io` is a test seam
+ * ({ table, envs, self }).
  */
 export const findTurnProcesses = (mark, since, io = {}) => {
   const { table = readProcessTable, envs = readEnvironments, self = process.pid } = io;
@@ -103,9 +105,17 @@ export const findTurnProcesses = (mark, since, io = {}) => {
   for (const row of recent) {
     if (environments.get(row.pid)?.has(marked) && !kept(row.pid)) found.set(row.pid, row);
   }
-  for (const row of [...found.values()]) {
-    for (const child of descendantsOf(rows, row.pid)) {
-      if (!found.has(child.pid) && !skip.has(child.pid) && !kept(child.pid)) found.set(child.pid, child);
+  const byParent = new Map();
+  for (const row of rows) {
+    if (row.pid === row.ppid) continue;
+    if (!byParent.has(row.ppid)) byParent.set(row.ppid, []);
+    byParent.get(row.ppid).push(row);
+  }
+  for (const stack = [...found.keys()]; stack.length;) {
+    for (const child of byParent.get(stack.pop()) || []) {
+      if (found.has(child.pid) || skip.has(child.pid) || kept(child.pid)) continue;
+      found.set(child.pid, child);
+      stack.push(child.pid);
     }
   }
   return [...found.values()];
@@ -114,16 +124,19 @@ export const findTurnProcesses = (mark, since, io = {}) => {
 /**
  * Stop what `findTurnProcesses` returns. SIGTERM is sent before this returns;
  * `done` settles after `graceMs`, once anything still alive has had SIGKILL.
- * A pid is signalled only while its start time is the one recorded. The grace
- * timer does not hold the process open. `io` adds `read` to the find seam.
+ * A pid is signalled only while its start time is the one recorded, read for
+ * all of them in one ps call per signal. The grace timer does not hold the
+ * process open. `io` adds `read` (pids -> rows) to the find seam.
  */
 export const reapTurnProcesses = (mark, since, { graceMs = TURN_REAP_GRACE_MS, io = {} } = {}) => {
-  const read = io.read || readProcess;
-  const unchanged = (row) => read(row.pid)?.started === row.started;
-  const signal = (rows, name) => rows.filter((row) => {
-    if (!unchanged(row)) return false;
-    try { process.kill(row.pid, name); return true; } catch { return false; }
-  });
+  const read = io.read || readProcesses;
+  const signal = (rows, name) => {
+    const now = new Map((read(rows.map((row) => row.pid)) || []).map((row) => [row.pid, row]));
+    return rows.filter((row) => {
+      if (now.get(row.pid)?.started !== row.started) return false;
+      try { process.kill(row.pid, name); return true; } catch { return false; }
+    });
+  };
   const termed = signal(findTurnProcesses(mark, since, io), 'SIGTERM');
   const done = termed.length === 0
     ? Promise.resolve({ killed: [] })
@@ -144,8 +157,11 @@ export const markTurn = (env, { enabled = turnReapEnabled(), now = Date.now, gra
   if (!enabled) return { env, mark: null, reap: () => null };
   const mark = randomUUID();
   const since = now();
+  // A keep setting the seat itself was started with would keep every turn.
+  const childEnv = { ...env, [TURN_MARK_ENV]: mark };
+  delete childEnv[KEEP_PROCESS_ENV];
   return {
-    env: { ...env, [TURN_MARK_ENV]: mark },
+    env: childEnv,
     mark,
     reap: (child, { io } = {}) => {
       if (!Number.isInteger(child?.pid) || child.pid <= 0) return null;
