@@ -3,7 +3,9 @@ const { mkdtemp, mkdir, rename, rm, writeFile } = require('fs/promises');
 const { tmpdir } = require('os');
 const { dirname, join } = require('path');
 const { promisify } = require('util');
-const { parseSeatPushArgs, fetchProviderObjects, pushWithLease, validateSeatBundle } = require('../../../services/seatGithubPush');
+const {
+  parseSeatPushArgs, fetchProviderObjects, pushWithLease, validateSeatBundle, PROVIDER_GIT_MAX_BUFFER,
+} = require('../../../services/seatGithubPush');
 
 const runFile = promisify(execFile);
 const env = { ...process.env, GIT_AUTHOR_NAME: 'Test', GIT_AUTHOR_EMAIL: 'test@example.com',
@@ -256,6 +258,56 @@ describe('seat push proof against the default branch', () => {
 
     await expect(validateSeatBundle({ git: boundGit, repo, bundlePath, baseOid: other, oldOid: zero, newOid: tip, defaultTip }))
       .rejects.toMatchObject({ code: 'bundle_base_not_in_provider', statusCode: 400 });
+  });
+
+  // Production runs git under PROVIDER_GIT_MAX_BUFFER. A check that lists every
+  // changed name fails there for a branch far behind the default branch.
+  const cappedGit = (repo) => async (args, cwd = repo, failure) => {
+    try {
+      return (await runFile('git', args, { cwd, env, maxBuffer: PROVIDER_GIT_MAX_BUFFER })).stdout.trim();
+    } catch {
+      throw failure || Object.assign(new Error('provider_git_failed'), { code: 'provider_git_failed' });
+    }
+  };
+
+  it('pushes a seat branch far behind a default branch that changed more names than the git buffer holds', async () => {
+    const base = await commit({ 'README.md': 'base\n' }, 'base');
+    await git(['checkout', '-q', '-b', 'seat'], work);
+    const tip = await commit({ 'b.txt': 'harmless\n' }, 'harmless');
+    await git(['checkout', '-q', 'main'], work);
+    const many = {};
+    const pad = 'x'.repeat(60);
+    for (let i = 0; i < 1200; i += 1) many[`generated/${pad}-${i}.txt`] = `${i}\n`;
+    const mainTip = await commit(many, 'many files');
+    const names = await git(['diff', '--name-only', '-z', mainTip, tip], work);
+    expect(names.length).toBeGreaterThan(PROVIDER_GIT_MAX_BUFFER);
+    await publish({ 'refs/heads/main': mainTip });
+    await git(['checkout', '-q', 'seat'], work);
+    await git(['bundle', 'create', bundlePath, 'HEAD', `^${base}`], work);
+    const { repo, defaultTip } = await receiverFor(ref, zero);
+
+    await expect(validateSeatBundle({
+      git: cappedGit(repo), repo, bundlePath, baseOid: base, oldOid: zero, newOid: tip, defaultTip,
+    })).resolves.toBeUndefined();
+  });
+
+  it('refuses a protected edit inside a merged side branch even when that branch undid it', async () => {
+    const base = await commit({ 'README.md': 'base\n' }, 'base');
+    await publish({ 'refs/heads/main': base });
+    await git(['checkout', '-q', '-b', 'side'], work);
+    await commit({ '.github/workflows/evil.yml': 'on: push\n' }, 'add workflow');
+    await git(['rm', '-q', '.github/workflows/evil.yml'], work);
+    await git(['commit', '-q', '-m', 'remove workflow'], work);
+    await git(['checkout', '-q', '-b', 'seat', base], work);
+    await commit({ 'b.txt': 'harmless\n' }, 'harmless');
+    await git(['merge', '-q', '--no-ff', '-m', 'merge side', 'side'], work);
+    const tip = await git(['rev-parse', 'HEAD'], work);
+    await git(['bundle', 'create', bundlePath, 'HEAD', `^${base}`], work);
+    const { repo, defaultTip } = await receiverFor(ref, zero);
+
+    await expect(validateSeatBundle({
+      git: cappedGit(repo), repo, bundlePath, baseOid: base, oldOid: zero, newOid: tip, defaultTip,
+    })).rejects.toMatchObject({ code: 'push_protected_path', statusCode: 403 });
   });
 
   it('refuses workflow files rolled back from an earlier default-branch commit', async () => {
