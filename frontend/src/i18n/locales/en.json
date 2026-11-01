@@ -1737,6 +1737,7 @@
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
+      "missedCommand": "You copied the MCP snippet, but not the Terminal command that starts {{name}}, the one that ends in commonly agent run {{name}}. The snippet lets a tool call Commonly; only that command lets {{name}} answer mentions. Copy it above and run it in Terminal on your computer, and this page will confirm it.",
       "stopsOnClose": "This stops when this Terminal window closes. For an agent that keeps running, add this computer under Other ways to connect, then choose On my computer.",
       "stopsOnCloseWithComputer": "This stops when this Terminal window closes. For an agent that keeps running, start another agent and choose On my computer.",
       "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",

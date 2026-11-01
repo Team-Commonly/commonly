@@ -28,6 +28,7 @@ const {
 const {
   extractToken, filterItems, nextCursorFrom, parseCursor, formatCursor,
   formatItemLine, createScrubber, retryDelayMs, DEFAULT_BACKOFF_MS, MAX_BACKOFF_MS,
+  createInboxRequest, InboxRequestError,
 } = await import('../src/lib/inbox.js');
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-inbox-'));
@@ -938,14 +939,22 @@ describe('ack and choose', () => {
     expect(text).toContain('item=');
   });
 
-  test('choose posts the value to the decision route', async () => {
+  const decisionQueue = (options) => jsonRes({
+    items: [{ ...item(1), id: hex(101), kind: 'decision', options }],
+    count: 1,
+    hasMore: false,
+  });
+  const CHOICES = [{ label: 'Ship it', recommended: true }, { label: 'Hold for review' }];
+
+  test('choose by index posts the option label, not the number', async () => {
     const file = writeTokenFile('choose-token', 'choose-secret\n');
     const seen = [];
     const fetchImpl = stubFetch({
       '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': decisionQueue(CHOICES),
       '/choose': (url, init) => {
         seen.push({ url, init });
-        return jsonRes({ status: 'ruled', body: { value: '2' } });
+        return jsonRes({ status: 'ruled', body: { value: 'Hold for review' } });
       },
     });
     const io = capture();
@@ -954,8 +963,82 @@ describe('ack and choose', () => {
     expect(code).toBe(0);
     expect(io.out[0]).toBe('account: connector-ops @ https://api.commonly.me');
     expect(seen[0].url).toBe(`https://api.commonly.me/api/activity/decisions/${hex(101)}/choose`);
-    expect(JSON.parse(seen[0].init.body)).toEqual({ value: '2' });
-    expect(io.out.join('\n')).toContain(`chose ${hex(101)} = 2`);
+    expect(JSON.parse(seen[0].init.body)).toEqual({ value: 'Hold for review' });
+    expect(io.out.join('\n')).toContain(`chose ${hex(101)} = Hold for review`);
+  });
+
+  test('choose by label posts that label, matched case-insensitively', async () => {
+    const file = writeTokenFile('label-token', 'choose-secret\n');
+    const seen = [];
+    const fetchImpl = stubFetch({
+      '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': decisionQueue(CHOICES),
+      '/choose': (url, init) => {
+        seen.push({ url, init });
+        return jsonRes({ status: 'ruled' });
+      },
+    });
+    const io = capture();
+    expect(await runInboxChoose(hex(101), 'ship IT', { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(0);
+    expect(JSON.parse(seen[0].init.body)).toEqual({ value: 'Ship it' });
+  });
+
+  test('choose refuses an out-of-range index or unknown label, posting nothing and listing the options', async () => {
+    const file = writeTokenFile('range-token', 'choose-secret\n');
+    for (const value of ['3', '0', 'Maybe']) {
+      const fetchImpl = stubFetch({
+        '/api/auth/user': jsonRes(USER),
+        '/api/activity/decision-queue': decisionQueue(CHOICES),
+        '/choose': jsonRes({ status: 'ruled' }),
+      });
+      const io = capture();
+      expect(await runInboxChoose(hex(101), value, { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(1);
+      expect(io.err.join('\n')).toContain('1. Ship it');
+      expect(io.err.join('\n')).toContain('2. Hold for review');
+      expect(fetchImpl.calls.some((c) => c.url.includes('/choose'))).toBe(false);
+    }
+  });
+
+  test('choose refuses a digit label that collides with another option\'s position, posting nothing', async () => {
+    const file = writeTokenFile('digit-token', 'choose-secret\n');
+    const fetchImpl = stubFetch({
+      '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': decisionQueue([{ label: '2' }, { label: 'Ship it' }]),
+      '/choose': jsonRes({ status: 'ruled' }),
+    });
+    const io = capture();
+    expect(await runInboxChoose(hex(101), '2', { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(1);
+    expect(io.err.join('\n')).toContain('refusing to guess');
+    expect(fetchImpl.calls.some((c) => c.url.includes('/choose'))).toBe(false);
+  });
+
+  test('a digit label that points at its own position still chooses by position', async () => {
+    const file = writeTokenFile('digit-own-token', 'choose-secret\n');
+    const seen = [];
+    const fetchImpl = stubFetch({
+      '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': decisionQueue([{ label: 'Ship it' }, { label: '2' }]),
+      '/choose': (url, init) => {
+        seen.push(init);
+        return jsonRes({ status: 'ruled' });
+      },
+    });
+    const io = capture();
+    expect(await runInboxChoose(hex(101), '2', { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(0);
+    expect(JSON.parse(seen[0].body)).toEqual({ value: '2' });
+  });
+
+  test('choose refuses when the decision is not open on the queue', async () => {
+    const file = writeTokenFile('closed-token', 'choose-secret\n');
+    const fetchImpl = stubFetch({
+      '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': jsonRes({ items: [], count: 0, hasMore: false }),
+      '/choose': jsonRes({ status: 'ruled' }),
+    });
+    const io = capture();
+    expect(await runInboxChoose(hex(101), '1', { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(1);
+    expect(io.err.join('\n')).toContain('not open on this account');
+    expect(fetchImpl.calls.some((c) => c.url.includes('/choose'))).toBe(false);
   });
 
   test('ack and choose refuse without a token file, making no request', async () => {
@@ -1087,5 +1170,50 @@ describe('item line and pure helpers', () => {
     inbox.configureOutput({ writeOut: (text) => printed.push(text) });
     inbox.outputHelp();
     expect(printed.join('')).toContain('There is no fallback to the saved login');
+  });
+});
+
+// TASK-338: the inbox's own fetch gets the same hard timeout as every other CAP
+// request, and a timeout, from the fetch or from the body read, reads as an
+// unanswered request rather than a bare DOMException.
+describe('a request that is never answered', () => {
+  // The limits below are the defaults; an operator's own override must not leak in.
+  const savedTimeout = process.env.COMMONLY_CAP_TIMEOUT_MS;
+  beforeEach(() => { delete process.env.COMMONLY_CAP_TIMEOUT_MS; });
+  afterAll(() => {
+    if (savedTimeout !== undefined) process.env.COMMONLY_CAP_TIMEOUT_MS = savedTimeout;
+  });
+  const timeoutError = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  const request = (fetchImpl) => createInboxRequest({
+    baseUrl: 'https://example.test', token: 'cm_agent_x', tokenFile: '/tmp/t', fetchImpl,
+  });
+
+  test('sends a timeout signal with every request', async () => {
+    const fetchImpl = stubFetch({ '/api/activity/decision-queue': jsonRes({ items: [] }) });
+    await request(fetchImpl)('/api/activity/decision-queue');
+    expect(fetchImpl.calls[0].init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test('a fetch that times out becomes an InboxRequestError with no status', async () => {
+    const err = await request(jest.fn(async () => { throw timeoutError(); }))('/api/activity/decision-queue')
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(InboxRequestError);
+    expect(err.status).toBeNull();
+    expect(err.message).toBe('GET /api/activity/decision-queue got no answer in 30s');
+  });
+
+  test('so does a body read that times out', async () => {
+    const fetchImpl = jest.fn(async () => ({ ok: true, status: 200, text: async () => { throw timeoutError(); } }));
+    const err = await request(fetchImpl)('/api/activity/decision-queue', { method: 'POST', body: {} })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(InboxRequestError);
+    expect(err.status).toBeNull();
+    expect(err.message).toBe('POST /api/activity/decision-queue got no answer in 60s');
+  });
+
+  test('any other fetch failure passes through unchanged', async () => {
+    const boom = new TypeError('fetch failed');
+    const err = await request(jest.fn(async () => { throw boom; }))('/api/x').catch((e) => e);
+    expect(err).toBe(boom);
   });
 });

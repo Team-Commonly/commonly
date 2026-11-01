@@ -226,6 +226,8 @@ export interface IAgentInstallationRegistry extends Document {
     label?: string;
     createdAt: Date;
     lastUsedAt?: Date;
+    /** Last listener check-in (events poll or socket connect); see agentListenerCheckIn. */
+    lastListenedAt?: Date;
   }>;
   // Server-granted because GitHub issue writes use the instance credential.
   // Never map this to the client-editable `scopes` array.
@@ -277,6 +279,7 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
         label: String,
         createdAt: { type: Date, default: Date.now },
         lastUsedAt: Date,
+        lastListenedAt: Date,
       },
     ],
     githubIssueWrite: { type: Boolean, default: false },

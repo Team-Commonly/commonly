@@ -62,6 +62,7 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
+import { capTimeoutMs, formatLimit } from './api.js';
 
 export const INBOX_KINDS = ['mention', 'decision', 'handoff', 'approval'];
 export const TOKEN_FILE_ENV = 'COMMONLY_TOKEN_FILE';
@@ -394,19 +395,29 @@ export const createInboxRequest = ({
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
     }
+    // TASK-338: the same hard timeout as every other CAP request (api.js).
+    const timeoutMs = capTimeoutMs(method === 'GET' ? 'read' : 'write');
     for (let attempt = 0; ; attempt += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      const res = await fetchImpl(url.toString(), {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'commonly-cli/0.1',
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-      // eslint-disable-next-line no-await-in-loop
-      const text = await res.text();
+      let res;
+      let text;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        res = await fetchImpl(url.toString(), {
+          method,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'commonly-cli/0.1',
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        // eslint-disable-next-line no-await-in-loop
+        text = await res.text();
+      } catch (err) {
+        if (err?.name !== 'TimeoutError') throw err;
+        throw new InboxRequestError(`${method} ${path} got no answer in ${formatLimit(timeoutMs)}`, null);
+      }
       let parsed;
       try {
         parsed = JSON.parse(text);
