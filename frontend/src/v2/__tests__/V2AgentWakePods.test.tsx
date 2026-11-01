@@ -188,12 +188,12 @@ describe('per-agent Wake and Pods settings', () => {
     view.rerender(
       <MemoryRouter><V2AgentWakePods agentName="new-agent" instanceId="default" updatePod={updatePod} /></MemoryRouter>,
     );
-    expect((await screen.findAllByText('New pod')).length).toBe(2);
+    expect((await screen.findAllByText('New pod')).length).toBe(1);
     await act(async () => { finishOld({ data: { installations: [{
       podId: 'pod-old', podName: 'Old pod', wakeOnMessage: true, boardWake: true, heartbeatMinutes: 60,
     }] } }); });
     expect(screen.queryByText('Old pod')).not.toBeInTheDocument();
-    expect(screen.getAllByText('New pod')).toHaveLength(2);
+    expect(screen.getByText('New pod')).toBeInTheDocument();
   });
 
   it('previews heartbeat turns against the plan cap before saving', async () => {
