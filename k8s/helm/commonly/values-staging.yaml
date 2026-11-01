@@ -183,7 +183,7 @@ backend:
     # Individual team emails are PII and live in the GCP SM secret
     # commonly-staging-auth-allowed-emails (NOT in this repo), surfaced via the
     # api-keys ExternalSecret → AUTH_ALLOWED_EMAILS when the flag below is true.
-    authAllowedDomains: "seed.staging.commonly.me,ops.commonly.invalid"
+    authAllowedDomains: "seed.staging.commonly.me,ops.commonly.invalid,example.invalid"
     authAllowedEmailsFromSecret: true
     # Smaller Postgres pool for staging's Aiven db (fewer connections than prod).
     pgPoolMax: 5
