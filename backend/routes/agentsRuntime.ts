@@ -1397,14 +1397,17 @@ router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any,
   // The runner polls /events only between turns, so a turn longer than the
   // listening window would age a working seat into gone-dark. Renewing a
   // delivery is the runner saying it is alive and holding work, so it counts
-  // as a check-in. The MCP checkpoint tool uses /ack, not this route.
-  recordListenerCheckIn(req.agentUser?._id, req.agentTokenHash);
+  // as a check-in, but only when a delivery it holds actually renewed: stale or
+  // made-up nonces renew nothing, and must not move an MCP-only seat out of
+  // never-connected. The MCP checkpoint tool uses /ack, not this route.
   try {
     const renewed = await Promise.all(events.map(async (entry: { eventId: string; deliveryId: string }) => (
       await AgentEventService.renewDelivery(entry.eventId, agentName, instanceId, entry.deliveryId)
         ? entry.eventId : null
     )));
-    return res.json({ renewed: renewed.filter(Boolean) });
+    const renewedEventIds = renewed.filter(Boolean);
+    if (renewedEventIds.length > 0) recordListenerCheckIn(req.agentUser?._id, req.agentTokenHash);
+    return res.json({ renewed: renewedEventIds });
   } catch (error: any) {
     console.error('Error renewing inbox deliveries:', error.message);
     return res.status(500).json({ message: 'Could not renew inbox deliveries' });

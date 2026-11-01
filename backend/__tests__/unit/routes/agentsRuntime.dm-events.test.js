@@ -189,6 +189,19 @@ describe('inbox delivery renewal route', () => {
     }, response());
     expect(recordListenerCheckIn).toHaveBeenCalledWith('bot-user-1', 'hashed-token');
   });
+  test('a renew that renews nothing is not a check-in', async () => {
+    AgentEventService.renewDelivery.mockResolvedValue(false);
+    recordListenerCheckIn.mockClear();
+    const res = response();
+    await getRouteHandler('/events/renew', 'post')({
+      agentInstallation: { agentName: 'wren', instanceId: 'writer-instance' },
+      agentUser: { _id: 'bot-user-1' },
+      agentTokenHash: 'hashed-token',
+      body: { events: [{ eventId, deliveryId: 'stale-nonce' }] },
+    }, res);
+    expect(res.json).toHaveBeenCalledWith({ renewed: [] });
+    expect(recordListenerCheckIn).not.toHaveBeenCalled();
+  });
   test('a malformed renew is not a check-in', async () => {
     recordListenerCheckIn.mockClear();
     await getRouteHandler('/events/renew', 'post')({

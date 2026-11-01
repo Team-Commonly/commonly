@@ -14,11 +14,14 @@ const { hash } = require('../utils/secret');
 const { markByoConnectionAttempt } = require('./onboardingMarks');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { embeddedRuntimeTokenExpired, runtimeCredentialRefusalReason } = require('./runtimeCredentialGate');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { recordListenerCheckIn } = require('./agentListenerCheckIn');
 
 interface AgentSocket {
   agentName: string;
   instanceId: string;
   agentUserId: string | null;
+  tokenHash?: string;
   agentKey: string;
   subscribedPods: Set<string>;
   handshake: { auth?: { token?: string } };
@@ -152,6 +155,7 @@ class AgentWebSocketService {
         socket.agentName = agentInfo.agentName;
         socket.instanceId = agentInfo.instanceId || 'default';
         socket.agentUserId = agentInfo.agentUserId || null;
+        socket.tokenHash = token.startsWith('cm_agent_') ? hash(token) : undefined;
         socket.agentKey = `${socket.agentName}:${socket.instanceId}`;
         socket.subscribedPods = new Set();
 
@@ -202,6 +206,10 @@ class AgentWebSocketService {
         // socket refresh the replacement's liveness timestamp.
         if (data?.socket === socket) {
           data.lastPong = Date.now();
+          // A socket that stays connected is still a listener. The connect
+          // stamp alone would age it into gone-dark after the listening window.
+          // The helper throttles per token, so a 30s ping costs one write a minute.
+          recordListenerCheckIn(socket.agentUserId, socket.tokenHash);
         }
       });
 
