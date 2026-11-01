@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from '../../i18n';
@@ -75,6 +75,11 @@ describe('claim run summary control (TASK-692)', () => {
     expect(claimRowTaskIds(container)).toEqual(['TASK-674', 'TASK-675', 'TASK-676', 'TASK-678']);
     act(() => toggle.click());
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    // The rows stay mounted, inert, while the fold closes, then leave.
+    const closing = container.querySelector('.v2-claim-run .v2-fold') as Element;
+    expect(closing).toHaveClass('v2-fold--closing');
+    expect(closing).toHaveAttribute('inert');
+    fireEvent.animationEnd(closing);
     expect(claimRowTaskIds(container)).toEqual([]);
   });
 
@@ -88,6 +93,7 @@ describe('claim run summary control (TASK-692)', () => {
     expect(claimRowTaskIds(container)).toHaveLength(4);
     await user.keyboard(' ');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.animationEnd(container.querySelector('.v2-claim-run .v2-fold') as Element);
     expect(claimRowTaskIds(container)).toEqual([]);
   });
 

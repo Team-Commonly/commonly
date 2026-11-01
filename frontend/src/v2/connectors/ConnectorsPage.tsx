@@ -16,7 +16,7 @@ import { useToolConnectors } from './useToolConnectors';
 import { useToolPanels } from './ToolPanels';
 import { usePhone } from './usePhone';
 import ChannelPanel from './ChannelPanel';
-import ConnectorDrawer from './ConnectorDrawer';
+import ConnectorDrawer, { ConnectorDrawerPresence } from './ConnectorDrawer';
 import ConnectorLogo from './ConnectorLogo';
 import ConnectorPopover from './ConnectorPopover';
 import ConnectorTile from './ConnectorTile';
@@ -717,7 +717,9 @@ const ConnectorsPage: React.FC = () => {
             {nothing && <p className="v2-cx-note">{t('tools.nothingMatches', { defaultValue: 'Nothing matches.' })}</p>}
           </div>
           {!channelDrawerOpen && !toolDrawerOpen && renderPopover()}
-          {renderChannelDrawer() || (toolDrawerOpen ? renderToolDrawer() : null)}
+          <ConnectorDrawerPresence>
+            {renderChannelDrawer() || (toolDrawerOpen ? renderToolDrawer() : null)}
+          </ConnectorDrawerPresence>
         </div>
       )}
     </div>

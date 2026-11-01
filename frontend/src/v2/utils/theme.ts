@@ -41,12 +41,24 @@ export function resolveV2Theme(pref: V2ThemePref): 'light' | 'dark' {
     ? 'dark' : 'light';
 }
 
+type ViewTransitionDocument = Document & { startViewTransition?: (update: () => void) => unknown };
+
 export function setV2Theme(pref: V2ThemePref): void {
   try {
     window.localStorage.setItem(V2_THEME_KEY, pref);
   } catch {
     // Storage can be blocked; the choice still applies for this page view.
   }
-  applyV2Theme(pref);
+  // The whole page crossfades once where the browser has view transitions and the
+  // user hasn't asked for reduced motion. Everywhere else the switch is instant.
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const doc = document as ViewTransitionDocument;
+  if (doc.startViewTransition && !reduce) {
+    doc.startViewTransition(() => applyV2Theme(pref));
+  } else {
+    applyV2Theme(pref);
+  }
+  // Subscribers (the theme switch, the Settings picker) hear every change,
+  // whichever way it was painted.
   listeners.forEach((listener) => listener());
 }

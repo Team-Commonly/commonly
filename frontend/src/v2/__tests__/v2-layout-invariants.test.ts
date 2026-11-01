@@ -2529,11 +2529,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).not.toMatch(/\.v2-msg__prose--closed::after/);
   });
 
-  it('the long-prose fold keeps both its max-height and overflow clip', () => {
+  it('the long-prose fold keeps both its 132px height and overflow clip', () => {
+    // The fold sizes between 132px and auto (motion pass), so the six-line cap is a
+    // block-size rather than a max-height; it must still be 132px and still clip.
     const block = v2.match(/\.v2-msg__prose--closed \{[^}]*\}/);
     expect(block).not.toBeNull();
-    expect(block![0]).toMatch(/max-height:\s*132px/);
-    expect(block![0]).toMatch(/overflow:\s*hidden/);
+    expect(block![0]).toMatch(/block-size:\s*132px/);
+    expect(block![0]).toMatch(/overflow:\s*clip/);
   });
 
   it('the BEND-1 feature type step exists in v2.css and tokens.css together', () => {

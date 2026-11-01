@@ -880,17 +880,46 @@
   font: 400 11px/16px var(--v2-font-mono);
 }
 
-/* Long code collapses after six lines; expands in place. */
+/* Long code collapses after six lines; expands in place. It sizes to auto over
+   --v2-dur and back to six lines over --v2-dur-fast, with no measured height and
+   no max-height. Without interpolate-size it opens and closes at once, as before.
+   overflow-y stays hidden while it sizes, so no vertical scrollbar flashes. */
 .v2-msg__collapse { position: relative; }
 
-.v2-msg__collapse--closed pre { max-height: calc(6 * 1.5 * 12.5px + 20px); overflow: hidden; }
+.v2-msg__collapse pre {
+  interpolate-size: allow-keywords;
+  block-size: auto;
+  overflow-y: hidden;
+  transition: block-size var(--v2-dur) var(--v2-ease);
+}
 
-/* Long agent prose folds after six lines (6 × 22px). The fade masks the prose itself, so a hovered row keeps its own surface. */
+.v2-msg__collapse--closed pre {
+  block-size: calc(6 * 1.5 * 12.5px + 20px);
+  overflow: hidden;
+  transition-duration: var(--v2-dur-fast);
+}
+
+/* Long agent prose folds after six lines (6 × 22px). The fade masks the prose itself, so a hovered row keeps its own surface.
+   A prose that folds sizes between 132px and auto: open over --v2-dur, closed over --v2-dur-fast, with
+   no measured height and no max-height. flow-root keeps the first child's margin inside the box in both
+   states, so the six-line preview matches the old overflow:hidden fold exactly. clip (not hidden) keeps
+   the box from becoming a scroller a focused link could scroll. Without interpolate-size it jumps, as before. */
 .v2-msg__prose { position: relative; }
 
+.v2-msg__prose--fold {
+  display: flow-root;
+  interpolate-size: allow-keywords;
+  block-size: auto;
+  overflow: clip;
+  overflow-clip-margin: 6px;
+  transition: block-size var(--v2-dur) var(--v2-ease);
+}
+
 .v2-msg__prose--closed {
-  max-height: 132px;
-  overflow: hidden;
+  block-size: 132px;
+  overflow: clip;
+  overflow-clip-margin: 0px;
+  transition-duration: var(--v2-dur-fast);
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
 }
@@ -915,9 +944,9 @@
 
 .v2-root button.v2-msg__showmore:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--v2-accent-text); }
 
-.v2-msg__showmore svg { width: 14px; height: 14px; flex: none; transition: transform 160ms; }
+.v2-msg__showmore svg { width: 14px; height: 14px; flex: none; transition: transform var(--v2-dur-fast) var(--v2-ease); }
 
-.v2-msg__showmore[aria-expanded='true'] svg { transform: rotate(180deg); }
+.v2-msg__showmore[aria-expanded='true'] svg { transform: rotate(180deg); transition-duration: var(--v2-dur); }
 
 .v2-root button.v2-msg__more {
   display: inline-block;
@@ -1107,4 +1136,18 @@
   .v2-root .v2-thread button.v2-msg__action { position: relative; width: 28px; height: 28px; }
   .v2-root .v2-thread button.v2-msg__action::after { content: ''; position: absolute; inset: -8px; }
   .v2-thread .v2-msg__gutter-time { display: none; }
+}
+
+/* A message that arrives live enters once: opacity 0→1 and 4px up, over --v2-dur.
+   History, a pod just opened and older pages carry no enter class and appear at
+   once. backwards fill only, so no transform lingers on the row after it lands. */
+.v2-msg--enter {
+  animation: v2-msg-enter var(--v2-dur) var(--v2-ease) backwards;
+}
+
+@keyframes v2-msg-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }

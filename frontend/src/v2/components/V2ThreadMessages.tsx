@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { HistorySearchState, V2Message, V2Start } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
@@ -11,9 +11,12 @@ import V2Avatar from './V2Avatar';
 import { ShellGlyph } from '../icons/glyphs';
 import { formatRelativeTime } from '../utils/grouping';
 import { V2DecisionCardData, V2DecisionRuling } from './V2DecisionCard';
+import V2Fold from './V2Fold';
 
 // Expanded threads show the newest eight; a `N more replies` line reveals the rest.
 const MAX_EXPANDED_REPLIES = 8;
+// A transcript load shorter than this never shows a spinner.
+const SPINNER_DELAY_MS = 300;
 
 interface V2ThreadMessagesProps {
   messages: V2Message[];
@@ -162,6 +165,32 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   messagesEndRef,
 }) => {
   const { t } = useTranslation();
+  // Loading → content: whatever replaces the spinner fades in once, over
+  // --v2-dur. A load that never showed the spinner (an older page, a
+  // reconnect catch-up) gets nothing, and a re-render never replays it.
+  // The spinner itself waits SPINNER_DELAY_MS, so a fast load shows content with
+  // no flash of a loader.
+  const waiting = loading && messages.length === 0;
+  const [showSpinner, setShowSpinner] = useState(false);
+  useEffect(() => {
+    if (!waiting) {
+      setShowSpinner(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setShowSpinner(true), SPINNER_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [waiting]);
+  const spinnerShownRef = useRef(showSpinner);
+  const [revealed, setRevealed] = useState(false);
+  useLayoutEffect(() => {
+    if (showSpinner) {
+      spinnerShownRef.current = true;
+      setRevealed(false);
+    } else if (spinnerShownRef.current) {
+      spinnerShownRef.current = false;
+      setRevealed(true);
+    }
+  }, [showSpinner]);
   // Expanded threads show the newest MAX_EXPANDED_REPLIES; "N more replies"
   // reveals the rest for that root (walk-3 §3).
   const [expandedAll, setExpandedAll] = useState<Set<string>>(() => new Set());
@@ -258,7 +287,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   };
 
   return (
-    <div className="v2-chat__messages" ref={messagesContainerRef}>
+    <div className={`v2-chat__messages${revealed ? ' v2-chat__messages--reveal' : ''}`} ref={messagesContainerRef}>
       {/* History edge: one mono line. Loads on scroll (observer in V2Thread);
           the button form stays reachable by keyboard. */}
       <div className="v2-thread__edge" ref={edgeRef} data-state={loadingOlder ? 'loading' : hasMore ? 'more' : messages.length > 0 ? 'beginning' : 'empty'}>
@@ -271,7 +300,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
         ) : null}
       </div>
       {error && <div className="v2-chat__error">{error}</div>}
-      {loading && messages.length === 0 && <div className="v2-empty"><span className="v2-spinner" /></div>}
+      {showSpinner && <div className="v2-empty"><span className="v2-spinner" /></div>}
       {starterPanel}
       {emptyState}
       {threadView.map((item, index, view) => {
@@ -416,14 +445,12 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 {lastAt && <span className="v2-claim-run__time" aria-hidden="true">{formatRelativeTime(lastAt)}</span>}
                 <span className="v2-claim-run__chev" aria-hidden="true"><ShellGlyph name="chevron" size={15} /></span>
               </button>
-              {open && (
-                <div className="v2-claim-run__list">
-                  {item.messages.map((message, claimIndex) => renderMessage(
-                    message,
-                    claimIndex === 0 ? view[index - 1] : { kind: 'message', message: item.messages[claimIndex - 1] },
-                  ))}
-                </div>
-              )}
+              <V2Fold open={open} className="v2-claim-run__list">
+                {item.messages.map((message, claimIndex) => renderMessage(
+                  message,
+                  claimIndex === 0 ? view[index - 1] : { kind: 'message', message: item.messages[claimIndex - 1] },
+                ))}
+              </V2Fold>
             </div>
           );
         }
