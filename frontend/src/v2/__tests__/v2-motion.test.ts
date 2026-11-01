@@ -47,3 +47,54 @@ describe('v2 motion (D220)', () => {
     expect(offenders.map((file) => path.relative(v2Dir, file))).toEqual([]);
   });
 });
+
+describe('v2 motion: chat', () => {
+  const chatMessageCss = fs.readFileSync(path.join(v2Dir, 'chat', 'chat-message.css'), 'utf8');
+  const chatPaneCss = fs.readFileSync(path.join(v2Dir, 'chat', 'chat-pane.css'), 'utf8');
+  const rule = (css: string, selector: string): string => {
+    const start = css.indexOf(`${selector} {`);
+    expect(start).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf('}', start) + 1);
+  };
+  const keyframes = (css: string, name: string): string => {
+    const start = css.indexOf(`@keyframes ${name} {`);
+    expect(start).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf('}\n}', start) + 3);
+  };
+
+  test('a live message enters over --v2-dur on the one curve, by opacity and 4px of transform only', () => {
+    expect(rule(chatMessageCss, '.v2-msg--enter')).toContain('animation: v2-msg-enter var(--v2-dur) var(--v2-ease) backwards;');
+    const frames = keyframes(chatMessageCss, 'v2-msg-enter');
+    expect(frames).toContain('opacity: 0;');
+    expect(frames).toContain('transform: translateY(4px);');
+    expect(frames.replace(/opacity: 0;|transform: translateY\(4px\);/g, '')).not.toMatch(/[a-z-]+:\s*[^;]+;/);
+  });
+
+  test('content replacing the loader fades in over --v2-dur, opacity only', () => {
+    expect(rule(chatPaneCss, '.v2-chat__messages--reveal')).toContain('animation: v2-chat-reveal var(--v2-dur) var(--v2-ease) backwards;');
+    expect(keyframes(chatPaneCss, 'v2-chat-reveal')).toMatch(/from \{ opacity: 0; \}/);
+  });
+
+  test('Show more opens by size over --v2-dur and closes over --v2-dur-fast, with no max-height', () => {
+    const fold = rule(chatMessageCss, '.v2-msg__prose--fold');
+    expect(fold).toContain('interpolate-size: allow-keywords;');
+    expect(fold).toContain('block-size: auto;');
+    expect(fold).toContain('transition: block-size var(--v2-dur) var(--v2-ease);');
+    const closed = rule(chatMessageCss, '.v2-msg__prose--closed');
+    expect(closed).toContain('block-size: 132px;');
+    expect(closed).toContain('transition-duration: var(--v2-dur-fast);');
+
+    const code = rule(chatMessageCss, '.v2-msg__collapse pre');
+    expect(code).toContain('block-size: auto;');
+    expect(code).toContain('transition: block-size var(--v2-dur) var(--v2-ease);');
+    expect(rule(chatMessageCss, '.v2-msg__collapse--closed pre')).toContain('transition-duration: var(--v2-dur-fast);');
+
+    const folds = [fold, closed, code, rule(chatMessageCss, '.v2-msg__collapse--closed pre')].join('\n');
+    expect(folds).not.toMatch(/max-height/);
+  });
+
+  test('the Show more chevron turns on the same tokens: open over --v2-dur, back over --v2-dur-fast', () => {
+    expect(rule(chatMessageCss, '.v2-msg__showmore svg')).toContain('transition: transform var(--v2-dur-fast) var(--v2-ease);');
+    expect(rule(chatMessageCss, ".v2-msg__showmore[aria-expanded='true'] svg")).toContain('transition-duration: var(--v2-dur);');
+  });
+});
