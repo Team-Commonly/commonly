@@ -13,7 +13,7 @@
  * SIGKILL after a grace for any still alive. That includes a lasting server
  * the turn started on first use, such as tmux, and a seat it restarted. A
  * process started with COMMONLY_KEEP_PROCESS=1 is left running, and so is
- * anything it starts, since they inherit the setting; the turn's child itself
+ * anything it starts, even one that clears the setting; the turn's child itself
  * never inherits it. COMMONLY_TURN_REAP=0 turns the whole check off.
  *
  * Only processes started since the turn began are read, and each one's
@@ -89,8 +89,9 @@ const selfAndAncestors = (table, pid) => {
 
 /**
  * The processes still carrying `mark`, as { pid, ppid, started }: started at
- * or after `since` (ms), neither this process nor an ancestor of it, and not
- * kept. Each one brings its descendants, except a kept one and everything
+ * or after `since` (ms), neither this process nor an ancestor of it, and
+ * neither kept nor under a kept one. Each one brings its descendants, except a
+ * kept one and everything
  * under it, whose environments may be unreadable. The start-time window only
  * limits what is read; the marker is what decides. `io` is a test seam
  * ({ table, envs, self }).
@@ -107,9 +108,18 @@ export const findTurnProcesses = (mark, since, io = {}) => {
   const marked = `${TURN_MARK_ENV}=${mark}`;
   const keep = `${KEEP_PROCESS_ENV}=1`;
   const kept = (pid) => environments.get(pid)?.has(keep) === true;
+  const byPid = new Map(rows.map((row) => [row.pid, row]));
+  // A kept process keeps what it starts even when that drops the setting.
+  const underKept = (row) => {
+    for (let up = byPid.get(row.ppid), seen = new Set(); up && !seen.has(up.pid); up = byPid.get(up.ppid)) {
+      if (kept(up.pid)) return true;
+      seen.add(up.pid);
+    }
+    return false;
+  };
   const found = new Map();
   for (const row of recent) {
-    if (environments.get(row.pid)?.has(marked) && !kept(row.pid)) found.set(row.pid, row);
+    if (environments.get(row.pid)?.has(marked) && !kept(row.pid) && !underKept(row)) found.set(row.pid, row);
   }
   const byParent = new Map();
   for (const row of rows) {
@@ -131,8 +141,9 @@ export const findTurnProcesses = (mark, since, io = {}) => {
  * Stop what `findTurnProcesses` returns. SIGTERM is sent before this returns;
  * `done` settles after `graceMs`, once anything still alive has had SIGKILL.
  * A pid is signalled only while its start time is the one recorded, read for
- * all of them in one ps call per signal. The grace timer does not hold the
- * process open. `io` adds `read` (pids -> rows) to the find seam.
+ * all of them in one ps call per signal. The grace timer holds the process
+ * open until SIGKILL has gone out, so a seat stopped mid-turn still escalates.
+ * `io` adds `read` (pids -> rows) to the find seam.
  */
 export const reapTurnProcesses = (mark, since, { graceMs = TURN_REAP_GRACE_MS, io = {} } = {}) => {
   const read = io.read || readProcesses;
@@ -147,8 +158,7 @@ export const reapTurnProcesses = (mark, since, { graceMs = TURN_REAP_GRACE_MS, i
   const done = termed.length === 0
     ? Promise.resolve({ killed: [] })
     : new Promise((resolve) => {
-      const timer = setTimeout(() => resolve({ killed: signal(termed, 'SIGKILL').map((row) => row.pid) }), graceMs);
-      timer.unref?.();
+      setTimeout(() => resolve({ killed: signal(termed, 'SIGKILL').map((row) => row.pid) }), graceMs);
     });
   return { termed: termed.map((row) => row.pid), done };
 };

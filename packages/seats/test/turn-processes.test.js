@@ -4,11 +4,12 @@
 // reap looks, which is the shape of `npm exec vite &` from a shell tool.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isRunning, readPids, reap, waitFor } from '../test-support/processes.js';
 import {
   describeTurnReap, findTurnProcesses, KEEP_PROCESS_ENV, markTurn, reapTurnProcesses, TURN_MARK_ENV,
@@ -17,6 +18,8 @@ import {
 import { readProcess, readProcesses, startedMs } from '../src/process-group.js';
 
 const POSIX = process.platform !== 'win32';
+const PROCESS_GROUP = fileURLToPath(new URL('../src/process-group.js', import.meta.url));
+const TURN_PROCESSES = fileURLToPath(new URL('../src/turn-processes.js', import.meta.url));
 // A start time as ps prints it: `Sun Nov  1 12:00:00 2026`, in UTC.
 const at = (ms) => {
   const [day, date, month, year, time] = new Date(ms).toUTCString().split(' ');
@@ -93,9 +96,15 @@ test('a start time in the hour daylight saving repeats reads as the hour it was'
 });
 
 test('ps prints start times in UTC whatever zone the seat runs in', { skip: !POSIX }, () => {
-  const self = readProcess(process.pid);
-  const began = Date.now() - process.uptime() * 1000;
-  assert.ok(Math.abs(startedMs(self.started) - began) < 5_000, `${self.started} is not when this process began`);
+  // In a child started east of UTC, so a runner already on UTC proves nothing.
+  const script = `import { readProcess, startedMs } from ${JSON.stringify(pathToFileURL(PROCESS_GROUP).href)};
+const self = readProcess(process.pid);
+process.stdout.write(String(Math.abs(startedMs(self.started) - (Date.now() - process.uptime() * 1000))));`;
+  const out = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8', env: { ...process.env, TZ: 'Asia/Kolkata' },
+  });
+  assert.equal(out.status, 0, out.stderr);
+  assert.ok(Number(out.stdout) < 5_000, `start time read ${out.stdout} ms from when the process began`);
 });
 
 test('a leftover is found in a seat running east of UTC', () => {
@@ -134,6 +143,26 @@ test('a kept process keeps everything under it, even a child whose environment c
   const found = findTurnProcesses('m-2', since, { table, envs, self: 500 });
 
   assert.deepEqual(found.map((row) => row.pid).sort(), [700, 704]);
+});
+
+test('a marked process under a kept one is kept, even when it dropped the setting', () => {
+  const since = Date.parse('2026-11-01T12:00:00Z');
+  const fresh = at(since + 5_000);
+  const table = () => [
+    { pid: 720, ppid: 1, started: fresh }, // kept, reparented
+    { pid: 721, ppid: 720, started: fresh }, // its child, marked, keep cleared
+    { pid: 722, ppid: 1, started: fresh }, // a plain leftover
+  ];
+  const pair = `${TURN_MARK_ENV}=m-5`;
+  const envs = () => new Map([
+    [720, new Set([pair, `${KEEP_PROCESS_ENV}=1`])],
+    [721, new Set([pair])],
+    [722, new Set([pair])],
+  ]);
+
+  const found = findTurnProcesses('m-5', since, { table, envs, self: 500 });
+
+  assert.deepEqual(found.map((row) => row.pid), [722]);
 });
 
 test('the check is on unless COMMONLY_TURN_REAP=0, and a child with no pid is never reaped', () => {
@@ -209,6 +238,36 @@ test('a turn that detaches children leaves none running, except the one it kept'
     assert.ok(isRunning(bystander.pid), 'an unmarked process is untouched');
   } finally {
     for (const pid of [...pids, bystander.pid]) reap(pid);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a leftover that ignores SIGTERM still gets SIGKILL when nothing else keeps the seat up', { skip: !POSIX }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'turn-escalate-'));
+  const readyFile = join(dir, 'ready');
+  // The "seat" starts a stubborn marked child, reaps, and has nothing left to do.
+  const seat = `import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { reapTurnProcesses, TURN_MARK_ENV } from ${JSON.stringify(pathToFileURL(TURN_PROCESSES).href)};
+const mark = 'escalate-' + process.pid;
+const since = Date.now();
+const stubborn = "process.on('SIGTERM', () => {}); require('fs').writeFileSync(process.argv[1], '1'); setInterval(() => {}, 1000);";
+const child = spawn(process.execPath, ['-e', stubborn, process.argv[1]], { detached: true, stdio: 'ignore', env: { ...process.env, [TURN_MARK_ENV]: mark } });
+child.unref();
+while (!existsSync(process.argv[1])) await new Promise((resolve) => { setTimeout(resolve, 20); });
+process.stdout.write(String(child.pid));
+reapTurnProcesses(mark, since, { graceMs: 300 });`;
+  let pid = 0;
+  try {
+    const run = spawn(process.execPath, ['--input-type=module', '-e', seat, readyFile], { stdio: ['ignore', 'pipe', 'inherit'] });
+    let out = '';
+    run.stdout.on('data', (chunk) => { out += chunk; });
+    await once(run, 'close');
+    pid = Number(out);
+    assert.ok(pid > 0, 'the seat reported its child');
+    assert.ok(await waitFor(() => !isRunning(pid)), 'the stubborn child is gone once the seat has exited');
+  } finally {
+    if (pid) reap(pid);
     rmSync(dir, { recursive: true, force: true });
   }
 });
