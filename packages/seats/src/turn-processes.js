@@ -24,7 +24,9 @@
  * What it does not catch: on macOS `ps -E` cannot read the environment of an
  * Apple platform binary (sh, bash, sleep), so one of those is stopped only as
  * a descendant of a marked process. A process that clears its environment
- * loses the marker. Both are left running.
+ * loses the marker. Both are left running. The same unreadable environment
+ * hides a keep setting: a kept Apple binary is not seen as kept, so a process
+ * it starts is kept only if that process keeps the setting itself.
  */
 
 import { randomUUID } from 'node:crypto';

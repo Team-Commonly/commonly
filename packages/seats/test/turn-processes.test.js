@@ -165,6 +165,28 @@ test('a marked process under a kept one is kept, even when it dropped the settin
   assert.deepEqual(found.map((row) => row.pid), [722]);
 });
 
+test('a kept process whose environment is unreadable keeps only what kept the setting', () => {
+  // macOS withholds an Apple binary's environment, so a kept sh reads as
+  // neither marked nor kept, and only a child that kept the setting survives.
+  const since = Date.parse('2026-11-01T12:00:00Z');
+  const fresh = at(since + 5_000);
+  const table = () => [
+    { pid: 730, ppid: 1, started: fresh }, // kept sh, environment withheld
+    { pid: 731, ppid: 730, started: fresh }, // its child, marked, keep cleared
+    { pid: 732, ppid: 730, started: fresh }, // its child, marked and kept
+  ];
+  const pair = `${TURN_MARK_ENV}=m-6`;
+  const envs = () => new Map([
+    [730, new Set(['sh'])],
+    [731, new Set([pair])],
+    [732, new Set([pair, `${KEEP_PROCESS_ENV}=1`])],
+  ]);
+
+  const found = findTurnProcesses('m-6', since, { table, envs, self: 500 });
+
+  assert.deepEqual(found.map((row) => row.pid), [731]);
+});
+
 test('the check is on unless COMMONLY_TURN_REAP=0, and a child with no pid is never reaped', () => {
   assert.equal(turnReapEnabled({}), POSIX);
   assert.equal(turnReapEnabled({ COMMONLY_TURN_REAP: '0' }), false);
