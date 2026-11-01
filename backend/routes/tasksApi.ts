@@ -234,8 +234,12 @@ router.get('/:podId', taskReadIpRateLimit, auth, async (req: AuthReq, res: Res) 
     if (access.error) return res.status(access.status || 500).json({ error: access.error });
     const query: Record<string, unknown> = { podId: mongoose.Types.ObjectId.createFromHexString(podId || '') };
     // Read the filter the way the writers store it, so a seat that assigned a
-    // row by an agent's handle finds it again by that handle.
-    if (assignee) query.assignee = await canonicalAssignee(podId || '', assignee);
+    // row by an agent's handle finds it again by that handle. The spelling as
+    // typed still matches a row stored before the writers canonicalized.
+    if (assignee) {
+      const stored = await canonicalAssignee(podId || '', assignee);
+      query.assignee = stored === assignee ? assignee : { $in: [stored, assignee] };
+    }
     if (status) query.status = status.includes(',') ? { $in: status.split(',') } : status;
     // Composes with `status` by AND rather than overriding it, so
     // ?status=claimed&claimable=true asks the useful narrow question — show me

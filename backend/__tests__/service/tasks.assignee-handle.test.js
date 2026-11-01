@@ -40,6 +40,9 @@ beforeEach(async () => {
     bot('openclaw-pixel', 'openclaw', 'pixel'),
     bot('openclaw-nova', 'openclaw', 'nova'),
     bot('scout-scout-1', 'scout', 'scout-1'),
+    // Two agents with different agentNames that share the board name `sam`.
+    bot('claude-code-sam', 'claude-code', 'sam'),
+    bot('codex-sam', 'codex', 'sam'),
   ]);
   token = generateTestToken(owner._id);
   pod = await Pod.create({
@@ -72,6 +75,8 @@ describe('anything else is kept as typed', () => {
     ['a person in the pod', 'pat'],
     ['a person whose username is also an agentName', 'scout'],
     ['a name nobody in the pod has', 'someone-else'],
+    // Rewriting it to `sam` would turn a precise name into one two seats answer to.
+    ['the handle of an agent whose board name another agent shares', 'claude-code-sam'],
   ])('%s', async (_label, typed) => {
     expect((await create(typed)).assignee).toBe(typed);
   });
@@ -99,6 +104,16 @@ describe('the list filter reads an assignee the way the writers store it', () =>
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(res.body.tasks.map((t) => t.taskId)).toEqual([task.taskId]);
+  });
+
+  test('a row stored before this change under the typed handle is still found by it', async () => {
+    const legacy = await Task.create({
+      podId: pod._id, taskId: 'TASK-090', taskNum: 90, title: 'Assigned before F45', assignee: '@cto-walk-1016-cto-walk',
+    });
+    const res = await request(app).get(api()).query({ assignee: '@cto-walk-1016-cto-walk' })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(res.body.tasks.map((t) => t.taskId)).toEqual([legacy.taskId]);
   });
 
   test('a person is still filtered by their username', async () => {

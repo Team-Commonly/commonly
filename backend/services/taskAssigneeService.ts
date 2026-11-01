@@ -48,9 +48,14 @@ async function podMembers(podId: string): Promise<{ agents: AssigneeAgent[]; peo
  * agent carries it and no person in the pod has that username.
  */
 export async function resolveAssigneeAgent(podId: string, typed: unknown): Promise<AssigneeAgent | null> {
+  return resolveAmong(await podMembers(podId), typed);
+}
+
+function resolveAmong(
+  { agents, people }: { agents: AssigneeAgent[]; people: Set<string> }, typed: unknown,
+): AssigneeAgent | null {
   if (typeof typed !== 'string' || typedName(typed) === '') return null;
   const want = typedName(typed);
-  const { agents, people } = await podMembers(podId);
   const byBoard = agents.filter((a) => lower(boardNameOf(a)) === want);
   if (byBoard.length === 1) return byBoard[0];
   if (byBoard.length > 1 || people.has(want)) return null;
@@ -62,10 +67,17 @@ export async function resolveAssigneeAgent(podId: string, typed: unknown): Promi
   return null;
 }
 
-/** The assignee to store: the named agent's board name, or the input as typed. */
+/**
+ * The assignee to store: the named agent's board name, or the input as typed.
+ * A board name another agent in the pod shares is not stored: both seats would
+ * answer to it, so the precise name typed is kept instead.
+ */
 export async function canonicalAssignee(
   podId: string, typed: string | null | undefined,
 ): Promise<string | null | undefined> {
-  const agent = await resolveAssigneeAgent(podId, typed);
-  return agent ? boardNameOf(agent) : typed;
+  const members = await podMembers(podId);
+  const agent = resolveAmong(members, typed);
+  if (!agent) return typed;
+  const board = lower(boardNameOf(agent));
+  return members.agents.filter((a) => lower(boardNameOf(a)) === board).length === 1 ? boardNameOf(agent) : typed;
 }
