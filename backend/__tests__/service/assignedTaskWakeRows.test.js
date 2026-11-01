@@ -260,6 +260,29 @@ describe('a row a person created or assigned', () => {
     expect(await wakes(31)).toBe(0);
   });
 
+  // Review of F42: system writes carry no author either, and only the kernel
+  // sweep's lease notes are bookkeeping. A reopen is a change.
+  it('wakes again when the row is reopened by a system write', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await note(null, 10, 'system');
+    expect(await wakes(31)).toBe(1);
+  });
+
+  it('wakes again when the dep it was waiting on is done, though the row itself is untouched', async () => {
+    await Task.create({ podId, taskNum: 9, taskId: 'TASK-9', title: 'Upstream', status: 'pending' });
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    // The agent parked its row behind TASK-9 in that run.
+    await Task.updateOne({ podId, taskId: 'TASK-1' }, { $set: { dep: 'TASK-9' }, $push: { updates: {
+      text: 'forge updated: dep → TASK-9', author: 'forge', authorId: String(agent._id), createdAt: at(5),
+    } } });
+    expect(await wakes(31)).toBe(0);
+    // Merge evidence closes TASK-9 with no author and writes nothing on TASK-1.
+    await Task.updateOne({ podId, taskId: 'TASK-9' }, { $set: { status: 'done', completedAt: at(40) } });
+    expect(await wakes(71)).toBe(1);
+  });
+
   it('wakes again after a run that ended for its own reason, since that run did not see the row', async () => {
     expect(await wakes(0)).toBe(1);
     await settle('neutral', 1);
@@ -340,6 +363,61 @@ describe('a row a person created or assigned', () => {
       if (outcome === 'succeeded') await note(other._id, step * 31 + 2, 'other-bot'); // eslint-disable-line no-await-in-loop
     }
     expect(await wakes(outcomes.length * 31)).toBe(1);
+  });
+});
+
+// Review of F42: one wake shows up to five rows and asks for the next one. A run
+// that moved one row on has not answered the rest, so they wake again; a run that
+// moved nothing has.
+describe('several rows in one wake', () => {
+  beforeEach(() => Task.create([
+    { podId, taskNum: 1, taskId: 'TASK-1', title: 'First', assignee: 'forge' },
+    { podId, taskNum: 2, taskId: 'TASK-2', title: 'Second', assignee: 'forge' },
+  ]));
+  const shownIn = (call) => AgentEventService.enqueue.mock.calls[call][0].payload.content;
+  const ownUpdate = (taskId, set, minutes) => Task.updateOne({ podId, taskId }, { $set: set, $push: { updates: {
+    text: `forge updated: ${JSON.stringify(set)}`, author: 'forge', authorId: String(agent._id), createdAt: at(minutes),
+  } } });
+
+  it('stay quiet together when the run moved neither', async () => {
+    expect(await wakes(0)).toBe(1);
+    expect(shownIn(0)).toContain('TASK-2');
+    await settle('succeeded', 1);
+    expect(await wakes(31)).toBe(0);
+  });
+
+  it('wake the rest once the agent completes one', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await ownUpdate('TASK-1', { status: 'done', completedAt: at(10) }, 10);
+    expect(await wakes(31)).toBe(1);
+    expect(shownIn(1)).toContain('TASK-2');
+    await settle('succeeded', 32);
+    expect(await wakes(62)).toBe(0);
+  });
+
+  it('wake the rest once the agent marks one blocked', async () => {
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    await ownUpdate('TASK-1', { status: 'blocked' }, 10);
+    expect(await wakes(31)).toBe(1);
+    expect(shownIn(1)).toContain('TASK-2');
+  });
+
+  it('are not woken by a row completed before the last wake', async () => {
+    await Task.create({
+      podId, taskNum: 3, taskId: 'TASK-3', title: 'Earlier', assignee: 'forge', status: 'done', completedAt: at(-20),
+    });
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    expect(await wakes(31)).toBe(0);
+  });
+
+  it('are not woken by a row the agent blocked before the last wake', async () => {
+    await ownUpdate('TASK-2', { status: 'blocked' }, -20);
+    expect(await wakes(0)).toBe(1);
+    await settle('succeeded', 1);
+    expect(await wakes(31)).toBe(0);
   });
 });
 

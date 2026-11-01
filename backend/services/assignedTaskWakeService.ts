@@ -27,7 +27,9 @@ type Installation = { agentName: string; instanceId: string; podId: unknown };
 type Row = {
   _id: unknown; podId: unknown; taskId: string; title: string; status: string;
   assignee?: string | null; claimedBy?: string | null; dep?: string | null; depMockOk?: boolean;
-  source?: string; updates?: Array<{ authorId?: string | null; createdAt?: Date }>;
+  source?: string; updates?: Array<{ authorId?: string | null; author?: string | null; createdAt?: Date }>;
+  // When the row's dep was completed, set by actionableRows for a done dep.
+  depDoneAt?: Date | null;
 };
 type RowState = {
   _id: string; lastWakeAt?: Date | null; lastWakeEventId?: unknown; countedEventId?: unknown;
@@ -86,12 +88,17 @@ const updatedSince = (row: Row, since: Date): unknown[] => (row.updates || [])
   .filter((update) => update.createdAt && new Date(update.createdAt) > since)
   .map((update) => update.authorId);
 
-// F42: every API change to a row (a note, status, reassignment, dep, title)
-// records its author, while the kernel's own lease notes record none. So an
-// authored update from anyone but this seat is the change a completed run has
-// not seen yet.
-const changedByOthersSince = (row: Row, since: Date, principalId: string): boolean => updatedSince(row, since)
-  .some((authorId) => Boolean(authorId) && String(authorId) !== principalId);
+// F42: what a completed run on this row has not seen yet. Every API change to a
+// row (a note, status, reassignment, dep, title) records its author, so any
+// update from someone other than this seat counts. Of the writes that record no
+// author, only the kernel sweep's lease notes are bookkeeping: a system reopen
+// counts. So does the row's dep being completed, which writes nothing on the row.
+// eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+const kernelActor = (): string => require('./kernelWorkSweepService').KERNEL_ACTOR;
+const changedSince = (row: Row, since: Date, principalId: string): boolean => (row.updates || [])
+  .some((update) => update.createdAt && new Date(update.createdAt) > since
+    && (update.authorId ? String(update.authorId) !== principalId : update.author !== kernelActor()))
+  || Boolean(row.depDoneAt && new Date(row.depDoneAt) > since);
 
 // The last wake on this row is counted, and its run completed: it saw the row.
 const seenByCompletedRun = (state: RowState): boolean => Boolean(state.lastWakeAt)
@@ -176,12 +183,30 @@ async function stopRow(row: Row, state: RowState, install: Installation, princip
   state.stoppedAt = now;
 }
 
+// The seat has moved one of its rows in this pod on since `since`: completed it,
+// or blocked it itself. One wake shows several rows and asks for the next one, so
+// after that the rows it did not move have not been answered yet.
+async function movedOnSince(install: Installation, principalId: string, since: Date): Promise<boolean> {
+  const instance = normalized(install.instanceId || 'default');
+  const alias = exactIgnoringCase(instance === 'default' ? normalized(install.agentName) : instance);
+  return Boolean(await Task.exists({
+    podId: install.podId,
+    $and: [
+      { $or: [{ assignee: alias }, { claimedBy: principalId }, { claimedBy: alias }] },
+      { $or: [
+        { status: 'done', completedAt: { $gt: since } },
+        { status: 'blocked', updates: { $elemMatch: { authorId: principalId, createdAt: { $gt: since } } } },
+      ] },
+    ],
+  }));
+}
+
 // The rows that may wake this seat now. A row the agent created for itself
 // wakes it once, then again only after a person acts in the pod. Any other
-// row wakes it once, then again after a completed run only when someone else
-// has updated it since. A run that fails is retried until STOP_AFTER_FAILURES
-// consecutive runs fail; a person updating the row, or a run that succeeds,
-// starts the count again.
+// row wakes it once, then again after a completed run only when it changed
+// since (changedSince) or the seat moved another of its rows on. A run that
+// fails is retried until STOP_AFTER_FAILURES consecutive runs fail; a person
+// updating the row, or a run that succeeds, starts the count again.
 async function wakeableRows(
   owned: Row[], install: Installation, principalId: string, seat: string, now: Date,
 ): Promise<Row[]> {
@@ -194,6 +219,11 @@ async function wakeableRows(
   const humanActedSince = (since: Date): Promise<boolean> => {
     if (!actedSince.has(since.getTime())) actedSince.set(since.getTime(), humanActedInPodSince(install.podId, since));
     return actedSince.get(since.getTime()) as Promise<boolean>;
+  };
+  const movedOn = new Map<number, Promise<boolean>>();
+  const seatMovedOnSince = (since: Date): Promise<boolean> => {
+    if (!movedOn.has(since.getTime())) movedOn.set(since.getTime(), movedOnSince(install, principalId, since));
+    return movedOn.get(since.getTime()) as Promise<boolean>;
   };
   const wakeable: Row[] = [];
   for (const row of owned) {
@@ -226,9 +256,13 @@ async function wakeableRows(
       logSkip(install, [row], 'stopped', now);
       continue;
     }
-    if (seenByCompletedRun(state) && !changedByOthersSince(row, new Date(state.lastWakeAt as Date), principalId)) {
-      logSkip(install, [row], 'unchanged', now);
-      continue;
+    if (seenByCompletedRun(state)) {
+      const since = new Date(state.lastWakeAt as Date);
+      // eslint-disable-next-line no-await-in-loop
+      if (!changedSince(row, since, principalId) && !await seatMovedOnSince(since)) {
+        logSkip(install, [row], 'unchanged', now);
+        continue;
+      }
     }
     wakeable.push(row);
   }
@@ -270,10 +304,12 @@ async function actionableRows(rows: Row[]): Promise<Row[]> {
   const dependencies = await Task.find({
     podId: { $in: rows.map((row) => row.podId) },
     taskId: { $in: rows.map((row) => row.dep).filter(Boolean) },
-  }).select('podId taskId status').lean();
-  const done = new Set(dependencies.filter((row) => row.status === 'done')
-    .map((row) => `${row.podId}:${row.taskId}`));
-  return rows.filter((row) => !row.dep || row.depMockOk || done.has(`${row.podId}:${row.dep}`));
+  }).select('podId taskId status completedAt').lean();
+  const doneAt = new Map(dependencies.filter((row) => row.status === 'done')
+    .map((row) => [`${row.podId}:${row.taskId}`, (row as { completedAt?: Date | null }).completedAt ?? null]));
+  return rows.filter((row) => !row.dep || row.depMockOk || doneAt.has(`${row.podId}:${row.dep}`))
+    .map((row) => (row.dep && doneAt.has(`${row.podId}:${row.dep}`)
+      ? { ...row, depDoneAt: doneAt.get(`${row.podId}:${row.dep}`) } : row));
 }
 
 export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eligible: number; woken: number }> {
@@ -284,7 +320,7 @@ export async function dispatchAssignedTaskWakes(now = new Date()): Promise<{ eli
       { status: 'claimed', claimedBy: { $type: 'string', $ne: '' } },
     ],
   })
-    .select('_id podId taskId title status assignee claimedBy dep depMockOk source updates.authorId updates.createdAt')
+    .select('_id podId taskId title status assignee claimedBy dep depMockOk source updates.authorId updates.author updates.createdAt')
     .lean() as Row[];
   const rows = await actionableRows(open);
   if (!rows.length) return { eligible: 0, woken: 0 };
