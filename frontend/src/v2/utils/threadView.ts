@@ -12,6 +12,7 @@ import { V2ThreadParticipant } from '../components/V2ThreadCard';
  */
 export type ThreadViewItem =
   | { kind: 'message'; message: V2Message }
+  | { kind: 'claims'; key: string; messages: V2Message[] }
   | {
     kind: 'card';
     rootId: string;
@@ -26,6 +27,36 @@ const rootOf = (m: V2Message): string | null => (
   m.thread_root_id === null || m.thread_root_id === undefined ? null : String(m.thread_root_id)
 );
 const whenOf = (m: V2Message): string => String(m.created_at || m.createdAt || '');
+const isClaimLine = (m: V2Message): boolean => (
+  (m.message_type === 'system' || m.messageType === 'system')
+  && m.payload?.kind === 'system-action'
+  && m.payload.action === 'task-claimed'
+);
+
+/**
+ * Collapse each run of two or more consecutive claim lines into one summary
+ * item. A claim that roots a thread stays a message so its card still renders,
+ * and any other item ends the run, so only adjacent claims fold together.
+ */
+const groupClaimRuns = (items: ThreadViewItem[]): ThreadViewItem[] => {
+  const out: ThreadViewItem[] = [];
+  let run: V2Message[] = [];
+  const flush = () => {
+    if (run.length >= 2) out.push({ kind: 'claims', key: idOf(run[0]), messages: run });
+    else run.forEach((message) => out.push({ kind: 'message', message }));
+    run = [];
+  };
+  items.forEach((item, index) => {
+    if (item.kind === 'message' && isClaimLine(item.message) && items[index + 1]?.kind !== 'card') {
+      run.push(item.message);
+      return;
+    }
+    flush();
+    out.push(item);
+  });
+  flush();
+  return out;
+};
 
 /**
  * Keep replies that were visible before their root arrived flat for the life
@@ -115,7 +146,7 @@ export const buildThreadView = (
       replies,
     });
   }
-  return out;
+  return groupClaimRuns(out);
 };
 
 export default buildThreadView;

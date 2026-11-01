@@ -5256,6 +5256,16 @@ describe('v2 board on a phone (TASK-576)', () => {
   });
 });
 
+describe('claim run summary (TASK-692)', () => {
+  test('the toggle is a real button styled as a control, with its state on aria-expanded', () => {
+    const css = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
+    const toggle = css.match(/\.v2-root button\.v2-claim-run__toggle \{[^}]*\}/);
+    expect(toggle).not.toBeNull();
+    expect(toggle![0]).toMatch(/box-shadow: inset 0 0 0 1px var\(--v2-border\)/);
+    expect(css).toMatch(/\.v2-claim-run__toggle\[aria-expanded='true'\]::after/);
+  });
+});
+
 describe('pod board column scroll (TASK-698)', () => {
   const css = read('../v2.css');
   test('the board route scrolls inside its columns, not the page', () => {
