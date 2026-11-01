@@ -11,12 +11,20 @@
  * revocation calls; PKCE S256 is still sent. No registration_access_token is
  * stored. A secret the vendor says will lapse is replaced by registering again
  * before it does.
+ *
+ * A client the vendor deleted fails on the vendor's own authorize page, which
+ * never comes back here (F14). See `retireDcrClientIfUnknown` for how a
+ * member's retry finds it, and scripts/retire-hosted-mcp-dcr-client.ts for an
+ * admin's hand.
  */
+import { randomBytes } from 'crypto';
 import { Types } from 'mongoose';
 import HostedMcpDcrRegistration, { IHostedMcpDcrRegistration } from '../models/HostedMcpDcrRegistration';
 import type { HostedMcpOAuthEntry } from './hostedMcpEntryService';
 import {
+  buildTokenExchangeRequest,
   CONFIDENTIAL_CLIENT_METHODS,
+  createPkcePair,
   HostedMcpClientError,
   type HostedMcpAuthorizationServer,
   type HostedMcpClientConfiguration,
@@ -272,4 +280,107 @@ export const refuseDcrClient = async (entry: HostedMcpOAuthEntry, clientId: stri
   );
   // A refused client's secret is useless; delete it now rather than at the sweep.
   if (refused?.clientSecretRef) await connectorSecrets.revoke(refused.clientSecretRef).catch(() => {});
+};
+
+/** The vendor is asked about one registration at most this often. */
+export const DCR_ASK_INTERVAL_MS = 10 * 60 * 1000;
+
+export type DcrClientAnswer = 'unknown_client' | 'known' | 'unclear';
+
+/**
+ * Whether the vendor still knows a client, asked at its token endpoint with a
+ * made-up code. RFC 6749 §5.2: invalid_client is a client the server can't
+ * authenticate, which for a public client means one it no longer has;
+ * invalid_grant means it knew the client and refused only the code. Anything
+ * else, a failure to answer included, is unclear and changes nothing.
+ */
+export const askVendorAboutDcrClient = async (
+  entry: HostedMcpOAuthEntry,
+  metadata: HostedMcpAuthorizationServer,
+  client: HostedMcpClientConfiguration,
+  redirectUri: string,
+  fetchImpl: typeof fetch = hostedVendorFetch,
+): Promise<DcrClientAnswer> => {
+  const request = buildTokenExchangeRequest(entry, metadata, client, {
+    redirectUri,
+    code: randomBytes(24).toString('base64url'),
+    codeVerifier: createPkcePair().verifier,
+  });
+  try {
+    const response = await upstreamFetch(metadata.token_endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+        ...request.headers,
+      },
+      body: request.body,
+    }, fetchImpl);
+    if (response.ok) return 'unclear';
+    const refusal = await response.json().catch(() => null) as { error?: unknown } | null;
+    if (refusal?.error === 'invalid_client') return 'unknown_client';
+    if (refusal?.error === 'invalid_grant') return 'known';
+    return 'unclear';
+  } catch {
+    return 'unclear';
+  }
+};
+
+/**
+ * Stop giving an entry's current client to new starts, so the next one
+ * registers a new client. Rows it minted keep using it until the vendor refuses
+ * one of their own token calls (`refuseDcrClient`). With `clientId`, only while
+ * that client is still the current one. True when a client was retired.
+ */
+export const retireCurrentDcrClient = async (
+  entry: HostedMcpOAuthEntry,
+  clientId?: string,
+  now: Date = new Date(),
+): Promise<boolean> => {
+  if (entry.client !== 'dcr') return false;
+  const write = await HostedMcpDcrRegistration.updateOne(
+    clientId ? { ...currentFilter(entry), clientId } : currentFilter(entry),
+    { $set: { current: false, retiredAt: now } },
+  );
+  return (write.modifiedCount ?? 0) > 0;
+};
+
+/**
+ * Called when a member starts again while their last start didn't finish. A
+ * client the vendor deleted fails on the vendor's own authorize page, which
+ * never comes back here, so an unfinished start is the one sign of it this
+ * side gets. When `clientId` is still the entry's current client, the vendor is
+ * asked about it, at most once per DCR_ASK_INTERVAL_MS, and never while the
+ * client is younger than that: a vendor that wrongly answers invalid_client
+ * can then cost at most one registration an interval, not one a retry. If the
+ * vendor no longer knows it, it is retired, and this start registers a new one.
+ * A member who closed the tab or declined consent costs one ask. True when the
+ * client was retired. A vendor that can't be reached is an unclear answer; a
+ * store failure is thrown, for the caller to report.
+ */
+export const retireDcrClientIfUnknown = async (
+  entry: HostedMcpOAuthEntry,
+  metadata: HostedMcpAuthorizationServer,
+  clientId: string,
+  fetchImpl: typeof fetch = hostedVendorFetch,
+  now: Date = new Date(),
+): Promise<boolean> => {
+  if (entry.client !== 'dcr' || !clientId) return false;
+  const claimed = await HostedMcpDcrRegistration.findOneAndUpdate(
+    {
+      ...currentFilter(entry),
+      clientId,
+      refusedAt: null,
+      createdAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) },
+      $or: [{ askedAt: null }, { askedAt: { $lte: new Date(now.getTime() - DCR_ASK_INTERVAL_MS) } }],
+    },
+    { $set: { askedAt: now } },
+    { new: true },
+  );
+  // ensureDcrClient replaces a client whose secret can't be read on its own.
+  const client = claimed ? await clientFromRow(claimed) : null;
+  if (!claimed || !client) return false;
+  const answer = await askVendorAboutDcrClient(entry, metadata, client, claimed.redirectUri, fetchImpl);
+  if (answer !== 'unknown_client') return false;
+  return retireCurrentDcrClient(entry, clientId, now);
 };

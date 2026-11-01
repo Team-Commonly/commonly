@@ -23,7 +23,9 @@ const auth = require('../middleware/auth');
 import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { upstreamFetch } from '../services/upstreamFetch';
-import { dcrClientForRow, ensureDcrClient, refuseDcrClient } from '../services/hostedMcpDcrRegistry';
+import {
+  dcrClientForRow, ensureDcrClient, refuseDcrClient, retireDcrClientIfUnknown,
+} from '../services/hostedMcpDcrRegistry';
 import { forgetHostedMcpDrift } from '../services/hostedMcpToolDefinitions';
 import { publicAppUrl } from '../utils/publicAppUrl';
 import { submitOperatorKey } from './hostedMcpOperatorKey';
@@ -284,6 +286,21 @@ const startConnect = async (req: AuthedRequest, res: Response) => {
 
   try {
     if (entry.client === 'dcr') {
+      // A pending start still on the member's row is one that didn't finish,
+      // which is how a client the vendor deleted looks from here (F14): ask
+      // about it first. The ask is a repair: when it can't run, it is logged
+      // and this start uses the current client.
+      try {
+        const unfinished = await Integration.findOne({
+          type: 'hosted-mcp', createdBy: userId, 'config.entryId': entry.id,
+        }).select('config.pendingAuth.clientId').lean();
+        const unfinishedClientId = unfinished?.config?.pendingAuth?.clientId;
+        if (unfinishedClientId) await retireDcrClientIfUnknown(entry, authorizationServer, unfinishedClientId);
+      } catch (error) {
+        console.error('[hosted-mcp] DCR client ask failed', JSON.stringify({
+          entryId: entry.id, error: (error as Error)?.name || 'Error',
+        }));
+      }
       client = await ensureDcrClient(entry, authorizationServer, hostedMcpCallbackUrl(entry.id));
     }
   } catch (error) {

@@ -7,6 +7,9 @@ const {
   ensureDcrClient,
   dcrClientForRow,
   refuseDcrClient,
+  retireDcrClientIfUnknown,
+  retireCurrentDcrClient,
+  DCR_ASK_INTERVAL_MS,
 } = require('../../services/hostedMcpDcrRegistry');
 const { setupMongoDb, clearMongoDb, closeMongoDb } = require('../utils/testUtils');
 const ConnectorSecret = require('../../models/ConnectorSecret');
@@ -443,5 +446,190 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       .rejects.toMatchObject({ code: 'client_registration_unsupported' });
     expect(fetch).not.toHaveBeenCalled();
     expect(await Model.countDocuments({})).toBe(0);
+  });
+
+  // A client the vendor deleted fails on the vendor's own authorize page, which
+  // never comes back here, so every new connect kept using it (F14). A member's
+  // retry after a start that never finished is the sign this side gets.
+  describe('a client the vendor no longer knows', () => {
+    const answer = (status, body) => new Response(JSON.stringify(body), { status });
+    // One stub for both the registration POST and the token endpoint ask.
+    const vendor = (sent, tokenAnswer, registered = ['registered-1', 'registered-2']) => {
+      let registrations = 0;
+      return jest.fn(async (url, init) => {
+        if (url === metadata.registration_endpoint) {
+          const clientId = registered[registrations];
+          registrations += 1;
+          sent.push({ kind: 'register', clientId });
+          return answer(201, { client_id: clientId, token_endpoint_auth_method: 'none', redirect_uris: [callback] });
+        }
+        sent.push({ kind: 'token', url, body: new URLSearchParams(String(init.body)) });
+        return tokenAnswer();
+      });
+    };
+    const asks = (sent) => sent.filter((call) => call.kind === 'token').length;
+    // A client is asked about only once it is an interval old.
+    const after = (ms = 0) => new Date(Date.now() + DCR_ASK_INTERVAL_MS + ms);
+
+    test('is asked about at the token endpoint and replaced, while rows it minted keep it', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(401, { error: 'invalid_client' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after())).toBe(true);
+
+      const asked = sent.find((call) => call.kind === 'token');
+      expect(asked.url).toBe(metadata.token_endpoint);
+      expect(asked.body.get('grant_type')).toBe('authorization_code');
+      expect(asked.body.get('client_id')).toBe('registered-1');
+      expect(asked.body.get('redirect_uri')).toBe(callback);
+      expect(asked.body.get('code')).toMatch(/^[A-Za-z0-9_-]{20,}$/);
+      expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: false, refusedAt: null });
+      expect(await ensureDcrClient(entry, metadata, callback, fetch)).toEqual({ clientId: 'registered-2' });
+      // Retired, not refused: a row it minted refreshes with it until the vendor refuses that.
+      expect(await dcrClientForRow(entry, 'registered-1')).toEqual({ clientId: 'registered-1' });
+    });
+
+    test('is kept when the vendor still knows it, and asked about at most once an interval', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(400, { error: 'invalid_grant' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+      const now = after();
+
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, now)).toBe(false);
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, now)).toBe(false);
+      expect(asks(sent)).toBe(1);
+      // Exactly an interval later it may be asked again.
+      const later = new Date(now.getTime() + DCR_ASK_INTERVAL_MS);
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, later)).toBe(false);
+      expect(asks(sent)).toBe(2);
+      expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: true });
+    });
+
+    test('two retries at once send one ask', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(400, { error: 'invalid_grant' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+      const now = after();
+      await Promise.all([
+        retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, now),
+        retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, now),
+      ]);
+      expect(asks(sent)).toBe(1);
+    });
+
+    test('is not asked about while it is younger than the interval', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(401, { error: 'invalid_client' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, new Date())).toBe(false);
+      expect(asks(sent)).toBe(0);
+      expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: true });
+    });
+
+    test('is kept on any answer other than invalid_client', async () => {
+      const replies = [
+        () => answer(500, { error: 'server_error' }),
+        () => answer(400, { error: 'invalid_request' }),
+        () => answer(200, { access_token: 'never-for-a-made-up-code' }),
+        () => new Response('not json', { status: 401 }),
+        () => { throw new Error('connect ECONNREFUSED'); },
+      ];
+      for (const [i, reply] of replies.entries()) {
+        /* eslint-disable no-await-in-loop */
+        await Model.deleteMany({});
+        const fetch = vendor([], reply);
+        await ensureDcrClient(entry, metadata, callback, fetch);
+        expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after(i))).toBe(false);
+        expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: true });
+        /* eslint-enable no-await-in-loop */
+      }
+    });
+
+    test('only the current client is asked about, and only it is retired', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(401, { error: 'invalid_client' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'some-other-client', fetch, after())).toBe(false);
+      expect(await retireDcrClientIfUnknown({ ...entry, client: 'cimd' }, metadata, 'registered-1', fetch, after()))
+        .toBe(false);
+      expect(asks(sent)).toBe(0);
+    });
+
+    test('a client replaced while the vendor was being asked is not the one retired', async () => {
+      const sent = [];
+      let fetch = null;
+      fetch = vendor(sent, async () => {
+        // Another start moves the entry to a new client while this ask is out.
+        await retireCurrentDcrClient(entry);
+        await ensureDcrClient(entry, metadata, callback, fetch);
+        return answer(401, { error: 'invalid_client' });
+      });
+      await ensureDcrClient(entry, metadata, callback, fetch);
+
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after())).toBe(false);
+      expect(await Model.findOne({ current: true })).toMatchObject({ clientId: 'registered-2' });
+    });
+
+    test('a store failure reaches the caller, before or after the ask', async () => {
+      const fetch = vendor([], () => answer(401, { error: 'invalid_client' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+      const claim = jest.spyOn(Model, 'findOneAndUpdate').mockRejectedValueOnce(new Error('mongo unavailable'));
+      try {
+        await expect(retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after()))
+          .rejects.toThrow('mongo unavailable');
+      } finally {
+        claim.mockRestore();
+      }
+      const retire = jest.spyOn(Model, 'updateOne').mockRejectedValueOnce(new Error('mongo unavailable'));
+      try {
+        await expect(retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after(1)))
+          .rejects.toThrow('mongo unavailable');
+      } finally {
+        retire.mockRestore();
+      }
+      expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: true });
+    });
+
+    test('a confidential client is asked with its own secret, and not at all once that is gone', async () => {
+      const confidentialMetadata = { ...metadata, token_endpoint_auth_methods_supported: ['client_secret_basic'] };
+      const sent = [];
+      const fetch = jest.fn(async (url, init) => {
+        if (url === metadata.registration_endpoint) {
+          return answer(201, {
+            client_id: 'conf-1',
+            client_secret: 'issued-secret-1',
+            token_endpoint_auth_method: 'client_secret_basic',
+            redirect_uris: [callback],
+            client_secret_expires_at: 0,
+          });
+        }
+        sent.push({ headers: init.headers, body: new URLSearchParams(String(init.body)) });
+        return answer(400, { error: 'invalid_grant' });
+      });
+      await ensureDcrClient(entry, confidentialMetadata, callback, fetch);
+      const now = after();
+
+      expect(await retireDcrClientIfUnknown(entry, confidentialMetadata, 'conf-1', fetch, now)).toBe(false);
+      expect(sent).toHaveLength(1);
+      expect(sent[0].headers.Authorization).toBe(`Basic ${Buffer.from('conf-1:issued-secret-1').toString('base64')}`);
+      expect(sent[0].body.get('client_secret')).toBeNull();
+
+      await ConnectorSecret.deleteMany({});
+      const later = new Date(now.getTime() + DCR_ASK_INTERVAL_MS);
+      expect(await retireDcrClientIfUnknown(entry, confidentialMetadata, 'conf-1', fetch, later)).toBe(false);
+      expect(sent).toHaveLength(1);
+    });
+
+    test('an admin can retire an entry\'s current client by hand', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(400, { error: 'invalid_grant' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+
+      expect(await retireCurrentDcrClient(entry)).toBe(true);
+      expect(await retireCurrentDcrClient(entry)).toBe(false);
+      expect(await ensureDcrClient(entry, metadata, callback, fetch)).toEqual({ clientId: 'registered-2' });
+      expect(await dcrClientForRow(entry, 'registered-1')).toEqual({ clientId: 'registered-1' });
+    });
   });
 });
