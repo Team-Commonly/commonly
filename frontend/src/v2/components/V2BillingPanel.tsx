@@ -38,7 +38,6 @@ const V2BillingPanel: React.FC = () => {
       <span className="lb"><Card />Plan</span>
       <span className="vl">
         <span className="v2-settings__plan">{t(isPro ? 'billing.tier.pro' : 'billing.tier.free')}</span>
-        {error && <span className="v2-settings__error" role="alert">{error}</span>}
       </span>
       <span className="ac">
         <button
@@ -50,6 +49,7 @@ const V2BillingPanel: React.FC = () => {
           {busy ? t('billing.opening') : t(isPro ? 'billing.manage' : 'billing.upgrade')}
         </button>
       </span>
+      {error && <span className="v2-settings__error v2-settings__error--row" role="alert">{error}</span>}
     </div>
   );
 };

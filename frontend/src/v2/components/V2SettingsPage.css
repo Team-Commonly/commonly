@@ -46,6 +46,7 @@
   .v2-settings .v2p-lrow .vl { display: none; }
   .v2-settings .v2p-disc > summary { grid-template-columns: minmax(0, 1fr) auto auto; min-height: 48px; padding: 8px 12px; }
   .v2-settings .v2p-disc > summary .vl { display: none; }
+  .v2-settings .v2p-disc > summary .v2-settings__vl--error { display: flex; grid-column: 1 / -1; order: 3; }
   .v2-settings__edit, .v2-settings__token-detail, .v2-settings__fold-body { padding-left: 12px; padding-right: 12px; }
 }
 
@@ -441,6 +442,8 @@
 /* The frame reads the plan as plain text in the row's value. */
 .v2-settings__plan { font-weight: 600; color: var(--v2-text-primary); }
 .v2-settings__error { color: var(--v2-text-primary); font-size: 12.5px; }
+/* errors are a state the frame doesn't draw: they sit on their own line and stay visible at 390 */
+.v2-settings__error--row { grid-column: 1 / -1; }
 
 .v2-settings__section .v2-devices__item {
   border-radius: var(--v2-radius-sm);
