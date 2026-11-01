@@ -81,10 +81,17 @@ describe('stampCardSource', () => {
       + 'KeyValue([Pair("Owner", "Sam \\"S\\" X"), Pair("Owner", "Sam \\"S\\" X")]), Table([Col("n", "number")], [[1], [2]]), '
       + 'Source("sentry", "2026-11-01T09:30:00.000Z")], "2 issues")');
   });
+  it('reprints numbers, null table cells and defaulted props exactly', () => {
+    const source = 'root = Card("Counts", [Table([Col("n", "number"), Col("s")], [[-5, null], [1.5, "x"]]), RunTrace(), '
+      + 'DiffSummary([File("a.ts", 0, 12)]), List(["one"], true)])';
+    const { source: out } = stampCardSource(source, 'fallback', { connector: 'atlassian', fetchedAt });
+    expect(out).toBe('root = Card("Counts", [Table([Col("n", "number"), Col("s")], [[-5, null], [1.5, "x"]]), RunTrace(3), '
+      + 'DiffSummary([File("a.ts", 0, 12)]), List(["one"], true), Source("atlassian", "2026-11-01T09:30:00.000Z")])');
+  });
   it.each(['github', 'Linear', '', undefined])('refuses an unknown connector %p', (connector) => {
     expect(() => stampCardSource(issues, 'fallback', { connector, fetchedAt })).toThrow(refused(/connector/));
   });
-  it.each(['yesterday', '', new Date(Number.NaN), '+275760-09-13T00:00:00.000Z'])('refuses an invalid fetchedAt %p', (value) => {
+  it.each(['yesterday', '', '1', '2026-11-01', '2026-11-01T09:30:00Z', new Date(Number.NaN), '+275760-09-13T00:00:00.000Z'])('refuses an invalid fetchedAt %p', (value) => {
     expect(() => stampCardSource(issues, 'fallback', { connector: 'linear', fetchedAt: value })).toThrow(refused(/fetchedAt|catalogue/));
   });
   it('holds the input to the agent rules, so vendor data cannot carry its own Source', () => {

@@ -16,6 +16,12 @@
 .v2-ui-card .ui-src-mk{display:block;flex:none;width:16px;height:16px}
 .v2-ui-card .ui-src-mk>*{display:block;width:16px;height:16px}
 .v2-ui-card .ui-src-n{color:var(--s)}
+/* The bundled mark is redrawn in tokens: one colour (--s) with its white knockouts in --v2-bg, so it holds 3:1 in both themes. */
+.v2-ui-card .ui-src-mk{color:var(--s)}
+.v2-ui-card .ui-src-mk svg *{fill:currentColor}
+.v2-ui-card .ui-src-mk svg [fill="none"]{fill:none}
+.v2-ui-card .ui-src-mk svg [fill="#fff"]{fill:var(--v2-bg)}
+.v2-ui-card .ui-src-mk svg [stroke="#fff"]{stroke:var(--v2-bg);opacity:1}
 /* Steps */
 .v2-ui-card .ui-steps{margin:0;padding:0;list-style:none;display:grid;gap:2px}
 .v2-ui-card .ui-steps li{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:8px;align-items:start;padding:3px 0}
