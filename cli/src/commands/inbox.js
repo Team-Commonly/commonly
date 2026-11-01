@@ -188,22 +188,52 @@ export const runInboxAck = async (itemId, opts = {}, deps = {}) => {
   }
 };
 
+// `value` is either a 1-based option index (as printed by `list`'s decision
+// options) or an option label. The server stores whatever string it is sent, so
+// the label is resolved here against the open queue and only the label is posted:
+// a bare "2" recorded in the ruling would mean nothing to anyone reading it later.
+export const resolveDecisionChoice = (options, value) => {
+  const choices = (Array.isArray(options) ? options : [])
+    .map((option) => String(option?.label ?? '').trim())
+    .filter(Boolean);
+  const listing = choices.map((label, i) => `  ${i + 1}. ${label}`).join('\n');
+  const raw = String(value).trim();
+  if (/^\d+$/.test(raw)) {
+    const index = Number(raw);
+    if (index < 1 || index > choices.length) {
+      throw new InboxRefusal(`option ${raw} is out of range; choose 1-${choices.length}:\n${listing}`);
+    }
+    return choices[index - 1];
+  }
+  const match = choices.find((label) => label.toLocaleLowerCase() === raw.toLocaleLowerCase());
+  if (!match) throw new InboxRefusal(`"${raw}" is not an option; the options are:\n${listing}`);
+  return match;
+};
+
 export const runInboxChoose = async (decisionId, value, opts = {}, deps = {}) => {
   const {
     env = process.env, fetchImpl = fetch, log = console.log, error = console.error, sleep = undefined,
   } = deps;
   try {
-    if (!decisionId) throw new InboxRefusal('a decision id is required: commonly inbox choose <decisionId> <value>');
-    if (value === undefined) throw new InboxRefusal('a value is required: commonly inbox choose <decisionId> <value>');
+    if (!decisionId) throw new InboxRefusal('a decision id is required: commonly inbox choose <decisionId> <n|label>');
+    if (value === undefined) throw new InboxRefusal('a value is required: commonly inbox choose <decisionId> <n|label>');
     const {
       baseUrl, request, account,
     } = await connect(opts, { env, fetchImpl, sleep });
     log(formatAccountLine({ account, baseUrl }));
+    // The options live on the open queue, not on the decision route, so the
+    // choice is resolved against the same queue this account would see in `list`.
+    const { items } = await fetchQueue(request);
+    const open = items.find((item) => String(item?.id) === String(decisionId) && item?.kind === 'decision');
+    if (!open) {
+      throw new InboxRefusal(`decision ${decisionId} is not open on this account's queue; nothing to choose`);
+    }
+    const label = resolveDecisionChoice(open.options, value);
     const result = await request(`/api/activity/decisions/${encodeURIComponent(decisionId)}/choose`, {
       method: 'POST',
-      body: { value },
+      body: { value: label },
     });
-    log(`chose ${decisionId} = ${value}`);
+    log(`chose ${decisionId} = ${label}`);
     log(`-> ${JSON.stringify(result)}`);
     return 0;
   } catch (err) {
@@ -237,7 +267,8 @@ Examples:
   $ commonly inbox list --cursor-file ~/.commonly/inbox/connector-ops.cursor   # only what is new
   $ commonly inbox list --cursor-file ~/.commonly/inbox/c.cursor --window 300  # widen the re-read to 5m
   $ commonly inbox ack <attentionItemId>
-  $ commonly inbox choose <decisionId> 2
+  $ commonly inbox choose <decisionId> 2          # option 2 of the card, by position
+  $ commonly inbox choose <decisionId> "Ship it"  # or by its label
 
 Cost: with no cursor, \`list\` reads the WHOLE queue, one request per 50 items —
 550 open items is 11 requests. /api/activity is limited to 60 a minute **keyed on
@@ -285,7 +316,7 @@ their attention as runtime events, not from this queue.
 
   inbox
     .command('choose <decisionId> <value>')
-    .description('Rule a decision card (the source= id from `list`)')
+    .description('Rule a decision card (the source= id from `list`). <value> is an option number (1-based) or its label')
     .option('--token-file <path>', INBOX_TOKEN_HELP)
     .option('--instance <url>', 'Target Commonly instance')
     .action(async (decisionId, value, opts) => { process.exit(await runInboxChoose(decisionId, value, opts)); });

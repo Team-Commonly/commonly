@@ -939,14 +939,22 @@ describe('ack and choose', () => {
     expect(text).toContain('item=');
   });
 
-  test('choose posts the value to the decision route', async () => {
+  const decisionQueue = (options) => jsonRes({
+    items: [{ ...item(1), id: hex(101), kind: 'decision', options }],
+    count: 1,
+    hasMore: false,
+  });
+  const CHOICES = [{ label: 'Ship it', recommended: true }, { label: 'Hold for review' }];
+
+  test('choose by index posts the option label, not the number', async () => {
     const file = writeTokenFile('choose-token', 'choose-secret\n');
     const seen = [];
     const fetchImpl = stubFetch({
       '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': decisionQueue(CHOICES),
       '/choose': (url, init) => {
         seen.push({ url, init });
-        return jsonRes({ status: 'ruled', body: { value: '2' } });
+        return jsonRes({ status: 'ruled', body: { value: 'Hold for review' } });
       },
     });
     const io = capture();
@@ -955,8 +963,53 @@ describe('ack and choose', () => {
     expect(code).toBe(0);
     expect(io.out[0]).toBe('account: connector-ops @ https://api.commonly.me');
     expect(seen[0].url).toBe(`https://api.commonly.me/api/activity/decisions/${hex(101)}/choose`);
-    expect(JSON.parse(seen[0].init.body)).toEqual({ value: '2' });
-    expect(io.out.join('\n')).toContain(`chose ${hex(101)} = 2`);
+    expect(JSON.parse(seen[0].init.body)).toEqual({ value: 'Hold for review' });
+    expect(io.out.join('\n')).toContain(`chose ${hex(101)} = Hold for review`);
+  });
+
+  test('choose by label posts that label, matched case-insensitively', async () => {
+    const file = writeTokenFile('label-token', 'choose-secret\n');
+    const seen = [];
+    const fetchImpl = stubFetch({
+      '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': decisionQueue(CHOICES),
+      '/choose': (url, init) => {
+        seen.push({ url, init });
+        return jsonRes({ status: 'ruled' });
+      },
+    });
+    const io = capture();
+    expect(await runInboxChoose(hex(101), 'ship IT', { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(0);
+    expect(JSON.parse(seen[0].init.body)).toEqual({ value: 'Ship it' });
+  });
+
+  test('choose refuses an out-of-range index or unknown label, posting nothing and listing the options', async () => {
+    const file = writeTokenFile('range-token', 'choose-secret\n');
+    for (const value of ['3', '0', 'Maybe']) {
+      const fetchImpl = stubFetch({
+        '/api/auth/user': jsonRes(USER),
+        '/api/activity/decision-queue': decisionQueue(CHOICES),
+        '/choose': jsonRes({ status: 'ruled' }),
+      });
+      const io = capture();
+      expect(await runInboxChoose(hex(101), value, { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(1);
+      expect(io.err.join('\n')).toContain('1. Ship it');
+      expect(io.err.join('\n')).toContain('2. Hold for review');
+      expect(fetchImpl.calls.some((c) => c.url.includes('/choose'))).toBe(false);
+    }
+  });
+
+  test('choose refuses when the decision is not open on the queue', async () => {
+    const file = writeTokenFile('closed-token', 'choose-secret\n');
+    const fetchImpl = stubFetch({
+      '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': jsonRes({ items: [], count: 0, hasMore: false }),
+      '/choose': jsonRes({ status: 'ruled' }),
+    });
+    const io = capture();
+    expect(await runInboxChoose(hex(101), '1', { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(1);
+    expect(io.err.join('\n')).toContain('not open on this account');
+    expect(fetchImpl.calls.some((c) => c.url.includes('/choose'))).toBe(false);
   });
 
   test('ack and choose refuse without a token file, making no request', async () => {
