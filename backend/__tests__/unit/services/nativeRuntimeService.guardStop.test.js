@@ -269,6 +269,18 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(savedRun.metered).toBe(false);
     });
 
+    test('a reply held back because the pod was bridged after a page read fails the run, unmetered', async () => {
+      mockBridged.mockImplementation(async () => mockGetPage.mock.calls.length > 0);
+      chatReplies = [toolCalls(fetchCall('c1', STOPPED_URL)), guardStop, reply('From what I have.'), neverAsked];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
+      expect(savedRun.metered).toBe(false);
+      // Bridged, so not even the fixed line goes out.
+      expect(posted()).toEqual([]);
+    });
+
     test('a post refused in that call ends the run, with no second call', async () => {
       // The bridge is added once the page is in the turn, so the post is refused.
       mockBridged.mockImplementation(async () => mockGetPage.mock.calls.length > 0);

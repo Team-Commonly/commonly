@@ -2620,7 +2620,10 @@ export async function runAgent(
       // re-read the bridge before letting it through.
       const fallbackBlocked = Boolean(textOut && !postedViaTool
         && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow());
+      // Held back, the reply never reached the person: the run failed, so it
+      // is not metered and its digest is not settled as answered.
       if (fallbackBlocked) {
+        run.status = 'failed';
         run.errorKind = 'guardrail_blocked';
         run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
