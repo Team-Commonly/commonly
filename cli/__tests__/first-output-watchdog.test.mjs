@@ -12,6 +12,7 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { EventEmitter } from 'events';
+import { spawn as realSpawn } from 'child_process';
 
 const sessionsTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-first-output-test-'));
 
@@ -38,7 +39,7 @@ const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 const claude = (await import('../src/lib/adapters/claude.js')).default;
 const {
   consoleLocked, spawnStalledError, watchFirstOutput, firstOutputWindowMs, DEFAULT_FIRST_OUTPUT_WINDOW_MS, physicalPath,
-  killStallSurvivors, isModelProgressLine,
+  killStallSurvivors, isModelProgressLine, describeFirstOutputWatch,
 } = await import('../src/lib/first-output-watchdog.js');
 const { claudeResultText, claudeFailureTail } = await import('../src/lib/adapters/claude.js');
 const watchStream = (args) => watchFirstOutput({ ...args, modelStream: true });
@@ -239,7 +240,9 @@ describe('the claude adapter under the first-output watchdog', () => {
         env: { ...process.env, HOME: sessionsTmpDir },
         cwd: sessionsTmpDir,
       }).then(() => ({}), (err) => ({ error: err }));
-      expect(spawned.child.kill.mock.calls.map(([signal]) => signal)).toEqual(['SIGTERM', 'SIGKILL']);
+      // SIGCONT wakes a stopped child so it can act on the SIGTERM; a parked one
+      // still ignores it and is SIGKILLed at the grace.
+      expect(spawned.child.kill.mock.calls.map(([signal]) => signal)).toEqual(['SIGTERM', 'SIGCONT', 'SIGKILL']);
       expect(error.code).toBe('spawn_stalled');
     } finally {
       if (saved === undefined) delete process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
@@ -260,6 +263,59 @@ describe('the claude adapter under the first-output watchdog', () => {
     expect(child.kill).not.toHaveBeenCalled();
     expect(value.text).toBe('the answer');
   });
+});
+
+// SRE's forced-stall walk on rivet (2026-11-01): a claude child SIGSTOPped as
+// its turn began was cancelled 191 s later, with a 180 s window. A stopped
+// process holds SIGTERM until it is continued, so the cancel waited out the
+// whole kill grace before SIGKILL. That holds for a process that handles
+// SIGTERM, as claude does; one left at the default dies even while stopped.
+// So the child here is real (only a real process can be stopped), installs a
+// SIGTERM handler, and is stopped only once the handler is in place.
+describe('a turn frozen with SIGSTOP', () => {
+  test('is cancelled at the window, not the window plus the kill grace', async () => {
+    // Long enough for node to start and install its handler on a busy runner;
+    // still far under the grace, which the upper bound below rules out.
+    const WINDOW_MS = 1_500;
+    const GRACE_MS = 8_000;
+    const saved = process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+    process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = String(WINDOW_MS);
+    let child = null;
+    let spawnedAt = 0;
+    let stopped = false;
+    try {
+      const outcome = await claude.spawn('hello', {
+        environment: { model: 'test-model' },
+        _spawnImpl: (_cmd, _args, options) => {
+          const script = "process.on('SIGTERM', () => process.exit(143)); process.stderr.write('ready\\n'); setInterval(() => {}, 1000);";
+          child = realSpawn(process.execPath, ['-e', script], { ...options, cwd: sessionsTmpDir });
+          spawnedAt = Date.now();
+          // Stderr is not model output in stream mode, so it does not start the turn.
+          child.stderr.once('data', () => { process.kill(child.pid, 'SIGSTOP'); stopped = true; });
+          return child;
+        },
+        _lockProbe: async () => false,
+        _stallKillGraceMs: GRACE_MS,
+        env: { ...process.env, HOME: sessionsTmpDir },
+        cwd: sessionsTmpDir,
+      }).then(() => null, (error) => error);
+      const cancelMs = Date.now() - spawnedAt;
+
+      expect(outcome?.code).toBe('spawn_stalled');
+      // The child was frozen, with its handler in place, before the window ran out.
+      expect(stopped).toBe(true);
+      expect(cancelMs).toBeGreaterThanOrEqual(WINDOW_MS);
+      expect(cancelMs).toBeLessThan(WINDOW_MS + 2_000);
+      // It ran its own SIGTERM handler, so the SIGKILL at the grace never came.
+      expect(child.exitCode).toBe(143);
+    } finally {
+      if (child && child.exitCode === null && child.signalCode === null) {
+        try { process.kill(child.pid, 'SIGKILL'); } catch { /* gone */ }
+      }
+      if (saved === undefined) delete process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS;
+      else process.env.COMMONLY_FIRST_OUTPUT_WINDOW_MS = saved;
+    }
+  }, 20_000);
 });
 
 describe('watchFirstOutput', () => {
@@ -595,5 +651,47 @@ describe('claudeFailureTail', () => {
       'Error: usage limit reached',
     ].join('\n');
     expect(claudeFailureTail(stdout)).toBe('Error: usage limit reached');
+  });
+});
+
+// The G6 walk took 120 s, the seats supervisor's package default, for the
+// window a claude turn runs under. That window is off for claude; this
+// watchdog's is the one, so a claude seat's boot log names it.
+describe('the boot line names the window a claude turn runs under', () => {
+  test.each([
+    ['unset', {}, /^first-output watchdog ON for claude: a turn with no model output in 180000ms is killed \(SIGTERM, then SIGKILL 10000ms later/],
+    ['60000', { COMMONLY_FIRST_OUTPUT_WINDOW_MS: '60000' }, /in 60000ms is killed/],
+    ['0', { COMMONLY_FIRST_OUTPUT_WINDOW_MS: '0' }, /^first-output watchdog OFF for claude/],
+  ])('COMMONLY_FIRST_OUTPUT_WINDOW_MS %s', (_label, env, line) => {
+    expect(describeFirstOutputWatch(env)).toMatch(line);
+  });
+
+  test.each([
+    ['claude', 1],
+    ['stub', 0],
+  ])('agent run logs it once for a %s seat', async (name, count) => {
+    createClient.mockReturnValue({
+      get: jest.fn(async () => ({ events: [] })), post: jest.fn(async () => ({})), del: jest.fn(async () => ({})),
+    });
+    const logs = [];
+    const handle = performRun({
+      instanceUrl: 'http://localhost:5000',
+      token: 'cm_agent_test',
+      adapter: { name, detect: stubAdapter.detect, spawn: jest.fn() },
+      agentName: 'boot-line',
+      superviseRuns: false,
+      setTimeoutImpl: () => 0,
+      setIntervalImpl: () => ({}),
+      clearIntervalImpl: () => {},
+      setDeadlineTimeoutImpl: () => 0,
+      clearDeadlineTimeoutImpl: () => {},
+      log: (line) => logs.push(String(line)),
+      onError: () => {},
+    });
+    try {
+      expect(logs.filter((line) => line.startsWith('first-output watchdog'))).toHaveLength(count);
+    } finally {
+      handle.stop?.();
+    }
   });
 });

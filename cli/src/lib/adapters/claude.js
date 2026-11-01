@@ -676,6 +676,13 @@ const runClaude = ({
       const table = Number.isInteger(proc.pid) ? processTable() : null;
       if (table) stallSnapshot = descendantsOf(table, proc.pid);
       killProcessTree(proc, 'SIGTERM', treeIo(() => table));
+      // A stopped process holds a SIGTERM it handles (claude does) until it is
+      // continued, so a turn frozen with SIGSTOP sat out the whole grace below:
+      // 191 s on a 180 s window (rivet, 2026-11-01). SIGCONT lets it act on the
+      // SIGTERM now. A process that is not stopped is unaffected unless it
+      // handles SIGCONT (a job-control shell does); the SIGKILL below still
+      // lands at the grace either way.
+      killProcessTree(proc, 'SIGCONT', treeIo(() => table));
       // A process parked in a system call may not act on SIGTERM. SIGKILL the
       // child, its group when it leads one, and its descendants.
       stallKill = setTimeout(() => {

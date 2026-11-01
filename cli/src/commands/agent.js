@@ -96,6 +96,7 @@ import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
 import { createTurnRunner, supervisedRunPolicy } from '../lib/supervised-turn.js';
+import { describeFirstOutputWatch } from '../lib/first-output-watchdog.js';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
@@ -1586,6 +1587,7 @@ export const performRun = ({
     seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: supervising, log,
   });
   if (supervising) log(turnRunner.describe(adapter?.name));
+  if (adapter?.name === 'claude') log(describeFirstOutputWatch());
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
