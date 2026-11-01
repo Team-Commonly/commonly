@@ -13,6 +13,7 @@
 // update + revert — the same call the v1 board makes, so both boards stay
 // behaviorally interchangeable while v1 winds down.
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import AddIcon from '@mui/icons-material/Add';
@@ -31,6 +32,7 @@ import { useSocket } from '../../context/SocketContext';
 import V2Avatar from './V2Avatar';
 import { useAuth } from '../../context/AuthContext';
 import { taskRecordPath } from './V2TaskRecord';
+import { EXIT_SAFETY_MS, prefersReducedMotion, runViewTransition, useExitPresence, viewTransitionName } from '../utils/motion';
 import './V2PodBoard.css';
 
 type TaskPriority = 'P0' | 'P1' | 'P2' | 'P3';
@@ -152,6 +154,22 @@ const COLUMNS: ColumnMeta[] = [
   },
 ];
 
+const columnOf = (status: string): CanonicalStatus | null => COLUMNS.find((col) => col.statuses.includes(status))?.key || null;
+const COLUMN_ORDER = COLUMNS.map((col) => col.key);
+
+// While a live column change glides, <html> carries this class: it names the cards
+// in the columns involved for the view transition, sets the glide's pace, and
+// holds the lease pulse until the card has landed.
+const GLIDE_CLASS = 'v2-board-glide';
+let glidesRunning = 0;
+
+interface LeavingCard {
+  task: BoardTask;
+  from: CanonicalStatus;
+  to: CanonicalStatus;
+  index: number;
+}
+
 const V2PodBoard: React.FC = () => {
   const { podId } = useParams<{ podId: string }>();
   const { t } = useTranslation();
@@ -181,7 +199,14 @@ const V2PodBoard: React.FC = () => {
   const [detailError, setDetailError] = useState<string | null>(null);
   const taskRequestRef = useRef(0);
   const taskMutationRef = useRef(0);
-  const detailDialogRef = useRef<HTMLDivElement>(null);
+  const detailDialogRef = useRef<HTMLDivElement | null>(null);
+  const tasksRef = useRef<BoardTask[]>(tasks);
+  tasksRef.current = tasks;
+  const isPhoneRef = useRef(false);
+  const mobileTabRef = useRef<CanonicalStatus>('pending');
+  const columnTasksRef = useRef<Map<CanonicalStatus, BoardTask[]>>(new Map());
+  const [leavingCards, setLeavingCards] = useState<LeavingCard[]>([]);
+  const [countTick, setCountTick] = useState<{ col: CanonicalStatus | null; n: number }>({ col: null, n: 0 });
   const detailReturnRef = useRef<HTMLElement | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -308,7 +333,15 @@ const V2PodBoard: React.FC = () => {
   const memberAvatar = (member: PodMember, name: string) => (
     <V2Avatar name={name} src={member.profilePicture} kind={member.isBot === undefined ? undefined : member.isBot ? 'agent' : 'human'} seed={memberId(member)} size="sm" className="v2-board__member-avatar" />
   );
-  const watchers = selected ? [...(selected.watchers || [])].sort((a, b) => (
+  // The drawer keeps the last task on screen while it slides out.
+  const drawer = useExitPresence(selected);
+  const drawerTask = drawer.shown;
+  const drawerExitRef = drawer.ref;
+  const setDetailDialog = useCallback((node: HTMLDivElement | null) => {
+    detailDialogRef.current = node;
+    drawerExitRef(node);
+  }, [drawerExitRef]);
+  const watchers = drawerTask ? [...(drawerTask.watchers || [])].sort((a, b) => (
     Number(b === currentUser?._id) - Number(a === currentUser?._id)
   )) : [];
   const following = Boolean(currentUser?._id && watchers.includes(currentUser._id));
@@ -350,19 +383,63 @@ const V2PodBoard: React.FC = () => {
     setSearchParams(next, { replace: true });
   }, [openCreateTask, searchParams, setSearchParams]);
 
-  const load = useCallback(async () => {
+  // `live` marks a read caused by someone else's change arriving over the socket.
+  // Only those animate a card changing column: the first load, a reconnect
+  // catch-up and a refetch the user started all land at once.
+  const load = useCallback(async (options: { live?: boolean } = {}) => {
     if (!podId) return;
     const requestId = ++taskRequestRef.current;
     taskLoadPendingRef.current = true;
     try {
       const data = await api.get<{ tasks: BoardTask[]; permissions?: { canWrite: boolean; canReadRecord?: boolean } }>(`/api/v1/tasks/${podId}`);
       if (requestId !== taskRequestRef.current) return;
-      setTasks(data.tasks || []);
-      setTaskWriteAllowed(data.permissions?.canWrite === true);
-      setRecordReadAllowed(data.permissions?.canReadRecord === true);
-      setSelected((previous) => previous ? (data.tasks || []).find((task) => task.taskId === previous.taskId) || null : null);
-      setClaimClock(Date.now());
-      setLoadError(false);
+      const next = data.tasks || [];
+      const apply = () => {
+        setTasks(next);
+        setTaskWriteAllowed(data.permissions?.canWrite === true);
+        setRecordReadAllowed(data.permissions?.canReadRecord === true);
+        setSelected((previous) => previous ? next.find((task) => task.taskId === previous.taskId) || null : null);
+        setClaimClock(Date.now());
+        setLoadError(false);
+      };
+      const before = new Map(tasksRef.current.map((task) => [task.taskId, columnOf(task.status)]));
+      const moved = options.live ? next.flatMap((task) => {
+        const from = before.get(task.taskId);
+        const to = columnOf(task.status);
+        return from && to && from !== to ? [{ task, from, to }] : [];
+      }) : [];
+      if (!moved.length) {
+        apply();
+      } else if (isPhoneRef.current) {
+        // One column per tab: a card can't glide to a tab that isn't showing. It
+        // fades out of the open tab toward the one it went to, that tab's count
+        // ticks, and the open tab stays where the user left it.
+        const open = mobileTabRef.current;
+        const leaving = prefersReducedMotion() ? [] : moved.flatMap(({ task, from, to }) => {
+          const index = (columnTasksRef.current.get(from) || []).findIndex((item) => item.taskId === task.taskId);
+          return from === open && index >= 0 ? [{ task: (columnTasksRef.current.get(from) || [])[index], from, to, index }] : [];
+        });
+        apply();
+        if (leaving.length) setLeavingCards((current) => [...current.filter((item) => !leaving.some((l) => l.task.taskId === item.task.taskId)), ...leaving]);
+        setCountTick((current) => ({ col: moved[moved.length - 1].to, n: current.n + 1 }));
+      } else {
+        // The cards in the columns involved carry a view-transition-name, so the
+        // browser glides the moved card and the others close the gap in one go.
+        const columns = Array.from(new Set(moved.flatMap(({ from, to }) => [from, to])));
+        const sections = columns.flatMap((key) => Array.from(document.querySelectorAll<HTMLElement>(`.v2-board__col--${key}`)));
+        const root = document.documentElement;
+        sections.forEach((section) => { section.dataset.glide = ''; });
+        root.classList.add(GLIDE_CLASS);
+        glidesRunning += 1;
+        const settle = () => {
+          sections.forEach((section) => { delete section.dataset.glide; });
+          glidesRunning = Math.max(0, glidesRunning - 1);
+          if (!glidesRunning) root.classList.remove(GLIDE_CLASS);
+        };
+        const transition = runViewTransition(() => { flushSync(apply); });
+        if (!transition?.finished) settle();
+        else transition.finished.catch(() => undefined).then(settle);
+      }
     } catch {
       if (requestId === taskRequestRef.current) setLoadError(true);
     } finally {
@@ -613,7 +690,7 @@ const V2PodBoard: React.FC = () => {
     if (!podId || !socket || !connected) return undefined;
     const onTaskUpdated = (payload: { podId?: string } | null) => {
       if (!payload || (payload.podId && payload.podId !== podId)) return;
-      load();
+      load({ live: true });
       loadFocus();
     };
     socket.on('task_updated', onTaskUpdated);
@@ -703,7 +780,46 @@ const V2PodBoard: React.FC = () => {
     });
     return byColumn;
   }, [visibleTasks]);
+  isPhoneRef.current = isPhone;
+  mobileTabRef.current = mobileTab;
+  columnTasksRef.current = columnTasks;
 
+  // A card that left the open tab is gone once its fade ends, or after the
+  // safety net if the animation never reports back.
+  const dropLeaving = useCallback((taskId: string) => {
+    setLeavingCards((current) => current.filter((item) => item.task.taskId !== taskId));
+  }, []);
+  useEffect(() => {
+    if (!leavingCards.length) return undefined;
+    const ids = leavingCards.map((item) => item.task.taskId);
+    const timer = window.setTimeout(() => {
+      setLeavingCards((current) => current.filter((item) => !ids.includes(item.task.taskId)));
+    }, EXIT_SAFETY_MS);
+    return () => window.clearTimeout(timer);
+  }, [leavingCards]);
+  // Switching tabs by hand drops any card still fading out of the old one.
+  useEffect(() => { setLeavingCards([]); }, [mobileTab, isPhone]);
+
+  const cardFace = (task: BoardTask) => (
+    <>
+      <span className="v2-board__card-kicker">
+        <span className="v2-board__card-id">{task.taskId}</span>
+        <span className={`v2-board__priority${task.priority === 'P0' ? ' v2-board__priority--p0' : ''}${(task.priority || 'P2') === 'P2' ? ' v2-board__priority--p2' : ''}`}>{task.priority || 'P2'}</span>
+        <span className="v2-board__card-spacer" />
+        {ownerLine(task)}
+      </span>
+      <span className="v2-board__card-title">{task.title}</span>
+    </>
+  );
+  // The open phone tab keeps a leaving card in its old slot until its fade ends.
+  const cardsFor = (key: CanonicalStatus, items: BoardTask[]) => {
+    const rows: Array<{ task: BoardTask; leaving: LeavingCard | null }> = items.map((task) => ({ task, leaving: null }));
+    if (!isPhone || key !== mobileTab) return rows;
+    leavingCards.filter((item) => item.from === key).sort((a, b) => a.index - b.index).forEach((item) => {
+      rows.splice(Math.min(item.index, rows.length), 0, { task: item.task, leaving: item });
+    });
+    return rows;
+  };
   const filterChips = (
     <div className="v2-board__filters" role="group" aria-label={t('board.filter.label')}>
     {FILTERS.map((f) => (
@@ -868,7 +984,12 @@ const V2PodBoard: React.FC = () => {
                 onClick={() => setMobileTab(col.key)}
               >
                 {t(col.labelKey)}
-                <span className="v2-board__tab-count">{(columnTasks.get(col.key) || []).length}</span>
+                <span
+                  key={countTick.col === col.key ? `tick-${countTick.n}` : 'count'}
+                  className={`v2-board__tab-count${countTick.col === col.key ? ' is-ticking' : ''}`}
+                >
+                  {(columnTasks.get(col.key) || []).length}
+                </span>
               </button>
             ))}
           </div>
@@ -879,7 +1000,7 @@ const V2PodBoard: React.FC = () => {
             return (
               <section key={col.key} className={`v2-board__col v2-board__col--${col.key}${mobileTab === col.key ? ' is-active' : ''}`} aria-label={t(col.labelKey)}>
                 <div className="v2-board__col-head">
-                  <span className={`v2-board__col-dot v2-board__col-dot--${col.key}`} aria-hidden="true" />
+                  <span className={`v2-board__col-dot v2-board__col-dot--${col.key}${items.some((task) => leaseFor(task).claimed && !leaseFor(task).expired) ? ' is-live' : ''}`} aria-hidden="true" />
                   <span className="v2-board__col-name">{t(col.labelKey)}</span>
                   <span className="v2-board__col-count">{items.length}</span>
                   {col.key === 'pending' && (
@@ -904,21 +1025,30 @@ const V2PodBoard: React.FC = () => {
                 {items.length === 0 && (
                   <div className="v2-board__col-empty">{t(col.emptyKey)}</div>
                 )}
-                {items.map((task) => (
-                  <article key={task.taskId} className={`v2-board__card${col.key === 'done' ? ' v2-board__card--done' : ''}${col.key === 'blocked' ? ' v2-board__card--blocked' : ''}${selected?.taskId === task.taskId ? ' is-picked' : ''}`}>
+                {cardsFor(col.key, items).map(({ task, leaving }) => (leaving ? (
+                  // A copy of the card that just left this tab, fading toward its new one.
+                  <article
+                    key={`leaving-${task.taskId}`}
+                    className={`v2-board__card is-leaving is-leaving--${COLUMN_ORDER.indexOf(leaving.to) > COLUMN_ORDER.indexOf(leaving.from) ? 'next' : 'prev'}`}
+                    aria-hidden="true"
+                    {...{ inert: '' }}
+                    onAnimationEnd={(event) => { if (event.target === event.currentTarget) dropLeaving(task.taskId); }}
+                  >
+                    <span className="v2-board__card-main">{cardFace(task)}</span>
+                  </article>
+                ) : (
+                  <article
+                    key={task.taskId}
+                    className={`v2-board__card${col.key === 'done' ? ' v2-board__card--done' : ''}${col.key === 'blocked' ? ' v2-board__card--blocked' : ''}${selected?.taskId === task.taskId ? ' is-picked' : ''}`}
+                    style={{ '--v2-task-vt': viewTransitionName('task', task.taskId) } as React.CSSProperties}
+                  >
                     <button
                       type="button"
                       className="v2-board__card-main"
                       title={task.taskId}
                       onClick={() => openTask(task)}
                     >
-                      <span className="v2-board__card-kicker">
-                        <span className="v2-board__card-id">{task.taskId}</span>
-                        <span className={`v2-board__priority${task.priority === 'P0' ? ' v2-board__priority--p0' : ''}${(task.priority || 'P2') === 'P2' ? ' v2-board__priority--p2' : ''}`}>{task.priority || 'P2'}</span>
-                        <span className="v2-board__card-spacer" />
-                        {ownerLine(task)}
-                      </span>
-                      <span className="v2-board__card-title">{task.title}</span>
+                      {cardFace(task)}
                     </button>
                     <div className="v2-board__card-actions">
                       {col.moves.map((move) => (
@@ -935,7 +1065,7 @@ const V2PodBoard: React.FC = () => {
                       ))}
                     </div>
                   </article>
-                ))}
+                )))}
                 </div>
               </section>
             );
@@ -951,20 +1081,29 @@ const V2PodBoard: React.FC = () => {
         </>
       )}
 
-      {selected && (
-        <div className="v2-modal__overlay v2-board__overlay v2-board__overlay--drawer" role="presentation" onClick={() => openTask(null)}>
+      {drawerTask && (
+        <div
+          className="v2-modal__overlay v2-board__overlay v2-board__overlay--drawer"
+          role="presentation"
+          onClick={() => openTask(null)}
+          // While it slides out the drawer stays mounted, inert (React 18 takes
+          // `inert` only as a string attribute).
+          {...(drawer.leaving ? { inert: '', 'data-leaving': '' } : {})}
+        >
           <div
             className="v2-modal v2-board__detail v2-board__drawer"
-            ref={detailDialogRef}
+            {...(drawer.leaving ? { 'data-leaving': '' } : {})}
+            ref={setDetailDialog}
+            onAnimationEnd={drawer.onAnimationEnd}
             role="dialog"
-            aria-label={selected.title}
+            aria-label={drawerTask.title}
             aria-modal="true"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="v2-board__grab" aria-hidden="true" />
             <div className="v2-board__drawer-head">
-              <span className="v2-board__drawer-id">{selected.taskId}</span>
-              <span className={`v2-board__priority${selected.priority === 'P0' ? ' v2-board__priority--p0' : ''}${(selected.priority || 'P2') === 'P2' ? ' v2-board__priority--p2' : ''}`}>{selected.priority || 'P2'}</span>
+              <span className="v2-board__drawer-id">{drawerTask.taskId}</span>
+              <span className={`v2-board__priority${drawerTask.priority === 'P0' ? ' v2-board__priority--p0' : ''}${(drawerTask.priority || 'P2') === 'P2' ? ' v2-board__priority--p2' : ''}`}>{drawerTask.priority || 'P2'}</span>
               <span className="v2-board__card-spacer" />
               <button
                 type="button"
@@ -977,11 +1116,11 @@ const V2PodBoard: React.FC = () => {
               </button>
             </div>
             <div className="v2-board__drawer-body">
-              <h2 className="v2-board__drawer-title">{selected.title}</h2>
+              <h2 className="v2-board__drawer-title">{drawerTask.title}</h2>
               <div className="v2-board__detail-meta">
                 <div className="v2-board__status-segment" role="radiogroup" aria-label={t('board.detail.statusLabel')}>
                   {COLUMNS.map((column) => {
-                    const current = column.statuses.includes(selected.status);
+                    const current = column.statuses.includes(drawerTask.status);
                     return (
                       <button
                         key={column.key}
@@ -990,44 +1129,44 @@ const V2PodBoard: React.FC = () => {
                         aria-checked={current}
                         className="v2-board__status-option"
                         disabled={detailSaving || !taskWriteAllowed || current}
-                        onClick={() => moveTask(selected, column.statuses[0] as CanonicalStatus)}
+                        onClick={() => moveTask(drawerTask, column.statuses[0] as CanonicalStatus)}
                       >
                         {t(column.labelKey)}
                       </button>
                     );
                   })}
                 </div>
-                {selected.prUrl && (
-                  <a className="v2-board__detail-pr" href={selected.prUrl} target="_blank" rel="noreferrer">
+                {drawerTask.prUrl && (
+                  <a className="v2-board__detail-pr" href={drawerTask.prUrl} target="_blank" rel="noreferrer">
                     {t('board.detail.pr')}
                   </a>
                 )}
-                {recordReadAllowed && taskRecordPath(podId, selected.taskId) && (
-                  <Link className="v2-board__detail-pr" to={taskRecordPath(podId, selected.taskId) as string}>
+                {recordReadAllowed && taskRecordPath(podId, drawerTask.taskId) && (
+                  <Link className="v2-board__detail-pr" to={taskRecordPath(podId, drawerTask.taskId) as string}>
                     {t('board.detail.record')}
                   </Link>
                 )}
               </div>
               <dl className="v2-board__ownership">
                 <dt><label htmlFor="task-priority">{t('board.detail.priority')}</label></dt>
-                <dd><select id="task-priority" value={selected.priority || 'P2'} disabled={detailSaving || !taskWriteAllowed} onChange={(event) => updateDetail(selected, { priority: event.target.value as TaskPriority })}>
+                <dd><select id="task-priority" value={drawerTask.priority || 'P2'} disabled={detailSaving || !taskWriteAllowed} onChange={(event) => updateDetail(drawerTask, { priority: event.target.value as TaskPriority })}>
                   {PRIORITIES.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
                 </select></dd>
                 <dt>{t('board.detail.assignedTo')}</dt>
-                <dd>{selected.assignee ? <>{memberAvatar(podMembers.find((member) => member.username === selected.assignee) || {}, selected.assignee)}{selected.assignee}</> : <span className="v2-board__empty-owner">{t('board.detail.unassigned')}</span>}</dd>
+                <dd>{drawerTask.assignee ? <>{memberAvatar(podMembers.find((member) => member.username === drawerTask.assignee) || {}, drawerTask.assignee)}{drawerTask.assignee}</> : <span className="v2-board__empty-owner">{t('board.detail.unassigned')}</span>}</dd>
                 <dt>{t('board.detail.claimedBy')}</dt>
-                <dd>{leaseFor(selected).claimed ? <><span aria-hidden="true" className={`v2-board__owner-dot v2-board__owner-dot--${leaseFor(selected).expired ? 'expired' : 'live'}`} />{memberAvatar(podMembers.find((item) => memberId(item) === selected.claimedBy || item.username === selected.claimedBy) || {}, claimHolderName(selected))}{claimHolderName(selected)}</> : <span className="v2-board__empty-owner">{t('board.detail.notClaimed')}</span>}</dd>
+                <dd>{leaseFor(drawerTask).claimed ? <><span aria-hidden="true" className={`v2-board__owner-dot v2-board__owner-dot--${leaseFor(drawerTask).expired ? 'expired' : 'live'}`} />{memberAvatar(podMembers.find((item) => memberId(item) === drawerTask.claimedBy || item.username === drawerTask.claimedBy) || {}, claimHolderName(drawerTask))}{claimHolderName(drawerTask)}</> : <span className="v2-board__empty-owner">{t('board.detail.notClaimed')}</span>}</dd>
                 <dt>{t('board.detail.leaseLeft')}</dt>
-                <dd className="v2-board__lease-value">{leaseFor(selected).claimed && leaseFor(selected).knownExpiry
-                  ? leaseFor(selected).expired ? t('board.detail.expiredAt', { time: timeLabel(leaseFor(selected).expiry) })
-                    : t('board.detail.remaining', { minutes: leaseFor(selected).minutes, time: timeLabel(leaseFor(selected).expiry) })
-                  : t(leaseFor(selected).claimed ? 'board.detail.timeUnavailable' : 'board.detail.notClaimed')}</dd>
+                <dd className="v2-board__lease-value">{leaseFor(drawerTask).claimed && leaseFor(drawerTask).knownExpiry
+                  ? leaseFor(drawerTask).expired ? t('board.detail.expiredAt', { time: timeLabel(leaseFor(drawerTask).expiry) })
+                    : t('board.detail.remaining', { minutes: leaseFor(drawerTask).minutes, time: timeLabel(leaseFor(drawerTask).expiry) })
+                  : t(leaseFor(drawerTask).claimed ? 'board.detail.timeUnavailable' : 'board.detail.notClaimed')}</dd>
                 <dt>{t('board.detail.depends')}</dt>
-                <dd>{selected.dep ? <span className="v2-board__dep">{selected.dep}</span> : <span className="v2-board__empty-owner">{t('board.detail.noDeps')}</span>}</dd>
+                <dd>{drawerTask.dep ? <span className="v2-board__dep">{drawerTask.dep}</span> : <span className="v2-board__empty-owner">{t('board.detail.noDeps')}</span>}</dd>
               </dl>
               <section className="v2-board__watchers" aria-label={t('board.detail.watchers')}>
                 <div className="v2-board__watchers-head"><h3>{t('board.detail.watchers')}</h3><span className="v2-board__watchers-count">{watchers.length}</span>
-                  <button type="button" className="v2-board__follow" aria-pressed={following} aria-disabled={detailSaving || !currentUser?._id} onClick={() => { if (!detailSaving && currentUser?._id) updateDetail(selected, { following: !following }); }}>{following && <span aria-hidden="true">✓ </span>}{t(following ? 'board.detail.following' : 'board.detail.follow')}</button>
+                  <button type="button" className="v2-board__follow" aria-pressed={following} aria-disabled={detailSaving || !currentUser?._id} onClick={() => { if (!detailSaving && currentUser?._id) updateDetail(drawerTask, { following: !following }); }}>{following && <span aria-hidden="true">✓ </span>}{t(following ? 'board.detail.following' : 'board.detail.follow')}</button>
                 </div>
                 <div className="v2-board__watcher-list">{watchers.map((id) => {
                   const member = podMembers.find((item) => memberId(item) === id) || (id === currentUser?._id ? currentUser : {});
@@ -1037,14 +1176,14 @@ const V2PodBoard: React.FC = () => {
                 <p className="v2-board__watcher-hint">{t('board.detail.digestHint')}</p>
               </section>
               {detailError && <p className="v2-modal__error" role="alert">{detailError}</p>}
-              {selected.notes && <p className="v2-board__detail-notes">{selected.notes}</p>}
-              {(selected.updates?.length || 0) > 0 && (
+              {drawerTask.notes && <p className="v2-board__detail-notes">{drawerTask.notes}</p>}
+              {(drawerTask.updates?.length || 0) > 0 && (
                 <>
                   <div className="v2-modal__section-title">{t('board.detail.updates')}</div>
                   <ul className="v2-board__detail-updates">
                     {(() => {
                       // Newest first. The two newest stay visible (d215 frame); older ones fold behind a toggle.
-                      const ordered = (selected.updates || []).slice().reverse();
+                      const ordered = (drawerTask.updates || []).slice().reverse();
                       const earlier = Math.max(0, ordered.length - VISIBLE_UPDATES);
                       return (updatesExpanded ? ordered : ordered.slice(0, ordered.length - earlier)).map((update, index) => (
                         // Updates have no id; index-in-reversed-list is stable
@@ -1064,12 +1203,12 @@ const V2PodBoard: React.FC = () => {
                       ));
                     })()}
                   </ul>
-                  {(selected.updates?.length || 0) > VISIBLE_UPDATES && (
+                  {(drawerTask.updates?.length || 0) > VISIBLE_UPDATES && (
                     <button type="button" className="v2-board__updates-toggle" aria-expanded={updatesExpanded} onClick={() => setUpdatesExpanded((open) => !open)}>
                       <ExpandMoreIcon aria-hidden="true" />
                       {updatesExpanded
                         ? t('board.detail.hideEarlierUpdates')
-                        : t('board.detail.showEarlierUpdates', { count: (selected.updates?.length || 0) - VISIBLE_UPDATES })}
+                        : t('board.detail.showEarlierUpdates', { count: (drawerTask.updates?.length || 0) - VISIBLE_UPDATES })}
                     </button>
                   )}
                 </>
