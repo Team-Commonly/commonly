@@ -320,6 +320,18 @@ describe('commonly_get_tasks / create / claim / complete / update', () => {
     expect(url).toContain('status=pending');
   });
 
+  it('declares the accepted values the routes enforce: priority P0-P3, options as {label} objects', () => {
+    expect(byName.commonly_create_task.inputSchema.properties.priority.enum).toEqual(['P0', 'P1', 'P2', 'P3']);
+    expect(byName.commonly_update_task.inputSchema.properties.priority.enum).toEqual(['P0', 'P1', 'P2', 'P3']);
+    const { options } = byName.commonly_request_decision.inputSchema.properties;
+    expect(options.type).toBe('array');
+    expect(options.items).toMatchObject({
+      type: 'object',
+      required: ['label'],
+      properties: { label: { type: 'string' }, recommended: { type: 'boolean' } },
+    });
+  });
+
   it('create_task documents the idempotency key, not just the fields it dedups on', () => {
     // AX entry 70: `sourceRef` was an idempotency key the description never
     // named, so callers read it as ordinary metadata and learned about the
