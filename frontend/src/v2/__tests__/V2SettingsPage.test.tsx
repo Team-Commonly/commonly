@@ -241,9 +241,10 @@ describe('V2SettingsPage', () => {
     });
     renderSettings();
 
-    expect(await screen.findByText(/shown once, when generated/i)).toBeInTheDocument();
-    expect(screen.getByText(/ends in cret/i)).toBeInTheDocument();
-    expect(screen.getByText(/^Created [45] Sep 2026$/)).toBeInTheDocument();
+    expect(await screen.findByText(/active · ends in cret/i)).toBeInTheDocument();
+    expect(screen.queryByText(/shown once/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('••••••••••••••••••••••••••••••••')).not.toBeInTheDocument();
+    expect(document.querySelector('.v2-settings__token-detail')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show' })).not.toBeInTheDocument();
     expect(screen.queryByText('cm_user_secret')).not.toBeInTheDocument();

@@ -488,7 +488,7 @@ const V2ApiTokenSection: React.FC = () => {
   const maskedToken = '••••••••••••••••••••••••••••••••';
   const createdLabel = createdAt ? formatTokenCreatedAt(createdAt) : null;
 
-  const statusLabel = hasToken ? 'Active' : 'None';
+  const statusLabel = hasToken ? `Active${last4 ? ` · ends in ${last4}` : ''}` : 'None';
 
   return (
     <div className="v2-settings__token">
@@ -511,24 +511,19 @@ const V2ApiTokenSection: React.FC = () => {
           </button>
         )}
       </div>
-      {(error || notice || hasToken) && (
+      {(error || notice || token) && (
         <div className="v2-settings__token-detail">
           {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
           {notice && <p className="v2-settings__message" role="status">{notice}</p>}
-          {hasToken && (
+          {token && (
             <>
               <div className="v2-settings__token-value">
                 <code>{token && showToken ? token : maskedToken}</code>
-                {token && (
-                  <>
-                    <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
-                      {showToken ? 'Hide' : 'Show'}
-                    </button>
-                    <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
-                  </>
-                )}
+                <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
+                  {showToken ? 'Hide' : 'Show'}
+                </button>
+                <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
               </div>
-              {!token && <p className="v2-settings__token-meta">Shown once, when generated.{last4 ? ` Ends in ${last4}.` : ''}</p>}
               {createdLabel && <p className="v2-settings__token-meta">{createdLabel}</p>}
             </>
           )}

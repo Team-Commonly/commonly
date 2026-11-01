@@ -8418,7 +8418,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 /* D215 Settings › Look: a label and a segment per row. Language moved here
    from the rail (TASK-691). */
 .v2-settings__look { display: flex; flex-direction: column; }
-.v2-settings__look .v2-settings__row { justify-content: space-between; }
+.v2-settings__look .v2-settings__row { justify-content: flex-start; }
+.v2-settings__look .v2-settings__row > :last-child { margin-left: auto; }
 .v2-settings__look .v2-settings__row + .v2-settings__row { border-top: 1px solid var(--v2-border-soft); }
 
 
