@@ -1783,6 +1783,9 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
   const failed = (id, content) => ({
     type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content }] },
   });
+  const succeeded = (id, content = '[]') => ({
+    type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content }] },
+  });
   const result = (text) => ({ type: 'result', subtype: 'success', is_error: false, result: text });
   const API_503 = JSON.stringify({ status: 503, body: '<html>503 Service Unavailable</html>', message: 'HTTP 503' });
   const API_404 = JSON.stringify({ status: 404, body: { error: 'Pod not found' }, message: 'Pod not found' });
@@ -1848,6 +1851,33 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
     ['an error as text parts', [{ type: 'text', text: API_503 }]],
   ])('withholds the turn when a Commonly call fails with %s', async (_label, content) => {
     const stdout = stream(init('connected'), call('t1', 'mcp__commonly__list_pods'), failed('t1', content), result('Every call is failing.'));
+    await expect(turn(stdout)).rejects.toMatchObject({ code: 'public_tool_failed' });
+  });
+
+  // `pending` at init is not a failure: the server may finish starting during
+  // the turn. Only a Commonly call that returned shows it working, so that is
+  // the evidence a pending server needs.
+  test('posts when init shows Commonly pending and a Commonly call then returned', async () => {
+    const stdout = stream(init('pending'), call('t1', 'mcp__commonly__list_pods'), succeeded('t1'), result('Two pods.'));
+    await expect(turn(stdout)).resolves.toMatchObject({ text: 'Two pods.' });
+  });
+
+  test.each([
+    ['no Commonly call was made', stream(init('pending'), result('HELLO'))],
+    ['only another server\'s call returned', stream(init('pending'), call('t1', 'mcp__other__ping'), succeeded('t1'), result('HELLO'))],
+  ])('withholds the turn when init shows Commonly pending and %s', async (_label, stdout) => {
+    const outcome = turn(stdout);
+    await expect(outcome).rejects.toMatchObject({ code: 'public_mcp_not_ready' });
+    await expect(outcome).rejects.toThrow(/status pending/);
+  });
+
+  test('withholds a pending server whose Commonly call failed, even beside one that returned', async () => {
+    const stdout = stream(
+      init('pending'),
+      call('t1', 'mcp__commonly__list_pods'), succeeded('t1'),
+      call('t2', 'mcp__commonly__read_context'), failed('t2', API_503),
+      result('Every call is failing.'),
+    );
     await expect(turn(stdout)).rejects.toMatchObject({ code: 'public_tool_failed' });
   });
 

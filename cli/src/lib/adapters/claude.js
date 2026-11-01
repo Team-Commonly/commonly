@@ -541,8 +541,10 @@ export const claudeResultText = (stdout, { credentials = [] } = {}) => {
 // whose content is the server's text, the shipped MCP's `{status, body,
 // message}` JSON (both measured on Claude Code 2.1.314; `-p` waits for a slow
 // server, so init reports it connected rather than pending). Ready is a positive
-// witness: a stream with no init event, or with a Commonly server in any other
-// state, never showed the server working, so the turn is withheld. A failed
+// witness: `connected` in init, or `pending` followed by a Commonly call that
+// returned, since a server may finish starting during the turn. A stream with no
+// init event, or with a Commonly server in any other state, never showed the
+// server working, so the turn is withheld. A failed
 // Commonly call withholds it unless `isAnswerableToolError` names an answer the
 // person can be given (the predicate the OpenCode adapter uses). Only servers
 // that run the shipped Commonly MCP count. Returns the failure, or null.
@@ -560,12 +562,6 @@ export const claudePublicMcpWitness = (stdout, mcpServers) => {
   const events = String(stdout || '').split('\n').map(parseEvent).filter(Boolean);
   const init = events.find((event) => event.type === 'system' && event.subtype === 'init');
   const servers = Array.isArray(init?.mcp_servers) ? init.mcp_servers : [];
-  for (const name of names) {
-    const status = servers.find((server) => server?.name === name)?.status;
-    if (status !== 'connected') {
-      return { code: PUBLIC_MCP_NOT_READY_CODE, tool: name, error: init ? `status ${status || 'absent'}` : 'no init event' };
-    }
-  }
   const toolNames = new Map();
   for (const event of events) {
     if (event.type !== 'assistant') continue;
@@ -573,19 +569,28 @@ export const claudePublicMcpWitness = (stdout, mcpServers) => {
       if (block?.type === 'tool_use' && block.id) toolNames.set(block.id, String(block.name || ''));
     }
   }
+  const results = events
+    .filter((event) => event.type === 'user' && Array.isArray(event.message?.content))
+    .flatMap((event) => event.message.content)
+    .filter((block) => block?.type === 'tool_result')
+    .map((block) => ({ block, tool: toolNames.get(block.tool_use_id) || '' }));
   // Init names a server as declared; tool names carry it with every character
   // outside [A-Za-z0-9_-] turned to `_` (`commonly.me` → `mcp__commonly_me__`,
   // measured on 2.1.314).
-  const prefixes = names.map((name) => `mcp__${name.replace(/[^A-Za-z0-9_-]/g, '_')}__`);
-  for (const event of events) {
-    if (event.type !== 'user' || !Array.isArray(event.message?.content)) continue;
-    for (const block of event.message.content) {
-      if (block?.type !== 'tool_result' || block.is_error !== true) continue;
-      const tool = toolNames.get(block.tool_use_id) || '';
-      if (!prefixes.some((prefix) => tool.startsWith(prefix))) continue;
-      const error = toolResultText(block.content);
-      if (!isAnswerableToolError(error)) return { code: PUBLIC_TOOL_FAILED_CODE, tool, error };
+  const prefixOf = (name) => `mcp__${name.replace(/[^A-Za-z0-9_-]/g, '_')}__`;
+  for (const name of names) {
+    const status = servers.find((server) => server?.name === name)?.status;
+    const returned = status === 'pending'
+      && results.some(({ block, tool }) => block.is_error !== true && tool.startsWith(prefixOf(name)));
+    if (status !== 'connected' && !returned) {
+      return { code: PUBLIC_MCP_NOT_READY_CODE, tool: name, error: init ? `status ${status || 'absent'}` : 'no init event' };
     }
+  }
+  const prefixes = names.map(prefixOf);
+  for (const { block, tool } of results) {
+    if (block.is_error !== true || !prefixes.some((prefix) => tool.startsWith(prefix))) continue;
+    const error = toolResultText(block.content);
+    if (!isAnswerableToolError(error)) return { code: PUBLIC_TOOL_FAILED_CODE, tool, error };
   }
   return null;
 };
