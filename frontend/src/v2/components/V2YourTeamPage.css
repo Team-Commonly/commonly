@@ -1,0 +1,100 @@
+/* Your team (/v2/agents), lifted from the d215 frame (R06):
+   docs/design/artboards/d215/index.html, section s-team, frame "team" at 1440
+   and 390. The rules below are the frame's own, same selectors and values; only
+   the tokens are translated to --v2-* (so light, dark and auto switch together)
+   and the frame's `.app.m` phone rules sit in the page's 760px phone query.
+   Scoped to .v2-team, the page's root. */
+.v2-team { display: flex; flex-direction: column; gap: 20px; max-width: 1100px; margin: 0 auto; }
+.v2-team .v2-team__head { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; }
+.v2-team .v2-team__heading { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.v2-team .v2-team__title { margin: 0; font: 800 24px/1 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); }
+.v2-team .v2-team__meta { font: 500 12px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
+.v2-team .v2-team__actions { display: flex; gap: 8px; flex-shrink: 0; }
+.v2-team .v2-team__byo, .v2-team .v2-team__hire, .v2-team .v2-team-card__answer, .v2-team .v2-team-card__talk { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; }
+.v2-team .v2-team__hire, .v2-team .v2-team-card__answer { color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
+.v2-team .v2-team__byo, .v2-team .v2-team-card__talk { color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
+.v2-team .v2-team__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.v2-team .v2-team-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px; border: 1px solid var(--v2-border-soft); border-radius: 14px; background: var(--v2-surface); }
+/* The one that needs you: a ring, never a tinted background (state grammar §3). */
+.v2-team .v2-team-card--needsYou { border: 2px solid var(--v2-accent); padding: 15px; }
+.v2-team .v2-team-card--own { border: 1px dashed var(--v2-border); background: transparent; }
+.v2-team .v2-team-card__head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.v2-team .v2-team-card__mark { all: unset; box-sizing: border-box; cursor: pointer; flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--v2-av-ring); font: 600 12px/1 var(--v2-font); letter-spacing: 0.02em; text-transform: uppercase; }
+.v2-team .v2-team-card__mark .v2-avatar { width: 100%; height: 100%; border: 0; border-radius: inherit; box-shadow: none; }
+.v2-team .v2-team-card__mark img, .v2-team .v2-team-card__mark svg { display: block; width: 100%; height: 100%; object-fit: cover; }
+.v2-team .v2-team-card__mark--needsYou { background: var(--v2-accent); color: var(--v2-on-accent); }
+.v2-team .v2-team-card__mark--working { background: var(--v2-text-primary); color: var(--v2-surface); }
+.v2-team .v2-team-card__mark--idle { background: var(--v2-border-soft); color: var(--v2-text-secondary); }
+.v2-team .v2-team-card__title { min-width: 0; }
+/* A primary identifier never one-line-ellipsizes (craft audit rule 1, #568):
+   two lines, then clamp; min-width 0 so the grid column can shrink under it. */
+.v2-team .v2-team-card__name { font: 700 18px/1.2 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); overflow-wrap: anywhere; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-width: 0; }
+.v2-team .v2-team-card__status { margin-top: 3px; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-team .v2-team-card__status--needsYou, .v2-team .v2-team-card__status--working { color: var(--v2-accent-text); }
+/* The ask is the line's content: it wraps, it never ellipsizes (66246 (3)). */
+.v2-team .v2-team-card__status--needsYou { white-space: normal; overflow: visible; text-overflow: clip; }
+.v2-team .v2-team-card__status--working .v2-team-card__dot { animation: v2-team-pulse 1.6s ease-in-out infinite; }
+@keyframes v2-team-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+/* Where the seat runs: a cloud (Commonly) or a laptop (your computer), top-right. */
+.v2-team .v2-team-card__where { display: inline-flex; flex: none; margin-left: auto; align-self: flex-start; color: var(--v2-text-muted); }
+.v2-team .v2-team-card__desc { margin: 0; font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
+.v2-team .v2-team-card__pods { display: flex; flex-wrap: wrap; gap: 6px; }
+.v2-team .v2-team-card__pod { display: inline-block; max-width: 100%; height: 24px; padding: 0 8px; border-radius: 7px; font: 500 11.5px/24px var(--v2-font-mono); color: var(--v2-text-secondary); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Hosted meter: the server's count against the server's cap, as a bar and a mono line. */
+.v2-team .v2-team-card__meter { display: flex; align-items: center; gap: 10px; }
+.v2-team .v2-team-card__meter-track { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--v2-border-soft); overflow: hidden; }
+.v2-team .v2-team-card__meter-fill { display: block; height: 100%; background: var(--v2-accent); }
+.v2-team .v2-team-card__meter-text { font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
+.v2-team .v2-team-card__command { display: block; padding: 10px 12px; border-radius: 10px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); font: 500 14px/20px var(--v2-font-mono); color: var(--v2-text-primary); white-space: pre-wrap; overflow-wrap: anywhere; }
+.v2-team .v2-team-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+@media (max-width: 760px) {
+  .v2-team { gap: 14px; }
+  .v2-team .v2-team__head { flex-direction: column; align-items: stretch; gap: 12px; }
+  /* The title never wraps beside its meta: stack them (66246 (1)). */
+  .v2-team .v2-team__heading { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .v2-team .v2-team__meta { white-space: normal; }
+  .v2-team .v2-team__actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v2-team .v2-team__byo, .v2-team .v2-team__hire, .v2-team .v2-team-card__answer, .v2-team .v2-team-card__talk { height: 44px; font-size: 14px; }
+  .v2-team .v2-team__grid { grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 10px; }
+  .v2-team .v2-team-card__mark { width: 44px; height: 44px; border-radius: 11px; }
+  .v2-team .v2-team-card__actions > button { flex: 1 1 0; }
+  /* Not in the frame: the text links (Have an invitation code? at 20px,
+     Connected agents at 16px) get an invisible ring 14px above and below, so
+     each hit area is at least 44px tall. */
+  .v2-team button.v2-team__link::after { content: ""; position: absolute; inset: -14px 0; }
+}
+
+/* Live behaviour and states the frame does not draw, kept working with prod's values. */
+.v2-team .v2-team__byo:hover, .v2-team .v2-team-card__talk:hover { background: var(--v2-surface-hover); }
+.v2-team .v2-team__hire:disabled { opacity: 0.5; cursor: default; }
+.v2-team .v2-team-card__talk:disabled { color: var(--v2-text-placeholder); cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  .v2-team .v2-team-card__status--working .v2-team-card__dot { animation: none; }
+}
+.v2-team .v2-team__notice { font-size: 13px; color: var(--v2-text-secondary); }
+.v2-team .v2-team__notice--ok { color: var(--v2-text-primary); }
+.v2-team .v2-team__redeem { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.v2-team .v2-team__redeem-input { height: 36px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: 4px; font: 400 14px/20px var(--v2-font); }
+.v2-team .v2-team__redeem-error { color: var(--v2-text-primary); font-size: 13px; }
+.v2-team button.v2-team__link { position: relative; padding: 0; border: 0; background: transparent; color: var(--v2-accent-text); font: 500 13px/20px var(--v2-font); cursor: pointer; }
+.v2-team .v2-team__error { font-size: 13px; color: var(--v2-text-primary); border: 1px solid var(--v2-border); border-radius: 4px; padding: 10px 12px; }
+.v2-team .v2-team__empty { border: 1px dashed var(--v2-border); border-radius: 4px; padding: 20px; }
+.v2-team .v2-team__empty-title { font: 700 var(--v2-fs-feature)/1.2 var(--v2-font-display); letter-spacing: -0.02em; margin-bottom: 6px; }
+.v2-team .v2-team__empty-text { font-size: 13px; color: var(--v2-text-secondary); }
+.v2-team .v2-team__internal { display: flex; flex-direction: column; gap: 8px; }
+.v2-team button.v2-team__internal-toggle { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-team .v2-team__internal-list { display: flex; gap: 6px; flex-wrap: wrap; }
+.v2-team .v2-team-card__fix {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--v2-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+/* CJK never takes negative letter-spacing (TASK-055); these entries left the
+   v2.css :lang(zh) reset list with the rest of the page. */
+.v2-root:lang(zh) .v2-team .v2-team__title,
+.v2-root:lang(zh) .v2-team .v2-team-card__name,
+.v2-root:lang(zh) .v2-team .v2-team__empty-title { letter-spacing: 0; }

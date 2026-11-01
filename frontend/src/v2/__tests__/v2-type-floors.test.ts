@@ -25,8 +25,9 @@ import path from 'path';
  * longer violates). Target is an empty list.
  */
 // v2.css plus the per-surface sheets lifted out of it, so a rule that moved
-// file is still held to the floors (R04 moved the BYO page's rules).
-const CSS = ['../v2.css', '../components/V2AgentBYO.css']
+// file is still held to the floors (R04 moved the BYO page's rules, R06 the
+// Your team page's).
+const CSS = ['../v2.css', '../components/V2AgentBYO.css', '../components/V2YourTeamPage.css']
   .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))
   .join('\n');
 

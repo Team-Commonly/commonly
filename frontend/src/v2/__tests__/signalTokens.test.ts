@@ -111,13 +111,14 @@ describe('dark-safe surfaces (TASK-681)', () => {
     expect(rd('../landing/v2-landing.css')).toMatch(/\.v2-landing__bar\s*\{[^}]*color-mix\(in srgb, var\(--v2-bg\) 86%/);
     expect(rd('../agents/v2-agent-profile.css')).toMatch(/\.v2-aprofile__bar\s*\{[^}]*color-mix\(in srgb, var\(--v2-bg\) 86%/);
   });
-  test('ink primary buttons take --v2-ink / --v2-on-ink', () => {
-    const css = rd('../v2.css');
-    ['v2-team__hire', 'v2-team-card__answer'].forEach((cls) => {
-      const rule = css.match(new RegExp(`button\\.${cls}\\s*\\{[^}]*\\}`));
-      expect(rule?.[0]).toContain('background: var(--v2-ink)');
-      expect(rule?.[0]).toContain('color: var(--v2-on-ink)');
-    });
+  test('ink primary buttons take theme tokens, never a literal colour', () => {
+    // R06 lifted Your team onto the d215 frame: Hire and Answer are its ink
+    // key, the --v2-fill-* gradient with --v2-on-fill text, in the page's sheet.
+    const css = rd('../components/V2YourTeamPage.css');
+    const rule = css.match(/\n\.v2-team \.v2-team__hire, \.v2-team \.v2-team-card__answer \{[^}]*\}/);
+    expect(rule?.[0]).toContain('background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
+    expect(rule?.[0]).toContain('color: var(--v2-on-fill)');
+    expect(rule?.[0]).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
   });
   test('the board drawer scrim is --v2-scrim', () => {
     expect(rd('../v2.css')).toMatch(/\.v2-board__overlay\s*\{\s*background:\s*var\(--v2-scrim\)/);
