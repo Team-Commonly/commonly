@@ -211,7 +211,9 @@ const slugify = (value = ''): string => value
   .replace(/^-+|-+$/g, '');
 
 // How firmly a key names one install when two installs claim it. A canonical
-// username is a User row's username, so it is unique and always wins. Then the
+// username is a User row's username, and the identity-conflict refusal keeps
+// two installs from holding the same one, so it wins. (buildAgentUsername is
+// not injective, so that refusal is what keeps it unique, not the key.) Then the
 // explicit agent-instance key, then the bare name and its curated aliases
 // (single-install only), then the instanceId and the display-name slug, which
 // nothing keeps unique. An equal claim keeps the rule every key had before
@@ -290,12 +292,19 @@ const sameTarget = (a: MentionTarget | undefined, b: MentionTarget): boolean => 
  * when none does. Its canonical username first (the name the platform shows),
  * then the explicit agent-instance key, which is what a default install beside
  * a sibling of the same agent answers to. Everything that tells an agent or a
- * person what to type (the install intro, get_context, get_messages) takes the
- * handle from here, so the name it shows is the name routing resolves.
+ * person what to type (the install intro, get_context, get_messages, the
+ * welcome cue) takes the handle from here, so the name it shows is the name
+ * routing resolves. A caller may name keys to try first, such as the display
+ * slug a person sees; each still has to route to this install.
  */
-const routedMentionHandle = (map: Map<string, MentionTarget>, target: MentionTarget): string => {
+const routedMentionHandle = (
+  map: Map<string, MentionTarget>,
+  target: MentionTarget,
+  { prefer = [] }: { prefer?: string[] } = {},
+): string => {
   const instanceId = target.instanceId || 'default';
   const candidates = [
+    ...prefer.map((key) => String(key || '').toLowerCase()),
     buildAgentUsername(target.agentName, instanceId),
     `${target.agentName}-${instanceId}`.toLowerCase(),
   ];

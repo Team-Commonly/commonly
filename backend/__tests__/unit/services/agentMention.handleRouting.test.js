@@ -97,6 +97,39 @@ describe('routedMentionHandle names a handle that routes to the install in this 
   });
 });
 
+// An explicit agent-instance key outranks a display slug that spells the same
+// thing: the slug is a label anyone can choose, the key is the install.
+describe('an explicit agent-instance key beats a display slug equal to it', () => {
+  const owner = { agentName: 'codex', instanceId: 'default', displayName: 'Codex' };
+  const lookalike = { agentName: 'claude', instanceId: 'desk', displayName: 'Codex Default' };
+
+  test.each([
+    ['owner first', [owner, lookalike]],
+    ['look-alike first', [lookalike, owner]],
+  ])('%s', (_order, installs) => {
+    const { map } = buildMentionMap(installs, []);
+    expect(map.get('codex-default')).toEqual({ agentName: 'codex', instanceId: 'default' });
+  });
+});
+
+describe('routedMentionHandle tries a preferred key only while it routes here', () => {
+  const helper = { agentName: 'codex', instanceId: 'helper', displayName: 'Assistant' };
+  const desk = { agentName: 'claude', instanceId: 'desk', displayName: 'Assistant' };
+
+  test('the preferred slug, when it routes to this install', () => {
+    const { map } = buildMentionMap([helper], []);
+    expect(routedMentionHandle(map, { agentName: 'codex', instanceId: 'helper' }, { prefer: ['assistant'] }))
+      .toBe('assistant');
+  });
+
+  test('the routed handle instead, when a later install owns the slug', () => {
+    const { map } = buildMentionMap([helper, desk], []);
+    expect(map.get('assistant')).toEqual({ agentName: 'claude', instanceId: 'desk' });
+    expect(routedMentionHandle(map, { agentName: 'codex', instanceId: 'helper' }, { prefer: ['assistant'] }))
+      .toBe('codex-helper');
+  });
+});
+
 describe('mentionHandleForUser', () => {
   const { map } = buildMentionMap([{ agentName: 'codex', instanceId: 'swe-dogfood', displayName: 'Rivet' }], []);
 
