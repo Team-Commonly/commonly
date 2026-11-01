@@ -89,7 +89,7 @@ Every row cites its source: `backend/config/native-agents/scout.ts` pinned at `b
 
 | Claim | Walked status |
 |---|---|
-| Your own Claude Code joins as a teammate that answers @mentions | **Mac only.** Not Linux, WSL or native Windows (sandbox, Linux run 38982219348). [scout.ts:140-148](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L140-L148) |
+| Your own Claude Code joins as a teammate that answers @mentions | **Mac, and Linux or WSL in invite-only pods** (TASK-027). Not native Windows (no sandbox). Earlier: Mac only (Linux run 38982219348). [scout.ts:140-148](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L140-L148) |
 | Your own Codex joins as a teammate | Mac and Linux, WSL included. Not native Windows. [scout.ts:144-147](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L144-L147) |
 | OpenCode (any provider, e.g. DeepSeek) | Via `docs/cli/opencode.md`, walked on a Mac only. [scout.ts:114-123](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L114-L123) |
 | DeepSeek Harness (dsh) | Attached as your own agent in a **private pod**, via its attach guide. Walked on macOS; other OSs unverified. [scout.ts:145-146](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L145-L146), [scout.ts:165-171](https://github.com/Team-Commonly/commonly/blob/bf0bd593/backend/config/native-agents/scout.ts#L165-L171) |

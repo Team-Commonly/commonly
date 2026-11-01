@@ -2495,6 +2495,24 @@ body.modern-ui.v2-canvas {
   line-height: 1.4;
 }
 
+.v2-chat__agent-room-command {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--v2-font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.v2-team-card__fix {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--v2-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--v2-text-secondary);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 .v2-chat__agent-room-status--wait {
   border-color: var(--v2-border);
   background: var(--v2-surface-hover);
@@ -9044,12 +9062,6 @@ body.modern-ui.v2-canvas {
   white-space: pre-wrap;
 }
 
-.v2-board__detail-moves {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
 .v2-board__detail-updates {
   list-style: none;
   margin: 0;
@@ -10926,6 +10938,29 @@ body.modern-ui.v2-canvas {
 .v2-connectors__inactive-caret { width: 7px; height: 7px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
 .v2-root button.v2-connectors__inactive-toggle[aria-expanded="true"] .v2-connectors__inactive-caret { transform: rotate(45deg); }
 .v2-connectors__inactive-rows > .v2-connector-row:last-child { border-bottom: 0; }
+/* TASK-677 slice (a), D215 artboard: channel rows render as a tile grid
+   (auto-fill, 150px minimum, per the 2026-10-31 ruling; the aside stays). Layout
+   only: the same rows, the same act and the same connect flow. Tools rows are not
+   tiled in this slice. The inactive fold spans the grid, and its own rows reuse
+   the same tile template. */
+.v2-connectors__rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; overflow: visible; border: 0; border-radius: 0; }
+.v2-connectors__rows .v2-connector-row { grid-template-columns: minmax(0, 1fr); align-content: center; min-height: 128px; border: 1px solid var(--v2-border-soft); border-radius: 14px; padding: 14px 12px; }
+.v2-connectors__inactive-fold { grid-column: 1 / -1; }
+.v2-connectors__inactive-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 12px 0 0; }
+/* Lumen's 1440 HOLD (review 5722362448): the row's own two-track grid and its
+   spanning placements sized the name, detail and act past a 150px tile. Inside a
+   tile the content stacks in one track and wraps within the tile. */
+.v2-root .v2-connectors__rows button.v2-connector-row__selection { grid-column: 1; grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
+.v2-connectors__rows .v2-connector-row__name { min-width: 0; overflow-wrap: anywhere; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.v2-connectors__rows .v2-connector-row__details { min-width: 0; overflow-wrap: anywhere; padding-right: 0; }
+/* The 760px rule reserved 52px beside the icon act (column 2). Inside a tile the
+   icon act is centred under the text, so the reserve only narrowed the text. The
+   specificity here is (0,5,1), above the 760px padding-right rule (0,4,1). */
+.v2-root .v2-connectors__rows .v2-connector-row:has(.v2-connector-row__action--icon) button.v2-connector-row__selection { padding-right: 0; }
+.v2-root .v2-connectors__rows .v2-connector-row__action { grid-column: 1; grid-row: 2; justify-self: stretch; }
+/* The icon act is 32px or 44px wide, so stretch does nothing; centre it under the
+   text. Specificity (0,4,1) beats the 760px icon placement (0,2,1). */
+.v2-root .v2-connectors__rows button.v2-connector-row__action--icon { grid-column: 1; grid-row: 2; justify-self: center; }
 
 .v2-connector-row {
   display: grid;
@@ -11793,6 +11828,52 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-thread__inspector-toggle:hover,
 .v2-root button.v2-thread__inspector-toggle--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+
+/* TASK-702: the header Invite. Same height and frame as the inspector
+   toggle beside it, with a label so it reads as an action, not decoration. */
+.v2-root button.v2-pod-header__invite {
+  display: inline-flex;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--v2-border);
+  border-radius: 4px;
+  background: var(--v2-surface);
+  color: var(--v2-text-primary);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.v2-root button.v2-pod-header__invite:hover { background: var(--v2-surface-hover); }
+
+/* On a phone the label would take the pod name's width, so the button keeps
+   only its glyph, square like the inspector toggle. The label stays in the
+   accessibility tree as the button's name. */
+@media (max-width: 760px) {
+  .v2-root button.v2-pod-header__invite {
+    width: 28px;
+    flex: 0 0 28px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .v2-root button.v2-pod-header__invite span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
 
 .v2-thread .v2-msg {
   grid-template-columns: 28px minmax(0, 1fr);
@@ -13765,6 +13846,15 @@ body.modern-ui.v2-canvas {
 .v2-board__detail .v2-modal__body { padding: 16px 24px 24px; display: grid; gap: 20px; }
 .v2-root .v2-board__detail button.v2-modal__close { width: 32px; height: 32px; border: 1px solid var(--v2-border); border-radius: 4px; flex-shrink: 0; }
 .v2-board__grab { display: none; }
+/* D215 task board: details open in a 400px right drawer, not a centred modal. */
+.v2-board .v2-board__overlay--drawer { align-items: stretch; justify-content: flex-end; padding-top: 0; }
+.v2-board .v2-board__drawer { width: 400px; max-width: 100%; height: 100%; max-height: none; border-radius: 14px 0 0 14px; box-shadow: var(--v2-shadow-lg); }
+.v2-board__status-segment { display: inline-flex; max-width: 100%; border: 1px solid var(--v2-border); border-radius: 6px; overflow: hidden; }
+.v2-root button.v2-board__status-option { min-height: 32px; padding: 0 12px; border: 0; border-radius: 0; background: var(--v2-bg); color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; }
+.v2-root button.v2-board__status-option + button.v2-board__status-option { border-left: 1px solid var(--v2-border-soft); }
+.v2-root button.v2-board__status-option[aria-checked="true"] { background: var(--v2-surface); color: var(--v2-text-primary); }
+.v2-root button.v2-board__status-option:disabled { cursor: default; }
+.v2-root button.v2-board__updates-toggle { justify-self: start; min-height: 32px; padding: 0; border: 0; background: none; color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; text-decoration: underline; }
 .v2-board__ownership { margin: 0; display: grid; grid-template-columns: 112px minmax(0, 1fr); border: 1px solid var(--v2-border-soft); border-radius: 4px; }
 .v2-board__ownership dt, .v2-board__ownership dd { margin: 0; padding: 10px 12px; min-height: 44px; display: flex; align-items: center; border-top: 1px solid var(--v2-border-soft); }
 .v2-board__ownership dt:first-of-type, .v2-board__ownership dd:first-of-type { border-top: 0; }
@@ -13789,6 +13879,9 @@ body.modern-ui.v2-canvas {
   .v2-board__col { flex: 0 0 78%; min-width: 250px; }
   .v2-root button.v2-board__card-move { min-height: 44px; padding: 0 14px; font-size: 13px; }
   .v2-board .v2-board__detail { position: absolute; inset: 44px 0 0; width: 100%; max-height: none; border-radius: 6px 6px 0 0; }
+  .v2-board .v2-board__drawer { width: 100%; height: auto; border-radius: 6px 6px 0 0; }
+  .v2-root button.v2-board__status-option { min-height: 44px; padding: 0 14px; }
+  .v2-root button.v2-board__updates-toggle { min-height: 44px; }
   .v2-board__grab { display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--v2-border-soft); margin: 8px auto 0; flex-shrink: 0; }
   .v2-board__detail .v2-modal__head { padding: 12px 16px 14px; }
   .v2-board__detail .v2-modal__body { padding: 14px 16px 24px; gap: 18px; }

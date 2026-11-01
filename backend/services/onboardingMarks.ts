@@ -26,6 +26,12 @@
  * nothing else calls). It tells "never looked at setup" apart from "looked and
  * left".
  *
+ * byoOpenedOs is written with it, in the same write-once update: the OS the
+ * page detected from the browser, one of BYO_OPENED_OS. The listener runs only
+ * on Mac (listenerRunsOn in V2AgentBYO.tsx is os === 'mac'), so this splits
+ * "left" by whether the listener path could have worked. An unknown or
+ * missing value records the visit without an OS.
+ *
  * Three surface marks come from the browser through POST /api/stats/byo-step,
  * as fixed step names: inviteCardShownAt and inviteCardDismissedAt for
  * the "invite a teammate" card, and byoOfferShownAt the first time the thread
@@ -39,6 +45,7 @@ const podOpenedMarked = new Set<string>();
 const startPickedMarked = new Set<string>();
 const byoOpenedMarked = new Set<string>();
 const byoCommandCopiedMarked = new Set<string>();
+const byoCommandKindMarked = new Set<string>();
 const byoConnectionAttemptMarked = new Set<string>();
 const surfaceMarked = new Map<SurfaceMark, Set<string>>();
 
@@ -102,15 +109,30 @@ function recordFirstStart(id: string, startId: string): void {
   }
 }
 
-export function markByoOpened(userId: unknown): void {
+export const BYO_OPENED_OS = ['mac', 'linux', 'windows', 'other'] as const;
+export type ByoOpenedOs = typeof BYO_OPENED_OS[number];
+
+export const parseByoOpenedOs = (value: unknown): ByoOpenedOs | undefined => (
+  typeof value === 'string' && (BYO_OPENED_OS as readonly string[]).includes(value)
+    ? value as ByoOpenedOs
+    : undefined
+);
+
+export function markByoOpened(userId: unknown, os?: unknown): void {
   const id = String(userId || '');
   if (!id) return;
   if (byoOpenedMarked.has(id)) return;
   byoOpenedMarked.add(id);
+  const detectedOs = parseByoOpenedOs(os);
   try {
     User.updateOne(
       { _id: id, isBot: { $ne: true }, 'onboarding.byoOpenedAt': { $exists: false } },
-      { $set: { 'onboarding.byoOpenedAt': new Date() } },
+      {
+        $set: {
+          'onboarding.byoOpenedAt': new Date(),
+          ...(detectedOs ? { 'onboarding.byoOpenedOs': detectedOs } : {}),
+        },
+      },
     ).catch(() => {
       byoOpenedMarked.delete(id);
     });
@@ -125,10 +147,31 @@ export function markByoOpened(userId: unknown): void {
  *
  * Only the fixed command kind is kept. The command itself contains a runtime
  * token, so it must never cross this boundary or be written to telemetry.
+ *
+ * Two shapes are written. `byoCommandCopiedAt` / `byoCommandType` keep the
+ * FIRST copy of either kind, as before. `byoMcpCopiedAt` / `byoCliCopiedAt`
+ * keep the first copy of EACH kind, so "copied the MCP snippet and never the
+ * listener command" (TASK-721) is distinguishable from "MCP first, listener
+ * second", which the first-copy pair cannot tell apart.
  */
 export function markByoCommandCopied(userId: unknown, commandType: 'mcp' | 'cli'): void {
   const id = String(userId || '');
   if (!id || !['mcp', 'cli'].includes(commandType)) return;
+  const kindField = commandType === 'mcp' ? 'onboarding.byoMcpCopiedAt' : 'onboarding.byoCliCopiedAt';
+  if (!byoCommandKindMarked.has(`${id}:${commandType}`)) {
+    byoCommandKindMarked.add(`${id}:${commandType}`);
+    try {
+      User.updateOne(
+        { _id: id, isBot: { $ne: true }, [kindField]: { $exists: false } },
+        { $set: { [kindField]: new Date() } },
+      ).catch(() => {
+        byoCommandKindMarked.delete(`${id}:${commandType}`);
+      });
+    } catch {
+      // Telemetry fails open: it must never break the copy flow.
+      byoCommandKindMarked.delete(`${id}:${commandType}`);
+    }
+  }
   if (byoCommandCopiedMarked.has(id)) return;
   byoCommandCopiedMarked.add(id);
   try {
@@ -218,6 +261,7 @@ export function resetOnboardingMarksForTest(): void {
   startPickedMarked.clear();
   byoOpenedMarked.clear();
   byoCommandCopiedMarked.clear();
+  byoCommandKindMarked.clear();
   byoConnectionAttemptMarked.clear();
   surfaceMarked.clear();
 }

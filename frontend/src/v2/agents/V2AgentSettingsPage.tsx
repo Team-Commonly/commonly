@@ -101,6 +101,35 @@ const V2AgentSettingsPage: React.FC = () => {
     return () => { active = false; };
   }, [access, podId, fetchKeys, identityKey, t]);
 
+  // A key used or revoked from outside this page only shows up when the list
+  // is re-read. Poll while the tab is visible, and re-read on focus.
+  useEffect(() => {
+    if (!access || !podId) return undefined;
+    let active = true;
+    let pending = false;
+    const refreshKeys = async () => {
+      if (pending || document.hidden) return;
+      pending = true;
+      try {
+        const rows = await fetchKeys();
+        if (active) setKeys(rows);
+      } catch {
+        // Keep the last list; the next tick or focus retries.
+      } finally {
+        pending = false;
+      }
+    };
+    const timer = window.setInterval(refreshKeys, 15_000);
+    window.addEventListener('focus', refreshKeys);
+    document.addEventListener('visibilitychange', refreshKeys);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshKeys);
+      document.removeEventListener('visibilitychange', refreshKeys);
+    };
+  }, [access, podId, fetchKeys]);
+
   const replaceKey = async () => {
     if (!access || !podId || pendingAction !== 'replace' || busy || installation?.runtime?.runtimeType === 'wrapper') return;
     const requestIdentity = identityKey;

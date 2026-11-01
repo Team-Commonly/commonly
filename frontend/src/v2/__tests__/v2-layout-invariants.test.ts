@@ -2486,6 +2486,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(layoutBlocks('v2-connectors').filter((b) => b.includes('min-height'))).toEqual([]);
     expect(layoutBlocks('v2-connectors__content').filter((b) => b.includes('flex: 1'))).toEqual([]);
     expect(layoutBlocks('v2-connectors__rows').filter((b) => b.includes('flex: 1'))).toEqual([]);
+    // TASK-677 tile grid: the channel rows tile at 150px minimum, the fold spans
+    // the grid, and the icon act is centred. jsdom cannot see the cascade, so the
+    // 760px overrides are guarded by presence here.
+    // ruleBody takes the first line-start match, which is the base rule, so scan
+    // every block for the tile declarations instead.
+    expect(layoutBlocks('v2-connectors__rows').some((b) => b.includes('repeat(auto-fill, minmax(150px, 1fr))'))).toBe(true);
+    expect(layoutBlocks('v2-connectors__inactive-fold').some((b) => b.includes('grid-column: 1 / -1'))).toBe(true);
+    expect(layoutBlocks('v2-connector-row__action--icon').some((b) => b.includes('justify-self: center'))).toBe(true);
     expect(ruleBody(v2, '.v2-page-head__meta')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: inherit');
@@ -5092,7 +5100,14 @@ test('TASK-443 phone ownership sheet keeps its inset and scroll containment', ()
   expect(modal).toContain('overflow: auto');
   expect(modal).toContain('display: flex');
   expect(modal).toContain('flex-direction: column');
-  expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail"');
+  expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail v2-board__drawer"');
+});
+
+test('TASK-699 task detail is a 400px right drawer on desktop and a sheet on phones', () => {
+  const css = read('../v2.css');
+  expect(ruleBody(css, '.v2-board .v2-board__drawer')).toContain('width: 400px');
+  expect(ruleBody(css, '.v2-board .v2-board__overlay--drawer')).toContain('justify-content: flex-end');
+  expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail v2-board__drawer"');
 });
 
 
@@ -5261,5 +5276,13 @@ describe('pod board column scroll (TASK-698)', () => {
     const focus = ruleBody(css, '.v2-board__focus');
     expect(focus).toContain('max-height: min(35vh, 260px)');
     expect(focus).toContain('overflow-y: auto');
+  });
+
+  // TASK-702: on a phone the header Invite is glyph-only, or its label takes
+  // the pod name's width and the title truncates to a few characters.
+  test('the header Invite hides its label on a phone, keeping it for screen readers', () => {
+    const block = mediaBlockContaining(read('../v2.css'), '.v2-pod-header__invite span');
+    expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip-path:\s*inset\(50%\)/);
+    expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*28px/);
   });
 });

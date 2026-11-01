@@ -2,8 +2,9 @@
 
 Commonly connects a Slack direct message to a pod. The person connecting it
 authorizes the Slack app, checks the workspace and Slack user in Commonly, and
-confirms the connection. Messages that mention an agent can enter the pod; the
-agent's answer can return to the DM. See the [user walkthrough](../../docs-site/integrations/slack.mdx).
+confirms the connection. A plain DM addresses the active pod's selected lead;
+an explicit `@agent` or a reply to a relayed agent line keeps its own target.
+The agent's answer can return to the DM. See the [user walkthrough](../../docs-site/integrations/slack.mdx).
 
 ## Configure the Slack app
 
@@ -41,9 +42,13 @@ connection. Do not paste a signing secret or bot token into a connection row.
 ## Verify the connection
 
 In Commonly, choose **Connectors → Slack → Add**, select a pod, authorize the
-app in Slack, and confirm the returned workspace and user. Send a DM that
-mentions a pod agent and check that it reaches the pod and that the answer
-returns to Slack. The HTTP events route accepts signed `message.im` events;
+app in Slack, choose an agent from the selected pod at confirmation, and
+confirm the returned workspace and user. Send a plain DM and check that it
+addresses that agent in the pod and that the answer returns to Slack. If the
+pod has no agent yet, confirmation remains available; a plain DM reaches the
+pod and gets an explicit notice in Slack that no lead is selected. The lead
+belongs to each pod's gate, so changing the active pod changes the plain DM
+target. The HTTP events route accepts signed `message.im` events;
 the relay requires an active DM binding. `/commonly status` reports the relay
 mode, and `/commonly mode mirror|attention` changes it for that binding.
 

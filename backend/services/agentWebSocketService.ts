@@ -70,7 +70,7 @@ interface AgentUserDoc {
   username?: string;
   isBot?: boolean;
   botMetadata?: Record<string, unknown>;
-  agentRuntimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date; expiresAt?: Date | null }>;
+  agentRuntimeTokens?: Array<{ tokenHash: string; lastUsedAt?: Date; lastListenedAt?: Date; expiresAt?: Date | null }>;
 }
 
 interface InstallationDoc {
@@ -394,9 +394,15 @@ class AgentWebSocketService {
             .find((t: { tokenHash?: string; lastUsedAt?: Date }) => t.tokenHash === tokenHash);
           const isFirstTokenUse = !wsTokenRecord?.lastUsedAt;
           try {
+            // A WebSocket connect is a listener check-in as well as a use.
             await User.updateOne(
               { _id: agentUser._id, 'agentRuntimeTokens.tokenHash': tokenHash },
-              { $set: { 'agentRuntimeTokens.$.lastUsedAt': new Date() } },
+              {
+                $set: {
+                  'agentRuntimeTokens.$.lastUsedAt': new Date(),
+                  'agentRuntimeTokens.$.lastListenedAt': new Date(),
+                },
+              },
             );
           } catch (err) {
             console.warn('Failed to update agent token usage on User:', (err as Error).message);

@@ -1,6 +1,7 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
 import { foregroundDaemonHint } from '../lib/daemon-hint.js';
 import { loadDaemonRecord } from '../lib/daemon-store.js';
+import { daemonSeatLogPath, logSize, readAppended, readLogTail } from '../lib/daemon-logs.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -16,6 +17,7 @@ import { createRuntimeReporter } from '../lib/runtime-observation.js';
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
+import { refreshMcpTokenCopy, removeMcpTokenCopy } from '../lib/mcp-token.js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
 import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
@@ -53,6 +55,7 @@ import {
 import { catchUpBeforeTurn } from '../lib/pod-catch-up.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
+import { createPollLiveness, formatStall, resolvePollLivenessMs } from '../lib/poll-liveness.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
 import { compileServerSkills } from '../lib/server-skills.js';
@@ -147,6 +150,12 @@ export const saveAgentToken = (name, record) => {
     JSON.stringify({ ...record, savedAt: new Date().toISOString() }, null, 2),
     { encoding: 'utf8', mode: 0o600 },
   );
+  // After the record is durable, so a failed refresh never loses a freshly minted token.
+  try {
+    refreshMcpTokenCopy(name, record?.runtimeToken);
+  } catch (err) {
+    console.warn(`Could not refresh the MCP token copy for '${name}': ${err.message}. Run: commonly mcp config --agent ${name}`);
+  }
 };
 
 export const loadAgentToken = (name) => {
@@ -162,6 +171,7 @@ export const loadAgentToken = (name) => {
 export const deleteAgentToken = (name) => {
   const file = tokenFile(name);
   if (existsSync(file)) rmSync(file);
+  removeMcpTokenCopy(name);
 };
 
 // ── env-var bootstrap for `agent run` (#913) ────────────────────────────────
@@ -491,6 +501,81 @@ export const bootstrapAgentRecordFromEnv = async ({
       : environment,
     workspacePath: workspace?.workspacePath || null,
   };
+};
+
+/**
+ * `commonly agent list`. Without --pod it reads the admin installs route, which
+ * only a global admin can call. With --pod it reads the member-gated pod roster,
+ * so a pod member lists its own seats. Returns the exit code, never exits itself.
+ * Any throw becomes one Failed line and exit 1.
+ */
+export const runAgentList = async (opts = {}, deps = {}) => {
+  const { error = console.error } = deps;
+  try {
+    return await listAgents(opts, deps);
+  } catch (err) {
+    error(`Failed: ${err.message}`);
+    return 1;
+  }
+};
+
+const listAgents = async (opts, deps) => {
+  const {
+    clientFactory = createClient,
+    tokenFor = getToken,
+    instanceUrlFor = resolveInstanceUrl,
+    log = console.log,
+    error = console.error,
+  } = deps;
+  const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
+
+  if (opts.local) {
+    const agents = listLocalAgents();
+    if (agents.length === 0) {
+      log('No agents attached locally. Run: commonly agent attach <adapter> --pod <podId> --name <n>');
+      return 0;
+    }
+    log(`${col('NAME', 20)} ${col('ADAPTER', 10)} ${col('POD', 26)} LAST TURN`);
+    log('─'.repeat(80));
+    agents.forEach((a) => {
+      const lastTurn = a.lastTurn ? new Date(a.lastTurn).toLocaleString() : 'never';
+      log(`${col(a.name, 20)} ${col(a.adapter, 10)} ${col(a.podId, 26)} ${lastTurn}`);
+    });
+    return 0;
+  }
+
+  const token = tokenFor(opts.instance);
+  if (!token) { error('Not logged in. Run: commonly login'); return 1; }
+
+  const client = clientFactory({ instance: instanceUrlFor(opts.instance), token });
+
+  try {
+    const rows = opts.pod
+      ? (await client.get(`/api/registry/pods/${encodeURIComponent(opts.pod)}/agents`)).agents || []
+      : (await client.get('/api/registry/admin/installations')).installations || [];
+
+    if (rows.length === 0) {
+      log('No agents installed.');
+      return 0;
+    }
+
+    log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
+    log('─'.repeat(80));
+    rows.forEach((inst) => {
+      // The pod roster names the agent `name`; the admin route uses `agentName`.
+      const displayName = opts.pod ? (inst.name || inst.agentName) : inst.agentName;
+      const runtimeType = inst.config?.runtime?.runtimeType || inst.runtime?.runtimeType || inst.runtimeType || '?';
+      const host = inst.config?.runtime?.host || inst.runtime?.host || '';
+      const seen = inst.lastActiveAt || inst.usage?.lastUsedAt || inst.connection?.lastSeenAt;
+      const lastSeen = seen ? new Date(seen).toLocaleString() : 'never';
+      log(`${col(displayName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
+    });
+    return 0;
+  } catch (err) {
+    error(`Failed: ${err.message}`);
+    if (err.status === 403 && !opts.pod) error('Listing every install needs a global admin. Pass --pod <podId> to list one pod you belong to.');
+    return 1;
+  }
 };
 
 /**
@@ -1386,6 +1471,15 @@ const extractPrompt = (event) => {
 // cancel grace, and the wall-clock backstop past the adapter's own timeout.
 export { supervisedRunPolicy };
 
+// Codex turns are supervised by default (D211): a turn that stops making
+// progress is named and killed instead of holding the seat. COMMONLY_SUPERVISE_RUNS=0
+// opts out. Every other adapter stays off unless COMMONLY_SUPERVISE_RUNS=1.
+export const superviseRunsByDefault = (adapterName, env = process.env) => {
+  if (env.COMMONLY_SUPERVISE_RUNS === '0') return false;
+  if (adapterName === 'codex') return true;
+  return env.COMMONLY_SUPERVISE_RUNS === '1';
+};
+
 /**
  * Start the run loop. Polls /events, spawns the adapter per event, posts the
  * result into the pod, acks.
@@ -1461,14 +1555,23 @@ export const performRun = ({
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
-  // Off unless COMMONLY_SUPERVISE_RUNS=1: each spawn runs under the seats
-  // supervisor (stall window, wall-clock backstop, a named failure on every
-  // settle). The CLI still talks to its provider directly, and one metadata
-  // line per turn goes to ~/.commonly/state/turns/<agent>.jsonl once
-  // delivery settles. Off, the spawn path is the plain adapter call it has
-  // always been, and nothing is written.
-  superviseRuns = process.env.COMMONLY_SUPERVISE_RUNS === '1',
+  // Each spawn runs under the seats supervisor (stall window, wall-clock
+  // backstop, a named failure on every settle) when superviseRuns is true.
+  // Unset, the default comes from superviseRunsByDefault. The CLI still talks
+  // to its provider directly, and one metadata line per turn goes to
+  // ~/.commonly/state/turns/<agent>.jsonl once delivery settles. Off, the spawn
+  // path is the plain adapter call it has always been, and nothing is written.
+  superviseRuns,
+  // TASK-338. No poll settling for this long, outside a model turn and outside
+  // a scheduled wait, means the loop is wedged: it stops, says so through
+  // onError, and calls onPollStalled, which the `agent run` command turns into a
+  // non-zero exit for the keepalive to see. Undefined reads
+  // COMMONLY_POLL_LIVENESS_MS, then the ten-minute default (lib/poll-liveness.js).
+  pollLivenessMs,
+  pollLivenessCheckMs,
+  onPollStalled,
 }) => {
+  const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
     throw new Error('environment.provider requires a provider-capable adapter');
@@ -1480,9 +1583,9 @@ export const performRun = ({
   // The supervised run keeps its trace in memory, metadata only; no record of
   // a run is written to disk (lib/supervised-turn.js).
   const turnRunner = createTurnRunner({
-    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: superviseRuns, log,
+    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: supervising, log,
   });
-  if (superviseRuns) log(turnRunner.describe(adapter?.name));
+  if (supervising) log(turnRunner.describe(adapter?.name));
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
@@ -1570,6 +1673,26 @@ export const performRun = ({
   const MAX_AUTH_ERRORS = 3;
   let consecutivePollFailures = 0;
   let consecutiveSpawnFailures = 0;
+  let pollStalled = false;
+  const pollLiveness = createPollLiveness({
+    limitMs: resolvePollLivenessMs(pollLivenessMs),
+    checkEveryMs: pollLivenessCheckMs,
+    onStall: ({ stalledMs }) => {
+      // A loop that already stopped itself (auth, a superseded delivery) is
+      // draining, not wedged.
+      if (!running) return;
+      pollStalled = true;
+      running = false;
+      pollLiveness.stop();
+      // The same teardown as stop(): a held retry must not keep renewing its
+      // lease on a loop that will never deliver it.
+      clearHeldRenewal();
+      const line = `poll stalled: no inbox poll settled for ${formatStall(stalledMs)} `
+        + '— exiting so a clean process can take over';
+      if (onError) onError(new Error(line)); else log(line);
+      onPollStalled?.({ stalledMs });
+    },
+  });
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
@@ -1895,7 +2018,7 @@ export const performRun = ({
 
   // The spawn → post-decision half of a turn, split out so the claim release
   // above is a plain finally instead of threading through every return path.
-  // With superviseRuns, the turn's log line is written once delivery has
+  // With supervising, the turn's log line is written once delivery has
   // settled; anything thrown after a spawn that resolved means the reply never
   // reached the pod. Off, `turn` writes nothing.
   const runTurn = async (args) => {
@@ -3074,6 +3197,13 @@ export const performRun = ({
     }
   };
 
+  // A model turn is not a stall, however long it runs: the liveness clock
+  // stops for it and restarts when it ends.
+  const duringTurn = async (turn) => {
+    pollLiveness.pause();
+    try { return await turn(); } finally { pollLiveness.arm(); }
+  };
+
   const tick = async () => {
     if (!running) return;
     let nextPollDelayMs = intervalMs;
@@ -3087,10 +3217,19 @@ export const performRun = ({
       // do not reintroduce a mixed-pod `limit: 10` here.
       // TASK-317: name this CLI for the chat chip. The server keeps it as a
       // display-only label (runtime.reportedCli) and never as a binding.
-      const { events = [], inboxCount } = await client.get('/api/agents/runtime/events', {
+      // The liveness clock runs from here until the next scheduled wait, paused
+      // only while a model turn runs (lib/poll-liveness.js).
+      pollLiveness.arm();
+      const page = await client.get('/api/agents/runtime/events', {
         agentName, instanceId, limit: batchLimit,
         ...(adapter?.name ? { reportedCli: adapter.name } : {}),
       });
+      pollLiveness.arm();
+      // A stall fired while this request hung: the loop has already given up on
+      // it. A plain stop() falls through instead, to the group loop's own
+      // `running` check, which leaves the page's rows to requeue as it always has.
+      if (pollStalled) return;
+      const { events = [], inboxCount } = page;
       consecutiveAuthErrors = 0;
       consecutivePollFailures = 0;
       // A deployed CLI can briefly run against an older server that still
@@ -3204,10 +3343,10 @@ export const performRun = ({
           let batch;
           try {
             // The person's item leads the prompt; the greeting rides along.
-            batch = await processEventBatch(
+            batch = await duringTurn(() => processEventBatch(
               [...group].sort((a, b) => inboxPriority(a) - inboxPriority(b)),
               pageInboxCount,
-            );
+            ));
           } catch (err) {
             await scheduleBatchRetry(err, group);
             break;
@@ -3264,7 +3403,7 @@ export const performRun = ({
         } else {
           const eventWillSpawn = Boolean(extractPrompt(event) && (event.podId || podId));
           try {
-            result = await processEvent(event);
+            result = await duringTurn(() => processEvent(event));
           } catch (err) {
             if (isContentRefusal(err)) {
               // A refused private item is acked without a pod notice: it has no
@@ -3412,6 +3551,8 @@ export const performRun = ({
     // before the next inbox read, independent of the idle polling cadence. A
     // retry scheduled in the same tick keeps its own delay: the failure report
     // names it, and a sibling's completed turn must not shorten the backoff.
+    // A wait the loop schedules itself always ends, so it is not a stall.
+    pollLiveness.pause();
     if (running) setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
   };
 
@@ -3419,6 +3560,7 @@ export const performRun = ({
   return {
     stop: () => {
       running = false;
+      pollLiveness.stop();
       clearHeldRenewal();
     },
   };
@@ -3803,6 +3945,8 @@ Docs:
         onError: (err) => {
           console.error(`[poll error] ${err.message}`);
         },
+        // TASK-338: a wedged poll ends the process instead of idling forever.
+        onPollStalled: () => process.exit(1),
       });
 
       // Graceful shutdown
@@ -4175,6 +4319,9 @@ Docs:
         // collapsed the duplication. The conclusion survived the premise; the
         // sentence did not, and nothing in the diff pointed at it.)
         onError: (err) => console.error(`${stamp()} [${name}] ${err.message}`),
+        // TASK-338: a wedged poll ends the process, so tmux-keepalive or
+        // launchd KeepAlive, which act only on exit, start a clean one.
+        onPollStalled: () => process.exit(1),
       });
 
       // SIGTERM is the daemon's idle-boundary handoff signal. `stop()` stops
@@ -4306,88 +4453,88 @@ The two modes answer different questions:
 
 Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
 `)
-    .action(async (opts) => {
-      if (opts.local) {
-        const agents = listLocalAgents();
-        if (agents.length === 0) {
-          console.log('No agents attached locally. Run: commonly agent attach <adapter> --pod <podId> --name <n>');
-          return;
+    .action(async (opts) => { process.exit(await runAgentList(opts)); });
+
+  // ── logs ──────────────────────────────────────────────────────────────────
+  // Without --pod, the seat's local daemon log is read. With --pod, the owner
+  // login reads recent events and runs from the member-gated seat-activity
+  // route, whichever machine the seat runs on. The owner login is never sent to
+  // the agent-runtime routes, which only accept a seat's own token.
+  agent
+    .command('logs <name>')
+    .description("Show a seat's recent log: local daemon log, or server activity with --pod")
+    .option('--pod <podId>', 'Read server-side events and runs for a pod you belong to')
+    .option('--instance-id <id>', 'Seat instance ID', 'default')
+    .option('--follow', 'Continue printing new output', false)
+    .option('--lines <n>', 'Number of trailing local lines to show', '50')
+    .option('--instance <url>', 'Target Commonly instance (with --pod)')
+    .action(async (name, opts) => {
+      if (opts.follow && opts.pod) {
+        console.error('--follow needs a local seat log; server activity is a snapshot. Re-run without --follow.');
+        process.exit(1);
+      }
+      const lines = Number(opts.lines);
+      if (!Number.isInteger(lines) || lines < 1) {
+        console.error(`--lines must be a positive integer, got '${opts.lines}'`);
+        process.exit(1);
+      }
+      if (!opts.pod) {
+        const path = daemonSeatLogPath(name);
+        let output;
+        try {
+          output = readLogTail(path, lines);
+        } catch (err) {
+          console.error(`Cannot read ${path}: ${err.message}`);
+          process.exit(1);
         }
-        const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
-        console.log(`${col('NAME', 20)} ${col('ADAPTER', 10)} ${col('POD', 26)} LAST TURN`);
-        console.log('─'.repeat(80));
-        agents.forEach((a) => {
-          const lastTurn = a.lastTurn ? new Date(a.lastTurn).toLocaleString() : 'never';
-          console.log(`${col(a.name, 20)} ${col(a.adapter, 10)} ${col(a.podId, 26)} ${lastTurn}`);
-        });
+        if (output === null) {
+          console.error(`No local log for '${name}' at ${path}. Pass --pod <podId> to read its server-side activity.`);
+          process.exit(1);
+        }
+        if (output) console.log(output);
+        if (!opts.follow) return;
+        // Poll rather than fs.watch: a rename-rotated log would leave a watch
+        // on the old inode silent. Only appended bytes are printed.
+        let offset = logSize(path);
+        const timer = setInterval(() => {
+          try {
+            const next = readAppended(path, offset);
+            offset = next.offset;
+            if (next.text) process.stdout.write(next.text);
+          } catch (err) {
+            // Rotation can leave a gap with no file; wait for it to come back.
+            if (err?.code === 'ENOENT') return;
+            console.error(`Cannot follow ${path}: ${err.message}`);
+            process.exit(1);
+          }
+        }, 1000);
+        const close = () => { clearInterval(timer); process.exit(0); };
+        process.once('SIGINT', close);
+        process.once('SIGTERM', close);
         return;
       }
 
       const token = getToken(opts.instance);
       if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
-
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
-
-      try {
-        const params = opts.pod ? { podId: opts.pod } : {};
-        const data = await client.get('/api/registry/admin/installations', params);
-        const installations = data.installations || data || [];
-
-        if (installations.length === 0) {
-          console.log('No agents installed.');
-          return;
-        }
-
-        const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
-        console.log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
-        console.log('─'.repeat(80));
-        installations.forEach((inst) => {
-          const runtimeType = inst.config?.runtime?.runtimeType || inst.runtimeType || '?';
-          const host = inst.config?.runtime?.host || '';
-          const lastSeen = inst.usage?.lastUsedAt
-            ? new Date(inst.usage.lastUsedAt).toLocaleString()
-            : 'never';
-          console.log(`${col(inst.agentName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
-        });
-      } catch (err) {
-        console.error(`Failed: ${err.message}`);
-        process.exit(1);
-      }
-    });
-
-  // ── logs ──────────────────────────────────────────────────────────────────
-  agent
-    .command('logs <name>')
-    .description('Stream recent events for an agent')
-    .option('--instance-id <id>', 'Instance ID', 'default')
-    .option('--follow', 'Keep polling for new events', false)
-    .option('--instance <url>', 'Target Commonly instance')
-    .action(async (name, opts) => {
-      const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
-
-      const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
-
-      const fetchAndPrint = async () => {
-        const { events = [] } = await client.get('/api/agents/runtime/events', {
+      const printActivity = async () => {
+        const { events = [], runs = [] } = await client.get('/api/agents/seat-activity', {
+          podId: opts.pod,
           agentName: name,
           instanceId: opts.instanceId,
-          limit: 20,
         });
         events.forEach((e) => {
           const ts = new Date(e.createdAt).toTimeString().slice(0, 8);
-          const outcome = e.delivery?.outcome || e.status;
-          console.log(`[${ts}] ${e.type.padEnd(18)} → ${outcome}`);
+          console.log(`[${ts}] ${String(e.type).padEnd(18)} → ${e.outcome || e.status}`);
         });
-        return events;
+        runs.forEach((r) => {
+          const ts = new Date(r.startedAt).toTimeString().slice(0, 8);
+          console.log(`[${ts}] run ${String(r.trigger).padEnd(14)} → ${r.status} (${r.totalTokens} tokens)`);
+        });
+        if (events.length === 0 && runs.length === 0) console.log(`No recent activity for '${name}' in this pod.`);
       };
-
       try {
-        await fetchAndPrint();
-        if (opts.follow) {
-          console.log('Following... (Ctrl+C to stop)');
-          setInterval(fetchAndPrint, 5000);
-        }
+        await printActivity();
       } catch (err) {
         console.error(`Failed: ${err.message}`);
         process.exit(1);

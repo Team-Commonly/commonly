@@ -224,6 +224,35 @@ describe('V2Thread agent-room liveness', () => {
     );
   });
 
+  test('a never-connected direct seat says so and shows the owner the command to run', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run aria',
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    const banner = await screen.findByTestId('agent-room-liveness');
+    expect(banner).toHaveTextContent("Aria isn't connected yet");
+    expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
+  });
+
+  test('a never-connected direct seat shows a non-owner no command', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: false,
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    expect(await screen.findByTestId('agent-room-liveness')).toHaveTextContent("Aria isn't connected yet");
+    expect(screen.queryByTestId('agent-room-fix-command')).not.toBeInTheDocument();
+  });
+
   test('a live direct seat shows a wait until it replies', async () => {
     axios.get.mockResolvedValue({
       data: {

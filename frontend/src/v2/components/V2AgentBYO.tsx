@@ -75,9 +75,11 @@ const CLAUDE_FILE_NAME = 'CLAUDE.md';
 type MachineAdapter = '' | 'claude' | 'codex';
 
 // Where the listener runs (cli 0.1.106 stops elsewhere, with directions):
-// Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac;
-// on Linux (WSL included) the bubblewrap namespace cannot start Claude Code
-// yet (ubuntu run 38982219348), and native Windows has no sandbox for either.
+// Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac.
+// On Linux (WSL included) bubblewrap runs Codex, and Claude Code only as a
+// workspace seat, which the CLI allows only while every pod it answers in is
+// invite-only (TASK-027); a public Claude Code seat there is refused. Native
+// Windows has no sandbox for either.
 // PowerShell also has no `export`, so a Windows visitor gets PowerShell lines
 // for the MCP connection instead (windows-latest, 2026-10-16).
 type SetupOs = 'mac' | 'linux' | 'windows';
@@ -92,6 +94,19 @@ const browserOs = (): SetupOs => {
   if (/X11|CrOS|Linux (x86_64|aarch64|armv|i686)|^Linux$/.test(platform) && !/Android/.test(platform)) return 'linux';
   return 'mac';
 };
+// What the page saw, for the first-open mark only (byoOpenedOs). Unlike
+// browserOs it does not default to mac: a browser it can't place is 'other'.
+type OpenedOs = SetupOs | 'other';
+const openedOs = (): OpenedOs => {
+  if (typeof navigator === 'undefined') return 'other';
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform || nav.userAgent || '';
+  if (/iPhone|iPad|Android/.test(platform)) return 'other';
+  // iPadOS Safari in desktop mode reports a Mac user agent; touch gives it away.
+  if (/Mac|macOS/.test(platform)) return (nav.maxTouchPoints || 0) > 1 ? 'other' : 'mac';
+  const os = browserOs();
+  return os === 'mac' ? 'other' : os;
+};
 const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
   { os: 'mac', labelKey: 'agentByo.listen.osMac' },
   { os: 'linux', labelKey: 'agentByo.listen.osLinux' },
@@ -103,7 +118,19 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 // which PowerShell cannot run, and Codex on native Windows is unmeasured.
 // Not drift: the page only offers what it has seen work. Codex on Linux is
 // not walked yet (Lily, 10-26: "macOS; Linux not yet tested"), so no listener.
-const listenerRunsOn = (os: SetupOs): boolean => os === 'mac';
+// Claude Code on Linux runs only in a pod that passes the CLI's own test
+// (workspace-trust.js podIsConfirmedPrivate): both flags reported and false,
+// and invite-only. A pod that omits a flag is not private.
+const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
+  typeof pod?.publicRead === 'boolean'
+  && typeof pod?.communityListed === 'boolean'
+  && !pod.publicRead
+  && !pod.communityListed
+  && pod.joinPolicy === 'invite-only'
+);
+const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex', pod?: V2Pod): boolean => (
+  os === 'mac' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod))
+);
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
   { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
@@ -200,7 +227,32 @@ const V2AgentBYO: React.FC = () => {
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(setupOs);
+  const listenerAvailable = listenerRunsOn(
+    setupOs,
+    listenAdapter,
+    pods.find((p) => p._id === (issued?.podId || podId)),
+  );
+  // TASK-705: "Work in my repo". The CLI already confines a seat to the folder it
+  // starts in when every pod is confirmed private (workspace trust: Seatbelt on
+  // a Mac, bwrap on Linux). This choice makes that explicit and carries the two
+  // opt-ins. There is no unconfined path: write and web only ever ride on
+  // `--allow`, and the CLI refuses them for a folder it will not confine.
+  const [workInRepo, setWorkInRepo] = useState(false);
+  const [allowWrite, setAllowWrite] = useState(false);
+  const [allowWeb, setAllowWeb] = useState(false);
+  // Each seat is its own opt-in: starting another install clears all three.
+  useEffect(() => {
+    setWorkInRepo(false); setAllowWrite(false); setAllowWeb(false);
+  }, [issued?.token]);
+  const repoPod = pods.find((p) => p._id === (issued?.podId || podId));
+  const repoChoiceAvailable = listenAdapter === 'claude'
+    && setupOs !== 'windows'
+    && podIsConfirmedPrivate(repoPod);
+  const repoActive = workInRepo && repoChoiceAvailable;
+  const allowFlag = repoActive
+    ? [allowWrite && 'write', allowWeb && 'web'].filter(Boolean).join(',')
+    : '';
+
   // Live listening verification (#887 class, second half). #888 made the
   // listening step legible; this makes it CHECKABLE — the page polls the
   // kernel until THIS agent's runtime token authenticates for the first time
@@ -526,8 +578,9 @@ const V2AgentBYO: React.FC = () => {
       }
       try {
         // This request also records the person's first visit to this page on
-        // the server (User.onboarding.byoOpenedAt). Keep it on page load.
-        const availability = await api.get<HostedAvailability>('/api/hosted/availability');
+        // the server (User.onboarding.byoOpenedAt, and byoOpenedOs from ?os).
+        // Keep it on page load.
+        const availability = await api.get<HostedAvailability>(`/api/hosted/availability?os=${openedOs()}`);
         if (cancelled) return;
         if (availability && typeof availability.configured === 'boolean') {
           // Sets no mode. This effect re-runs on every pod change (podId is a
@@ -875,8 +928,9 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
-  // Poll the kernel for THIS agent's first authenticated check-in after
-  // issuance. `/api/users/me/agent-connection` reports the caller's latest
+  // Poll the kernel for THIS agent's first listener check-in after
+  // issuance (an events poll or socket connect, not a tool call).
+  // `/api/users/me/agent-connection` reports the caller's latest
   // agent connection (name + lastUsedAt); the name match plus the
   // issuedAt time-fence means a pre-existing connected agent can never flip
   // the checkmark for the one just issued. 4s cadence sits well inside the
@@ -1029,7 +1083,7 @@ const V2AgentBYO: React.FC = () => {
   // EINVALIDTAGNAME "#" and installs nothing (ux-lead on #2104). The command
   // names itself; the body above the box says where to run it.
   const listenSnippet = issued
-    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName} --adapter ${listenAdapter}`
+    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName} --adapter ${listenAdapter}${allowFlag ? ` --allow ${allowFlag}` : ''}`
     : '';
 
   const cursorSnippet = issued
@@ -1436,7 +1490,8 @@ const V2AgentBYO: React.FC = () => {
             {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
-              : listenAdapter === 'claude' ? 'agentByo.footnote.cliRouteClaudeUnavailable'
+              : listenAdapter === 'claude'
+                ? (setupOs === 'linux' ? 'agentByo.footnote.cliRouteClaudeLinuxUnavailable' : 'agentByo.footnote.cliRouteClaudeUnavailable')
                 : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
@@ -1587,12 +1642,34 @@ const V2AgentBYO: React.FC = () => {
                 </React.Fragment>
               ))}
             </p>
+            {!listenerAvailable && (
+              <p className="v2-byo__needs" data-testid="byo-listen-wont-answer">
+                <strong>{t('agentByo.listen.wontAnswer', { name: issued.agentName })}</strong>
+                {hosting?.configured && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="v2-byo__secondary"
+                      data-testid="byo-listen-run-here"
+                      disabled={submitting}
+                      onClick={startHostedInstead}
+                    >
+                      {t('agentByo.mode.hosted')}
+                    </button>
+                  </>
+                )}
+                {error && <span className="v2-byo__error" role="alert"> {error}</span>}
+              </p>
+            )}
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
               {listenerAvailable
-                ? t('agentByo.listen.needs', {
+                ? `${t('agentByo.listen.needs', {
                   tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
-                })
-                : t(listenAdapter === 'claude' ? 'agentByo.listen.unavailableClaude' : 'agentByo.listen.unavailableCodex', {
+                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxFolder')}` : ''}`
+                : t(listenAdapter === 'claude'
+                  ? (setupOs === 'linux' ? 'agentByo.listen.unavailableClaudeLinux' : 'agentByo.listen.unavailableClaude')
+                  : 'agentByo.listen.unavailableCodex', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
                 })}{' '}
               <button
@@ -1646,8 +1723,46 @@ const V2AgentBYO: React.FC = () => {
             )}
             {listenerAvailable && listenAdapter === 'claude' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
-                {t('agentByo.listen.reachClaude', { name: issued.agentName })}
+                {t(setupOs === 'linux' ? 'agentByo.listen.reachClaudeLinux' : 'agentByo.listen.reachClaude', { name: issued.agentName })}
               </p>
+            )}
+            {listenerAvailable && repoChoiceAvailable && (
+              <div className="v2-byo__listen-note" data-testid="byo-repo-choice">
+                <label>
+                  <input
+                    type="checkbox"
+                    data-testid="byo-repo-toggle"
+                    checked={workInRepo}
+                    onChange={(e) => setWorkInRepo(e.target.checked)}
+                  />
+                  {' '}{t('agentByo.listen.repo.label')}
+                </label>
+                <p>{t('agentByo.listen.repo.hint')}</p>
+                {workInRepo && (
+                  <>
+                    <label>
+                      <input
+                        type="checkbox"
+                        data-testid="byo-repo-write"
+                        checked={allowWrite}
+                        onChange={(e) => setAllowWrite(e.target.checked)}
+                      />
+                      {' '}{t('agentByo.listen.repo.write')}
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        data-testid="byo-repo-web"
+                        checked={allowWeb}
+                        onChange={(e) => setAllowWeb(e.target.checked)}
+                      />
+                      {' '}{t('agentByo.listen.repo.web')}
+                    </label>
+                    <p data-testid="byo-repo-folder-note">{t('agentByo.listen.repo.folder')}</p>
+                    <p data-testid="byo-repo-saved-note">{t('agentByo.listen.repo.saved')}</p>
+                  </>
+                )}
+              </div>
             )}
             {listenerAvailable && listenAdapter === 'codex' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach-codex">
@@ -1657,31 +1772,43 @@ const V2AgentBYO: React.FC = () => {
           </div>
           <p data-testid="byo-key-once">{t('agentByo.result.keyOnce')}</p>
 
-          {listenAdapter === 'claude' && (
-            <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
-              <div className="v2-byo__snippet-head">
-                {/* Where no listener runs, this is the way in, not an extra. */}
-                <span>{t(listenerAvailable ? 'agentByo.snippets.claudeCode' : 'agentByo.snippets.claudeCodeMain')}</span>
+          {listenAdapter === 'claude' && (() => {
+            const mcpBlock = (
+  <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
+                <div className="v2-byo__snippet-head">
+                  {/* Where no listener runs, this is the way in, not an extra. */}
+                  <span>{t(listenerAvailable ? 'agentByo.snippets.claudeCode' : 'agentByo.snippets.claudeCodeMain')}</span>
+                </div>
+                <p className="v2-byo__hint">
+                  {t(
+                    setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows'
+                      : listenerAvailable ? 'agentByo.snippets.claudeCodeBody' : 'agentByo.snippets.claudeCodeBodyOwn',
+                    { name: issued.agentName },
+                  )}
+                </p>
+                <div className="v2-byo__command" onCopy={copiedIssuedContent}>
+                  <pre className="v2-byo__pre">{setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet}</pre>
+                  <button
+                    type="button"
+                    onClick={() => copy('claude', setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet)}
+                    className="v2-byo__copy"
+                  >
+                    {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+                  </button>
+                </div>
               </div>
-              <p className="v2-byo__hint">
-                {t(
-                  setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows'
-                    : listenerAvailable ? 'agentByo.snippets.claudeCodeBody' : 'agentByo.snippets.claudeCodeBodyOwn',
-                  { name: issued.agentName },
-                )}
-              </p>
-              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
-                <pre className="v2-byo__pre">{setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet}</pre>
-                <button
-                  type="button"
-                  onClick={() => copy('claude', setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet)}
-                  className="v2-byo__copy"
-                >
-                  {copied === 'claude' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
-                </button>
-              </div>
-            </div>
-          )}
+            );
+            // With a listener, the MCP command is the extra: folded away and
+            // labelled, because a stranger copied it three times, never ran the
+            // listener, and the agent never answered (walk 2026-10-31). Without a
+            // listener it is the only way in, so it stays open.
+            return listenerAvailable ? (
+              <details className="v2-byo__more" data-testid="byo-mcp-details">
+                <summary>{t('agentByo.snippets.mcpSummary')}</summary>
+                {mcpBlock}
+              </details>
+            ) : mcpBlock;
+          })()}
 
           <details className="v2-byo__more" data-testid="byo-result-more-ways">
             <summary>{t('agentByo.otherWays.title')}</summary>
@@ -1817,7 +1944,7 @@ const V2AgentBYO: React.FC = () => {
         </div>
       </aside>
       </div>
-          {issued && showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
+          {issued && listenerAvailable && showHostedOffer && !hasCopied && hosting?.configured && listenState !== 'listening' && (
             <section role="status" className="v2-byo__hosted-offer" aria-label={t('agentByo.hosted.offerAction')}>
               <p>{t('agentByo.hosted.offerBody')}</p>
               <button type="button" className="v2-byo__submit v2-byo__hosted-offer-action" disabled={submitting} onClick={startHostedInstead}>

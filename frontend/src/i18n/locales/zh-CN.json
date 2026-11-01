@@ -589,7 +589,8 @@
       "goneDark": "{{agentName}} 最近没有接入，回复可能需要更长时间。",
       "unknown": "{{agentName}} 的可用状态未知，回复可能需要更长时间。",
       "waiting": "正在等待 {{agentName}} 回复…",
-      "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。"
+      "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。",
+      "runCommand": "要连接它，请运行："
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
@@ -667,7 +668,8 @@
       "agents_one": "{{count}}个智能体",
       "agents_other": "{{count}}个智能体",
       "boardOpen": "看板{{count}}项待办",
-      "backToPods": "返回 Pod 列表"
+      "backToPods": "返回 Pod 列表",
+      "invite": "邀请"
     },
     "team": {
       "view": "查看 Pod 团队",
@@ -1531,7 +1533,10 @@
       "watchers": "关注者",
       "digestHint": "更新会显示在你的摘要中。",
       "memberUnavailable": "成员不可用",
-      "saveError": "未能保存更改，请重试。"
+      "saveError": "未能保存更改，请重试。",
+      "statusLabel": "状态",
+      "showEarlierUpdates": "显示{{count}}条更早的更新",
+      "hideEarlierUpdates": "隐藏更早的更新"
     },
     "form": {
       "title": "标题",
@@ -1729,6 +1734,7 @@
     "footnote": {
       "cliRoute": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会显示回复 @提及的监听命令。",
       "cliRouteClaudeUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后可以在自己的 Claude Code 会话中连接 Commonly。要回复 @提及，请在支持的电脑上运行监听命令，或选择「{{hosted}}」。",
+      "cliRouteClaudeLinuxUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后可以在自己的 Claude Code 会话中连接 Commonly。在 Linux 上，只有当它所在的每个 Pod 都仅限邀请时，Claude Code 才会回复 @提及；否则请选择「{{hosted}}」。",
       "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 电脑上运行监听命令。要从 {{os}} 回复 @提及，请选择「{{hosted}}」。",
       "notSure": "不确定用哪条路径？",
       "mcpVsCli": "MCP、CLI 与 SDK 对比",
@@ -1753,7 +1759,8 @@
       "claudeCodeBody": "为你的 Claude Code 会话加上 Commonly 的工具。回复 @提及需要上面的命令。",
       "claudeCodeBodyOwn": "为你自己的 Claude Code 会话加上 Commonly 的工具。",
       "claudeCodeBodyWindows": "两行都粘贴到 PowerShell 里运行。这样你在这台电脑上的 Claude Code 会话就能用上 Commonly 的工具。",
-      "claudeCodeMain": "让 Claude Code 在你自己的会话里使用这个 Pod"
+      "claudeCodeMain": "让 Claude Code 在你自己的会话里使用这个 Pod",
+      "mcpSummary": "在你自己的会话里使用 Claude Code。这不会回复 @提及。"
     },
     "memory": {
       "doneLead": "记忆已导入——",
@@ -1783,6 +1790,7 @@
     "listen": {
       "title": "在终端里运行这段命令",
       "note": "仅连接 MCP 不会唤醒 {{name}} 回复 @提及。请保持终端窗口开启。",
+      "reachClaudeLinux": "在 Linux 上，只有当 {{name}} 所在的每个 Pod 都是私密、仅限邀请且未列入「社区」的时候，它才会回复，而且只能读取你运行这段命令时所在的文件夹。请在项目文件夹里运行（别在个人文件夹里），并先装好 bubblewrap（bwrap）。只要有一个 Pod 不再仅限邀请，{{name}} 就会停止回复，直到那个 Pod 恢复为仅限邀请。想让它编辑文件、运行命令，就在最后一行加上 --allow write。它运行的命令能读取文件夹以外的内容。想让它抓取网页，就加上 --allow web。无论加哪一个，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予这两项权限。",
       "reachClaude": "默认情况下，如果你用的是 macOS，并且 {{name}} 所在的每个 Pod 都是私密、仅限邀请且未列入「社区」的，它只能读取你运行这段命令时所在的文件夹。不满足这些条件，或者你在个人文件夹里运行这段命令，它都会在自己的临时文件夹里工作。想让它编辑文件、运行命令，就在最后一行加上 --allow write。它运行的命令能读取文件夹以外的内容。想让它抓取网页，就加上 --allow web。无论加哪一个，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予这两项权限。",
       "reachCodex": "Codex 会在系统临时目录里用自己的暂存文件夹工作，不在你运行命令的这个文件夹。--allow 对 Codex 无效，所以最后一行不带 --allow。",
       "waiting": "正在等待 {{name}} 接入…命令一接通，这里就会变绿。",
@@ -1793,15 +1801,26 @@
       "npmPermission": "如果 npm 报 EACCES（权限被拒绝），不要加 sudo。请用版本管理工具（如 nvm）重新安装 Node，然后重新运行这四行。",
       "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
       "needs": "需要 Node 20+（含 npm）和已登录的 {{tool}}。四行都要在同一个窗口里运行，换了窗口 export 就失效。",
+      "needsLinuxFolder": "在 Linux 上，请先在项目文件夹里打开窗口，并装好 bubblewrap（bwrap）：在个人文件夹里运行，它不会启动。",
       "osLabel": "你的系统：",
       "osLinux": "Linux",
       "osMac": "Mac",
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
+      "unavailableClaudeLinux": "在 Linux 上，Claude Code 只在仅限邀请的 Pod 里回复 @提及，而这个 Pod 不是。Pod 的所有者可以在 Pod 设置的「谁可以加入」里改成「仅限邀请」。你也可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择「在这里运行」，改用托管智能体。",
       "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
       "unavailableCodex": "Codex CLI 在 {{os}} 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 机器上运行这条命令（Linux 尚未测试）。",
+      "wontAnswer": "{{name}} 在这里不会回复 @提及。",
       "toolCodex": "Codex CLI",
-      "useDifferentRunner": "换一种适配器"
+      "useDifferentRunner": "换一种适配器",
+      "repo": {
+        "label": "在我的仓库里工作",
+        "hint": "在你启动它的那个文件夹里运行，只能访问这个文件夹。这个智能体所在的每个 Pod 都必须是私密的邀请制 Pod；只要有一个不是，它就不会读取你的文件夹，而是改在自己的暂存文件夹里运行；如果你勾选了下面的选项，它会拒绝启动。不勾选写入时，它只读取这个文件夹，读不到这台电脑上的其他内容。勾选写入后，它运行的命令能读取文件夹以外的内容。",
+        "write": "允许它编辑文件、运行命令（--allow write）",
+        "web": "允许它抓取网页（--allow web）",
+        "folder": "粘贴命令之前，先在终端里打开你的项目文件夹（别在个人文件夹里）。无论选哪一项，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予。",
+        "saved": "写入和联网权限在智能体第一次启动时保存，之后在这里取消勾选并不会移除它们。修改前请先停止正在运行的监听器。然后运行 commonly agent detach <name> --force，再用新的选择重新运行。"
+      }
     },
     "mode": {
       "label": "在哪里运行？",
@@ -2305,7 +2324,7 @@
     "connectChannel": "连接频道",
     "copied": "已复制",
     "copyCommand": "复制命令",
-    "description": "每个频道从一个 Pod 接入一个智能体。它会在那里以自己的名义回复，其余团队成员都在幕后。",
+    "description": "将频道连接到 Pod。消息会以你的身份进入 Pod；你可以选择哪些内容回传到频道。",
     "errorLine": "连接已断开。",
     "errorReconnect": "重新连接以恢复",
     "gateLead": "{{pod}} 的主导智能体",
@@ -2386,6 +2405,11 @@
     "slackConfirmConnection": "确认连接",
     "slackConfirmDetail": "等待你确认",
     "slackConfirmHint": "{{workspace}} 想以 {{user}} 的身份连接。",
+    "slackBindLead": "回复普通消息的智能体",
+    "slackBindLeadNone": "选择智能体",
+    "slackLeadInvalid": "请选择当前 Pod 中的智能体。",
+    "slackLeadNone": "尚未选择负责人",
+    "slackNoAgent": "这个 Pod 里还没有智能体。消息会送达 Pod；你可以稍后选择负责人。",
     "slackConfirmRow": "{{workspace}} 显示 {{user}} 已连接，是你吗？",
     "slackReject": "这不是我",
     "title": "连接器",
@@ -2485,6 +2509,7 @@
     "connect": "连接",
     "connectError": "无法开始连接，请稍后重试。",
     "connectOwn": "连接你自己的 {{label}} 账号",
+    "chooseAccess": "选择 {{label}} 可以访问的内容",
     "connection": "连接",
     "counts": "调用次数",
     "days": "{{count}}天后",

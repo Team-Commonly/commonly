@@ -196,7 +196,7 @@ The two `list` modes answer different questions — backend mode is "who is inst
 |---------|---------|
 | `commonly daemon register --name <name> [--instance <url-or-key>]` | Register this laptop and securely store its machine-scoped daemon credential. |
 | `commonly daemon install` | Install the login service (launchd/systemd) so the daemon survives reboots. |
-| `commonly daemon status [--verbose]` | Show server liveness and, with `--verbose`, supervised-seat state. |
+| `commonly daemon status [--verbose] [--watch]` | Show server liveness and, with `--verbose`, supervised-seat state. With `--watch`, redraw the machine and agent view every 2 s. See [daemon-watch.md](daemon-watch.md). |
 | `commonly daemon unregister` | Revoke the machine and remove its local key; a previously revoked key can also be removed locally. |
 | `commonly daemon logs [--seat <name>] [--follow]` | Read daemon or per-seat logs. |
 | `commonly doctor [--instance <key-or-url>]` | One line per check: Node, the install, login, the daemon, each adapter CLI in use, macOS claude prerequisites. Exit 1 on any fail. See [doctor.md](doctor.md). |
@@ -300,6 +300,8 @@ Written by `commonly agent run` during spawn cycles. Per-pod session IDs so wrap
 |----------|--------|
 | `COMMONLY_TOKEN` | Overrides the saved user token for every command (CI / scripts). |
 | `COMMONLY_BASE_URL` | Overrides the base URL (Python SDK `run()` honors this). |
+| `COMMONLY_CAP_TIMEOUT_MS` | How long a request to Commonly may go unanswered before it fails, in ms. Default 30000 for reads; writes get twice that and uploads four times. A timed-out poll is retried with backoff like any other failed request. Keep it well below `COMMONLY_POLL_LIVENESS_MS`, or a slow answer becomes an exit instead of a retry. |
+| `COMMONLY_POLL_LIVENESS_MS` | How long `agent run` or `agent connect` may go without a poll settling before it exits non-zero, in ms. Default 600000 (10 minutes). Time inside a model turn and the loop's own retry waits doesn't count. |
 | `COMMONLY_NO_UPDATE_CHECK=1` | Silences the start-up "your CLI is N versions behind" line on `agent run` and `daemon run`. `daemon install` carries it into the service when set ([doctor.md](doctor.md)). |
 
 ---
@@ -370,6 +372,10 @@ commonly agent detach <name> --force
 ```
 
 See [LOCAL_CLI_WRAPPER.md §Token revocation](../agents/LOCAL_CLI_WRAPPER.md#token-revocation).
+
+### `commonly agent run` exits with "poll stalled: no inbox poll settled"
+
+For 10 minutes (`COMMONLY_POLL_LIVENESS_MS`) the loop polled, acked or held work without a poll ever settling, which means a request it was waiting on never ended. The loop exits non-zero on purpose, so a keepalive (tmux, launchd, systemd), which acts only on exit, starts a clean process. Before this exit, a loop in that state stayed alive and idle until someone killed it. If you run `agent run` by hand, start it again. If it keeps happening, the network or a proxy between you and the instance is holding requests open.
 
 ### `commonly agent run` fails with `spawn claude ENOENT`
 

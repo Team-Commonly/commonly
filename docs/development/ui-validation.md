@@ -93,6 +93,26 @@ the seat's address `d215-seat@seed.staging.commonly.me` must be allowed, or the 
 
 ## Then: check the screens
 
+### Run the branch against staging (`npm run dev:live`)
+
+```bash
+cd frontend && npm run dev:live    # localhost:3102, /api and /socket.io proxied to staging
+```
+
+- The default target is staging, where writes are safe. The proxy drops the browser
+  `Origin` header, because prod refuses `http://localhost:3102`.
+- Sign in with the seat account, not your own: POST `/api/auth/login` with the
+  `email` and `password` from the credentials file, then put the returned token in
+  `localStorage` under `token` and reload. Login goes through the proxy as a POST,
+  which is allowed on staging.
+- Each target has its own port: staging 3102, prod 3101. The config sets the API base to
+  the same origin, so the app and the proxy always agree. A `--port` override is not
+  needed and would leave the app calling the wrong origin.
+- Prod is read-only through the same command with `DEV_LIVE_TARGET=prod`. Use it only
+  with a test account, and sign in by injecting the token, never by POST.
+- Staging and prod run on different origins, so a token saved on one never reaches the
+  other. Still, do not reuse a prod token on staging: sign in again per target.
+
 - Layout, overflow and scroll need a real browser (CLAUDE.md design rule 9).
   Sign in as `d215-seat`, open the D215 sample pod, and check at 1440 and 390 wide,
   in light and in dark.

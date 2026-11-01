@@ -197,7 +197,7 @@ describe('V2AgentBYO — Run it here', () => {
     );
     await waitFor(() => expect(screen.getByTestId('byo-mode-hosted')).toBeInTheDocument());
     // let the availability effect settle, then assert it did not stomp the mode
-    await waitFor(() => expect(axios.get.mock.calls.some(([url]) => url === '/api/hosted/availability')).toBe(true));
+    await waitFor(() => expect(axios.get.mock.calls.some(([url]) => url.startsWith('/api/hosted/availability'))).toBe(true));
     await waitFor(() => expect(screen.getByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'true'));
     expect(screen.getByTestId('byo-mode-hosted')).toHaveAttribute('aria-pressed', 'false');
     window.history.pushState({}, '', '/');
@@ -480,5 +480,54 @@ describe('V2AgentBYO — Run it here', () => {
     fireEvent.click(screen.getByRole('button', { name: /get my connect command/i }));
     await screen.findByText(/your connect command for/i);
     expect(axios.post.mock.calls[0][1]).toMatchObject({ config: { runtime: { runtimeType: 'webhook' } } });
+  });
+});
+
+// The page's load request carries the OS it detected, for the server's
+// first-open mark (User.onboarding.byoOpenedOs). Unlike the setup tabs, an
+// OS it can't place is reported as 'other', never as a Mac.
+describe('V2AgentBYO — detected OS on the availability request', () => {
+  const availabilityUrl = () => axios.get.mock.calls
+    .map(([url]) => url)
+    .find((url) => url.startsWith('/api/hosted/availability'));
+
+  const withPlatform = async (platform, userAgent, touchPoints = 0) => {
+    const uaData = Object.getOwnPropertyDescriptor(window.navigator, 'userAgentData');
+    const ua = jest.spyOn(window.navigator, 'userAgent', 'get');
+    if (userAgent) ua.mockReturnValue(userAgent);
+    const touch = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    Object.defineProperty(window.navigator, 'maxTouchPoints', { value: touchPoints, configurable: true });
+    Object.defineProperty(window.navigator, 'userAgentData', {
+      value: platform === undefined ? undefined : { platform }, configurable: true,
+    });
+    try {
+      mockGet({ configured: true });
+      renderPage();
+      await waitFor(() => expect(availabilityUrl()).toBeDefined());
+      return availabilityUrl();
+    } finally {
+      ua.mockRestore();
+      if (touch) Object.defineProperty(window.navigator, 'maxTouchPoints', touch);
+      else delete window.navigator.maxTouchPoints;
+      if (uaData) Object.defineProperty(window.navigator, 'userAgentData', uaData);
+      else delete window.navigator.userAgentData;
+    }
+  };
+
+  test.each([
+    ['macOS', undefined, 'mac'],
+    ['Windows', undefined, 'windows'],
+    ['Linux', undefined, 'linux'],
+    ['Android', undefined, 'other'],
+    [undefined, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)', 'other'],
+    [undefined, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'mac'],
+    [undefined, 'Mozilla/5.0 (linux) AppleWebKit/537.36 (KHTML, like Gecko) jsdom/20.0.3', 'other'],
+  ])('platform %p / UA %p reports os=%s', async (platform, userAgent, os) => {
+    expect(await withPlatform(platform, userAgent)).toBe(`/api/hosted/availability?os=${os}`);
+  });
+
+  test('an iPad in desktop mode (Mac UA, touch) reports os=other', async () => {
+    expect(await withPlatform(undefined, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 5))
+      .toBe('/api/hosted/availability?os=other');
   });
 });

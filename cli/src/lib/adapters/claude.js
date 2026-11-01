@@ -494,10 +494,65 @@ const publicSkillPromptArgs = async (skillSources) => {
 
 // `ownGroup` is set only under the run supervisor, which kills the child's
 // whole group; unsupervised, the spawn options are exactly what they were.
+// Stream-json so each model event is a sign of life for the watchdog. The
+// partial messages put thinking deltas on the stream too, so a long think is
+// visible while it runs. A hung provider writes only `system` retry events,
+// and the watchdog does not count those.
+const STREAM_ARGS = ['--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+
+const parseEvent = (line) => {
+  try {
+    const event = JSON.parse(line);
+    return event && typeof event === 'object' ? event : null;
+  } catch {
+    return null;
+  }
+};
+
+// The reply is the `result` event's text. A turn that reaches no result event
+// (killed mid-stream, exit 0) gets the text of its assistant events, never the
+// raw NDJSON. Output with no JSON lines at all is plain text and returned as it
+// arrived. A result flagged `is_error` is a failed turn, whatever its exit code,
+// so it is raised here, outside the parse guard, and never returned as a reply.
+export const claudeResultText = (stdout, { credentials = [] } = {}) => {
+  const text = String(stdout || '');
+  const events = text.split('\n').map(parseEvent);
+  if (!events.some(Boolean)) return text.trim();
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    if (events[i]?.type !== 'result') continue;
+    const reply = String(events[i].result ?? '').trim();
+    if (events[i].is_error === true) throw adapterFailure('claude', reply, { credentials });
+    return reply;
+  }
+  return events
+    .filter((event) => event?.type === 'assistant')
+    .flatMap((event) => event.message?.content || [])
+    .filter((block) => block?.type === 'text')
+    .map((block) => block.text)
+    .join('')
+    .trim();
+};
+
+// The failure tail for a non-zero exit. Stream events are mostly system init
+// and status lines, which would push the terminal error past the 2000-char cut,
+// so keep the result text, or the lines that are not system or stream events.
+export const claudeFailureTail = (stdout) => {
+  const text = String(stdout || '');
+  const lines = text.split('\n');
+  const events = lines.map(parseEvent);
+  if (!events.some(Boolean)) return text.trim();
+  const result = [...events].reverse().find((event) => event?.type === 'result');
+  if (String(result?.result ?? '').trim()) return String(result.result).trim();
+  return lines
+    .filter((_, i) => !['system', 'stream_event'].includes(events[i]?.type))
+    .join('\n')
+    .trim();
+};
+
 const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
-  processTable = readProcessTable, survivorIo,
+  processTable = readProcessTable, survivorIo, modelStream = true,
 }) => new Promise((resolve, reject) => {
   const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
     cwd,
@@ -529,6 +584,7 @@ const runClaude = ({
     proc,
     windowMs: firstOutputMs,
     transcriptPath,
+    modelStream,
     lockProbe,
     onStall: (reason) => {
       stalled = spawnStalledError({ label: 'claude', windowMs: firstOutputMs, reason });
@@ -584,7 +640,7 @@ const runClaude = ({
       // reduced to one named field. The status, when the tail names one, is
       // attached as `error.status` so a refusal classifies by field rather than
       // by regex.
-      const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join(' | ');
+      const detail = [stderr.trim(), claudeFailureTail(stdout)].filter(Boolean).join(' | ');
       return reject(adapterFailure('claude', detail, {
         credentials,
         exitCode: code,
@@ -1161,7 +1217,7 @@ export default {
       ...(seatModel ? ['--model', seatModel] : []),
       ...(ctx.environment?.effort ? ['--effort', String(ctx.environment.effort)] : []),
     ];
-    const baseArgs = ['-p', fullPrompt, '--output-format', 'text', sessionFlag, sessionId, ...modelArgs];
+    const baseArgs = ['-p', fullPrompt, ...STREAM_ARGS, sessionFlag, sessionId, ...modelArgs];
 
     let mountedSkills = [];
     let skillMount = { mounted: [], conflicted: [] };
@@ -1274,7 +1330,7 @@ export default {
       const contextTokens = claudeContextTokens({
         cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
       });
-      return { text: stdout.trim(), newSessionId: sessionId, contextTokens };
+      return { text: claudeResultText(stdout, { credentials: spawnCredentials(spawnCtx) }), newSessionId: sessionId, contextTokens };
     } catch (err) {
       // A public seat's refusal is not a session-store failure, whatever its
       // message happens to contain: it must reach the run loop, never the
@@ -1295,7 +1351,7 @@ export default {
           memoryWithheld: ctx.memoryWithheld === true,
         });
         const retryBase = ['-p', freshPrompt,
-        '--output-format', 'text', '--session-id', freshId, ...modelArgs];
+        ...STREAM_ARGS, '--session-id', freshId, ...modelArgs];
         const retryCtx = {
           ...ctx,
           mcpConfigPath: mcpConfig?.file || null,
@@ -1337,7 +1393,7 @@ export default {
           cwd: physicalPath(ctx.cwd), sessionId: freshId,
           configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
         });
-        return { text: stdout.trim(), newSessionId: freshId, contextTokens };
+        return { text: claudeResultText(stdout, { credentials: spawnCredentials(retryCtx) }), newSessionId: freshId, contextTokens };
       }
       throw err;
     } finally {

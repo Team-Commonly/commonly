@@ -585,11 +585,12 @@
       "action": "Add an agent"
     },
     "agentRoomLiveness": {
-      "neverConnected": "{{agentName}} isn't connected. Messages sent here will wait for this seat to connect.",
+      "neverConnected": "{{agentName}} isn't connected yet. Messages sent here will wait until it runs.",
       "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
       "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
-      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation."
+      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation.",
+      "runCommand": "To connect it, run:"
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",
@@ -668,7 +669,8 @@
       "agents_one": "{{count}} agent",
       "agents_other": "{{count}} agents",
       "boardOpen": "board {{count}} open",
-      "backToPods": "Back to pods"
+      "backToPods": "Back to pods",
+      "invite": "Invite"
     },
     "team": {
       "view": "View pod team",
@@ -1539,7 +1541,10 @@
       "watchers": "Watchers",
       "digestHint": "Updates appear in your digest.",
       "memberUnavailable": "Member unavailable",
-      "saveError": "Could not save this change. Try again."
+      "saveError": "Could not save this change. Try again.",
+      "statusLabel": "Status",
+      "showEarlierUpdates": "Show {{count}} earlier updates",
+      "hideEarlierUpdates": "Hide earlier updates"
     },
     "form": {
       "title": "Title",
@@ -1670,6 +1675,7 @@
     "footnote": {
       "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
       "cliRouteClaudeUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose “{{hosted}}”.",
+      "cliRouteClaudeLinuxUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. On Linux, Claude Code answers @mentions only when every pod it’s in is invite-only; otherwise choose “{{hosted}}”.",
       "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac computer. To answer @mentions from {{os}}, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
@@ -1694,7 +1700,8 @@
       "claudeCodeBody": "Gives your Claude Code sessions Commonly’s tools. Answering @mentions needs the command above.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
       "claudeCodeBodyWindows": "Paste both lines in PowerShell. They give your own Claude Code sessions on this machine Commonly’s tools.",
-      "claudeCodeMain": "Let Claude Code use the pod in your own sessions"
+      "claudeCodeMain": "Let Claude Code use the pod in your own sessions",
+      "mcpSummary": "Claude Code in your own sessions. This does not answer @mentions."
     },
     "memory": {
       "doneLead": "Memory imported —",
@@ -1724,6 +1731,7 @@
     "listen": {
       "title": "Run this in Terminal",
       "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
+      "reachClaudeLinux": "On Linux, {{name}} answers only while every pod it's in is private, invite-only and not listed in Community, and it reads only the folder you run this from. Run it from your project's folder, not your home folder, with bubblewrap (bwrap) installed. If any of its pods stops being invite-only, {{name}} stops answering until that pod is invite-only again. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "reachClaude": "By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, {{name}} reads only the folder you run this from. Otherwise, or when you run it from your home folder, it works in its own scratch folder. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "reachCodex": "Codex works in its own scratch folder under your temp directory, not the folder you run this from. --allow does not apply to Codex, so the last line has no --allow.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
@@ -1734,15 +1742,26 @@
       "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
       "needs": "Needs Node 20+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
+      "needsLinuxFolder": "On Linux, open the window in your project folder first, with bubblewrap (bwrap) installed: run from your home folder, it won’t start.",
       "osLabel": "Setting up on:",
       "osLinux": "Linux",
       "osMac": "Mac",
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
+      "unavailableClaudeLinux": "On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t. Its owner can switch it to Invite-only under “Who can join” in pod settings. Or connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
-      "useDifferentRunner": "Use a different adapter"
+      "wontAnswer": "{{name}} will not answer @mentions from here.",
+      "useDifferentRunner": "Use a different adapter",
+      "repo": {
+        "label": "Work in my repo",
+        "hint": "Runs in the folder you start it from, confined to that folder. Every pod this agent is in must be private and invite-only; if one is not, it will not read your folder. It uses its own scratch folder, or refuses to start if you ticked an option below. Without write, it reads only that folder and nothing else on this computer. With write, the commands it runs can read beyond the folder.",
+        "write": "Let it edit files and run commands (--allow write)",
+        "web": "Let it fetch web pages (--allow web)",
+        "folder": "Open your terminal in your project's folder (not your home folder) before you paste the command. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
+        "saved": "Write and web are saved when the agent first starts, and unticking a box here does not remove them later. Stop the running listener first. Then change them with: commonly agent detach <name> --force, followed by a new run with the new choice."
+      }
     },
     "mode": {
       "label": "Where should it run?",
@@ -2315,7 +2334,7 @@
     "connectChannel": "Connect a channel",
     "copied": "Copied",
     "copyCommand": "Copy command",
-    "description": "Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.",
+    "description": "Connect a channel to a pod. Messages arrive there as you; choose what reaches the channel.",
     "errorLine": "The connection dropped.",
     "errorReconnect": "reconnect to resume",
     "gateLead": "Lead agent for {{pod}}",
@@ -2396,6 +2415,11 @@
     "slackConfirmConnection": "Confirm connection",
     "slackConfirmDetail": "waiting for you to confirm",
     "slackConfirmHint": "{{workspace}} wants to connect as {{user}}.",
+    "slackBindLead": "Agent for plain messages",
+    "slackBindLeadNone": "Choose an agent",
+    "slackLeadInvalid": "Choose an agent in the active pod.",
+    "slackLeadNone": "No lead selected",
+    "slackNoAgent": "No agent is in this pod yet. Messages will reach the pod; choose a lead later.",
     "slackConfirmRow": "{{workspace}} says {{user}} connected — is that you?",
     "slackReject": "This is not me",
     "title": "Connectors",
@@ -2482,6 +2506,7 @@
     "connect": "Connect",
     "connectError": "Could not begin connecting. Try again in a moment.",
     "connectOwn": "connect your own {{label}} account",
+    "chooseAccess": "Choose what {{label}} can reach",
     "connection": "connection",
     "counts": "Call counts",
     "days": "in {{count}} days",

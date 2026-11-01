@@ -34,7 +34,7 @@ describe('tool registry shape', () => {
     // + 1 agent-originated decision request (TASK-095 rev 2).
     // + 1 self-follow task digest subscription (TASK-443).
     // + 1 direct row edit (commonly_patch_task, TASK-669): PATCH the row itself.
-    expect(tools).toHaveLength(32);
+    expect(tools).toHaveLength(33);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {

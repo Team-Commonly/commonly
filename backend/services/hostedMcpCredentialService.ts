@@ -267,7 +267,9 @@ export const refreshTokenAtVendor = async ({
     body: tokenRequest.body,
   }, fetchImpl);
   const body = await response.json().catch(() => ({} as Record<string, unknown>)) as Record<string, unknown>;
-  if (!response.ok) {
+  // GitHub's token endpoint answers a refused refresh with HTTP 200 and an
+  // `error` body, so a 200 is not proof of a token.
+  if (!response.ok || (!body.access_token && body.error)) {
     const code = String(body.error || '');
     if (code === 'invalid_client' && entry.client === 'dcr') {
       await refuseDcrClient(entry, clientId);
@@ -280,7 +282,7 @@ export const refreshTokenAtVendor = async ({
     // revoked from the vendor's side, or run out its own lifetime. Everything
     // else — a 500, a 429, a body we cannot read — is the vendor having a bad
     // moment, and the next call should try again with the same pair.
-    const definitive = code === 'invalid_grant' || response.status === 400 || response.status === 401;
+    const definitive = code === 'invalid_grant' || code === 'bad_refresh_token' || response.status === 400 || response.status === 401;
     throw new HostedMcpCredentialError(
       definitive ? 'connection_error' : 'refresh_unreachable',
       `refresh refused (${response.status}${code ? ` ${code}` : ''})`,

@@ -438,6 +438,16 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   if (!pod || !isConnectorTargetPod(pod, userId)) {
     return slackError(res, 403, 'slack_pod_access_denied', 'You no longer have access to this pod.');
   }
+  const selectedLead = req.body?.leadAgentUsername;
+  if (selectedLead !== undefined) {
+    if (typeof selectedLead !== 'string' || !/^[a-z0-9_-]{2,}$/i.test(selectedLead)) {
+      return slackError(res, 400, 'slack_lead_invalid', 'Choose an agent in the active pod.');
+    }
+    const member = await User.findOne({
+      _id: { $in: pod.members }, username: selectedLead, isBot: true,
+    });
+    if (!member) return slackError(res, 400, 'slack_lead_invalid', 'Choose an agent in the active pod.');
+  }
   // A preflight lookup alone cannot prevent two replicas confirming the same
   // DM at once. Refuse new binds until the unique index has been installed.
   const unavailable = 'Slack connections are temporarily unavailable. Try again later.';
@@ -451,16 +461,27 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
   const bindingSelector = activeSlackDm(String(pending.teamId), String(pending.chatId), owned.integration._id);
   const existing = await Integration.findOne(bindingSelector);
   if (existing && String(existing._id) !== String(owned.integration._id)) return slackBindConflict(res, existing);
+  const activePodId = String(owned.integration.podId);
+  const gates = owned.integration.config?.gates;
+  const oldGate = gates?.get?.(activePodId) || gates?.[activePodId];
+  // For an existing gate, change only the selected lead. Replaying the gate
+  // snapshot would undo an owner's concurrent enable/mode change. A missing
+  // gate may be initialized only while it is still absent at the atomic bind.
+  const initializeGate = Boolean(selectedLead && !oldGate);
   let confirmed: any;
   try {
     confirmed = await Integration.findOneAndUpdate(
       {
         _id: owned.integration._id,
         type: 'slack',
+        podId: owned.integration.podId,
         isActive: true,
         'config.pendingBind.botTokenRef': pending.botTokenRef,
         'config.pendingBind.expiresAt': { $gt: new Date() },
         'config.chatId': { $exists: false },
+        ...(selectedLead ? {
+          [`config.gates.${activePodId}`]: { $exists: !initializeGate },
+        } : {}),
       },
       {
         $set: {
@@ -478,6 +499,9 @@ router.post('/slack/confirm', writeIntegrationsRateLimit, auth, async (req: Auth
           'config.chatId': pending.chatId,
           'config.chatType': 'im',
           'config.botTokenRef': pending.botTokenRef,
+          ...(selectedLead ? (initializeGate
+            ? { [`config.gates.${activePodId}`]: { enabled: true, lead: selectedLead, since: new Date() } }
+            : { [`config.gates.${activePodId}.lead`]: selectedLead }) : {}),
         },
         $unset: { 'config.pendingBind': 1 },
       },

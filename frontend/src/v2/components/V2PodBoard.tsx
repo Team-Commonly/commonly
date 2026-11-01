@@ -81,7 +81,6 @@ interface ColumnMeta {
   key: CanonicalStatus;
   labelKey: string;
   emptyKey: string;
-  pillClass: string;
   // Alias statuses written before the PATCH vocabulary gate (#921) render in
   // their canonical column instead of disappearing.
   statuses: string[];
@@ -94,7 +93,6 @@ const COLUMNS: ColumnMeta[] = [
     key: 'pending',
     labelKey: 'board.col.pending',
     emptyKey: 'board.emptyCol.pending',
-    pillClass: 'v2-inspector__pill v2-inspector__pill--progress',
     statuses: ['pending', 'todo', 'open'],
     moves: [
       { to: 'claimed', labelKey: 'board.move.start' },
@@ -105,7 +103,6 @@ const COLUMNS: ColumnMeta[] = [
     key: 'claimed',
     labelKey: 'board.col.inProgress',
     emptyKey: 'board.emptyCol.inProgress',
-    pillClass: 'v2-inspector__pill v2-inspector__pill--progress',
     statuses: ['claimed', 'in_progress', 'in-progress'],
     moves: [
       { to: 'done', labelKey: 'board.move.finish' },
@@ -116,7 +113,6 @@ const COLUMNS: ColumnMeta[] = [
     key: 'blocked',
     labelKey: 'board.col.blocked',
     emptyKey: 'board.emptyCol.blocked',
-    pillClass: 'v2-inspector__pill v2-inspector__pill--blocked',
     statuses: ['blocked'],
     moves: [
       { to: 'claimed', labelKey: 'board.move.resume' },
@@ -127,7 +123,6 @@ const COLUMNS: ColumnMeta[] = [
     key: 'done',
     labelKey: 'board.col.done',
     emptyKey: 'board.emptyCol.done',
-    pillClass: 'v2-inspector__pill v2-inspector__pill--complete',
     statuses: ['done', 'completed', 'complete'],
     moves: [
       { to: 'pending', labelKey: 'board.move.reopen' },
@@ -154,6 +149,7 @@ const V2PodBoard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [selected, setSelected] = useState<BoardTask | null>(null);
+  const [updatesExpanded, setUpdatesExpanded] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newAssignee, setNewAssignee] = useState('');
@@ -186,6 +182,7 @@ const V2PodBoard: React.FC = () => {
     taskMutationRef.current += 1;
     setDetailSaving(false);
     setDetailError(null);
+    setUpdatesExpanded(false);
     setSelected(task);
   }, []);
 
@@ -635,11 +632,6 @@ const V2PodBoard: React.FC = () => {
     return byColumn;
   }, [tasks]);
 
-  const pillFor = (status: string): { className: string; label: string } => {
-    const col = COLUMNS.find((c) => c.statuses.includes(status)) || COLUMNS[0];
-    return { className: col.pillClass, label: t(col.labelKey) };
-  };
-
   return (
     <div className="v2-board" data-testid="v2-board">
       <header className="v2-board__head">
@@ -779,9 +771,9 @@ const V2PodBoard: React.FC = () => {
       )}
 
       {selected && (
-        <div className="v2-modal__overlay v2-board__overlay" role="presentation" onClick={() => openTask(null)}>
+        <div className="v2-modal__overlay v2-board__overlay v2-board__overlay--drawer" role="presentation" onClick={() => openTask(null)}>
           <div
-            className="v2-modal v2-board__detail"
+            className="v2-modal v2-board__detail v2-board__drawer"
             ref={detailDialogRef}
             role="dialog"
             aria-label={selected.title}
@@ -797,7 +789,24 @@ const V2PodBoard: React.FC = () => {
             </div>
             <div className="v2-modal__body">
               <div className="v2-board__detail-meta">
-                {(() => { const pill = pillFor(selected.status); return <span className={pill.className}>{pill.label}</span>; })()}
+                <div className="v2-board__status-segment" role="radiogroup" aria-label={t('board.detail.statusLabel')}>
+                  {COLUMNS.map((column) => {
+                    const current = column.statuses.includes(selected.status);
+                    return (
+                      <button
+                        key={column.key}
+                        type="button"
+                        role="radio"
+                        aria-checked={current}
+                        className="v2-board__status-option"
+                        disabled={detailSaving || !taskWriteAllowed || current}
+                        onClick={() => moveTask(selected, column.statuses[0] as CanonicalStatus)}
+                      >
+                        {t(column.labelKey)}
+                      </button>
+                    );
+                  })}
+                </div>
                 {selected.prUrl && (
                   <a className="v2-board__detail-pr" href={selected.prUrl} target="_blank" rel="noreferrer">
                     {t('board.detail.pr')}
@@ -832,32 +841,32 @@ const V2PodBoard: React.FC = () => {
               </section>
               {detailError && <p className="v2-modal__error" role="alert">{detailError}</p>}
               {selected.notes && <p className="v2-board__detail-notes">{selected.notes}</p>}
-              <div className="v2-board__detail-moves">
-                {(COLUMNS.find((c) => c.statuses.includes(selected.status))?.moves || []).map((move) => (
-                  <button
-                    key={move.to}
-                    type="button"
-                    className="v2-board__card-move"
-                    onClick={() => moveTask(selected, move.to)}
-                  >
-                    {t(move.labelKey)}
-                  </button>
-                ))}
-              </div>
               {(selected.updates?.length || 0) > 0 && (
                 <>
                   <div className="v2-modal__section-title">{t('board.detail.updates')}</div>
                   <ul className="v2-board__detail-updates">
-                    {(selected.updates || []).slice().reverse().map((update, index) => (
-                      // Updates have no id; index-in-reversed-list is stable
-                      // for a render of an immutable snapshot.
-                      // eslint-disable-next-line react/no-array-index-key
-                      <li key={index}>
-                        <span className="v2-board__detail-update-author">{update.author}</span>
-                        <span className="v2-board__detail-update-text">{update.text}</span>
-                      </li>
-                    ))}
+                    {(() => {
+                      // Newest first. The three newest stay visible; older ones fold behind a toggle.
+                      const ordered = (selected.updates || []).slice().reverse();
+                      const earlier = Math.max(0, ordered.length - 3);
+                      return (updatesExpanded ? ordered : ordered.slice(0, ordered.length - earlier)).map((update, index) => (
+                        // Updates have no id; index-in-reversed-list is stable
+                        // for a render of an immutable snapshot.
+                        // eslint-disable-next-line react/no-array-index-key
+                        <li key={index}>
+                          <span className="v2-board__detail-update-author">{update.author}</span>
+                          <span className="v2-board__detail-update-text">{update.text}</span>
+                        </li>
+                      ));
+                    })()}
                   </ul>
+                  {(selected.updates?.length || 0) > 3 && (
+                    <button type="button" className="v2-board__updates-toggle" aria-expanded={updatesExpanded} onClick={() => setUpdatesExpanded((open) => !open)}>
+                      {updatesExpanded
+                        ? t('board.detail.hideEarlierUpdates')
+                        : t('board.detail.showEarlierUpdates', { count: (selected.updates?.length || 0) - 3 })}
+                    </button>
+                  )}
                 </>
               )}
             </div>

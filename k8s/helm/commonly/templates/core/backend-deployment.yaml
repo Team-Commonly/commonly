@@ -83,6 +83,8 @@ spec:
           value: {{ .Values.hostedMcp.hiddenEntries | toJson | quote }}
         - name: HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST
           value: {{ .Values.hostedMcp.hiddenEntryUserAllowlist | default dict | toJson | quote }}
+        - name: GITHUB_MCP_APP_SLUG
+          value: {{ .Values.hostedMcp.githubMcp.appSlug | default "" | quote }}
         {{- if .Values.errorTracking.enabled }}
         - name: SENTRY_DSN
           valueFrom:
@@ -118,6 +120,20 @@ spec:
         {{- if .Values.backend.env.registrationInviteOnly }}
         - name: REGISTRATION_INVITE_ONLY
           value: {{ .Values.backend.env.registrationInviteOnly | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.authAllowedDomains }}
+        # Instance access allowlist. Any value here flips
+        # isInstanceAccessRestricted() true and gates BOTH register and login.
+        # Unset (prod/values-dev) = public. Staging scopes sign-in to the team.
+        - name: AUTH_ALLOWED_DOMAINS
+          value: {{ .Values.backend.env.authAllowedDomains | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.authAllowedEmailsFromSecret }}
+        - name: AUTH_ALLOWED_EMAILS
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: auth-allowed-emails
         {{- end }}
 
         # Database Connections
@@ -444,6 +460,21 @@ spec:
             secretKeyRef:
               name: api-keys
               key: google-calendar-client-secret
+              optional: true
+
+        # GitHub hosted-MCP uses its own pre-registered App, separate from the
+        # sign-in app and room-grant broker. Missing keys leave it unavailable.
+        - name: GITHUB_MCP_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: github-mcp-client-id
+              optional: true
+        - name: GITHUB_MCP_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: github-mcp-client-secret
               optional: true
 
         # Slack installable OAuth and per-workspace token encryption. Every

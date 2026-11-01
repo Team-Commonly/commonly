@@ -19,6 +19,9 @@ export interface IAgentRuntimeToken {
   label?: string;
   createdAt: Date;
   lastUsedAt?: Date;
+  // Set only by a listener check-in (the events poll, the agent WebSocket
+  // connect), never by an ordinary authenticated call such as an MCP tool.
+  lastListenedAt?: Date;
   expiresAt?: Date;
 }
 
@@ -210,10 +213,15 @@ export interface IUser extends Document {
     firstStartId?: string;
     firstStartAt?: Date;
     byoOpenedAt?: Date;
+    /** OS the page detected on that first open, written with byoOpenedAt. */
+    byoOpenedOs?: 'mac' | 'linux' | 'windows' | 'other';
     /** First BYO setup command copied in the browser, never overwritten. */
     byoCommandCopiedAt?: Date;
     /** Fixed kind only; command contents and tokens are never stored. */
     byoCommandType?: 'mcp' | 'cli';
+    /** First copy of each setup command, kept per kind (TASK-721). */
+    byoMcpCopiedAt?: Date;
+    byoCliCopiedAt?: Date;
     /** First authenticated BYO runtime request, never overwritten. */
     byoFirstConnectionAttemptAt?: Date;
     /** First "invite a teammate" card mounted, and first dismissed. */
@@ -395,6 +403,7 @@ const userSchema = new Schema<IUser>({
       label: { type: String },
       createdAt: { type: Date, default: Date.now },
       lastUsedAt: { type: Date },
+      lastListenedAt: { type: Date },
       expiresAt: { type: Date },
     },
   ],
@@ -465,8 +474,11 @@ const userSchema = new Schema<IUser>({
     firstStartId: { type: String },
     firstStartAt: { type: Date },
     byoOpenedAt: { type: Date },
+    byoOpenedOs: { type: String, enum: ['mac', 'linux', 'windows', 'other'] },
     byoCommandCopiedAt: { type: Date },
     byoCommandType: { type: String, enum: ['mcp', 'cli'] },
+    byoMcpCopiedAt: { type: Date },
+    byoCliCopiedAt: { type: Date },
     byoFirstConnectionAttemptAt: { type: Date },
     inviteCardShownAt: { type: Date },
     inviteCardDismissedAt: { type: Date },

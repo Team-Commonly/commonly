@@ -166,6 +166,7 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
         issued: false,
         connected: false,
         lastUsedAt: null,
+        lastToolUseAt: null,
         connectedAgent: null,
       });
     }
@@ -177,22 +178,33 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
         'botMetadata.instanceId': identity.instanceId,
       })),
     })
-      .select('botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastUsedAt')
+      .select(
+        'botMetadata.agentName botMetadata.instanceId '
+        + 'agentRuntimeTokens.lastUsedAt agentRuntimeTokens.lastListenedAt',
+      )
       .lean();
 
-    let latestConnection: { usedAt: Date; identity: any } | null = null;
+    // `connected` means a LISTENER checked in (the events poll or the agent
+    // WebSocket), because that is what "mentions will wake it" promises. Any
+    // other authenticated call, such as an MCP tool, only moves `lastToolUseAt`
+    // (TASK-719): a stranger walk copied the MCP snippet, never ran a listener,
+    // and still saw "is listening".
+    const latestOf = (current: { at: Date; identity: any } | null, value: unknown, identity: any) => {
+      if (!value) return current;
+      const at = new Date(value as string | number | Date);
+      if (Number.isNaN(at.getTime())) return current;
+      return !current || at > current.at ? { at, identity } : current;
+    };
+    let latestConnection: { at: Date; identity: any } | null = null;
+    let latestToolUse: { at: Date; identity: any } | null = null;
     for (const agentUser of agentUsers || []) {
       const agentName = String(agentUser.botMetadata?.agentName || '').trim().toLowerCase();
       const instanceId = String(agentUser.botMetadata?.instanceId || 'default').trim().toLowerCase();
       const identity = installationsByIdentity.get(`${agentName}:${instanceId}`);
       if (!identity) continue;
       for (const token of agentUser.agentRuntimeTokens || []) {
-        if (!token?.lastUsedAt) continue;
-        const usedAt = new Date(token.lastUsedAt);
-        if (Number.isNaN(usedAt.getTime())) continue;
-        if (!latestConnection || usedAt > latestConnection.usedAt) {
-          latestConnection = { usedAt, identity };
-        }
+        latestConnection = latestOf(latestConnection, token?.lastListenedAt, identity);
+        latestToolUse = latestOf(latestToolUse, token?.lastUsedAt, identity);
       }
     }
 
@@ -202,7 +214,9 @@ router.get('/me/agent-connection', agentConnectionReadLimit, auth, async (req: a
       // newcomer look onboarded when they have attached nothing themselves.
       issued: true,
       connected: latestConnection !== null,
-      lastUsedAt: latestConnection ? latestConnection.usedAt.toISOString() : null,
+      // Listener check-in time. `lastToolUseAt` is any authenticated use.
+      lastUsedAt: latestConnection ? latestConnection.at.toISOString() : null,
+      lastToolUseAt: latestToolUse ? latestToolUse.at.toISOString() : null,
       connectedAgent: latestConnection ? {
         agentName: latestConnection.identity.agentName,
         instanceId: latestConnection.identity.instanceId,
