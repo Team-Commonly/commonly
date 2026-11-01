@@ -216,7 +216,7 @@ export const V2AgentConnectorsRow: React.FC<ConnectorsProps> = ({ name, instance
   const [busy, setBusy] = useState(false);
   const [confirmGrantId, setConfirmGrantId] = useState<string | null>(null);
   // A failed load or revoke, or a pending confirm, opens the list so its message and action are in view.
-  const [open, setOpen] = useOpensOnDemand(Boolean(loadError || revokeError || confirmGrantId));
+  const [open, setOpen] = useOpensOnDemand(loadError, revokeError, confirmGrantId);
   const toggleRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {

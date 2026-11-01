@@ -37,7 +37,7 @@ const V2AgentListingRow: React.FC<Props> = ({ agentName, instanceId }) => {
   const [listingBusy, setListingBusy] = useState(false);
   const [listingError, setListingError] = useState<string | null>(null);
   // A failed save opens the panel where its message is.
-  const [open, setOpen] = useOpensOnDemand(Boolean(listingError));
+  const [open, setOpen] = useOpensOnDemand(listingError);
 
   useEffect(() => {
     let active = true;

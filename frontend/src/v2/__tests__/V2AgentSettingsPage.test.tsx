@@ -843,6 +843,25 @@ describe('one Identity & access list (d215 frame)', () => {
     expect(toggle).toHaveFocus();
   });
 
+  test('a key that arrives after the panel was closed mid-replace still opens it', async () => {
+    axios.get.mockImplementation(fleet());
+    let resolvePost: (value: unknown) => void = () => {};
+    axios.post.mockReturnValue(new Promise((resolve) => { resolvePost = resolve; }));
+    renderPage();
+    await openKeys();
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate key' }));
+    fireEvent.click(screen.getByRole('button', { name: /replace the running agent/i }));
+    const toggle = screen.getByRole('button', { name: 'Key actions' });
+    // The reader folds the panel while the replace is still in flight.
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await act(async () => { resolvePost({ data: { token: 'cm_agent_late' } }); });
+    // The old key is already gone, so the new one must be in view, with Done the way out.
+    expect(await screen.findByTestId('agent-one-time-key')).toHaveTextContent('cm_agent_late');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toBeDisabled();
+  });
+
   test('a key error opens the panel, and its toggle still closes it', async () => {
     axios.get.mockImplementation(fleet());
     axios.post.mockRejectedValue({ response: { data: { error: 'Replacement refused' } } });

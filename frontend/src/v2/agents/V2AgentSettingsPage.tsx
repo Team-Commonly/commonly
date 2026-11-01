@@ -63,7 +63,7 @@ const V2AgentSettingsPage: React.FC = () => {
   const connectionState = connection?.state ?? null;
   // The key panel opens by itself for anything the owner must see or answer; a failed skills read opens
   // its panel, where the error is. Either way the row's toggle keeps working.
-  const [keyOpen, setKeyOpen] = useOpensOnDemand(Boolean(oneTimeKey || pendingAction || error));
+  const [keyOpen, setKeyOpen] = useOpensOnDemand(oneTimeKey, pendingAction, error);
   const keyToggleRef = useRef<HTMLButtonElement>(null);
   // Set by Done; the toggle is disabled until the key clears, so focus moves after that render.
   const refocusKeyToggle = useRef(false);
