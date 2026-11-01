@@ -489,12 +489,12 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
 
   // Prod 2026-11-01: an agent whose name began "dan" failed every turn, because the
   // prompt opened "You are <name>" and the injection guard blocks the
-  // substring "you are DAN". The keywords are the guard's own, read from the
-  // LiteLLM image this cluster runs.
+  // substring "you are DAN" (and "you are now"). The keywords are the guard's
+  // own, read from the LiteLLM image this cluster runs.
   describe('a name the injection guard would read as a jailbreak', () => {
-    const GUARD = require('../../fixtures/litellm/injection-guard-high-keywords-v1.106.2.json');
+    const GUARD = require('../../fixtures/litellm/injection-guard-keywords-v1.106.2.json');
     const KEYWORDS = Object.values(GUARD.categories).flat().map((keyword) => keyword.toLowerCase());
-    const NAMES = ['Dan', 'Danny', 'Dante', 'daniel-helper', 'Maya'];
+    const NAMES = ['Dan', 'Danny', 'Dante', 'daniel-helper', 'Nowak', 'Maya'];
     const tripped = (prompt) => KEYWORDS.filter((keyword) => prompt.toLowerCase().includes(keyword));
 
     test.each(NAMES)('a hosted agent named %s gets a prompt the guard passes, and still its name', async (name) => {
