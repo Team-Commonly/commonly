@@ -274,12 +274,27 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
     const userRows = usernameSet.size > 0
       ? await User.find({ username: { $in: Array.from(usernameSet) } })
-        .select('username profilePicture botMetadata agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt')
+        .select([
+          'username isBot profilePicture botMetadata',
+          'agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt',
+        ].join(' '))
         .lean()
       : [];
     const userByUsername = new Map<string, any>(
       (userRows as any[]).map((u: any) => [u.username, u]),
     );
+    // The handle a person types to reach each agent here, from the map mention
+    // routing reads (F44). Advisory: without it a row simply carries no handle.
+    // Lazy, as podContextService loads it: the mention service pulls in the event
+    // and message services.
+    // eslint-disable-next-line global-require
+    const mentions = require('../../services/agentMentionService');
+    let mentionMap = new Map<string, { agentName: string; instanceId?: string }>();
+    try {
+      mentionMap = await mentions.loadPodMentionMap(podId);
+    } catch (mentionErr) {
+      console.warn('[pod-agents] mention map unavailable:', (mentionErr as Error).message);
+    }
 
     // Connection health is advisory, like activity. Read credentials in one
     // batch; a revoked row survives removal of the embedded bearer.
@@ -388,6 +403,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         const grantCount = grantPodCounts.get(instanceKey);
         const payload = basePayload && {
           ...basePayload,
+          mention: mentions.mentionHandleForUser(mentionMap, user),
           runtimeNarrowedByMultipleGrantPods: (grantCount?.grantPods ?? 0) >= 2,
           // A seat in one pod loses nothing; one granted pod out of several
           // means it can post only there.

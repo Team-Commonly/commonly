@@ -56,6 +56,26 @@ describe('runAgentList', () => {
     expect(printed).not.toMatch(/undefined/);
   });
 
+  // F44 (A): NAME and INSTANCE are two of an agent's three names; the third is
+  // the one a person types. The roster carries it, and --pod prints it whole.
+  test('--pod prints each agent\'s @mention handle in full', async () => {
+    const { log, deps } = fakeDeps(async () => ({
+      agents: [
+        { name: 'cto-walk-1016', instanceId: 'cto-walk', mention: 'cto-walk-1016-cto-walk', status: 'active', runtimeType: 'native' },
+        { name: 'ember', instanceId: 'default', status: 'active', runtimeType: 'wrapper' },
+      ],
+    }));
+
+    expect(await runAgentList({ pod: 'pod-42' }, deps)).toBe(0);
+
+    const [header, , first, second] = log.mock.calls.map((c) => c[0]);
+    expect(header).toMatch(/^NAME\s+INSTANCE\s+HANDLE\s+RUNTIME/);
+    expect(first).toMatch(/^cto-walk-1016\s+cto-walk\s+@cto-walk-1016-cto-walk\s+native/);
+    // A roster from an older server has no handle: the column is blank, not "@undefined".
+    expect(second).toMatch(/^ember\s+default\s+wrapper/);
+    expect(second).not.toMatch(/@|undefined/);
+  });
+
   test('a non-member 403 on --pod exits 1 with one Failed line', async () => {
     const { log, error, deps } = fakeDeps(async () => {
       throw httpError(403, 'Access denied');

@@ -76,9 +76,12 @@ jest.mock('../../../models/Pod', () => ({
   })),
 }));
 
+// One agent claimant is keyed by its user id, as a runtime-token claim stores it (F44).
 jest.mock('../../../models/User', () => ({
-  findById: jest.fn(() => ({
-    select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ username: 'tester' }) })),
+  findById: jest.fn((id) => ({
+    select: jest.fn(() => ({
+      lean: jest.fn().mockResolvedValue({ username: String(id) === 'bbbbbbbbbbbbbbbbbbbbbbbb' ? 'cto-walk-1016-cto-walk' : 'tester' }),
+    })),
   })),
 }));
 
@@ -381,6 +384,18 @@ describe('the row\'s creator may act over a peer\'s live lease (TASK-669)', () =
     expect(res.status).toBe(200);
     expect((await Task.findOne({ taskId: 'TASK-001' }).lean()).status).toBe('done');
     expect((await updateTexts()).at(-1)).toMatch(/\(overrode other-seat's live claim\)$/);
+  });
+
+  // F44 (E): a claim made with a runtime token stores the claimant's user id. The
+  // note names the claimant by the handle a person can @mention, not by that id.
+  it.each([
+    ['an edit', () => patch('lead-seat'), /overrode cto-walk-1016-cto-walk's live claim$/],
+    ['a close', () => complete('lead-seat'), /\(overrode cto-walk-1016-cto-walk's live claim\)$/],
+  ])('%s over a claim keyed by user id names the claimant by handle', async (_label, act, note) => {
+    await leasedByPeer({ claimedBy: 'bbbbbbbbbbbbbbbbbbbbbbbb', ...createdBy('lead-seat') });
+
+    expect((await act()).status).toBe(200);
+    expect((await updateTexts()).at(-1)).toMatch(note);
   });
 
   it('releases a row a peer holds by moving it to pending, and the next seat is not refused', async () => {

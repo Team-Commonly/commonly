@@ -560,7 +560,12 @@ const listAgents = async (opts, deps) => {
       return 0;
     }
 
-    log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
+    // The pod roster also names the handle a person types to reach each agent
+    // (F44). It is printed whole: a cut handle reaches nobody.
+    const handleOf = (inst) => (inst.mention ? `@${inst.mention}` : '');
+    const handleWidth = opts.pod ? Math.max(6, ...rows.map((inst) => handleOf(inst).length)) : 0;
+    const handleCol = (s) => (opts.pod ? `${col(s, handleWidth)} ` : '');
+    log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${handleCol('HANDLE')}${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
     log('─'.repeat(80));
     rows.forEach((inst) => {
       // The pod roster names the agent `name`; the admin route uses `agentName`.
@@ -569,7 +574,7 @@ const listAgents = async (opts, deps) => {
       const host = inst.config?.runtime?.host || inst.runtime?.host || '';
       const seen = inst.lastActiveAt || inst.usage?.lastUsedAt || inst.connection?.lastSeenAt;
       const lastSeen = seen ? new Date(seen).toLocaleString() : 'never';
-      log(`${col(displayName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
+      log(`${col(displayName, 16)} ${col(inst.instanceId, 10)} ${handleCol(handleOf(inst))}${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
     });
     return 0;
   } catch (err) {
@@ -577,6 +582,26 @@ const listAgents = async (opts, deps) => {
     if (err.status === 403 && !opts.pod) error('Listing every install needs a global admin. Pass --pod <podId> to list one pod you belong to.');
     return 1;
   }
+};
+
+/**
+ * The seat `agent logs <name> --pod` reads (F44). An agent has three names: its
+ * agentName, its instance, and the handle its @mentions route to. Any of them
+ * finds it in the pod roster, so a seat whose instance isn't "default" no longer
+ * reads as idle. An explicit --instance-id is used as given.
+ */
+export const resolveLogsSeat = async (client, podId, typed, instanceId) => {
+  if (instanceId) return { agentName: typed, instanceId };
+  const want = String(typed).trim().replace(/^@/, '').toLowerCase();
+  const { agents = [] } = await client.get(`/api/registry/pods/${encodeURIComponent(podId)}/agents`);
+  const named = (inst) => [inst.mention, inst.name || inst.agentName, inst.instanceId !== 'default' && inst.instanceId]
+    .some((n) => typeof n === 'string' && n.toLowerCase() === want);
+  const hits = agents.filter(named);
+  if (hits.length > 1) {
+    throw new Error(`${hits.length} seats are named '${typed}' here: ${hits.map((h) => h.instanceId).join(', ')}. Pass --instance-id.`);
+  }
+  if (hits.length === 0) return { agentName: typed, instanceId: 'default' };
+  return { agentName: hits[0].name || hits[0].agentName, instanceId: hits[0].instanceId || 'default' };
 };
 
 /**
@@ -4466,7 +4491,7 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
     .command('logs <name>')
     .description("Show a seat's recent log: local daemon log, or server activity with --pod")
     .option('--pod <podId>', 'Read server-side events and runs for a pod you belong to')
-    .option('--instance-id <id>', 'Seat instance ID', 'default')
+    .option('--instance-id <id>', 'Seat instance ID (with --pod, found from the name when omitted)')
     .option('--follow', 'Continue printing new output', false)
     .option('--lines <n>', 'Number of trailing local lines to show', '50')
     .option('--instance <url>', 'Target Commonly instance (with --pod)')
@@ -4520,10 +4545,11 @@ Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
       if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
       const printActivity = async () => {
+        const seat = await resolveLogsSeat(client, opts.pod, name, opts.instanceId);
         const { events = [], runs = [] } = await client.get('/api/agents/seat-activity', {
           podId: opts.pod,
-          agentName: name,
-          instanceId: opts.instanceId,
+          agentName: seat.agentName,
+          instanceId: seat.instanceId,
         });
         events.forEach((e) => {
           const ts = new Date(e.createdAt).toTimeString().slice(0, 8);

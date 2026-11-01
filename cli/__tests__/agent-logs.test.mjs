@@ -90,12 +90,14 @@ test('agent logs --pod sends the owner bearer token and prints the server activi
     seen.push({ url: new URL(req.url, 'http://127.0.0.1'), auth: req.headers.authorization });
     const authorized = req.headers.authorization === 'Bearer owner-token';
     res.writeHead(authorized ? 200 : 401, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(authorized
-      ? {
-        events: [{ type: 'chat.mention', status: 'delivered', createdAt: '2026-10-31T22:00:00Z', outcome: 'posted' }],
-        runs: [{ trigger: 'mention', status: 'completed', startedAt: '2026-10-31T22:00:01Z', totalTokens: 812 }],
-      }
-      : { message: 'Unauthorized' }));
+    // F44 (C): the pod roster tells the CLI which instance `forge` is.
+    const roster = { agents: [{ name: 'forge', instanceId: 'w1', mention: 'forge-w1' }] };
+    const activity = {
+      events: [{ type: 'chat.mention', status: 'delivered', createdAt: '2026-10-31T22:00:00Z', outcome: 'posted' }],
+      runs: [{ trigger: 'mention', status: 'completed', startedAt: '2026-10-31T22:00:01Z', totalTokens: 812 }],
+    };
+    if (!authorized) res.end(JSON.stringify({ message: 'Unauthorized' }));
+    else res.end(JSON.stringify(req.url.startsWith('/api/registry/pods/') ? roster : activity));
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
@@ -110,11 +112,14 @@ test('agent logs --pod sends the owner bearer token and prints the server activi
     expect(result.stdout).toContain('chat.mention');
     expect(result.stdout).toContain('run mention');
     expect(result.stdout).not.toContain('owner-token');
-    expect(seen).toHaveLength(1);
-    expect(seen[0].auth).toBe('Bearer owner-token');
-    expect(seen[0].url.pathname).toBe('/api/agents/seat-activity');
-    expect(seen[0].url.searchParams.get('podId')).toBe('6a692a1be833c668acdb84cf');
-    expect(seen[0].url.searchParams.get('agentName')).toBe('forge');
+    expect(seen).toHaveLength(2);
+    expect(seen.every((r) => r.auth === 'Bearer owner-token')).toBe(true);
+    expect(seen[0].url.pathname).toBe('/api/registry/pods/6a692a1be833c668acdb84cf/agents');
+    expect(seen[1].url.pathname).toBe('/api/agents/seat-activity');
+    expect(seen[1].url.searchParams.get('podId')).toBe('6a692a1be833c668acdb84cf');
+    expect(seen[1].url.searchParams.get('agentName')).toBe('forge');
+    // No --instance-id: the roster's instance is read, not "default".
+    expect(seen[1].url.searchParams.get('instanceId')).toBe('w1');
   } finally {
     server.close();
   }
