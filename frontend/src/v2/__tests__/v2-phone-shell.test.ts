@@ -6,6 +6,7 @@ import path from 'path';
 // that carry it, the same way v2-layout-invariants.test.ts does.
 
 const css = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
+const settingsCss = fs.readFileSync(path.join(__dirname, '../components/V2SettingsPage.css'), 'utf8');
 // The block is the tail of the sheet, from its marker comment to the end.
 const phone = css.slice(css.indexOf('D223 (TASK-730 shell)'));
 
@@ -34,31 +35,36 @@ describe('D223 phone shell', () => {
 
   test('the block comes last in the sheet, so it outranks the earlier phone rules', () => {
     const at = css.indexOf('D223 (TASK-730 shell)');
-    expect(at).toBeGreaterThan(css.indexOf('.v2-settings__layout {'));
+    expect(at).toBeGreaterThan(css.indexOf('.v2-feature__body {'));
     expect(css.indexOf('.v2-feature__body {')).toBeLessThan(at);
   });
 
   test('agent settings and memory pages get the same 52px bar inside the 760px query', () => {
     const agentCss = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
     const tail = agentCss.slice(agentCss.indexOf('D223 (TASK-730)'));
-    expect(tail).toMatch(/\.v2-agent-settings > \.v2-page-head,\s*\.v2-agent-settings > \.v2-agent-memory__head\s*\{[^}]*min-height:\s*52px/);
+    expect(tail).toMatch(/\.v2-agent-settings > \.v2-page-head\s*\{[^}]*min-height:\s*52px/);
+    expect(agentCss).not.toContain('v2-agent-memory');
     const at = agentCss.indexOf('D223 (TASK-730)');
     expect(agentCss.slice(0, at).lastIndexOf('@media')).toBe(agentCss.lastIndexOf('@media (max-width: 760px)', at));
   });
 
-  test('the memory bar lets the name shrink and drops the tab nav margin so it stays 52px', () => {
-    const agentCss = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
-    const tail = agentCss.slice(agentCss.indexOf('D223 (TASK-730)'));
-    expect(tail).toMatch(/__ident\s*\{\s*min-width:\s*0/);
-    expect(tail).toMatch(/__seg\s*\{[^}]*margin-top:\s*0/);
+  test('the memory bar is the same 52px phone bar, in the memory sheet on its v2m names', () => {
+    const memCss = fs.readFileSync(path.join(__dirname, '../agents/V2AgentMemory.css'), 'utf8');
+    const start = memCss.indexOf('@media (max-width: 767px)');
+    const phoneBlock = memCss.slice(start, memCss.indexOf('@media', start + 1));
+    expect(phoneBlock).not.toContain('min-width: 768px');
+    expect(phoneBlock).toMatch(/\.v2m-page \.v2p-ph\s*\{[^}]*min-height:\s*52px[^}]*flex-wrap:\s*nowrap/);
+    expect(phoneBlock).toMatch(/\.v2m-ahead\s*\{\s*min-width:\s*0/);
+    expect(phoneBlock).toMatch(/\.v2m-ahead h1\s*\{[^}]*white-space:\s*nowrap[^}]*text-overflow:\s*ellipsis/);
+    expect(phoneBlock).toMatch(/\.v2p-seg\s*\{[^}]*flex:\s*none/);
   });
 
   test('the settings head spans the pane and only the body scrolls', () => {
-    expect(phone).toMatch(/\.v2-feature--settings > \.v2-feature__body\s*\{[^}]*padding:\s*0/);
-    expect(phone).toMatch(/\.v2-feature--settings \.v2-feature__legacy\s*\{[^}]*max-width:\s*none/);
+    expect(settingsCss).toMatch(/\.v2-feature--settings > \.v2-feature__body\s*\{[^}]*padding:\s*0/);
+    expect(settingsCss).toMatch(/\.v2-feature--settings \.v2-feature__legacy\s*\{[^}]*max-width:\s*none/);
     expect(fs.readFileSync(path.join(__dirname, '../V2App.tsx'), 'utf8')).toContain("'v2-feature--settings'");
     expect(fs.readFileSync(path.join(__dirname, '../components/V2SettingsPage.tsx'), 'utf8')).toContain('<header className="v2p-ph">');
-    expect(css).toMatch(/\.v2-settings__content\s*\{[^}]*width:\s*min\(100%, 760px\)/);
-    expect(phone).toMatch(/\.v2-feature--settings \.v2-settings__layout\s*\{[^}]*overflow-y:\s*auto/);
+    expect(settingsCss).toMatch(/\.v2-settings__content\s*\{[^}]*width:\s*min\(100%, 760px\)/);
+    expect(settingsCss).toMatch(/\.v2-feature--settings \.v2-settings__layout\s*\{[^}]*overflow-y:\s*auto/);
   });
 });

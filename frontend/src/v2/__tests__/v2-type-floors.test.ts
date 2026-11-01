@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { readV2Css } from '../__testkit__/v2Css';
 
 /**
@@ -23,8 +25,10 @@ import { readV2Css } from '../__testkit__/v2Css';
  * fixed one fails the second (the allowlist may not carry a selector that no
  * longer violates). Target is an empty list.
  */
-// v2.css plus the surface files lifted out of it (D223).
-const CSS = readV2Css();
+// v2.css plus the surface files lifted out of it (D223): the chat sheets V2App
+// loads, and the per-surface sheets their components import (R04 moved BYO's).
+const CSS = [readV2Css(), fs.readFileSync(path.join(__dirname, '../components/V2AgentBYO.css'), 'utf8')]
+  .join('\n');
 
 const MONO_FLOOR = 11;
 const SANS_FLOOR = 12;
@@ -132,7 +136,6 @@ const ALLOWLIST: string[] = [
   '.v2-root button.v2-chat__new-pod-copy', // 11.0px — no-mono-family
   // PR3 selectors meet the floor; no remaining allowances.
   // PR4
-  '.v2-billing__badge', // 11.0px — no-mono-family
   // TASK-166 took `.v2-byo__mode-kicker` (10.0px, no family) and
   // `.v2-byo__preview-label` (11.0px, no family) to mono 500 11px, so both
   // entries left this burn-down list rather than being updated in place.
@@ -193,7 +196,7 @@ describe('v2 type floors (ruling h)', () => {
     // `--v2-fs-label: 11px` is consumed by rules that declare no literal size.
     // If substitution regressed, those rules would silently drop out of scope.
     expect(CSS).toMatch(/--v2-fs-label:\s*11px/);
-    expect(CSS).toContain('font-size: var(--v2-fs-label)');
+    expect(CSS + fs.readFileSync(path.join(__dirname, '../components/V2SettingsPage.css'), 'utf8')).toContain('font-size: var(--v2-fs-label)');
   });
 
   test('a rule inside an @media block is keyed to its own selector', () => {

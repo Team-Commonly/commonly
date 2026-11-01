@@ -25,6 +25,9 @@ import { readV2Css } from '../__testkit__/v2Css';
 const read = (rel: string): string =>
   fs.readFileSync(path.join(__dirname, rel), 'utf8');
 
+// Settings keeps its own sheet, lifted from the d215 frame (TASK-688).
+const ss = read('../components/V2SettingsPage.css');
+
 // The team's phone block: the `@media (max-width: 760px)` block that carries
 // `.v2-team__grid`, wherever it sits in the sheet — not the last one.
 const teamPhoneBlock = (css: string): string =>
@@ -165,6 +168,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const tokens = read('../../../design-system/tokens.css');
   const aprofile = read('../agents/v2-agent-profile.css');
   const agentSettings = read('../agents/v2-agent-settings.css');
+  const byoCss = read('../components/V2AgentBYO.css');
   const landing = read('../landing/v2-landing.css');
   const podChat = read('../components/V2Thread.tsx');
   const podsSidebar = read('../components/V2PodsSidebar.tsx');
@@ -234,13 +238,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('BYO hints do not add paragraph margins to flex gaps', () => {
-    expect(ruleBody(v2, '.v2-byo__hint')).toContain('margin: 0');
+    expect(ruleBody(byoCss, '.v2-byo__hint')).toContain('margin: 0');
   });
 
   test('BYO field hints take no space until focused or in error', () => {
-    expect(ruleBody(v2, '.v2-byo__field > .v2-byo__hint')).toContain('display: none');
-    expect(selectorRuleBody(v2, '.v2-byo__field:focus-within > .v2-byo__hint,\n.v2-byo__field--error > .v2-byo__hint'))
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__field > .v2-byo__hint')).toContain('display: none');
+    expect(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__field:focus-within > .v2-byo__hint, .v2-feature--byo .v2-byo__field--error > .v2-byo__hint'))
       .toContain('display: block');
+    // The page's rules left v2.css for the page's own sheet (R04 lift).
+    expect(v2).not.toContain('.v2-byo__field');
   });
 
   test('the global button reset stays a low-specificity default', () => {
@@ -272,16 +278,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   // page shows one command, and the needs line is read before the Copy button.
   // jsdom cannot see either; sprint-review deleted all three rules and every
   // other test stayed green.
-  test('BYO "Other ways" is a spaced disclosure with a link-like summary, and the needs line reads as body', () => {
-    // The mechanism, not just the decoration (sprint-review on #2290): gap and
-    // flex-direction do nothing without display: flex, so pinning gap alone
-    // passed on a rule that had silently reverted to block flow.
-    expect(ruleBody(v2, '.v2-root .v2-byo__more')).toContain('display: flex');
-    expect(ruleBody(v2, '.v2-root .v2-byo__more')).toContain('flex-direction: column');
-    expect(ruleBody(v2, '.v2-root .v2-byo__more')).toContain('gap: 12px');
-    expect(ruleBody(v2, '.v2-root .v2-byo__more > summary')).toContain('cursor: pointer');
-    expect(ruleBody(v2, '.v2-root .v2-byo__more > summary')).toContain('color: var(--v2-accent-text)');
-    expect(ruleBody(v2, '.v2-root .v2-byo__needs')).toContain('color: var(--v2-text-primary)');
+  // R04 (d215 frame): the disclosure is now a bordered row with a chevron, its
+  // contents inset under the summary, and the needs line is a 13px secondary line.
+  test('BYO "Other ways" is a bordered disclosure row with a chevron, and the needs line reads before the command', () => {
+    const more = ruleBody(byoCss, '.v2-feature--byo .v2-byo__more');
+    expect(more).toContain('border-radius: 12px');
+    expect(more).toContain('box-shadow: inset 0 0 0 1px var(--v2-border-soft)');
+    const summary = ruleBody(byoCss, '.v2-feature--byo .v2-byo__more > summary');
+    expect(summary).toContain('cursor: pointer');
+    expect(summary).toContain('display: flex');
+    expect(summary).toContain('min-height: 52px');
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__more > summary::after')).toContain('rotate(45deg)');
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__more[open] > summary::after')).toContain('rotate(225deg)');
+    // The folded contents keep their spacing from the summary and each other.
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__more > :not(summary)')).toContain('margin: 0 16px 14px');
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__needs')).toContain('font-size: 13px');
   });
 
   // #2670: the Cursor rule card's header names an unbroken save path; without
@@ -1243,11 +1254,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('<AppsManagement variant="settings" showIntegrations={false} />');
     expect(settingsPage).toContain('to="/v2/connectors"');
     expect(settingsPage).toContain('<summary>Developer apps</summary>');
-    expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
+    expect(settingsPage).toContain('<V2BillingPanel />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 44px');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(ss, '.v2-settings__avatar')).toContain('width: 44px');
+    expect(ruleBody(ss, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(ss, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
     expect(avatar).toContain("borderRadius: 'inherit'");
     expect(v2App).toMatch(/path="settings\/devices"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toMatch(/path="profile"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
@@ -1256,12 +1267,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(app).toContain('<Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />');
   });
 
+  test('Settings errors never sit inside the value column the phone hides', () => {
+    const devicesPanel = read('../components/V2DevicesPanel.tsx');
+    // billing error is its own line under the row, not a child of .vl
+    expect(billingPanel).toMatch(/<\/span>\s*\{error && <span className="v2-settings__error v2-settings__error--row"/);
+    expect(billingPanel).not.toMatch(/<span className="vl">[^]*v2-settings__error[^]*<\/span>\s*<span className="ac">/);
+    expect(ruleBody(ss, '.v2-settings__error--row')).toContain('grid-column: 1 / -1');
+    // devices: a load failure keeps its summary visible at 390
+    expect(devicesPanel).toContain("'vl v2-settings__vl--error'");
+    expect(ss).toMatch(/\.v2-settings \.v2p-disc > summary \.v2-settings__vl--error \{ display: flex/);
+  });
+
   test('Settings is one screen: grouped cards, no jump nav', () => {
     expect(settingsPage).not.toContain('v2-settings__nav');
-    expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 760px)');
-    expect(ruleBody(v2, '.v2-settings__edit--closed')).toContain('display: none');
-    expect(ruleBody(v2, '.v2-settings__group,\n.v2-settings__fold')).toContain('overflow: hidden');
-    expect(ruleBody(v2, '.v2-settings__row > .v2-settings__row-value')).toContain('min-width: 0');
+    expect(ruleBody(ss, '.v2-settings__content')).toContain('width: min(100%, 760px)');
+    expect(ruleBody(ss, '.v2-settings__edit--closed')).toContain('display: none');
   });
 
   test('Settings saves a display name while allowing handle changes and exposing the email change affordance', () => {
@@ -1277,42 +1297,33 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('type="button">Change</button>');
     expect(settingsPage).not.toContain('Email changes go through re-verification; ask us for now.');
     expect(settingsPage).not.toContain('v2-settings__nav-note');
-    expect(ruleBody(v2, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-    expect(ruleBody(v2, '.v2-settings__account-fields > label')).toContain('align-content: start');
-    expect(ruleBody(v2, '.v2-settings__account-fields > .v2-settings__account-email')).toContain('grid-column: 1 / -1');
-    expect(ruleBody(v2, '.v2-settings__account-fields input')).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__email-control')).toContain('display: flex');
-    const accountForm = ruleBody(v2, '.v2-settings form.v2-settings__account');
+    expect(ruleBody(ss, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(ss, '.v2-settings__account-fields > label')).toContain('align-content: start');
+    expect(ruleBody(ss, '.v2-settings__account-fields > .v2-settings__account-email')).toContain('grid-column: 1 / -1');
+    expect(ruleBody(ss, '.v2-settings__account-fields input')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(ss, '.v2-settings__email-control')).toContain('display: flex');
+    const accountForm = ruleBody(ss, '.v2-settings form.v2-settings__account');
     expect(accountForm).toContain('padding: 0');
     expect(accountForm).toContain('background: transparent');
     expect(accountForm).toContain('box-shadow: none');
   });
 
   test('Settings avatar controls keep the account face square and the crop step usable on phones', () => {
-    const avatar = ruleBody(v2, '.v2-settings__avatar');
+    const avatar = ruleBody(ss, '.v2-settings__avatar');
     expect(avatar).toContain('width: 44px');
     expect(avatar).toContain('height: 44px');
     expect(avatar).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
+    expect(ruleBody(ss, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
     expect(avatarCropDialog).toContain('className="v2-root v2-modal__overlay v2-settings__avatar-overlay"');
     expect(avatarCropDialog).toContain('className="v2-modal v2-settings__avatar-dialog"');
-    expect(ruleBody(v2, '.v2-settings__avatar-crop-stage')).toContain('aspect-ratio: 392 / 260');
-    expect(ruleBody(v2, '.v2-settings__avatar-crop-frame')).toContain('border: 1px solid var(--v2-surface)');
-    expect(ruleBody(v2, '.v2-settings__avatar-crop-dim span')).toContain('background: rgba(16, 24, 40, 0.55)');
-    expect(ruleBody(v2, '.v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-thumb')).toContain('width: 16px');
-    expect(ruleBody(v2, '.v2-root .v2-settings__avatar-dialog-actions button')).toContain('min-width: 112px');
-    const ariaDisabledStyle = selectorRuleBody(
-      v2,
-      '.v2-root button.v2-settings__primary[aria-disabled="true"]',
-    );
-    expect(ariaDisabledStyle).toContain('cursor: default');
-    expect(ariaDisabledStyle).toContain('opacity: 0.55');
-    expect(v2).toContain('.v2-root button.v2-settings__primary:hover:not(:disabled):not([aria-disabled="true"])');
-    expect(v2).toContain('.v2-root button.v2-settings__secondary:hover:not(:disabled):not([aria-disabled="true"])');
-
-    const phone = blockContaining(v2, '@media (max-width: 680px)', '.v2-settings__avatar-actions');
+    expect(ruleBody(ss, '.v2-settings__avatar-crop-stage')).toContain('aspect-ratio: 392 / 260');
+    expect(ruleBody(ss, '.v2-settings__avatar-crop-frame')).toContain('border: 1px solid var(--v2-surface)');
+    expect(ruleBody(ss, '.v2-settings__avatar-crop-dim span')).toContain('background: rgba(16, 24, 40, 0.55)');
+    expect(ruleBody(ss, '.v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-thumb')).toContain('width: 16px');
+    expect(ruleBody(ss, '.v2-root .v2-settings__avatar-dialog-actions button')).toContain('min-width: 112px');
+    const phone = blockContaining(ss, '@media (max-width: 680px)', '.v2-settings__avatar-actions');
     expect(ruleBody(phone, '.v2-settings__avatar-actions', { within: phone })).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-    expect(ruleBody(phone, '.v2-root .v2-settings__avatar-actions button.v2-settings__secondary', { within: phone })).toContain('min-height: 44px');
+    expect(ruleBody(phone, '.v2-settings__avatar-actions .v2p-b', { within: phone })).toContain('min-height: 44px');
     expect(ruleBody(phone, '.v2-settings__avatar-footer', { within: phone })).toContain('flex-direction: column');
     expect(ruleBody(phone, '.v2-root .v2-settings__avatar-dialog-actions button', { within: phone })).toContain('min-height: 44px');
 
@@ -1337,13 +1348,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(billingPanel).toContain("t(isPro ? 'billing.manage' : 'billing.upgrade')");
     expect(billingPanel).not.toContain('free in beta');
     expect(billingPanel).not.toContain('included during beta');
-    const badge = ruleBody(v2, '.v2-settings__section .v2-billing__badge');
-    expect(badge).toContain('background: transparent');
-    expect(badge).toContain('border: 0');
-    expect(badge).toContain('padding: 0');
-    const proBadge = ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro');
-    expect(proBadge).toContain('background: transparent');
-    expect(proBadge).toContain('color: var(--v2-text-primary)');
+    // The frame reads the plan as plain text in the row value, not a chip.
+    expect(billingPanel).toContain('<span className="v2-settings__plan">');
+    expect(billingPanel).not.toContain('v2-billing__badge');
   });
 
   test('Settings flattens connected apps and folds Developer Tips under the form', () => {
@@ -1353,8 +1360,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(appsManagement).toContain('className="apps-management__developer-tips"');
     expect(appsManagement).toContain('{!isSettingsVariant && (');
     expect(appsManagement).toContain('? <Box className={className}>{children}</Box>');
-    expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__section + .apps-management__section')).toContain('border-top: 1px solid var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__section + .apps-management__section')).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
   });
 
   test('mention treatment is a tight chip on the handle, never a row wash or rail', () => {
@@ -2692,18 +2699,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       }
     });
 
-    test('Needs-you rows: every open ask wears the 2px cobalt ring, no shadow, no dividers (66390)', () => {
+    test('Needs-you rows: open asks sit on a 1px neutral border, no shadow, no dividers (66390; ring moved to focus, TASK-748)', () => {
       const row = ruleBody(v2, '.v2-activity__queue-row');
-      expect(row).toContain('border: 2px solid var(--v2-accent)');
+      expect(row).toContain('border: 1px solid var(--v2-border)');
       expect(row).toContain('border-radius: var(--v2-radius)');
       expect(v2).not.toContain('.v2-activity__queue-row + .v2-activity__queue-row');
       const hover = ruleBody(v2, '.v2-activity__queue-row:hover');
       const declarations = hover.slice(hover.indexOf('{') + 1).split(';').map((d) => d.trim()).filter(Boolean);
       expect(declarations.length).toBeGreaterThan(0);
       for (const declaration of declarations) expect(declaration).toMatch(/^background/);
-      // A pending decision or approval is a ring like every other ask — never a lift.
+      // A pending decision or approval wears the same neutral border as every other ask — never a lift.
       const pending = ruleBody(v2, '.v2-activity__queue-row--decision,\n.v2-activity__queue-row--approval');
-      expect(pending).toContain('border-color: var(--v2-accent)');
+      expect(pending).toContain('border-color: var(--v2-border)');
       expect(pending).toContain('box-shadow: none');
       expect(cssVariable(v2Root, '--v2-shadow-pending')).toBe(cssVariable(tokens, '--c-shadow-pending'));
       // A ruled decision settles to a flat bordered row.
@@ -2739,8 +2746,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain('shortPodName(item.podName)');
       expect(lastRuleBody(v2, '.v2-activity__queue-kind')).toContain('500 11px/16px var(--v2-font-mono)');
       expect(lastRuleBody(v2, '.v2-activity__queue-kind')).toContain('text-transform: lowercase');
-      // Every open ask rings 2px cobalt in the LAST rule too (66400 fix 1); settled and day-zero rows are flat.
-      expect(lastRuleBody(v2, '.v2-activity__queue-row')).toContain('border: 2px solid var(--v2-accent)');
+      // Open asks sit on a 1px neutral border (slop tell 2); the cobalt ring belongs to the focused row only.
+      expect(lastRuleBody(v2, '.v2-activity__queue-row')).toContain('border: 1px solid var(--v2-border)');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row')).not.toContain('var(--v2-accent)');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row--approval')).toContain('border-color: var(--v2-border)');
+      expect(v2).toContain('.v2-activity__queue-row--approval:focus-within { border-color: var(--v2-accent); box-shadow: 0 0 0 1px var(--v2-accent); }');
       expect(lastRuleBody(v2, '.v2-activity__queue-row--decision')).toContain('box-shadow: none');
       expect(v2).toContain('.v2-activity__queue-row--settled,\n.v2-activity__queue-row--onboarding { padding: 12px; border: 1px solid var(--v2-border); }');
       // Day zero (66658/66666): Get started is its own card above Needs you; a step is not an ask.
@@ -3278,6 +3288,7 @@ describe('the landing hero demo (TASK-147)', () => {
 // ---------------------------------------------------------------------------
 describe('Bring your own agent onto Signal (TASK-166)', () => {
   const v2 = readV2Css();
+  const byoCss = read('../components/V2AgentBYO.css');
   const byo = read('../components/V2AgentBYO.tsx');
   const en = read('../../i18n/locales/en.json');
 
@@ -3324,57 +3335,66 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     return false;
   };
 
-  test('the submit button is ink, at radius 4 (item 1)', () => {
-    const submit = cssDeclarations(ruleBody(v2, '.v2-root button.v2-byo__submit'));
-    expect(submit.background).toBe('var(--v2-ink)');
-    expect(submit['border-radius']).toBe('4px');
-    // Non-vacuity: the rule was read, not returned empty.
-    expect(ruleBody(v2, '.v2-root button.v2-byo__submit')).toContain('cursor: pointer');
-    const hover = cssDeclarations(
-      ruleBody(v2, '.v2-root button.v2-byo__submit:hover:not(:disabled)'),
-    );
-    expect(hover.background).toBe('var(--v2-ink-hover)');
-    expect(hover['border-color']).toBe('var(--v2-ink-hover)');
+  // R04 lifted the page onto the d215 frame (V2AgentBYO.css). The items below
+  // keep guarding what they guarded, at the frame's values.
+  test('controls keep hover feedback and selects keep the focus ring the frame does not draw', () => {
+    expect(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__mode:not([aria-pressed="true"]):hover, .v2-feature--byo .v2-byo__os .v2-byo__link:not([aria-pressed="true"]):not(:disabled):hover, .v2-feature--byo .v2-byo__secondary:hover'))
+      .toContain('var(--v2-surface-hover)');
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__submit:hover:not(:disabled)')).toContain('var(--v2-ink-hover)');
+    expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__copy:hover')).toContain('var(--v2-surface-hover)');
+    expect(ruleBody(byoCss, '.v2-feature--byo select.v2-byo__input:focus-visible')).toContain('var(--v2-focus-ring)');
+  });
+  test('the submit button is the ink key, at radius 10 (item 1)', () => {
+    const submit = cssDeclarations(ruleBody(byoCss, '.v2-feature--byo .v2-byo__submit'));
+    expect(submit.background).toBe('linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
+    expect(submit.color).toBe('var(--v2-on-fill)');
+    expect(submit.border).toBe('1px solid var(--v2-fill-edge)');
+    const shared = cssDeclarations(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary'));
+    expect(shared['border-radius']).toBe('10px');
+    expect(shared.cursor).toBe('pointer');
+    // The old rules left v2.css with the lift.
+    expect(v2).not.toContain('button.v2-byo__submit');
   });
 
-  test('the mode cards keep button-specific card styling (item 2)', () => {
-    const base = cssDeclarations(ruleBody(v2, '.v2-root button.v2-byo__mode'));
-    expect(base['border-radius']).toBe('4px');
-    // The 1px-per-side compensation is derived from the base shorthand, so it is
-    // pinned to it rather than restated as a magic number.
-    expect(base.padding).toBe('16px 18px 14px');
-    // With only the title left, a card sizes to its text unless it stretches
-    // across its cell (the chooser collapsed at 1440, 720 and 390 without this).
-    expect(base['align-self']).toBe('stretch');
-
+  test('the modes are one segment, the pressed option a raised key (item 2)', () => {
+    const group = cssDeclarations(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__modes, .v2-feature--byo .v2-byo__os'));
+    expect(group.display).toBe('inline-flex');
+    expect(group.background).toBe('var(--v2-surface-tint)');
+    const base = cssDeclarations(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__mode, .v2-feature--byo .v2-byo__os .v2-byo__link'));
+    expect(base.height).toBe('28px');
+    expect(base['border-radius']).toBe('7px');
     const pressed = cssDeclarations(
-      ruleBody(v2, '.v2-root button.v2-byo__mode[aria-pressed="true"]'),
+      selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__mode[aria-pressed="true"]'),
     );
-    expect(pressed.border).toBe('2px solid var(--v2-accent)');
-    expect(pressed.padding).toBe('15px 17px 13px');
-    expect(v2).toContain('.v2-root button.v2-byo__mode:hover');
-    expect(v2).toContain('.v2-root button.v2-byo__mode:focus-visible');
-    // (c) the ring belongs to :focus-visible, and a ring here is the defect.
-    expect(pressed['box-shadow']).toBeUndefined();
+    expect(pressed.background).toBe('var(--v2-surface)');
+    expect(pressed['font-weight']).toBe('600');
+    // (c) the pressed state is the key's edge, never the focus ring...
+    expect(pressed['box-shadow']).toBe('0 0 0 1px var(--v2-key-edge), var(--v2-key-inset)');
+    expect(pressed['box-shadow']).not.toContain('--v2-focus-ring');
+    // ...and the focus ring still shows on a pressed option: the pressed rule
+    // (0,3,0) outranks `.v2-root button:focus-visible` (0,2,1), so the page
+    // restates the ring at the pressed rule's weight.
+    expect(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__mode:focus-visible'))
+      .toContain('box-shadow: var(--v2-focus-ring)');
     expect(
       selectorRuleBody(v2, '.v2-root button:focus-visible'),
     ).toContain('box-shadow: var(--v2-focus-ring)');
   });
 
-  test('the preview label is mono 500 at 11px with no caps transform (item 4)', () => {
-    const label = cssDeclarations(ruleBody(v2, '.v2-byo__preview-label'));
-    expect(label.font).toBe('500 11px/16px var(--v2-font-mono)');
+  test('the preview label is mono 500 with no caps transform (item 4)', () => {
+    const label = cssDeclarations(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__modes-question, .v2-feature--byo .v2-byo__preview-label'));
+    expect(label.font).toBe('500 11.5px/1 var(--v2-font-mono)');
     expect(label['text-transform']).toBeUndefined();
     expect(label.color).toBe('var(--v2-text-muted)');
   });
 
-  test('controls take radius 4 and cards radius 6 (items 5 and 6)', () => {
-    expect(cssDeclarations(ruleBody(v2, '.v2-byo__input'))['border-radius']).toBe('4px');
-    expect(cssDeclarations(ruleBody(v2, '.v2-byo__preview-card'))['border-radius']).toBe('6px');
+  test('controls and cards take the frame radii (items 5 and 6)', () => {
+    expect(cssDeclarations(ruleBody(byoCss, '.v2-feature--byo .v2-byo__input'))['border-radius']).toBe('9px');
+    expect(cssDeclarations(ruleBody(byoCss, '.v2-feature--byo .v2-byo__preview-card'))['border-radius']).toBe('12px');
   });
 
   test('the BYO avatar wins its radius against the global round one (item 7a)', () => {
-    const square = ruleBody(v2, '.v2-byo__layout .v2-avatar');
+    const square = ruleBody(byoCss, '.v2-byo__layout .v2-avatar');
     const round = ruleBody(v2, '.v2-avatar');
     // Non-vacuity: both rules were read, and each declares the very property
     // being overridden. A specificity comparison against an empty body would
@@ -3398,7 +3418,7 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
   });
 
   test('the live dot is cobalt, and stays round (item 7b)', () => {
-    const dot = cssDeclarations(ruleBody(v2, '.v2-byo__layout .v2-avatar__online'));
+    const dot = cssDeclarations(ruleBody(byoCss, '.v2-byo__layout .v2-avatar__online'));
     const baseDot = ruleBody(v2, '.v2-avatar__online');
     // Non-vacuity: the base rule it overrides is read, and it is the green one.
     expect(baseDot).toContain('background: var(--v2-success)');
@@ -3443,72 +3463,44 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     expect(en).not.toContain('"title": "Your agent"');
   });
 
-  test('the preview status line is a §3 line, not a pill (item 7 fold-in)', () => {
-    const status = cssDeclarations(ruleBody(v2, '.v2-byo__preview-status'));
-    // It sits directly beside the cobalt avatar dot, so the success pill read
-    // as a second, contradictory state of the same agent (ux-lead, #1897 gate).
-    expect(status.font).toBe('500 11px/16px var(--v2-font-mono)');
-    expect(status.color).toBe('var(--v2-text-muted)');
-    expect(status.padding).toBe('0');
-    expect(status['border-radius']).toBe('0');
-    expect(status.background).toBe('none');
-    // What the gate kept, so the fix is a restyle and not a removal.
+  // R04: the frame draws the status as a chip beside the avatar, so the line
+  // became a small ringed chip again. What the fold-in removed stays removed:
+  // no success colour anywhere on it.
+  test('the preview status is the frame chip, in mono (item 7 fold-in)', () => {
+    const status = cssDeclarations(ruleBody(byoCss, '.v2-feature--byo .v2-byo__preview-status'));
+    expect(status.font).toBe('500 11.5px/1 var(--v2-font-mono)');
+    expect(status.color).toBe('var(--v2-text-secondary)');
     expect(status.display).toBe('inline-flex');
     expect(status.gap).toBe('6px');
-    expect(status['margin-top']).toBe('10px');
+    expect(status.height).toBe('24px');
+    expect(status['border-radius']).toBe('7px');
+    expect(status['box-shadow']).toBe('inset 0 0 0 1px var(--v2-border-soft)');
   });
 
-  test('each preview status is its §3 state, and the success colours are gone', () => {
-    const draft = cssDeclarations(
-      ruleBody(v2, '.v2-byo__preview-status--draft .v2-byo__preview-dot'),
-    );
-    // §3 not yet — the Connectors dashed hollow dot. Without border-box the
-    // 1px dashed ring grows the 7px dot to 9px, which is a layout change, not a
-    // colour one.
-    expect(draft.border).toBe('1px dashed var(--v2-border-strong)');
-    expect(draft.background).toBe('transparent');
-    expect(draft['box-sizing']).toBe('border-box');
-
-    // §3 working — the team card's working line, colour and pulse both, so
-    // "an agent is starting" reads identically in the two places a human sees
-    // it. Non-vacuity: that rule and its keyframes are read, not assumed.
-    expect(cssDeclarations(ruleBody(v2, '.v2-byo__preview-status--starting')).color)
-      .toBe('var(--v2-accent-text)');
-    const startingDot = cssDeclarations(
-      ruleBody(v2, '.v2-byo__preview-status--starting .v2-byo__preview-dot'),
-    );
-    expect(startingDot.background).toBe('var(--v2-accent)');
-    expect(startingDot.animation).toBe('v2-team-pulse 1.6s ease-in-out infinite');
-    expect(ruleBody(v2, '.v2-team-card__status--working .v2-team-card__dot'))
-      .toContain('animation: v2-team-pulse 1.6s ease-in-out infinite');
-    expect(v2).toContain('@keyframes v2-team-pulse');
-    // ...and it stops when motion is reduced, like the rule it copies. Read from
-    // the media block itself: `lastRuleBody` cannot reach an indented selector,
-    // and the base rule above is what it finds instead.
-    const sectionFrom = v2.indexOf('.v2-byo__preview-status {');
-    const reducedAt = v2.indexOf('@media (prefers-reduced-motion: reduce) {', sectionFrom);
-    expect(reducedAt).toBeGreaterThan(sectionFrom);
-    const reducedBlock = v2.slice(reducedAt, v2.indexOf('\n}', reducedAt));
-    expect(reducedBlock).toContain('.v2-byo__preview-status--starting .v2-byo__preview-dot');
-    expect(reducedBlock).toContain('animation: none');
-
-    // §3 connected / live — cobalt dot, muted text. Both halves are asserted
-    // because the defect was the colour AND the fill.
-    expect(cssDeclarations(ruleBody(v2, '.v2-byo__preview-status--live')).color)
-      .toBe('var(--v2-text-muted)');
+  test('each preview status is its frame state, and the success colours are gone', () => {
+    // not created yet: the bare dot is a hollow ring.
+    const dot = cssDeclarations(ruleBody(byoCss, '.v2-feature--byo .v2-byo__preview-dot'));
+    expect(dot['box-shadow']).toBe('inset 0 0 0 1.5px var(--v2-text-muted)');
+    expect(dot.background).toBeUndefined();
+    // waiting and starting: a filled grey dot, the same in both.
+    const pending = cssDeclarations(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__preview-status--waiting .v2-byo__preview-dot, .v2-feature--byo .v2-byo__preview-status--starting .v2-byo__preview-dot'));
+    expect(pending.background).toBe('var(--v2-text-muted)');
+    expect(pending['box-shadow']).toBe('none');
+    // live: the cobalt chip and dot.
+    const live = cssDeclarations(ruleBody(byoCss, '.v2-feature--byo .v2-byo__preview-status--live'));
+    expect(live.color).toBe('var(--v2-accent-text)');
+    expect(live.background).toBe('var(--v2-accent-soft)');
     expect(cssDeclarations(
-      ruleBody(v2, '.v2-byo__preview-status--live .v2-byo__preview-dot'),
+      ruleBody(byoCss, '.v2-feature--byo .v2-byo__preview-status--live .v2-byo__preview-dot'),
     ).background).toBe('var(--v2-accent)');
 
-    // The negative that says what the fold-in removed: no status colour and no
-    // pill fill anywhere in this block. A future edit that adds one back is the
-    // regression, and a presence check on the new values cannot see it.
-    expect(v2).not.toContain('.v2-byo__preview-note {');
-    const blockEnd = v2.indexOf('.v2-byo__result-hero {', sectionFrom);
-    expect(blockEnd).toBeGreaterThan(sectionFrom);
-    const block = v2.slice(sectionFrom, blockEnd);
-    ['--v2-success', '--v2-success-text', '--v2-success-soft', '--v2-warning', '--v2-surface-hover']
-      .forEach((token) => expect(block).not.toContain(token));
+    // The negative that says what the fold-in removed: no status colour
+    // anywhere in the preview rules.
+    expect(byoCss).not.toContain('.v2-byo__preview-note');
+    const preview = byoCss.split('\n').filter((line) => line.includes('.v2-byo__preview')).join('\n');
+    expect(preview).toContain('.v2-byo__preview-status--live');
+    ['--v2-success', '--v2-warning', '--v2-surface-hover']
+      .forEach((token) => expect(preview).not.toContain(token));
 
     // The three strings, in the data rather than via a transform — the same
     // reason the kicker's caps were fixed in en.json.
@@ -3534,6 +3526,7 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
 // browser's answer and jsdom has no layout engine, so they are not asserted.
 describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
   const v2 = readV2Css();
+  const byoCss = read('../components/V2AgentBYO.css');
   const byo = read('../components/V2AgentBYO.tsx');
   const en = read('../../i18n/locales/en.json');
   const zh = read('../../i18n/locales/zh-CN.json');
@@ -3550,29 +3543,31 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
     return out;
   };
 
-  // Bodies of every rule whose selector is on the byo route, comments removed.
-  // The comments here describe the old values in words ('green', 'SF Mono'), so
-  // a raw `toContain` over the sheet would fail on prose rather than on a rule.
+  // Bodies of every rule whose selector is on the byo route, comments removed,
+  // from the page's own sheet and from v2.css (which should carry none now).
+  // The comments describe the old values in words ('green', 'SF Mono'), so a
+  // raw `toContain` over the sheet would fail on prose rather than on a rule.
   const byoRuleBodies = (): string[] => {
     const out: string[] = [];
-    const re = /([^{}]+)\{([^{}]*)\}/g;
-    let m = re.exec(v2);
-    while (m) {
-      const selector = m[1].replace(/\/\*[\s\S]*?\*\//g, '');
-      if (selector.includes('.v2-byo__')) out.push(m[2].replace(/\/\*[\s\S]*?\*\//g, ''));
-      m = re.exec(v2);
-    }
+    [byoCss, v2].forEach((css) => {
+      const re = /([^{}]+)\{([^{}]*)\}/g;
+      let m = re.exec(css);
+      while (m) {
+        const selector = m[1].replace(/\/\*[\s\S]*?\*\//g, '');
+        if (selector.includes('.v2-byo__')) out.push(m[2].replace(/\/\*[\s\S]*?\*\//g, ''));
+        m = re.exec(css);
+      }
+    });
     return out;
   };
 
   test('item 1: the live line is a cobalt dot, and green is gone from the route', () => {
-    const dot = decls(ruleBody(v2, '.v2-byo__live::before'));
-    expect(dot.background).toBe('var(--v2-accent)');
-    expect(dot['border-radius']).toBe('50%');
+    expect(decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__live::before')).background).toBe('var(--v2-accent)');
+    expect(decls(selectorRuleBody(byoCss, '.v2-feature--byo [data-testid="byo-listen-waiting"]::before, .v2-feature--byo .v2-byo__live::before'))['border-radius']).toBe('50%');
     // The hex, not the word: #1e6b2a was the only green literal on the route.
     expect(byoRuleBodies().join('\n')).not.toContain('#1e6b2a');
     // memory-done keeps its name and loses its padding and its green.
-    const done = decls(ruleBody(v2, '.v2-byo__memory-done'));
+    const done = decls(ruleBody(byoCss, '.v2-byo__memory-done'));
     expect(done.color).toBe('var(--v2-text-primary)');
     expect(done.padding).toBe('0');
     // The two live lines wear the new class; the memory line does not.
@@ -3590,24 +3585,25 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
   });
 
   test('item 2: stat cards are radius 6, and the counts are data in mono', () => {
-    expect(decls(ruleBody(v2, '.v2-byo__stat'))['border-radius']).toBe('var(--v2-radius-lg)');
-    expect(decls(ruleBody(v2, '.v2-byo__stat-value')).font).toBe('500 18px/24px var(--v2-font-mono)');
+    expect(decls(ruleBody(byoCss, '.v2-byo__stat'))['border-radius']).toBe('var(--v2-radius-lg)');
+    expect(decls(ruleBody(byoCss, '.v2-byo__stat-value')).font).toBe('500 18px/24px var(--v2-font-mono)');
     // Mono at 11px is legal only because the family is named in the same rule,
     // which is also what let its type-floors allowlist entry leave that list.
-    expect(decls(ruleBody(v2, '.v2-byo__stat-label')).font).toBe('500 11px/16px var(--v2-font-mono)');
+    expect(decls(ruleBody(byoCss, '.v2-byo__stat-label')).font).toBe('500 11px/16px var(--v2-font-mono)');
   });
 
-  test('item 3: the secondary button is a control, radius 4', () => {
-    expect(decls(ruleBody(v2, '.v2-root button.v2-byo__secondary'))['border-radius'])
-      .toBe('var(--v2-radius)');
+  test('item 3: the secondary button is a control, at the frame key radius', () => {
+    expect(decls(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary'))['border-radius'])
+      .toBe('10px');
+    expect(decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__secondary')).color).toBe('var(--v2-text-secondary)');
   });
 
   test('item 4: the persona card is a card, radius 6', () => {
-    expect(decls(ruleBody(v2, '.v2-byo__persona'))['border-radius']).toBe('var(--v2-radius-lg)');
+    expect(decls(ruleBody(byoCss, '.v2-byo__persona'))['border-radius']).toBe('var(--v2-radius-lg)');
   });
 
   test('item 5: an error is a bordered white card, not a red fill', () => {
-    const body = ruleBody(v2, '.v2-byo__error');
+    const body = ruleBody(byoCss, '.v2-byo__error');
     const err = decls(body);
     expect(err.background).toBe('var(--v2-surface)');
     expect(err.border).toBe('1px solid var(--v2-border)');
@@ -3616,24 +3612,31 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
     ['#fee2e2', '#fca5a5', '#991b1b'].forEach((hex) => expect(body).not.toContain(hex));
   });
 
-  test('item 6: commands are ink blocks with Copy in cobalt, and the cards are gone', () => {
-    const command = decls(ruleBody(v2, '.v2-byo__command'));
-    expect(command.background).toBe('var(--v2-ink)');
-    expect(command['border-radius']).toBe('var(--v2-radius-sm)');
-    // minmax(0, 1fr) is the clipping fix: a bare `1fr` may not shrink below the
-    // command's min-content width, which is what clipped the daemon line.
-    expect(command['grid-template-columns']).toBe('minmax(0, 1fr) auto');
-    const copy = decls(ruleBody(v2, '.v2-root button.v2-byo__copy'));
-    expect(copy.background).toBe('var(--v2-accent)');
-    expect(copy.color).toBe('var(--v2-on-ink)');
-    expect(copy['border-radius']).toBe('var(--v2-radius-sm)');
-    expect(decls(ruleBody(v2, '.v2-byo__pre')).color).toBe('var(--v2-on-ink)');
-    expect(decls(ruleBody(v2, '.v2-byo__add-computer-row')).background).toBe('var(--v2-ink)');
-    const addComputer = decls(ruleBody(v2, '.v2-byo__add-computer'));
+  test('item 6: commands are tinted blocks with Copy as a key on the block, and the cards are gone', () => {
+    // R04 (d215 frame): the ink block became the light code block, and Copy a
+    // key placed on its top-right corner; the padding keeps text clear of it.
+    const command = decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__command'));
+    expect(command.background).toBe('var(--v2-bg-subtle)');
+    expect(command['border-radius']).toBe('12px');
+    expect(command.position).toBe('relative');
+    expect(command.padding).toBe('12px 96px 12px 14px');
+    const copy = decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__copy'));
+    expect(copy.background).toBe('linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b))');
+    expect(copy.color).toBe('var(--v2-text-primary)');
+    expect(copy.position).toBe('absolute');
+    expect(decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__pre')).color).toBe('var(--v2-text-primary)');
+    // The add-computer row is not drawn in the frame and keeps its ink block,
+    // with its Copy kept in the row's own column.
+    expect(decls(ruleBody(byoCss, '.v2-byo__add-computer-row')).background).toBe('var(--v2-ink)');
+    expect(decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__add-computer-row .v2-byo__copy')).position).toBe('static');
+    const addComputer = decls(ruleBody(byoCss, '.v2-byo__add-computer'));
     expect(addComputer['border-radius']).toBe('var(--v2-radius-lg)');
     expect(addComputer.background).toBe('var(--v2-bg-subtle)');
     // Each snippet is a flat section, not a card.
-    expect(decls(ruleBody(v2, '.v2-byo__snippet')).border).toBe('0');
+    const snippet = decls(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__form, .v2-feature--byo .v2-byo__result, .v2-feature--byo .v2-byo__snippet'));
+    expect(snippet.display).toBe('flex');
+    expect(snippet.border).toBeUndefined();
+    expect(snippet.background).toBeUndefined();
     // Copy left the head, and the head is a label: five heads, no button in any.
     const heads = byo.match(/<div className="v2-byo__snippet-head">[\s\S]*?<\/div>/g) ?? [];
     expect(heads).toHaveLength(5);
@@ -3641,35 +3644,35 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
   });
 
   test('item 7: the mono stack is the token, and the textarea outranks the shell', () => {
-    expect(decls(ruleBody(v2, '.v2-root textarea.v2-byo__memory-text'))['font-family'])
+    expect(decls(ruleBody(byoCss, '.v2-root textarea.v2-byo__memory-text'))['font-family'])
       .toBe('var(--v2-font-mono)');
     // Why the element is in the selector: `.v2-root textarea` inherits the
     // family and outranks a lone class, so the old stack never applied at all.
     expect(v2).toContain('.v2-root textarea {');
-    expect(decls(ruleBody(v2, '.v2-byo__footnote code'))['font-family']).toBe('var(--v2-font-mono)');
-    expect(decls(ruleBody(v2, '.v2-byo__layout code'))['font-family']).toBe('var(--v2-font-mono)');
+    expect(decls(ruleBody(byoCss, '.v2-byo__footnote code'))['font-family']).toBe('var(--v2-font-mono)');
+    expect(decls(ruleBody(byoCss, '.v2-byo__layout code'))['font-family']).toBe('var(--v2-font-mono)');
     const bodies = byoRuleBodies().join('\n');
     expect(bodies).not.toContain('SF Mono');
     expect(bodies).not.toContain('ui-monospace');
   });
 
   test('item 8: the agent name in a result heading is mono in cobalt', () => {
-    const rule = decls(ruleBody(v2, '.v2-byo__result h2 code'));
-    expect(rule['font-family']).toBe('var(--v2-font-mono)');
-    expect(rule.color).toBe('var(--v2-accent-text)');
+    // The connect command's heading is the frame's; the two result-card
+    // headings (not drawn yet) keep the old rule.
+    const drawn = decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__result > h2 code'));
+    expect(drawn.font).toBe('600 15px/1 var(--v2-font-mono)');
+    expect(drawn.color).toBe('var(--v2-accent-text)');
+    const kept = decls(ruleBody(byoCss, '.v2-byo__result h2 code'));
+    expect(kept['font-family']).toBe('var(--v2-font-mono)');
+    expect(kept.color).toBe('var(--v2-accent-text)');
     // The three headings it covers, so it is not styling a name that left.
     expect(byo.match(/<h2>[^<]*<code>\{/g) ?? []).toHaveLength(3);
   });
 
   test('the fourth preview state: waiting, once a token is issued and nothing has checked in', () => {
-    // waiting is listed FIRST on purpose. `ruleBody` matches the selector on the
-    // line touching the brace, so the existing draft assertion keeps reading
-    // this block; `selectorRuleBody` is what reaches the first line.
-    const waiting = decls(selectorRuleBody(v2, '.v2-byo__preview-status--waiting .v2-byo__preview-dot'));
-    expect(waiting.border).toBe('1px dashed var(--v2-border-strong)');
-    expect(waiting.background).toBe('transparent');
-    expect(decls(ruleBody(v2, '.v2-byo__preview-status--draft .v2-byo__preview-dot')).border)
-      .toBe('1px dashed var(--v2-border-strong)');
+    // waiting shares starting's filled grey dot; draft is the bare hollow ring.
+    const waiting = decls(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__preview-status--waiting .v2-byo__preview-dot'));
+    expect(waiting.background).toBe('var(--v2-text-muted)');
     // The rail said "not created yet" while the page beside it said the install
     // had succeeded; that is the state this adds.
     expect(en).toContain('"waiting": "not listening yet"');
@@ -3680,49 +3683,33 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
     expect(zh).not.toContain('变成对勾');
   });
 
-  test('found while rendering: the phone block un-doubles padding and lifts Copy', () => {
-    // The shell already pads at this width, so the page's padding landed on top
-    // of it and squeezed the command block to 274px at 390.
-    expect(decls(ruleBody(v2, '.v2-byo__result')).gap).toBe('28px');
-    const phone = mediaBlockContaining(v2, '.v2-byo__copy');
-    expect(phone).toContain('.v2-byo__layout { padding-left: 0; padding-right: 0; }');
-    expect(phone).toContain('.v2-byo__copy::after');
-    expect(phone).toContain('height: 44px');
+  test('phone: Copy is a full-width 44px key, and the layout adds no side padding', () => {
+    const phone = mediaBlockContaining(byoCss, '.v2-feature--byo .v2-byo__copy');
+    expect(phone).toContain('.v2-feature--byo .v2-byo__copy { position: static; width: 100%; height: 44px;');
+    // The shell already pads at this width; the page's own layout adds none.
+    const layout = decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__layout'));
+    expect(layout.padding).toBeUndefined();
+    expect(layout['padding-left']).toBeUndefined();
   });
 
-  test('the render gate: result gaps are the authored 28, and the dot is on the first line', () => {
+  test('the render gate: result paragraphs add no margin to the frame gap', () => {
     // A paragraph's user-agent margin does not collapse inside a flex column,
-    // so the authored 28 drew as 42 (28 + 1em) and the h2's 4px rode on the gap
-    // after it.
+    // so an authored gap draws as gap + 1em unless the paragraph is zeroed.
     //
-    // The `>` is the scope, and what it buys is the NEXT paragraph, not today's.
-    // Every paragraph currently reachable under a result is a direct child of
-    // one of three containers that each zero their own `> p` — the result, the
-    // snippet, the memory block — so the child and descendant forms are
-    // indistinguishable at this head: swapping them in a browser moved nothing
-    // (sprint-review, 2026-09-26). The paragraph this guards is one added later
-    // inside some OTHER wrapper in a result: the descendant form would zero it
-    // silently, the child form leaves it alone. That is why the descendant form
-    // is the negative rather than the value.
-    expect(decls(ruleBody(v2, '.v2-byo__result > p')).margin).toBe('0');
-    expect(v2).not.toMatch(/\.v2-byo__result p\s*\{/);
-    // ...and this is why that negative passes today: the two containers the
-    // result nests are each zeroing their own direct children. If either goes,
-    // its paragraphs start relying on the result rule above and the swap stops
-    // being free — so the reasoning is pinned, not just written down.
-    expect(decls(ruleBody(v2, '.v2-byo__snippet > p')).margin).toBe('0');
-    expect(decls(ruleBody(v2, '.v2-byo__memory > p')).margin).toBe('0');
-    expect(decls(ruleBody(v2, '.v2-byo__result h2')).margin).toBe('0');
-    // The rhythm itself did not move to absorb the margin it was fighting.
-    expect(decls(ruleBody(v2, '.v2-byo__result')).gap).toBe('28px');
-    // A wrapped live line is the case: centred, the dot floats between the two
-    // lines at 390 rather than marking the first one.
-    const live = decls(ruleBody(v2, '.v2-byo__live'));
-    expect(live['align-items']).toBe('flex-start');
-    expect(live['align-items']).not.toBe('center');
-    // (20px line box − 7px dot) / 2: the dot marks the first line's optical
-    // centre, not the top of its line box.
-    expect(decls(ruleBody(v2, '.v2-byo__live::before'))['margin-top']).toBe('6.5px');
+    // The `>` is the scope, and what it buys is the NEXT paragraph, not today's:
+    // a paragraph added later inside some OTHER wrapper in a result keeps its
+    // own rhythm, where the descendant form would zero it silently. That is why
+    // the descendant form is the negative rather than the value.
+    expect(decls(ruleBody(byoCss, '.v2-byo__result > p')).margin).toBe('0');
+    expect(byoCss).not.toMatch(/\.v2-byo__result p\s*\{/);
+    expect(decls(ruleBody(byoCss, '.v2-byo__memory > p')).margin).toBe('0');
+    expect(decls(ruleBody(byoCss, '.v2-byo__result h2')).margin).toBe('0');
+    // The frame's rhythm: one 10px gap through the form and the result.
+    expect(decls(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__form, .v2-feature--byo .v2-byo__result, .v2-feature--byo .v2-byo__snippet')).gap).toBe('10px');
+    // The live and waiting lines are one status row, 44px tall, dot centred.
+    const line = decls(selectorRuleBody(byoCss, '.v2-feature--byo [data-testid="byo-listen-waiting"], .v2-feature--byo .v2-byo__live'));
+    expect(line['min-height']).toBe('44px');
+    expect(line['align-items']).toBe('center');
   });
 });
 
@@ -5064,8 +5051,9 @@ describe('BYO command boxes wrap at spaces', () => {
   // fit (the key, a URL), so a 390 screen never clips; it just stops
   // splitting words that could have moved to the next line whole.
   const v2 = readV2Css();
+  const byoCss = read('../components/V2AgentBYO.css');
   test('the command box breaks inside a word only when the word cannot fit', () => {
-    const rule = ruleBody(v2, '.v2-byo__pre');
+    const rule = ruleBody(byoCss, '.v2-feature--byo .v2-byo__pre');
     expect(rule).toContain('white-space: pre-wrap');
     expect(rule).toContain('overflow-wrap: anywhere');
     expect(rule).not.toContain('word-break: break-all');
@@ -5148,28 +5136,35 @@ describe('agent Identity editor', () => {
   });
 });
 
-describe('agent Memory tab (TASK-690 slice 1 and 2)', () => {
-  const css = read('../agents/v2-agent-settings.css');
-  const desktop = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory');
-  const phone = blockContaining(css, '@media (max-width: 767px)', '.v2-agent-memory__nav ul');
+describe('agent Memory tab (TASK-732 lift of d215 #s-memory)', () => {
+  const css = read('../agents/V2AgentMemory.css');
+  const desktop = blockContaining(css, '@media (min-width: 768px)', '.v2m-grp > summary');
+  const phone = blockContaining(css, '@media (max-width: 767px)', '.v2m-mnav ul');
   test('desktop keeps the group nav beside the notes at 200px', () => {
-    expect(ruleBody(css, '.v2-agent-memory')).toContain('display: grid');
-    expect(ruleBody(css, '.v2-agent-memory', { within: desktop })).toContain('grid-template-columns: 200px minmax(0, 1fr)');
+    expect(ruleBody(css, '.v2m-mem')).toContain('grid-template-columns: 200px minmax(0, 1fr)');
   });
   test('the page spans the pane instead of a centred column', () => {
-    const page = ruleBody(css, '.v2-agent-memory-page');
+    const page = ruleBody(css, '.v2m-page');
     expect(page).toContain('width: 100%');
-    expect(page).toContain('max-width: none');
     expect(page).toContain('align-self: stretch');
+    expect(page).not.toContain('max-width');
   });
-  test('phone hides the group nav and makes the groups collapsible', () => {
-    expect(ruleBody(css, '.v2-agent-memory__nav ul', { within: phone })).toContain('display: none');
-    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: phone })).toContain('cursor: pointer');
+  test('the header is the frame agent bar: 76px tall, 28px left padding', () => {
+    const ph = ruleBody(css, '.v2m-page .v2p-ph');
+    expect(ph).toContain('height: 76px');
+    expect(ph).toContain('padding-left: 28px');
+  });
+  test('phone hides the group nav and makes the groups collapsible rows', () => {
+    expect(ruleBody(css, '.v2m-mnav ul', { within: phone })).toContain('display: none');
+    expect(ruleBody(css, '.v2m-grp > summary', { within: phone })).toContain('cursor: pointer');
+    expect(ruleBody(css, '.v2m-gtitle', { within: phone })).toContain('height: 44px');
   });
   test('desktop group titles do not take pointer input, and the chevron is phone-only', () => {
-    const titles = blockContaining(css, '@media (min-width: 768px)', '.v2-agent-memory__gtitle');
-    expect(ruleBody(css, '.v2-agent-memory__gtitle', { within: titles })).toContain('pointer-events: none');
-    expect(ruleBody(css, '.v2-agent-memory__chev')).toContain('display: none');
+    expect(ruleBody(css, '.v2m-grp > summary', { within: desktop })).toContain('pointer-events: none');
+    expect(ruleBody(css, '.v2m-gtitle .v2m-chev')).toContain('display: none');
+  });
+  test('the old memory rules are gone from the agent settings sheet', () => {
+    expect(read('../agents/v2-agent-settings.css')).not.toContain('v2-agent-memory');
   });
 });
 
@@ -5251,7 +5246,7 @@ test('TASK-443 lease typography outranks the ownership cell font size', () => {
 });
 
 test('TASK-482 sticky bar overlays reserved space with a top border and no shadow', () => {
-  const css = readV2Css();
+  const css = read('../components/V2AgentBYO.css');
   const bar = ruleBody(css, '.v2-byo__hosted-offer');
   expect(bar).toContain('position: sticky');
   expect(bar).toContain('bottom: 0');
@@ -5262,7 +5257,11 @@ test('TASK-482 sticky bar overlays reserved space with a top border and no shado
   expect(bar).toContain('border-top: 1px solid var(--v2-border)');
   expect(bar).toContain('background: var(--v2-surface)');
   expect(bar).not.toContain('box-shadow');
-  expect(ruleBody(css, '.v2-byo__layout')).toContain('padding: 8px 24px calc(40px + var(--v2-byo-offer-height, 0px))');
+  // The frame's layout rule carries no padding; the reserved space is its own
+  // rule after it, so the bar's height is still read back by the e2e spec.
+  expect(lastRuleBody(css, '.v2-feature--byo .v2-byo__layout')).toContain('padding-bottom: calc(40px + var(--v2-byo-offer-height, 0px))');
+  // The bar is the page's last block: its rules sit in the page's own sheet.
+  expect(read('../v2.css')).not.toContain('.v2-byo__hosted-offer');
 });
 
 test('TASK-482 offer follows the final CTA so existing commands and controls cannot move', () => {

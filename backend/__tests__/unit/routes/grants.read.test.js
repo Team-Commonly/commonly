@@ -94,7 +94,7 @@ const trailRow = (over = {}) => ({
 // liveness either.
 const FIELDS = ['grantId', 'installationId', 'target', 'tools', 'writeMode', 'budget', 'effectiveAudience',
   'expiresAt', 'revokedAt', 'revokedBy', 'parentGrantId', 'rootGrantId', 'createdAt', 'grantedBy',
-  'grantBrokerRefusal', 'grantBrokerRefusalScope'];
+  'grantBrokerRefusal', 'grantBrokerRefusalScope', 'connector'];
 
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
@@ -326,6 +326,26 @@ describe('GET /api/grants/:grantId/calls', () => {
   });
 });
 
+describe('the connector a grant belongs to (TASK-753, D226)', () => {
+  // The page names a grant by the catalogue entry that covers its tools. A hidden
+  // entry, or one whose connection was removed, is absent from that catalogue,
+  // so the grant itself has to carry its connector or it reads "Unknown connector".
+  test('names a hosted entry from its tool namespace, hidden or not, and GitHub by its own', async () => {
+    const atlassian = await RoomGrant.create(grant({ tools: ['atlassian.getJiraIssue'] }));
+    const github = await RoomGrant.create(grant());
+    const unknown = await RoomGrant.create(grant({ tools: ['nobody.anything'] }));
+    const mixed = await RoomGrant.create(grant({ tools: ['sentry.find_organizations', 'linear.list_issues'] }));
+    const res = await request(app).get(`/api/pods/${POD}/grants`).set('x-test-user', MEMBER);
+    expect(res.status).toBe(200);
+    const byId = Object.fromEntries(res.body.grants.map((row) => [row.grantId, row.connector]));
+    expect(byId[atlassian.grantId]).toEqual({ id: 'atlassian', label: 'Atlassian' });
+    expect(byId[github.grantId]).toEqual({ id: 'github', label: 'GitHub' });
+    // A namespace no entry claims, or tools from two entries, is not guessed.
+    expect(byId[unknown.grantId]).toBeNull();
+    expect(byId[mixed.grantId]).toBeNull();
+  });
+});
+
 describe('GET /api/grants/:grantId', () => {
   test('GET /api/grants/:id returns the field list and never connectionId or brokerId', async () => {
     const row = await RoomGrant.create(grant({ parentGrantId: null, rootGrantId: 'grant_root' }));
@@ -335,6 +355,7 @@ describe('GET /api/grants/:grantId', () => {
     expect(res.body).toMatchObject({
       grantId: row.grantId, installationId: 'install-1', target: { kind: 'pod', id: POD },
       tools: ['github.list_issues', 'github.comment'], writeMode: 'write-with-confirm',
+      connector: { id: 'github', label: 'GitHub' },
       budget: { calls: 10, windowMs: 60000 }, effectiveAudience: [SEAT], revokedAt: null, revokedBy: null,
       parentGrantId: null, rootGrantId: 'grant_root', grantedBy: OWNER,
     });

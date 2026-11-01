@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import V2FeedbackMenu from './V2FeedbackMenu';
 import V2AccountMenu from './V2AccountMenu';
+import V2ThemeSwitch from './V2ThemeSwitch';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import Badge from '@mui/material/Badge';
@@ -127,6 +128,7 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount })
           <div className="v2-rail__utility">
             <V2FeedbackMenu />
           </div>
+          <V2ThemeSwitch />
           <span className="v2-rail__foot-sep" aria-hidden="true" />
           {/* Account */}
           <div className="v2-rail__user">
