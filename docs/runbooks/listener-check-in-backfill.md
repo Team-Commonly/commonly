@@ -26,7 +26,7 @@ already has `lastListenedAt` is counted as skipped.
 ## What it will not do
 
 - Overwrite a stamp a running listener wrote after the dry run. Each write is
-  guarded by `lastListenedAt: { $exists: false }` on that one token element.
+  guarded by `lastListenedAt: null` (absent or null, never a live Date) on that one token element.
 - Replace an array or touch another field, so a concurrent `lastUsedAt` write is kept.
 - Read, print or store a token hash.
 

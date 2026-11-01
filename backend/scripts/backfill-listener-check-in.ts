@@ -12,7 +12,7 @@
  *
  * Safety.
  *  - Insert-only against live writers. Each write is guarded by
- *    `lastListenedAt: { $exists: false }` on the one token element, so a stamp a
+ *    `lastListenedAt: null` on the one token element, so a stamp a
  *    running listener wrote in the meantime is never overwritten.
  *  - Per token, by its subdocument `_id`: no array is replaced, so a concurrent
  *    `lastUsedAt` write on another element or field is not lost.
@@ -116,8 +116,8 @@ export const productionDeps = (): ListenerBackfillDeps => ({
     const out: TokenCandidate[] = [];
     let unaddressable = 0;
     const take = (store: TokenStore, ownerId: unknown, token: Record<string, any>) => {
-      if (!token.lastUsedAt || token.lastListenedAt) return;
-      if (!/^[0-9a-f]{24}$/i.test(String(token._id || ''))) {
+      if (!token.lastUsedAt || token.lastListenedAt != null) return;
+      if (!(token._id instanceof mongoose.Types.ObjectId)) {
         unaddressable += 1;
         return;
       }

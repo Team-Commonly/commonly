@@ -111,11 +111,13 @@ describe('backfill-listener-check-in against the real schemas', () => {
   it('counts a token with no ObjectId _id as unaddressable instead of listing it', async () => {
     await makeInstall([
       { _id: 'not-an-object-id', tokenHash: 'secret-s', lastUsedAt: USED },
+      // A 24-hex id stored as a string is still not an ObjectId and would never match.
+      { _id: '0123456789abcdef01234567', tokenHash: 'secret-h', lastUsedAt: USED },
       { tokenHash: 'secret-m', lastUsedAt: USED },
     ]);
     const listing = await productionDeps().listCandidates();
     expect(listing.candidates).toHaveLength(0);
-    expect(listing.unaddressable).toBe(1 + 1);
+    expect(listing.unaddressable).toBe(3);
     expect(JSON.stringify(listing)).not.toContain('secret');
   });
 });
