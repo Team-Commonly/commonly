@@ -16,6 +16,20 @@ interface InstallationSettings {
   heartbeatMinutes: number;
 }
 
+// Message wake is one choice of three, shown together: the human-only
+// filter used to appear only after "Wake on messages" was ticked (D173).
+const MESSAGE_WAKE_CHOICES = ['mentions', 'human', 'all'] as const;
+type MessageWakeChoice = typeof MESSAGE_WAKE_CHOICES[number];
+const MESSAGE_WAKE_SETTINGS: Record<MessageWakeChoice, Pick<InstallationSettings, 'wakeOnMessage' | 'humanOnly'>> = {
+  mentions: { wakeOnMessage: false, humanOnly: false },
+  human: { wakeOnMessage: true, humanOnly: true },
+  all: { wakeOnMessage: true, humanOnly: false },
+};
+const messageWakeChoice = (entry: InstallationSettings): MessageWakeChoice => {
+  if (!entry.wakeOnMessage) return 'mentions';
+  return entry.humanOnly ? 'human' : 'all';
+};
+
 const V2AgentWakePods: React.FC<{
   agentName: string;
   instanceId: string;
@@ -37,6 +51,10 @@ const V2AgentWakePods: React.FC<{
   const identity = `${agentName}:${instanceId}`;
   const identityRef = useRef(identity);
   identityRef.current = identity;
+  // Per-pod save state; see save() below.
+  const committedRef = useRef<Record<string, InstallationSettings>>({});
+  const queuedRef = useRef<Record<string, InstallationSettings | undefined>>({});
+  const sendingRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     let active = true;
@@ -45,6 +63,9 @@ const V2AgentWakePods: React.FC<{
     setBusyPod(null);
     setError(null);
     setDraftMinutes({});
+    committedRef.current = {};
+    queuedRef.current = {};
+    sendingRef.current = {};
     const load = async () => {
       try {
         const settingsResult = await axios.get<{
@@ -53,6 +74,7 @@ const V2AgentWakePods: React.FC<{
         if (!active) return;
         const rows = Array.isArray(settingsResult.data.installations) ? settingsResult.data.installations : [];
         setInstallations(rows);
+        committedRef.current = Object.fromEntries(rows.map((row) => [row.podId, row]));
         setActivePodCount(settingsResult.data.activePodCount ?? rows.filter((row) => row.status === 'active').length);
         setPodCount(settingsResult.data.podCount ?? rows.length);
         setDraftMinutes(Object.fromEntries(rows.map((row) => [row.podId, row.heartbeatMinutes])));
@@ -71,26 +93,56 @@ const V2AgentWakePods: React.FC<{
     return () => { active = false; };
   }, [base, query, identity, t]);
 
+  // Saves per pod go out one at a time, newest pick last. The message-wake
+  // radios stay enabled while a save is in flight (disabling them dropped
+  // keyboard focus to the page), so a second pick queues behind the first
+  // rather than racing it to the server. A failure rolls the row back to the
+  // last settings the server accepted, never to an unsaved pick.
+
   const save = async (entry: InstallationSettings, changes: Partial<InstallationSettings>) => {
     const requestedIdentity = identity;
-    setBusyPod(entry.podId);
+    const { podId } = entry;
+    const next = { ...entry, ...changes };
+    // An agent switch replaces these objects. Hold the ones this save started
+    // with, so a loop still in flight for the old agent never writes into the
+    // new agent's queue.
+    const committed = committedRef.current;
+    const queued = queuedRef.current;
+    const sending = sendingRef.current;
+    if (!committed[podId]) committed[podId] = entry;
+    queued[podId] = next;
+    setBusyPod(podId);
     setError(null);
+    // Show the pick at once, so the next arrow key moves on from it.
+    setInstallations((current) => current.map((item) => item.podId === podId ? next : item));
+    if (sending[podId]) return;
+    sending[podId] = true;
     try {
-      const next = { ...entry, ...changes };
-      await updatePod(entry.podId, {
-        wakeOnMessage: next.wakeOnMessage,
-        boardWake: next.boardWake,
-        humanOnly: next.humanOnly,
-        heartbeatEnabled: next.heartbeatEnabled,
-        heartbeatMinutes: next.heartbeatMinutes,
-      });
-      if (identityRef.current === requestedIdentity) {
-        setInstallations((current) => current.map((item) => item.podId === entry.podId ? next : item));
+      while (queued[podId]) {
+        const target = queued[podId] as InstallationSettings;
+        queued[podId] = undefined;
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await updatePod(podId, {
+            wakeOnMessage: target.wakeOnMessage,
+            boardWake: target.boardWake,
+            humanOnly: target.humanOnly,
+            heartbeatEnabled: target.heartbeatEnabled,
+            heartbeatMinutes: target.heartbeatMinutes,
+          });
+          committed[podId] = target;
+        } catch (requestError) {
+          queued[podId] = undefined;
+          if (identityRef.current === requestedIdentity) {
+            const saved = committed[podId];
+            setInstallations((current) => current.map((item) => item.podId === podId ? saved : item));
+            setError((requestError as { response?: { status?: number } })?.response?.status === 403
+              ? t('agentSettings.forbidden') : t('agentSettings.saveError'));
+          }
+        }
       }
-    } catch (requestError) {
-      if (identityRef.current === requestedIdentity) setError((requestError as { response?: { status?: number } })?.response?.status === 403
-        ? t('agentSettings.forbidden') : t('agentSettings.saveError'));
     } finally {
+      sending[podId] = false;
       if (identityRef.current === requestedIdentity) setBusyPod(null);
     }
   };
@@ -136,16 +188,17 @@ const V2AgentWakePods: React.FC<{
         {installations.map((entry) => (
           <div className="v2-agent-wake-pods__pod" key={entry.podId}>
             <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
-            <label className="v2-agent-wake-pods__row">
-              <span>{t('agentSettings.wakeOnMessage')}</span>
-              <input type="checkbox" checked={entry.wakeOnMessage} disabled={busyPod === entry.podId}
-                onChange={(event) => { void save(entry, { wakeOnMessage: event.target.checked }); }} />
-            </label>
-            {entry.wakeOnMessage && <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow">
-              <span>{t('agentSettings.humanOnly')}</span>
-              <input type="checkbox" checked={entry.humanOnly} disabled={busyPod === entry.podId}
-                onChange={(event) => { void save(entry, { humanOnly: event.target.checked }); }} />
-            </label>}
+            <fieldset className="v2-agent-wake-pods__choice" aria-busy={busyPod === entry.podId}>
+              <legend>{t('agentSettings.messageWake')}</legend>
+              {MESSAGE_WAKE_CHOICES.map((choice) => (
+                <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow" key={choice}>
+                  <span>{t(`agentSettings.messageWake_${choice}`)}</span>
+                  <input type="radio" name={`message-wake-${entry.podId}`} value={choice}
+                    checked={messageWakeChoice(entry) === choice}
+                    onChange={() => { void save(entry, MESSAGE_WAKE_SETTINGS[choice]); }} />
+                </label>
+              ))}
+            </fieldset>
             <label className="v2-agent-wake-pods__row">
               <span>{t('agentSettings.boardWake')}</span>
               <input type="checkbox" checked={entry.boardWake} disabled={busyPod === entry.podId}

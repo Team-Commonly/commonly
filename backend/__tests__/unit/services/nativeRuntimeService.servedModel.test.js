@@ -115,7 +115,7 @@ test('a turn another group answered records both, and the hops', async () => {
     headers: { 'x-litellm-model-group': DEEPSEEK, 'x-litellm-attempted-fallbacks': '1' },
   });
   expect(turn).toEqual({ model: NEMOTRON, servedModel: DEEPSEEK, fallbacks: 1 });
-  // The refusal still goes out: recording a fallback is not permission for one (D81).
+  // The refusal still goes out: recording a fallback is not permission for one.
   expect(requests[0].body).toMatchObject({ model: NEMOTRON, disable_fallbacks: true });
 });
 

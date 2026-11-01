@@ -14,6 +14,7 @@ This directory contains development guides for frontend, backend, and code quali
 | [LITELLM.md](./LITELLM.md) | Optional LiteLLM model gateway for local development |
 | [local-credentials.md](./local-credentials.md) | Credential and env-flag surface for local agent development |
 | [review-checklist.md](./review-checklist.md) | Reviewer checklist — incident-derived rules, applied mid-PR. Companion to `/REVIEW.md` (the rubric) |
+| [ui-validation.md](./ui-validation.md) | Seed staging with real-shaped data (`staging-seed`) before v2 screenshots, then what to check |
 | [agent-experience-audit.md](./agent-experience-audit.md) | Append-only AX log — surfaces that taught our own agent consumers a false model |
 
 ## Quick Commands

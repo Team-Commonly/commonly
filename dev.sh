@@ -2,6 +2,8 @@
 
 # Development environment management script
 # Usage: ./dev.sh [up|down|restart|logs|build]
+#        ./dev.sh up --ephemeral          - native backend + preview frontend on this worktree's slot (scripts/dev-ephemeral.sh)
+#        ./dev.sh gc                      - reap ephemeral slots past their 24 h TTL
 #        ./dev.sh test                    - unit tests (in-memory, no services needed)
 #        ./dev.sh test:integration        - integration tests (requires ./dev.sh up)
 #        ./dev.sh clawdbot [up|down|logs]
@@ -135,6 +137,10 @@ print_local_dev_notes() {
 
 case "$1" in
     up)
+        if [ "$2" = "--ephemeral" ]; then
+            # Per-worktree native stack on its own ports and database (D177). See scripts/dev-ephemeral.sh.
+            exec bash "$(dirname "$0")/scripts/dev-ephemeral.sh" up
+        fi
         ensure_local_env_file
         echo "🚀 Starting development environment..."
         # Set higher timeout for frontend npm install
@@ -150,6 +156,10 @@ case "$1" in
         print_local_dev_notes
         ;;
     
+    gc)
+        exec bash "$(dirname "$0")/scripts/dev-ephemeral.sh" gc
+        ;;
+
     down)
         echo "🛑 Stopping development environment..."
         docker compose -f $COMPOSE_FILE down

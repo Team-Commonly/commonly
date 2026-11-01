@@ -106,6 +106,25 @@ describe('per-installation agent settings', () => {
     expect(after.body.runtimeControls.effort).toBe('xhigh');
   });
 
+  it('reports the process from the agent listener, not the computer heartbeat', async () => {
+    await Machine.create({ ownerUserId: owner._id, machineId: 'machine-a', name: 'Test computer', lastSeenAt: null });
+    await User.create({
+      username: 'settings-runtime-bot', email: 'settings-runtime-bot@test.com', password: 'password123',
+      isBot: true, botMetadata: { agentName: 'settings-agent', instanceId: 'same', machineId: 'machine-a' },
+      agentRuntimeTokens: [{ tokenHash: 'listener-hash', lastUsedAt: new Date(Date.now() - 10_000) }],
+    });
+    const url = '/api/registry/agents/settings-agent/manage-settings?instanceId=same';
+    const polling = await request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
+    expect(polling.status).toBe(200);
+    expect(polling.body.processConnected).toBe(true);
+
+    await Machine.updateOne({ machineId: 'machine-a' }, { $set: { lastSeenAt: new Date() } });
+    await User.updateOne({ username: 'settings-runtime-bot' },
+      { $set: { 'agentRuntimeTokens.0.lastUsedAt': new Date(Date.now() - 10 * 60_000) } });
+    const silent = await request(app).get(url).set('Authorization', `Bearer ${token(owner)}`);
+    expect(silent.body.processConnected).toBe(false);
+  });
+
   it('does not present a standalone CLI preference as a running effort', async () => {
     await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
       $set: { 'config.environment': { model: 'opus', effort: 'max' } },

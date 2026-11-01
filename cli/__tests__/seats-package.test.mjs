@@ -1,5 +1,5 @@
 /**
- * packages/seats is the runtime the CLI bundles (D62, extract-in-place). These
+ * packages/seats is the runtime the CLI bundles (extract-in-place). These
  * tests hold the two properties the move depends on: the package imports
  * nothing from Commonly, and the CLI tarball carries it.
  */

@@ -239,10 +239,10 @@ describe('macOS Seatbelt profile', () => {
       expect(loopback).not.toContain(`com.apple.${service}`);
     }
     // The resolver's configuration only: without it the first hostname lookup
-    // blocks the process forever (D106), see the sandboxed test below.
+    // blocks the process forever, see the sandboxed test below.
     const configServices = loopback.match(/com\.apple\.SystemConfiguration\.\w+/g);
     expect(configServices).toEqual(['com.apple.SystemConfiguration.DNSConfiguration']);
-    // The verb, not only the name: a deny here is the D106 hang itself, and a
+    // The verb, not only the name: a deny here is the hang itself, and a
     // bare allow would admit every service. Both modes carry the same rule.
     const resolverRule = '(allow mach-lookup (global-name "com.apple.SystemConfiguration.DNSConfiguration"))';
     // SBPL ignores whitespace inside a form, so a bare allow can be spelled
@@ -357,7 +357,7 @@ describe('macOS Seatbelt profile', () => {
   // Off macOS there is no sandbox-exec to run it under, so it reports as
   // skipped rather than passing without running.
   (process.platform === 'darwin' ? test : test.skip)('a loopback-confined process builds a DNS resolver and still reaches no outside host', () => {
-    // D106: the profile once denied the resolver's configuration, and
+    // The profile once denied the resolver's configuration, and
     // constructing a c-ares Resolver could block the process forever, so
     // confined dsh turns ran to their 900 s timeout before sending a request.
     // That hang was intermittent, so this run cannot catch its return on its

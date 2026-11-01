@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,5 +21,23 @@ export const readLogTail = (path, count = 50) => {
   } catch (error) {
     if (error?.code === 'ENOENT') return null;
     throw error;
+  }
+};
+
+export const logSize = (path) => statSync(path).size;
+
+// Bytes appended since `offset`, for `agent logs --follow`. A file that shrank
+// (rotated or truncated) is read from the start again.
+export const readAppended = (path, offset) => {
+  const size = logSize(path);
+  const start = size < offset ? 0 : offset;
+  if (size === start) return { text: '', offset: size };
+  const fd = openSync(path, 'r');
+  try {
+    const buffer = Buffer.alloc(size - start);
+    readSync(fd, buffer, 0, buffer.length, start);
+    return { text: buffer.toString('utf8'), offset: size };
+  } finally {
+    closeSync(fd);
   }
 };

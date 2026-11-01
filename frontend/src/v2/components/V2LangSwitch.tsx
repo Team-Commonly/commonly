@@ -4,7 +4,7 @@ import { LANGUAGE_REGISTRY, LanguageCode } from '../../i18n';
 
 const CHECK_ICON = '✓';
 
-// Dropdown language menu (Sam's call 2026-07-22: reads like the other nav
+// Dropdown language menu (2026-07-22: reads like the other nav
 // options, not a two-button pill). Trigger shows the active language; the
 // menu lists all languages with the active one checked. Closes on outside
 // click, Escape, and selection.

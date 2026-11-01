@@ -8,7 +8,7 @@
  * their pods. Minting one, or force-rotating it, must therefore require owning
  * the identity outright.
  *
- * SOLE-INSTALLER rule (Vera's ruling on #1315, first applied to daemon
+ * SOLE-INSTALLER rule (ruling on #1315, first applied to daemon
  * adoption). Two clauses, both must hold:
  *   - an active installation of the identity installedBy the owner exists;
  *   - no active installation of it exists installedBy anyone else.

@@ -123,7 +123,7 @@ describe('install', () => {
     expect(deps.execCmd).toHaveBeenLastCalledWith(['launchctl', 'load', '-w', target.file]);
   });
 
-  test('linux: writes the unit, reloads, enables --now', async () => {
+  test('linux: writes the unit, reloads, enables, and restarts so a running unit takes the new env', async () => {
     const deps = makeDeps();
     const target = await installDaemonService({
       platform: 'linux', home, nodePath, cliPath, ...deps,
@@ -131,7 +131,8 @@ describe('install', () => {
     expect(target.kind).toBe('systemd');
     expect(deps.execCmd.mock.calls).toEqual([
       [['systemctl', '--user', 'daemon-reload']],
-      [['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT]],
+      [['systemctl', '--user', 'enable', SYSTEMD_UNIT]],
+      [['systemctl', '--user', 'restart', SYSTEMD_UNIT]],
     ]);
   });
 
@@ -186,6 +187,30 @@ describe('install', () => {
     // a time.
     expect(withoutKey.writeFile.mock.calls[0][1]).not.toContain('COMMONLY_LITELLM_KEY');
     expect(withoutKey.warn).toHaveBeenCalledWith(expect.stringContaining('COMMONLY_LITELLM_KEY is not set in this shell'));
+  });
+
+  test('install carries a set opt-out into the unit, and says nothing when it is absent (TASK-660)', async () => {
+    const set = makeDeps();
+    set.warn = jest.fn();
+    await installDaemonService({
+      platform: 'linux', home, nodePath, cliPath,
+      optionalEnvNames: ['COMMONLY_NO_UPDATE_CHECK'],
+      env: { COMMONLY_NO_UPDATE_CHECK: '1' },
+      ...set,
+    });
+    expect(set.writeFile.mock.calls[0][1]).toContain('Environment="COMMONLY_NO_UPDATE_CHECK=1"');
+    expect(set.warn).not.toHaveBeenCalled();
+
+    const absent = makeDeps();
+    absent.warn = jest.fn();
+    await installDaemonService({
+      platform: 'darwin', home, nodePath, cliPath,
+      optionalEnvNames: ['COMMONLY_NO_UPDATE_CHECK'],
+      env: {},
+      ...absent,
+    });
+    expect(absent.writeFile.mock.calls[0][1]).not.toContain('COMMONLY_NO_UPDATE_CHECK');
+    expect(absent.warn).not.toHaveBeenCalled();
   });
 
   // The mode is held by construction — a sibling file created 0600 and renamed

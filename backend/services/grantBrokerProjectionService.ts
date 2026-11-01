@@ -9,8 +9,8 @@
  *
  * The selection lived inside `grantServersForIdentities` before this module,
  * and only the daemon could reach it: `nativeRuntimeService` never referenced
- * grants at all, so a hosted agent in a granted pod could not use GitHub
- * (eng lead 73723). The predicate is MOVED here, not rewritten — a second
+ * grants at all, so a hosted agent in a granted pod could not use GitHub.
+ * The predicate is MOVED here, not rewritten — a second
  * implementation of "live, audience, target" is how the two paths drift apart,
  * and the drift would be invisible until a seat was handed a capability the
  * other path withholds.
@@ -21,7 +21,7 @@
  * recomputes the live member set and re-runs `assertGrantUsable` with the
  * required write mode taken from the server-side definition map. That re-check
  * is the whole reason a caller may assemble this projection once per run
- * (vera 73751) — see the cache note on `hostedBrokerToolsForRun`.
+ * — see the cache note on `hostedBrokerToolsForRun`.
  */
 
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from './installable/toolInstallables';
@@ -29,11 +29,15 @@ import { GRANT_BROKER_AUTHORIZATION } from './seatEnvironmentProjection';
 import { allToolDefinitions, executionErrorOutcome } from './toolBrokerService';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
+import { assertGrantUsable, RoomGrantError } from './roomGrantService';
+import type { RoomGrantTaskBinding } from '../models/RoomGrant';
 
 export type GrantTarget = { kind?: unknown; id?: unknown };
 
 export interface LiveGrant {
   grantId: string;
+  binding?: RoomGrantTaskBinding;
+  taskEpoch?: number;
   target: GrantTarget;
   audience?: unknown[];
   tools?: unknown[];
@@ -69,8 +73,8 @@ export interface LiveGrantQuery {
   identityIds: string[];
   /**
    * The pods this caller is projecting for. A daemon passes the seat's
-   * installed pods; a hosted run passes only the pod it is running in
-   * (wren 73741), which is what keeps a run from reaching a grant minted for
+   * installed pods; a hosted run passes only the pod it is running in,
+   * which is what keeps a run from reaching a grant minted for
    * another pod.
    */
   podIds: string[];
@@ -100,7 +104,7 @@ export const selectLiveGrantsForIdentities = async (
     revokedAt: null,
     expiresAt: { $gt: new Date() },
     audience: { $in: ids },
-  }).select('grantId target audience tools writeMode').lean() as LiveGrant[];
+  }).select('grantId target audience tools writeMode binding taskEpoch expiresAt revokedAt parentGrantId').lean() as LiveGrant[];
   if (!grants.length) return output;
 
   const pods = scopedPodIds.length
@@ -114,7 +118,7 @@ export const selectLiveGrantsForIdentities = async (
   );
 
   for (const id of ids) {
-    const selected = grants.filter((grant) => {
+    const candidates = grants.filter((grant) => {
       const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
       if (!grantId) return false;
       const inAudience = (grant.audience || []).map(String).includes(id);
@@ -127,6 +131,20 @@ export const selectLiveGrantsForIdentities = async (
       }
       return false;
     });
+    const selected: LiveGrant[] = [];
+    for (const grant of candidates) {
+      if (grant.binding) {
+        try {
+          // Same authority as list/call; no task context supplied by the model.
+          await assertGrantUsable({ grant: grant as unknown as Record<string, unknown>, agentUserId: id,
+            currentMemberIds: grant.target.kind === 'pod' ? [...(podMembers.get(String(grant.target.id)) || [])] : [id] });
+        } catch (error) {
+          if (error instanceof RoomGrantError) continue;
+          throw error;
+        }
+      }
+      selected.push(grant);
+    }
     if (selected.length) output.set(id, selected);
   }
   return output;
@@ -138,7 +156,7 @@ export interface HostedBrokerProjection {
   /**
    * The ONLY thing a run may cache: exposed tool name -> the grant and the
    * broker tool it resolves to. Never the grant document, the member set, or
-   * the result of `assertGrantUsable` (vera 73751).
+   * the result of `assertGrantUsable`.
    */
   dispatch: Map<string, { grantId: string; tool: string }>;
 }
@@ -149,7 +167,7 @@ export interface HostedBrokerProjection {
  *
  * Two deliberate narrowings, both fail-closed:
  *
- *  - **Reads only** (wren 73743). Only definitions whose `requiredWriteMode` is
+ *  - **Reads only**. Only definitions whose `requiredWriteMode` is
  *    `read` are offered, even when the grant's own mode would allow a write: a
  *    hosted write's unattended path is not reconciled with ADR-020 D1 yet.
  *    `callTool` re-checks the mode on every call regardless — this is the
@@ -271,7 +289,7 @@ export const dispatchHostedBrokerTool = async (
       runPodId,
       // A hosted turn has no shell, web or file tools: there is nothing for a
       // sandbox to confine, so the seat-confinement refusal does not apply
-      // (Wren, TASK-175 74882). This is the only caller that sets it.
+      // (TASK-175). This is the only caller that sets it.
       hostedTurn: true,
     });
     return {

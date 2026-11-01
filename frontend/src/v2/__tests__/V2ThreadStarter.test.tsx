@@ -117,15 +117,16 @@ describe('V2Thread teaching empty states', () => {
     expect(document.querySelector('.v2-teammate')).toBeNull();
   });
 
-  test('compact header shows singular agents and names both counts for assistive tech', () => {
+  test('compact header shows the member count; the agent count stays in the desktop meta', () => {
     const detail = makeDetail({
       agents: [{ agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' }],
     });
     renderChat(detail);
 
-    const compact = screen.getByRole('group', { name: '1 member, 1 agent' });
-    expect(compact).toHaveTextContent('1 · 1 agent');
-    expect(compact.querySelector('[aria-hidden="true"]')).toHaveTextContent('1 · 1 agent');
+    const compact = document.querySelector('.v2-pod-header__meta--compact');
+    expect(compact).toHaveTextContent('1 member');
+    expect(compact).not.toHaveTextContent('agent');
+    expect(document.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)')).toHaveTextContent('1 agent');
   });
 
   test('multi-member regular pods use the same teaching state', () => {
@@ -221,6 +222,35 @@ describe('V2Thread agent-room liveness', () => {
     expect(await screen.findByTestId('agent-room-liveness')).toHaveTextContent(
       "Aria's availability is unknown",
     );
+  });
+
+  test('a never-connected direct seat says so and shows the owner the command to run', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: true, fixCommand: 'commonly agent run aria',
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    const banner = await screen.findByTestId('agent-room-liveness');
+    expect(banner).toHaveTextContent("Aria isn't connected yet");
+    expect(screen.getByTestId('agent-room-fix-command')).toHaveTextContent('commonly agent run aria');
+  });
+
+  test('a never-connected direct seat shows a non-owner no command', async () => {
+    axios.get.mockResolvedValue({
+      data: {
+        agents: [{
+          agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria', state: 'never-connected', isOwner: false,
+        }],
+      },
+    });
+    renderChat(makeAgentRoom());
+
+    expect(await screen.findByTestId('agent-room-liveness')).toHaveTextContent("Aria isn't connected yet");
+    expect(screen.queryByTestId('agent-room-fix-command')).not.toBeInTheDocument();
   });
 
   test('a live direct seat shows a wait until it replies', async () => {

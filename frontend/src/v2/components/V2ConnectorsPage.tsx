@@ -15,6 +15,7 @@ import { ActGlyph, MarkGlyph, MarkName } from '../icons/glyphs';
 import V2ConnectorTools, { type HostedMcpManualRevokeNotice } from './V2ConnectorTools';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import { catalogDescription } from '../utils/connectorCatalogDescription';
 import V2PageHead from './V2PageHead';
 import V2InactiveFold from './V2InactiveFold';
 
@@ -57,7 +58,7 @@ interface Connector {
   // own classifier, and externalFeedService, which copies a provider's error
   // text or a raw `err.message` in here. `errorMessageUserFacing` is what tells
   // them apart, and only a message written for a person is rendered — the field
-  // holding a value is not permission to show it (vera 73848).
+  // holding a value is not permission to show it.
   errorMessage?: string | null;
   errorMessageUserFacing?: boolean;
   scope?: 'user' | 'pod';
@@ -74,7 +75,7 @@ interface CatalogInstallation {
   // holding a value is not permission to show it. A catalog failure is
   // `markProjectionFailure`'s raw exception message unless a writer says
   // otherwise, so the flag decides and the generic sentence is the fallback
-  // (TASK-131, vera 73848).
+  // (TASK-131).
   errorMessage?: string;
   errorMessageUserFacing?: boolean;
   boundPodId?: string;
@@ -85,14 +86,14 @@ interface CatalogInstallation {
 
 interface CatalogEntry {
   installableId: string;
-  // Two lists (tools plan, Sam's option A): this page draws channels; the
+  // Two lists (tools plan, option A): this page draws channels; the
   // Tools page draws tool Installables, so a `tools` row never renders here.
   list?: 'channels' | 'tools';
   connectionType?: 'github-app' | 'hosted-mcp';
   label?: string;
   description?: string;
   available: boolean;
-  // Capability vs offerability (Wren 71169/71174). `available` says this
+  // Capability vs offerability. `available` says this
   // instance holds the credentials; `offered` says a builtin Installable row
   // exists to install. Only both together may show an Add. Absent is read as
   // offered: the field's only producer always emits it, so a missing value
@@ -181,7 +182,7 @@ const mappedTypeLabel = (type: string): string | null => TYPE_LABELS[type] || nu
 // detail line at all. The two-branch ternary this replaces gave every provider
 // that was not telegram Slack's "one click in your workspace", so a stranger
 // reading a Discord row was told to click something in a workspace they may not
-// have (Vera 71165).
+// have.
 const CONNECT_DETAIL: Record<string, { key: string; defaultValue: string }> = {
   telegram: { key: 'connectors.availableTelegram', defaultValue: 'one message' },
   slack: { key: 'connectors.availableSlack', defaultValue: 'one click in your workspace' },
@@ -229,6 +230,7 @@ const SLACK_REFUSALS: Record<string, { key: string; defaultValue: string }> = {
   slack_installation_not_found: { key: 'connectors.slackInstallationNotFound', defaultValue: 'Slack installation not found.' },
   slack_bind_missing: { key: 'connectors.slackBindMissing', defaultValue: 'There is no Slack authorization to confirm.' },
   slack_bind_expired: { key: 'connectors.slackBindExpired', defaultValue: 'Slack authorization expired. Start again.' },
+  slack_lead_invalid: { key: 'connectors.slackLeadInvalid', defaultValue: 'Choose an agent in the active pod.' },
   slack_pod_access_denied: { key: 'connectors.slackPodAccessDenied', defaultValue: 'You no longer have access to this pod.' },
 };
 
@@ -297,7 +299,7 @@ const botMembers = (pod: V2Pod | undefined): V2PodMember[] => (
 );
 
 const V2ConnectorsPage: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const api = useV2Api();
   const navigate = useNavigate();
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -322,6 +324,7 @@ const V2ConnectorsPage: React.FC = () => {
   // only in the page-level slot at the foot of the page.
   const [rowRefusal, setRowRefusal] = useState<{ key: string; message: string } | null>(null);
   const [slackCallbackError, setSlackCallbackError] = useState<string | null>(null);
+  const [slackLeadChoices, setSlackLeadChoices] = useState<Record<string, string>>({});
   const [hostedMcpCallbackError, setHostedMcpCallbackError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const podPickerRef = useRef<HTMLSelectElement | null>(null);
@@ -508,17 +511,21 @@ const V2ConnectorsPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [api]);
 
+  const untitledPodName = (): string => t('connectors.untitledPod', { defaultValue: 'Untitled pod' });
+
   const podNameById = (podId: string | null | undefined, fallback?: Connector | null): string => {
     const pod = podList.find((candidate) => String(candidate._id) === String(podId || ''));
-    if (pod) return pod.name || 'Untitled pod';
+    if (pod) return pod.name || untitledPodName();
     if (fallback && typeof fallback.podId === 'object' && fallback.podId?.name) return fallback.podId.name;
-    return 'Untitled pod';
+    return untitledPodName();
   };
 
   const boundPodName = (boundPodId: string | undefined): string => {
     const existing = connectors.find((connector) => connectorPodId(connector) === String(boundPodId));
     const boundPod = podList.find((pod) => String(pod._id) === String(boundPodId));
-    return existing ? podNameById(connectorPodId(existing), existing) : (boundPod?.name || 'another pod');
+    return existing
+      ? podNameById(connectorPodId(existing), existing)
+      : (boundPod?.name || t('connectors.anotherPod', { defaultValue: 'another pod' }));
   };
 
   const installInProgressMessage = (boundPodId?: string): string => (
@@ -559,7 +566,7 @@ const V2ConnectorsPage: React.FC = () => {
           // (:1220, :1286) — an `aria-label`, not visible text, so naming it in
           // the copy sent a sighted user hunting for a string the page never
           // renders. That is the same defect as "gate switches" sourced from an
-          // attribute instead of an identifier (Vera, TASK-173 gate), so the
+          // attribute instead of an identifier (TASK-173 gate), so the
           // copy names the section title alone.
           defaultValue: 'Your {{connector}} channel is bound to {{pod}}. Other pods reach it through "Pods that reach this channel" — switch a pod on there.',
           connector: typeLabel,
@@ -618,7 +625,7 @@ const V2ConnectorsPage: React.FC = () => {
   // The server validates every key against membership and refuses the whole
   // body on the first miss, so a gate for a pod the owner has since left
   // (not yet pruned by the reconciler) is dropped here rather than sent —
-  // otherwise every toggle would 403 for up to one sweep (Vera, 63997).
+  // otherwise every toggle would 403 for up to one sweep.
   const writeGate = (connector: Connector, podId: string, next: ConnectorGate) => {
     const current = connector.config?.gates || {};
     const memberOf = new Set(podList.map((pod) => String(pod._id)));
@@ -699,13 +706,14 @@ const V2ConnectorsPage: React.FC = () => {
     }
   };
 
-  const resolveSlackBind = async (connector: Connector, action: 'confirm' | 'reject', rowKey: string) => {
+  const resolveSlackBind = async (connector: Connector, action: 'confirm' | 'reject', rowKey: string, lead?: string) => {
     if (busyId) return;
     setBusyId(connector._id);
     setError(null);
     setRowRefusal(null);
     try {
-      await api.post(`/api/installables/slack/${action}`, {});
+      await api.post(`/api/installables/slack/${action}`, action === 'confirm' && lead
+        ? { leadAgentUsername: lead } : {});
       await load();
     } catch (requestError) {
       setRowRefusal({
@@ -906,8 +914,10 @@ const V2ConnectorsPage: React.FC = () => {
     }
 
     if (isSlack && connector.config?.pendingBind) {
-      const workspace = connector.config.pendingBind.teamName || 'This Slack workspace';
-      const user = connector.config.pendingBind.slackUserName ? `@${connector.config.pendingBind.slackUserName}` : 'your Slack user';
+      const workspace = connector.config.pendingBind.teamName || t('connectors.thisSlackWorkspace', { defaultValue: 'This Slack workspace' });
+      const user = connector.config.pendingBind.slackUserName
+        ? `@${connector.config.pendingBind.slackUserName}`
+        : t('connectors.yourSlackUser', { defaultValue: 'your Slack user' });
       return {
         action: 'confirm',
         actionLabel: t('connectors.slackConfirm', { defaultValue: 'Confirm' }),
@@ -950,7 +960,7 @@ const V2ConnectorsPage: React.FC = () => {
       return {
         action: null,
         // The copy decision here is main's, not this branch's: this commit set
-        // `detail: ''` citing Wren's 09-04 one-state-line rule, but #1557 landed
+        // `detail: ''` citing the 09-04 one-state-line rule, but #1557 landed
         // the detail AFTER that ruling and its tests assert the text is present.
         // A rebase is not the place to re-open it, so the line is restored and
         // raised on the row; everything else in the commit is unchanged.
@@ -966,7 +976,7 @@ const V2ConnectorsPage: React.FC = () => {
     // Usable here, but with nothing to install: declaring readiness is a claim
     // about this instance's keys, not about whether a row exists to install.
     // Showing the Add anyway is what produced a lowercase `discord` row whose
-    // click ended in 404 installable_not_found (Wren 71162/71163).
+    // click ended in 404 installable_not_found.
     if (entry.offered === false) {
       return {
         action: null,
@@ -996,7 +1006,7 @@ const V2ConnectorsPage: React.FC = () => {
           ? t(connectDetail.key, { defaultValue: connectDetail.defaultValue })
           : '',
         dot: 'empty',
-        line: entry.description || t('connectors.availableLine', { defaultValue: 'Connect {{label}} to a pod.', label }),
+        line: catalogDescription(i18n, entry.installableId, entry.description) || t('connectors.availableLine', { defaultValue: 'Connect {{label}} to a pod.', label }),
         pulse: false,
         when: t('connectors.notConnected', { defaultValue: 'not connected' }),
       };
@@ -1107,8 +1117,15 @@ const V2ConnectorsPage: React.FC = () => {
   };
 
   const catalogTypes = new Set((catalog || []).map((entry) => entry.installableId));
+  // D215: a provider this instance does not offer is not listed, so a connector
+  // nobody here has walked is never shown. The API still reports it (the
+  // offerability contract), and someone who already installed it keeps their
+  // row, which renders in the not-connectable state below.
+  const listedCatalog = (catalog || []).filter((entry) => (
+    entry.offered !== false || Boolean(entry.installation) || Boolean(entry.integration)
+  ));
   const allItems: ListItem[] = [
-    ...(catalog || []).map((entry): ListItem => ({
+    ...listedCatalog.map((entry): ListItem => ({
       kind: 'catalog',
       key: `catalog:${entry.installableId}`,
       entry,
@@ -1154,7 +1171,7 @@ const V2ConnectorsPage: React.FC = () => {
   // Direction A rule 3: every row's kicker is `pod · verb age` in mono. The verb
   // stays ("added 23d", never "23d") so an age beside a state dot is not read as
   // last-used; a connection with no pod says so. Both parts come from keys and
-  // the timestamp, never from rendered English (Vera, Connectors 70300).
+  // the timestamp, never from rendered English.
   const kickerFor = (item: ListItem, row: ConnectorRow): string => {
     // Inactive rows sit under the "inactive · N" fold. Their state is the fold's
     // job, so the kicker carries no pod and no state word.
@@ -1203,7 +1220,9 @@ const V2ConnectorsPage: React.FC = () => {
     if (!connector) return undefined;
     if (action === 'new-code') return regenerateCode(connector);
     if (action === 'authorize') return authorizeSlack(connector, item.key);
-    if (action === 'confirm') return resolveSlackBind(connector, 'confirm', item.key);
+    // The row opens the aside where the active pod's lead can be chosen.
+    // Sending a confirm here would silently omit that choice.
+    if (action === 'confirm') return undefined;
     return undefined;
   };
 
@@ -1375,7 +1394,9 @@ const V2ConnectorsPage: React.FC = () => {
                     disabled={disabled}
                     onChange={(event) => { void writeGate(connector, pod._id, { ...gate, enabled, lead: event.target.value || undefined }); }}
                   >
-                    <option value="">{t('connectors.leadAny', { defaultValue: 'Any agent leads' })}</option>
+                    <option value="">{connector.type === 'slack'
+                      ? t('connectors.slackLeadNone', { defaultValue: 'No lead selected' })
+                      : t('connectors.leadAny', { defaultValue: 'Any agent leads' })}</option>
                     {bots.map((bot) => <option key={bot.username} value={bot.username}>{bot.username}</option>)}
                   </select>
                   {!active && (
@@ -1477,6 +1498,12 @@ const V2ConnectorsPage: React.FC = () => {
     const supportsRelayControls = isTelegram || isSlack;
     const mirror = connector.config?.relayAllAgentMessages === true;
     const pendingBind = connector.config?.pendingBind;
+    const activePod = podList.find((pod) => pod._id === connectorPodId(connector));
+    const availableLeads = botMembers(activePod);
+    const candidateSlackLead = slackLeadChoices[connector._id]
+      ?? connector.config?.gates?.[String(connectorPodId(connector))]?.lead ?? '';
+    const selectedSlackLead = availableLeads.some((bot) => bot.username === candidateSlackLead)
+      ? candidateSlackLead : '';
     const userScoped = connector.scope === 'user' || Boolean(connector.config?.gates);
     const busy = busyFor(item);
 
@@ -1514,11 +1541,27 @@ const V2ConnectorsPage: React.FC = () => {
               <>
                 <p>{t('connectors.slackConfirmHint', {
                   defaultValue: '{{workspace}} wants to connect as {{user}}.',
-                  workspace: pendingBind.teamName || 'This Slack workspace',
-                  user: pendingBind.slackUserName ? `@${pendingBind.slackUserName}` : 'your Slack user',
+                  workspace: pendingBind.teamName || t('connectors.thisSlackWorkspace', { defaultValue: 'This Slack workspace' }),
+                  user: pendingBind.slackUserName ? `@${pendingBind.slackUserName}` : t('connectors.yourSlackUser', { defaultValue: 'your Slack user' }),
                 })}</p>
+                <label htmlFor={`slack-lead-${connector._id}`}>
+                  {t('connectors.slackBindLead', { defaultValue: 'Agent for plain messages' })}
+                </label>
+                <select
+                  id={`slack-lead-${connector._id}`}
+                  className="v2-connectors__select"
+                  value={selectedSlackLead}
+                  disabled={busy || pods === null || availableLeads.length === 0}
+                  onChange={(event) => setSlackLeadChoices((current) => ({ ...current, [connector._id]: event.target.value }))}
+                >
+                  <option value="">{t('connectors.slackBindLeadNone', { defaultValue: 'Choose an agent' })}</option>
+                  {availableLeads.map((bot) => <option key={bot.username} value={bot.username}>{bot.username}</option>)}
+                </select>
+                {pods !== null && availableLeads.length === 0 && (
+                  <p>{t('connectors.slackNoAgent', { defaultValue: 'No agent is in this pod yet. Messages will reach the pod; choose a lead later.' })}</p>
+                )}
                 <div className="v2-connector-aside__actions">
-                  <button type="button" className="v2-connector-aside__primary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key); }}>
+                  <button type="button" className="v2-connector-aside__primary" disabled={busy || pods === null || (availableLeads.length > 0 && !selectedSlackLead)} onClick={() => { void resolveSlackBind(connector, 'confirm', item.key, selectedSlackLead); }}>
                     {t('connectors.slackConfirmConnection', { defaultValue: 'Confirm connection' })}
                   </button>
                   <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => { void resolveSlackBind(connector, 'reject', item.key); }}>
@@ -1662,7 +1705,7 @@ const V2ConnectorsPage: React.FC = () => {
         className="v2-connectors__header"
         title={t('connectors.title', { defaultValue: 'Connectors' })}
         meta={!loading && headMeta ? headMeta : undefined}
-        hint={t('connectors.description', { defaultValue: 'Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.' })}
+        hint={t('connectors.description', { defaultValue: 'Connect a channel to a pod. Messages arrive there as you; choose what reaches the channel.' })}
         hintLabel={t('connectors.about')}
       />
 
@@ -1683,7 +1726,6 @@ const V2ConnectorsPage: React.FC = () => {
                 <button type="button" className="v2-connectors__connect" onClick={() => setAddingType((current) => current ? null : availableProviders[0]?.type || null)}>
                   {t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}
                 </button>
-                {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
               </div>
             )}
           </section>
@@ -1700,7 +1742,6 @@ const V2ConnectorsPage: React.FC = () => {
             <aside className="v2-connectors__aside" aria-label={t('connectors.connectChannel', { defaultValue: 'Connect a channel' })}>
               <section className="v2-connector-aside__step">
                 <p className="v2-connector-aside__eyebrow">{t('connectors.nextStep', { defaultValue: 'Next step' })}</p>
-                {(pods === null || pods.length > 0) && <p>{t('connectors.connectChannelHint', { defaultValue: 'Choose a channel and the pod it should join.' })}</p>}
                 {renderAddForm(true)}
               </section>
             </aside>

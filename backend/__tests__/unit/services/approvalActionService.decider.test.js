@@ -27,6 +27,8 @@ jest.mock('../../../models/ApprovalAction', () => ({
 const mockPodFindById = jest.fn();
 jest.mock('../../../models/Pod', () => ({
   findById: (...args) => mockPodFindById(...args),
+  // The BYO name allocator lists the caller's pods; none here, so names stay free.
+  find: jest.fn(() => ({ select: () => ({ lean: async () => [] }) })),
   create: jest.fn(),
   updateOne: jest.fn(),
 }));

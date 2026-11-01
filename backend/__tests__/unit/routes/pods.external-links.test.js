@@ -291,3 +291,31 @@ describe('pods routes - external links', () => {
     await request(app).get('/api/pods/p1/external-links').expect(404);
   });
 });
+
+describe('pods routes - WeChat QR image', () => {
+  let app;
+  let headerAtSend;
+  beforeEach(() => {
+    headerAtSend = undefined;
+    app = express();
+    app.use(express.json());
+    app.use((req, res, next) => {
+      // send() only adds its public default when no header is set, so record
+      // what the route had set at the moment it handed the file over.
+      res.sendFile = jest.fn(() => {
+        headerAtSend = res.getHeader('Cache-Control');
+        res.status(200).end();
+      });
+      next();
+    });
+    app.use('/api/pods', routes);
+    jest.clearAllMocks();
+  });
+
+  it('is sent private, no-store', async () => {
+    ExternalLink.findById.mockResolvedValue({ type: 'wechat', qrCodePath: '/uploads/qr.png', podId: 'p1' });
+    Pod.findById.mockResolvedValue({ members: [{ toString: () => 'user1' }] });
+    await request(app).get('/api/pods/external-link/l1/qrcode').expect(200);
+    expect(headerAtSend).toBe('private, no-store');
+  });
+});

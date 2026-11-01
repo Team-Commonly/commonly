@@ -18,7 +18,7 @@ Measured on our own dev pod, 2026-08-06:
 | longest | 6,004 |
 | over 1,500 chars | **33 of 40** |
 
-A 2,700-character median in a chat room is a document. Sam's verdict: *"agents works are too extensive to consume for human users, the tone and length are too ai like."*
+A 2,700-character median in a chat room is a document.
 
 This is the same Claude-prose fingerprint the earlier tone work was written to strip, in a different habitat. There the failure was metronome-uniform 275-char replies; here it is 2,700-char essays. Same origin, opposite symptom.
 

@@ -21,7 +21,15 @@ export interface IRoomGrantTarget {
   id: string;
 }
 
+// record-v1 §2 / ADR-033 §5.1. Only `task.done` is accepted in v1: a bound
+// grant always ends when its task closes, with `expiresAt` as a ceiling.
+export type RoomGrantBindingEndsOn = 'task.done';
+export interface RoomGrantTaskBinding { taskId: string; podId: string; endsOn: RoomGrantBindingEndsOn }
+
 export interface IRoomGrant extends Document {
+  binding?: RoomGrantTaskBinding;
+  taskEpoch?: number;
+  revocationReason?: 'task.done';
   grantId: string;
   connectionId: string;
   installationId: string;
@@ -40,6 +48,18 @@ export interface IRoomGrant extends Document {
   rootGrantId?: string | null;
   /** Required proxy identifier; an agent must never receive connection material. */
   brokerId: string;
+  /**
+   * The Integration row `_id` this grant was minted against. Bound at mint, so
+   * a later row that reuses `installationId` cannot inherit the grant.
+   * Null on grants minted before binding and not yet backfilled.
+   */
+  connectionRowId?: string | null;
+  /**
+   * The row's owner at mint (the granter). Read for revoke and seat-grant
+   * access; never re-resolved from the current holder of `connectionId`.
+   * Null means unbound: revoke and seat read refuse it.
+   */
+  ownerId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -74,6 +94,16 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
     // `grantId` is the public, opaque identifier used by the MCP endpoint;
     // Mongo's _id remains an implementation detail.
     grantId: { type: String, required: true, unique: true, trim: true },
+    binding: {
+      type: new Schema({
+        taskId: { type: String, required: true },
+        podId: { type: String, required: true },
+        endsOn: { type: String, enum: ['task.done'], required: true, default: 'task.done' },
+      }, { _id: false }),
+      default: undefined,
+    },
+    taskEpoch: { type: Number, min: 0 },
+    revocationReason: { type: String, enum: ['task.done'] },
     connectionId: { type: String, required: true, trim: true },
     installationId: { type: String, required: true, trim: true },
     target: { type: GrantTargetSchema, required: true },
@@ -93,11 +123,14 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
     parentGrantId: { type: String, default: null, trim: true },
     rootGrantId: { type: String, default: null, trim: true },
     brokerId: { type: String, required: true, trim: true },
+    connectionRowId: { type: String, default: null, trim: true },
+    ownerId: { type: String, default: null, trim: true },
   },
   { timestamps: true, collection: 'room_grants' },
 );
 
 RoomGrantSchema.index({ target: 1, revokedAt: 1, expiresAt: 1 });
+RoomGrantSchema.index({ 'binding.podId': 1, 'binding.taskId': 1, taskEpoch: 1, revokedAt: 1 });
 RoomGrantSchema.index({ parentGrantId: 1 });
 RoomGrantSchema.index({ rootGrantId: 1 });
 RoomGrantSchema.index({ connectionId: 1, installationId: 1 });

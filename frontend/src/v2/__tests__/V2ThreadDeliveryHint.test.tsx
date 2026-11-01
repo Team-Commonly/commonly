@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import V2Thread from '../components/V2Thread';
+import axios from 'axios';
 import { AuthContext } from '../../context/AuthContext';
 
 let mockSocketValue = { socket: null, connected: false };
@@ -417,5 +418,75 @@ describe('V2Thread agent delivery hint', () => {
     await waitFor(() => {
       expect(screen.queryByText('no agent in this pod')).not.toBeInTheDocument();
     });
+  });
+
+  // Silence census, 10-20: Scout woke on an unmentioned message, the person's
+  // own hosted agent did not, and the hint stayed hidden because "an agent
+  // was woken". Name the agent that wasn't.
+  const SCOUT_AND_OWN = [
+    { agentName: 'guide', instanceId: 'u3f9c2a1b7d', displayName: 'Scout', status: 'active' },
+    { agentName: 'sly-agent', instanceId: 'default', displayName: 'Sly', status: 'active' },
+  ];
+
+  test('when Scout woke and another agent did not, names that agent', async () => {
+    renderHarness(
+      makeMessage('can you research this', {
+        enqueued: 0, implicit: [], agentsInPod: 2, woken: 1, wokenAgents: ['guide'],
+      }),
+      jest.fn(),
+      { agents: SCOUT_AND_OWN },
+    );
+
+    sendDraft('can you research this');
+
+    const hint = await screen.findByText(/will answer this/);
+    expect(hint.closest('.v2-chat__delivery-hint')).toHaveTextContent(
+      'Scout will answer this. Other agents here answer only when you @mention them. Try @sly.',
+    );
+  });
+
+  test('never suggests an agent its own liveness row says is not connected', async () => {
+    axios.get.mockImplementation((url) => (typeof url === 'string' && url.endsWith('/agent-states')
+      ? Promise.resolve({ data: { agents: [
+        { agentName: 'guide', instanceId: 'u3f9c2a1b7d', state: 'listening', isOwner: false },
+        { agentName: 'sly-agent', instanceId: 'default', displayName: 'Sly', state: 'never-connected', isOwner: true },
+      ] } })
+      : Promise.resolve({ data: {} })));
+    try {
+      renderHarness(
+        makeMessage('can you research this', {
+          enqueued: 0, implicit: [], agentsInPod: 2, woken: 1, wokenAgents: ['guide'],
+        }),
+        jest.fn(),
+        { agents: SCOUT_AND_OWN },
+      );
+      await waitFor(() => expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/agent-states'), expect.anything()));
+      await screen.findByText(/isn.t connected yet/);
+
+      sendDraft('can you research this');
+      await screen.findAllByText('can you research this');
+
+      expect(screen.queryByText(/Try @/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/will answer this/)).not.toBeInTheDocument();
+    } finally {
+      axios.get.mockImplementation(() => Promise.resolve({ data: {} }));
+    }
+  });
+
+  test('stays hidden when every agent in the pod was woken', async () => {
+    const sendSpy = jest.fn();
+    renderHarness(
+      makeMessage('hello all', {
+        enqueued: 0, implicit: [], agentsInPod: 2, woken: 2, wokenAgents: ['guide', 'sly-agent'],
+      }),
+      sendSpy,
+      { agents: SCOUT_AND_OWN },
+    );
+
+    sendDraft('hello all');
+    await screen.findByText('hello all');
+
+    expect(screen.queryByText(/will answer this/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No agent was notified/i)).not.toBeInTheDocument();
   });
 });

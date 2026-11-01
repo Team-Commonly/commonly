@@ -71,10 +71,10 @@ describe('recordReportedCli on the real schema', () => {
     expect((await runtimeOf(row._id)).reportedCli).toBe('claude');
   });
 
-  test('a declared adapter, an adapter-shaped runtimeType or a non-BYO host is left alone', async () => {
+  test('a declared adapter or a non-BYO host is left alone; a stale adapter-shaped runtimeType gets the label', async () => {
     const declared = await install({ runtimeType: 'webhook', host: 'byo', adapter: 'pi' });
-    // The legacy binding: adapterForRuntimeBinding reads this seat as pi.
-    const legacy = await install({ runtimeType: 'pi', host: 'byo' });
+    // A stale declaration: the chip must show the poller, the binding stays codex.
+    const legacy = await install({ runtimeType: 'codex', host: 'byo' });
     const hosted = await install({ runtimeType: 'webhook', host: 'hosted' });
     // Await the very write the service issued, then assert on the rows.
     const original = AgentInstallation.updateMany.bind(AgentInstallation);
@@ -86,13 +86,13 @@ describe('recordReportedCli on the real schema', () => {
     try {
       recordReportedCli([declared._id, legacy._id, hosted._id], 'claude');
       expect(write).toHaveBeenCalledTimes(1);
-      expect((await issued).matchedCount).toBe(0);
+      expect((await issued).matchedCount).toBe(1);
     } finally {
       write.mockRestore();
     }
     expect((await runtimeOf(declared._id)).reportedCli).toBeUndefined();
     expect((await runtimeOf(declared._id)).adapter).toBe('pi');
-    expect((await runtimeOf(legacy._id)).reportedCli).toBeUndefined();
+    expect(await runtimeOf(legacy._id)).toEqual({ runtimeType: 'codex', host: 'byo', reportedCli: 'claude' });
     expect((await runtimeOf(hosted._id)).reportedCli).toBeUndefined();
   });
 });

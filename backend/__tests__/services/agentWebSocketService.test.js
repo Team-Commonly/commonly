@@ -177,7 +177,13 @@ describe('agentWebSocketService', () => {
       });
       expect(User.updateOne).toHaveBeenCalledWith(
         { _id: 'user-1', 'agentRuntimeTokens.tokenHash': hash(token) },
-        { $set: { 'agentRuntimeTokens.$.lastUsedAt': expect.any(Date) } },
+        // A WebSocket connect is a listener check-in as well as a use (TASK-719).
+        {
+          $set: {
+            'agentRuntimeTokens.$.lastUsedAt': expect.any(Date),
+            'agentRuntimeTokens.$.lastListenedAt': expect.any(Date),
+          },
+        },
       );
       expect(AgentInstallation.findOne).not.toHaveBeenCalled();
       expect(result).toEqual({
@@ -280,6 +286,13 @@ describe('agentWebSocketService', () => {
       agentWebSocketService.init(mockIo);
 
       expect(agentWebSocketService.pingInterval).not.toBeNull();
+    });
+
+    it('does not let the ping interval own process lifetime', () => {
+      jest.useRealTimers();
+      agentWebSocketService.init(mockIo);
+
+      expect(agentWebSocketService.pingInterval.hasRef()).toBe(false);
     });
 
     it('disconnects the identity room when its last installation is removed', () => {

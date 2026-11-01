@@ -233,7 +233,7 @@ input/output tokens, actual or explicitly estimated cost, outcome/fallback
 reason and resulting event IDs. No raw message bodies in general logs. Decision
 completion uses compare-and-set so a timeout and a late answer cannot both win.
 
-Production PR is Tier 2: Sable + Rhea, after CodeRabbit. Required tests include
+Production PR is Tier 2: two seat gates, after CodeRabbit. Required tests include
 rule bypass (zero inference calls), concurrent one-call reservation, crash
 fallback, invalid IDs/JSON, timeout versus late-result race, lifecycle changes
 between classification and enqueue, thread/private-pod isolation, opt-out/flag

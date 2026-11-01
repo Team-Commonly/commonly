@@ -136,6 +136,7 @@ describe('PostgreSQL Message Routes', () => {
       implicit: [],
       agentsInPod: expect.any(Number),
       woken: 0,
+      wokenAgents: [],
     });
   });
 
@@ -188,6 +189,7 @@ describe('PostgreSQL Message Routes', () => {
         implicit: [],
         agentsInPod: expect.any(Number),
         woken: 0,
+        wokenAgents: [],
       },
     });
     expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith({

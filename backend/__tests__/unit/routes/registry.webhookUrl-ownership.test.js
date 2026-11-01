@@ -7,7 +7,8 @@
  * covered: POST /install (supplying one at install time) and
  * PATCH /pods/:podId/agents/:name (setting or changing one later). The real
  * rule (services/runtimeIdentityOwnership) runs against an in-memory
- * installation set.
+ * installation set. The last block covers the https-only rule both writers
+ * apply to a new or changed URL.
  */
 const request = require('supertest');
 const express = require('express');
@@ -287,5 +288,205 @@ describe('POST /install — supplying a webhook URL', () => {
 
     expect(res.status).toBe(200);
     expect(AgentInstallation.install).toHaveBeenCalledTimes(1);
+  });
+});
+
+// TASK-303 F2: a new or changed webhook URL must be https. URLs already stored
+// as http are left alone until the census of them is in.
+describe('an http webhook URL at registration', () => {
+  const HTTP_URL = 'http://hooks.example.test/new';
+  const STORED_HTTP_URL = 'http://hooks.example.test/stored';
+  const savedFlag = process.env.OUTBOUND_WEBHOOK_ALLOW_HTTP;
+  beforeEach(() => { delete process.env.OUTBOUND_WEBHOOK_ALLOW_HTTP; });
+  afterAll(() => {
+    if (savedFlag === undefined) delete process.env.OUTBOUND_WEBHOOK_ALLOW_HTTP;
+    else process.env.OUTBOUND_WEBHOOK_ALLOW_HTTP = savedFlag;
+  });
+
+  describe('PATCH', () => {
+    // The POST /install block above replaces `find`, and clearAllMocks keeps a
+    // replaced implementation, so put back the one the module mock declares.
+    beforeEach(() => {
+      AgentInstallation.find.mockImplementation((filter) => (
+        filter.status === 'active' ? queryResult(mockInstalls) : queryResult([mockPrimary])
+      ));
+    });
+    const row = (storedUrl) => ({
+      agentName: 'relay',
+      podId: 'pod-1',
+      instanceId: 'default',
+      status: 'active',
+      installedBy: INSTALLER,
+      config: new Map(Object.entries({ runtime: { runtimeType: 'webhook', webhookUrl: storedUrl } })),
+      save: jest.fn().mockResolvedValue(true),
+    });
+    const patch = (config) => request(app)
+      .patch('/api/registry/pods/pod-1/agents/relay')
+      .send({ instanceId: 'default', config });
+    const storedUrlOf = (installation) => installation.config.get('runtime').webhookUrl;
+
+    test('changing to an http URL is refused, and nothing is written', async () => {
+      mockPrimary = row(STORED_URL);
+      mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+
+      const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: HTTP_URL } });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('webhook_url_refused');
+      expect(mockPrimary.save).not.toHaveBeenCalled();
+      expect(storedUrlOf(mockPrimary)).toBe(STORED_URL);
+    });
+
+    test('an admin is refused too', async () => {
+      mockCaller = ADMIN;
+      setCallerRole('admin');
+      mockPrimary = row(STORED_URL);
+      mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+
+      const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: HTTP_URL } });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('webhook_url_refused');
+      expect(mockPrimary.save).not.toHaveBeenCalled();
+    });
+
+    test('resending a stored http URL still patches the row', async () => {
+      mockPrimary = row(STORED_HTTP_URL);
+      mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+
+      const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: STORED_HTTP_URL }, note: 'renamed' });
+
+      expect(res.status).toBe(200);
+      expect(mockPrimary.save).toHaveBeenCalledTimes(1);
+      expect(mockPrimary.config.get('note')).toBe('renamed');
+      expect(storedUrlOf(mockPrimary)).toBe(STORED_HTTP_URL);
+    });
+
+    // The PATCH also writes this identity's rows in the caller's other pods,
+    // so resending this row's http URL is a change for a peer row holding an
+    // https one (Otto 5678408988).
+    describe('with a peer row in another pod', () => {
+      const peerRow = (storedUrl) => ({ ...row(storedUrl), podId: 'pod-2' });
+      const withPeer = (peer) => {
+        AgentInstallation.find.mockImplementation((filter) => (
+          filter.status === 'active' ? queryResult(mockInstalls) : queryResult([mockPrimary, peer])
+        ));
+        Pod.find.mockReturnValue(queryResult([
+          { _id: 'pod-1', members: [{ userId: INSTALLER }] },
+          { _id: 'pod-2', members: [{ userId: INSTALLER }] },
+        ]));
+        mockInstalls = [activeInstall(INSTALLER, 'pod-1'), activeInstall(INSTALLER, 'pod-2')];
+      };
+
+      test('resending this row\'s http URL is refused when a peer row holds an https one, and nothing is written', async () => {
+        mockPrimary = row(STORED_HTTP_URL);
+        const peer = peerRow(STORED_URL);
+        withPeer(peer);
+
+        const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: STORED_HTTP_URL } });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('webhook_url_refused');
+        expect(mockPrimary.save).not.toHaveBeenCalled();
+        expect(peer.save).not.toHaveBeenCalled();
+        expect(storedUrlOf(peer)).toBe(STORED_URL);
+      });
+
+      test('resending an http URL both rows already hold still patches both', async () => {
+        mockPrimary = row(STORED_HTTP_URL);
+        const peer = peerRow(STORED_HTTP_URL);
+        withPeer(peer);
+
+        const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: STORED_HTTP_URL }, note: 'renamed' });
+
+        expect(res.status).toBe(200);
+        expect(mockPrimary.save).toHaveBeenCalledTimes(1);
+        expect(peer.save).toHaveBeenCalledTimes(1);
+        expect(peer.config.get('note')).toBe('renamed');
+        expect(storedUrlOf(peer)).toBe(STORED_HTTP_URL);
+      });
+    });
+
+    test('the operator flag lets an http URL through', async () => {
+      process.env.OUTBOUND_WEBHOOK_ALLOW_HTTP = 'true';
+      mockPrimary = row(STORED_URL);
+      mockInstalls = [activeInstall(INSTALLER, 'pod-1')];
+
+      const res = await patch({ runtime: { runtimeType: 'webhook', webhookUrl: HTTP_URL } });
+
+      expect(res.status).toBe(200);
+      expect(storedUrlOf(mockPrimary)).toBe(HTTP_URL);
+    });
+  });
+
+  describe('POST /install', () => {
+    const install = (config) => request(app).post('/api/registry/install').send({
+      agentName: 'relay',
+      podId: 'pod-1',
+      instanceId: 'default',
+      version: '1.0.0',
+      scopes: [],
+      config,
+    });
+
+    beforeEach(() => {
+      AgentRegistry.getByName.mockResolvedValue({
+        agentName: 'relay',
+        displayName: 'Relay',
+        latestVersion: '1.0.0',
+        manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
+      });
+      AgentRegistry.incrementInstalls.mockResolvedValue({ acknowledged: true });
+      AgentInstallation.find.mockImplementation(() => {
+        const chain = { collation: () => chain, select: () => chain, lean: () => Promise.resolve([]) };
+        return chain;
+      });
+      AgentInstallation.install.mockImplementation(async (agentName, podId, options) => ({
+        _id: { toString: () => 'install-1' },
+        agentName,
+        instanceId: options.instanceId,
+        status: 'active',
+        scopes: [],
+        config: options.config,
+      }));
+      User.findOne.mockReturnValue({ select: () => ({ lean: () => Promise.resolve(null) }) });
+      AgentProfile.findOneAndUpdate.mockResolvedValue(true);
+      AgentTemplate.find.mockReturnValue({ select: () => ({ lean: () => Promise.resolve([]) }) });
+    });
+
+    test('an http URL is refused, and nothing is installed', async () => {
+      const res = await install({ runtime: { runtimeType: 'webhook', webhookUrl: HTTP_URL } });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('webhook_url_refused');
+      expect(AgentInstallation.install).not.toHaveBeenCalled();
+      expect(AgentProfile.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    test('an admin is refused too', async () => {
+      mockCaller = ADMIN;
+      setCallerRole('admin');
+
+      const res = await install({ runtime: { runtimeType: 'webhook', webhookUrl: HTTP_URL } });
+
+      expect(res.status).toBe(400);
+      expect(AgentInstallation.install).not.toHaveBeenCalled();
+    });
+
+    test('the same install over https goes through', async () => {
+      const res = await install({ runtime: { runtimeType: 'webhook', webhookUrl: NEW_URL } });
+
+      expect(res.status).toBe(200);
+      expect(AgentInstallation.install).toHaveBeenCalledTimes(1);
+    });
+
+    test('the operator flag lets an http URL through', async () => {
+      process.env.OUTBOUND_WEBHOOK_ALLOW_HTTP = 'true';
+
+      const res = await install({ runtime: { runtimeType: 'webhook', webhookUrl: HTTP_URL } });
+
+      expect(res.status).toBe(200);
+      expect(AgentInstallation.install.mock.calls[0][2].config.runtime.webhookUrl).toBe(HTTP_URL);
+    });
   });
 });

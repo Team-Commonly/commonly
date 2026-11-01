@@ -1,6 +1,6 @@
 # Initiative primitive: design proposal (I-1)
 
-Status: **Accepted** (2026-10-26), ratified by the project cofounder. It was Proposed and reviewed before ratification. Pin: `ec85e625c` (main). No code in this document; the build follows the rows in section 6.
+Status: **Accepted** (2026-10-26). It was Proposed and reviewed before ratification. Pin: `ec85e625c` (main). No code in this document; the build follows the rows in section 6.
 
 ## Problem
 

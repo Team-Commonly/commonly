@@ -1,4 +1,7 @@
 import { createOwnKeyResolver, createMachineReportClient } from '../lib/own-key-launch.js';
+import { foregroundDaemonHint } from '../lib/daemon-hint.js';
+import { loadDaemonRecord } from '../lib/daemon-store.js';
+import { daemonSeatLogPath, logSize, readAppended, readLogTail } from '../lib/daemon-logs.js';
 import { WALKED_HARNESSES } from '../lib/runtime-inventory.js';
 import { createRuntimeReporter } from '../lib/runtime-observation.js';
 /**
@@ -14,6 +17,7 @@ import { createRuntimeReporter } from '../lib/runtime-observation.js';
  * heartbeat  — manually trigger an agent's heartbeat
  */
 
+import { refreshMcpTokenCopy, removeMcpTokenCopy } from '../lib/mcp-token.js';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'fs';
 import { join, dirname, basename, resolve as pathResolve } from 'path';
 import { homedir, tmpdir } from 'os';
@@ -51,6 +55,7 @@ import {
 import { catchUpBeforeTurn } from '../lib/pod-catch-up.js';
 import { readLongTerm, syncBack } from '../lib/memory-bridge.js';
 import { pollRetryPolicy } from '../lib/poll-retry.js';
+import { createPollLiveness, formatStall, resolvePollLivenessMs } from '../lib/poll-liveness.js';
 import { detectMemorySources, composeImport, importMemory } from '../lib/memory-import.js';
 import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
 import { compileServerSkills } from '../lib/server-skills.js';
@@ -80,14 +85,17 @@ import {
   readPodFocus,
 } from '../lib/pod-focus.js';
 import { claimReleaseFor, ackResultFor, EMPTY_OUTPUT } from '../lib/claim-outcome.js';
+import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
+import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
 import { createSeatStop } from '../lib/seat-stop.js';
 import { detectSeatbelt } from '../lib/sandbox/seatbelt.js';
 import { describeUpstreamRefusal } from '../lib/upstream-refusal.js';
+import { createTurnRunner, supervisedRunPolicy } from '../lib/supervised-turn.js';
 import {
   DEFAULT_HOOK_TIMEOUT_MS,
   clampHookTimeoutMs,
@@ -142,6 +150,12 @@ export const saveAgentToken = (name, record) => {
     JSON.stringify({ ...record, savedAt: new Date().toISOString() }, null, 2),
     { encoding: 'utf8', mode: 0o600 },
   );
+  // After the record is durable, so a failed refresh never loses a freshly minted token.
+  try {
+    refreshMcpTokenCopy(name, record?.runtimeToken);
+  } catch (err) {
+    console.warn(`Could not refresh the MCP token copy for '${name}': ${err.message}. Run: commonly mcp config --agent ${name}`);
+  }
 };
 
 export const loadAgentToken = (name) => {
@@ -157,6 +171,7 @@ export const loadAgentToken = (name) => {
 export const deleteAgentToken = (name) => {
   const file = tokenFile(name);
   if (existsSync(file)) rmSync(file);
+  removeMcpTokenCopy(name);
 };
 
 // ── env-var bootstrap for `agent run` (#913) ────────────────────────────────
@@ -178,8 +193,7 @@ export const NO_AGENT_CLI_CODE = 'no_agent_cli';
  * workspace, and an environment that is absent or enforces nothing (a record
  * from before bootstrap applied the default, or one attached without an
  * environment file). Such a record is told how to pick the default up; it is
- * not rewritten here (Cofounder, 2026-10-16: none were found outside our own
- * tests).
+ * not rewritten here.
  */
 export const savedSeatLacksDefaultSandbox = (record) => Boolean(record)
   && ADAPTERS_WITH_DEFAULT_SANDBOX.has(record.adapter)
@@ -490,6 +504,81 @@ export const bootstrapAgentRecordFromEnv = async ({
 };
 
 /**
+ * `commonly agent list`. Without --pod it reads the admin installs route, which
+ * only a global admin can call. With --pod it reads the member-gated pod roster,
+ * so a pod member lists its own seats. Returns the exit code, never exits itself.
+ * Any throw becomes one Failed line and exit 1.
+ */
+export const runAgentList = async (opts = {}, deps = {}) => {
+  const { error = console.error } = deps;
+  try {
+    return await listAgents(opts, deps);
+  } catch (err) {
+    error(`Failed: ${err.message}`);
+    return 1;
+  }
+};
+
+const listAgents = async (opts, deps) => {
+  const {
+    clientFactory = createClient,
+    tokenFor = getToken,
+    instanceUrlFor = resolveInstanceUrl,
+    log = console.log,
+    error = console.error,
+  } = deps;
+  const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
+
+  if (opts.local) {
+    const agents = listLocalAgents();
+    if (agents.length === 0) {
+      log('No agents attached locally. Run: commonly agent attach <adapter> --pod <podId> --name <n>');
+      return 0;
+    }
+    log(`${col('NAME', 20)} ${col('ADAPTER', 10)} ${col('POD', 26)} LAST TURN`);
+    log('─'.repeat(80));
+    agents.forEach((a) => {
+      const lastTurn = a.lastTurn ? new Date(a.lastTurn).toLocaleString() : 'never';
+      log(`${col(a.name, 20)} ${col(a.adapter, 10)} ${col(a.podId, 26)} ${lastTurn}`);
+    });
+    return 0;
+  }
+
+  const token = tokenFor(opts.instance);
+  if (!token) { error('Not logged in. Run: commonly login'); return 1; }
+
+  const client = clientFactory({ instance: instanceUrlFor(opts.instance), token });
+
+  try {
+    const rows = opts.pod
+      ? (await client.get(`/api/registry/pods/${encodeURIComponent(opts.pod)}/agents`)).agents || []
+      : (await client.get('/api/registry/admin/installations')).installations || [];
+
+    if (rows.length === 0) {
+      log('No agents installed.');
+      return 0;
+    }
+
+    log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
+    log('─'.repeat(80));
+    rows.forEach((inst) => {
+      // The pod roster names the agent `name`; the admin route uses `agentName`.
+      const displayName = opts.pod ? (inst.name || inst.agentName) : inst.agentName;
+      const runtimeType = inst.config?.runtime?.runtimeType || inst.runtime?.runtimeType || inst.runtimeType || '?';
+      const host = inst.config?.runtime?.host || inst.runtime?.host || '';
+      const seen = inst.lastActiveAt || inst.usage?.lastUsedAt || inst.connection?.lastSeenAt;
+      const lastSeen = seen ? new Date(seen).toLocaleString() : 'never';
+      log(`${col(displayName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
+    });
+    return 0;
+  } catch (err) {
+    error(`Failed: ${err.message}`);
+    if (err.status === 403 && !opts.pod) error('Listing every install needs a global admin. Pass --pod <podId> to list one pod you belong to.');
+    return 1;
+  }
+};
+
+/**
  * Enumerate every agent attached on this laptop — i.e. every file in
  * ~/.commonly/tokens/*.json. Cross-references the session store for a
  * "last turn" timestamp per agent so the user sees cold vs. live agents.
@@ -530,6 +619,29 @@ export const listLocalAgents = () => {
       };
     })
     .filter(Boolean);
+};
+
+/**
+ * The token files listLocalAgents drops: present, but not readable JSON.
+ * `commonly doctor` reports them, because a dropped file otherwise reads as
+ * "no agent here" and lets doctor pass on a seat that cannot start.
+ * Throws when the directory exists but cannot be read, for doctor to report.
+ */
+export const listUnreadableAgentTokens = () => {
+  let files;
+  try {
+    files = readdirSync(tokensDir());
+  } catch (error) {
+    // Only a missing directory means no agents. existsSync also answers false
+    // for EACCES on an ancestor, which is why this reads instead of checking.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return [];
+    throw error;
+  }
+  return files
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => f.slice(0, -'.json'.length))
+    .filter((name) => !loadAgentToken(name))
+    .sort();
 };
 
 // Chat event types whose payload already contains the prompt the wrapper
@@ -717,7 +829,7 @@ export const assertSandboxDeclaredForPublicPod = async ({
     );
   }
 
-  // Normalized FIRST (Vera 71715, Wren 71718): the predicate below reads a
+  // Normalized FIRST: the predicate below reads a
   // legacy `internal` record as the `public` it means, the same mapping the
   // attach gate and both adapters use. Reading it raw refused a record that
   // means public one call before the gate #1840 fixes — TASK-113 claims
@@ -904,7 +1016,7 @@ export const updateAgentConfiguration = async ({
  * The sandbox an attach will actually run under — derived, then gated.
  *
  * The trust is normalized ONCE, before it is used for anything. A stored
- * `internal` means `public` (environment.js, Wren 69585), and resolving the mode
+ * `internal` means `public` (environment.js), and resolving the mode
  * off the raw value made this gate disagree with the adapters in BOTH
  * directions: `{ trust: 'internal' }` with no declared mode left the attach-time
  * mode at `'none'` and refused nothing here, and `internal` beside
@@ -917,8 +1029,7 @@ export const updateAgentConfiguration = async ({
  * either way; what was wrong is that this gate's verdict contradicted theirs, and
  * its refusal for the `mode: 'none'` shape landed later, at adapter spawn, after
  * attach had already published and minted. Normalizing here makes the two agree
- * and puts the refusal where the user can see it (Kai, TASK-113; re-measured at
- * source after Vera 71664).
+ * and puts the refusal where the user can see it (TASK-113).
  *
  * Whether the resolved mode is AVAILABLE here — bwrap installed, macOS for
  * Seatbelt, the codex permission-profile version — is deliberately not this
@@ -932,7 +1043,7 @@ export const updateAgentConfiguration = async ({
  * codex.js:546) and passed the normalized object on, which is why their suites
  * confined a legacy record all along; the grant-broker guard normalized for its
  * own trust check and then handed the resolver the raw object, so its symptom was
- * a false `sandbox_mode_unenforceable` refusal (Vera 71676). Both are settled on
+ * a false `sandbox_mode_unenforceable` refusal. Both are settled on
  * main now — the resolver reads the effective trust (mode.js:38) and the guard
  * imports the same reader from environment.js (grant-broker-guard.js:186) — so
  * this helper needs no coupling to them: it normalizes once, here, before its own
@@ -944,7 +1055,7 @@ export const resolveAttachSandbox = ({
   // An adapter that enforces one confined shape of its own (dsh: Seatbelt with a
   // restricted network and NO trust) says so here, and its check is the one that
   // decides: the trust-keyed gates below cannot express that shape, so before
-  // this they refused the only environment dsh accepts (D106). The adapter's
+  // this they refused the only environment dsh accepts. The adapter's
   // check throws on every other shape, so this admits nothing it would refuse.
   if (typeof adapter?.confinesOwnSandbox === 'function' && adapter.confinesOwnSandbox(environment)) {
     return { mode: environment.sandbox.mode, trust: environment.sandbox.trust };
@@ -967,7 +1078,7 @@ export const resolveAttachSandbox = ({
       `sandbox.trust=${trust} requires an enforced sandbox mode; refusing to attach unsandboxed`,
     );
   }
-  // Moved in from the call site (Vera 71675): this is the check the raw compare
+  // Moved in from the call site: this is the check the raw compare
   // used to fail closed on, refusing `internal` beside `mode: 'workspace'`. It is
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
@@ -1355,6 +1466,20 @@ const extractPrompt = (event) => {
   return null;
 };
 
+// The supervisor's policy for a run-loop spawn: lib/supervised-turn.js has the
+// stall windows per adapter (codex 15 min, claude off) and their evidence, the
+// cancel grace, and the wall-clock backstop past the adapter's own timeout.
+export { supervisedRunPolicy };
+
+// Codex turns are supervised by default (D211): a turn that stops making
+// progress is named and killed instead of holding the seat. COMMONLY_SUPERVISE_RUNS=0
+// opts out. Every other adapter stays off unless COMMONLY_SUPERVISE_RUNS=1.
+export const superviseRunsByDefault = (adapterName, env = process.env) => {
+  if (env.COMMONLY_SUPERVISE_RUNS === '0') return false;
+  if (adapterName === 'codex') return true;
+  return env.COMMONLY_SUPERVISE_RUNS === '1';
+};
+
 /**
  * Start the run loop. Polls /events, spawns the adapter per event, posts the
  * result into the pod, acks.
@@ -1430,7 +1555,23 @@ export const performRun = ({
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
+  // Each spawn runs under the seats supervisor (stall window, wall-clock
+  // backstop, a named failure on every settle) when superviseRuns is true.
+  // Unset, the default comes from superviseRunsByDefault. The CLI still talks
+  // to its provider directly, and one metadata line per turn goes to
+  // ~/.commonly/state/turns/<agent>.jsonl once delivery settles. Off, the spawn
+  // path is the plain adapter call it has always been, and nothing is written.
+  superviseRuns,
+  // TASK-338. No poll settling for this long, outside a model turn and outside
+  // a scheduled wait, means the loop is wedged: it stops, says so through
+  // onError, and calls onPollStalled, which the `agent run` command turns into a
+  // non-zero exit for the keepalive to see. Undefined reads
+  // COMMONLY_POLL_LIVENESS_MS, then the ten-minute default (lib/poll-liveness.js).
+  pollLivenessMs,
+  pollLivenessCheckMs,
+  onPollStalled,
 }) => {
+  const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
   if (environment?.provider !== undefined && !adapter?.supportsProvider) {
     throw new Error('environment.provider requires a provider-capable adapter');
@@ -1439,6 +1580,12 @@ export const performRun = ({
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
     ? Math.min(requestedTurnTimeout, 2_147_483_647) : 15 * 60 * 1000;
   const client = createClient({ instance: instanceUrl, token });
+  // The supervised run keeps its trace in memory, metadata only; no record of
+  // a run is written to disk (lib/supervised-turn.js).
+  const turnRunner = createTurnRunner({
+    seat: agentName, turnTimeoutMs: effectiveTurnTimeoutMs, supervise: supervising, log,
+  });
+  if (supervising) log(turnRunner.describe(adapter?.name));
   const runtimeReporter = createRuntimeReporter({
     client: runtimeReportClient || { post: async () => {} },
     harness: adapter.name, detect: () => adapter.detect(),
@@ -1490,7 +1637,7 @@ export const performRun = ({
   // (`daemon-supervisor.js`); this is the same predicate at the only other site
   // that can see the record — same code, so one refusal with two emitters.
   //
-  // IN MEMORY, RECORD UNTOUCHED (wren 71641): the withheld environment is what
+  // IN MEMORY, RECORD UNTOUCHED: the withheld environment is what
   // the adapter spawns with, and the stored record keeps its broker, so the
   // daemon stays the layer that judges a host it knows. Applied once for the
   // run rather than per turn: `agent run` reads its record once at boot.
@@ -1526,6 +1673,26 @@ export const performRun = ({
   const MAX_AUTH_ERRORS = 3;
   let consecutivePollFailures = 0;
   let consecutiveSpawnFailures = 0;
+  let pollStalled = false;
+  const pollLiveness = createPollLiveness({
+    limitMs: resolvePollLivenessMs(pollLivenessMs),
+    checkEveryMs: pollLivenessCheckMs,
+    onStall: ({ stalledMs }) => {
+      // A loop that already stopped itself (auth, a superseded delivery) is
+      // draining, not wedged.
+      if (!running) return;
+      pollStalled = true;
+      running = false;
+      pollLiveness.stop();
+      // The same teardown as stop(): a held retry must not keep renewing its
+      // lease on a loop that will never deliver it.
+      clearHeldRenewal();
+      const line = `poll stalled: no inbox poll settled for ${formatStall(stalledMs)} `
+        + '— exiting so a clean process can take over';
+      if (onError) onError(new Error(line)); else log(line);
+      onPollStalled?.({ stalledMs });
+    },
+  });
   const spawnJitterRatio = retryJitterRatio ?? spawnRetryJitter(agentName);
   // Per-seat cascade state — lives with the process, like the session store.
   // A wrapper restart forgets the streak; the decay window covers that gap.
@@ -1538,6 +1705,7 @@ export const performRun = ({
     warn: (message) => log(`cascade config: ${message}`),
   });
   const cascadeGovernor = createCascadeGovernor(cascadeSettings);
+  const claimedWorkGate = createClaimedWorkGate({ client });
   // Unconditional, because the only other cascade line on this path is the
   // warn callback above — which fires only when a value is BAD. Without this,
   // a seat running COMMONLY_CASCADE_CAP=8 logs exactly what a seat on the
@@ -1693,6 +1861,13 @@ export const performRun = ({
     // Recording a human trigger sets the streak to 0, so this call and the
     // completion-time one are idempotent with each other.
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    // Defer-while-claimed (TASK-640), before the cascade check so a deferred
+    // broadcast spends none of the addressed grace.
+    if (await claimedWorkGate.shouldDefer(eventPodId, [{ event, trigger }])) {
+      log(`[${event.type}] holding a claimed row in pod ${eventPodId} — broadcast`
+        + (event?.payload?.messageId ? ` ${event.payload.messageId}` : '') + ' acked without a spawn');
+      return { outcome: 'no_action', reason: 'claimed-work', details: { messageId: event?.payload?.messageId || null } };
+    }
     const admission = cascadeGovernor.admit(eventPodId, trigger, event.type, event.payload);
     if (!admission.allowed) {
       // Name the MESSAGE, not just the pod. Without this the refusal is silent at
@@ -1843,8 +2018,21 @@ export const performRun = ({
 
   // The spawn → post-decision half of a turn, split out so the claim release
   // above is a plain finally instead of threading through every return path.
-  const runTurn = async ({
-    event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger,
+  // With supervising, the turn's log line is written once delivery has
+  // settled; anything thrown after a spawn that resolved means the reply never
+  // reached the pod. Off, `turn` writes nothing.
+  const runTurn = async (args) => {
+    const turn = turnRunner.begin({ eventType: args.event.type });
+    try {
+      return await runTurnBody({ ...args, turn });
+    } catch (error) {
+      turn.finish('reply_lost');
+      throw error;
+    }
+  };
+
+  const runTurnBody = async ({
+    event, eventPodId, prompt, preSpawnIds, snapshotMessages, claimKeeper, trigger, turn,
   }) => {
     const placement = await placeTurn();
     // A workspace turn placed public (its pod turned public, or its pods could
@@ -1903,7 +2091,7 @@ export const performRun = ({
     const memoryWithheld = Boolean(placement.reason);
     const memoryLongTerm = memoryWithheld ? undefined : await readLongTerm(client, { onError });
 
-    // Sharpen TASK-129: focus is a turn-start read, not an enqueue-time
+    // TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
     // before spawn so queued events observe the current revision. The helper
     // disables pod-skill synthesis and throws on failure; the surrounding
@@ -1997,8 +2185,8 @@ export const performRun = ({
     try {
       opened = await lease.open();
     } catch (err) {
-      // A VERDICT IS NOT A CRASH, AND IT IS NOT A NO-OP (wren 72153, vera
-      // 72157). Letting it escape as a bare throw left `turnResult` undefined,
+      // A VERDICT IS NOT A CRASH, AND IT IS NOT A NO-OP.
+      // Letting it escape as a bare throw left `turnResult` undefined,
       // so `claimReleaseFor` returned the legacy holder-only DELETE — right for
       // a transient failure, wrong for a refusal that recurs on every
       // redelivery: the wake loops forever with one local log line as its only
@@ -2067,7 +2255,8 @@ export const performRun = ({
             reason: 'own-key-requires-scoped-spawn' };
         }
       }
-      result = await adapter.spawn(frameDecisionForkRule(promptForSpawn), {
+      const spawnPrompt = frameDecisionForkRule(promptForSpawn);
+      const spawnCtx = {
         onSpawn: reportRuntime ? (controls) => {
           observedSpawn = true;
           return runtimeReporter.spawn(controls);
@@ -2099,7 +2288,10 @@ export const performRun = ({
         instanceUrl,
         agentName,
         metadata: { event },
-      });
+      };
+      // Supervised or plain, a failure is thrown exactly as the adapter's own
+      // would be, so the run loop's classification and retry apply unchanged.
+      result = await turn.run(adapter, spawnPrompt, spawnCtx);
       spawnCompleted = true;
     } finally {
       try {
@@ -2182,6 +2374,9 @@ export const performRun = ({
     const upstream = result.upstream || null;
     let delivered = agentPostedItself;
     let deliveryRefusal = null;
+    // What became of the reply, for the turn line (lib/supervised-turn.js
+    // TURN_OUTCOMES). A throw below is reply_lost, finished by runTurn.
+    let turnOutcome;
 
     if (event.type === 'agent.ask') {
       if (silentReply) {
@@ -2191,6 +2386,7 @@ export const performRun = ({
         // having nothing to say.
         if (upstream) log(`[${event.type}] ${describeUpstreamRefusal(upstream)} — no private response`);
         else log(`[${event.type}] no private response (${reason})`);
+        turnOutcome = upstream ? 'upstream_refused' : 'silent';
       } else {
         try {
           await client.post(
@@ -2198,6 +2394,7 @@ export const performRun = ({
             { content: replyText },
           );
           delivered = true;
+          turnOutcome = 'delivered';
           log(`[${event.type}] routed private response (${Buffer.byteLength(replyText)} bytes)`);
         } catch (err) {
           // A tool-capable agent may have called commonly_respond_to_ask
@@ -2206,6 +2403,7 @@ export const performRun = ({
           // the model forever.
           if (err?.status === 409 && err?.body?.code === 'already_responded') {
             delivered = true;
+            turnOutcome = 'delivered';
             log(`[${event.type}] response already routed by agent tool`);
           } else {
             throw err;
@@ -2233,6 +2431,7 @@ export const performRun = ({
       // Report the two cases distinctly. `posted` is the load-bearing word: a
       // reader scanning for whether a seat is contributing must not have to
       // infer it from the absence of a different line.
+      turnOutcome = agentPostedItself ? 'delivered' : upstream ? 'upstream_refused' : 'silent';
       if (agentPostedItself) {
         log(
           `[${event.type}] posted via tool, then ${reason} — no echo needed `
@@ -2251,6 +2450,7 @@ export const performRun = ({
       // Name the message that caused the suppression. A silently dropped reply
       // is invisible to everyone; #757 went unnoticed precisely because this
       // line said only "posted via tool" with no way to tell whose post it saw.
+      turnOutcome = 'delivered';
       log(
         `[${event.type}] agent posted via tool this turn — not echoing CLI output `
         + `(avoids double-post; matched message ${suppressedBy.id} by ${suppressedBy.author} `
@@ -2260,6 +2460,7 @@ export const performRun = ({
       // ADR-018 D3: the lease lapsed mid-turn and a peer re-won the message —
       // that peer owns the conversation now, so posting would recreate the
       // two-agents-one-message crossing the claim exists to prevent.
+      turnOutcome = 'claim_lost';
       log(
         `[${event.type}] stood down — claim lost mid-turn to ${claimKeeper.getHolder()}; `
         + `reply suppressed (${Buffer.byteLength(replyText)} bytes not posted)`,
@@ -2302,6 +2503,7 @@ export const performRun = ({
         // it like a refusal: re-posting the same text inside the window would
         // only be skipped again.
         deliveryRefusal = delivery;
+        turnOutcome = 'server_skipped';
         const windowMinutes = delivery.duplicate?.dedupeWindowMinutes;
         const detail = [
           windowMinutes ? `${windowMinutes} min window` : null,
@@ -2327,6 +2529,7 @@ export const performRun = ({
         // guidance expressly says not to retry unchanged), while preserving
         // the refusal and its partial-post count for the seat and event ledger.
         deliveryRefusal = delivery;
+        turnOutcome = 'server_refused';
         const guidance = delivery.guidance || 'The server refused this message; do not retry it unchanged.';
         const detail = `after ${delivery.messages}/${delivery.attemptedMessages} message${delivery.attemptedMessages === 1 ? '' : 's'}`;
         log(`[${event.type}] wrapper delivery refused ${detail} (${delivery.reason}): ${guidance}`);
@@ -2342,12 +2545,14 @@ export const performRun = ({
         ));
       } else {
         delivered = true;
+        turnOutcome = 'delivered';
         log(
           `[${event.type}] posted ${Buffer.byteLength(replyText)} bytes as `
           + `${delivery.messages} message${delivery.messages === 1 ? '' : 's'} (${delivery.mode})`,
         );
       }
     }
+    turn.finish(turnOutcome);
     if (result.memorySummary && !memoryWithheld) {
       try {
         await syncBack(client, { summary: result.memorySummary });
@@ -2409,7 +2614,7 @@ export const performRun = ({
     // its batch and chose silence; one that printed nothing may have crashed,
     // timed out or lost its route without saying so. The bare `no_action`
     // stays the sentinel's alone, because a digest counts as read only on
-    // that (sable, #2753). Release, hand-off and spawn counting treat
+    // that (#2753). Release, hand-off and spawn counting treat
     // `empty-output` exactly as they treat a bare decline.
     if (!delivered && !replyText) return { outcome: 'no_action', reason: EMPTY_OUTPUT };
     return { outcome: delivered ? 'posted' : 'no_action' };
@@ -2745,6 +2950,17 @@ export const performRun = ({
     const trigger = triggers.includes('human') ? 'human'
       : (triggers.includes('agent') ? 'agent' : 'unknown');
     if (trigger === 'human') cascadeGovernor.record(eventPodId, trigger);
+    if (await claimedWorkGate.shouldDefer(eventPodId, wakingEntries.map((entry, index) => ({
+      event: entry.event, trigger: triggers[index],
+    })))) {
+      log(`[inbox.batch] holding a claimed row in pod ${eventPodId} — ${wakingEntries.length} broadcast`
+        + `${wakingEntries.length === 1 ? '' : 's'} acked without a spawn`);
+      // Digests are left as the cascade refusal leaves them: unread.
+      for (const entry of wakingEntries) {
+        entry.result = { outcome: 'no_action', reason: 'claimed-work', details: { messageId: entry.event.payload?.messageId || null } };
+      }
+      return { entries };
+    }
     const admissionEvent = wakingEntries.find((entry) => (
       ADDRESSED_EVENT_TYPES.has(entry.event.type) || entry.event.payload?.addressed === true
     ))
@@ -2981,6 +3197,13 @@ export const performRun = ({
     }
   };
 
+  // A model turn is not a stall, however long it runs: the liveness clock
+  // stops for it and restarts when it ends.
+  const duringTurn = async (turn) => {
+    pollLiveness.pause();
+    try { return await turn(); } finally { pollLiveness.arm(); }
+  };
+
   const tick = async () => {
     if (!running) return;
     let nextPollDelayMs = intervalMs;
@@ -2994,10 +3217,19 @@ export const performRun = ({
       // do not reintroduce a mixed-pod `limit: 10` here.
       // TASK-317: name this CLI for the chat chip. The server keeps it as a
       // display-only label (runtime.reportedCli) and never as a binding.
-      const { events = [], inboxCount } = await client.get('/api/agents/runtime/events', {
+      // The liveness clock runs from here until the next scheduled wait, paused
+      // only while a model turn runs (lib/poll-liveness.js).
+      pollLiveness.arm();
+      const page = await client.get('/api/agents/runtime/events', {
         agentName, instanceId, limit: batchLimit,
         ...(adapter?.name ? { reportedCli: adapter.name } : {}),
       });
+      pollLiveness.arm();
+      // A stall fired while this request hung: the loop has already given up on
+      // it. A plain stop() falls through instead, to the group loop's own
+      // `running` check, which leaves the page's rows to requeue as it always has.
+      if (pollStalled) return;
+      const { events = [], inboxCount } = page;
       consecutiveAuthErrors = 0;
       consecutivePollFailures = 0;
       // A deployed CLI can briefly run against an older server that still
@@ -3111,10 +3343,10 @@ export const performRun = ({
           let batch;
           try {
             // The person's item leads the prompt; the greeting rides along.
-            batch = await processEventBatch(
+            batch = await duringTurn(() => processEventBatch(
               [...group].sort((a, b) => inboxPriority(a) - inboxPriority(b)),
               pageInboxCount,
-            );
+            ));
           } catch (err) {
             await scheduleBatchRetry(err, group);
             break;
@@ -3171,7 +3403,7 @@ export const performRun = ({
         } else {
           const eventWillSpawn = Boolean(extractPrompt(event) && (event.podId || podId));
           try {
-            result = await processEvent(event);
+            result = await duringTurn(() => processEvent(event));
           } catch (err) {
             if (isContentRefusal(err)) {
               // A refused private item is acked without a pod notice: it has no
@@ -3319,6 +3551,8 @@ export const performRun = ({
     // before the next inbox read, independent of the idle polling cadence. A
     // retry scheduled in the same tick keeps its own delay: the failure report
     // names it, and a sibling's completed turn must not shorten the backoff.
+    // A wait the loop schedules itself always ends, so it is not a stall.
+    pollLiveness.pause();
     if (running) setTimeoutImpl(tick, completedModelTurn && !retryScheduled ? 3000 : nextPollDelayMs);
   };
 
@@ -3326,6 +3560,7 @@ export const performRun = ({
   return {
     stop: () => {
       running = false;
+      pollLiveness.stop();
       clearHeldRenewal();
     },
   };
@@ -3356,7 +3591,11 @@ const SDK_SOURCES = {
     botSrc: () => sdkAsset('python/bot.py', join('hello-world-python', 'bot.py')),
     sdkOut: 'commonly.py',
     botOut: (name) => `${name}.py`,
-    runHint: (name) => `COMMONLY_TOKEN=$(cat .commonly-env) python3 ${name}.py`,
+    // .commonly-env is already KEY=VALUE. Sourcing it under `set -a` exports
+    // the key as written and keeps the token out of argv (`env $(cat …)` would
+    // put it on the command line). `COMMONLY_TOKEN=$(cat …)` would set the
+    // variable to the literal `COMMONLY_TOKEN=cm_agent_…` and the bot would 401.
+    runHint: (name) => `(set -a; . ./.commonly-env; exec python3 ${name}.py)`,
   },
 };
 
@@ -3411,6 +3650,9 @@ export const performInit = async ({
   });
   const installation = installResult.installation || installResult;
   const instanceId = installation.instanceId || 'default';
+  // Same rule as `attach`: the mention handle is the instanceId when there is
+  // one, otherwise the registry agentName.
+  const mentionHandle = instanceId !== 'default' ? instanceId : (installation.agentName || agentName);
 
   let runtimeToken = installResult.runtimeToken;
   if (!runtimeToken) {
@@ -3436,6 +3678,7 @@ export const performInit = async ({
   return {
     installation,
     instanceId,
+    mentionHandle,
     runtimeToken,
     files: {
       sdk: sdkOutPath,
@@ -3525,6 +3768,9 @@ export const performDetach = async ({
  * kernel's own timestamps without conversion.
  */
 const stamp = () => new Date().toISOString();
+// An unreadable daemon record still means a daemon was registered here; the
+// hint only chooses between the two steps, so it must not throw on it.
+const hasDaemonRecord = () => { try { return Boolean(loadDaemonRecord()); } catch { return true; } };
 
 /**
  * Map `agent run`'s cascade flags onto resolveCascadeSettings' override keys.
@@ -3682,6 +3928,7 @@ Docs:
         agentName: opts.name,
         instanceId: opts.instanceId,
         intervalMs: parseInt(opts.interval, 10),
+        loginInstance: opts.instance,
         onEvent: async (event) => {
           const ts = new Date().toTimeString().slice(0, 8);
           process.stdout.write(`[${ts}] ${event.type.padEnd(18)}`);
@@ -3698,6 +3945,8 @@ Docs:
         onError: (err) => {
           console.error(`[poll error] ${err.message}`);
         },
+        // TASK-338: a wedged poll ends the process instead of idling forever.
+        onPollStalled: () => process.exit(1),
       });
 
       // Graceful shutdown
@@ -4018,7 +4267,13 @@ Docs:
       });
 
       console.log(`${stamp()} [${name}] polling ${record.instanceUrl} for events (ctrl+c to stop)`);
-      console.log(`${stamp()} [${name}] foreground mode; to background and keep it across logins, run: commonly daemon install`);
+      console.log(`${stamp()} [${name}] ${foregroundDaemonHint({ daemonRegistered: hasDaemonRecord() })}`);
+      // TASK-660: one line when this CLI is stale. Fired, not awaited, so a
+      // slow registry never delays the first poll.
+      startUpdateNotice({
+        installedVersion: installedCliVersion(),
+        log: (line) => console.log(`${stamp()} [${name}] ${line}`),
+      });
 
       const { stop } = performRun({
         instanceUrl: record.instanceUrl,
@@ -4064,6 +4319,9 @@ Docs:
         // collapsed the duplication. The conclusion survived the premise; the
         // sentence did not, and nothing in the diff pointed at it.)
         onError: (err) => console.error(`${stamp()} [${name}] ${err.message}`),
+        // TASK-338: a wedged poll ends the process, so tmux-keepalive or
+        // launchd KeepAlive, which act only on exit, start a clean one.
+        onPollStalled: () => process.exit(1),
       });
 
       // SIGTERM is the daemon's idle-boundary handoff signal. `stop()` stops
@@ -4173,6 +4431,7 @@ Docs:
         console.log('\nNext:');
         console.log(`  1. Edit ${opts.name}.py to handle events.`);
         console.log(`  2. Run: ${result.runHint}`);
+        console.log(`  3. In pod ${opts.pod}, @mention ${result.mentionHandle} to talk to it.`);
       } catch (err) {
         console.error(`Init failed: ${err.message}`);
         process.exit(1);
@@ -4194,88 +4453,88 @@ The two modes answer different questions:
 
 Use --local to find the name you'd pass to 'agent run' or 'agent detach'.
 `)
-    .action(async (opts) => {
-      if (opts.local) {
-        const agents = listLocalAgents();
-        if (agents.length === 0) {
-          console.log('No agents attached locally. Run: commonly agent attach <adapter> --pod <podId> --name <n>');
-          return;
+    .action(async (opts) => { process.exit(await runAgentList(opts)); });
+
+  // ── logs ──────────────────────────────────────────────────────────────────
+  // Without --pod, the seat's local daemon log is read. With --pod, the owner
+  // login reads recent events and runs from the member-gated seat-activity
+  // route, whichever machine the seat runs on. The owner login is never sent to
+  // the agent-runtime routes, which only accept a seat's own token.
+  agent
+    .command('logs <name>')
+    .description("Show a seat's recent log: local daemon log, or server activity with --pod")
+    .option('--pod <podId>', 'Read server-side events and runs for a pod you belong to')
+    .option('--instance-id <id>', 'Seat instance ID', 'default')
+    .option('--follow', 'Continue printing new output', false)
+    .option('--lines <n>', 'Number of trailing local lines to show', '50')
+    .option('--instance <url>', 'Target Commonly instance (with --pod)')
+    .action(async (name, opts) => {
+      if (opts.follow && opts.pod) {
+        console.error('--follow needs a local seat log; server activity is a snapshot. Re-run without --follow.');
+        process.exit(1);
+      }
+      const lines = Number(opts.lines);
+      if (!Number.isInteger(lines) || lines < 1) {
+        console.error(`--lines must be a positive integer, got '${opts.lines}'`);
+        process.exit(1);
+      }
+      if (!opts.pod) {
+        const path = daemonSeatLogPath(name);
+        let output;
+        try {
+          output = readLogTail(path, lines);
+        } catch (err) {
+          console.error(`Cannot read ${path}: ${err.message}`);
+          process.exit(1);
         }
-        const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
-        console.log(`${col('NAME', 20)} ${col('ADAPTER', 10)} ${col('POD', 26)} LAST TURN`);
-        console.log('─'.repeat(80));
-        agents.forEach((a) => {
-          const lastTurn = a.lastTurn ? new Date(a.lastTurn).toLocaleString() : 'never';
-          console.log(`${col(a.name, 20)} ${col(a.adapter, 10)} ${col(a.podId, 26)} ${lastTurn}`);
-        });
+        if (output === null) {
+          console.error(`No local log for '${name}' at ${path}. Pass --pod <podId> to read its server-side activity.`);
+          process.exit(1);
+        }
+        if (output) console.log(output);
+        if (!opts.follow) return;
+        // Poll rather than fs.watch: a rename-rotated log would leave a watch
+        // on the old inode silent. Only appended bytes are printed.
+        let offset = logSize(path);
+        const timer = setInterval(() => {
+          try {
+            const next = readAppended(path, offset);
+            offset = next.offset;
+            if (next.text) process.stdout.write(next.text);
+          } catch (err) {
+            // Rotation can leave a gap with no file; wait for it to come back.
+            if (err?.code === 'ENOENT') return;
+            console.error(`Cannot follow ${path}: ${err.message}`);
+            process.exit(1);
+          }
+        }, 1000);
+        const close = () => { clearInterval(timer); process.exit(0); };
+        process.once('SIGINT', close);
+        process.once('SIGTERM', close);
         return;
       }
 
       const token = getToken(opts.instance);
       if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
-
       const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
-
-      try {
-        const params = opts.pod ? { podId: opts.pod } : {};
-        const data = await client.get('/api/registry/admin/installations', params);
-        const installations = data.installations || data || [];
-
-        if (installations.length === 0) {
-          console.log('No agents installed.');
-          return;
-        }
-
-        const col = (s, w) => String(s ?? '').padEnd(w).slice(0, w);
-        console.log(`${col('NAME', 16)} ${col('INSTANCE', 10)} ${col('RUNTIME', 14)} ${col('HOST', 6)} ${col('STATUS', 10)} LAST SEEN`);
-        console.log('─'.repeat(80));
-        installations.forEach((inst) => {
-          const runtimeType = inst.config?.runtime?.runtimeType || inst.runtimeType || '?';
-          const host = inst.config?.runtime?.host || '';
-          const lastSeen = inst.usage?.lastUsedAt
-            ? new Date(inst.usage.lastUsedAt).toLocaleString()
-            : 'never';
-          console.log(`${col(inst.agentName, 16)} ${col(inst.instanceId, 10)} ${col(runtimeType, 14)} ${col(host, 6)} ${col(inst.status, 10)} ${lastSeen}`);
-        });
-      } catch (err) {
-        console.error(`Failed: ${err.message}`);
-        process.exit(1);
-      }
-    });
-
-  // ── logs ──────────────────────────────────────────────────────────────────
-  agent
-    .command('logs <name>')
-    .description('Stream recent events for an agent')
-    .option('--instance-id <id>', 'Instance ID', 'default')
-    .option('--follow', 'Keep polling for new events', false)
-    .option('--instance <url>', 'Target Commonly instance')
-    .action(async (name, opts) => {
-      const token = getToken(opts.instance);
-      if (!token) { console.error('Not logged in. Run: commonly login'); process.exit(1); }
-
-      const client = createClient({ instance: resolveInstanceUrl(opts.instance), token });
-
-      const fetchAndPrint = async () => {
-        const { events = [] } = await client.get('/api/agents/runtime/events', {
+      const printActivity = async () => {
+        const { events = [], runs = [] } = await client.get('/api/agents/seat-activity', {
+          podId: opts.pod,
           agentName: name,
           instanceId: opts.instanceId,
-          limit: 20,
         });
         events.forEach((e) => {
           const ts = new Date(e.createdAt).toTimeString().slice(0, 8);
-          const outcome = e.delivery?.outcome || e.status;
-          console.log(`[${ts}] ${e.type.padEnd(18)} → ${outcome}`);
+          console.log(`[${ts}] ${String(e.type).padEnd(18)} → ${e.outcome || e.status}`);
         });
-        return events;
+        runs.forEach((r) => {
+          const ts = new Date(r.startedAt).toTimeString().slice(0, 8);
+          console.log(`[${ts}] run ${String(r.trigger).padEnd(14)} → ${r.status} (${r.totalTokens} tokens)`);
+        });
+        if (events.length === 0 && runs.length === 0) console.log(`No recent activity for '${name}' in this pod.`);
       };
-
       try {
-        await fetchAndPrint();
-        if (opts.follow) {
-          console.log('Following... (Ctrl+C to stop)');
-          setInterval(fetchAndPrint, 5000);
-        }
+        await printActivity();
       } catch (err) {
         console.error(`Failed: ${err.message}`);
         process.exit(1);

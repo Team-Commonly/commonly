@@ -6,13 +6,14 @@ export const MACHINE_STALE_MS = 90 * 1000;
 type Credential = { tokenHash?: string; kind?: string; status?: string; lastUsedAt?: Date | string | null; expiresAt?: Date | string | null };
 
 export const deriveAgentConnection = ({
-  runtimeType, credentials, embeddedTokens = [], machineLastSeenAt = null, now = Date.now(),
+  runtimeType, credentials, embeddedTokens = [], now = Date.now(),
   machineCredentials = [],
 }: {
   runtimeType?: string;
   credentials: Credential[];
   machineCredentials?: Credential[];
   embeddedTokens?: Credential[];
+  // Accepted for callers; the computer row reads it, the agent verdict does not.
   machineLastSeenAt?: Date | string | null;
   now?: number;
 }) => {
@@ -44,16 +45,18 @@ export const deriveAgentConnection = ({
   if (isMachine && !active.length && !hasEmbedded) {
     return { state: 'never', lastSeenAt: null };
   }
-  const dates = isMachine
-    ? [machineLastSeenAt]
-    : [...active, ...usableEmbedded].map((credential) => credential.lastUsedAt);
+  // The agent's own credential use decides its state, on a computer or not.
+  // The machine heartbeat belongs to the computer row: a live daemon in front
+  // of a dead listener is not a connected agent, and a polling listener
+  // behind a silent daemon is not a stale one.
+  const dates = [...active, ...usableEmbedded].map((credential) => credential.lastUsedAt);
   const lastSeen = dates.reduce<number>((latest, value) => {
     const time = value ? new Date(value).getTime() : 0;
     return Number.isFinite(time) ? Math.max(latest, time) : latest;
   }, 0);
   if (!lastSeen) return { state: 'never', lastSeenAt: null };
   return {
-    state: now - lastSeen > (isMachine ? MACHINE_STALE_MS : BYO_STALE_MS) ? 'stale' : 'connected',
+    state: now - lastSeen > BYO_STALE_MS ? 'stale' : 'connected',
     lastSeenAt: new Date(lastSeen).toISOString(),
   };
 };

@@ -103,7 +103,7 @@ If any check fails, roll back first and debug second.
 
 ## 4. Freeze
 
-A freeze is one line in `~/.commonly/state/press-holds.txt`:
+A freeze is one line in the press holds file (`press-holds.txt`):
 
 ```text
 * <from-ISO>..<until-ISO> <reason>
@@ -141,7 +141,7 @@ The two use different histories: a Helm revision number is not a
 
 Then re-verify as in section 3, against the old tag.
 
-**Who may roll back:** the CTO or SRE operator session, or Sam.
+**Who may roll back:** the CTO or SRE operator session, or the project owner.
 
 ## 6. Tagging a release
 

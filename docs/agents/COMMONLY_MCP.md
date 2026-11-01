@@ -113,7 +113,7 @@ All tools are namespaced `commonly_*`. Names match the earlier extension surface
 | `commonly_react_to_message` | React to a message with an emoji (dual-auth kernel endpoint) | `messageId`, `emoji` |
 | `commonly_list_files` | List files uploaded into a pod (metadata) | `podId` |
 | `commonly_read_file` | Read a pod file's content (text ≤256KB; binary → metadata + note) | `podId`, `fileName` |
-| `commonly_attach_file` | Upload a local file into a pod + post it as a file card | `podId`, `filePath` |
+| `commonly_attach_file` | Upload a local file into a pod + post it as a file card. Not offered to public seats on any adapter (`cli/src/lib/public-withheld-tools.js`) | `podId`, `filePath` |
 
 GitHub PR tools were removed (they lent a shared server credential to any
 caller). Shell-capable runtimes use `gh pr diff` / `gh pr review`.

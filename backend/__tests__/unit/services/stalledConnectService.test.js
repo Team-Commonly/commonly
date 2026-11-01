@@ -144,7 +144,59 @@ describe('stalledConnectService.scan', () => {
       'copied the listener command a few minutes after you created the seat',
     );
     expect(posted.content).toContain('no connection arrived');
-    expect(posted.content).toContain('one thing to check for your OS');
+    // Nothing here knows the OS, so the copy doesn't claim to.
+    expect(posted.content).toContain('here is the one thing to check: run `commonly agent run ai1-agent`');
+    expect(posted.content).not.toContain('for your OS');
+  });
+
+  const copiedListenerOn = (byoOpenedOs, byoCommandType = 'cli') => mockUserFindById.mockReturnValue({
+    select: () => ({
+      lean: () => Promise.resolve({
+        username: 'alice',
+        onboarding: {
+          byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+          byoCommandType,
+          ...(byoOpenedOs ? { byoOpenedOs } : {}),
+        },
+      }),
+    }),
+  });
+
+  it.each([['linux', 'Linux'], ['windows', 'Windows']])(
+    'from a %s browser, says the listener answers @mentions only on a Mac, if it ran there',
+    async (os, label) => {
+      setup();
+      copiedListenerOn(os);
+      await scan({ now: NOW });
+      const { content } = mockPost.mock.calls[0][0];
+      // Conditional: the page shows this command only on its Mac tab, so the
+      // browser's OS is not proof of where it ran.
+      expect(content).toContain(`If you ran it on ${label}, that's likely why: the listener answers @mentions only from a Mac for now.`);
+      // The server cannot tell Claude Code from Codex, so no adapter-specific cause.
+      expect(content).not.toContain('sandbox');
+      expect(content).toContain('Run `commonly agent run ai1-agent` on a Mac');
+      expect(content).toContain('or choose “Run it here” on the Bring your own page for a hosted agent');
+      expect(content).toContain("I'll post here the moment I connect");
+      expect(content).not.toContain('one thing to check');
+    },
+  );
+
+  it.each(['mac', 'other', undefined])('with os=%p keeps the neutral check', async (os) => {
+    setup();
+    copiedListenerOn(os);
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('here is the one thing to check: run');
+    expect(content).not.toContain("can't answer @mentions");
+  });
+
+  it('an MCP copy on Linux is not told about the listener', async () => {
+    setup();
+    copiedListenerOn('linux', 'mcp');
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).not.toContain("listener can't answer");
+    expect(content).toContain('MCP-only clients can call Commonly');
   });
 
   it('explains that an MCP-only client cannot answer mentions', async () => {
@@ -167,6 +219,124 @@ describe('stalledConnectService.scan', () => {
       'MCP-only clients can call Commonly, but they do not answer @mentions',
     );
   });
+
+  const copiedKinds = (onboarding) => mockUserFindById.mockReturnValue({
+    select: () => ({ lean: () => Promise.resolve({ username: 'alice', onboarding }) }),
+  });
+
+  it('names the Terminal command when only the MCP snippet was copied (TASK-721)', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+      byoCommandType: 'mcp',
+      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+    });
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('you copied the MCP command');
+    expect(content).toContain('but not the listener command that starts me');
+    expect(content).toContain('MCP-only clients can call Commonly, but they do not answer @mentions');
+    expect(content).toContain('Run `commonly agent run ai1-agent` in a Terminal on the machine where I should live');
+    expect(content).toContain("I'll post here the moment I connect");
+  });
+
+  it('does not say the Terminal command was missed when the listener command was copied too', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+      byoCommandType: 'mcp',
+      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+      byoCliCopiedAt: new Date(OLD_TOKEN.getTime() + 9 * MINUTE),
+    });
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('you copied the listener command');
+    expect(content).not.toContain('but not the listener command');
+    expect(content).not.toContain('MCP-only clients');
+  });
+
+  it('keeps the older wording for a signup that only has the first-copy pair', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+      byoCommandType: 'mcp',
+    });
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('here is the one thing to check');
+    expect(content).not.toContain('but not the listener command');
+  });
+
+  it('does not call a pre-deploy listener copy "never copied" when an MCP copy follows', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 1 * MINUTE),
+      byoCommandType: 'cli',
+      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 5 * MINUTE),
+    });
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('you copied the listener command');
+    expect(content).not.toContain('but not the listener command');
+  });
+
+  it('makes no "missed it" claim when the listener copy is from an earlier agent and the MCP copy is inside this episode', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() - 7 * 24 * 60 * MINUTE),
+      byoCommandType: 'cli',
+      byoCliCopiedAt: new Date(OLD_TOKEN.getTime() - 7 * 24 * 60 * MINUTE),
+      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 3 * MINUTE),
+    });
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    // The first-copy mark cannot show whether this seat's listener was copied.
+    expect(content).toContain('you copied the MCP command');
+    expect(content).toContain('here is the one thing to check');
+    expect(content).toContain('MCP-only clients can call Commonly');
+    expect(content).not.toContain('but not the listener command');
+  });
+
+  it('an unparseable per-kind time falls back to the first-copy pair', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 1 * MINUTE),
+      byoCommandType: 'cli',
+      byoCliCopiedAt: 'garbage',
+      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 5 * MINUTE),
+    });
+    await scan({ now: NOW });
+    expect(mockPost.mock.calls[0][0].content).not.toContain('but not the listener command');
+  });
+
+  it('falls back to the generic nudge when every copy predates the token', async () => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() - 60 * MINUTE),
+      byoCommandType: 'mcp',
+      byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() - 60 * MINUTE),
+    });
+    await scan({ now: NOW });
+    expect(mockPost.mock.calls[0][0].content).toContain('nothing has ever started me');
+  });
+
+  it.each([['linux', 'Linux'], ['windows', 'Windows']])(
+    'MCP-only from a %s browser does not say the listener command was missed',
+    async (os, label) => {
+      setup();
+      copiedKinds({
+        byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+        byoCommandType: 'mcp',
+        byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+        byoOpenedOs: os,
+      });
+      await scan({ now: NOW });
+      const { content } = mockPost.mock.calls[0][0];
+      expect(content).toContain(`you first opened this page on ${label}`);
+      expect(content).toContain('in a Terminal on a Mac');
+      expect(content).not.toContain('but not the listener command');
+    },
+  );
 
   it('holds fire inside the patience window', async () => {
     setup({ installs: [install({ runtimeTokens: [{ createdAt: FRESH_TOKEN }] })] });
@@ -277,6 +447,18 @@ describe('stalledConnectService.scan', () => {
     expect(filter.status).toBe('active');
     expect(filter).not.toHaveProperty('runtimeTokens.0');
     expect(filter.$or).toEqual(expect.arrayContaining([{ 'config.runtime.host': 'byo' }]));
+  });
+
+  it('pre-filters the legacy unstamped polling seat that classifyRuntime calls BYO (TASK-655, #1320)', async () => {
+    setup();
+    await scan({ now: NOW });
+
+    const [filter] = mockInstallFind.mock.calls[0];
+    expect(filter.$or).toEqual(expect.arrayContaining([{
+      'config.runtime.runtimeType': 'webhook',
+      'config.runtime.host': { $in: [null, ''] },
+      'config.runtime.webhookUrl': { $in: [null, ''] },
+    }]));
   });
 });
 

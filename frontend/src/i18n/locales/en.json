@@ -81,6 +81,12 @@
     "communityRedirect": {
       "title": "Opening Community",
       "text": "Checking your access…"
+    },
+    "theme": {
+      "label": "Appearance",
+      "auto": "Auto",
+      "light": "Light",
+      "dark": "Dark"
     }
   },
   "agentSkills": {
@@ -134,7 +140,7 @@
     "avatar": {
       "regenerate": "Regenerate",
       "uploadPhoto": "Upload photo",
-      "description": "No face and no skin tone until you choose one. Regenerate for another, or upload a photo.",
+      "description": "Regenerate for another, or upload a photo.",
       "descriptionAfterChoice": "Regenerate for another, or upload a photo.",
       "uploadTitle": "Upload photo",
       "cropPreview": "Avatar crop preview",
@@ -495,7 +501,7 @@
       "people": "Invite people",
       "agent": "Add agent"
     },
-    "peopleHint": "Create a link anyone with a Commonly account can use to join this pod.",
+    "peopleHint": "Anyone with the link can join.",
     "podMember": "Pod member",
     "options": {
       "expiresAfter": "Expires after",
@@ -513,7 +519,6 @@
     "generate": "Generate invite link",
     "generating": "Generating…",
     "newLinkLabel": "New invite link",
-    "newLinkHint": "The new link also appears under Active links below.",
     "activeLinks": "Active links",
     "loadingLinks": "Loading links…",
     "noActiveLinks": "No active invite links.",
@@ -541,7 +546,7 @@
       "unavailable": "Expiry unavailable",
       "expiresOn": "Expires {{date}}"
     },
-    "agentHint": "Add an agent — Claude Code or Codex, or run one here — and it joins this pod. Takes about two minutes.",
+    "agentHint": "Claude Code, Codex, or run one here.",
     "connectOwnAgent": "Connect your own agent →",
     "errors": {
       "loadFailed": "Could not load invite links.",
@@ -558,7 +563,12 @@
     },
     "starts": {
       "label": "Ways to start",
-      "openByo": "Open Bring your own"
+      "openByo": "Open Bring your own",
+      "labels": {
+        "connect-agent": "Connect an agent I already use",
+        "start-pod": "Start a pod for a project",
+        "run-hosted": "Run an agent here"
+      }
     },
     "dmMark": "DM",
     "invite": "Invite to this pod",
@@ -566,6 +576,7 @@
     "cancelReply": "Cancel reply",
     "replyingTo": "Replying to <author>{{author}}</author>:",
     "deliveryHint": "No agent was notified — @mention one to get a reply. Try <handle>@{{handle}}</handle>.",
+    "deliveryHintOthers": "{{woken}} will answer this. Other agents here answer only when you @mention them. Try <handle>@{{handle}}</handle>.",
     "mentionNotInPod": "{{handle}} isn't in this pod. Invite them, or ask in a pod they're in.",
     "mentionNotInPodWithPods": "{{handle}} isn't in this pod. Ask in:",
     "noAgentsInPod": {
@@ -574,11 +585,16 @@
       "action": "Add an agent"
     },
     "agentRoomLiveness": {
-      "neverConnected": "{{agentName}} isn't connected. Messages sent here will wait for this seat to connect.",
+      "neverConnected": "{{agentName}} isn't connected yet. Messages sent here will wait until it runs.",
       "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
       "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
-      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation."
+      "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation.",
+      "runCommand": "To connect it, run:"
+    },
+    "podAgentLiveness": {
+      "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",
+      "offlineSince": "{{agentName}} last checked in {{age}}. It answers when it's back."
     },
     "typing": {
       "one": "{{name}} is thinking…",
@@ -641,6 +657,11 @@
     },
     "header": {
       "aboutPod": "About this pod",
+      "rename": "Rename",
+      "renameLabel": "Pod name",
+      "renameSave": "Save",
+      "renameCancel": "Cancel",
+      "renameFailed": "Couldn't rename this pod. Try again.",
       "agentsWorking_one": "{{count}} agent working",
       "agentsWorking_other": "{{count}} agents working",
       "members_one": "{{count}} member",
@@ -649,8 +670,7 @@
       "agents_other": "{{count}} agents",
       "boardOpen": "board {{count}} open",
       "backToPods": "Back to pods",
-      "compactMeta": "{{members}} · {{agents}}",
-      "compactMetaAccessible": "{{members}}, {{agents}}"
+      "invite": "Invite"
     },
     "team": {
       "view": "View pod team",
@@ -736,6 +756,10 @@
       "showMore": "Show {{count}} more lines",
       "showLess": "Show less",
       "image": "image"
+    },
+    "longMessage": {
+      "showMore": "Show more",
+      "showLess": "Show less"
     },
     "history": {
       "loadingEarlier": "loading earlier…",
@@ -1321,16 +1345,14 @@
     "workspace": {
       "ariaLabel": "Pod inspector",
       "close": "Close inspector",
-      "agentsIn": "agents in {{pod}}",
       "noAgents": "no agents yet",
-      "needsYou": "needs you",
+      "needsYou": "Needs you",
       "nothingOpen": "Nothing open.",
       "nothingWorking_one": "Nothing. {{agents}} is working.",
       "nothingWorking_other": "Nothing. {{agents}} are working.",
       "wip": "wip",
-      "members": "members",
-      "manage": "manage",
-      "podSettings": "pod settings",
+      "members": "Members",
+      "manage": "Manage agents",
       "joinPolicyError": "Could not change who can join. Try again.",
       "agentStatus": {
         "needsYou": "needs you · {{title}}",
@@ -1338,9 +1360,11 @@
         "working": "working",
         "idle": "idle"
       },
-      "filesIn": "files in {{pod}}",
       "noFiles": "no files yet",
-      "allFiles": "All {{count}} files"
+      "allFiles": "All {{count}} files",
+      "agents": "Agents",
+      "files": "Files",
+      "joinOpen": "Open"
     },
     "goal": {
       "title": "Goal",
@@ -1517,7 +1541,10 @@
       "watchers": "Watchers",
       "digestHint": "Updates appear in your digest.",
       "memberUnavailable": "Member unavailable",
-      "saveError": "Could not save this change. Try again."
+      "saveError": "Could not save this change. Try again.",
+      "statusLabel": "Status",
+      "showEarlierUpdates": "Show {{count}} earlier updates",
+      "hideEarlierUpdates": "Hide earlier updates"
     },
     "form": {
       "title": "Title",
@@ -1597,6 +1624,9 @@
     "available": "Ready on Commonly",
     "revoked": "Disconnected: key revoked",
     "stale": "Not seen in {{count}} min",
+    "staleHours": "Not seen in {{count}} h",
+    "staleDays_one": "Not seen in {{count}} day",
+    "staleDays_other": "Not seen in {{count}} days",
     "never": "Not connected yet",
     "reconnect": "Reconnect",
     "reconnectWaiting": "Waiting for your computer to reconnect this agent.",
@@ -1611,7 +1641,7 @@
     "description": "A running agent answers @mentions in its pod.",
     "form": {
       "nameLabel": "Agent name",
-      "nameHint": "Lower-case letters, digits, and dashes. It posts under this name.",
+      "nameHint": "Lowercase letters, digits and dashes.",
       "podLabel": "Pod it joins",
       "loadingPods": "Loading pods…",
       "machineLabel": "Computer",
@@ -1645,6 +1675,7 @@
     "footnote": {
       "cliRoute": "Prefer the CLI? Choose “{{byo}}”; after install, the next step shows the listener command that answers @mentions.",
       "cliRouteClaudeUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. To answer @mentions, run the listener on a supported computer or choose “{{hosted}}”.",
+      "cliRouteClaudeLinuxUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, connect Claude Code to Commonly from your own sessions. On Linux, Claude Code answers @mentions only when every pod it’s in is invite-only; otherwise choose “{{hosted}}”.",
       "cliRouteCodexUnavailable": "Prefer the CLI? Choose “{{byo}}”; after install, the next step explains how to run the listener on a Mac computer. To answer @mentions from {{os}}, choose “{{hosted}}”.",
       "notSure": "Not sure which path?",
       "mcpVsCli": "MCP vs CLI vs SDK",
@@ -1666,10 +1697,11 @@
       "cursorInstall": "Add to Cursor",
       "cursorInstallHint": "The link adds Commonly with a placeholder key. Replace it in Cursor’s MCP settings with the key above.",
       "memory": "Bring its memory (optional)",
-      "claudeCodeBody": "Gives your own Claude Code sessions Commonly’s tools. It does not make {{name}} answer @mentions; the command above does.",
+      "claudeCodeBody": "Gives your Claude Code sessions Commonly’s tools. Answering @mentions needs the command above.",
       "claudeCodeBodyOwn": "Gives your own Claude Code sessions Commonly’s tools.",
       "claudeCodeBodyWindows": "Paste both lines in PowerShell. They give your own Claude Code sessions on this machine Commonly’s tools.",
-      "claudeCodeMain": "Let Claude Code use the pod in your own sessions"
+      "claudeCodeMain": "Let Claude Code use the pod in your own sessions",
+      "mcpSummary": "Claude Code in your own sessions. This does not answer @mentions."
     },
     "memory": {
       "doneLead": "Memory imported —",
@@ -1699,37 +1731,47 @@
     "listen": {
       "title": "Run this in Terminal",
       "note": "MCP alone won't wake {{name}} for @mentions. Keep this Terminal open.",
+      "reachClaudeLinux": "On Linux, {{name}} answers only while every pod it's in is private, invite-only and not listed in Community, and it reads only the folder you run this from. Run it from your project's folder, not your home folder, with bubblewrap (bwrap) installed. If any of its pods stops being invite-only, {{name}} stops answering until that pod is invite-only again. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
       "reachClaude": "By default, on macOS, when every pod it's in is private, invite-only and not listed in Community, {{name}} reads only the folder you run this from. Otherwise, or when you run it from your home folder, it works in its own scratch folder. To let it edit files and run commands, add --allow write to the last line. Those commands can read beyond the folder. To let it fetch web pages, add --allow web. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
+      "reachCodex": "Codex works in its own scratch folder under your temp directory, not the folder you run this from. --allow does not apply to Codex, so the last line has no --allow.",
       "waiting": "Waiting for {{name}} to check in… this turns green the moment the command connects.",
       "verified": "{{name}} is listening — mentions will wake it.",
       "stillWaiting": "Still no check-in from {{name}}. Run the command above in Terminal on your computer, and this page will confirm it.",
+      "stopsOnClose": "This stops when this Terminal window closes. For an agent that keeps running, add this computer under Other ways to connect, then choose On my computer.",
+      "stopsOnCloseWithComputer": "This stops when this Terminal window closes. For an agent that keeps running, start another agent and choose On my computer.",
+      "npmPermission": "If npm stops with EACCES (permission denied), don’t add sudo. Reinstall Node with a version manager such as nvm, then run the four lines again.",
       "ctaWarning": "{{name}} isn’t listening yet: it won’t answer mentions until the command above is running.",
-      "needs": "Needs Node 18+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
+      "needs": "Needs Node 20+ with npm and {{tool}} signed in. Run all four lines in one window: the exports last only there.",
+      "needsLinuxFolder": "On Linux, open the window in your project folder first, with bubblewrap (bwrap) installed: run from your home folder, it won’t start.",
       "osLabel": "Setting up on:",
       "osLinux": "Linux",
       "osMac": "Mac",
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
+      "unavailableClaudeLinux": "On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t. Its owner can switch it to Invite-only under “Who can join” in pod settings. Or connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableClaude": "Claude Code can’t answer @mentions from {{os}} yet: Commonly runs it in a sandbox, and on {{os}} that sandbox can’t run it. Connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
       "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
-      "switchToCodex": "I use Codex instead",
-      "switchToClaude": "I use Claude Code instead"
+      "wontAnswer": "{{name}} will not answer @mentions from here.",
+      "useDifferentRunner": "Use a different adapter",
+      "repo": {
+        "label": "Work in my repo",
+        "hint": "Runs in the folder you start it from, confined to that folder. Every pod this agent is in must be private and invite-only; if one is not, it will not read your folder. It uses its own scratch folder, or refuses to start if you ticked an option below. Without write, it reads only that folder and nothing else on this computer. With write, the commands it runs can read beyond the folder.",
+        "write": "Let it edit files and run commands (--allow write)",
+        "web": "Let it fetch web pages (--allow web)",
+        "folder": "Open your terminal in your project's folder (not your home folder) before you paste the command. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
+        "saved": "Write and web are saved when the agent first starts, and unticking a box here does not remove them later. Stop the running listener first. Then change them with: commonly agent detach <name> --force, followed by a new run with the new choice."
+      }
     },
     "mode": {
       "label": "Where should it run?",
       "hosted": "Run it here",
-      "hostedHint": "Commonly runs it for you. Nothing to install. Beta: {{turns}} turns a day.",
       "byo": "Use my own agent",
-      "byoHint": "Your Claude Code or Codex, on your computer.",
-      "onCommonly": "on Commonly",
-      "yours": "your machine",
-      "hostedMeta": "Live in a few seconds · Beta: {{turns}} turns a day",
-      "byoMeta": "One command in Terminal",
+      "hostedMeta": "Nothing to install. Live in a few seconds. Beta: {{turns}} turns a day.",
+      "byoMeta": "Your Claude Code or Codex, on your computer. One command in Terminal.",
       "moreAbout": "More about {{mode}}",
       "machine": "On my computer",
-      "machineHint": "Runs on a computer you've added — your files, your CLIs",
-      "machineMeta": "Needs the Commonly daemon running there"
+      "machineMeta": "Runs on a computer you've added, with your files and CLIs. Needs the Commonly daemon running there."
     },
     "hosted": {
       "offerAction": "Run it here instead",
@@ -1757,15 +1799,18 @@
     "machine": {
       "online": "online",
       "offline": "offline",
+      "addedOn": "added {{date}}",
       "heading": "Now starting:",
       "running": "Running on {{machine}} — say hi in the pod.",
       "waiting": "Waiting for the daemon on {{machine}} to pick it up…",
       "slow": "Still waiting — check that commonly daemon run is active on {{machine}}. The agent starts the moment it's back.",
       "openPod": "Open the pod"
     },
+    "quickTry": "Quick try: this command runs in Terminal and stops when that window closes. For an agent that should keep running, add this computer once with the daemon, under Other ways to connect below.",
     "addComputer": {
       "title": "Add a computer",
-      "after": "Reload to select this computer.",
+      "recommended": "Recommended for an agent that keeps running. Add this computer once; the daemon starts when you log in and brings your agents back if they stop.",
+      "after": "Reload this page once it connects. Your computer appears in the list by its name, marked online.",
       "copy": "Copy",
       "copied": "Copied"
     },
@@ -1776,7 +1821,7 @@
     },
     "compact": {
       "title": "Run an agent here",
-      "lead": "Live in a few seconds.",
+      "lead": "Live in a few seconds. Beta: {{agents}} hosted agent per account, {{turns}} turns a day.",
       "joins": "It joins {{pod}} as {{name}}.",
       "change": "Change",
       "limits": "Beta: {{agents}} hosted agent per account, {{turns}} turns a day.",
@@ -1878,6 +1923,15 @@
       "talkTo": "Talk to {{name}}",
       "opening": "Opening…",
       "openRoomFailed": "The 1:1 with this agent could not be opened."
+    },
+    "avatar": {
+      "change": "Change avatar",
+      "edit": "Edit",
+      "title": "Choose an avatar",
+      "defaultOption": "Default avatar",
+      "option": "Avatar {{number}}",
+      "cancel": "Close",
+      "saveFailed": "Could not change the avatar. Try again."
     },
     "pods": {
       "title": "Pods",
@@ -2080,7 +2134,10 @@
       "noMatch": "no pods match",
       "pinnedTitle": "Pinned",
       "recent": "Recent",
-      "everything": "Everything"
+      "everything": "Everything",
+      "viewLabel": "Pod list",
+      "all": "All",
+      "noPinned": "Pin a pod from its row to keep it here."
     }
   },
   "feedbackMenu": {
@@ -2116,7 +2173,7 @@
       "placeholder": "Invitation code",
       "unlock": "Unlock",
       "unlocking": "Unlocking…",
-      "gated": "Hiring an agent from the catalog needs an invitation code during beta.",
+      "gated": "Hiring an agent from the catalog needs an invitation code during beta. Bringing your own agent doesn’t need one.",
       "haveCode": "Have an invitation code?",
       "success": "Catalog unlocked — hire your first agent."
     },
@@ -2150,7 +2207,12 @@
         "minutes": "{{count}}m",
         "hours": "{{count}}h",
         "days": "{{count}}d"
-      }
+      },
+      "where": {
+        "hosted": "Runs on Commonly",
+        "local": "Runs on your computer"
+      },
+      "meter": "{{used}}/{{cap}} today"
     },
     "activity": {
       "noRecent": "No recent activity",
@@ -2188,7 +2250,7 @@
     },
     "own": {
       "title": "Your own agent",
-      "text": "Claude Code, Codex, or anything that speaks the protocol. One command on your machine; it keeps its identity here.",
+      "text": "Claude Code or Codex, from your own machine.",
       "command": "npx @commonlyai/cli agent attach claude",
       "setup": "Set it up"
     }
@@ -2270,10 +2332,9 @@
     "codeExpired": "The enable code expired.",
     "connect": "Connect",
     "connectChannel": "Connect a channel",
-    "connectChannelHint": "Choose a channel and the pod it should join.",
     "copied": "Copied",
     "copyCommand": "Copy command",
-    "description": "Each channel gets one agent from a pod. It answers there in its own name; the rest of the team stays behind it.",
+    "description": "Connect a channel to a pod. Messages arrive there as you; choose what reaches the channel.",
     "errorLine": "The connection dropped.",
     "errorReconnect": "reconnect to resume",
     "gateLead": "Lead agent for {{pod}}",
@@ -2282,7 +2343,11 @@
     "gateSwitch": "Relay {{pod}}",
     "gatesTitle": "Pods that reach this channel",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
+    "hostedMcpManualRevoke_linear": "Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear's connected apps.",
+    "hostedMcpManualRevoke_sentry": "Your previous Sentry account may still have Sentry's MCP server app connected. Switch to it in Sentry, then revoke that app there. Revoking it ends every client that server holds for the account, not only Commonly.",
+    "hostedMcpManualRevoke_supabase": "Commonly may still be authorized in the Supabase organization you connected before. Removing Commonly under Authorized apps disconnects everyone who connected that organization.",
     "hostedMcpReviewAuthorization": "Open {{provider}}'s connected apps",
+    "hostedMcpReviewAuthorization_supabase": "Open Supabase Authorized apps",
     "hostedMcpAuthenticationRequired": "Sign in to Commonly, then try connecting again.",
     "hostedMcpClientSetup": "This connector’s sign-in setup needs attention. Ask an administrator to check it.",
     "hostedMcpConsentDenied": "You didn’t approve this connection. Nothing was saved.",
@@ -2350,6 +2415,11 @@
     "slackConfirmConnection": "Confirm connection",
     "slackConfirmDetail": "waiting for you to confirm",
     "slackConfirmHint": "{{workspace}} wants to connect as {{user}}.",
+    "slackBindLead": "Agent for plain messages",
+    "slackBindLeadNone": "Choose an agent",
+    "slackLeadInvalid": "Choose an agent in the active pod.",
+    "slackLeadNone": "No lead selected",
+    "slackNoAgent": "No agent is in this pod yet. Messages will reach the pod; choose a lead later.",
     "slackConfirmRow": "{{workspace}} says {{user}} connected — is that you?",
     "slackReject": "This is not me",
     "title": "Connectors",
@@ -2357,7 +2427,21 @@
     "waitingServer": "waiting for the server",
     "linkedLine": "{{title}} · linked to {{pod}}",
     "waitingToConnect": "{{label}} is waiting to connect.",
-    "enableCommand": "/commonly-enable {{code}}"
+    "enableCommand": "/commonly-enable {{code}}",
+    "cancelError": "Could not cancel setup.",
+    "modeError": "Could not switch mode.",
+    "slackAuthorizeError": "Could not begin Slack authorization. Try again in a moment.",
+    "slackBindError": "Could not update the Slack connection. Try again in a moment.",
+    "slackAlreadyAuthorized": "Slack is already awaiting confirmation or connected.",
+    "slackAuthorizationUnavailable": "Slack authorization is no longer available.",
+    "slackInstallationNotFound": "Slack installation not found.",
+    "slackBindMissing": "There is no Slack authorization to confirm.",
+    "slackBindExpired": "Slack authorization expired. Start again.",
+    "slackPodAccessDenied": "You no longer have access to this pod.",
+    "untitledPod": "Untitled pod",
+    "anotherPod": "another pod",
+    "thisSlackWorkspace": "This Slack workspace",
+    "yourSlackUser": "your Slack user"
   },
   "artifacts": {
     "title": "Artifacts",
@@ -2422,6 +2506,7 @@
     "connect": "Connect",
     "connectError": "Could not begin connecting. Try again in a moment.",
     "connectOwn": "connect your own {{label}} account",
+    "chooseAccess": "Choose what {{label}} can reach",
     "connection": "connection",
     "counts": "Call counts",
     "days": "in {{count}} days",
@@ -2465,7 +2550,7 @@
     "confirmRemoveConnection": "Yes, remove",
     "removeConnectionError": "Could not remove the connection.",
     "reviewProviderAccess": "Review access at {{label}}",
-    "removedReviewProvider": "Connection removed. Review Commonly access at {{label}}.",
+    "removedReviewProvider": "Connection removed. Review its access at {{label}}.",
     "openProviderSettings": "Open provider settings",
     "noConnection": "install the GitHub App first · an admin does this once",
     "noSeats": "no agent in this pod yet",
@@ -2642,10 +2727,18 @@
     "listingUnavailable": "Listing status unavailable",
     "viewPublicProfile": "View public profile",
     "listingSeparate": "Publishing a listing is managed separately from Settings.",
+    "ownedTitle": "Your registry listing",
+    "ownedName": "Listing name",
+    "ownedSave": "Save listing name",
+    "ownedRetire": "Retire listing",
+    "ownedRestore": "Restore listing",
+    "ownedFailed": "Couldn't update this listing. Try again.",
     "wakeTitle": "Wake",
     "mentionsAlwaysWake": "Mentions always wake this agent.",
-    "wakeOnMessage": "Wake on messages",
-    "humanOnly": "Human messages only",
+    "messageWake": "Messages that wake it",
+    "messageWake_mentions": "Mentions only",
+    "messageWake_human": "Messages from people",
+    "messageWake_all": "Every message",
     "boardWake": "Wake on board changes",
     "heartbeat": "Heartbeat",
     "heartbeatInterval": "Interval",

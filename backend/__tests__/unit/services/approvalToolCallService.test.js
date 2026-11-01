@@ -184,7 +184,7 @@ test('uses the approver display name in the execution receipt', async () => {
   mockApproval.findOneAndUpdate.mockResolvedValue(resolved);
   mockUser.findById.mockReturnValue({
     select: jest.fn(() => ({
-      lean: jest.fn().mockResolvedValue({ isBot: false, username: 'samxu01', displayName: 'Sam Xu' }),
+      lean: jest.fn().mockResolvedValue({ isBot: false, username: 'team-member', displayName: 'Team Member' }),
     })),
   });
   broker.executeApprovedToolCall.mockResolvedValue({ callId: 'tool_call_second', outcome: 'ok', result: { id: 9 } });
@@ -192,7 +192,7 @@ test('uses the approver display name in the execution receipt', async () => {
   await service.resolveApproval({ approvalId: pending._id, callerUserId: OWNER, decision: 'approved' });
 
   expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
-    content: "Sam Xu approved grant-broker's github.comment_on_issue · ran",
+    content: "Team Member approved grant-broker's github.comment_on_issue · ran",
   }));
 });
 

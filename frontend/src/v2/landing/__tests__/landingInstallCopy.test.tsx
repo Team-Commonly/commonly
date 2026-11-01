@@ -179,12 +179,12 @@ describe('landing install line copy control (TASK-154)', () => {
     // than anything drawn by the pill itself.
     expect(pill).toContain('background: transparent');
     expect(pill).toContain('border: 1px solid transparent');
-    expect(pill).toContain('color: #ffffff');
+    expect(pill).toContain('color: var(--v2-on-accent, #ffffff)');
     // The hover state needs the same tier: at (0,2,0) it lost to the (0,2,1) reset.
     expect(ruleBody(`${PILL_SELECTOR}:hover`)).toContain('background: rgba(255, 255, 255, 0.12)');
     // Focus is invisible against cobalt without an explicit ring, and the
     // band's own hairline is too faint to serve as one.
-    expect(ruleBody(`${PILL_SELECTOR}:focus-visible`)).toContain('outline: 2px solid #ffffff');
+    expect(ruleBody(`${PILL_SELECTOR}:focus-visible`)).toContain('outline: 2px solid var(--v2-on-accent, #ffffff)');
   });
 
   it('keeps the line 46px tall and gives the pill a 44px target on phones', () => {

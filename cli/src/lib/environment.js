@@ -75,9 +75,9 @@ const findInlineProviderCredentialField = (value, path) => {
 // daemon path it was silently inert — claude fell through to a bare unconfined
 // spawn and codex took `--dangerously-bypass-approvals-and-sandbox` — so a
 // declaration that reads as "confine me, not as a public agent" meant the
-// opposite of what it said (Vera 69592). It is refused for new declarations
+// opposite of what it said. It is refused for new declarations
 // above, and a record that already carries it is resolved TOWARD confinement,
-// never toward the bare spawn (Wren 69585): `internal` is read as `public`, so
+// never toward the bare spawn: `internal` is read as `public`, so
 // such a seat is confined where it can be and refuses to derive where it
 // cannot. A real middle trust arrives as its own adapter that reads it — and
 // `workspace` (above) is that trust, which is why it is NOT a legacy alias.
@@ -100,7 +100,7 @@ export const normalizeSandboxTrust = (sandbox) => (
  * compares the trust and must not write anything back. The server spells the
  * same predicate `effectiveSandboxTrust` (`grantBrokerConfinement.ts`) — the two
  * sides have to read `internal` the same way or one of them confines a seat the
- * other withholds from (Wren 71662).
+ * other withholds from.
  */
 export const effectiveSandboxTrust = (trust) => (
   typeof trust === 'string' && Object.prototype.hasOwnProperty.call(LEGACY_SANDBOX_TRUST, trust)
@@ -112,7 +112,7 @@ export const effectiveSandboxTrust = (trust) => (
  * Throw when an adapter that does not implement the `workspace` tier is handed
  * one (TASK-294). Only claude reads it. Every other adapter branches on
  * `trust === 'public'`, so an unread `workspace` would fall into its
- * non-public branch — the same silent widening `internal` was (Vera 69592).
+ * non-public branch — the same silent widening `internal` was.
  * Called at each adapter's spawn entry, before any other sandbox read.
  */
 export const refuseWorkspaceTrust = (sandbox, adapterLabel) => {
@@ -391,8 +391,8 @@ export const validateEnvironmentSpec = (spec) => {
     }
   }
 
-  // A TRANSPORT DECIDES THE ENTRY, so the fields must agree with it (TASK-071,
-  // Vera's ruling 2026-09-19). This block is MIRRORED, not shared: the other
+  // A TRANSPORT DECIDES THE ENTRY, so the fields must agree with it (TASK-071).
+  // This block is MIRRORED, not shared: the other
   // writer-side check is the backend's, in
   // backend/utils/environmentSpecValidation.ts, called from the
   // `PATCH /api/registry/pods/:podId/agents/:name` handler that stores

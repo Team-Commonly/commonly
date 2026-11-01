@@ -300,7 +300,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] connection lookup failed:', (connectionErr as Error).message);
     }
 
-    // Last thing each agent said in THIS pod (Wren spec §1.1 line 2).
+    // Last thing each agent said in THIS pod (spec §1.1 line 2).
     // Advisory like the activity map: a PG hiccup must never fail the roster.
     let lastMessageByUserId = new Map<string, { content: string; createdAt: unknown }>();
     try {
@@ -318,7 +318,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       console.warn('[pod-agents] last-message lookup failed:', (snippetErr as Error).message);
     }
 
-    // Day-zero step 2 (#1648, ux-lead 67071 / sprint-impl 67078): "Say something to it" closes
+    // Day-zero step 2 (#1648): "Say something to it" closes
     // on the caller's own message in this pod, reply or not. A seat's install intro, a heartbeat
     // or a teammate's post is not the caller speaking, so no per-agent field can carry this.
     // Advisory like the snippet: a PG hiccup reads as "not yet", never as a failed roster.
@@ -341,7 +341,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
 
     // A push webhook's URL can carry a credential in its query string, so only
-    // its installer and instance admins see it (Cofounder's hardening ruling,
+    // its installer and instance admins see it (hardening ruling,
     // 2026-10-21). The admin lookup runs only when the roster holds a URL the
     // viewer did not install.
     const viewerId = String(userId);
@@ -390,11 +390,13 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         const machineId = user?.botMetadata?.machineId;
         const daemonBound = Boolean(machineId);
         // The harness label moves to `adapter`, so the chat tag keeps naming it.
+        // The poller's report (TASK-704) outranks a stale runtimeType declaration:
+        // a seat declared codex that polls claude must not project codex here.
         const seatPayload = daemonBound
           ? { ...payload, runtime: {
             ...payload?.runtime,
             runtimeType: 'wrapper',
-            adapter: payload?.runtime?.adapter || payload?.runtime?.runtimeType,
+            adapter: payload?.runtime?.adapter || payload?.runtime?.reportedCli || payload?.runtime?.runtimeType,
           } }
           : payload;
         const hasRuntimeConnection = payload?.runtime?.host === 'byo'
@@ -403,15 +405,23 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
           || (runtimeType === 'webhook' && !payload?.runtime?.host);
         if (!connectionAvailable || !user || !hasRuntimeConnection
           || normalizeConfigMap(i.config)?.runtime?.webhookUrl) return seatPayload;
+        const connection = deriveAgentConnection({
+          runtimeType: daemonBound ? 'wrapper' : runtimeType,
+          credentials: credentialByAgent.get(String(user._id)) || [],
+          machineCredentials: credentialByMachine.get(String(machineId)) || [],
+          embeddedTokens: [...(user.agentRuntimeTokens || []), ...(i.runtimeTokens || [])],
+          machineLastSeenAt: machineById.get(String(machineId))?.lastSeenAt || null,
+        });
+        // TASK-716: the command that makes a never-connected seat run goes to
+        // the installer only, the same rule /agent-states applies to fixCommand.
+        // It is `commonly agent run <name>`; no token or URL is in it.
+        // eslint-disable-next-line global-require
+        const fixCommand = connection?.state === 'never' && installedByViewer(i)
+          ? require('../../services/agentStateService').runInstructionFor(i) : null;
         return {
           ...seatPayload,
-          connection: deriveAgentConnection({
-            runtimeType: daemonBound ? 'wrapper' : runtimeType,
-            credentials: credentialByAgent.get(String(user._id)) || [],
-            machineCredentials: credentialByMachine.get(String(machineId)) || [],
-            embeddedTokens: [...(user.agentRuntimeTokens || []), ...(i.runtimeTokens || [])],
-            machineLastSeenAt: machineById.get(String(machineId))?.lastSeenAt || null,
-          }),
+          connection,
+          ...(fixCommand ? { fixCommand } : {}),
         };
       }),
     });
