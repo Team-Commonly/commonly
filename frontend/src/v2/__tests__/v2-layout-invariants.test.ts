@@ -174,6 +174,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const threadMessages = read('../components/V2ThreadMessages.tsx');
   const messageRow = read('../components/V2MessageRow.tsx');
   const composer = read('../components/V2Composer.tsx');
+  const segmented = read('../components/V2Segmented.tsx');
+  const primitives = read('../primitives/primitives.css');
   const decisionCard = read('../components/V2DecisionCard.tsx');
   const navRail = read('../components/V2NavRail.tsx');
   const threadCard = read('../components/V2ThreadCard.tsx');
@@ -391,8 +393,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(search).toContain('height: 34px');
     expect(podsSidebar).toContain('<ShellGlyph name="search" size={15} />');
     // The + is the artboard's 32px raised key, a glyph rather than a character.
-    expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('height: 32px');
-    expect(ruleBody(v2, '.v2-root button.v2-pods__new')).toContain('width: 32px');
+    // D223: the new-pod key is the primitives' 32px secondary icon key.
+    expect(podsSidebar).toContain('className="v2p-b v2p-b-s v2p-ib v2-pods__new"');
+    expect(primitives).toMatch(/\.v2p-ib \{ width: 32px; height: 32px;/);
     expect(podsSidebar).toContain('<ShellGlyph name="plus" size={17} />');
     expect(row).toContain('grid-template-columns: 24px minmax(0, 1fr) auto');
     expect(row).toContain('min-height: 36px');
@@ -431,10 +434,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time { visibility: hidden; }');
     expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
     // The shared segment: a tinted track with the checked option raised.
-    expect(ruleBody(v2, '.v2-seg')).toContain('display: inline-flex');
-    expect(ruleBody(v2, '.v2-seg')).toContain('flex: none');
-    expect(ruleBody(v2, '.v2-root button.v2-seg__option')).toContain('white-space: nowrap');
-    expect(selectorRuleBody(v2, '.v2-root button.v2-seg__option--on,')).toContain('background: var(--v2-surface)');
+    // D223: the segment draws as the primitives' v2p-seg; v2.css keeps only its states.
+    expect(segmented).toContain("'v2p-seg v2-seg'");
+    expect(segmented).toContain("' on v2-seg__option--on'");
+    expect(ruleBody(primitives, '.v2p-seg')).toContain('display: inline-flex');
+    expect(ruleBody(primitives, '.v2p-seg button.on')).toContain('background: var(--v2-surface)');
+    expect(v2).not.toMatch(/(^|\n)\.v2-seg \{/);
     expect(ruleBody(v2, '.v2-root button.v2-seg__option:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
     expect(ruleBody(v2, '.v2-root button.v2-icon-button:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
     expect(v2).toContain('.v2-root .v2-pods__section--kind button.v2-pods__section-head');
@@ -594,10 +599,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-msg__gutter-time')).toContain('width: 36px');
     // The typing line is not a message row; its faces stay small.
     expect(ruleBody(v2, '.v2-thread .v2-chat__typing-avatars .v2-avatar')).toContain('width: 20px');
-    // The phone hides the panel's Hide key. It also carries .v2-icon-button,
-    // whose later display rule ties a one-class selector, so the hide rule
-    // must name both classes or it never applies.
-    expect(mediaBlockContaining(v2, '.v2-workspace-inspector__hide')).toMatch(/\.v2-root button\.v2-icon-button\.v2-workspace-inspector__hide \{ display: none; \}/);
+    // The phone hides the panel's Hide key; .v2-root button.<class> outranks
+    // the primitive key's display.
+    expect(mediaBlockContaining(v2, '.v2-workspace-inspector__hide')).toMatch(/\.v2-root button\.v2-workspace-inspector__hide \{ display: none; \}/);
+    expect(workspaceInspector).toContain('className="v2p-b v2p-b-g v2p-ib v2p-b-sm v2-workspace-inspector__head-button v2-workspace-inspector__hide"');
     expect(v2).toContain('.v2-msg--grouped');
   });
 
@@ -1003,7 +1008,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // no border draws its edge; the plus is a ghost key inside it.
     expect(ruleBody(v2, '.v2-composer')).toContain('border: 0');
     expect(ruleBody(v2, '.v2-composer')).toContain('box-shadow: var(--v2-shadow-pop');
-    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border: 1px solid transparent');
+    expect(composer).toContain('className="v2p-b v2p-b-g v2p-ib v2-composer__plus"');
     // Nothing in the column may escape the shared edge (2026-08-23:
     // mentions and threads sat off-grid while messages aligned).
     // Mentions: the wash bleed must equal the padding (the old -12px against
@@ -1429,14 +1434,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the composer is one line with a 32px plus menu and a 32px ink Send that exists only with text (D215, TASK-734)', () => {
     expect(lastRuleBody(v2, '.v2-composer__row')).toContain('min-height: 52px');
     expect(ruleBody(v2, '.v2-composer')).toContain('border-radius: var(--v2-r-14, 14px)');
-    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('width: 32px');
-    expect(ruleBody(v2, '.v2-root button.v2-composer__plus')).toContain('border-radius: var(--v2-r-8, 8px)');
+    // D223: plus and Send are the primitives' 32px ghost and primary icon keys,
+    // which only draw because the shell loads primitives.css after v2.css.
+    expect(read('../V2App.tsx')).toMatch(/import '\.\/v2\.css';\n[^\n]*\nimport '\.\/primitives\/primitives\.css';/);
+    expect(composer).toContain('className="v2p-b v2p-b-g v2p-ib v2-composer__plus"');
+    // The ghost hover has no :disabled guard, so the uploading plus restates rest.
+    expect(ruleBody(v2, '.v2-root button.v2-composer__plus:disabled:hover')).toContain('background: transparent');
+    expect(ruleBody(primitives, '.v2p-ib')).toContain('border-radius: var(--v2-r-8)');
     // The menu opens above the 32px plus, not over it.
     expect(ruleBody(v2, '.v2-composer__menu')).toContain('bottom: 40px');
     expect(lastRuleBody(v2, '.v2-root .v2-composer__field > textarea')).toContain('max-height: 112px');
     expect(lastRuleBody(v2, '.v2-root .v2-composer__field > textarea')).toContain('resize: none');
-    expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).toContain('width: 32px');
-    expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).toContain('background: linear-gradient(180deg, var(--v2-fill-a, var(--v2-ink)), var(--v2-fill-b, var(--v2-ink)))');
+    expect(composer).toContain('className="v2p-b v2p-b-p v2p-ib v2-composer__send"');
+    expect(ruleBody(primitives, '.v2p-b-p')).toContain('background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
+    // A bespoke look on Send would outrank the primitive (0,2,1 over 0,1,0).
+    expect(lastRuleBody(v2, '.v2-root button.v2-composer__send')).not.toContain('background');
     expect(composer).toContain('{hasText && (');
     expect(composer).toContain("role=\"menu\"");
     expect(composer).not.toContain('postsAs');
@@ -5331,6 +5343,8 @@ describe('pod board column scroll (TASK-698)', () => {
     const block = mediaBlockContaining(read('../v2.css'), '.v2-pod-header__invite span');
     expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip-path:\s*inset\(50%\)/);
     expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*32px/);
+    // The ghost override drops the key's shadow, so the phone restates the focus ring.
+    expect(block).toContain('.v2-root button.v2-pod-header__invite:focus-visible { box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent); }');
     // 32px keys take touches at 44px. The inset runs from the padding box,
     // inside a 1px border, so it is -7px: 30 + 2 x 7 = 44 (-6px measured 42 in a browser).
     const phoneHead = mediaBlockContaining(read('../v2.css'), '.v2-root button.v2-thread__back::after');

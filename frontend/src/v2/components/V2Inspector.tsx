@@ -308,7 +308,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           {onOpenInvite && (
             <button
               type="button"
-              className="v2-icon-button v2-workspace-inspector__head-button"
+              className="v2p-b v2p-b-g v2p-ib v2p-b-sm v2-workspace-inspector__head-button"
               onClick={onOpenInvite}
               aria-label={t('inspector.workspace.members')}
               title={t('inspector.workspace.members')}
@@ -318,7 +318,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           )}
           <button
             type="button"
-            className="v2-icon-button v2-workspace-inspector__head-button"
+            className="v2p-b v2p-b-g v2p-ib v2p-b-sm v2-workspace-inspector__head-button"
             onClick={() => navigate('/v2/agents')}
             aria-label={t('inspector.workspace.manage')}
             title={t('inspector.workspace.manage')}
@@ -328,7 +328,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
           {onClose && (
             <button
               type="button"
-              className="v2-icon-button v2-workspace-inspector__head-button v2-workspace-inspector__hide"
+              className="v2p-b v2p-b-g v2p-ib v2p-b-sm v2-workspace-inspector__head-button v2-workspace-inspector__hide"
               onClick={onClose}
               aria-label={t('inspector.workspace.hidePanel')}
               title={t('inspector.workspace.hidePanel')}

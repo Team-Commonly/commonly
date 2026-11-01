@@ -1472,7 +1472,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   const mobileNavButton = onBack ? (
     <button
       type="button"
-      className="v2-thread__back"
+      className="v2p-b v2p-b-g v2p-ib v2-thread__back"
       onClick={onBack}
       title={t('podChat.header.backToPods')}
       aria-label={t('podChat.header.backToPods')}
@@ -1964,7 +1964,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             {onOpenInvite && isPodMember && !isAgentDm && !isAgentRoom && (
               <button
                 type="button"
-                className="v2-pod-header__invite"
+                className="v2p-b v2p-b-s v2p-b-sm v2-pod-header__invite"
                 onClick={() => onOpenInvite(PEOPLE_INVITE_TAB)}
                 title={t('podChat.header.invite')}
                 data-testid="pod-header-invite"
@@ -1978,7 +1978,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             {onToggleInspector && inspectorCollapsed && (
               <button
                 type="button"
-                className="v2-thread__inspector-toggle"
+                className="v2p-b v2p-b-g v2p-ib v2-thread__inspector-toggle"
                 onClick={onToggleInspector}
                 title={t('podChat.team.view')}
                 aria-label={t('podChat.team.view')}
