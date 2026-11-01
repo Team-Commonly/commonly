@@ -711,11 +711,12 @@ test('detail status is a segment that moves the task, and older updates fold beh
   expect(within(segment).getByRole('radio', { name: 'Pending' })).toHaveAttribute('aria-checked', 'true');
   fireEvent.click(within(segment).getByRole('radio', { name: /in progress/i }));
   await waitFor(() => expect(axios.patch).toHaveBeenCalledWith('/api/v1/tasks/pod-1/TASK-5', { status: 'claimed' }, expect.any(Object)));
-  // Newest three show; the two oldest fold behind the toggle.
+  // Newest two show, as the d215 frame draws; the three oldest fold behind the toggle.
   expect(within(dialog).queryByText('one')).toBeNull();
-  expect(within(dialog).queryByText('two')).toBeNull();
+  expect(within(dialog).queryByText('three')).toBeNull();
+  expect(within(dialog).getByText('four')).toBeInTheDocument();
   expect(within(dialog).getByText('five')).toBeInTheDocument();
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Show 2 earlier updates' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Show 3 earlier updates' }));
   expect(within(dialog).getByText('one')).toBeInTheDocument();
   expect(within(dialog).getByRole('button', { name: 'Hide earlier updates' })).toHaveAttribute('aria-expanded', 'true');
 });

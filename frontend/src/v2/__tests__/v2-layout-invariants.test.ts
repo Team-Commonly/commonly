@@ -5195,6 +5195,9 @@ test('TASK-443 phone ownership sheet keeps its inset and scroll containment', ()
 });
 
 test('TASK-699 task detail is a 400px right drawer on desktop and a sheet on phones', () => {
+  // d215 .av--20: the claimant and update avatars are 6px-radius tiles with the avatar ring.
+  expect(boardCss).toContain('.v2-feature--board .v2-board__detail-updates .v2-board__member-avatar { border-radius: 6px; box-shadow: 0 0 0 1px var(--v2-av-ring); }');
+  expect(boardCss).toContain('.v2-feature--board .v2-board__ownership .v2-board__member-avatar,');
   expect(ruleBody(boardCss, '.v2-feature--board .v2-modal.v2-board__drawer')).toContain('width: 400px');
   expect(ruleBody(boardCss, '.v2-feature--board .v2-board__overlay--drawer')).toContain('justify-content: flex-end');
   // S4: the frame draws the drawer over the board with no scrim; phones keep the dim sheet backdrop.
@@ -5316,6 +5319,14 @@ describe('v2 board on a phone (TASK-576)', () => {
     // Exception to the frame: its 32px keys take touches at 44px (chat precedent).
     expect(phone).toContain('.v2-feature--board .v2-board__head > .v2-board__key::after { content: \'\'; position: absolute; inset: -7px; }');
     expect(phone).toContain('width: max(100%, 44px)');
+    // No two phone hit areas overlap: keys 12px apart (6px reach each), tabs 44px
+    // tall ending at the track edge where the chips' 10px reach begins.
+    expect(phone).toContain('.v2-feature--board .v2-board__head > .v2-board__key { position: relative; z-index: 1; }');
+    expect(phone).toContain('.v2-feature--board .v2-board__head > .v2-board__new { margin-left: 4px; }');
+    expect(phone).toContain('.v2-feature--board .v2-board__tab::after { content: \'\'; position: absolute; top: -14px; right: 0; bottom: -2px; left: 0; }');
+    expect(phone).toMatch(/\.v2-feature--board \.v2-board__tabs \{[^}]*padding: 14px 2px 2px;/);
+    expect(phone).toMatch(/\.v2-feature--board \.v2-board__tab \{[^}]*height: 28px;/);
+    expect(ruleBody(boardCss, '.v2-board__filters', { within: mediaBlockContaining(boardCss, '.v2-board__filters {') })).toContain('padding: 10px 12px 0');
   });
 
   test('the board drops the feature body gutter, phone included', () => {
@@ -5432,9 +5443,11 @@ describe('pod board column scroll (TASK-698)', () => {
     expect(colBody).toContain('min-height: 0');
     // Phones get the tab bar back: scope to the 390 frame's block.
     const mobile = css.slice(css.indexOf('/* ── 2. The 390 frame'));
-    expect(mobile).toMatch(/@media \(max-width: 760px\) \{[\s\S]*\.v2-board__tabs \{ display: inline-flex;/);
+    expect(mobile).toMatch(/@media \(max-width: 760px\) \{[\s\S]*\.v2-board__tabs \{ position: relative; display: inline-flex;/);
     // The phone tabs are the frame's segment: a tinted track with a raised active key.
-    expect(mobile).toMatch(/\.v2-board__tabs \{ display: inline-flex;[^}]*margin: 12px 12px 0; gap: 2px; padding: 2px;/);
+    // The track is drawn 12px below the bar by ::before, so the tabs' hit areas can reach into that gap.
+    expect(mobile).toMatch(/\.v2-board__tabs \{ position: relative; display: inline-flex;[^}]*margin: 0 12px; gap: 2px; padding: 14px 2px 2px;/);
+    expect(mobile).toMatch(/\.v2-board__tabs::before \{[^}]*top: 12px;[^}]*background: var\(--v2-surface-tint\);/);
     expect(mobile).toMatch(/\.v2-board__tab\.is-active \{ background: var\(--v2-surface\)/);
   });
 });

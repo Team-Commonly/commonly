@@ -108,6 +108,8 @@ interface ColumnMeta {
   moves: Array<{ to: CanonicalStatus; labelKey: string; Icon: typeof PlayArrowIcon }>;
 }
 
+// The drawer shows this many newest updates, as the d215 frame draws; older ones fold.
+const VISIBLE_UPDATES = 2;
 const COLUMNS: ColumnMeta[] = [
   {
     key: 'pending',
@@ -1041,9 +1043,9 @@ const V2PodBoard: React.FC = () => {
                   <div className="v2-modal__section-title">{t('board.detail.updates')}</div>
                   <ul className="v2-board__detail-updates">
                     {(() => {
-                      // Newest first. The three newest stay visible; older ones fold behind a toggle.
+                      // Newest first. The two newest stay visible (d215 frame); older ones fold behind a toggle.
                       const ordered = (selected.updates || []).slice().reverse();
-                      const earlier = Math.max(0, ordered.length - 3);
+                      const earlier = Math.max(0, ordered.length - VISIBLE_UPDATES);
                       return (updatesExpanded ? ordered : ordered.slice(0, ordered.length - earlier)).map((update, index) => (
                         // Updates have no id; index-in-reversed-list is stable
                         // for a render of an immutable snapshot.
@@ -1060,12 +1062,12 @@ const V2PodBoard: React.FC = () => {
                       ));
                     })()}
                   </ul>
-                  {(selected.updates?.length || 0) > 3 && (
+                  {(selected.updates?.length || 0) > VISIBLE_UPDATES && (
                     <button type="button" className="v2-board__updates-toggle" aria-expanded={updatesExpanded} onClick={() => setUpdatesExpanded((open) => !open)}>
                       <ExpandMoreIcon aria-hidden="true" />
                       {updatesExpanded
                         ? t('board.detail.hideEarlierUpdates')
-                        : t('board.detail.showEarlierUpdates', { count: (selected.updates?.length || 0) - 3 })}
+                        : t('board.detail.showEarlierUpdates', { count: (selected.updates?.length || 0) - VISIBLE_UPDATES })}
                     </button>
                   )}
                 </>
