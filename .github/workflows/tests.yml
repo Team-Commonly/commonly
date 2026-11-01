@@ -89,7 +89,7 @@ jobs:
             files=$(git diff --no-renames --name-only "$base"...HEAD 2>/dev/null || git diff --no-renames --name-only "$base" HEAD)
             printf '%s\n' "$files"
             printf '%s\n' "$files" | grep -qE '^(backend/|cli/|packages/|package(-lock)?\.json)' && backend=true
-            printf '%s\n' "$files" | grep -qE '^(frontend/|backend/|README\.md$|docs/assets/)' && frontend=true
+            printf '%s\n' "$files" | grep -qE '^(frontend/|backend/|README\.md$|docs/assets/|e2e/|docs/adr/|docs/cli/|docs-site/|cli/src/commands/login\.js$|commonly-mcp/src/tools\.js$)' && frontend=true
             printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|scripts/verify-backend-worker-chart\.sh$|scripts/monitoring/apply-alerting\.py$|docs/runbooks/alerting\.md$|package(-lock)?\.json)' && chart=true
             # A change to this workflow runs the full suite as a self-test, so a
             # PR that edits the test pipeline proves every heavy leg still works.
@@ -102,6 +102,14 @@ jobs:
             echo "frontend=$frontend"
             echo "chart=$chart"
           } >> "$GITHUB_OUTPUT"
+      # Guard the filter regexes: the test reads the three patterns out of this
+      # file and asserts path classification, so a reverted alternative (which
+      # would silently skip a suite for a package it should test) fails CI.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Filter regex regression test
+        run: node --test scripts/changes-filter.test.mjs
 
   # Heavy jobs (backend, frontend, service tests) run on Latchkey runners on
   # merge-queue runs when vars.LATCHKEY_HEAVY is 'on': those runners don't
