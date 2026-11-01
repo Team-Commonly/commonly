@@ -31,6 +31,13 @@ describe('V2ThemeSwitch', () => {
     expect(screen.getByRole('button', { name: /light/i })).toHaveAttribute('aria-pressed', 'true');
   });
 
+  test('the bar variant is the small 390 switch, the rail one is the column', () => {
+    const { container, rerender } = render(<V2ThemeSwitch variant="bar" />);
+    expect(container.firstElementChild).toHaveClass('seg', 'seg--ic', 'seg--sm');
+    rerender(<V2ThemeSwitch />);
+    expect(container.firstElementChild).toHaveClass('seg--rail');
+  });
+
   test('in Auto, an OS light/dark flip moves the switch', () => {
     let dark = false;
     let fire: () => void = () => {};

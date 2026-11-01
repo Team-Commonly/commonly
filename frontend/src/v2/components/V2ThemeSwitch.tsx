@@ -16,7 +16,8 @@ const Moon = () => (
 // stored preference as Settings > Theme (setV2Theme), so there is one setting.
 // An 'auto' preference shows whichever set the OS is giving; a click makes it
 // explicit.
-const V2ThemeSwitch: React.FC = () => {
+// 'rail' is the 1440 sidebar; 'bar' is the 390 Pods top bar (the rail is gone there).
+const V2ThemeSwitch: React.FC<{ variant?: 'rail' | 'bar' }> = ({ variant = 'rail' }) => {
   const { t } = useTranslation();
   const active = useSyncExternalStore(
     subscribeV2Theme,
@@ -24,7 +25,7 @@ const V2ThemeSwitch: React.FC = () => {
     () => 'light',
   );
   return (
-    <div className="seg seg--ic seg--rail" role="group" aria-label={t('common.theme.label')}>
+    <div className={`seg seg--ic v2-theme-seg ${variant === 'bar' ? 'seg--sm' : 'seg--rail'}`} role="group" aria-label={t('common.theme.label')}>
       <button type="button" data-t="light" title={t('common.theme.light')} aria-label={t('common.theme.light')}
         aria-pressed={active === 'light'} onClick={() => setV2Theme('light')}><Sun /></button>
       <button type="button" data-t="dark" title={t('common.theme.dark')} aria-label={t('common.theme.dark')}

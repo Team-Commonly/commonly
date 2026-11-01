@@ -1,12 +1,13 @@
 /* TASK-740 (D224): the d215 rail theme switch, lifted from
    docs/design/artboards/d215/index.html (.seg, .seg--ic, .seg--rail, lines
-   169-178). Scoped under .v2-rail so the generic .seg names stay local. The
+   169-178). Scoped by .v2-theme-seg so the generic .seg names stay local; --sm is the 390 Pods top bar (.mtop). The
    artboard's short colour names map to --v2-* as in primitives.css; the on state
    is aria-pressed (the artboard's .on), the same look. */
-.v2-rail .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--v2-r-9); background: var(--v2-surface-tint); box-shadow: inset 0 0 0 1px var(--v2-border-soft); flex: none; }
-.v2-rail .seg button { all: unset; box-sizing: border-box; cursor: pointer; height: 28px; padding: 0; width: 32px; border-radius: var(--v2-r-7); display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--v2-text-secondary); white-space: nowrap; }
-.v2-rail .seg button[aria-pressed="true"] { background: var(--v2-surface); color: var(--v2-text-primary); box-shadow: 0 0 0 1px var(--v2-key-edge), 0 1px 2px rgba(16, 24, 40, 0.08); }
-.v2-rail .seg button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
-.v2-rail .seg--ic svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.v2-rail .seg--rail { flex-direction: column; margin-bottom: 4px; }
-.v2-rail .seg--rail button { height: 30px; }
+.seg.v2-theme-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--v2-r-9); background: var(--v2-surface-tint); box-shadow: inset 0 0 0 1px var(--v2-border-soft); flex: none; }
+.seg.v2-theme-seg button { all: unset; box-sizing: border-box; cursor: pointer; height: 28px; padding: 0; width: 32px; border-radius: var(--v2-r-7); display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--v2-text-secondary); white-space: nowrap; }
+.seg.v2-theme-seg button[aria-pressed="true"] { background: var(--v2-surface); color: var(--v2-text-primary); box-shadow: 0 0 0 1px var(--v2-key-edge), 0 1px 2px rgba(16, 24, 40, 0.08); }
+.seg.v2-theme-seg button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.seg.v2-theme-seg--ic svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.seg.v2-theme-seg--rail { flex-direction: column; margin-bottom: 4px; }
+.seg.v2-theme-seg--rail button { height: 30px; }
+.seg.v2-theme-seg.seg--sm button { width: 28px; height: 24px; }
