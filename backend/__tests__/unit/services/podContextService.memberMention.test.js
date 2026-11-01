@@ -75,7 +75,7 @@ describe('pod context members', () => {
     const [bot, human] = context.members;
     expect(bot).toMatchObject({ name: 'Rivet', mention: 'codex-swe-dogfood', isAgent: true });
     expect(human).toMatchObject({ name: 'lily-shen', mention: 'lily-shen', isAgent: false });
-    expect(AgentInstallation.find).toHaveBeenCalledWith({ podId: 'pod-1', status: 'active' });
+    expect(AgentInstallation.find).toHaveBeenCalledWith({ podId: { $eq: 'pod-1' }, status: 'active' });
   });
 
   it('gives a recent message the author handle from the same pod map', async () => {

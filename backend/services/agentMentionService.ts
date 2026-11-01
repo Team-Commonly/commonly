@@ -332,10 +332,21 @@ const mentionHandleForUser = (
   return String(user.username);
 };
 
+// A pod id arrives from route params and request bodies. Only a string or an
+// ObjectId is one; anything else, such as an operator object from a JSON body,
+// names no pod. JSON cannot carry the ObjectId's method.
+const podIdKey = (podId: unknown): string | null => {
+  if (typeof podId === 'string') return podId;
+  const hex = (podId as { toHexString?: unknown } | null)?.toHexString;
+  return typeof hex === 'function' ? String(hex.call(podId)) : null;
+};
+
 /** The mention map for a pod, built from the same rows enqueueMentions reads. */
 const loadPodMentionMap = async (podId: unknown): Promise<Map<string, MentionTarget>> => {
-  const installations = await AgentInstallation.find({ podId, status: 'active' }).lean();
-  const profiles = await AgentProfile.find({ podId }).lean();
+  const id = podIdKey(podId);
+  if (!id) return new Map();
+  const installations = await AgentInstallation.find({ podId: { $eq: id }, status: 'active' }).lean();
+  const profiles = await AgentProfile.find({ podId: { $eq: id } }).lean();
   return buildMentionMap(
     installations as Array<Record<string, unknown>>,
     profiles as Array<Record<string, unknown>>,

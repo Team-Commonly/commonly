@@ -94,7 +94,7 @@ describe('registry install: the intro names the handle that routes in this pod',
     AgentRegistry.incrementInstalls.mockResolvedValue({ acknowledged: true });
     AgentInstallation.findOne.mockResolvedValue(null);
     AgentInstallation.find.mockImplementation((filter = {}) => buildLeanChain(
-      filter.podId === 'pod-1' && filter.status === 'active' ? podInstalls : [],
+      (filter.podId?.$eq ?? filter.podId) === 'pod-1' && filter.status === 'active' ? podInstalls : [],
     ));
     AgentInstallation.install.mockImplementation(async (agentName, podId, options) => {
       const installation = {

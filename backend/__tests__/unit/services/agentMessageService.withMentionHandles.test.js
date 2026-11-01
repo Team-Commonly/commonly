@@ -56,7 +56,7 @@ describe('AgentMessageService.withMentionHandles', () => {
 
     expect(result.map((m) => m.mention)).toEqual(['d214-lead-swe-dogfood', 'lily-shen']);
     expect(result[0].username).toBe('Rivet');
-    expect(AgentInstallation.find).toHaveBeenCalledWith({ podId: 'pod-1', status: 'active' });
+    expect(AgentInstallation.find).toHaveBeenCalledWith({ podId: { $eq: 'pod-1' }, status: 'active' });
   });
 
   // A default install's username is the bare agent name, which routes only
@@ -90,6 +90,17 @@ describe('AgentMessageService.withMentionHandles', () => {
 
     expect(message.mention).toBe('d214-lead-swe-dogfood');
     expect(AgentInstallation.find).not.toHaveBeenCalled();
+  });
+
+  // A pod id comes from route params and bodies; an operator object is not one.
+  it('reads no pod rows for a pod id that is not a string', async () => {
+    const { loadPodMentionMap } = jest.requireActual('../../../services/agentMentionService');
+
+    const map = await loadPodMentionMap({ $ne: null });
+
+    expect(map.size).toBe(0);
+    expect(AgentInstallation.find).not.toHaveBeenCalled();
+    expect(AgentProfile.find).not.toHaveBeenCalled();
   });
 
   it('queries each distinct author once, not once per message', async () => {
