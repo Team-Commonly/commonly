@@ -14,18 +14,14 @@ test('no COMMONLY_WALK_EMAIL signs up a fresh account on staging, and that accou
   assert.deepEqual(chooseWalkMode({ base: STAGING, env: {} }), { mode: 'signup', deleteAccount: true });
 });
 
-test('prod never signs up: it signs in to the existing test account, which is never deleted', () => {
-  const env = { COMMONLY_WALK_PROD_EMAIL: 'walk-test@commonly.me', COMMONLY_WALK_PROD_PASSWORD: 'pw' };
-  assert.deepEqual(chooseWalkMode({ base: PROD, env }), { mode: 'signin-prod', email: 'walk-test@commonly.me', password: 'pw', deleteAccount: false });
+test('prod never signs up: it signs in to the existing account from env, which is never deleted', () => {
+  assert.deepEqual(chooseWalkMode({ base: PROD, env: { COMMONLY_WALK_EMAIL: 'walk-test@commonly.me' } }), { mode: 'signin-prod', email: 'walk-test@commonly.me', deleteAccount: false });
 });
 
 test('prod without an existing test account is refused, not signed up', () => {
   assert.throws(() => chooseWalkMode({ base: PROD, env: {} }), /no walk signup/);
 });
 
-test('the shared sign-in account is refused on prod', () => {
-  assert.throws(() => chooseWalkMode({ base: PROD, env: { COMMONLY_WALK_EMAIL: 'walk@commonly.me' } }), /staging only/);
-});
 
 test('a host that merely contains "staging" never receives the shared account', () => {
   for (const base of ['https://staging.attacker.example', 'https://api-staging.commonly.me.attacker.example', 'https://evil-staging.example']) {

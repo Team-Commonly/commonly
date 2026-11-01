@@ -204,7 +204,7 @@ test('prod signs in to the existing test account: no signup, the six covered ste
   const { fetchImpl, state } = fakeBackend({ seeded: true });
   const { exitCode, result } = await run(fetchImpl, dirsFor, {
     base: 'https://api.commonly.me',
-    env: { COMMONLY_WALK_PROD_EMAIL: 'walk-test@commonly.test', COMMONLY_WALK_PROD_PASSWORD: PASSWORD },
+    env: { COMMONLY_WALK_EMAIL: 'walk-test@commonly.test' },
   });
 
   assert.equal(result.mode, 'signin-prod');

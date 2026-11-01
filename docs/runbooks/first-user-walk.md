@@ -26,16 +26,14 @@ invite preview, and the BYO step that reports not-covered). It removes only the
 pod, seat and agent it made, and it never deletes the account.
 
 ```bash
-COMMONLY_WALK_PROD_EMAIL=<existing test account> \
-COMMONLY_WALK_PROD_PASSWORD="<its password>" \
+COMMONLY_WALK_EMAIL=<existing test account> \
+COMMONLY_WALK_PASSWORD="<its password>" \
   node scripts/first-user-walk.mjs --base https://api.commonly.me
 ```
 
-- Without `COMMONLY_WALK_PROD_EMAIL` a prod run is refused before any request.
-- `COMMONLY_WALK_EMAIL` (the staging shared account) is refused on prod.
+- Without `COMMONLY_WALK_EMAIL` a prod run is refused before any request.
 - The manifest records `"mode": "signin-prod"`. The result file has no
   `signup` or `signup-workspace` steps.
-- The variable names are provisional until SRE confirms them.
 
 ### Signup (staging and other targets with no account given)
 

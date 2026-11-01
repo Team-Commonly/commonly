@@ -20,12 +20,13 @@
  * token or the email.
  *
  * Usage:
- *   COMMONLY_WALK_PROD_EMAIL=... COMMONLY_WALK_PROD_PASSWORD=... \
+ *   COMMONLY_WALK_EMAIL=... COMMONLY_WALK_PASSWORD=... \
  *     node scripts/first-user-walk.mjs [--base https://api.commonly.me]
  *
- * Prod: no signup. The run signs in to one existing test account (the PROD
- * variables above), runs the six covered steps, removes only what it created, and
- * never deletes that account. Without COMMONLY_WALK_PROD_EMAIL a prod run is refused.
+ * Prod: no signup. The run signs in to one existing test account (the email and
+ * password above, from env only), runs the six covered steps, removes only what it
+ * created, and never deletes that account. Without COMMONLY_WALK_EMAIL a prod run
+ * is refused before any request.
  *
  * Staging: signup needs a verified email, so SRE's shared walk account is used
  * instead. Set COMMONLY_WALK_EMAIL and COMMONLY_WALK_PASSWORD from env (never a
@@ -86,7 +87,7 @@ export const runWalk = async ({
   const startedAt = new Date(startedMs).toISOString();
   const stamp = startedMs.toString(36);
   const username = `${WALK_PREFIX}${stamp}`;
-  let password = env.COMMONLY_WALK_PASSWORD || '';
+  const password = env.COMMONLY_WALK_PASSWORD || '';
   let email = `${username}@example.invalid`;
   const agentName = `${username}-agent`;
   const results = [];
@@ -247,8 +248,7 @@ export const runWalk = async ({
   let cleanupOk = false;
   try {
     walkMode = chooseWalkMode({ base: BASE, env });
-    if (walkMode.password !== undefined) password = walkMode.password;
-    expect(password, walkMode.mode === 'signin-prod' ? 'COMMONLY_WALK_PROD_PASSWORD is not set' : 'COMMONLY_WALK_PASSWORD is not set');
+    expect(password, 'COMMONLY_WALK_PASSWORD is not set');
     if (walkMode.email) email = walkMode.email;
     manifest.mode = walkMode.mode;
 
