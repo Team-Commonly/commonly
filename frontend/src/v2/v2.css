@@ -806,7 +806,10 @@ body.modern-ui.v2-canvas {
 
 .v2-rail {
   height: 100%;
-  padding: 6px 10px;
+  /* 56px rail - 1px pane border - 2 x 8px = 39px, room for the 38px nav glyph.
+     At 10px the nav was 35px wide and scrolled sideways by 2px, which the
+     staging smoke's "rail no h-scroll @1440px" check caught after #3139. */
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;

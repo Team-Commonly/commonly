@@ -334,7 +334,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const brand = ruleBody(v2, '.v2-rail__brand-icon');
     const item = ruleBody(v2, '.v2-root button.v2-rail__item');
     const active = ruleBody(v2, '.v2-root button.v2-rail__item--active');
-    expect(rail).toContain('padding: 6px 10px');
+    expect(rail).toContain('padding: 6px 8px');
+    // The nav glyph must fit the rail's content box or the nav scrolls
+    // sideways (staging smoke, "rail no h-scroll @1440px"): rail width, less
+    // the pane's 1px border, less both side paddings.
+    const railW = Number(/--v2-rail-w:\s*(\d+)px/.exec(v2)?.[1]);
+    const padX = Number(/padding: \d+px (\d+)px/.exec(rail)?.[1]);
+    const itemW = Number(/(?:^|\s)width: (\d+)px/.exec(item)?.[1]);
+    expect(railW - 1 - 2 * padX).toBeGreaterThanOrEqual(itemW);
     expect(brand).toContain('width: 36px');
     expect(brand).toContain('height: 36px');
     expect(item).toContain('width: 38px');
