@@ -18,6 +18,18 @@ export const UI_CARD_SOURCE_CONNECTORS: readonly string[] = Object.freeze(
   [...catalogueRev2.$defs.Source.properties.connector.enum],
 );
 
+// Mirrors frontend/src/v2/cards/cardLinks.ts: the same hosts the renderer opens,
+// so a card the server accepts is one the client will not render as unavailable.
+const UI_LINK_HOSTS = new Set(['commonly.me', 'docs.commonly.me', 'github.com', 'linear.app', 'sentry.io']);
+const ATLASSIAN_SITE = /^[a-z0-9-]+\.atlassian\.net$/;
+export function isApprovedCardLink(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.port
+      && (UI_LINK_HOSTS.has(url.hostname) || ATLASSIAN_SITE.test(url.hostname));
+  } catch { return false; }
+}
+
 export const UI_CARD_MAX_BYTES = 32 * 1024;
 export const UI_CARD_MAX_EXPANDED_NODES = 2048;
 const bracketTokens = tokenize('()[]{}');
@@ -82,8 +94,7 @@ function validatePresentation(root: ElementNode): void {
     const { props } = node;
     if (node.typeName === 'Source') sources += 1;
     if (node.typeName === 'Link') {
-      const url = new URL(props.url as string);
-      if (url.protocol !== 'https:' || url.username || url.password) refuse('Link requires a credential-free https URL');
+      if (!isApprovedCardLink(String(props.url))) refuse('Link requires an approved credential-free https URL');
       if (props.as !== 'text') buttons += 1;
       if (props.as === 'primary') primary += 1;
     }
@@ -282,10 +293,7 @@ function validateCardSource(source: string, rev: CardRevision, serverStamped: bo
           if (node.name === 'OpenUrl') {
             const [url] = node.args;
             if (node.args.length !== 1 || url?.k !== 'Str') refuse('OpenUrl requires a literal https URL');
-            const parsed = new URL(url.v);
-            if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
-              refuse('OpenUrl requires a literal https URL');
-            }
+            if (!isApprovedCardLink(url.v)) refuse('OpenUrl requires an approved literal https URL');
           }
         } else if (node.k === 'Ref' && ['Query', 'Mutation', 'Run', 'Action', 'OpenUrl'].includes(node.n)) {
           refuse(`UI card capability is not allowed: ${node.n}`);

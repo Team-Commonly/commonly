@@ -89,6 +89,14 @@ describe('commonly_post_message', () => {
     expect(description).toContain(payload.catalogHash);
   });
 
+  it('teaches every runtime the list-results card rule, with the live catalogue tuple', () => {
+    const description = byName.commonly_post_message.description;
+    const live = JSON.parse(readFileSync(new URL('../../backend/config/uiCardCatalogueRevision.json', import.meta.url), 'utf8'));
+    expect(description).toContain('CARD RULE: when a linear.*, sentry.* or atlassian.* list tool');
+    expect(description).toContain(`"catalogId":"${live.catalogId}"`);
+    expect(description).toContain(`"catalogHash":"${live.catalogHash}"`);
+  });
+
   it('POSTs to the right path with body', async () => {
     const fetchSpy = installFetch(async () => okResponse({ id: 'm1' }));
     const result = await byName.commonly_post_message.call({

@@ -22,6 +22,19 @@ describe('untrusted UI card write validation', () => {
   it.each(['system', 'approval', null, 1])('refuses non-agent message type %s without a payload', (type) => {
     expect(() => validateAgentCardPayload(type, undefined, 'hello')).toThrow('text or card');
   });
+  it('accepts the Linear, Sentry and Atlassian site links the renderer opens', () => {
+    for (const url of ['https://linear.app/x', 'https://sentry.io/x', 'https://acme.atlassian.net/x']) {
+      expect(() => validate(card(`root = Text("hello")\nunused = Action(@OpenUrl("${url}"))`))).not.toThrow();
+    }
+  });
+  it.each([
+    'https://linear.app.evil.com', 'https://evilatlassian.net', 'https://atlassian.net.evil.com',
+    'https://sentry.io.evil.com', 'http://linear.app/x', 'https://user:pw@linear.app', 'https://linear.app:8443',
+  ])('refuses the unapproved link %s', (url) => {
+    expect(() => validate(card(`root = Text("hello")\nunused = Action(@OpenUrl("${url}"))`))).toThrow(expect.objectContaining({
+      statusCode: 400, code: 'invalid_ui_card',
+    }));
+  });
   it('accepts a complete known component without evaluating it', () => {
     expect(() => validate()).not.toThrow();
     expect(() => validate(card('root = Text("Query Mutation @Run are just quoted text")'))).not.toThrow();
