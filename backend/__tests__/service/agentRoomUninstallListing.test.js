@@ -46,6 +46,25 @@ describe('agent-room leaves the owner list when its agent is uninstalled (TASK-7
     expect(body.map((p) => String(p._id))).toContain(String(room._id));
   });
 
+  it('keeps a room that has no installation row at all (failed install, legacy room)', async () => {
+    const bare = await Pod.create({ name: 'Talk to nothing yet', type: 'agent-room', createdBy: owner, members: [owner] });
+    const body = await callGetAllPods(owner);
+    expect(body.map((p) => String(p._id))).toContain(String(bare._id));
+  });
+
+  it('keeps a room while any of its installation rows is still live', async () => {
+    await AgentInstallation.create({
+      agentName: 'other-agent',
+      podId: room._id,
+      instanceId: 'default',
+      version: '1.0.0',
+      installedBy: owner,
+      status: 'uninstalled',
+    });
+    const body = await callGetAllPods(owner);
+    expect(body.map((p) => String(p._id))).toContain(String(room._id));
+  });
+
   it('drops the room after uninstall, and restores it on reinstall', async () => {
     await AgentInstallation.uninstall('byo-agent', room._id, 'default');
 

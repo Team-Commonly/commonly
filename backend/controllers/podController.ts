@@ -159,16 +159,25 @@ const installDefaultAgentForPod = async ({ pod, userId }: { pod: any; userId: an
 // An agent-room outlives its agent's uninstall on purpose: the pod keeps the
 // agent's memory and history, so a reinstall returns the owner to the same
 // room (CLAUDE.md design rule 8). It must not stay in the owner's list while
-// the agent is gone, or the room still offers prompts to nobody. One batched
-// query over the rooms in the result, not one per room.
+// the agent is gone, or the room still offers prompts to nobody. A room is
+// hidden only when it HAS installation rows and every one is uninstalled: a
+// room with no row (a failed install, or a legacy membership-only room) is
+// not evidence its agent was removed, so it stays listed. One aggregate over
+// the rooms in the result, not one query per room.
 const dropUninstalledAgentRooms = async (pods: any[]): Promise<any[]> => {
   const roomIds = pods.filter((p: any) => p.type === 'agent-room').map((p: any) => p._id);
   if (roomIds.length === 0) return pods;
-  const installedRoomIds = new Set(
-    (await AgentInstallation.distinct('podId', { podId: { $in: roomIds }, status: { $ne: 'uninstalled' } }))
-      .map((id: any) => String(id)),
-  );
-  return pods.filter((p: any) => p.type !== 'agent-room' || installedRoomIds.has(String(p._id)));
+  const rows: Array<{ _id: unknown; liveRows: number }> = await AgentInstallation.aggregate([
+    { $match: { podId: { $in: roomIds } } },
+    {
+      $group: {
+        _id: '$podId',
+        liveRows: { $sum: { $cond: [{ $ne: ['$status', 'uninstalled'] }, 1, 0] } },
+      },
+    },
+  ]);
+  const goneRoomIds = new Set(rows.filter((r) => r.liveRows === 0).map((r) => String(r._id)));
+  return pods.filter((p: any) => p.type !== 'agent-room' || !goneRoomIds.has(String(p._id)));
 };
 
 exports.getAllPods = async (req: any, res: any) => {
@@ -278,7 +287,10 @@ exports.getAllPods = async (req: any, res: any) => {
       pods = pods.filter((p: any) => (p.members || []).some((m: any) => m && String(m._id || m) === uid));
     }
 
-    if (!isCommunityScope && !isDiscoverScope) pods = await dropUninstalledAgentRooms(pods);
+    // Admin `scope=all` is cross-instance moderation: it keeps every room.
+    if (!isCommunityScope && !isDiscoverScope && scope !== 'all') {
+      pods = await dropUninstalledAgentRooms(pods);
+    }
 
     // Attach last-message preview per pod for the sidebar snippet. Single
     // PG query with DISTINCT ON, batched across all returned pod IDs —
