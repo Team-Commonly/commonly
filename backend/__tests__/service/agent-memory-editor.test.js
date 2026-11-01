@@ -138,4 +138,31 @@ describe('owner memory editor', () => {
     expect(memory.sections.long_term.content).toBe('Old note');
     expect(memory.content).toBe('Old note');
   });
+
+  it('index sections carry the section update time and no per-note time', async () => {
+    await AgentMemory.updateOne({ agentName: 'editor-agent', instanceId: 'machine-1' }, { $set: {
+      'sections.long_term.content': '## Rules\nNever merge without a GATE line.\n## Overview\nReviews PRs.',
+      'sections.daily': [{ date: '2026-10-28', content: '#401 approved' }],
+    } });
+    const index = await request(app).get('/api/agent-memory/editor-agent/machine-1')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(index.status).toBe(200);
+    const longTerm = index.body.sections.find((s) => s.key === 'long_term');
+    const daily = index.body.sections.find((s) => s.key === 'daily');
+    expect(longTerm.updatedAt).toBe(new Date('2026-01-01').toISOString());
+    expect(daily.updatedAt).toBeNull();
+    for (const note of [...longTerm.notes, ...daily.notes]) {
+      expect(Object.keys(note).sort()).toEqual(['header', 'snippet']);
+    }
+  });
+
+  it('index returns a null section update time when the section has none', async () => {
+    await AgentMemory.updateOne({ agentName: 'editor-agent', instanceId: 'machine-1' }, {
+      $set: { 'sections.long_term.content': '## Rules\nNever merge.' },
+      $unset: { 'sections.long_term.updatedAt': '' },
+    });
+    const index = await request(app).get('/api/agent-memory/editor-agent/machine-1')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(index.body.sections.find((s) => s.key === 'long_term').updatedAt).toBeNull();
+  });
 });

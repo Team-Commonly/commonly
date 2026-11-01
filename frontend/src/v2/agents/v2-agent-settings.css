@@ -148,8 +148,23 @@
 .v2-agent-memory__search:focus-within { box-shadow: var(--v2-focus-ring); }
 .v2-agent-memory__body { display: grid; min-width: 0; }
 .v2-agent-memory__group { margin-bottom: 18px; }
-.v2-agent-memory__gtitle { display: flex; align-items: center; gap: 8px; margin: 0 4px 8px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-tertiary); }
+.v2-agent-memory__gtitle { display: flex; align-items: center; gap: 8px; margin: 0 4px 8px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-tertiary); list-style: none; }
+.v2-agent-memory__gtitle::-webkit-details-marker { display: none; }
+.v2-agent-memory__gheading { display: inline-flex; align-items: center; gap: 8px; }
 .v2-agent-memory__gtitle .v2-agent-memory__icon { width: 13px; height: 13px; }
+.v2-agent-memory__gmeta { margin-left: auto; font-weight: 400; font-size: 11px; }
+/* Desktop: the groups are not collapsible, so the summary is a plain title. */
+.v2-agent-memory__chev { display: none; }
+@media (min-width: 768px) {
+  .v2-agent-memory__gtitle { pointer-events: none; }
+}
+/* Phone: search above the groups, group list hidden, groups collapsible. */
+@media (max-width: 767px) {
+  .v2-agent-memory__nav ul { display: none; }
+  .v2-agent-memory__gtitle { cursor: pointer; pointer-events: auto; }
+  .v2-agent-memory__chev { display: inline-block; margin-left: 4px; transition: transform 0.15s; }
+  .v2-agent-memory__group[open] > .v2-agent-memory__gtitle .v2-agent-memory__chev { transform: rotate(180deg); }
+}
 .v2-agent-memory__list { list-style: none; margin: 0; padding: 0; border-radius: 12px; border: 1px solid var(--v2-border-soft); background: var(--v2-surface); overflow: hidden; }
 .v2-agent-memory__list > li { border-top: 1px solid var(--v2-border-soft); }
 .v2-agent-memory__list > li:first-child { border-top: 0; }

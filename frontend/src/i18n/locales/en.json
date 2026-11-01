@@ -1954,6 +1954,7 @@
       "viewTag": "{{role}} view · private",
       "indexSummary_one": "{{notes}} notes across {{count}} section{{updated}}. Visible to you; hidden from the public profile.",
       "indexSummary_other": "{{notes}} notes across {{count}} sections{{updated}}. Visible to you; hidden from the public profile.",
+      "sectionUpdated": "Section updated {{when}}",
       "lastSavedClause": " · last saved to {{section}} {{time}}",
       "more": "+{{count}} more",
       "entriesRemembered": "entries remembered",

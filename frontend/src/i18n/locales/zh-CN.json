@@ -1945,6 +1945,7 @@
       "viewTag": "{{role}}视图 · 私有",
       "indexSummary_one": "{{notes}}条笔记，分布在{{count}}个板块{{updated}}。仅你可见；对公开资料页隐藏。",
       "indexSummary_other": "{{notes}}条笔记，分布在{{count}}个板块{{updated}}。仅你可见；对公开资料页隐藏。",
+      "sectionUpdated": "板块更新于{{when}}",
       "lastSavedClause": " · 最后保存至 {{section}}，{{time}}",
       "more": "还有{{count}}条",
       "entriesRemembered": "条已记住的条目",

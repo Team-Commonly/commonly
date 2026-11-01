@@ -45,6 +45,13 @@ describe('groupSections', () => {
     const groups = groupSections([section('brand_new_key')]);
     expect(headersOf(groups, 'how')).toEqual(['brand_new_key 0']);
   });
+
+  it('carries the section update time onto its group sections and splits it with long_term', () => {
+    const at = '2026-10-30T12:00:00.000Z';
+    const groups = groupSections([{ ...named('long_term', ['Rules', 'Overview']), updatedAt: at }]);
+    expect(groups.find((g) => g.id === 'rules').sections[0].updatedAt).toBe(at);
+    expect(groups.find((g) => g.id === 'how').sections[0].updatedAt).toBe(at);
+  });
 });
 
 describe('V2AgentMemory', () => {
@@ -82,6 +89,27 @@ describe('V2AgentMemory', () => {
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'host' } });
     expect(screen.getByText('Host notes')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /Journal/ })).toBeNull();
+  });
+
+  it('shows the section update time once per group and never on a note', async () => {
+    axios.get.mockResolvedValue({ data: {
+      viewerRole: 'owner', totalEntries: 3,
+      sections: [
+        { ...named('long_term', ['Rules', 'Host notes']), updatedAt: '2026-10-30T12:00:00.000Z' },
+        section('daily', 1),
+      ],
+    } });
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: /Journal/ })).toBeInTheDocument());
+    // Rules and How I work each carry the long_term time; Journal has none.
+    expect(document.querySelectorAll('.v2-agent-memory__gmeta')).toHaveLength(2);
+    expect(document.querySelectorAll('.v2-agent-memory__mnote .v2-agent-memory__gmeta')).toHaveLength(0);
   });
 
   it('shows a denied notice instead of the index when the viewer is not owner or admin', async () => {
