@@ -20,7 +20,7 @@
 .v2-feature--board .v2-board { background: var(--v2-surface); }
 
 /* keys (.b, .b-g, .b-p, .b-s, .b-sm, .ib) */
-.v2-feature--board .v2-board__key { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); cursor: pointer; white-space: nowrap; transition: transform 120ms, background 160ms, box-shadow 140ms; }
+.v2-feature--board .v2-board__key { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); cursor: pointer; white-space: nowrap; transition: transform var(--v2-dur-fast) var(--v2-ease); }
 .v2-feature--board .v2-board__key svg { width: 16px; height: 16px; flex: none; }
 .v2-feature--board .v2-board__key:active { transform: translateY(1px); }
 .v2-feature--board .v2-board__key:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent); }
@@ -68,7 +68,7 @@
 /* #3179: Blocked shows through its red dot and name, never through the card. */
 .v2-feature--board .v2-board__col-dot--blocked { background: var(--v2-status-blocked); }
 .v2-board__col--blocked .v2-board__col-name { color: var(--v2-status-blocked); }
-.v2-feature--board .v2-board__col-dot--claimed::after,
+.v2-feature--board .v2-board__col-dot--claimed.is-live::after,
 .v2-feature--board .v2-board__owner-dot--live::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--v2-accent); opacity: 0; animation: v2-board-pulse 1.6s ease-out infinite; }
 @keyframes v2-board-pulse { 0% { transform: scale(0.5); opacity: 0.55; } 100% { transform: scale(1.4); opacity: 0; } }
 /* The frame scrolls inside each column; its static mock clips. */
@@ -135,7 +135,7 @@
 .v2-feature--board .v2-board__detail-updates .v2-avatar { width: 20px; height: 20px; min-width: 20px; border-radius: 6px; }
 .v2-feature--board .v2-board__update-time { font: 400 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-feature--board .v2-board__updates-toggle { justify-self: start; display: inline-flex; align-items: center; gap: 5px; height: 24px; min-height: 0; margin-top: 6px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; font: 500 12px/1 var(--v2-font); color: var(--v2-text-secondary); box-shadow: inset 0 0 0 1px var(--v2-border-soft); background: var(--v2-surface); text-decoration: none; cursor: pointer; }
-.v2-feature--board .v2-board__updates-toggle svg { width: 14px; height: 14px; transition: transform 160ms; }
+.v2-feature--board .v2-board__updates-toggle svg { width: 14px; height: 14px; transition: transform var(--v2-dur) var(--v2-ease); }
 .v2-feature--board .v2-board__updates-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .v2-feature--board .v2-board__updates-toggle:focus-visible { box-shadow: 0 0 0 2px var(--v2-accent); }
 
@@ -144,7 +144,7 @@
 .v2-root:lang(zh) .v2-feature--board .v2-board__drawer-title { letter-spacing: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .v2-feature--board .v2-board__col-dot--claimed::after,
+  .v2-feature--board .v2-board__col-dot--claimed.is-live::after,
   .v2-feature--board .v2-board__owner-dot--live::after { animation: none; }
 }
 
@@ -666,7 +666,7 @@
 .v2-board__focus > summary { list-style: none; }
 .v2-board__focus > summary::-webkit-details-marker { display: none; }
 .v2-root button.v2-board__focus-edit { white-space: nowrap; flex: none; }
-.v2-board__focus-chevron { transition: transform 0.15s; }
+.v2-board__focus-chevron { transition: transform var(--v2-dur) var(--v2-ease); }
 .v2-board__focus[open] .v2-board__focus-chevron { transform: rotate(180deg); }
 .v2-board__focus[open] > :not(summary) { margin-left: 12px; margin-right: 12px; }
 .v2-board__focus[open] { max-height: 40vh; overflow-y: auto; }
@@ -717,3 +717,45 @@
 .v2-root button.v2-board__card-main:focus-visible {
   outline: 2px solid var(--v2-accent); outline-offset: 2px; box-shadow: none;
 }
+
+/* ── 4. Motion (the drawn motion spec) ─────────────────────────────────── */
+/* Transform and opacity only, on the --v2-dur* tokens and the one curve. The
+   global reduced-motion switch in v2.css lands every moment at its end state. */
+
+/* Agent claims a task, at 1440. While a live column change runs, <html> carries
+   .v2-board-glide and the two columns involved carry data-glide: their cards take
+   their view-transition-name from --v2-task-vt (task-<id>, set on each card), so
+   the moved card glides to its new column and the others close the gap in the
+   same transition. */
+:root.v2-board-glide .v2-feature--board .v2-board__col[data-glide] .v2-board__card { view-transition-name: var(--v2-task-vt); }
+:root.v2-board-glide::view-transition-group(*) { animation-duration: var(--v2-dur-slow); animation-timing-function: var(--v2-ease); }
+/* The lease ring starts pulsing only once the card has landed. */
+:root.v2-board-glide .v2-feature--board .v2-board__owner-dot--live::after,
+:root.v2-board-glide .v2-feature--board .v2-board__col-dot--claimed.is-live::after { animation: none; }
+
+/* At 390 the card is in another tab, so it can't glide: it fades out of the open
+   tab 8px toward the tab it went to, and that tab's count ticks. */
+.v2-feature--board .v2-board__card.is-leaving { pointer-events: none; animation: v2-board-leave-next var(--v2-dur) var(--v2-ease) forwards; }
+.v2-feature--board .v2-board__card.is-leaving--prev { animation-name: v2-board-leave-prev; }
+@keyframes v2-board-leave-next { to { opacity: 0; transform: translateX(8px); } }
+@keyframes v2-board-leave-prev { to { opacity: 0; transform: translateX(-8px); } }
+.v2-feature--board .v2-board__tab-count.is-ticking { display: inline-block; animation: v2-board-tick var(--v2-dur-fast) var(--v2-ease); }
+@keyframes v2-board-tick { from { opacity: 0.4; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+/* The task drawer slides in from the right over --v2-dur-slow and out over
+   --v2-dur-fast; at 390 the full-width sheet travels the same way. The scrim
+   (phone only; desktop draws none) fades on its own layer so the drawer itself
+   never fades. */
+.v2-feature--board .v2-board__overlay.v2-board__overlay--drawer { overflow: hidden; background: transparent; }
+.v2-feature--board .v2-board__overlay--drawer::before { content: ''; position: absolute; inset: 0; background: var(--v2-scrim); animation: v2-board-scrim-in var(--v2-dur-slow) var(--v2-ease); }
+@media (min-width: 761px) {
+  .v2-feature--board .v2-board__overlay--drawer::before { content: none; }
+}
+.v2-feature--board .v2-modal.v2-board__drawer { animation: v2-board-drawer-in var(--v2-dur-slow) var(--v2-ease); }
+.v2-feature--board .v2-board__overlay--drawer[data-leaving] { pointer-events: none; }
+.v2-feature--board .v2-board__overlay--drawer[data-leaving]::before { animation: v2-board-scrim-out var(--v2-dur-fast) var(--v2-ease) forwards; }
+.v2-feature--board .v2-modal.v2-board__drawer[data-leaving] { animation: v2-board-drawer-out var(--v2-dur-fast) var(--v2-ease) forwards; }
+@keyframes v2-board-drawer-in { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes v2-board-drawer-out { from { transform: none; } to { transform: translateX(100%); } }
+@keyframes v2-board-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes v2-board-scrim-out { from { opacity: 1; } to { opacity: 0; } }

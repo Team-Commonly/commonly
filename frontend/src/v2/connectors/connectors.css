@@ -47,7 +47,7 @@
 
 /* grid and tile */
 .v2-cx-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
-.v2-cx-tile { all: unset; box-sizing: border-box; cursor: pointer; position: relative; display: grid; justify-items: center; align-content: center; gap: 10px; height: 128px; border-radius: 14px; background: linear-gradient(180deg, var(--cx-key-a), var(--cx-key-b)); box-shadow: 0 0 0 1px var(--cx-key-edge), 0 1px 2px rgba(16, 24, 40, 0.06), 0 6px 14px -10px rgba(16, 24, 40, 0.2); transition: box-shadow 140ms, transform 120ms; }
+.v2-cx-tile { all: unset; box-sizing: border-box; cursor: pointer; position: relative; display: grid; justify-items: center; align-content: center; gap: 10px; height: 128px; border-radius: 14px; background: linear-gradient(180deg, var(--cx-key-a), var(--cx-key-b)); box-shadow: 0 0 0 1px var(--cx-key-edge), 0 1px 2px rgba(16, 24, 40, 0.06), 0 6px 14px -10px rgba(16, 24, 40, 0.2); }
 .v2-cx-tile:hover { box-shadow: 0 0 0 1px var(--v2-border), 0 1px 2px rgba(16, 24, 40, 0.06), 0 12px 22px -12px rgba(16, 24, 40, 0.28); }
 .v2-cx-tile:focus-visible { box-shadow: 0 0 0 2px var(--v2-accent); }
 .v2-cx-tile--selected { box-shadow: 0 0 0 2px var(--v2-accent); }
@@ -119,3 +119,11 @@
 .v2-cx-drawer__body { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 16px; }
 .v2-cx-drawer__body .v2-connectors__aside { gap: 16px; }
 @media (max-width: 760px) { .v2-cx-drawer { position: fixed; inset: 0 0 calc(72px + env(safe-area-inset-bottom, 0px)) 0; width: auto; } }
+/* Motion: the drawer slides in from the right over --v2-dur-slow and back out over
+   --v2-dur-fast; at 390 the full-width sheet travels the same way. There is no
+   scrim here. The body clips sideways so the off-screen drawer never scrolls. */
+.v2-cx-drawer { animation: v2-cx-drawer-in var(--v2-dur-slow) var(--v2-ease); }
+.v2-cx-drawer.is-leaving { pointer-events: none; animation: v2-cx-drawer-out var(--v2-dur-fast) var(--v2-ease) forwards; }
+@keyframes v2-cx-drawer-in { from { transform: translateX(100%); } to { transform: none; } }
+@keyframes v2-cx-drawer-out { from { transform: none; } to { transform: translateX(100%); } }
+.v2-cx-body { overflow-x: hidden; }
