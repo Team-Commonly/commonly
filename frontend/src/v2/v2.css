@@ -7789,8 +7789,7 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Settings (/v2/settings) ---------- */
 .v2-settings {
-  width: min(100%, 1040px);
-  margin: 0 auto;
+  width: 100%;
   color: var(--v2-text-primary);
 }
 
@@ -7798,7 +7797,6 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding-top: 40px;
 }
 
 .v2-settings__title {
@@ -7880,7 +7878,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-settings__group .v2-settings__developer-disclosure { margin: 0; padding: 12px 14px; }
 .v2-settings__token-detail { padding: 0 14px 12px; }
 @media (max-width: 560px) {
-  .v2-settings__layout { padding-top: 20px; gap: 16px; }
+  .v2-settings__layout { gap: 16px; }
   .v2-settings__row > .v2-settings__row-label { min-width: 0; }
   .v2-settings__token > .v2-settings__row { flex-wrap: wrap; }
   .v2-settings__row-actions { flex: 1 0 100%; justify-content: flex-end; }
@@ -8418,7 +8416,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 /* D215 Settings › Look: a label and a segment per row. Language moved here
    from the rail (TASK-691). */
 .v2-settings__look { display: flex; flex-direction: column; }
-.v2-settings__look .v2-settings__row { justify-content: space-between; }
+.v2-settings__look .v2-settings__row { justify-content: flex-start; }
+.v2-settings__look .v2-settings__row > :last-child { margin-left: auto; }
 .v2-settings__look .v2-settings__row + .v2-settings__row { border-top: 1px solid var(--v2-border-soft); }
 
 
@@ -8494,15 +8493,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 @media (max-width: 680px) {
-  .v2-settings__layout {
-    display: block;
-    padding-top: 24px;
-  }
-
-  .v2-settings__title {
-    margin-bottom: 24px;
-    font-size: 28px;
-  }
+  .v2-settings__layout { display: block; }
 
 
   .v2-settings__token-value {

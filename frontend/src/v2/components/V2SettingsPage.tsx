@@ -5,6 +5,7 @@ import axios from '../../utils/axiosConfig';
 import { getAvatarSrc } from '../../utils/avatarUtils';
 import { useAuth } from '../../context/AuthContext';
 import AppsManagement from '../../components/AppsManagement';
+import '../primitives/primitives.css';
 import V2BillingPanel from './V2BillingPanel';
 import V2DevicesPanel from './V2DevicesPanel';
 import V2DeleteAccount from './V2DeleteAccount';
@@ -488,7 +489,7 @@ const V2ApiTokenSection: React.FC = () => {
   const maskedToken = '••••••••••••••••••••••••••••••••';
   const createdLabel = createdAt ? formatTokenCreatedAt(createdAt) : null;
 
-  const statusLabel = hasToken ? 'Active' : 'None';
+  const statusLabel = hasToken ? `Active${last4 ? ` · ends in ${last4}` : ''}` : 'None';
 
   return (
     <div className="v2-settings__token">
@@ -511,24 +512,19 @@ const V2ApiTokenSection: React.FC = () => {
           </button>
         )}
       </div>
-      {(error || notice || hasToken) && (
+      {(error || notice || token) && (
         <div className="v2-settings__token-detail">
           {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
           {notice && <p className="v2-settings__message" role="status">{notice}</p>}
-          {hasToken && (
+          {token && (
             <>
               <div className="v2-settings__token-value">
                 <code>{token && showToken ? token : maskedToken}</code>
-                {token && (
-                  <>
-                    <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
-                      {showToken ? 'Hide' : 'Show'}
-                    </button>
-                    <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
-                  </>
-                )}
+                <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
+                  {showToken ? 'Hide' : 'Show'}
+                </button>
+                <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
               </div>
-              {!token && <p className="v2-settings__token-meta">Shown once, when generated.{last4 ? ` Ends in ${last4}.` : ''}</p>}
               {createdLabel && <p className="v2-settings__token-meta">{createdLabel}</p>}
             </>
           )}
@@ -590,8 +586,8 @@ const V2SettingsPage: React.FC = () => {
 
   return (
     <div className="v2-settings" aria-label="Settings">
-      <div className="v2-settings__layout">
-        <h1 className="v2-settings__title">Settings</h1>
+      <header className="v2p-ph"><h1>Settings</h1></header>
+      <div className="v2p-body v2-settings__layout">
         <div className="v2-settings__content">
           <SettingsSection id="account" title="Account">
             <V2AccountSection />
