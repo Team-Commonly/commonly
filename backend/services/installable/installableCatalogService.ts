@@ -113,8 +113,8 @@ const publicInstallation = (installation: any): unknown => {
 //
 // A hosted entry can hold several of the caller's rows, an OAuth sign-in and
 // operator keys bound per agent (TASK-330), so a hosted row also carries what
-// tells them apart: when it was connected, and for a key its masked hint and
-// the agent it is bound to.
+// tells them apart: when it was connected, and for a key the agent (bot user
+// id) it is bound to.
 const publicConnection = (integration: any) => ({
   connectionId: String(integration.installationId || integration._id || ''),
   owner: String(integration.config?.owner || ''),
@@ -122,7 +122,6 @@ const publicConnection = (integration: any) => ({
   ...(integration.type === 'hosted-mcp' ? {
     ...(integration.createdAt ? { connectedAt: new Date(integration.createdAt).toISOString() } : {}),
     ...(integration.config?.agentId ? { agentId: String(integration.config.agentId) } : {}),
-    ...(integration.config?.credentialHint ? { credentialHint: String(integration.config.credentialHint) } : {}),
   } : {}),
 });
 

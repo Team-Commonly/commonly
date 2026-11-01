@@ -314,7 +314,7 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
   }
 });
 
-it("a hosted entry's connections each say how they differ: when, and for a key its hint and agent", async () => {
+it("a hosted entry's connections each say how they differ: when, and for a key its agent", async () => {
   const shipped = HOSTED_MCP_ENTRIES.slice();
   const linearEntry = shipped.find((entry) => entry.id === 'linear');
   try {
@@ -329,7 +329,7 @@ it("a hosted entry's connections each say how they differ: when, and for a key i
       {
         _id: 'conn-key', type: 'hosted-mcp', status: 'connected', createdBy: userId,
         createdAt: new Date('2026-10-31T11:00:00Z'),
-        config: { entryId: 'linear', agentId: 'agent-7', credentialHint: 'lin…9f', credentialRef: 'ref-key' },
+        config: { entryId: 'linear', agentId: '6a0000000000000000000007', credentialHint: 'lin…9f', credentialRef: 'ref-key' },
       },
     ]));
 
@@ -340,10 +340,10 @@ it("a hosted entry's connections each say how they differ: when, and for a key i
       { connectionId: 'conn-oauth', owner: '', repo: '', connectedAt: '2026-10-30T10:00:00.000Z' },
       {
         connectionId: 'conn-key', owner: '', repo: '', connectedAt: '2026-10-31T11:00:00.000Z',
-        agentId: 'agent-7', credentialHint: 'lin…9f',
+        agentId: '6a0000000000000000000007',
       },
     ]);
-    expect(JSON.stringify(linear.connections)).not.toMatch(/ref-oauth|ref-key|subject-1/);
+    expect(JSON.stringify(linear.connections)).not.toMatch(/ref-oauth|ref-key|subject-1|lin…9f/);
   } finally {
     HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
   }
