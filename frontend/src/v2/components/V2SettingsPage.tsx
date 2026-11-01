@@ -72,6 +72,10 @@ const Pencil = () => <Svg><path d="M4 20h4l10-10-4-4L4 16v4zM13 7l4 4" /></Svg>;
 const Chevron = () => <Svg><path d="m6 9 6 6 6-6" /></Svg>;
 const Key = () => <Svg><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8M16 7l2 2" /></Svg>;
 const Plug = () => <Svg><path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0V8zM12 17v4" /></Svg>;
+const Chat = () => <Svg><path d="M5 5h14v10H9l-4 4V5z" /></Svg>;
+const Card = () => <Svg><path d="M3 6h18v12H3zM3 10h18" /></Svg>;
+const Globe = () => <Svg><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></Svg>;
+const Moon = () => <Svg><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10z" /></Svg>;
 const Warn = () => <Svg><path d="M12 4 3 20h18L12 4zM12 10v4M12 17v.5" /></Svg>;
 
 const V2AccountSection: React.FC = () => {
@@ -254,6 +258,7 @@ const V2AccountSection: React.FC = () => {
         </button>
       </div>
       <div className="v2-settings__row">
+        <Chat />
         <span className="v2-settings__row-label">Email</span>
         <span className="v2-settings__row-value v2-settings__row-value--mono">{accountEmail || '—'}</span>
         <button
@@ -545,7 +550,7 @@ const V2LanguageSection: React.FC = () => {
   return (
     <div className="v2-settings__look">
       <div className="v2-settings__row">
-        <span className="v2-settings__row-label">{t('common.language.label')}</span>
+        <Globe /><span className="v2-settings__row-label">{t('common.language.label')}</span>
         <V2Segmented
           size="sm"
           ariaLabel={t('common.language.label')}
@@ -555,7 +560,7 @@ const V2LanguageSection: React.FC = () => {
         />
       </div>
       <div className="v2-settings__row">
-        <span className="v2-settings__row-label">{t('common.theme.label')}</span>
+        <Moon /><span className="v2-settings__row-label">{t('common.theme.label')}</span>
         <V2Segmented
           size="sm"
           ariaLabel={t('common.theme.label')}
@@ -591,6 +596,7 @@ const V2SettingsPage: React.FC = () => {
           <SettingsSection id="account" title="Account">
             <V2AccountSection />
             <div className="v2-settings__row v2-settings__row--plan">
+              <Card />
               <span className="v2-settings__row-label">Plan</span>
               <V2BillingPanel showHeading={false} />
             </div>

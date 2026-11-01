@@ -52,7 +52,7 @@ const V2DevicesPanel: React.FC<V2DevicesPanelProps> = ({ showHeading = true, asF
     const live = devices.filter((device) => !device.revokedAt);
     const lastUsed = live.map((device) => device.lastUsedAt).filter(Boolean).sort().pop();
     const summary = loading ? 'Loading…' : error ? 'Couldn’t load' : live.length === 0 ? 'None'
-      : `${live.length} CLI device${live.length === 1 ? '' : 's'}${lastUsed ? ` · used ${new Date(lastUsed as string).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}`;
+      : `${live.length} CLI device${live.length === 1 ? '' : 's'}${lastUsed ? ` · used ${(() => { const when = new Date(lastUsed as string); return when.toDateString() === new Date().toDateString() ? when.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : when.toLocaleDateString([], { month: 'short', day: 'numeric' }); })()}` : ''}`;
     return (
       <details className="v2-settings__fold">
         <summary className="v2-settings__row v2-settings__summary">
