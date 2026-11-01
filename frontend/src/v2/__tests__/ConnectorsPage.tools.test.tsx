@@ -691,6 +691,11 @@ describe('Connectors page: tools', () => {
 
     // TASK-330: one sign-in row plus operator-key rows bound per agent. The
     // server describes each row, so each gets its own named Disconnect.
+    // Labels carry the viewer's local date, so expected text is computed the
+    // same way and holds in any time zone the suite runs in.
+    const day = (at) => new Date(at).toLocaleDateString('en', { month: 'short', day: 'numeric' });
+    const SIGNED_IN = `Signed in · ${day('2026-10-30T12:00:00Z')}`;
+    const KEY_SCOUT = `Key · Scout · ${day('2026-10-31T12:00:00Z')}`;
     const twoNamed = {
       ...atlassian,
       connections: [
@@ -705,11 +710,11 @@ describe('Connectors page: tools', () => {
       renderPage();
 
       const popover = await openToolPopover('Atlassian');
-      expect(within(popover).getByText('Signed in · Oct 30')).toBeInTheDocument();
-      expect(within(popover).getByText('Key · Scout · Oct 31')).toBeInTheDocument();
-      fireEvent.click(within(popover).getByRole('button', { name: 'Disconnect Atlassian: Key · Scout · Oct 31' }));
+      expect(within(popover).getByText(SIGNED_IN)).toBeInTheDocument();
+      expect(within(popover).getByText(KEY_SCOUT)).toBeInTheDocument();
+      fireEvent.click(within(popover).getByRole('button', { name: `Disconnect Atlassian: ${KEY_SCOUT}` }));
       expect(within(popover).getAllByRole('button', { name: 'Yes, disconnect' })).toHaveLength(1);
-      expect(within(popover).getByRole('button', { name: 'Disconnect Atlassian: Signed in · Oct 30' })).toBeInTheDocument();
+      expect(within(popover).getByRole('button', { name: `Disconnect Atlassian: ${SIGNED_IN}` })).toBeInTheDocument();
       fireEvent.click(within(popover).getByRole('button', { name: 'Yes, disconnect' }));
       await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-atl-key', expect.any(Object)));
       expect(axios.delete).toHaveBeenCalledTimes(1);
@@ -721,7 +726,7 @@ describe('Connectors page: tools', () => {
       renderPage();
 
       const { aside } = await openRow('Atlassian', 'View Atlassian in Launch pod');
-      fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian: Signed in · Oct 30' }));
+      fireEvent.click(within(aside).getByRole('button', { name: `Disconnect Atlassian: ${SIGNED_IN}` }));
       fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
       await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-atl', expect.any(Object)));
       const card = await screen.findByRole('complementary', { name: 'Grant details' });
@@ -736,15 +741,15 @@ describe('Connectors page: tools', () => {
       renderPage();
 
       const popover = await openToolPopover('Atlassian');
-      expect(within(popover).getByText('Key · Oct 31')).toBeInTheDocument();
+      expect(within(popover).getByText(`Key · ${day('2026-10-31T12:00:00Z')}`)).toBeInTheDocument();
     });
 
     it('two connections that read the same offer no Disconnect, since neither can be told apart', async () => {
       const lookAlike = {
         ...twoNamed,
         connections: [
-          { connectionId: 'conn-atl-k1', owner: '', repo: '', agentId: 'off-roster-1', connectedAt: '2026-10-31T09:00:00Z' },
-          { connectionId: 'conn-atl-k2', owner: '', repo: '', agentId: 'off-roster-2', connectedAt: '2026-10-31T15:00:00Z' },
+          { connectionId: 'conn-atl-k1', owner: '', repo: '', agentId: 'off-roster-1', connectedAt: '2026-10-31T12:00:00Z' },
+          { connectionId: 'conn-atl-k2', owner: '', repo: '', agentId: 'off-roster-2', connectedAt: '2026-10-31T12:00:00Z' },
         ],
       };
       mockTools({ entries: [lookAlike], grants: [] });
@@ -761,7 +766,7 @@ describe('Connectors page: tools', () => {
       renderPage();
 
       const { aside } = await openRow('Atlassian', 'View Atlassian in Launch pod');
-      fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian: Signed in · Oct 30' }));
+      fireEvent.click(within(aside).getByRole('button', { name: `Disconnect Atlassian: ${SIGNED_IN}` }));
       fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
       expect(await screen.findByRole('link', { name: 'Open provider settings' })).toBeInTheDocument();
       const card = await screen.findByRole('complementary', { name: 'Grant details' });
