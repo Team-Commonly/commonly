@@ -150,5 +150,29 @@
  "profile-error-390": {
   "helperWords": 0,
   "innerRatio": 1
+ },
+ "taskrecord-log-1440": {
+  "helperWords": 58,
+  "innerRatio": 1
+ },
+ "taskrecord-empty-1440": {
+  "helperWords": 32,
+  "innerRatio": 1
+ },
+ "taskrecord-error-1440": {
+  "helperWords": 0,
+  "innerRatio": 1
+ },
+ "taskrecord-log-390": {
+  "helperWords": 48,
+  "innerRatio": 1
+ },
+ "taskrecord-empty-390": {
+  "helperWords": 32,
+  "innerRatio": 1
+ },
+ "taskrecord-error-390": {
+  "helperWords": 0,
+  "innerRatio": 1
  }
 }
