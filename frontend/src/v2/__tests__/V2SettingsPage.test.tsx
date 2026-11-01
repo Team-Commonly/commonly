@@ -244,6 +244,7 @@ describe('V2SettingsPage', () => {
     expect(await screen.findByText(/active · ends in cret/i)).toBeInTheDocument();
     expect(screen.queryByText(/shown once/i)).not.toBeInTheDocument();
     expect(screen.queryByText('••••••••••••••••••••••••••••••••')).not.toBeInTheDocument();
+    expect(document.querySelector('.v2-settings__token-detail')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show' })).not.toBeInTheDocument();
     expect(screen.queryByText('cm_user_secret')).not.toBeInTheDocument();
