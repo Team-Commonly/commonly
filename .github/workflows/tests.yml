@@ -102,6 +102,14 @@ jobs:
             echo "frontend=$frontend"
             echo "chart=$chart"
           } >> "$GITHUB_OUTPUT"
+      # Guard the filter regexes: the test reads the three patterns out of this
+      # file and asserts path classification, so a reverted alternative (which
+      # would silently skip a suite for a package it should test) fails CI.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Filter regex regression test
+        run: node --test scripts/changes-filter.test.mjs
 
   # Heavy jobs (backend, frontend, service tests) run on Latchkey runners on
   # merge-queue runs when vars.LATCHKEY_HEAVY is 'on': those runners don't
