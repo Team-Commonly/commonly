@@ -24,7 +24,12 @@ import path from 'path';
  * fixed one fails the second (the allowlist may not carry a selector that no
  * longer violates). Target is an empty list.
  */
-const CSS = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
+// v2.css plus the surface sheets that left it: the board's rules moved to its
+// own file (S4) and are held to the same floors.
+const CSS = [
+  '../v2.css',
+  '../components/V2PodBoard.css',
+].map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8')).join('\n');
 
 const MONO_FLOOR = 11;
 const SANS_FLOOR = 12;
@@ -147,8 +152,6 @@ const ALLOWLIST: string[] = [
   // unassigned
   '.v2-approval__badge', // 10.5px — mono-below-floor
   '.v2-approval__time', // 11.5px — no-mono-family
-  '.v2-board__card-id', // 10.5px — no-mono-family
-  '.v2-board__detail-update-author', // 11.5px — no-mono-family
   '.v2-connect__number', // 11.0px — no-mono-family
   '.v2-filter-count', // 11.0px — no-mono-family
   '.v2-invite-card__meta', // 11.0px — no-mono-family

@@ -24,6 +24,10 @@ import { blockAt, blockContaining } from '../lib/cssBlocks';
 const read = (rel: string): string =>
   fs.readFileSync(path.join(__dirname, rel), 'utf8');
 
+// The task board's own sheet (S4, lifted from the d215 frame). Its rules left
+// v2.css in the same change, so every board guard reads this file.
+const boardCss = read('../components/V2PodBoard.css');
+
 // The team's phone block: the `@media (max-width: 760px)` block that carries
 // `.v2-team__grid`, wherever it sits in the sheet — not the last one.
 const teamPhoneBlock = (css: string): string =>
@@ -1359,7 +1363,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('quote edges share the same neutral 3px structural weight', () => {
     expect(ruleBody(v2, '.v2-msg__content blockquote')).toContain('border-left: 3px solid var(--v2-border)');
     expect(ruleBody(v2, '.v2-msg__quote')).toContain('border-left: 3px solid var(--v2-border)');
-    expect(ruleBody(v2, '.v2-board__detail-updates li')).toContain('border-left: 3px solid var(--v2-border)');
   });
 
   test('the workspace inspector working dot is cobalt and uses the semantic pulse timing', () => {
@@ -1369,45 +1372,48 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('v2 focus treatment reuses the shared focus-ring token', () => {
-    expect(ruleBody(v2, '.v2-board__field input:focus')).toContain('box-shadow: var(--v2-focus-ring)');
+    expect(ruleBody(boardCss, '.v2-board__field input:focus')).toContain('box-shadow: var(--v2-focus-ring)');
   });
 
   test('board cards scroll intact and titles stay scannable in full columns', () => {
-    // A board column is a height-constrained flex container. The cards have
-    // overflow:hidden for rounded clipping, which otherwise permits the
-    // default flex-shrink:1 to crush full columns into unreadable slivers.
-    expect(ruleBody(v2, '.v2-board__card')).toContain('flex-shrink: 0');
-    expect(ruleBody(v2, '.v2-board__col-empty')).toContain('flex-shrink: 0');
+    // The column body is a grid of max-content rows (S4: the d215 .cbody), so a
+    // full column scrolls instead of crushing its cards; the empty note keeps
+    // its flex-shrink guard from the flex era.
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__col-body')).toContain('grid-auto-rows: max-content');
+    expect(ruleBody(boardCss, '.v2-board__col-empty')).toContain('flex-shrink: 0');
 
-    const title = ruleBody(v2, '.v2-board__card-title');
+    // The frame's .tt: two lines, then an ellipsis.
+    const title = ruleBody(boardCss, '.v2-feature--board .v2-board__card-title');
     expect(title).toContain('display: -webkit-box');
-    expect(title).toContain('-webkit-line-clamp: 3');
+    expect(title).toContain('-webkit-line-clamp: 2');
     expect(title).toContain('-webkit-box-orient: vertical');
     expect(title).toContain('overflow: hidden');
   });
 
-  test('a board claim lease reads as secondary status rather than a blue mention', () => {
+  test('a board claim lease is the frame\'s accent mono timer on the id row (D215 .lease)', () => {
     expect(podBoard).toContain('className="v2-board__owner-line"');
-    const lease = ruleBody(v2, '.v2-board__owner-line');
-    expect(lease).toContain('var(--v2-font-mono)');
-    expect(lease).toContain('color: var(--v2-text-secondary)');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__card-kicker')).toContain('var(--v2-font-mono)');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__owner-line')).toContain('color: var(--v2-accent-text)');
   });
 
-  test('craft-pass board action chips keep their 32px target and 12px type', () => {
-    // These compact controls are repeated on every board card and in the
-    // detail dialog. A declaration on the shared selector keeps both paths
-    // aligned and guards the 25px control regression measured at 390px.
-    const chip = ruleBody(v2, '.v2-root button.v2-board__card-move');
-    expect(chip).toContain('min-height: 32px');
-    expect(chip).toContain('font-size: 12px');
+  test('board card actions are the frame\'s 24px icon keys in a popover bar (D215 .hv)', () => {
+    // Icon-only, so each key carries its old visible text as aria-label and title.
+    expect(podBoard).toContain('aria-label={t(move.labelKey)}');
+    expect(podBoard).toContain('title={t(move.labelKey)}');
+    const key = ruleBody(boardCss, '.v2-feature--board .v2-board__card-actions .v2-board__key--icon');
+    expect(key).toContain('width: 24px');
+    expect(key).toContain('height: 24px');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__card-actions')).toContain('box-shadow: var(--v2-shadow-pop)');
   });
 
   test('UI-STRUCT B3 uses ink for primary actions and mono counts without pills', () => {
-    const boardNew = ruleBody(v2, '.v2-root button.v2-board__new');
-    expect(boardNew).toContain('background: var(--v2-ink)');
-    expect(boardNew).toContain('color: var(--v2-on-ink)');
+    // S4: New task is the frame's ink key (.b-p), the fill gradient.
+    expect(podBoard).toContain('v2-board__new v2-board__key v2-board__key--ink');
+    const boardNew = ruleBody(boardCss, '.v2-feature--board .v2-board__key--ink');
+    expect(boardNew).toContain('background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
+    expect(boardNew).toContain('color: var(--v2-on-fill)');
 
-    const columnCount = ruleBody(v2, '.v2-board__col-count');
+    const columnCount = ruleBody(boardCss, '.v2-feature--board .v2-board__col-count');
     expect(columnCount).toContain('var(--v2-font-mono)');
     expect(columnCount).not.toContain('background:');
     expect(columnCount).not.toContain('border-radius:');
@@ -3007,9 +3013,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(podBoard).toContain('className="v2-board__focus"');
       expect(podBoard).toContain('v2-board__focus-editor');
       expect(podBoard).toContain('expectedRevision: focusBaseRevision ?? 0');
-      expect(ruleBody(v2, '.v2-board__focus')).toContain('border: 1px solid var(--v2-border)');
-      expect(ruleBody(v2, '.v2-board__focus')).toContain('background: var(--v2-bg)');
-      expect(ruleBody(v2, '.v2-board__focus-tasks')).toContain('flex-direction: column');
+      // S4: the closed panel is the frame's 40px focus strip.
+      expect(ruleBody(boardCss, '.v2-feature--board .v2-board__focus-strip')).toContain('height: 40px');
+      expect(ruleBody(boardCss, '.v2-board__focus-tasks')).toContain('flex-direction: column');
       expect(podBoard).toContain('focusConflictLatest');
       expect(podBoard).toContain('focusConflictReviewed');
       expect(podBoard).toContain('focusMoveTargetRef');
@@ -3018,26 +3024,22 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(podBoard).toContain('v2-board__focus-position');
       expect(podBoard).toContain('className="v2-board__focus-task-position"');
       expect(podBoard).toContain('focusConflictLatest.focus.owner');
-      expect(ruleBody(v2, '.v2-board__focus-selected li:focus-visible')).toContain('outline: 2px solid var(--v2-accent)');
-      expect(ruleBody(v2, '.v2-board__focus-live')).toContain('clip: rect(0, 0, 0, 0)');
-      expect(ruleBody(v2, '.v2-root button.v2-board__focus-save')).toContain('background: var(--v2-ink)');
-      expect(ruleBody(v2, '.v2-root .v2-board__focus-selected button')).toContain('min-height: 32px');
-      expect(ruleBody(v2, '.v2-root .v2-board__focus-selected button')).toContain('border: 1px solid var(--v2-border)');
-      expect(ruleBody(v2, '.v2-board__focus-task-option')).toContain('flex: 0 0 auto');
-      expect(ruleBody(v2, '.v2-board__focus-task-option > span')).toContain('overflow-wrap: anywhere');
-      expect(ruleBody(v2, '.v2-board__focus-task-meta')).toContain('flex-wrap: wrap');
-      expect(ruleBody(v2, '.v2-board__focus-goal')).toContain('font-size: 16px');
-      expect(ruleBody(v2, '.v2-board__focus-scope')).toContain('font-size: 14px');
-      expect(ruleBody(v2, '.v2-board__focus-scope')).toContain('line-height: 20px');
+      expect(ruleBody(boardCss, '.v2-board__focus-selected li:focus-visible')).toContain('outline: 2px solid var(--v2-accent)');
+      expect(ruleBody(boardCss, '.v2-board__focus-live')).toContain('clip: rect(0, 0, 0, 0)');
+      expect(ruleBody(boardCss, '.v2-root button.v2-board__focus-save')).toContain('background: var(--v2-ink)');
+      expect(ruleBody(boardCss, '.v2-root .v2-board__focus-selected button')).toContain('min-height: 32px');
+      expect(ruleBody(boardCss, '.v2-root .v2-board__focus-selected button')).toContain('border: 1px solid var(--v2-border)');
+      expect(ruleBody(boardCss, '.v2-board__focus-task-option')).toContain('flex: 0 0 auto');
+      expect(ruleBody(boardCss, '.v2-board__focus-task-option > span')).toContain('overflow-wrap: anywhere');
+      expect(ruleBody(boardCss, '.v2-board__focus-task-meta')).toContain('flex-wrap: wrap');
+      expect(ruleBody(boardCss, '.v2-board__focus-scope')).toContain('font-size: 14px');
+      expect(ruleBody(boardCss, '.v2-board__focus-scope')).toContain('line-height: 20px');
       expect(podBoard).toContain('if (data?.podId && data.podId !== podId) return;');
       expect(podBoard).toContain('className="v2-board__focus-retry"');
-      expect(ruleBody(v2, '.v2-board__focus-conflict')).toContain('border: 1px solid var(--v2-border)');
-      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus \{[\s\S]*?padding: 14px;/);
-      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-edit,[\s\S]*?min-height: 44px;/);
-      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-tasks \{[\s\S]*?padding-left: 0;/);
-      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-tasks li \{[\s\S]*?grid-template-areas:[\s\S]*?\"title title\"[\s\S]*?\"meta meta\"/);
-      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-root \.v2-board__focus-editor button\.v2-board__focus-save,[\s\S]*?min-height: 44px;/);
-      expect(v2).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-root \.v2-board__focus-selected button \{[\s\S]*?border: 1px solid var\(--v2-border\);/);
+      expect(ruleBody(boardCss, '.v2-board__focus-conflict')).toContain('border: 1px solid var(--v2-border)');
+      expect(boardCss).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-board__focus-edit,[\s\S]*?min-height: 44px;/);
+      expect(boardCss).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-root \.v2-board__focus-editor button\.v2-board__focus-save,[\s\S]*?min-height: 44px;/);
+      expect(boardCss).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.v2-root \.v2-board__focus-selected button \{[\s\S]*?border: 1px solid var\(--v2-border\);/);
     });
   });
 
@@ -5127,27 +5129,30 @@ describe('agent Memory tab (TASK-690 slice 1 and 2)', () => {
 describe('task priority and lease signals (TASK-443)', () => {
   const css = read('../v2.css');
   test('priority remains a monochrome text badge', () => {
-    const badge = ruleBody(css, '.v2-board__priority');
+    const badge = ruleBody(boardCss, '.v2-feature--board .v2-board__priority');
     expect(badge).toContain('var(--v2-font-mono)');
     expect(badge).toContain('border-radius: 4px');
     expect(badge).toContain('background: none');
     expect(badge).toContain('color: var(--v2-prio-ink)');
-    expect(badge).toContain('border: 1px solid var(--v2-prio-edge)');
+    // S4: the frame's .pr1 draws its edge as an inset ring.
+    expect(badge).toContain('box-shadow: inset 0 0 0 1px var(--v2-prio-edge)');
     // P0 is the only filled badge: red fill, white label (B-lite, Sam 10-31).
-    const urgent = ruleBody(css, '.v2-board__priority--p0');
+    const urgent = ruleBody(boardCss, '.v2-feature--board .v2-board__priority--p0');
     expect(urgent).toContain('background: var(--v2-prio-p0-bg)');
     expect(urgent).toContain('color: var(--v2-prio-p0-fg)');
     // Status and priority colour are tokens, so the D215 colour choice is a value swap.
     expect(css).toMatch(/--v2-prio-p0-bg:\s*#b42318/);
     expect(css).toMatch(/--v2-prio-p2-fg:\s*#667085/);
     expect(css).toMatch(/--v2-status-live:\s*var\(--v2-accent\)/);
-    expect(ruleBody(css, '.v2-board__priority--p2')).toContain('color: var(--v2-prio-p2-fg)');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__priority--p2')).toContain('color: var(--v2-prio-p2-fg)');
   });
   test('blocked shows through the column dot and P0 badge, not a card rail', () => {
     expect(css).toMatch(/--v2-status-blocked:\s*#d92d20/);
     expect(css).not.toContain('--v2-status-blocked-edge');
     expect(css).not.toMatch(/\.v2-board__card--blocked\s*[,{]/);
-    expect(ruleBody(css, '.v2-board__col--blocked .v2-board__col-name')).toContain('color: var(--v2-status-blocked)');
+    expect(boardCss).not.toMatch(/\.v2-board__card--blocked\s*[,{]/);
+    expect(ruleBody(boardCss, '.v2-board__col--blocked .v2-board__col-name')).toContain('color: var(--v2-status-blocked)');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__col-dot--blocked')).toContain('background: var(--v2-status-blocked)');
   });
   // D225: a status rail down the side of a card reads as generated UI. A card is
   // told apart by its column and badge, never by an inset side shadow or a
@@ -5155,7 +5160,8 @@ describe('task priority and lease signals (TASK-443)', () => {
   test('no card selector draws a status rail (inset side shadow or coloured border-left >= 2px)', () => {
     const offenders: string[] = [];
     // Strip comments first: a comment before a rule would otherwise join its selector.
-    const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    // The board's cards are styled in their own sheet since S4, so it is read too.
+    const bare = `${css}\n${boardCss}`.replace(/\/\*[\s\S]*?\*\//g, '');
     for (const match of bare.matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
       const selector = match[1].trim();
       const body = match[2];
@@ -5169,8 +5175,8 @@ describe('task priority and lease signals (TASK-443)', () => {
     expect(offenders).toEqual([]);
   });
   test('live and expired ownership retain distinct dots', () => {
-    expect(ruleBody(css, '.v2-board__owner-dot--live')).toContain('background: var(--v2-status-live)');
-    const expired = ruleBody(css, '.v2-board__owner-dot--expired');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__owner-dot--live')).toContain('background: var(--v2-status-live)');
+    const expired = ruleBody(boardCss, '.v2-board__owner-dot--expired');
     expect(expired).toContain('border: 1px solid var(--v2-status-idle)');
     expect(expired).toContain('background: none');
   });
@@ -5179,7 +5185,7 @@ describe('task priority and lease signals (TASK-443)', () => {
 
 test('TASK-443 phone ownership sheet keeps its inset and scroll containment', () => {
   const css = read('../v2.css');
-  const sheet = ruleBody(css, '.v2-board .v2-board__detail');
+  const sheet = ruleBody(boardCss, '.v2-board .v2-board__detail');
   expect(sheet).toContain('inset: 44px 0 0');
   const modal = ruleBody(css, '.v2-modal');
   expect(modal).toContain('overflow: auto');
@@ -5189,16 +5195,20 @@ test('TASK-443 phone ownership sheet keeps its inset and scroll containment', ()
 });
 
 test('TASK-699 task detail is a 400px right drawer on desktop and a sheet on phones', () => {
-  const css = read('../v2.css');
-  expect(ruleBody(css, '.v2-board .v2-board__drawer')).toContain('width: 400px');
-  expect(ruleBody(css, '.v2-board .v2-board__overlay--drawer')).toContain('justify-content: flex-end');
+  expect(ruleBody(boardCss, '.v2-feature--board .v2-modal.v2-board__drawer')).toContain('width: 400px');
+  expect(ruleBody(boardCss, '.v2-feature--board .v2-board__overlay--drawer')).toContain('justify-content: flex-end');
+  // S4: the frame draws the drawer over the board with no scrim; phones keep the dim sheet backdrop.
+  expect(boardCss).toMatch(/@media \(min-width: 761px\) \{\s*\.v2-feature--board \.v2-board__overlay--drawer \{ background: transparent; \}/);
+  expect(ruleBody(boardCss, '.v2-board__overlay')).toContain('background: var(--v2-scrim)');
   expect(read('../components/V2PodBoard.tsx')).toContain('className="v2-modal v2-board__detail v2-board__drawer"');
 });
 
 
 test('TASK-443 lease typography outranks the ownership cell font size', () => {
-  expect(ruleBody(read('../v2.css'), '.v2-board__ownership .v2-board__lease-value'))
+  expect(ruleBody(boardCss, '.v2-board__ownership .v2-board__lease-value'))
     .toContain('font: 500 12px/16px var(--v2-font-mono)');
+  // The frame's kv cell sets its size on the list, not the cell, so the lease font is not outranked.
+  expect(ruleBody(boardCss, '.v2-feature--board .v2-board__ownership dd')).not.toContain('font-size');
 });
 
 test('TASK-482 sticky bar overlays reserved space with a top border and no shadow', () => {
@@ -5295,19 +5305,21 @@ test('OpenUI cards keep the approved phone controls and table records', () => {
 });
 
 describe('v2 board on a phone (TASK-576)', () => {
-  test('the board head wraps so the title keeps a full-width row above the actions', () => {
-    const css = read('../v2.css');
-    const phone = mediaBlockContaining(css, '.v2-board__head');
-    expect(ruleBody(phone, '.v2-board__head')).toContain('flex-wrap: wrap');
-    expect(ruleBody(phone, '.v2-board__title-wrap')).toContain('flex: 1 1 100%');
-    expect(ruleBody(phone, '.v2-board__title-wrap')).toContain('order: 1');
-    expect(ruleBody(phone, '.v2-board__new')).toContain('margin-left: auto');
+  test('the board head is the frame\'s one-row 52px top bar, title taking the free width', () => {
+    // S4 (d215 .mtop): back, title, search, New task in one row; the title ellipsizes.
+    const phone = mediaBlockContaining(boardCss, '.v2-feature--board .v2-board__head');
+    const head = ruleBody(boardCss, '.v2-feature--board .v2-board__head', { within: phone });
+    expect(head).toContain('height: 52px');
+    expect(head).toContain('gap: 8px');
+    expect(ruleBody(boardCss, '.v2-board__title-wrap', { within: mediaBlockContaining(boardCss, '.v2-board__title-wrap {') })).toContain('order: 2');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__title')).toContain('text-overflow: ellipsis');
+    // Exception to the frame: its 32px keys take touches at 44px (chat precedent).
+    expect(phone).toContain('.v2-feature--board .v2-board__head > .v2-board__key::after { content: \'\'; position: absolute; inset: -7px; }');
+    expect(phone).toContain('width: max(100%, 44px)');
   });
 
-  test('the board drops the feature body gutter on a phone', () => {
-    const css = read('../v2.css');
-    const phone = mediaBlockContaining(css, '.v2-feature--board > .v2-feature__body');
-    expect(ruleBody(phone, '.v2-feature--board > .v2-feature__body')).toMatch(/padding:\s*0;/);
+  test('the board drops the feature body gutter, phone included', () => {
+    expect(ruleBody(boardCss, '.v2-feature--board > .v2-feature__body')).toMatch(/padding:\s*0;/);
   });
 
   test('the board route passes the class that opts it into that override', () => {
@@ -5358,22 +5370,26 @@ describe('claim run summary (TASK-692)', () => {
 describe('pod board column scroll (TASK-698)', () => {
   const css = read('../v2.css');
   test('the board route scrolls inside its columns, not the page', () => {
+    expect(css).not.toContain('.v2-feature--board');
     // The feature body was the scroller and its legacy wrapper had auto height, so the
     // columns' max-height:100% resolved to nothing (85.5x at 1440, measured 12f608b71).
-    const body = ruleBody(css, '.v2-feature--board .v2-feature__body');
+    const body = ruleBody(boardCss, '.v2-feature--board .v2-feature__body');
     expect(body).toContain('display: flex');
     expect(body).toContain('overflow: hidden');
-    const legacy = ruleBody(css, '.v2-feature--board .v2-feature__legacy');
+    const legacy = ruleBody(boardCss, '.v2-feature--board .v2-feature__legacy');
     expect(legacy).toContain('width: 100%');
     expect(legacy).toContain('min-height: 0');
     expect(legacy).toContain('display: flex');
-    expect(ruleBody(css, '.v2-feature--board .v2-board')).toContain('flex: 1 1 auto');
-    expect(ruleBody(css, '.v2-board__col')).toContain('overflow-y: auto');
-    expect(ruleBody(css, '.v2-board__col')).toContain('max-height: 100%');
+    expect(lastRuleBody(boardCss, '.v2-feature--board .v2-board')).toContain('flex: 1 1 auto');
+    // S4: the column clips (d215 .col) and its body is the scroller.
+    const col = ruleBody(boardCss, '.v2-feature--board .v2-board__col');
+    expect(col).toContain('min-height: 0');
+    expect(col).toContain('overflow: hidden');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__col-body')).toContain('overflow-y: auto');
   });
   test('a long focus list is bounded so the columns keep room below it', () => {
-    const focus = ruleBody(css, '.v2-board__focus');
-    expect(focus).toContain('max-height: min(35vh, 260px)');
+    const focus = ruleBody(boardCss, '.v2-board__focus[open]');
+    expect(focus).toContain('max-height: 40vh');
     expect(focus).toContain('overflow-y: auto');
   });
 
@@ -5403,19 +5419,22 @@ describe('pod board column scroll (TASK-698)', () => {
   });
 
   test('the board keeps three columns plus a 120px done rail, and tabs only on phones (TASK-687)', () => {
-    const css = fs.readFileSync(path.join(__dirname, '..', 'v2.css'), 'utf8');
+    const css = boardCss;
     expect(css).toMatch(/\.v2-board__columns \{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\) 120px/);
     expect(css).toMatch(/\.v2-board__tabs \{ display: none; \}/);
     // Card actions stay on the id row (off the title); card buttons keep a visible focus ring.
-    expect(css).toMatch(/\.v2-board__card-actions \{\s*position: absolute; right: 6px; top: 4px;/);
+    expect(css).toMatch(/\.v2-board__card-actions \{ position: absolute; right: 6px; top: 6px;/);
     expect(css).toMatch(/button\.v2-board__card-main:focus-visible[^{]*\{[^}]*outline: 2px solid/);
     // The column body is the scroller; the page itself does not scroll.
-    expect(css).toMatch(/\.v2-board__col-body \{[^}]*overflow-y: auto;[^}]*flex: 1;[^}]*min-height: 0;/);
-    // Phones get the tab bar back: scope to the TASK-687 mobile block.
-    const mobile = css.slice(css.indexOf('/* TASK-687 / D223'));
-    expect(mobile).toMatch(/@media \(max-width: 760px\) \{[\s\S]*\.v2-board__tabs \{ display: flex;/);
+    const colBody = ruleBody(css, '.v2-feature--board .v2-board__col-body');
+    expect(colBody).toContain('overflow-y: auto');
+    expect(colBody).toContain('flex: 1');
+    expect(colBody).toContain('min-height: 0');
+    // Phones get the tab bar back: scope to the 390 frame's block.
+    const mobile = css.slice(css.indexOf('/* ── 2. The 390 frame'));
+    expect(mobile).toMatch(/@media \(max-width: 760px\) \{[\s\S]*\.v2-board__tabs \{ display: inline-flex;/);
     // The phone tabs are the frame's segment: a tinted track with a raised active key.
-    expect(mobile).toMatch(/\.v2-board__tabs \{ display: flex; margin: 12px 12px 0; padding: 2px;/);
-    expect(mobile).toMatch(/button\.v2-board__tab\.is-active \{ background: var\(--v2-surface\)/);
+    expect(mobile).toMatch(/\.v2-board__tabs \{ display: inline-flex;[^}]*margin: 12px 12px 0; gap: 2px; padding: 2px;/);
+    expect(mobile).toMatch(/\.v2-board__tab\.is-active \{ background: var\(--v2-surface\)/);
   });
 });
