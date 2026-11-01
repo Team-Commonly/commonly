@@ -267,17 +267,24 @@ const V2PodBoard: React.FC = () => {
   const timeLabel = (expiry: number) => new Intl.DateTimeFormat(undefined, {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).format(new Date(expiry));
+  // The frame's card line is the lease timer and the claimant's avatar, nothing else:
+  // an assigned-but-unclaimed task shows no owner text.
   const ownerLine = (task: BoardTask) => {
     if (['done', 'completed', 'complete'].includes(task.status)) return null;
     const lease = leaseFor(task);
-    if (!lease.claimed && !task.assignee) return null;
-    const state = lease.expired ? 'expired' : lease.claimed ? 'live' : 'not-claimed';
-    const text = lease.expired ? t('board.owner.expired', { holder: claimHolderName(task) })
-      : lease.claimed ? (lease.knownExpiry
-        ? <Trans i18nKey="board.owner.left" values={{ holder: claimHolderName(task), minutes: lease.minutes }} components={{ minutes: <span className="v2-board__owner-time" /> }} />
-        : t('board.owner.claimed', { holder: claimHolderName(task) }))
-        : t('board.owner.assigned', { assignee: task.assignee });
-    return <span className="v2-board__owner-line"><span aria-hidden="true" className={`v2-board__owner-dot v2-board__owner-dot--${state}`} />{text}</span>;
+    if (!lease.claimed) return null;
+    const holder = claimHolderName(task);
+    const member = podMembers.find((item) => memberId(item) === task.claimedBy || item.username === task.claimedBy);
+    const state = lease.expired ? 'expired' : 'live';
+    return (
+      <span className="v2-board__owner-line">
+        <span aria-hidden="true" className={`v2-board__owner-dot v2-board__owner-dot--${state}`} />
+        <span className="v2-board__owner-time">
+          {lease.expired ? t('board.owner.expiredShort') : lease.knownExpiry ? t('board.owner.leaseShort', { minutes: lease.minutes }) : t('board.owner.claimedShort')}
+        </span>
+        <V2Avatar name={holder} src={member?.profilePicture} kind={member?.isBot === undefined ? undefined : member.isBot ? 'agent' : 'human'} seed={member ? memberId(member) : holder} size="sm" className="v2-board__card-avatar" />
+      </span>
+    );
   };
   const memberAvatar = (member: PodMember, name: string) => (
     <V2Avatar name={name} src={member.profilePicture} kind={member.isBot === undefined ? undefined : member.isBot ? 'agent' : 'human'} seed={memberId(member)} size="sm" className="v2-board__member-avatar" />

@@ -1606,6 +1606,9 @@
     },
     "owner": {
       "left": "{{holder}} · <minutes>{{minutes}}m left</minutes>",
+      "leaseShort": "{{minutes}}m",
+      "expiredShort": "expired",
+      "claimedShort": "claimed",
       "assigned": "{{assignee}} · not claimed",
       "expired": "lease expired · {{holder}}",
       "claimed": "{{holder}} · claimed"

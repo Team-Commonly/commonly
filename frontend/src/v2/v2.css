@@ -13860,6 +13860,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-board__watcher-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .v2-board__watcher { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; max-width: 100%; padding: 0 8px 0 4px; border: 1px solid var(--v2-border-soft); border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }
 .v2-board .v2-board__member-avatar { width: 20px; height: 20px; min-width: 20px; border-radius: 4px; }
+.v2-board .v2-board__card-avatar { width: 20px; height: 20px; min-width: 20px; border-radius: 50%; }
 .v2-board__watcher-hint, .v2-board__field small { margin: 8px 0 0; font-size: 12px; line-height: 16px; color: var(--v2-text-muted); }
 .v2-board__create-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 12px; }
 .v2-board__field input, .v2-board__field select { min-height: 40px; border-radius: 4px; }
