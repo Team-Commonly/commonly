@@ -39,25 +39,35 @@ describe('agentAuthRefusals (TASK-712)', () => {
   });
 
   test('logs one line with the reason, route, method and fingerprint, and no token', () => {
-    recordAgentAuthRefusal({ reason: 'invalid_token', route: '/r', method: 'POST', tokenHash: HASH, now: 1000 });
+    recordAgentAuthRefusal({
+      reason: 'invalid_token', route: '/r', method: 'POST', tokenHash: HASH, now: 1000, 
+    });
     expect(lines()).toEqual([{
       reason: 'invalid_token', route: '/r', method: 'POST', fingerprint: 'deadbeef', repeatsSinceLastLog: 0,
     }]);
   });
 
   test('rate-limits per reason and fingerprint, and reports the repeats on the next line', () => {
-    const at = (ms) => recordAgentAuthRefusal({ reason: 'invalid_token', route: '/r', tokenHash: HASH, now: ms });
-    at(0); at(1000); at(59_000);
+    const at = (ms) => recordAgentAuthRefusal({
+      reason: 'invalid_token', route: '/r', tokenHash: HASH, now: ms, 
+    });
+    at(0); at(1000); at(59000);
     expect(lines()).toHaveLength(1);
-    at(61_000);
+    at(61000);
     expect(lines()).toHaveLength(2);
     expect(lines()[1].repeatsSinceLastLog).toBe(2);
   });
 
   test('a different fingerprint or reason is its own line', () => {
-    recordAgentAuthRefusal({ reason: 'invalid_token', route: '/r', tokenHash: HASH, now: 0 });
-    recordAgentAuthRefusal({ reason: 'invalid_token', route: '/r', tokenHash: 'ffffffff' + HASH.slice(8), now: 0 });
-    recordAgentAuthRefusal({ reason: 'agent_not_installed', route: '/r', tokenHash: HASH, now: 0 });
+    recordAgentAuthRefusal({
+      reason: 'invalid_token', route: '/r', tokenHash: HASH, now: 0, 
+    });
+    recordAgentAuthRefusal({
+      reason: 'invalid_token', route: '/r', tokenHash: `ffffffff${HASH.slice(8)}`, now: 0, 
+    });
+    recordAgentAuthRefusal({
+      reason: 'agent_not_installed', route: '/r', tokenHash: HASH, now: 0, 
+    });
     expect(lines()).toHaveLength(3);
   });
 

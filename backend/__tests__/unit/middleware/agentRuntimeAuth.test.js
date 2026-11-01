@@ -64,6 +64,8 @@ jest.mock('../../../models/Pod', () => ({
 }));
 
 const agentRuntimeAuth = require('../../../middleware/agentRuntimeAuth').default;
+const { agentAuthRefusalCounts, resetAgentAuthRefusalsForTest } = require('../../../services/agentAuthRefusals');
+const { findOne: mockCredentialFindOne } = require('../../../models/AgentCredential');
 
 const buildReq = (token) => {
   const headers = { authorization: `Bearer ${token}` };
@@ -260,8 +262,6 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
 // TASK-712: every refusal branch logs one reason line and counts it, and the
 // token never appears in what is logged.
 describe('agentRuntimeAuth refusals are logged and counted (TASK-712)', () => {
-  const { agentAuthRefusalCounts, resetAgentAuthRefusalsForTest } = require('../../../services/agentAuthRefusals');
-  const { findOne: mockCredentialFindOne } = require('../../../models/AgentCredential');
   const TOKEN = 'cm_agent_secret-token-value-do-not-log';
   const FINGERPRINT_HASH = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90';
   let warn;
@@ -290,7 +290,10 @@ describe('agentRuntimeAuth refusals are logged and counted (TASK-712)', () => {
 
   test('a missing token is refused, logged as missing_token with no fingerprint, and counted', async () => {
     const res = buildRes();
-    await agentRuntimeAuth({ headers: {}, header: () => undefined, method: 'GET', baseUrl: '/api/agents/runtime' }, res, jest.fn());
+    const req = {
+      headers: {}, header: () => undefined, method: 'GET', baseUrl: '/api/agents/runtime',
+    };
+    await agentRuntimeAuth(req, res, jest.fn());
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({ message: 'Missing agent token' });
     expect(refusalLines()).toEqual([expect.objectContaining({
@@ -315,7 +318,9 @@ describe('agentRuntimeAuth refusals are logged and counted (TASK-712)', () => {
     const res = buildRes();
     await agentRuntimeAuth(buildReq(TOKEN), res, jest.fn());
     expect(res.json).toHaveBeenCalledWith({ message: 'Agent not installed' });
-    expect(refusalLines()).toEqual([expect.objectContaining({ reason: 'agent_not_installed', fingerprint: 'a1b2c3d4' })]);
+    expect(refusalLines()).toEqual([
+      expect.objectContaining({ reason: 'agent_not_installed', fingerprint: 'a1b2c3d4' }),
+    ]);
   });
 
   test('a User-row token past its own expiry is refused as session_expired', async () => {
@@ -336,21 +341,42 @@ describe('agentRuntimeAuth refusals are logged and counted (TASK-712)', () => {
     expect(refusalLines()).toEqual([expect.objectContaining({ reason: 'token_revoked', fingerprint: 'a1b2c3d4' })]);
   });
 
-  test('the token text never appears in any logged output, on any branch', async () => {
-    mockUserFindOne.mockResolvedValue(null);
-    mockInstallationFindOne.mockResolvedValue(null);
-    await agentRuntimeAuth(buildReq(TOKEN), buildRes(), jest.fn());
-    await agentRuntimeAuth(buildReq('cm_agent_other'), buildRes(), jest.fn());
-    expect(allLoggedText()).not.toContain('secret-token-value');
-    expect(allLoggedText()).not.toContain(TOKEN);
+  test('the token text never appears in any logged output, on any token-bearing refusal branch', async () => {
+    const branches = [
+      ['invalid_token', 'cm_agent_invalid-branch-token', () => {
+        mockUserFindOne.mockResolvedValue(null);
+        mockInstallationFindOne.mockResolvedValue(null);
+      }],
+      ['agent_not_installed', 'cm_agent_not-installed-branch-token', () => {
+        mockUserFindOne.mockResolvedValue(agentUser());
+        mockInstallationFind.mockReturnValue({ lean: async () => [] });
+      }],
+      ['session_expired', 'cm_agent_expired-branch-token', () => {
+        mockUserFindOne.mockResolvedValue(agentUser({
+          agentRuntimeTokens: [{ tokenHash: FINGERPRINT_HASH, expiresAt: new Date('2020-01-01T00:00:00Z') }],
+        }));
+      }],
+      ['token_revoked', 'cm_agent_revoked-branch-token', () => {
+        mockCredentialFindOne.mockResolvedValue({ _id: 'cred-1', kind: 'runtime', status: 'revoked' });
+      }],
+    ];
+    await branches.reduce((previous, [, token, arrange]) => previous.then(() => {
+      arrange();
+      return agentRuntimeAuth(buildReq(token), buildRes(), jest.fn());
+    }), Promise.resolve());
+    expect(refusalLines().map((line) => line.reason)).toEqual(branches.map(([reason]) => reason));
+    branches.forEach(([, token]) => {
+      expect(allLoggedText()).not.toContain(token);
+      expect(allLoggedText()).not.toContain(token.slice('cm_agent_'.length));
+    });
   });
 
   test('a repeated refusal from the same client is logged once and counted every time', async () => {
     mockUserFindOne.mockResolvedValue(null);
     mockInstallationFindOne.mockResolvedValue(null);
-    for (let i = 0; i < 5; i += 1) {
-      await agentRuntimeAuth(buildReq(TOKEN), buildRes(), jest.fn());
-    }
+    await [1, 2, 3, 4, 5].reduce((previous) => previous.then(
+      () => agentRuntimeAuth(buildReq(TOKEN), buildRes(), jest.fn()),
+    ), Promise.resolve());
     expect(refusalLines()).toHaveLength(1);
     expect(agentAuthRefusalCounts().counts.invalid_token).toBe(5);
   });
