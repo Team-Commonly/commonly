@@ -113,7 +113,9 @@ const ALLOWLIST: string[] = [
   '.v2-chat__composer-hint', // 11.0px — no-mono-family
   '.v2-chat__composer-hint kbd', // 10.5px — mono-below-floor
   '.v2-chat__mode-toggle--header .v2-chat__mode-option', // 11.5px — no-mono-family
-  '.v2-chat__new-pod-action-text, .v2-chat__new-pod-status', // 11.0px — no-mono-family
+  // Split in two by the D223 chat lift (S3d): the status half moved to chat/chat-states.css.
+  '.v2-chat__new-pod-action-text', // 11.0px — no-mono-family
+  '.v2-chat__new-pod-status', // 11.0px — no-mono-family
   '.v2-chat__new-pod-error', // 11.0px — no-mono-family
   '.v2-chat__title-mark', // 11.0px — no-mono-family
   '.v2-msg__file-icon', // 10.0px — no-mono-family

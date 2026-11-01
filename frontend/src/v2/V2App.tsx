@@ -26,6 +26,7 @@ import './chat/chat-message.css';
 import './chat/chat-pane.css';
 import './chat/chat-composer.css';
 import './chat/chat-inspector.css';
+import './chat/chat-states.css';
 import { applyV2Theme, getV2Theme } from './utils/theme';
 
 // TASK-145 — inside the shell, only the surfaces the composer path needs stay
