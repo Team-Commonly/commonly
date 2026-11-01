@@ -41,6 +41,9 @@ describe('D223 phone shell', () => {
   test('the settings head spans the pane and only the body scrolls', () => {
     expect(phone).toMatch(/\.v2-feature--settings > \.v2-feature__body\s*\{[^}]*padding:\s*0/);
     expect(phone).toMatch(/\.v2-feature--settings \.v2-feature__legacy\s*\{[^}]*max-width:\s*none/);
+    expect(fs.readFileSync(path.join(__dirname, '../V2App.tsx'), 'utf8')).toContain("'v2-feature--settings'");
+    expect(fs.readFileSync(path.join(__dirname, '../components/V2SettingsPage.tsx'), 'utf8')).toContain('<header className="v2p-ph">');
+    expect(css).toMatch(/\.v2-settings__content\s*\{[^}]*width:\s*min\(100%, 760px\)/);
     expect(phone).toMatch(/\.v2-feature--settings \.v2-settings__layout\s*\{[^}]*overflow-y:\s*auto/);
   });
 });

@@ -7895,7 +7895,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   display: flex;
   flex-direction: column;
   gap: 20px;
-  width: min(100%, 640px);
+  width: min(100%, 760px);
+  min-width: 0;
   margin: 0 auto;
 }
 
