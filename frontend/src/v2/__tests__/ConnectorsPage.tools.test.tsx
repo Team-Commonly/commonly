@@ -939,9 +939,9 @@ describe('Connectors page: tools', () => {
 
     const tools = await screen.findByRole('region', { name: 'Tools' });
     await settle();
-    const rows = tools.querySelectorAll('.v2-connector-row');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).not.toHaveClass('v2-connector-row--dead');
+    // An orphan grant is a tile since TASK-754: one tile, for the live grant.
+    expect(tools.querySelectorAll('.v2-cx-tile')).toHaveLength(1);
+    expect(tools.querySelector('.v2-connector-row')).toBeNull();
   });
 
   /**

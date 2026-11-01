@@ -10,7 +10,7 @@ import { catalogDescription } from '../utils/connectorCatalogDescription';
 import { ADD_PLATFORMS, TYPE_LABELS } from './channelModel';
 import type { ListItem } from './channelModel';
 import { entryCovers, entryIsGranted, isDead } from './toolModel';
-import type { ToolCatalogEntry } from './toolModel';
+import type { ToolCatalogEntry, ToolGrant } from './toolModel';
 import { useChannelConnectors } from './useChannelConnectors';
 import { useToolConnectors } from './useToolConnectors';
 import { useToolPanels } from './ToolPanels';
@@ -191,6 +191,18 @@ const ConnectorsPage: React.FC = () => {
     setPop({ key: `tool:${entry.installableId}`, anchor: event.currentTarget });
   };
 
+  // A grant with no catalogue entry has no entry drawer, so its tile opens the
+  // grant's own.
+  const openOrphan = (grant: ToolGrant) => {
+    closeChannels();
+    setPop(null);
+    setToolKey(null);
+    m.setDraft(null);
+    m.setGithubAppSetup(null);
+    m.setConfirmRevoke(null);
+    m.setSelectedId(grant.grantId);
+  };
+
   const openAdd = () => {
     closeTools();
     setPop(null);
@@ -250,6 +262,23 @@ const ConnectorsPage: React.FC = () => {
       selected={toolEntry?.installableId === entry.installableId}
       expanded={pop?.key === `tool:${entry.installableId}`}
       onClick={(event) => openTool(entry, event)}
+    />
+  );
+
+  // A live grant whose entry is gone is still access (TASK-752), so it keeps a
+  // tile in the Tools grid, in the grid's own shape (TASK-754, D223). The
+  // server's `connector` names it when the catalogue cannot (TASK-753).
+  const renderOrphanTile = (grant: ToolGrant) => (
+    <ConnectorTile
+      key={`grant:${grant.grantId}`}
+      type={grant.connector?.id || grant.tools[0]?.split('.')[0] || 'tools'}
+      name={m.toolLabel(grant)}
+      dot={{ kind: 'live', label: t('tools.granted', { defaultValue: 'Granted' }) }}
+      beta={grant.connector?.id === 'atlassian'
+        ? { word: t('tools.beta', { defaultValue: 'beta' }), title: t('tools.readInTesting', { defaultValue: 'read in testing' }) }
+        : undefined}
+      selected={m.selectedId === grant.grantId}
+      onClick={() => openOrphan(grant)}
     />
   );
 
@@ -529,6 +558,7 @@ const ConnectorsPage: React.FC = () => {
                 <div className="v2-cx-grid">
                   {showChannels && liveChannels.map((item) => renderChannelTile(item))}
                   {showTools && liveTools.map((entry) => renderToolTile(entry))}
+                  {showTools && orphanGrants.map(renderOrphanTile)}
                   {phoneOffOpen && showChannels && offChannels.map((item) => renderChannelTile(item, true))}
                   {phoneOffOpen && showTools && offTools.map((entry) => renderToolTile(entry, true))}
                   {showChannels && availableProviders.length > 0 && !q && (
@@ -550,7 +580,6 @@ const ConnectorsPage: React.FC = () => {
                     {t('connectors.offCount', { defaultValue: '+{{n}} off', n: offTotal })}
                   </button>
                 )}
-                {showTools && orphanGrants.length > 0 && <div className="v2-cx-list">{orphanGrants.map(tp.renderRow)}</div>}
                 {showTools && phoneOffOpen && orphanHidden.length > 0 && (
                   <div className="v2-cx-list">{orphanHidden.map(tp.renderHiddenConnection)}</div>
                 )}
@@ -586,9 +615,9 @@ const ConnectorsPage: React.FC = () => {
                 </h2>
                 <div className="v2-cx-grid">
                   {liveTools.map((entry) => renderToolTile(entry))}
+                  {orphanGrants.map(renderOrphanTile)}
                   {offOpen.tools && offTools.map((entry) => renderToolTile(entry, true))}
                 </div>
-                {orphanGrants.length > 0 && <div className="v2-cx-list">{orphanGrants.map(tp.renderRow)}</div>}
                 {offOpen.tools && orphanHidden.length > 0 && (
                   <div className="v2-cx-list">{orphanHidden.map(tp.renderHiddenConnection)}</div>
                 )}

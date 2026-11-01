@@ -267,10 +267,35 @@ describe('Connectors page: the tile surface', () => {
     renderPage();
 
     await findTile('GitHub');
-    const row = await screen.findByRole('button', { name: /View Unknown connector/ });
-    fireEvent.click(row);
+    fireEvent.click(await findTile('Unknown connector'));
     expect(await findDrawer(/Unknown connector/)).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /^Revoke/ })).toBeInTheDocument();
+  });
+
+  // TASK-754 (D226 #3): the grant sat under the tiles as a full-width card with
+  // its own title size, a status dot and a lone gear. Under D223 it takes the
+  // grid's own shape: a tile beside GitHub's, opening the same drawer.
+  it('a live grant whose entry is gone is a tile in the Tools grid, not a row with a gear', async () => {
+    const iso = (ms) => new Date(Date.now() + ms).toISOString();
+    const orphan = {
+      grantId: 'grant_orphan', installationId: 'inst-x', target: { kind: 'pod', id: 'p1' }, tools: ['retired.read'],
+      writeMode: 'read', budget: null, effectiveAudience: [], expiresAt: iso(86_400_000), revokedAt: null, revokedBy: null,
+      parentGrantId: null, rootGrantId: null, createdAt: iso(-3_600_000), grantedBy: 'u1',
+    };
+    mockCatalog([tool('github', 'GitHub')], { grants: [orphan] });
+    renderPage();
+
+    const github = await findTile('GitHub');
+    const tile = await findTile('Unknown connector');
+    expect(tile.parentElement).toBe(github.parentElement);
+    expect(within(tile).getByRole('img', { name: 'Granted' })).toBeInTheDocument();
+    const tools = screen.getByRole('region', { name: 'Tools' });
+    expect(tools.querySelector('.v2-connector-row')).toBeNull();
+    expect(tools.querySelector('.v2-connector-row__action--icon')).toBeNull();
+    expect(tile).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(tile);
+    expect(await findDrawer(/Unknown connector/)).toBeInTheDocument();
+    expect(tileNode('Unknown connector')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('names a grant whose entry is gone by the connector the server reads from its tools (TASK-753)', async () => {
@@ -287,11 +312,11 @@ describe('Connectors page: the tile surface', () => {
     renderPage();
 
     await findTile('GitHub');
-    const row = await screen.findByRole('button', { name: /View Atlassian/ });
-    expect(row.querySelector('.v2-connector-row__glyph svg')).not.toBeNull();
-    expect(row).toHaveTextContent('read in testing');
-    expect(screen.queryByRole('button', { name: /View Unknown connector/ })).toBeNull();
-    fireEvent.click(row);
+    const tile = await findTile('Atlassian');
+    expect(tile.querySelector('.v2-cx-tile__logo svg')).not.toBeNull();
+    expect(tile.querySelector('.v2-cx-tile__beta')).toHaveAttribute('title', 'read in testing');
+    expect(tileNode('Unknown connector')).toBeNull();
+    fireEvent.click(tile);
     expect(await findDrawer(/Atlassian/)).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /^Revoke/ })).toBeInTheDocument();
   });
