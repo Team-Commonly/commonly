@@ -352,6 +352,8 @@ it('the approval-card branch links to its server-bound original pod', () => {
     },
   }} /></MemoryRouter>);
   expect(screen.getByTestId('approval-card')).toBeInTheDocument();
+  // A Threads row lands on this card by its standard anchor.
+  expect(screen.getByTestId('approval-card').closest('#message-approval-origin-run')).toHaveAttribute('tabindex', '-1');
   expect(screen.getByRole('link', { name: 'View run trace' })).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
 });
 
