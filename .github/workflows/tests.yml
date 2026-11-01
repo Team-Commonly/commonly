@@ -88,7 +88,7 @@ jobs:
             printf '%s\n' "$files"
             printf '%s\n' "$files" | grep -qE '^(backend/|cli/|package(-lock)?\.json)' && backend=true
             printf '%s\n' "$files" | grep -qE '^(frontend/|backend/)' && frontend=true
-            printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/)' && chart=true
+            printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|package(-lock)?\.json)' && chart=true
             # A change to this workflow runs the full suite as a self-test, so a
             # PR that edits the test pipeline proves every heavy leg still works.
             if printf '%s\n' "$files" | grep -qE '^\.github/workflows/tests\.yml$'; then
@@ -218,7 +218,7 @@ jobs:
     needs: [latchkey-route, changes]
     # tests-slim fast lane: off the PR + merge_group critical path. Runs post-merge
     # (push:main) and nightly, and on a PR only when backend/cli/deps changed.
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
     runs-on: ${{ needs.latchkey-route.outputs.backend || 'ubuntu-latest' }}
     env:
       JWT_SECRET: test-jwt-secret
@@ -270,7 +270,7 @@ jobs:
     needs: [latchkey-route, changes]
     # tests-slim fast lane: post-merge + nightly, and on a PR only when frontend or
     # backend changed (the frontend typecheck follows imports into backend).
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && needs.changes.outputs.frontend == 'true')) }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.frontend == 'true')) }}
     runs-on: ${{ needs.latchkey-route.outputs.frontend || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
@@ -388,7 +388,7 @@ jobs:
     needs: [latchkey-route, changes]
     # tests-slim fast lane: post-merge + nightly, and on a PR only when backend/cli
     # changed (these are the real-DB Tier-1 integration tests).
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
     runs-on: ${{ needs.latchkey-route.outputs.service || 'ubuntu-latest' }}
 
     services:
@@ -460,7 +460,7 @@ jobs:
     name: Chart Lint (Tier 1.5)
     needs: changes
     # tests-slim fast lane: post-merge + nightly, and on a PR only when charts/k8s changed.
-    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || (github.event_name == 'pull_request' && needs.changes.outputs.chart == 'true')) }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.chart == 'true')) }}
     runs-on: ubuntu-latest
 
     env:
