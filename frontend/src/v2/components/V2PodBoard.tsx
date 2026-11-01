@@ -35,6 +35,7 @@ const FILTERS: Array<{ key: BoardFilter; labelKey: string }> = [
   { key: 'p0', labelKey: 'board.filter.p0' },
   { key: 'unclaimed', labelKey: 'board.filter.unclaimed' },
 ];
+const PHONE_MEDIA_QUERY = '(max-width: 760px)';
 const DONE_STATUSES = ['done', 'completed', 'complete'];
 
 interface BoardTask {
@@ -635,6 +636,18 @@ const V2PodBoard: React.FC = () => {
     }
   }, [api, podId, newTitle, newAssignee, newPriority, creating, load, t]);
 
+  // The frame puts the filter chips under the tabs on a phone, so they render in one place or the other.
+  const [isPhone, setIsPhone] = useState(
+    () => typeof window !== 'undefined' && !!window.matchMedia?.(PHONE_MEDIA_QUERY)?.matches,
+  );
+  useEffect(() => {
+    const query = window.matchMedia?.(PHONE_MEDIA_QUERY);
+    if (!query) return undefined;
+    const onChange = () => setIsPhone(query.matches);
+    onChange();
+    query.addEventListener?.('change', onChange);
+    return () => query.removeEventListener?.('change', onChange);
+  }, []);
   const [filters, setFilters] = useState<BoardFilter[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -665,6 +678,22 @@ const V2PodBoard: React.FC = () => {
     return byColumn;
   }, [visibleTasks]);
 
+  const filterChips = (
+    <div className="v2-board__filters" role="group" aria-label={t('board.filter.label')}>
+    {FILTERS.map((f) => (
+      <button
+        key={f.key}
+        type="button"
+        className={`v2-board__chip${filters.includes(f.key) ? ' is-on' : ''}`}
+        aria-pressed={filters.includes(f.key)}
+        onClick={() => toggleFilter(f.key)}
+      >
+        {t(f.labelKey)}
+      </button>
+    ))}
+  </div>
+  );
+
   return (
     <div className="v2-board" data-testid="v2-board">
       <header className="v2-board__head">
@@ -682,19 +711,7 @@ const V2PodBoard: React.FC = () => {
             {t('board.taskCount', { count: tasks.length })}
           </span>
         </div>
-        <div className="v2-board__filters" role="group" aria-label={t('board.filter.label')}>
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              className={`v2-board__chip${filters.includes(f.key) ? ' is-on' : ''}`}
-              aria-pressed={filters.includes(f.key)}
-              onClick={() => toggleFilter(f.key)}
-            >
-              {t(f.labelKey)}
-            </button>
-          ))}
-        </div>
+        {!isPhone && filterChips}
         {searchOpen && (
           <input
             type="search"
@@ -816,6 +833,7 @@ const V2PodBoard: React.FC = () => {
               </button>
             ))}
           </div>
+          {isPhone && filterChips}
           <div className={`v2-board__columns${showDone ? ' is-showdone' : ''}`}>
           {COLUMNS.map((col) => {
             const items = columnTasks.get(col.key) || [];
