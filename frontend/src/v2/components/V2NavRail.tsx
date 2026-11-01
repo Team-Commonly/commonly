@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import V2FeedbackMenu from './V2FeedbackMenu';
 import V2AccountMenu from './V2AccountMenu';
 import V2ThemeSwitch from './V2ThemeSwitch';
-import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import Badge from '@mui/material/Badge';
 import { useV2PodAttention } from '../hooks/useV2PodAttention';
@@ -59,7 +58,6 @@ const isMobileViewport = (): boolean => (
 const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { logout } = useAuth();
   const { t } = useTranslation();
   const attention = useV2PodAttention(needsYouCount === undefined);
   const count = needsYouCount === undefined ? attention.count : needsYouCount;
@@ -129,18 +127,10 @@ const V2NavRail: React.FC<V2NavRailProps> = ({ onPodsMobileNav, needsYouCount })
             <V2FeedbackMenu />
           </div>
           <V2ThemeSwitch />
-          <span className="v2-rail__foot-sep" aria-hidden="true" />
-          {/* Account */}
+          {/* Account. Sign out lives in the account menu, as the d215 rail
+              draws it: the theme switch sits directly above the avatar. */}
           <div className="v2-rail__user">
             <V2AccountMenu />
-            <button
-              type="button"
-              className="v2-rail__signout"
-              onClick={logout}
-              title="Sign out"
-            >
-              <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-            </button>
           </div>
         </div>
       </div>
