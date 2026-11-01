@@ -2,6 +2,7 @@
 const mockPodFind = jest.fn();
 const mockGrantFind = jest.fn();
 const mockConnectionFind = jest.fn();
+const mockInstallationFind = jest.fn();
 
 jest.mock('../../../models/Pod', () => ({
   __esModule: true,
@@ -15,8 +16,11 @@ jest.mock('../../../models/Integration', () => ({
   __esModule: true,
   default: { find: (...args) => mockConnectionFind(...args) },
 }));
+jest.mock('../../../models/AgentRegistry', () => ({
+  AgentInstallation: { find: (...args) => mockInstallationFind(...args) },
+}));
 
-const { podHasOutsiderWritableGrant, podsWithOutsiderWritableGrants } = require('../../../services/nativeOutsiderGrantPolicy');
+const { podHasOutsiderWritableGrant, podsWithOutsiderWritableGrants, outsiderGrantPodCounts } = require('../../../services/nativeOutsiderGrantPolicy');
 
 const POD = '507f1f77bcf86cd799439011';
 const SEAT = '507f1f77bcf86cd799439013';
@@ -36,6 +40,7 @@ beforeEach(() => {
   mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }]));
   mockGrantFind.mockReturnValue(chain([grant()]));
   mockConnectionFind.mockReturnValue(chain([{ _id: CONNECTION, type: 'hosted-mcp' }]));
+  mockInstallationFind.mockReturnValue(chain([]));
 });
 
 test('a live pod grant with a current audience member narrows every native agent in the pod', async () => {
@@ -84,6 +89,53 @@ test('a seat-targeted grant whose audience omits the seat narrows nothing', asyn
   mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }]));
   mockGrantFind.mockReturnValue(chain([grant({ target: { kind: 'seat', id: SEAT }, audience: [] })]));
   expect(await podsWithOutsiderWritableGrants([POD])).toEqual(new Set());
+});
+
+test('roster marker uses every installation pod, including pods outside the viewer roster', async () => {
+  mockInstallationFind.mockReturnValue(chain([
+    { agentName: 'scout', instanceId: 'default', podId: POD },
+    { agentName: 'scout', instanceId: 'default', podId: OTHER },
+  ]));
+  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
+  mockGrantFind.mockReturnValue(chain([grant(), grant({ target: { kind: 'pod', id: OTHER } })]));
+  expect(await outsiderGrantPodCounts([{ agentName: 'scout', instanceId: 'default' }]))
+    .toEqual(new Map([['scout:default', { pods: 2, grantPods: 2 }]]));
+  expect(mockInstallationFind).toHaveBeenCalledTimes(1);
+  expect(mockPodFind).toHaveBeenCalledTimes(1);
+  mockGrantFind.mockReturnValue(chain([grant()]));
+  expect(await outsiderGrantPodCounts([{ agentName: 'scout' }]))
+    .toEqual(new Map([['scout:default', { pods: 2, grantPods: 1 }]]));
+  mockGrantFind.mockReturnValue(chain([]));
+  expect(await outsiderGrantPodCounts([{ agentName: 'scout' }]))
+    .toEqual(new Map([['scout:default', { pods: 2, grantPods: 0 }]]));
+});
+
+test('default-instance roster census includes an older row without instanceId', async () => {
+  mockInstallationFind.mockReturnValue(chain([
+    { agentName: 'scout', instanceId: 'default', podId: POD },
+    { agentName: 'scout', podId: OTHER },
+  ]));
+  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
+  mockGrantFind.mockReturnValue(chain([grant(), grant({ target: { kind: 'pod', id: OTHER } })]));
+  expect(await outsiderGrantPodCounts([{ agentName: 'scout' }]))
+    .toEqual(new Map([['scout:default', { pods: 2, grantPods: 2 }]]));
+  expect(mockInstallationFind).toHaveBeenCalledWith({
+    status: 'active',
+    $or: [{ agentName: 'scout', $or: [{ instanceId: 'default' }, { instanceId: null }] }],
+  });
+});
+
+test('roster marker propagates a failed grant census for the unavailable state', async () => {
+  mockInstallationFind.mockReturnValue(chain([
+    { agentName: 'scout', instanceId: 'default', podId: POD },
+    { agentName: 'scout', instanceId: 'default', podId: OTHER },
+  ]));
+  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
+  mockGrantFind.mockReturnValue({ select: () => ({ lean: async () => {
+    throw new Error('grant DB unavailable');
+  } }) });
+  await expect(outsiderGrantPodCounts([{ agentName: 'scout', instanceId: 'default' }]))
+    .rejects.toThrow('grant DB unavailable');
 });
 
 test('a seat grant is in scope only when its seat is a current member and in its audience', async () => {

@@ -50,6 +50,8 @@ export const useChannelConnectors = () => {
   // empty array is the only confirmed zero-pod state, so it alone may replace
   // the existing picker with the create-a-pod path.
   const [pods, setPods] = useState<V2Pod[] | null>(null);
+  // The pod list could not be read, so nothing downstream can vouch for it.
+  const [podListFailed, setPodListFailed] = useState(false);
   const [newPodId, setNewPodId] = useState('');
   const [addingType, setAddingType] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -264,14 +266,19 @@ export const useChannelConnectors = () => {
         // list — built from that same endpoint — offers exactly what those verbs
         // accept (TASK-171).
         const data = await api.get<V2Pod[]>('/api/pods');
-        const eligible = Array.isArray(data) ? data : [];
+        const confirmed = Array.isArray(data);
+        const eligible = confirmed ? data : [];
         if (!cancelled) {
-          setPods(eligible);
+          // A non-array body is not a confirmed pod list either: leave `pods`
+          // unread so the zero-pod CTA never shows for it.
+          setPods(confirmed ? eligible : null);
+          setPodListFailed(!confirmed);
           setNewPodId((current) => current || defaultPodForChannel(eligible));
         }
       } catch {
         // Keep the normal picker visible when membership cannot be read. A
         // zero-pod CTA requires a confirmed `[]`, never an unavailable read.
+        if (!cancelled) setPodListFailed(true);
       }
     })();
     return () => { cancelled = true; };
@@ -1007,6 +1014,7 @@ export const useChannelConnectors = () => {
     now,
     adding,
     podList,
+    podListFailed,
     gateModes,
     load,
     hasPending,

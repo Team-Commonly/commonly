@@ -6,7 +6,9 @@
 import Integration from '../models/Integration';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
+import { AgentInstallation } from '../models/AgentRegistry';
 import { GRANT_BROKER_ID } from './installable/toolInstallables';
+import { installationIdentityFilter } from './agentInstallationIdentity';
 
 interface CandidateGrant {
   connectionId?: unknown;
@@ -74,4 +76,41 @@ export const podsWithOutsiderWritableGrants = async (podIds: string[]): Promise<
     [String(connection._id), ...(connection.type === 'github-app' ? [String(connection.installationId || '')] : [])]));
   return new Set(candidates.filter((candidate) => matched.has(candidate.connectionId))
     .map((candidate) => candidate.podId));
+};
+
+/** Human roster projection of the same identity-wide boundary enforced by
+ * agentRuntimeAuth. Return only a boolean; other pod ids remain private. */
+export type OutsiderGrantPodCount = { pods: number; grantPods: number };
+
+// Per seat (`agentName:instanceId`): how many pods it is installed in, and in
+// how many of those an outsider-writable grant is in scope. Runtime auth narrows
+// a seat's posting on the second number; the roster reports it as booleans.
+export const outsiderGrantPodCounts = async (
+  identities: Array<{ agentName: string; instanceId?: string }>,
+): Promise<Map<string, OutsiderGrantPodCount>> => {
+  const unique = [...new Map(identities.map((identity) => {
+    const instanceId = identity.instanceId || 'default';
+    return [`${identity.agentName}:${instanceId}`, installationIdentityFilter(identity.agentName, instanceId)];
+  })).values()];
+  if (!unique.length) return new Map();
+  const installations = await AgentInstallation.find({
+    status: 'active', $or: unique,
+  }).select('agentName instanceId podId').lean() as Array<{
+    agentName: string; instanceId?: string; podId?: unknown;
+  }>;
+  const podIds = [...new Set(installations.map((row) => objectId(row.podId)).filter((id): id is string => Boolean(id)))];
+  // The human roster reports an unavailable status on census failure. Runtime
+  // authentication applies its own fail-closed policy to the same failure.
+  const narrowed = await podsWithOutsiderWritableGrants(podIds);
+  const pods = new Map<string, { all: Set<string>; granted: Set<string> }>();
+  for (const row of installations) {
+    const podId = objectId(row.podId);
+    if (!podId) continue;
+    const key = `${row.agentName}:${row.instanceId || 'default'}`;
+    if (!pods.has(key)) pods.set(key, { all: new Set(), granted: new Set() });
+    const entry = pods.get(key)!;
+    entry.all.add(podId);
+    if (narrowed.has(podId)) entry.granted.add(podId);
+  }
+  return new Map([...pods].map(([key, entry]) => [key, { pods: entry.all.size, grantPods: entry.granted.size }]));
 };

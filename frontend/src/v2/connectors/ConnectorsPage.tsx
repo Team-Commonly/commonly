@@ -46,7 +46,7 @@ const ConnectorsPage: React.FC = () => {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const c = useChannelConnectors();
-  const m = useToolConnectors(c.podList, c.hostedMcpManualRevoke);
+  const m = useToolConnectors(c.podList, c.hostedMcpManualRevoke, c.podListFailed);
   const tp = useToolPanels(m);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
@@ -533,6 +533,29 @@ const ConnectorsPage: React.FC = () => {
               </a>
             </>
           )}
+        </p>
+      )}
+      {m.blockedSeatNames.length > 0 && (
+        <p className="v2-cx-note" role="status">
+          {t('tools.multiGrantPodPostingBlocked', {
+            defaultValue: '{{agents}} cannot post in any pod while connectors reach more than one of their pods. End grants until at most one of their pods has connector access. While one still does, they can post only in that pod.',
+            agents: m.blockedSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
+          })}
+        </p>
+      )}
+      {m.onePodSeatNames.length > 0 && (
+        <p className="v2-cx-note" role="status">
+          {t('tools.grantPodPostingNarrowed', {
+            defaultValue: '{{agents}} can post only in one of their pods while that pod has connector access.',
+            agents: m.onePodSeatNames.join(t('tools.listSeparator', { defaultValue: ', ' })),
+          })}
+        </p>
+      )}
+      {m.narrowingStatusUnavailable && (
+        <p className="v2-cx-note" role="status">
+          {t('tools.runtimePostingStatusUnavailable', {
+            defaultValue: 'Could not check whether connector grants limit agent posting. Try again shortly.',
+          })}
         </p>
       )}
       {m.removedHiddenNotice && (

@@ -1317,6 +1317,16 @@ describe('Connectors page: channels', () => {
       expect(within(drawer).queryByRole('button', { name: 'Create a pod' })).toBeNull();
     });
 
+    it('keeps the existing picker visible when the pod list read returns something other than a list', async () => {
+      mockCatalog([entry()], [], { error: 'unexpected body' });
+      renderPage();
+
+      fireEvent.click(await findTile('Channel'));
+      const drawer = await findDrawer('Connect a channel');
+      expect(within(drawer).getByLabelText('Pod to bridge')).toBeInTheDocument();
+      expect(within(drawer).queryByRole('button', { name: 'Create a pod' })).toBeNull();
+    });
+
     it('keeps the existing picker visible when pod membership cannot be read', async () => {
       mockCatalog([entry()], [], new Error('pods unavailable'));
       renderPage();
