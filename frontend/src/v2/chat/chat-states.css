@@ -632,6 +632,48 @@
   .v2-chat__readonly { margin: 4px 12px 66px; }
 }
 
+/* A 1:1 room's empty state (d215 .rempty): the agent's face above the
+   greeting, or both faces for two agents who haven't talked yet. */
+.v2-empty.v2-empty--room {
+  gap: 10px;
+  text-align: center;
+}
+
+.v2-empty--room .v2-empty__title {
+  margin-top: 4px;
+  font: 700 18px/1.2 var(--v2-font-display);
+  letter-spacing: -0.01em;
+  color: var(--v2-ink);
+}
+
+.v2-empty--room .v2-empty__text {
+  max-width: 440px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--v2-text-secondary);
+}
+
+.v2-thread .v2-empty--room .v2-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--v2-surface);
+}
+
+.v2-empty__stack {
+  display: inline-flex;
+}
+
+.v2-thread .v2-empty__stack .v2-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+
+.v2-empty__stack .v2-avatar + .v2-avatar {
+  margin-left: -6px;
+}
+
 /* GitHub PR preview card. Rendered below a message body when the content
    contains a `https://github.com/<owner>/<repo>/pull/<n>` URL. Card fetches
    from GitHub REST API on mount; failure mode is silent (parent's clickable

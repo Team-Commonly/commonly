@@ -1890,9 +1890,17 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
   // A 1:1 room is a pod without the pod furniture (d215 frame): no board
   // count and no member stack. "DM" sits in a mono chip, and an observer of an
   // agent DM sees "read only" before reaching the banner.
+  // A human's room with one agent also names that agent's runtime before "DM",
+  // the same mono label its messages carry after the time. The phone head
+  // keeps "DM" alone, as the frame draws it.
   const isDirectPod = isAgentRoom || isAgentDm;
+  const roomRuntime = isAgentRoom && botMembers.length === 1
+    ? agentTags.get(String(botMembers[0]?.username || '').toLowerCase()) || ''
+    : '';
+  const dmChip = <span key="dm" className="v2-pod-header__chip">{t('podChat.header.dm')}</span>;
   const directChips = isDirectPod ? [
-    <span key="dm" className="v2-pod-header__chip">{t('podChat.header.dm')}</span>,
+    ...(roomRuntime ? [<span key="runtime" className="v2-pod-header__chip">{roomRuntime}</span>] : []),
+    dmChip,
     ...(isReadOnly ? [<span key="read-only" className="v2-pod-header__chip">{t('podChat.header.readOnly')}</span>] : []),
   ] : [];
   if (isDirectPod) {
@@ -1982,7 +1990,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             {/* The phone head draws "DM" alone (d215 390 frame). */}
             {isDirectPod ? (
               <span className="v2-pod-header__meta v2-pod-header__meta--compact">
-                {directChips[0]}
+                {dmChip}
               </span>
             ) : headerMeta.boardOpen !== null && (
               <span className="v2-pod-header__meta v2-pod-header__meta--compact">
@@ -2104,9 +2112,21 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             />
             ) : undefined}
             emptyState={!starterPanelVisible && !firstRunVisible && !loading && messages.length === 0 ? (
-                <div className="v2-empty">
+                <div className={`v2-empty${isDirectPod ? ' v2-empty--room' : ''}`}>
                   {isBotToBot && botPair ? (
                     <>
+                      <span className="v2-empty__stack" aria-hidden="true">
+                        {botMembers.slice(0, 2).map((member, index) => (
+                          <V2Avatar
+                            key={member?._id || member?.username || index}
+                            name={member?.botMetadata?.displayName || member?.username || ''}
+                            src={member?.profilePicture || undefined}
+                            tone="flat"
+                            kind="agent"
+                            seed={member?._id || member?.username || undefined}
+                          />
+                        ))}
+                      </span>
                       <div className="v2-empty__title">{t('podChat.empty.botPairTitle', { first: botPair[0], second: botPair[1] })}</div>
                       <div className="v2-empty__text">{t('podChat.empty.botPairText')}</div>
                     </>
@@ -2118,6 +2138,14 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                         || t('common.agent');
                       return (
                         <>
+                          <V2Avatar
+                            className="v2-empty__avatar"
+                            name={agentName}
+                            src={botMembers[0]?.profilePicture || undefined}
+                            tone="flat"
+                            kind="agent"
+                            seed={botMembers[0]?._id || rawUsername || undefined}
+                          />
                           <div className="v2-empty__title">{t('podChat.empty.agentRoomTitle', { agentName })}</div>
                           <div className="v2-empty__text">
                             {t('podChat.empty.agentRoomText')}
