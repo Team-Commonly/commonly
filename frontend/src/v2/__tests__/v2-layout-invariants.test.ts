@@ -220,6 +220,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(header).toContain('align-items: flex-start');
   });
 
+  test('agent Settings phone rows keep the value cell visible under the label', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    const phone = surface.slice(surface.indexOf('@media (max-width: 600px)'));
+    expect(ruleBody(phone, '.v2-agent-settings-page .lrow .vl')).toContain('grid-row: 2');
+    expect(ruleBody(phone, '.v2-agent-settings-page .lrow .ac')).toContain('grid-row: 1 / span 2');
+  });
+
   test('agent Settings buttons retain their chrome over the v2 button reset', () => {
     const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button):not(.v2-agent-wake-pods__fold)');
     expect(button).toContain('border: 1px solid var(--v2-border)');

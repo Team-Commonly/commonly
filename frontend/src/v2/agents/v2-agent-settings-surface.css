@@ -131,7 +131,8 @@
   .v2-agent-settings-page .ph .sp { display: none; }
   .v2-agent-settings-page .lrow { grid-template-columns: minmax(0, 1fr) auto; min-height: 48px; padding: 8px 12px; }
   .v2-agent-settings-page .lrow .lb { font-weight: 500; }
-  .v2-agent-settings-page .lrow .vl { display: none; }
+  .v2-agent-settings-page .lrow .vl { grid-column: 1; grid-row: 2; font-size: 12px; }
+  .v2-agent-settings-page .lrow .ac { grid-row: 1 / span 2; }
 }
 @media (max-width: 600px) {
   .v2-agent-settings-page .wt thead { display: none; }
