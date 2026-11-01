@@ -160,6 +160,10 @@ describe('V2Thread teaching empty states', () => {
     const meta = document.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');
     expect(meta).toHaveTextContent('DM');
     expect(meta).toHaveTextContent('read only');
+    // The phone head draws "DM" alone (d215 390 frame).
+    const compact = document.querySelector('.v2-pod-header__meta--compact');
+    expect(compact).toHaveTextContent('DM');
+    expect(compact).not.toHaveTextContent('read only');
     const note = screen.getByRole('note', { name: 'Read-only conversation' });
     expect(note).toHaveTextContent('Aria and Pixel are talking directly');
     expect(note.querySelector('.v2-chat__readonly-icon svg')).not.toBeNull();

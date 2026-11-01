@@ -1974,9 +1974,10 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
             </div>
             {/* The phone head carries the board chip alone (D215 phone frame);
                 the member faces live in the panel there. */}
+            {/* The phone head draws "DM" alone (d215 390 frame). */}
             {isDirectPod ? (
               <span className="v2-pod-header__meta v2-pod-header__meta--compact">
-                {directChips}
+                {directChips[0]}
               </span>
             ) : headerMeta.boardOpen !== null && (
               <span className="v2-pod-header__meta v2-pod-header__meta--compact">
@@ -2219,9 +2220,6 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
                   data-testid="pod-agent-liveness"
                   role="status"
                 >
-                  <span className="v2-chat__agent-room-status-icon" aria-hidden="true">
-                    <ShellGlyph name={row.state === 'never-connected' ? 'alert' : 'info'} size={16} />
-                  </span>
                   <div className="v2-chat__agent-room-status-body">
                     {row.state === 'never-connected' || !row.lastUsedAt
                       ? t('podChat.podAgentLiveness.notConnected', { agentName: row.displayName || row.agentName })
