@@ -657,6 +657,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const status = ruleBody(v2, '.v2-chat__agent-room-status');
     expect(status).toContain('margin: 6px 18px 0');
     expect(status).toContain('flex: none');
+    // The fix command shrinks and wraps inside its row rather than pushing the
+    // copy key out of the pane.
+    expect(ruleBody(v2, '.v2-chat__agent-room-command')).toContain('display: flex');
+    const commandCode = ruleBody(v2, '.v2-chat__agent-room-command code');
+    expect(commandCode).toContain('flex: 1');
+    expect(commandCode).toContain('min-width: 0');
+    expect(commandCode).toContain('overflow-wrap: anywhere');
     const waiting = ruleBody(v2, '.v2-chat__agent-room-status--wait');
     expect(waiting).toContain('var(--v2-font-mono)');
     // The waiting dot is ink, never the success green (d215 frame).
