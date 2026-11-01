@@ -5274,6 +5274,22 @@ test('OpenUI cards keep the approved phone controls and table records', () => {
   expect(css).toContain('.ui.gone{border-style:dashed');
 });
 
+test('the card Source line (TASK-607) uses v2 tokens only, one value per token, no dark-only colours', () => {
+  const css = read('../cards/uiCard.css');
+  const rules = css.split('\n').filter(line => /\.ui-src/.test(line));
+  expect(rules.length).toBeGreaterThanOrEqual(4);
+  for (const rule of rules) {
+    // Colour comes only from the card's v2 token aliases (--m muted, --s secondary).
+    expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+    expect(rule).not.toMatch(/data-v2-theme|prefers-color-scheme/);
+  }
+  expect(css).toContain('.v2-ui-card .ui-src{display:inline-flex;align-items:center;gap:6px;margin-left:auto;min-width:0;font:500 11px/16px var(--mono);color:var(--m)}');
+  expect(css).toContain('.v2-ui-card .ui-src-n{color:var(--s)}');
+  expect(css).toContain('.v2-ui-card .ui-src-mk>*{display:block;width:16px;height:16px}');
+  // The aliases resolve to the shared v2 tokens, which carry the theme themselves.
+  expect(css).toMatch(/--m:var\(--v2-text-muted\);--s:var\(--v2-text-secondary\)/);
+});
+
 describe('v2 board on a phone (TASK-576)', () => {
   test('the board head wraps so the title keeps a full-width row above the actions', () => {
     const css = read('../v2.css');

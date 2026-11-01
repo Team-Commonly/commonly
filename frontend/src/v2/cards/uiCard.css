@@ -11,6 +11,11 @@
 .v2-ui-card .ui-sec>.ui-meta{margin:0}
 .v2-ui-card .ui-ft{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--d)}
 .v2-ui-card .ui-ft .ui-meta{margin-left:auto}
+/* Source (rev 2, server-stamped): the bundled connector mark, then name and fetch time in v2 tokens */
+.v2-ui-card .ui-src{display:inline-flex;align-items:center;gap:6px;margin-left:auto;min-width:0;font:500 11px/16px var(--mono);color:var(--m)}
+.v2-ui-card .ui-src-mk{display:block;flex:none;width:16px;height:16px}
+.v2-ui-card .ui-src-mk>*{display:block;width:16px;height:16px}
+.v2-ui-card .ui-src-n{color:var(--s)}
 /* Steps */
 .v2-ui-card .ui-steps{margin:0;padding:0;list-style:none;display:grid;gap:2px}
 .v2-ui-card .ui-steps li{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:8px;align-items:start;padding:3px 0}
@@ -110,6 +115,7 @@
 .v2-ui-card .ui .ui-ft{display:grid;gap:8px}
 .v2-ui-card .ui .ui-ft .ub{height:44px;justify-content:center}
 .v2-ui-card .ui .ui-ft .ui-meta{margin:0}
+.v2-ui-card .ui .ui-ft .ui-src{margin:0}
 .v2-ui-card .ui .ui-h{flex-wrap:wrap;row-gap:0}
 .v2-ui-card .ui .ui-h .ui-meta{margin-left:0;flex-basis:100%}
 

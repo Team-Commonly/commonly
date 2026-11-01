@@ -4,6 +4,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { useSocket } from '../../context/SocketContext';
 import { cardHref } from './cardLinks';
+import ConnectorLogo from '../connectors/ConnectorLogo';
 
 export const CardContext = createContext<{ podId: string; runId: string; runPodId?: string }>({ podId: '', runId: '' });
 export type Node = ElementNode;
@@ -79,6 +80,24 @@ export function TaskView({ taskId, note }: { taskId: string; note?: string }) {
   return <div className={`ui-task ${task?.status || ''}`}><span className="ui-meta" aria-hidden="true">·</span>
     <span className="ti">{task?.title || (state.key === key ? 'Task unavailable' : 'Loading task…')}</span><span className="id">{taskId}</span>
     <span className="no">{task?.status || ''}{note && ` · ${note}`}</span></div>;
+}
+const SOURCE_NAMES: Record<string, string> = { linear: 'Linear', sentry: 'Sentry', atlassian: 'Atlassian' };
+/** "fetched 2 min ago"; a clock running behind the server reads as just now. */
+export function fetchedLabel(ms: number) {
+  const minutes = Math.floor(Math.max(0, ms) / 60_000);
+  if (minutes < 1) return 'fetched just now';
+  if (minutes < 60) return `fetched ${minutes} min ago`;
+  if (minutes < 24 * 60) return `fetched ${Math.floor(minutes / 60)} h ago`;
+  return `fetched ${Math.floor(minutes / (24 * 60))} d ago`;
+}
+/** Server-stamped origin (TASK-607). The write path refuses it from agents. */
+export function SourceView({ connector, fetchedAt }: { connector: string; fetchedAt: string }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(timer); }, []);
+  const at = new Date(fetchedAt);
+  return <span className="ui-src"><span className="ui-src-mk"><ConnectorLogo type={connector} size={16} /></span>
+    <span className="ui-src-n">{SOURCE_NAMES[connector] || connector}</span><span aria-hidden="true">·</span>
+    <time dateTime={fetchedAt} title={at.toLocaleString()}>{fetchedLabel(now - at.getTime())}</time></span>;
 }
 export function TraceLink() {
   const { podId: messagePodId, runPodId, runId } = useContext(CardContext);
