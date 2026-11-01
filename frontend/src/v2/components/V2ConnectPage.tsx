@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Trans, useTranslation } from 'react-i18next';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import { useAuth } from '../../context/AuthContext';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
@@ -10,11 +11,14 @@ type CopyKey = 'cli' | 'mcp' | 'cursorRule';
 
 const CopyButton: React.FC<{ value: string; copyKey: CopyKey; copied: CopyKey | null; onCopy: (key: CopyKey, value: string) => void }> = ({
   value, copyKey, copied, onCopy,
-}) => (
-  <button type="button" className="v2-connect__copy" onClick={() => onCopy(copyKey, value)}>
-    {copied === copyKey ? 'Copied' : 'Copy'}
-  </button>
-);
+}) => {
+  const { t } = useTranslation();
+  return (
+    <button type="button" className="v2-connect__copy" onClick={() => onCopy(copyKey, value)}>
+      {copied === copyKey ? t('connect.copied') : t('connect.copy')}
+    </button>
+  );
+};
 
 const V2ConnectPage: React.FC = () => {
   const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
@@ -24,6 +28,7 @@ const V2ConnectPage: React.FC = () => {
   -e COMMONLY_API_URL=${apiBaseUrl} \\
   -e COMMONLY_AGENT_TOKEN=cm_agent_… \\
   -- npx -y @commonlyai/mcp`;
+  const { t } = useTranslation();
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.role === 'admin';
   const [copied, setCopied] = useState<CopyKey | null>(null);
@@ -64,7 +69,7 @@ const V2ConnectPage: React.FC = () => {
         <div className="v2-connect__lane-heading">
           <span className="v2-connect__number" aria-hidden="true">01</span>
           <div>
-            <h2 id="connect-cli-heading">Connect the CLI or MCP</h2>
+            <h2 id="connect-cli-heading">{t('connect.cliHeading')}</h2>
           </div>
         </div>
         <div className="v2-connect__code-grid">
@@ -78,29 +83,29 @@ const V2ConnectPage: React.FC = () => {
           </div>
         </div>
         <div className="v2-connect__cursor">
-          <a className="v2-connect__link" href={cursorInstallHref}>Add Commonly to Cursor</a>
-          <span>Add your agent key in Cursor’s MCP settings.</span>
+          <a className="v2-connect__link" href={cursorInstallHref}>{t('connect.cursorInstall')}</a>
+          <span>{t('connect.cursorKeyHint')}</span>
         </div>
         <div className="v2-connect__code-card v2-connect__rule">
           <div className="v2-connect__code-head">
-            <span>Cursor rule · save as <code>{CURSOR_PROJECT_RULE_PATH}</code> in your project</span>
+            <span><Trans i18nKey="connect.cursorRule" values={{ path: CURSOR_PROJECT_RULE_PATH }} components={{ code: <code /> }} /></span>
             <CopyButton value={CURSOR_PROJECT_RULE} copyKey="cursorRule" copied={copied} onCopy={copy} />
           </div>
           <pre>{CURSOR_PROJECT_RULE}</pre>
         </div>
-        <Link className="v2-connect__link" to="/v2/settings">Manage connected CLI devices</Link>
+        <Link className="v2-connect__link" to="/v2/settings">{t('connect.manageDevices')}</Link>
       </section>
 
       <section className="v2-connect__lane" aria-labelledby="connect-agent-heading">
         <div className="v2-connect__lane-heading">
           <span className="v2-connect__number" aria-hidden="true">02</span>
           <div>
-            <h2 id="connect-agent-heading">Connect an agent you run</h2>
+            <h2 id="connect-agent-heading">{t('connect.agentHeading')}</h2>
           </div>
         </div>
         <div className="v2-connect__actions">
-          <Link className="v2-connect__cta" to="/v2/agents/byo">Set up an agent</Link>
-          <Link className="v2-connect__secondary" to="/v2/agents">Manage installed agents</Link>
+          <Link className="v2-connect__cta" to="/v2/agents/byo">{t('connect.setUpAgent')}</Link>
+          <Link className="v2-connect__secondary" to="/v2/agents">{t('connect.manageAgents')}</Link>
         </div>
 
       </section>
@@ -110,10 +115,10 @@ const V2ConnectPage: React.FC = () => {
           <div className="v2-connect__lane-heading">
             <span className="v2-connect__number" aria-hidden="true">03</span>
             <div>
-              <h2 id="connect-keys-heading">Instance keys</h2>
+              <h2 id="connect-keys-heading">{t('connect.keysHeading')}</h2>
             </div>
           </div>
-          <Link className="v2-connect__secondary" to="/v2/admin/integrations/global">Open global integrations</Link>
+          <Link className="v2-connect__secondary" to="/v2/admin/integrations/global">{t('connect.openGlobal')}</Link>
         </section>
       )}
     </div>

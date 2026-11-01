@@ -3,6 +3,7 @@ import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
+import i18n, { i18nReady } from '../../i18n';
 import V2ConnectPage from '../components/V2ConnectPage';
 import V2AccountMenu from '../components/V2AccountMenu';
 import { CURSOR_PROJECT_RULE, CURSOR_PROJECT_RULE_PATH } from '../utils/cursorProjectRule';
@@ -141,4 +142,26 @@ test('the account menu sends the folded Profile surface to Settings', async () =
   fireEvent.click(screen.getByRole('button', { name: 'Open account menu' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Settings', hidden: true }));
   expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/settings');
+});
+
+describe('V2ConnectPage in zh-CN', () => {
+  beforeAll(async () => { await i18nReady; await i18n.changeLanguage('zh-CN'); });
+  afterAll(async () => { await i18n.changeLanguage('en'); });
+
+  test('every heading, label, link and copy button reads in Chinese', async () => {
+    const clipboard = { writeText: jest.fn().mockResolvedValue(undefined) };
+    Object.assign(navigator, { clipboard });
+    const { container } = renderConnect({ ...auth, currentUser: { ...auth.currentUser, role: 'admin' } });
+    // Chrome only: commands, the rule body and product names stay as written.
+    const chrome = [...container.querySelectorAll('h2, a, button, .v2-connect__cursor span, .v2-connect__code-head > span')]
+      .map((el) => el.textContent.trim());
+    expect(chrome).toEqual(expect.arrayContaining([
+      '连接 CLI 或 MCP', '添加到 Cursor', '管理已连接的 CLI 设备', '接入你自己运行的智能体',
+      '接入智能体', '管理已安装的智能体', '实例密钥', '打开全局集成', '复制',
+    ]));
+    expect(container.querySelector('.v2-connect__rule code')).toHaveTextContent(CURSOR_PROJECT_RULE_PATH);
+    expect(chrome.join('\n')).not.toMatch(/\b(Copy|Copied|Connect|Manage|Add|Set up|Open|Instance keys|save as)\b/);
+    fireEvent.click(screen.getAllByRole('button', { name: '复制' })[0]);
+    expect(await screen.findByRole('button', { name: '已复制' })).toBeInTheDocument();
+  });
 });
