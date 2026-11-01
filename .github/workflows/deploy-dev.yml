@@ -473,7 +473,7 @@ jobs:
             echo "::warning title=Record failed::could not write the verified-revision ConfigMap ($CURREV) for commonly-dev; the next rollback will fall back to last-deployed. Check the deploy service account's configmap RBAC."
           fi
 
-      # D227 (Sam via Cofounder, 2026-11-01): the heavy test matrix is leaving the merge
+      # The heavy test matrix is leaving the merge
       # path, so a bad image can reach prod and this post-deploy verify is the net. If any
       # deploy/verify step above failed, undo this release in-cluster by rolling back to the
       # previous helm revision, so prod self-heals without waiting for a human. The job still

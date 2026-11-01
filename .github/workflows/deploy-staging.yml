@@ -405,7 +405,7 @@ jobs:
             -f description="$DESC" >/dev/null
           [ "$STATE" = "success" ]
 
-      # D227 (Sam via Cofounder, 2026-11-01): mirror of the prod rollback net. Roll this staging
+      # Mirror of the prod rollback net. Roll this staging
       # release back to the newest prior good revision when the helm upgrade or the rollout verify
       # fails — NOT on a post-deploy infra flake (setup-node / npm / playwright-install), which
       # would otherwise self-heal a healthy release. The `force_bad_tag` rehearsal input drives a
