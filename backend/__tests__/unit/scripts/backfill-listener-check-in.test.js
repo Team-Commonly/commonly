@@ -4,8 +4,8 @@ const candidate = (store, tokenId) => ({
   store, ownerId: `${store}-owner`, tokenId, lastUsedAt: '2026-10-01T00:00:00.000Z',
 });
 
-const makeDeps = (candidates, stamp = async () => 1) => ({
-  listCandidates: jest.fn(async () => candidates),
+const makeDeps = (candidates, stamp = async () => 1, unaddressable = 0) => ({
+  listCandidates: jest.fn(async () => ({ candidates, unaddressable })),
   stamp: jest.fn(stamp),
 });
 
@@ -17,6 +17,11 @@ describe('backfill-listener-check-in', () => {
       dryRun: true, candidates: 3, byStore: { user: 2, installation: 1 }, frozen: null, applied: 0,
     });
     expect(deps.stamp).not.toHaveBeenCalled();
+  });
+
+  it('reports tokens it cannot address so the operator sees them before the switch', async () => {
+    const report = await backfillListenerCheckIn(makeDeps([candidate('user', 'a')], undefined, 2));
+    expect(report).toMatchObject({ candidates: 1, unaddressable: 2 });
   });
 
   it('refuses to apply without the frozen set from a dry run', async () => {

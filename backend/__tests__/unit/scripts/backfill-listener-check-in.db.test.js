@@ -54,7 +54,7 @@ describe('backfill-listener-check-in against the real schemas', () => {
     ]);
 
     const deps = productionDeps();
-    const listed = await deps.listCandidates();
+    const { candidates: listed } = await deps.listCandidates();
     expect(listed).toHaveLength(2);
     expect(JSON.stringify(listed)).not.toContain('secret');
 
@@ -72,7 +72,7 @@ describe('backfill-listener-check-in against the real schemas', () => {
   it('never overwrites a stamp a running listener wrote after the dry run', async () => {
     const user = await makeAgentUser([{ tokenHash: 'secret-1', lastUsedAt: USED }]);
     const deps = productionDeps();
-    const frozen = await deps.listCandidates();
+    const { candidates: frozen } = await deps.listCandidates();
     await User.updateOne(
       { _id: user._id },
       { $set: { 'agentRuntimeTokens.0.lastListenedAt': LISTENED } },
@@ -86,10 +86,36 @@ describe('backfill-listener-check-in against the real schemas', () => {
   it('is idempotent: a second apply of the same set changes nothing', async () => {
     await makeAgentUser([{ tokenHash: 'secret-1', lastUsedAt: USED }]);
     const deps = productionDeps();
-    const frozen = await deps.listCandidates();
+    const { candidates: frozen } = await deps.listCandidates();
     await backfillListenerCheckIn(deps, { apply: true, frozen });
     const second = await backfillListenerCheckIn(deps, { apply: true, frozen });
     expect(second).toMatchObject({ applied: 0, skippedAlreadyStamped: 1 });
-    expect(await deps.listCandidates()).toHaveLength(0);
+    expect((await deps.listCandidates()).candidates).toHaveLength(0);
+  });
+
+  it('stamps a token whose lastListenedAt is an explicit null', async () => {
+    const inst = await makeInstall([
+      {
+        _id: new mongoose.Types.ObjectId(), tokenHash: 'secret-n', lastUsedAt: USED, lastListenedAt: null, 
+      },
+    ]);
+    const deps = productionDeps();
+    const { candidates } = await deps.listCandidates();
+    expect(candidates).toHaveLength(1);
+    const report = await backfillListenerCheckIn(deps, { apply: true, frozen: candidates });
+    expect(report).toMatchObject({ applied: 1, skippedAlreadyStamped: 0 });
+    const after = await AgentInstallation.collection.findOne({ _id: inst.insertedId });
+    expect(after.runtimeTokens[0].lastListenedAt).toEqual(USED);
+  });
+
+  it('counts a token with no ObjectId _id as unaddressable instead of listing it', async () => {
+    await makeInstall([
+      { _id: 'not-an-object-id', tokenHash: 'secret-s', lastUsedAt: USED },
+      { tokenHash: 'secret-m', lastUsedAt: USED },
+    ]);
+    const listing = await productionDeps().listCandidates();
+    expect(listing.candidates).toHaveLength(0);
+    expect(listing.unaddressable).toBe(1 + 1);
+    expect(JSON.stringify(listing)).not.toContain('secret');
   });
 });

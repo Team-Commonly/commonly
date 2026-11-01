@@ -36,8 +36,15 @@ A token that was only ever used for MCP tool calls gets a `lastListenedAt` too.
 That is deliberate: it keeps the verdict agent state gave before the change. A
 live listener's next poll writes the real value.
 
-## Check it worked
+## Before the derivation switch ships
 
-The dry run's candidate count after the apply should be 0. Then confirm the
-state derivation change is safe to deploy: no old seat should read
-never-connected that read gone-dark before.
+- The listener check-in writer (#3114) must already be live on prod. Otherwise a
+  live listener keeps only its backfilled stamp and ages into gone-dark.
+- Run the dry run once more after the apply. Some candidates will remain on a
+  live system: tokens first used by an MCP call after the freeze, and any
+  **unaddressable** ones. The report's `unaddressable` count is tokens whose
+  subdocument has no ObjectId `_id`; the script cannot stamp them, and they would
+  flip from gone-dark to never-connected. Resolve them (or accept them) first.
+- A write that comes back unacknowledged counts as `failed`, never as skipped.
+- Installation-only tokens (no copy on the agent's User row) keep their backfilled
+  value forever until the switch PR adds a live stamp for them.

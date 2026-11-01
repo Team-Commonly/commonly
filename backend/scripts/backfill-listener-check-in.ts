@@ -44,8 +44,18 @@ export interface TokenCandidate {
   lastUsedAt: string;
 }
 
+export interface CandidateListing {
+  candidates: TokenCandidate[];
+  /**
+   * Used, unstamped tokens whose subdocument has no ObjectId `_id`. They cannot
+   * be addressed by this script, so the operator must see them before the
+   * derivation switch ships; they would flip from gone-dark to never-connected.
+   */
+  unaddressable: number;
+}
+
 export interface ListenerBackfillDeps {
-  listCandidates: () => Promise<TokenCandidate[]>;
+  listCandidates: () => Promise<CandidateListing>;
   /** Returns how many rows the database changed (0 when already stamped). */
   stamp: (candidate: TokenCandidate) => Promise<number>;
 }
@@ -53,6 +63,7 @@ export interface ListenerBackfillDeps {
 export interface ListenerBackfillReport {
   dryRun: boolean;
   candidates: number;
+  unaddressable: number;
   byStore: Record<TokenStore, number>;
   frozen: number | null;
   applied: number;
@@ -68,12 +79,13 @@ export async function backfillListenerCheckIn(
   if (apply && !options.frozen) {
     throw new Error('apply needs the frozen id set from a dry run (--ids)');
   }
-  const current = await deps.listCandidates();
+  const { candidates: current, unaddressable } = await deps.listCandidates();
   const byStore: Record<TokenStore, number> = { user: 0, installation: 0 };
   current.forEach((candidate) => { byStore[candidate.store] += 1; });
   const report: ListenerBackfillReport = {
     dryRun: !apply,
     candidates: current.length,
+    unaddressable,
     byStore,
     frozen: options.frozen ? options.frozen.length : null,
     applied: 0,
@@ -102,38 +114,34 @@ const toIso = (value: unknown): string => new Date(value as string | number | Da
 export const productionDeps = (): ListenerBackfillDeps => ({
   listCandidates: async () => {
     const out: TokenCandidate[] = [];
+    let unaddressable = 0;
+    const take = (store: TokenStore, ownerId: unknown, token: Record<string, any>) => {
+      if (!token.lastUsedAt || token.lastListenedAt) return;
+      if (!/^[0-9a-f]{24}$/i.test(String(token._id || ''))) {
+        unaddressable += 1;
+        return;
+      }
+      out.push({
+        store,
+        ownerId: String(ownerId),
+        tokenId: String(token._id),
+        lastUsedAt: toIso(token.lastUsedAt),
+      });
+    };
     // Only the ids and the two timestamps are selected: no token hash leaves the database.
     const users = await User.find({ 'agentRuntimeTokens.lastUsedAt': { $exists: true } })
       .select('agentRuntimeTokens._id agentRuntimeTokens.lastUsedAt agentRuntimeTokens.lastListenedAt')
       .lean();
     for (const user of users as Array<Record<string, any>>) {
-      for (const token of user.agentRuntimeTokens || []) {
-        if (token.lastUsedAt && !token.lastListenedAt) {
-          out.push({
-            store: 'user',
-            ownerId: String(user._id),
-            tokenId: String(token._id),
-            lastUsedAt: toIso(token.lastUsedAt),
-          });
-        }
-      }
+      for (const token of user.agentRuntimeTokens || []) take('user', user._id, token);
     }
     const installs = await AgentInstallation.find({ 'runtimeTokens.lastUsedAt': { $exists: true } })
       .select('runtimeTokens._id runtimeTokens.lastUsedAt runtimeTokens.lastListenedAt')
       .lean();
     for (const install of installs as Array<Record<string, any>>) {
-      for (const token of install.runtimeTokens || []) {
-        if (token.lastUsedAt && !token.lastListenedAt) {
-          out.push({
-            store: 'installation',
-            ownerId: String(install._id),
-            tokenId: String(token._id),
-            lastUsedAt: toIso(token.lastUsedAt),
-          });
-        }
-      }
+      for (const token of install.runtimeTokens || []) take('installation', install._id, token);
     }
-    return out;
+    return { candidates: out, unaddressable };
   },
   stamp: async (candidate) => {
     const field = candidate.store === 'user' ? 'agentRuntimeTokens' : 'runtimeTokens';
@@ -144,12 +152,16 @@ export const productionDeps = (): ListenerBackfillDeps => ({
         [field]: {
           $elemMatch: {
             _id: new mongoose.Types.ObjectId(candidate.tokenId),
-            lastListenedAt: { $exists: false },
+            // null matches an absent field and an explicit null, never a live Date.
+            lastListenedAt: null,
           },
         },
       },
       { $set: { [`${field}.$.lastListenedAt`]: new Date(candidate.lastUsedAt) } },
     );
+    // A write Mongoose dropped (a field missing from the schema) comes back
+    // unacknowledged: report it as a failure, never as "already stamped".
+    if (res?.acknowledged === false) throw new Error('write was not acknowledged');
     return res?.modifiedCount ?? res?.nModified ?? 0;
   },
 });
@@ -173,7 +185,7 @@ export async function main(): Promise<void> {
   try {
     const deps = productionDeps();
     if (!apply && outPath) {
-      const candidates = await deps.listCandidates();
+      const { candidates } = await deps.listCandidates();
       fs.writeFileSync(outPath, JSON.stringify({ createdAt: new Date().toISOString(), candidates }, null, 2));
       console.log(`[backfill-listener-check-in] wrote ${candidates.length} candidates to ${outPath}`);
     }
