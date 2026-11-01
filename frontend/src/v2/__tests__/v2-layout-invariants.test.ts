@@ -5145,14 +5145,16 @@ describe('task priority and lease signals (TASK-443)', () => {
   // coloured border-left. Quote and thread rails are typographic and exempt.
   test('no card selector draws a status rail (inset side shadow or coloured border-left >= 2px)', () => {
     const offenders: string[] = [];
-    for (const match of css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
+    // Strip comments first: a comment before a rule would otherwise join its selector.
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const match of bare.matchAll(/([^{}@]+)\{([^{}]*)\}/g)) {
       const selector = match[1].trim();
       const body = match[2];
       if (!/card/i.test(selector) || /quote|thread/i.test(selector)) continue;
       const insetRail = /box-shadow:[^;]*\binset\s+-?[1-9]\d*(?:\.\d+)?px\s+0(?:px)?\s+0/.test(body)
         || /box-shadow:[^;]*\binset\s+0(?:px)?\s+-?[1-9]\d*(?:\.\d+)?px\s+0(?:px)?\s+0/.test(body);
-      const leftBorder = /border-left(?:-width)?:\s*([2-9]|\d{2,})(?:\.\d+)?px/.exec(body);
-      const leftColoured = leftBorder && !/border-left(?:-color)?:[^;]*(transparent|none)/.test(body);
+      const leftBorder = /border-(?:left|inline-start)(?:-width)?:\s*([2-9]|\d{2,})(?:\.\d+)?px/.exec(body);
+      const leftColoured = leftBorder && !/border-(?:left|inline-start)(?:-color)?:[^;]*(transparent|none)/.test(body);
       if (insetRail || leftColoured) offenders.push(selector);
     }
     expect(offenders).toEqual([]);
