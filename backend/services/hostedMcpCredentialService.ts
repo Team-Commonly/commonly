@@ -104,6 +104,7 @@ export interface HostedMcpRow {
     authGeneration?: number;
     credentialAuthGeneration?: number;
     expiresAt?: Date | null;
+    grantedScope?: string;
   };
 }
 
@@ -111,6 +112,8 @@ interface RefreshResult {
   accessToken: string;
   refreshToken?: string;
   expiresIn?: number;
+  /** Present only when the vendor restated the scope on refresh. */
+  scope?: string;
 }
 
 interface CredentialDeps {
@@ -296,7 +299,20 @@ export const refreshTokenAtVendor = async ({
     accessToken: String(body.access_token),
     refreshToken: body.refresh_token ? String(body.refresh_token) : undefined,
     expiresIn: typeof body.expires_in === 'number' ? body.expires_in : undefined,
+    scope: typeof body.scope === 'string' ? body.scope : undefined,
   };
+};
+
+/**
+ * The scope a refresh leaves the connection holding. A refresh can narrow a
+ * grant but never widen it, so only scopes already granted are kept. A response
+ * that restates no scope keeps the grant as it was (RFC 6749 §5.1).
+ */
+const scopeAfterRefresh = (row: HostedMcpRow, entry: HostedMcpOAuthEntry, scope?: string): string | undefined => {
+  if (scope === undefined) return undefined;
+  const parse = (value: string) => value.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
+  const held = new Set(typeof row.config?.grantedScope === 'string' ? parse(row.config.grantedScope) : entry.scopes || []);
+  return parse(scope).filter((part) => held.has(part)).join(' ');
 };
 
 const defaultDeps = (): CredentialDeps => ({
@@ -557,6 +573,7 @@ export const credentialFor = async (
   );
 
   const expiresAt = refreshed.expiresIn ? new Date(now.getTime() + refreshed.expiresIn * 1000) : null;
+  const grantedScope = scopeAfterRefresh(won, entry, refreshed.scope);
   // One write, and it has to stay one: a loser serves the first re-read that
   // passes `servableRef`, so a reference written ahead of its expiry would be
   // served under the old lifetime whenever that one still reads fresh.
@@ -567,6 +584,9 @@ export const credentialFor = async (
     // Released with the write it guarded, so the next refresh is not turned into
     // a loser by a lease whose holder has already finished.
     'config.refreshingUntil': null,
+    // A narrowed scope lands with the pair it came with, so a write grant is
+    // never minted against a scope the vendor has withdrawn.
+    ...(grantedScope === undefined ? {} : { 'config.grantedScope': grantedScope }),
     // Top-level, not `config.*`: the row's error text lives outside the strict
     // subdocument, and clearing it inside one would be dropped in silence.
     errorMessage: null,
