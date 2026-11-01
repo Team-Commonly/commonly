@@ -113,9 +113,10 @@
    column of the transcript they sit in. Both are siblings of `.v2-msg` inside
    `.v2-chat__messages`, so the indent is the avatar track plus the gap of the
    rule that governs those rows HERE, which is the thread override
-   `.v2-thread .v2-msg { grid-template-columns: 28px minmax(0, 1fr); gap: 8px }`
-   — 28 + 8 = 36, NOT the base `.v2-msg` grid (38 + 12 = 50), which that
-   override replaces (0,3,0 beats 0,1,0). The first cut of this rule derived
+   `.v2-thread .v2-msg { grid-template-columns: 36px minmax(0, 1fr); gap: 12px }`
+   — 36 + 12 = 48 (30 + 10 = 40 on a phone, in the 760 block below), NOT the
+   base `.v2-msg` grid (38 + 12 = 50), which that override replaces (0,3,0
+   beats 0,1,0). The first cut of this rule derived
    from the base grid and was 14px out; ux-lead's #1860 gate measured it at
    390, 720 and 1440 — 50px put both rows 14px right of `.v2-msg__content`,
    36px put them on it (injection on their fixture, right edge and scrollWidth
