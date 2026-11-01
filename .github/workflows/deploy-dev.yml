@@ -393,6 +393,27 @@ jobs:
           echo "::error title=Chat unavailable on the new backend::$POD has pg/status=$STATUS and pg/messages=$ROUTE (401 means mounted, 404 unmounted). Chat history fails until the pod restarts: kubectl rollout restart deploy/backend -n $NAMESPACE"
           exit 1
 
+      # D227 (Sam via Cofounder, 2026-11-01): the heavy test matrix is leaving the merge
+      # path, so a bad image can reach prod and this post-deploy verify is the net. If any
+      # deploy/verify step above failed, undo this release in-cluster by rolling back to the
+      # previous helm revision, so prod self-heals without waiting for a human. The job still
+      # ends red, which makes the auto-deploy dispatcher write auto-deploy.hold and stop
+      # re-dispatching (Mac-side). Rolls back revision CUR -> CUR-1; a no-op at revision 1 or
+      # if the cluster is unreachable (helm history empty).
+      - name: Roll back on a failed deploy
+        if: failure()
+        run: |
+          set -uo pipefail
+          CUR=$(helm history commonly-dev -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.[-1].revision // 0')
+          PREV=$(( CUR - 1 ))
+          if [ "$PREV" -lt 1 ]; then
+            echo "::warning title=No rollback target::commonly-dev is at revision ${CUR:-0}; nothing to roll back to."
+            exit 0
+          fi
+          echo "Rolling commonly-dev back: revision $CUR -> $PREV"
+          helm rollback commonly-dev "$PREV" -n "$NAMESPACE" --wait --timeout 8m
+          echo "::error title=Deploy rolled back::commonly-dev rolled back to revision $PREV after a failed deploy. Investigate the bad image before the next deploy."
+
       # The stranger journey walks signup -> Scout's welcome -> a real question
       # -> the connect card against the release just deployed
       # (docs/runbooks/alerting.md#stranger-journey). It runs as a Job from the

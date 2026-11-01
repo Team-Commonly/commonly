@@ -25,6 +25,11 @@ on:
         description: 'Git ref / SHA to build + deploy to staging (defaults to the triggering ref)'
         required: false
         default: ''
+      force_bad_tag:
+        description: 'REHEARSAL: deploy a nonexistent backend image tag so the rollout fails and the rollback step fires (staging only)'
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [ main ]
 
@@ -157,12 +162,21 @@ jobs:
       - name: Helm upgrade commonly-staging
         env:
           TAG: ${{ steps.tag.outputs.tag }}
+          FORCE_BAD: ${{ inputs.force_bad_tag }}
         run: |
+          # Rollback rehearsal (force_bad_tag): point the backend image at a tag that does not
+          # exist, so the pod never pulls, the rollout verify below fails, and the rollback step
+          # at the end of the job fires. Staging only; a normal run leaves BTAG = the real tag.
+          BTAG="$TAG"
+          if [ "$FORCE_BAD" = "true" ]; then
+            BTAG="rollback-rehearsal-nonexistent"
+            echo "::warning title=Rollback rehearsal::forcing a nonexistent backend image tag ($BTAG) to exercise the rollback step"
+          fi
           helm upgrade --install "$RELEASE" k8s/helm/commonly -n "$NAMESPACE" --create-namespace \
             -f k8s/helm/commonly/values.yaml \
             -f k8s/helm/commonly/values-staging.yaml \
             -f "$RUNNER_TEMP/values-private.yaml" \
-            --set backend.image.tag="$TAG" \
+            --set backend.image.tag="$BTAG" \
             --set frontend.image.tag="$TAG-staging" \
             --set agents.commonlyBot.image.tag="$TAG" \
             --timeout 10m \
@@ -300,3 +314,21 @@ jobs:
             -f context="staging-smoke" \
             -f description="$DESC" >/dev/null
           [ "$STATE" = "success" ]
+
+      # D227 (Sam via Cofounder, 2026-11-01): mirror of the prod rollback net. If any step
+      # above failed (rollout or smoke), roll this staging release back to the previous helm
+      # revision so staging self-heals. The `force_bad_tag` rehearsal input drives a failed
+      # rollout specifically to exercise this path. The job still ends red.
+      - name: Roll back on a failed deploy
+        if: failure()
+        run: |
+          set -uo pipefail
+          CUR=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.[-1].revision // 0')
+          PREV=$(( CUR - 1 ))
+          if [ "$PREV" -lt 1 ]; then
+            echo "::warning title=No rollback target::$RELEASE is at revision ${CUR:-0}; nothing to roll back to."
+            exit 0
+          fi
+          echo "Rolling $RELEASE back: revision $CUR -> $PREV"
+          helm rollback "$RELEASE" "$PREV" -n "$NAMESPACE" --wait --timeout 8m
+          echo "::error title=Deploy rolled back::$RELEASE rolled back to revision $PREV after a failed deploy. Investigate before the next deploy."
