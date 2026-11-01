@@ -684,9 +684,26 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     try {
       const res = await api.del<{ revokeAt?: string }>(`/api/integrations/${encodeURIComponent(connectionId)}`);
       setConfirmDisconnect(null);
+      // The removal revokes every grant on the connection, so the page says so
+      // now rather than waiting on a re-read that may fail.
+      const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
+      setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
       setRemovedHiddenNotice({ label: entry.label, revokePage: safeProviderRevokePage(res?.revokeAt) ? res.revokeAt : null });
       await load();
-    } catch {
+    } catch (err) {
+      // A 502 is a partial removal: the grants are already revoked and the row is
+      // disconnected, only the provider's own revoke failed. Show that, and send
+      // the person to the provider page the server named.
+      const data = (err as { response?: { status?: number; data?: { revokeAt?: string } } })?.response;
+      if (data?.status === 502) {
+        const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
+        setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
+        setConfirmDisconnect(null);
+        if (safeProviderRevokePage(data.data?.revokeAt)) {
+          setRemovedHiddenNotice({ label: entry.label, revokePage: data.data.revokeAt });
+        }
+        await load();
+      }
       setError(t('tools.disconnectError', { defaultValue: 'Could not disconnect {{label}}.', label: entry.label }));
     } finally {
       setBusy(false);
@@ -695,7 +712,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
 
   // Hosted connections only: a GitHub App connection is the instance's, not the viewer's to drop.
   const renderDisconnect = (entry: ToolCatalogEntry | null, variant: 'row' | 'aside') => {
-    const connection = entry && entry.connectionType === 'hosted-mcp' ? entry.connections[0] : null;
+    // One connection only: a grant does not say which connection it was minted on,
+    // so with several the button could drop the wrong one.
+    const connection = entry && entry.connectionType === 'hosted-mcp' && entry.connections.length === 1 ? entry.connections[0] : null;
     if (!entry || !connection) return null;
     const cls = variant === 'row'
       ? 'v2-connector-row__action v2-connector-row__action--secondary'

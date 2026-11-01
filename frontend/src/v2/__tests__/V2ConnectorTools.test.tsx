@@ -541,6 +541,9 @@ test('after Revoke the grant card says revoked in place, even when the re-read i
   fireEvent.click(within(aside).getByRole('button', { name: 'Revoke' }));
   fireEvent.click(within(aside).getByRole('button', { name: 'Yes, revoke it' }));
   await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2));
+  // A tab refocus re-reads, and that read fails.
+  fireEvent(document, new Event('visibilitychange'));
+  await waitFor(() => expect(reads).toBeGreaterThanOrEqual(3));
   const card = await screen.findByRole('complementary', { name: 'Grant details' });
   await waitFor(() => expect(within(card).getByText(/Revoked by sam just now\./)).toBeInTheDocument());
   expect(within(card).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
@@ -582,14 +585,38 @@ describe('Disconnect on a live connection of an offered hosted connector', () =>
     expect(link).toHaveAttribute('href', 'https://id.atlassian.com/manage-profile/apps');
   });
 
-  test('a failed disconnect says so and keeps the connection', async () => {
+  test('a network failure says so and keeps the connection', async () => {
     mockTwoEntries({ catalog: [atlassian], grants: { p1: [], p2: [] } });
-    axios.delete.mockRejectedValue(new Error('502'));
+    axios.delete.mockRejectedValue(new Error('network'));
     renderTools();
     fireEvent.click(await screen.findByRole('button', { name: 'Disconnect Atlassian' }));
     fireEvent.click(screen.getByRole('button', { name: 'Yes, disconnect' }));
     expect(await screen.findByText('Could not disconnect Atlassian.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Yes, disconnect' })).toBeInTheDocument();
+  });
+
+  // A 502 is the server's partial removal: grants already revoked, row disconnected,
+  // only the provider's revoke failed, and the body names the page to visit.
+  test('a 502 partial removal shows the grant revoked and links the provider page', async () => {
+    mockTwoEntries({ catalog: [atlassian], grants: { p1: [grantAtl], p2: [] } });
+    axios.delete.mockRejectedValue({ response: { status: 502, data: { code: 'provider_revoke_failed', revokeAt: 'https://id.atlassian.com/manage-profile/apps' } } });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'View Atlassian in Launch pod' }));
+    const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+    fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian' }));
+    fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
+    expect(await screen.findByRole('link', { name: 'Open provider settings' })).toHaveAttribute('href', 'https://id.atlassian.com/manage-profile/apps');
+    const card = await screen.findByRole('complementary', { name: 'Grant details' });
+    expect(within(card).getByText(/Revoked by sam/)).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
+  });
+
+  test('two connections of one entry offer no Disconnect, since a grant does not name its connection', async () => {
+    const two = { ...atlassian, connections: [...atlassian.connections, { connectionId: 'conn-atl-2', owner: 'me', repo: 'atlassian' }] };
+    mockTwoEntries({ catalog: [two], grants: { p1: [], p2: [] } });
+    renderTools();
+    await screen.findByText('Atlassian');
+    expect(screen.queryByRole('button', { name: /Disconnect/ })).not.toBeInTheDocument();
   });
 
   test('GitHub (the instance App connection) never offers Disconnect', async () => {
