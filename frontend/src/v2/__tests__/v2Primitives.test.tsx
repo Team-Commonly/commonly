@@ -58,4 +58,12 @@ describe('D223 primitives', () => {
     render(<V2PrimitivesPage />);
     expect(screen.getByLabelText('Primitives')).toHaveClass('v2p-pane--scroll');
   });
+
+  test('the disclosure row has its summary grid, chevron turn and 390 rule', () => {
+    expect(css).toContain('details.v2p-disc > summary {');
+    expect(css).toContain('details.v2p-disc[open] > summary .chev { transform: rotate(180deg); }');
+    expect(css).toMatch(/@media \(max-width: 480px\)[\s\S]*details\.v2p-disc > summary \{ grid-template-columns: minmax\(0, 1fr\) auto auto;/);
+    const { container } = render(<V2PrimitivesPage />);
+    expect(container.querySelector('details.v2p-disc')).not.toBeNull();
+  });
 });
