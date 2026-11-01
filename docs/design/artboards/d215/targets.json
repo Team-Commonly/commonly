@@ -69,7 +69,7 @@
  },
  "byo-handoff-390": {
   "helperWords": 106,
-  "innerRatio": 1.52
+  "innerRatio": 1.31
  },
  "firstrun-welcome-1440": {
   "helperWords": 16,
@@ -101,6 +101,30 @@
  },
  "firstrun-error-390": {
   "helperWords": 58,
+  "innerRatio": 1
+ },
+ "activity-queue-1440": {
+  "helperWords": 92,
+  "innerRatio": 1
+ },
+ "activity-empty-1440": {
+  "helperWords": 65,
+  "innerRatio": 1
+ },
+ "activity-error-1440": {
+  "helperWords": 0,
+  "innerRatio": 1
+ },
+ "activity-queue-390": {
+  "helperWords": 41,
+  "innerRatio": 1.09
+ },
+ "activity-empty-390": {
+  "helperWords": 57,
+  "innerRatio": 1
+ },
+ "activity-error-390": {
+  "helperWords": 0,
   "innerRatio": 1
  }
 }
