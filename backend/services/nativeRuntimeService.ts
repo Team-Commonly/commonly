@@ -144,8 +144,14 @@ const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> => {
 // A web result the guard stops on its own is replaced with this before the
 // turn's one extra round. It names no rule and repeats nothing from the result.
 const WEB_SET_ASIDE_NOTICE = 'This result was set aside: a content filter stopped it, and its text is no longer '
-  + 'in this conversation. Answer with what you have, and tell the person which page or search you could not use.';
+  + 'in this conversation. No more lookups are possible in this turn: answer with what you have, and tell the '
+  + 'person which page or search you could not use.';
 const RECOVERY_REPLIED_REFUSAL = 'This turn has posted its reply.';
+// The refusal for any tool that round does not offer. When the round did not
+// try to post, the model reads it before one further call (F33: it asked for
+// the set-aside page again).
+const RECOVERY_NOT_OFFERED_REFUSAL = 'No more lookups are possible in this turn. Reply with commonly_post_message from '
+  + 'what you have, and tell the person which page or search you could not use.';
 // What a hosted agent posts when a turn someone was waiting on ends on a guard
 // stop or an error with nothing posted. Fixed text, so it carries nothing the
 // turn read.
@@ -2232,6 +2238,9 @@ export async function runAgent(
   // Set when the recovery round was stopped too, and every web result left
   // was set aside for one last round.
   let webSetAsideAll = false;
+  // Set when the recovery round asked only for tools it was not offered and
+  // was given one more call to read the refusal (F33).
+  let recoveryRetried = false;
   // Returns how many results were set aside, and how many web results the
   // turn lost in all (those plus the ones in the dropped rounds).
   const setAsideStoppedWebResult = async (): Promise<{ setAside: number; removed: number }> => {
@@ -2298,7 +2307,9 @@ export async function runAgent(
       const webTainted = Boolean(dispatchCtx.webTainted);
       const podBridged = mayLookUp ? await podBridgedNow() : false;
       // The round after a set-aside is the recovery round: one model call,
-      // offered only a post, and the run ends after it whatever it did.
+      // offered only a post, and the run ends after it whatever it did. The
+      // one exception is a call that asked only for other tools: it gets a
+      // second call, after reading the refusal.
       const recoveryRound = webSetAside;
       offeredBroker = broker;
       const offeredTools = [
@@ -2497,7 +2508,9 @@ export async function runAgent(
           const narrowedAway = (Boolean(dispatchCtx.inPodOnly)
             && !keptInPod(toolName, Boolean(dispatchCtx.brokerCallSeen)))
             || withdrawnAfterBroker(toolName, Boolean(dispatchCtx.brokerCallSeen));
-          const notOffered = `${toolName || 'That tool'} is not available to you in this turn.`;
+          const notOffered = recoveryRound
+            ? RECOVERY_NOT_OFFERED_REFUSAL
+            : `${toolName || 'That tool'} is not available to you in this turn.`;
           // The recovery round posts at most one reply.
           const replied = recoveryRound && postedViaTool ? RECOVERY_REPLIED_REFUSAL : '';
           let result: DispatchResult;
@@ -2576,12 +2589,24 @@ export async function runAgent(
         // The recovery round ends the run: answered (or declined through a
         // post) is a success, anything else could not finish.
         if (recoveryRound) {
+          const asked = toolCalls.map((tc) => tc.function?.name || '');
           if (postedViaTool) {
             run.status = run.status === 'running' ? 'succeeded' : run.status;
+          } else if (!recoveryRetried && !asked.includes('commonly_post_message')) {
+            // On prod the model asked for the set-aside page again, every time
+            // (F33), and the run ended before it read the refusal.
+            recoveryRetried = true;
+            continue;
           } else {
             run.status = 'failed';
             run.errorKind = 'guardrail_blocked';
-            run.errorMessage = 'Request blocked by a content guardrail (prompt-injection / moderation).';
+            const other = [...new Set(asked.filter((name) => name && name !== 'commonly_post_message'))];
+            const why = [
+              ...(asked.includes('commonly_post_message') ? ['its post was refused'] : []),
+              ...(other.length ? [`it asked for ${other.join(', ')}, which that round does not offer`] : []),
+            ];
+            run.errorMessage = 'A content filter set web results aside, and the round after it ended without a reply'
+              + (why.length ? `: ${why.join('; ')}.` : '.');
           }
           break;
         }
@@ -2608,10 +2633,15 @@ export async function runAgent(
 
       const textOut = typeof msg.content === 'string' ? msg.content.trim() : '';
       // The fallback post is a post like any other: after an external result,
-      // re-read the bridge before letting it through.
+      // re-read the bridge before letting it through. A silent reply (NO_REPLY)
+      // is a decline, not a held-back answer: it would post nothing anyway.
       const fallbackBlocked = Boolean(textOut && !postedViaTool
-        && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow());
+        && (dispatchCtx.webTainted || dispatchCtx.brokerCallSeen) && await podBridgedNow()
+        && require('./agentMessageService').sanitizeAgentContent(textOut));
+      // Held back, the reply never reached the person: the run failed, so it
+      // is not metered and its digest is not settled as answered.
       if (fallbackBlocked) {
+        run.status = 'failed';
         run.errorKind = 'guardrail_blocked';
         run.errorMessage = dispatchCtx.webTainted ? WEB_TAINTED_BRIDGED_REFUSAL : BROKER_TAINTED_BRIDGED_REFUSAL;
       }
@@ -2647,6 +2677,14 @@ export async function runAgent(
           run.errorMessage = (postErr as Error).message;
           run.errorKind = 'tool_error';
         }
+      }
+      // The extra recovery call was given because the model meant to answer,
+      // so an empty one is a reply that never came, not a decline.
+      if (recoveryRetried && !textOut && !postedViaTool) {
+        run.status = 'failed';
+        run.errorKind = 'guardrail_blocked';
+        run.errorMessage = 'A content filter set web results aside, and the round after it ended without a reply: '
+          + 'its extra call returned nothing.';
       }
 
       run.status = run.status === 'running' ? 'succeeded' : run.status;

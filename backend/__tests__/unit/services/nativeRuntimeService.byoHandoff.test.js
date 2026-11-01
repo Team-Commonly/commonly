@@ -204,7 +204,8 @@ describe('commonly_offer_local_agent', () => {
 
     const result = await runAgent(install, ask);
 
-    expect(result.status).toBe('succeeded');
+    // Its last text was held back too, so the turn answered no one.
+    expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
     // The runtime offers every model tool call to the broker; only the granted
     // tool is a broker dispatch, so count that one.
     const brokerDispatches = mockDispatchHostedBrokerTool.mock.calls
