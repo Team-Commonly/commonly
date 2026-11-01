@@ -408,6 +408,15 @@ describe('V2Inspector', () => {
     });
     expect(screen.queryByRole('radiogroup', { name: 'Who can join' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Who can join/ })).toBeInTheDocument();
+    expect(screen.getByText('Invite-only')).toBeInTheDocument();
+  });
+
+  test('falls back to the shared queue slice when this pod\'s queue read is rejected', async () => {
+    mockGet.mockImplementation((url: string) => (url.startsWith('/api/activity/decision-queue')
+      ? Promise.reject(new Error('down'))
+      : Promise.resolve({ tasks: [] })));
+    renderInspector({ attentionCount: 1, attentionItems: [{ id: 'shared', kind: 'decision', title: 'Shared slice item', podId: 'pod-1' }] });
+    expect(await screen.findByText('Shared slice item')).toBeInTheDocument();
   });
 
   test('does not render a stale attention item from another pod', async () => {
