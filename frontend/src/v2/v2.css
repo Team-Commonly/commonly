@@ -4676,6 +4676,31 @@ body.modern-ui.v2-canvas {
   white-space: nowrap;
 }
 
+/* The 390 bar's controls are 44px touch targets. The frame draws them at 34px,
+   so they go to 44px at this width. The theme buttons keep their pill and reach
+   44px tall through ::after, which stays inside each button's own column. */
+.v2-pods-aside--page .v2-pods__bar .v2p-ib {
+  width: 44px;
+  height: 44px;
+}
+
+/* New pod carries its own flex-basis (.v2-pods__new, 32px); the bar overrides it. */
+.v2-root .v2-pods-aside--page .v2-pods__bar button.v2-pods__new {
+  flex-basis: 44px;
+}
+
+.v2-pods-aside--page .v2-pods__bar .seg.v2-theme-seg button {
+  position: relative;
+  width: 44px;
+  height: 40px;
+}
+
+.v2-pods-aside--page .v2-pods__bar .seg.v2-theme-seg button::after {
+  content: '';
+  position: absolute;
+  inset: -2px 0;
+}
+
 .v2-pods-aside--page .v2-pods__body {
   display: flex;
   min-height: 0;

@@ -565,6 +565,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-pods__page-title')).toContain('font: 800 21px/1 var(--v2-font-display, var(--v2-font))');
   });
 
+  test('the phone pods bar gives each control a 44px target', () => {
+    const icon = topLevelRuleBody(v2, '.v2-pods-aside--page .v2-pods__bar .v2p-ib');
+    expect(icon).toContain('width: 44px');
+    expect(icon).toContain('height: 44px');
+    // .v2-pods__new sets flex: 0 0 32px; without this the New pod key stays 32px wide.
+    expect(topLevelRuleBody(v2, '.v2-root .v2-pods-aside--page .v2-pods__bar button.v2-pods__new')).toContain('flex-basis: 44px');
+    const theme = topLevelRuleBody(v2, '.v2-pods-aside--page .v2-pods__bar .seg.v2-theme-seg button');
+    expect(theme).toContain('position: relative');
+    expect(theme).toContain('width: 44px');
+    expect(theme).toContain('height: 40px');
+    // The 2px the seg's padding takes back comes from ::after, inside the button's own column.
+    expect(topLevelRuleBody(v2, '.v2-pods-aside--page .v2-pods__bar .seg.v2-theme-seg button::after')).toContain('inset: -2px 0');
+  });
+
   test('pod search shortcut hint hides on narrow and touch-only screens', () => {
     const hideHint = mediaAt(v2, '@media (max-width: 760px), (hover: none) and (pointer: coarse) {');
     expect(hideHint).not.toBe('');
