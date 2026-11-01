@@ -98,9 +98,25 @@ test('keeps reading past a full page, so a long chain is not shown short', async
     return Promise.reject(new Error(`unexpected ${url}`));
   });
   setup();
-  await waitFor(() => expect(mockGet).toHaveBeenCalledWith(second, expect.anything()));
+  // Both pages render: the first and the last entry of the 1002 are on screen.
+  expect(await screen.findByText('Entry 1002')).toBeInTheDocument();
+  expect(screen.getByText('Entry 1')).toBeInTheDocument();
+  expect(mockGet).toHaveBeenCalledWith(second, expect.anything());
   // A short second page ends the read: no third request.
   expect(mockGet.mock.calls.filter(([url]) => url.startsWith(recordUrl))).toHaveLength(2);
+});
+
+test('a failure partway through the chain shows the error, never the partial record', async () => {
+  const page = Array.from({ length: 1000 }, (_, i) => line(i + 1, 'task.claimed', { id: AGENT, type: 'agent' })).join('\n').concat('\n');
+  mockGet.mockImplementation((url: string) => {
+    if (url === pageUrl) return Promise.resolve(page);
+    if (url === `${recordUrl}?after=1000&limit=1000`) return Promise.reject(Object.assign(new Error('http'), { response: { status: 503 } }));
+    if (url === `/api/pods/${POD}`) return Promise.resolve({ members: [] });
+    return Promise.reject(new Error(`unexpected ${url}`));
+  });
+  setup();
+  expect(await screen.findByText(i18n.t('taskRecord.store'))).toBeInTheDocument();
+  expect(screen.queryByText('Entry 1')).toBeNull();
 });
 
 test('reads the JSONL as text and shows every entry with member names, unknown kinds by name', async () => {

@@ -33,6 +33,8 @@ const PERSON_FIELDS = new Set(['doneBy', 'decidedBy', 'issuedBy']);
 const RECORD_PAGE_LINES = 1000;
 
 type LoadError = 'access' | 'members' | 'store' | 'error' | 'unreadable';
+// A page the reader cannot follow: its cursor is missing, or does not move on.
+class UnreadablePage extends Error {}
 const STATUS_ERRORS: Record<number, LoadError> = { 403: 'members', 404: 'access', 503: 'store' };
 
 const isObject = (value: unknown): value is Record<string, unknown> => (
@@ -98,7 +100,11 @@ const V2TaskRecord: React.FC = () => {
         text += body;
         const lines = body.trimEnd().split('\n');
         if (lines.length < RECORD_PAGE_LINES) break;
-        after = (JSON.parse(lines[lines.length - 1]) as RecordLine).seq;
+        // The cursor is the last line's seq, and it must move forward.
+        let next: unknown;
+        try { next = (JSON.parse(lines[lines.length - 1]) as { seq?: unknown }).seq; } catch { throw new UnreadablePage(); }
+        if (!Number.isInteger(next) || (next as number) <= after) throw new UnreadablePage();
+        after = next as number;
       }
       return text;
     };
@@ -107,8 +113,10 @@ const V2TaskRecord: React.FC = () => {
         if (!live) return;
         try { setLines(parseRecord(text)); setJsonl(text); } catch { setError('unreadable'); }
       })
-      .catch((err: { response?: { status?: number } }) => {
-        if (live) setError(STATUS_ERRORS[err.response?.status || 0] || 'error');
+      .catch((err: { response?: { status?: number } } & Error) => {
+        if (!live) return;
+        if (err instanceof UnreadablePage || err instanceof SyntaxError) setError('unreadable');
+        else setError(STATUS_ERRORS[err.response?.status || 0] || 'error');
       });
     return () => { live = false; };
   }, [api, recordUrl, valid, attempt]);

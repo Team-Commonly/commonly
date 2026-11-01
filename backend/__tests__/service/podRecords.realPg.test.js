@@ -215,6 +215,8 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     expect(await read(generateTestToken(outsider._id))).toMatchObject({ status: 404, body: { error: 'record_not_found' } });
     // An admin can view the pod, but the lines carry approver ids verbatim.
     expect(await read(generateTestToken(admin._id))).toMatchObject({ status: 403, body: { error: 'record_requires_membership' } });
+    // The 403 comes before the task lookup, so an admin cannot tell a missing task from a present one.
+    expect(await read(generateTestToken(admin._id), pod._id, 'TASK-404')).toMatchObject({ status: 403, body: { error: 'record_requires_membership' } });
     // Task ids restart in each pod: TASK-1 belongs to the first pod only.
     expect(await read(generateTestToken(owner._id), otherPod._id)).toMatchObject({ status: 404 });
     expect(await read(generateTestToken(owner._id), pod._id, 'TASK-404')).toMatchObject({ status: 404 });
