@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import V2Avatar from './V2Avatar';
 import V2Segmented from './V2Segmented';
 import { ShellGlyph } from '../icons/glyphs';
+import V2ThemeSwitch from './V2ThemeSwitch';
 import { UseV2PodsResult, V2Pod, V2PodMember, useV2Pods } from '../hooks/useV2Pods';
 import { useV2Pinned } from '../hooks/useV2Pinned';
 import { useAuth } from '../../context/AuthContext';
@@ -490,6 +491,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         {isPage && (
           <div className="v2-pods__bar">
             <h1 className="v2-pods__page-title">{t('podsSidebar.workspace.listTitle')}</h1>
+            <V2ThemeSwitch variant="bar" />
             <button
               ref={searchToggleRef}
               type="button"

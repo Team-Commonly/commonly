@@ -191,6 +191,8 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     const isSelected = selectedId === grant.grantId;
     const entry = entryFor(grant);
     const label = toolLabel(grant);
+    // A grant the catalogue no longer covers keeps the server-named connector's glyph (TASK-753).
+    const glyph = entry?.installableId || grant.connector?.id;
     const noticeGrantId = noticeMatchesEntry(entry)
       ? (grants || []).find((candidate) => (
         !isDead(candidate, now) && entryFor(candidate)?.installableId === entry?.installableId
@@ -235,7 +237,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
           <span className="v2-connector-row__name">
             <span className={`v2-connector-row__dot ${dead ? 'v2-connector-row__dot--empty' : `v2-connector-row__dot--live${usedRecently(grant) ? ' v2-connector-row__dot--pulse' : ''}`}`} aria-hidden="true" />
             <span className="v2-connector-row__glyph" aria-hidden="true">
-              {entry && <PlatformGlyph type={entry.installableId} />}
+              {glyph && <PlatformGlyph type={glyph} />}
             </span>
             <span>{label}</span>
           </span>
@@ -243,7 +245,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             <span className="v2-connector-row__kicker">
               {kicker}
               {!dead && <span className="v2-connector-row__kicker-mode"> · {asksFirst(grant)}</span>}
-              {entry?.entryId === 'atlassian' && <span> · {t('tools.readInTesting', { defaultValue: 'read in testing' })}</span>}
+              {(entry ? entry.entryId : grant.connector?.id) === 'atlassian' && <span> · {t('tools.readInTesting', { defaultValue: 'read in testing' })}</span>}
             </span>
             <strong>
               {/* Direction A: what the tool does is the not-yet row's and the aside's sentence, not the granted row's. */}

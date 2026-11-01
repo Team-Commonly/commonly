@@ -376,6 +376,16 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
+  // TASK-255: a tool of this same entry that the entry does not pin.
+  test('a hosted grant cannot name a tool its entry does not pin', async () => {
+    Integration.findById.mockResolvedValue(hostedRow());
+    const res = await withCatalog([ENTRY], () => hostedMint({ tools: ['linear.delete_issue'], writeMode: 'write-with-confirm' }));
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_tools' });
+    expect(res.body.message).toMatch(/linear\.delete_issue/);
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+  });
+
   test('write is refused on a hosted row, and write-with-confirm is not', async () => {
     Integration.findById.mockResolvedValue(hostedRow());
     const refused = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'write' }));

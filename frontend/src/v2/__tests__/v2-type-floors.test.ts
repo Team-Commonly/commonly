@@ -24,12 +24,11 @@ import path from 'path';
  * fixed one fails the second (the allowlist may not carry a selector that no
  * longer violates). Target is an empty list.
  */
-// v2.css plus the surface sheets that left it: the board's rules moved to its
-// own file (S4) and are held to the same floors.
-const CSS = [
-  '../v2.css',
-  '../components/V2PodBoard.css',
-].map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8')).join('\n');
+// v2.css plus the per-surface sheets lifted out of it, so a rule that moved
+// file is still held to the floors (R04 moved the BYO page's rules, S4 the board's).
+const CSS = ['../v2.css', '../components/V2AgentBYO.css', '../components/V2PodBoard.css']
+  .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))
+  .join('\n');
 
 const MONO_FLOOR = 11;
 const SANS_FLOOR = 12;
