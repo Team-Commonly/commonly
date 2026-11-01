@@ -86,3 +86,27 @@ test('a PATCH reassigning by handle stores the board name and says so in the his
   expect(saved.assignee).toBe('nova');
   expect(saved.updates.at(-1).text).toMatch(/reassigned to nova/);
 });
+
+describe('the list filter reads an assignee the way the writers store it', () => {
+  test.each([
+    ['the handle the row was assigned by', '@cto-walk-1016-cto-walk'],
+    ['the handle without the @', 'cto-walk-1016-cto-walk'],
+    ['the board name', 'cto-walk'],
+  ])('%s finds the row', async (_label, filter) => {
+    const task = await create('@cto-walk-1016-cto-walk');
+    await create('pat');
+    const res = await request(app).get(api()).query({ assignee: filter })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(res.body.tasks.map((t) => t.taskId)).toEqual([task.taskId]);
+  });
+
+  test('a person is still filtered by their username', async () => {
+    await create('@rivet');
+    const task = await create('pat');
+    const res = await request(app).get(api()).query({ assignee: 'pat' })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(res.body.tasks.map((t) => t.taskId)).toEqual([task.taskId]);
+  });
+});

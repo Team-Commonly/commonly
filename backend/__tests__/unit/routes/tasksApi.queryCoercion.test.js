@@ -41,6 +41,8 @@ jest.mock('../../../models/User', () => ({
   })),
 }));
 
+jest.mock('../../../services/taskAssigneeService', () => ({ canonicalAssignee: async (_podId, typed) => typed }));
+
 const tasksApiRoutes = require('../../../routes/tasksApi');
 
 const POD = '69b7ddff0ce64c9648365fc4';
