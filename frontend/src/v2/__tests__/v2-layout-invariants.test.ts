@@ -304,6 +304,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(surface).toContain('.v2-agent-settings-page__panel--pad:not([hidden])');
   });
 
+  test('How it runs is one box: its inner lists and the memory section carry no card of their own', () => {
+    const surface = read('../agents/v2-agent-settings-surface.css');
+    expect(ruleBody(surface, '.v2-agent-settings-page .dbody.v2-agent-settings-page__runsbody')).toContain('padding: 0');
+    const list = ruleBody(surface, '.v2-agent-settings-page .v2-agent-settings-page__runsbody .list');
+    expect(list).toContain('box-shadow: none');
+    expect(list).toContain('border-radius: 0');
+    expect(list).toContain('border-top: 1px solid var(--d)');
+    const memory = ruleBody(surface, '.v2-agent-settings-page .v2-agent-settings-page__runsbody .v2-agent-policy__group');
+    expect(memory).toContain('border: 0');
+    expect(memory).toContain('border-radius: 0');
+    expect(memory).toContain('background: transparent');
+  });
+
   test('agent Control reconnect remains an ink action with a focus edge', () => {
     const action = ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action');
     expect(action).toContain('background: var(--v2-ink)');
