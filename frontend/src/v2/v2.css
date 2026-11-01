@@ -519,95 +519,6 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Shared filter grammar ---------- */
 
-.v2-filter-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  margin-bottom: 16px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  background: var(--v2-surface);
-}
-
-.v2-filter-bar--flat {
-  padding: 0;
-  border: none;
-  background: transparent;
-}
-
-.v2-filter-bar__search {
-  flex: 1 1 280px;
-  min-width: 220px;
-}
-
-.v2-filter-bar__control {
-  flex: 0 1 180px;
-  min-width: 160px;
-}
-
-.v2-filter-bar__action {
-  flex: 0 0 auto;
-}
-
-.v2-filter-bar__summary {
-  margin-left: auto;
-  color: var(--v2-text-tertiary);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.v2-filter-segment {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.v2-filter-segment__item {
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-pill);
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
-}
-
-.v2-filter-segment__item:hover {
-  border-color: var(--v2-border-strong);
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-.v2-root button.v2-filter-segment__item--active {
-  border-color: var(--v2-accent);
-  background: var(--v2-accent);
-  color: var(--v2-surface);
-  font-weight: 700;
-}
-
-.v2-filter-count {
-  margin-left: 5px;
-  color: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  opacity: 0.68;
-}
-
-.v2-active-filter-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin: -4px 0 16px;
-  color: var(--v2-text-tertiary);
-  font-size: 12px;
-}
-
 .v2-root button:focus-visible,
 .v2-root input:focus-visible,
 .v2-root textarea:focus-visible,
@@ -778,19 +689,6 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-inspector-backdrop {
-  display: none;
-}
-
-/* Mobile pods-drawer affordances — hidden on desktop, where the pods sidebar
-   is a permanent grid column. The <=760px media query (bottom of file) turns
-   these on and converts .v2-pods-aside into a slide-over overlay. Declared
-   here so resizing a phone-open drawer up to desktop can't leak the overlay
-   or backdrop into the normal multi-column layout. */
-.v2-mobile-backdrop {
-  display: none;
-}
-
-.v2-pods__mobile-close {
   display: none;
 }
 
@@ -1117,27 +1015,6 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-tertiary);
 }
 
-.v2-rail__user-name {
-  font-weight: 700;
-  font-size: 13px;
-}
-
-.v2-rail__user-status {
-  font-size: 12px;
-  color: var(--v2-success);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.v2-online-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--v2-success);
-  display: inline-block;
-}
-
 /* ---------- Pods sidebar ---------- */
 
 .v2-pods {
@@ -1145,41 +1022,6 @@ body.modern-ui.v2-canvas {
   flex-direction: column;
   height: 100%;
   padding: 24px 16px;
-}
-
-.v2-pods__header {
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.v2-pods__title {
-  height: 32px;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  margin-bottom: 14px;
-}
-
-.v2-root button.v2-pods__new-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 40px;
-  gap: 8px;
-  background: var(--v2-accent-fill);
-  color: var(--v2-on-accent);
-  font-weight: 600;
-  font-size: 14px;
-  padding: 0 14px;
-  border-radius: var(--v2-radius-sm);
-  transition: background 80ms ease;
-  margin-bottom: 16px;
-}
-
-.v2-root button.v2-pods__new-btn:hover {
-  background: var(--v2-accent-strong);
 }
 
 .v2-pods__create {
@@ -1302,71 +1144,10 @@ body.modern-ui.v2-canvas {
   }
 }
 
-.v2-pods__filters {
-  /* Fourth mechanism for this row (2026-08-23): every chip the
-     SAME size, at least as roomy as the widest label. Content-sized chips
-     read ragged (EN measured 33/49/44/84px), and four equal cells cannot
-     share one 239px rail — "Community" alone needs 84px. Equal therefore
-     means a 2×2 grid, the exact mechanism .v2-pods__community-tabs below
-     already uses, so the two stacked sections align by construction. This
-     retires the 2026-08-13 one-row intent deliberately. */
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 0;
-  margin-bottom: 18px;
-  flex-shrink: 0;
-  overflow: visible;
-}
-
-/* Keep the explicit button prefix on the chip state rules so their visual
-   treatment remains intentional above the low-specificity default reset.
-   This used to be required to beat the reset; the reset is now scoped through
-   `:where()` so bare component rules can own their declarations. */
-.v2-root button.v2-pods__filter {
-  height: 32px;
-  min-width: 0;
-  padding: 0 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #4b5563;
-  border-radius: var(--v2-radius-sm);
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.v2-pods__filter:hover {
-  color: var(--v2-text-primary);
-  background: var(--v2-surface-hover);
-}
-
 /* Must sit AFTER the base chip rule: both this and the shared
    .v2-root button.v2-filter-segment__item--active rule weigh 0-2-1, so
    source order decides — with the base chip rule later in the file, the
    selected chip shipped grey-on-blue (measured live 2026-08-23). */
-.v2-root button.v2-pods__filter--active {
-  background: var(--v2-accent);
-  color: var(--v2-surface);
-  font-weight: 700;
-}
-
-.v2-pods__community-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  margin: -10px 0 14px;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.v2-pods__community-tab {
-  min-width: 0;
-  padding-inline: 8px;
-  white-space: nowrap;
-}
 
 .v2-pods__list {
   flex: 1;
@@ -1374,581 +1155,15 @@ body.modern-ui.v2-canvas {
   padding: 0;
 }
 
-.v2-pods__group-label {
-  padding: 0;
-  margin: 18px 0 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-text-muted);
-}
-
-.v2-pods__item {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-  height: 64px;
-  padding: 10px;
-  overflow: hidden;
-  border-radius: var(--v2-radius);
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-  transition: background 80ms ease;
-  border: 1px solid transparent;
-}
-
-.v2-pods__item:hover {
-  background: var(--v2-surface-hover);
-}
-
-/* The explicit root/button selector keeps the selected row treatment above
-   the low-specificity default reset. Source order then resolves the local
-   active-row variants. */
-.v2-root button.v2-pods__item--active {
-  background: var(--v2-accent-soft);
-  border-color: transparent;
-  position: relative;
-}
-
-.v2-root button.v2-pods__item--active::before {
-  content: '';
-  position: absolute;
-  left: -8px;
-  top: 12px;
-  bottom: 12px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--v2-accent);
-}
-
-.v2-pods__item-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--v2-radius);
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  color: var(--v2-text-secondary);
-  font-weight: 700;
-  background: var(--v2-surface-hover);
-  text-transform: uppercase;
-  border: 1px solid var(--v2-border-soft);
-}
-
-.v2-pods__item-icon--team {
-  background: var(--v2-surface-hover);
-  border-color: var(--v2-border-soft);
-  color: var(--v2-text-secondary);
-}
-
-.v2-pods__item-icon--private {
-  background: #f3f4f6;
-  color: var(--v2-text-secondary);
-}
-
-.v2-pods__item--active .v2-pods__item-icon--team,
-.v2-pods__item--active .v2-pods__item-icon--private {
-  background: var(--v2-accent);
-  border-color: transparent;
-  color: #fff;
-}
-
-.v2-pods__item-body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.v2-pods__item-title-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  min-width: 0;
-  min-height: 20px;
-}
-
-/* Craft baseline rule 1: the pod name is the row's primary identifier and
-   never loses to its own timestamp — wrap to two lines instead of
-   ellipsizing (same idiom as the team-card name fix, #1104). The clamp
-   keeps pathological names from unbounding the row; the timestamp lives on
-   the snippet row so it never shares a line with the name. */
-.v2-pods__item-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 600;
-  color: var(--v2-text-primary);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-
-.v2-pods__item-snippet-row {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-
-.v2-pods__item-snippet-row .v2-pods__item-snippet { flex: 1; min-width: 0; }
-
-.v2-pods__status {
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--v2-text-tertiary);
-  background: var(--v2-surface);
-}
-
-.v2-pods__status--agents {
-  color: var(--v2-text-secondary);
-  background: var(--v2-surface-hover);
-}
-
-.v2-pods__status--empty {
-  color: var(--v2-text-tertiary);
-  background: var(--v2-surface);
-}
-
-.v2-pods__status--direct {
-  color: var(--v2-text-secondary);
-  background: #f3f4f6;
-}
-
-.v2-pods__item--active .v2-pods__item-title {
-  color: var(--v2-accent-text);
-}
-
-/* Unread state: title becomes bolder + body picks up an accent dot. Active
-   pods are never marked unread, so the active treatment above wins. */
-.v2-pods__item--unread .v2-pods__item-title {
-  font-weight: 700;
-  color: var(--v2-text-primary);
-}
-
-.v2-pods__item--unread .v2-pods__item-snippet {
-  color: var(--v2-text-secondary);
-}
-
-.v2-pods__item-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--v2-accent);
-  flex-shrink: 0;
-  /* The title-row went align-items: flex-start for the 2-line name wrap
-     (#1110), which parked this dot flush at the row's top-right corner —
-     inside the row's border-radius + overflow:hidden clip, so the rounding
-     visibly shaved the dot (2026-08-22). Center it on the first 20px
-     text line and inset it clear of the 10px corner curve. */
-  margin-top: 6px;
-  margin-right: 4px;
-}
-
-.v2-pods__item-snippet--typing {
-  color: var(--v2-accent-text);
-  font-style: italic;
-}
-
-.v2-pods__item-meta {
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-pods__item-snippet {
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--v2-text-tertiary);
-  display: block;
-  height: 16px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* Title-row sibling — sits to the right of the pod name. Slack/iMessage
    pattern: the timestamp lives on the same line as the title so the
    second line is reserved entirely for the message preview. */
-.v2-pods__item-time {
-  flex-shrink: 0;
-  /* Relative-time formatting follows the viewer's browser locale. Do not
-     cap it to an English measurement: title ellipsis is safer than clipping
-     a clock, and visibility:hidden still reserves this row's slot on hover. */
-  font-size: 11px;
-  color: var(--v2-text-tertiary);
-  font-variant-numeric: tabular-nums;
-  align-self: baseline;
-  text-align: right;
-  white-space: nowrap;
-}
 
 .v2-pods__empty {
   padding: 32px 16px;
   text-align: center;
   color: var(--v2-text-tertiary);
   font-size: 13px;
-}
-
-.v2-pods__join-notice {
-  margin-bottom: 8px;
-  padding: 9px 10px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.v2-pods__discover-row {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  margin-bottom: 6px;
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius);
-  background: var(--v2-surface);
-}
-
-.v2-pods__discover-body {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.v2-pods__discover-title {
-  overflow: hidden;
-  color: var(--v2-text-primary);
-  font-size: 13px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-pods__discover-description {
-  overflow: hidden;
-  color: var(--v2-text-tertiary);
-  display: -webkit-box;
-  font-size: 12px;
-  line-height: 1.35;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.v2-pods__discover-meta {
-  color: var(--v2-text-muted);
-  font-size: 11px;
-}
-
-.v2-root button.v2-pods__discover-join {
-  min-width: 44px;
-  min-height: 30px;
-  padding-inline: 9px;
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.v2-root button.v2-pods__discover-join:hover {
-  background: var(--v2-accent);
-  color: var(--v2-surface);
-}
-
-.v2-root button.v2-pods__discover-join:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
-.v2-pods__community {
-  flex-shrink: 0;
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  background: var(--v2-surface);
-}
-
-.v2-pods__community-title {
-  color: var(--v2-text-primary);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.v2-pods__community-copy {
-  margin-top: 3px;
-  color: var(--v2-text-tertiary);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.v2-root button.v2-pods__community-button {
-  width: 100%;
-  min-height: 34px;
-  margin-top: 10px;
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-accent-soft);
-  color: var(--v2-accent-text);
-  font-size: 12px;
-  font-weight: 700;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.v2-root button.v2-pods__community-button:hover {
-  background: var(--v2-accent);
-  color: var(--v2-surface);
-}
-
-/* ---------- Pod chat (main) ---------- */
-
-.v2-chat__title {
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
-  min-width: 0;
-  letter-spacing: -0.025em;
-}
-
-.v2-chat__title-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--v2-radius-sm);
-  display: grid;
-  place-items: center;
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-secondary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-}
-
-.v2-chat__title-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-chat__avatars {
-  display: flex;
-  align-items: center;
-}
-
-.v2-chat__avatars > * + * {
-  margin-left: -8px;
-}
-
-/* When the avatar group is the inspector entry, treat it like a button:
-   subtle hover shadow that hints "this is clickable" without an explicit
-   chevron. Active state means the inspector is open. */
-.v2-chat__avatars--button {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--v2-radius-pill);
-  padding: 3px 6px;
-  cursor: pointer;
-  transition: background 80ms ease, border-color 80ms ease;
-}
-
-.v2-chat__avatars--button:hover {
-  background: var(--v2-surface-hover);
-}
-
-.v2-chat__avatars--active {
-  background: var(--v2-surface-hover);
-  border-color: var(--v2-surface-hover);
-}
-
-.v2-chat__avatars--active:hover {
-  background: var(--v2-surface-hover);
-}
-
-.v2-chat__avatars-more {
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  border: 2px solid var(--v2-surface);
-}
-
-.v2-chat__btn {
-  display: flex;
-  align-items: center;
-  height: 34px;
-  gap: 6px;
-  padding: 0 14px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #374151;
-  border: 1px solid #e5e7eb;
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.v2-chat__btn:hover {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-.v2-chat__icon-btn {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  color: #6b7280;
-  border: 1px solid #e5e7eb;
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.v2-chat__icon-btn:hover {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-.v2-chat__mode-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 34px;
-  padding: 3px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  background: var(--v2-bg-subtle);
-}
-
-/* Keep the explicit root/button selector on the mode control so the active
-   state owns its background and color rather than relying on reset order. */
-.v2-root button.v2-chat__mode-option {
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 9px;
-  border-radius: var(--v2-radius-sm);
-  background: transparent;
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.v2-root button.v2-chat__mode-option:hover {
-  color: var(--v2-text-primary);
-  background: var(--v2-surface);
-}
-
-.v2-root button.v2-chat__mode-option--active {
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-}
-
-.v2-root button.v2-chat__mode-option--active:hover {
-  background: var(--v2-ink-hover);
-  color: var(--v2-on-ink);
-}
-
-.v2-chat__goal {
-  font-size: 13px;
-  color: #4b5563;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 720px;
-}
-
-.v2-chat__state-strip {
-  min-height: 42px;
-  margin: 12px 24px 0;
-  padding: 8px 12px;
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-lg);
-  background: var(--v2-bg-subtle);
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 12px;
-}
-
-.v2-chat__state-strip--execute {
-  border-color: var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
-}
-
-.v2-chat__state-primary {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.v2-chat__state-copy {
-  min-width: 0;
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-chat__state-meta {
-  color: var(--v2-text-tertiary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-/* "Load older messages" control — the pod chat equivalent of the showcase
-   pager. Same pill treatment so the two reading surfaces match. */
-.v2-chat__older { display: flex; justify-content: center; padding: 4px 0 12px; }
-.v2-chat__older-btn {
-  padding: 7px 16px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: 999px;
-  cursor: pointer;
-}
-.v2-chat__older-btn:hover:not(:disabled) {
-  color: var(--v2-text-primary);
-  border-color: var(--v2-text-tertiary);
-}
-.v2-chat__older-btn:disabled { opacity: 0.6; cursor: default; }
-
-.v2-chat__composer > * {
-  margin-inline: 0;
 }
 
 /* First-run is a shell-level dialog. The overlay separates the one-time setup
@@ -2121,198 +1336,9 @@ body.modern-ui.v2-canvas {
   font-size: 12px;
 }
 
-.v2-chat__system {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  font-size: 13px;
-  color: var(--v2-text-secondary);
-}
-
-.v2-chat__system-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--v2-success);
-  flex-shrink: 0;
-}
-
 @keyframes v2-typing-dot {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
   30%           { transform: translateY(-3px); opacity: 1; }
-}
-
-.v2-chat__composer {
-  padding: 12px 24px 14px;
-  border-top: 1px solid var(--v2-border-soft);
-  background: var(--v2-surface);
-  flex-shrink: 0;
-}
-
-.v2-chat__new-pod-text {
-  max-width: 520px;
-  margin-top: 4px;
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.v2-chat__new-pod-action-text {
-  color: var(--v2-text-secondary);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.v2-chat__composer-input-wrap {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  min-height: 60px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  padding: 10px 10px 10px 12px;
-  background: var(--v2-bg);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
-}
-
-.v2-chat__composer-input-wrap:focus-within {
-  border-color: var(--v2-accent);
-  box-shadow: var(--v2-focus-ring);
-}
-
-.v2-chat__composer-input {
-  flex: 1;
-  min-height: 38px;
-  max-height: 96px;
-  padding: 0;
-  border-radius: 0;
-  border: none;
-  background: transparent;
-  font-size: 14px;
-  line-height: 1.45;
-  resize: vertical;
-  outline: none;
-  transition: background 80ms ease, border-color 80ms ease;
-}
-
-.v2-chat__composer-input:focus {
-  border-color: transparent;
-  background: transparent;
-}
-
-.v2-chat__composer-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0;
-  align-self: flex-end;
-  order: 2;
-}
-
-.v2-chat__composer-icon-btn {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--v2-radius-sm);
-  color: var(--v2-text-tertiary);
-  font-size: 14px;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.v2-chat__composer-icon-btn:hover {
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-primary);
-}
-
-/* Explicit root/button selector for the composer control; the global reset is
-   deliberately a low-specificity default and must not own this state. */
-.v2-root button.v2-chat__send {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: var(--v2-ink);
-  border-color: var(--v2-ink);
-  color: var(--v2-on-ink);
-  transition: background 80ms ease;
-  flex-shrink: 0;
-  order: 3;
-}
-
-.v2-chat__composer-input {
-  order: 1;
-}
-
-.v2-root button.v2-chat__send--execute {
-  background: var(--v2-ink);
-  border-color: var(--v2-ink);
-}
-
-.v2-root button.v2-chat__send--execute:hover {
-  background: var(--v2-ink-hover);
-}
-
-.v2-root button.v2-chat__send:hover {
-  background: var(--v2-ink-hover);
-}
-
-.v2-root button.v2-chat__send:disabled {
-  background: var(--v2-border-strong);
-  cursor: not-allowed;
-}
-
-.v2-chat__composer-footer {
-  height: 18px;
-  padding-top: 0;
-  margin-top: 5px;
-  font-size: 11px;
-  color: var(--v2-text-muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  justify-content: center;
-}
-
-.v2-chat__composer-footer-link {
-  color: var(--v2-text-secondary);
-  font-weight: 600;
-  text-decoration: underline;
-}
-
-.v2-chat__composer-error {
-  color: var(--v2-danger);
-  font-weight: 600;
-}
-
-/* Composer hint row — keyboard affordances below the input wrap.
-   Mirrors the .composer__hint pattern in components-composer.html. */
-.v2-chat__composer-hint {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 6px;
-  padding: 0 4px;
-  font-size: 11px;
-  color: var(--v2-text-muted);
-}
-
-.v2-chat__composer-hint kbd {
-  font-family: var(--v2-font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--v2-text-tertiary);
-  background: var(--v2-surface-hover);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: 4px;
-  padding: 1px 5px;
-  margin: 0 2px;
 }
 
 /* ---------- Message bubble ---------- */
@@ -2333,68 +1359,6 @@ body.modern-ui.v2-canvas {
    the trigger sits with its siblings instead of orphaned in an empty band
    below the message (the old absolute "+"). */
 .v2-msg { position: relative; }
-.v2-msg__image-link {
-  display: inline-block;
-  margin-top: 7px;
-  max-width: min(420px, 100%);
-  border-radius: var(--v2-radius);
-  overflow: hidden;
-  border: 1px solid var(--v2-border);
-  background: var(--v2-surface);
-}
-
-.v2-msg__image {
-  display: block;
-  max-width: 100%;
-  max-height: 320px;
-  object-fit: contain;
-}
-
-.v2-msg__file {
-  width: 300px;
-  height: 40px;
-  display: inline-grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 9px;
-  padding: 0 12px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
-  margin-top: 7px;
-  max-width: 100%;
-}
-
-.v2-msg__file-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  display: grid;
-  place-items: center;
-  font-size: 10px;
-  font-weight: 700;
-  color: #fff;
-}
-
-.v2-msg__file-meta {
-  display: flex;
-  flex-direction: column;
-  font-size: 12px;
-  min-width: 0;
-}
-
-.v2-msg__file-name {
-  color: #374151;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-msg__file-size {
-  color: var(--v2-text-tertiary);
-  font-size: 11px;
-}
 
 /* ---------- Inspector ---------- */
 
@@ -2413,276 +1377,8 @@ body.modern-ui.v2-canvas {
   height: 100%;
 }
 
-.v2-inspector__header {
-  position: relative;
-  padding: 18px 44px 16px 18px;
-  border-bottom: 1px solid var(--v2-border-soft);
-  flex-shrink: 0;
-}
-
-.v2-inspector__pod-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.v2-inspector__pod-block {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.v2-inspector__pod-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--v2-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-inspector__pod-meta {
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-inspector__sub-title {
-  font-size: 14px;
-  font-weight: 650;
-  color: var(--v2-text-primary);
-  margin-top: 4px;
-}
-
-.v2-inspector__back {
-  appearance: none;
-  background: transparent;
-  border: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
-  margin: -4px 0 6px -6px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--v2-text-tertiary);
-  cursor: pointer;
-  border-radius: var(--v2-radius-sm);
-  transition: color 80ms ease, background 80ms ease;
-}
-
-.v2-inspector__back:hover {
-  color: var(--v2-text-primary);
-  background: var(--v2-surface-hover);
-}
-
-.v2-inspector__close {
-  position: absolute;
-  top: 14px;
-  right: 12px;
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--v2-radius-sm);
-  color: var(--v2-text-tertiary);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: background 80ms ease, color 80ms ease;
-}
-
-.v2-inspector__close:hover {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
-
-.v2-inspector__body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 14px 14px 24px;
-  background: var(--v2-surface-tint);
-}
-
-/* Pill tabs — see frontend/design-system/preview/components-tabs.html.
-   Used inside the inspector to split Overview / Members / Tasks
-   without underline-tab competing with the chat header divider. */
-.v2-inspector__tabs {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  background: var(--v2-bg);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: 9px;
-  margin: 0 0 12px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.v2-root button.v2-inspector__tab {
-  flex: 1 1 0;
-  min-width: 0;
-  height: 28px;
-  padding: 0 6px;
-  border-radius: 6px;
-  background: transparent;
-  border: none;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  color: var(--v2-text-secondary);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background 80ms ease, color 80ms ease, box-shadow 80ms ease;
-}
-
-.v2-root button.v2-inspector__tab:hover {
-  color: var(--v2-text-primary);
-}
-
-.v2-root button.v2-inspector__tab--active {
-  border-bottom: 2px solid var(--v2-accent);
-  background: transparent;
-  color: var(--v2-ink);
-  font-weight: 600;
-}
-
-.v2-inspector__tab-count {
-  height: 16px;
-  min-width: 16px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: var(--v2-border-soft);
-  color: var(--v2-text-tertiary);
-  font-size: 11px;
-  font-family: var(--v2-font-mono);
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.v2-root button.v2-inspector__tab--active .v2-inspector__tab-count {
-  background: transparent;
-  color: var(--v2-ink);
-}
-
-/* NOW card — currently-active agent + task. Now lives inside
-   .v2-inspector__section (which provides the card chrome). */
-.v2-inspector__now {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.v2-inspector__now-eyebrow {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--v2-text-tertiary);
-  font-family: var(--v2-font-mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-/* Pod-progress card — overall task completion bar. Surfaces only when
-   the pod has at least one tracked task. */
-.v2-inspector__progress-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.v2-inspector__progress-stat {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-primary);
-}
-
-.v2-inspector__progress-pct {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-ink);
-  font-family: var(--v2-font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.v2-inspector__progress-track {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--v2-border-soft);
-  overflow: hidden;
-}
-
-.v2-inspector__progress-bar {
-  height: 100%;
-  border-radius: 3px;
-  background: var(--v2-ink);
-  transition: width 240ms ease;
-}
-
 /* Danger zone — destructive actions (delete pod, etc.) live in the
    Manage tab inside this red-accent card with proper warning chrome. */
-.v2-inspector__danger {
-  border-color: rgba(239, 68, 68, 0.25);
-  background: rgba(239, 68, 68, 0.04);
-}
-
-.v2-inspector__danger-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--v2-danger);
-  margin-bottom: 4px;
-}
-
-.v2-inspector__danger-text {
-  font-size: 12px;
-  color: var(--v2-text-secondary);
-  margin-bottom: 12px;
-  line-height: 1.5;
-}
-
-.v2-root button.v2-inspector__btn--danger {
-  background: transparent;
-  border-color: var(--v2-danger);
-  color: var(--v2-danger);
-}
-
-.v2-root button.v2-inspector__btn--danger:hover {
-  background: var(--v2-danger);
-  color: var(--v2-on-accent);
-  border-color: var(--v2-danger);
-}
-
-.v2-inspector__now-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--v2-text-primary);
-  letter-spacing: -0.01em;
-}
-
-.v2-inspector__now-pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--v2-success);
-  box-shadow: 0 0 0 0 var(--v2-success-ring-strong);
-  animation: v2-now-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
-  flex-shrink: 0;
-}
 
 @keyframes v2-now-pulse {
   0%   { box-shadow: 0 0 0 0 var(--v2-success-ring); }
@@ -2690,709 +1386,7 @@ body.modern-ui.v2-canvas {
   100% { box-shadow: 0 0 0 0 transparent; }
 }
 
-.v2-inspector__now-meta {
-  font-size: 12px;
-  color: var(--v2-text-secondary);
-  line-height: 1.45;
-}
-
-/* Card-style sections inside the tinted inspector body — replaces the
-   flat divider treatment. Mirrors the .card pattern in
-   components-inspector.html. */
-.v2-inspector__section {
-  padding: 14px;
-  background: var(--v2-bg);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius);
-  margin-bottom: 10px;
-}
-
-.v2-inspector__section:last-child { margin-bottom: 0; }
-
-/* "Quiet" sections have no card chrome — used for inline action rows
-   like the "Manage" link on the Members tab and the danger zone. */
-.v2-inspector__section--quiet {
-  padding: 0;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-}
-
-.v2-inspector__section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-/* Eyebrow style — must read as a label, not body text. Mirrors the
-   --c-fg-tertiary uppercase pattern in the design-system preview cards
-   (see frontend/design-system/preview/components-inspector.html .eyebrow). */
-.v2-inspector__section-title {
-  font-size: 11px;
-  font-family: var(--v2-font-mono);
-  font-weight: 700;
-  color: var(--v2-text-tertiary);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 8px;
-}
-
-.v2-inspector__section-head .v2-inspector__section-title {
-  margin-bottom: 0;
-}
-
-.v2-inspector__goal-text {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--v2-text-secondary);
-}
-
-.v2-inspector__empty {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--v2-text-tertiary);
-  padding: 6px 0;
-}
-
-.v2-inspector__link {
-  appearance: none;
-  background: transparent;
-  border: none;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-accent);
-  cursor: pointer;
-  padding: 0;
-}
-
-.v2-inspector__link:hover {
-  text-decoration: underline;
-}
-
-.v2-inspector__link--block {
-  display: inline-block;
-  margin-top: 12px;
-  font-size: 13px;
-}
-
-.v2-inspector__link--danger {
-  color: var(--v2-danger);
-  font-weight: 500;
-  font-size: 12px;
-}
-
-.v2-inspector__link--danger:hover {
-  color: var(--v2-danger);
-}
-
-/* ---------- Members section action row (Invite / Manage) ----------
- * Replaces the bare text-link buttons that previously sat right-aligned
- * above the member list. Now reads as a proper action toolbar with a
- * primary "Invite" CTA (filled ink) and a secondary "Manage" affordance
- * (outline). Matches the "+ Add" / Cancel pattern used in Artifacts. */
-.v2-inspector__members-actions {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-
-.v2-root button.v2-inspector__action,
-.v2-inspector__action {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 11px;
-  border-radius: 999px;
-  border: 1px solid var(--v2-border-soft);
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
-}
-
-.v2-root button.v2-inspector__action:hover,
-.v2-inspector__action:hover {
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-primary);
-  border-color: var(--v2-border);
-}
-
-.v2-root button.v2-inspector__action--primary,
-.v2-inspector__action--primary {
-  background: var(--v2-ink);
-  border-color: var(--v2-ink);
-  color: var(--v2-on-ink);
-  flex: 1;
-  justify-content: center;
-}
-
-.v2-root button.v2-inspector__action--primary:hover,
-.v2-inspector__action--primary:hover {
-  background: var(--v2-ink-hover);
-}
-
-/* ---------- Inspector: Artifacts ---------- */
-
-.v2-inspector__artifacts {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.v2-inspector__artifact-row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  background: transparent;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  border-radius: var(--v2-radius-sm);
-  transition: background 80ms ease;
-}
-
-.v2-inspector__artifact-row:hover {
-  background: var(--v2-surface-hover);
-}
-
-.v2-inspector__artifact-icon {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: var(--v2-surface-hover);
-  color: var(--v2-ink);
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.v2-inspector__artifact-icon--lg {
-  width: 48px;
-  height: 48px;
-  font-size: 18px;
-  border-radius: 12px;
-}
-
-.v2-inspector__artifact-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.v2-inspector__artifact-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-inspector__artifact-sub {
-  font-size: 11px;
-  font-family: var(--v2-font-mono);
-  color: var(--v2-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* ---------- Inspector: Members ---------- */
-
-/* Agent rows are buttons, so keep their row treatment explicit rather than
-   relying on the global default reset. */
-.v2-root button.v2-inspector__member-row,
-.v2-inspector__member-row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 8px;
-  margin: 0 -8px;
-  background: transparent;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-  border-radius: var(--v2-radius-sm);
-  transition: background 80ms ease;
-}
-
-.v2-inspector__member-row + .v2-inspector__member-row,
-.v2-inspector__member-row + .v2-inspector__member-row--static {
-  margin-top: 4px;
-}
-
-.v2-inspector__member-meta {
-  gap: 3px;
-}
-
-.v2-root button.v2-inspector__member-row:hover,
-.v2-inspector__member-row:hover {
-  background: var(--v2-surface-hover);
-}
-
-.v2-inspector__member-row--static {
-  cursor: default;
-}
-
-.v2-inspector__member-row--static:hover {
-  background: transparent;
-}
-
-.v2-inspector__member-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.v2-inspector__member-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--v2-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.v2-inspector__member-role {
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ---------- Inspector: Run State ---------- */
-
-.v2-inspector__runstate {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.v2-inspector__runstate-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 13px;
-  color: var(--v2-text-secondary);
-}
-
-.v2-inspector__runstate-label {
-  font-weight: 500;
-}
-
-.v2-inspector__pill {
-  height: 22px;
-  padding: 0 10px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  font-size: 11px;
-  font-family: var(--v2-font-mono);
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.v2-inspector__pill--blocked {
-  background: rgba(239, 68, 68, 0.10);
-  color: #b91c1c;
-}
-
-.v2-inspector__pill--progress {
-  border: 1px solid var(--v2-ink);
-  background: transparent;
-  color: var(--v2-ink);
-  font-family: var(--v2-font-mono);
-}
-
-.v2-inspector__pill--complete {
-  background: rgba(16, 185, 129, 0.12);
-  color: #047857;
-}
-
-.v2-inspector__task-list {
-  margin-top: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.v2-inspector__section-subtitle {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--v2-text-muted);
-  margin-bottom: 2px;
-}
-
-.v2-inspector__task-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 8px 10px;
-  background: var(--v2-bg-subtle);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-}
-
-.v2-inspector__task-title {
-  font-size: 13px;
-  color: var(--v2-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
-}
-
-.v2-inspector__task-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.v2-inspector__task-assignee {
-  font-size: 11px;
-  color: var(--v2-text-tertiary);
-  font-family: var(--v2-font-mono);
-}
-
-/* ---------- Inspector: Detail sub-page ---------- */
-
-.v2-inspector__detail {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-top: 4px;
-}
-
-.v2-inspector__detail-head {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-
-.v2-inspector__detail-name {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--v2-text-primary);
-  letter-spacing: -0.01em;
-  margin-top: 4px;
-}
-
-.v2-inspector__detail-sub {
-  font-size: 12px;
-  color: var(--v2-text-tertiary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.v2-inspector__detail-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/*
- * Keep the explicit button selector for the inspector actions so their
- * bg/border/padding remain component-owned. The global reset is intentionally
- * low-specificity now; the `a.X` selector covers the artifact "Open" link
- * variant.
- */
-.v2-root button.v2-inspector__btn,
-.v2-root a.v2-inspector__btn {
-  appearance: none;
-  height: 32px;
-  padding: 0 14px;
-  border-radius: var(--v2-radius-sm);
-  border: 1px solid var(--v2-border);
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  transition: background 80ms ease, color 80ms ease, border-color 80ms ease;
-}
-
-.v2-root button.v2-inspector__btn:hover,
-.v2-root a.v2-inspector__btn:hover {
-  color: var(--v2-text-primary);
-  background: var(--v2-surface-hover);
-}
-
-.v2-root button.v2-inspector__btn--primary,
-.v2-root a.v2-inspector__btn--primary {
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
-  border-color: var(--v2-ink);
-}
-
-.v2-root button.v2-inspector__btn--primary:hover,
-.v2-root a.v2-inspector__btn--primary:hover {
-  background: var(--v2-ink-hover);
-}
-
-.v2-inspector__detail-card {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.v2-inspector__detail-kicker {
-  font-size: 11px;
-  font-family: var(--v2-font-mono);
-  font-weight: 700;
-  color: var(--v2-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.v2-inspector__detail-body {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--v2-text-secondary);
-}
-
-.v2-inspector__chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 2px;
-}
-
-.v2-inspector__chip {
-  height: 22px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-secondary);
-  font-size: 11px;
-  font-family: var(--v2-font-mono);
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-}
-
-/* Sprint B1: agent-DM list under member-detail. Clickable rows that
- * navigate to the DM pod (read-only for the human via the §3.7
- * co-pod-member rule). Same visual rhythm as detail-card content; the
- * arrow glyph signals "this is interactive." */
-.v2-inspector__dm-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.v2-root button.v2-inspector__dm-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--v2-border-subtle);
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s ease, border-color 0.12s ease;
-}
-
-.v2-root button.v2-inspector__dm-row:hover {
-  background: var(--v2-surface-hover);
-  border-color: var(--v2-border);
-}
-
-.v2-inspector__dm-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-inspector__dm-arrow {
-  color: var(--v2-text-tertiary);
-  font-weight: 500;
-  margin-left: 8px;
-}
-
-/* ---------- Runtime badge (driver tag — OC, CX, CC, WH, NA) ----------
- * Identity (runtimeType) renders as the main pill; host=byo adds a small
- * "BYO" tag alongside. Cloud is the implicit default and stays unmarked
- * to keep the chrome quiet. Same pattern in compact form on the member-
- * list row (`.v2-runtime-mono` + `.v2-runtime-mono--byo`). */
-
-.v2-inspector__detail-runtime {
-  margin-top: 8px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 6px;
-}
-
-.v2-runtime-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 9px 0 6px;
-  border-radius: 999px;
-  border: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-secondary);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-.v2-runtime-pill__mono {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--v2-text-primary);
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: 4px;
-  padding: 1px 4px;
-  line-height: 1;
-}
-
-.v2-runtime-pill__label {
-  line-height: 1;
-}
-
-.v2-runtime-mono {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  height: 18px;
-  min-width: 22px;
-  padding: 0 5px;
-  margin-left: 6px;
-  border-radius: 4px;
-  border: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-secondary);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-}
-
-.v2-runtime-mono--byo {
-  border-color: var(--v2-border);
-  background: var(--v2-surface-hover);
-}
-
-.v2-runtime-mono__byo {
-  font-size: 8.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  opacity: 0.78;
-}
-
-.v2-runtime-host {
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 4px;
-  border: 1px solid var(--v2-border);
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-secondary);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-
-/* Member-list row runtime chip — shows the FULL runtime label (Claude Code,
- * Codex, OpenClaw …) so identity reads at a glance, with BYO as a small
- * trailing tag when the user is hosting the runtime themselves. The mono
- * codes (CC / CX / OC) live on the detail-card pill where there's room
- * for both. */
-.v2-runtime-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 6px;
-  flex-shrink: 0;
-}
-
-.v2-runtime-row__label {
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-secondary);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-}
-
-.v2-runtime-row__byo {
-  display: inline-flex;
-  align-items: center;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 4px;
-  border: 1px solid var(--v2-border);
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-tertiary);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-
-/* ---------- Role chip (preset category — Development / Design / etc.) ----------
- * Shown on the Your Team card and used as the role tag on agent profiles.
- * Neutral by design — categories don't get color codes; the text label is
- * enough. Kept compact to fit in the team-card name row without wrapping. */
-.v2-role-chip {
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 8px;
-  border-radius: 999px;
-  border: 1px solid var(--v2-border-soft);
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-secondary);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
 
 /* ---------- Your Team category tab bar ---------- */
 
@@ -3497,11 +1491,6 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-secondary);
   margin: 0;
   line-height: 1.5;
-}
-
-.v2-modal__hint--muted {
-  color: var(--v2-text-tertiary);
-  font-size: 11px;
 }
 
 .v2-modal__error {
@@ -4055,9 +2044,6 @@ body.modern-ui.v2-canvas {
 
 /* OAuth links and invite forms share one button treatment. Prefix with
    `.v2-root` to beat the global button/link rules. */
-.v2-login__oauth-form {
-  margin: 0;
-}
 
 .v2-root :where(a, button).v2-login__oauth-btn {
   display: flex;
@@ -4678,31 +2664,6 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Misc utilities ---------- */
 
-.v2-divider {
-  height: 1px;
-  background: var(--v2-border);
-  margin: 16px 0;
-}
-
-.v2-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.v2-row--between {
-  justify-content: space-between;
-}
-
-.v2-mute {
-  color: var(--v2-text-tertiary);
-}
-
-.v2-strong {
-  font-weight: 700;
-  color: var(--v2-text-primary);
-}
-
 @media (max-width: 1023px) {
   .v2-root {
     min-width: 0;
@@ -4778,7 +2739,6 @@ body.modern-ui.v2-canvas {
     transform: translateX(0);
   }
 
-  .v2-mobile-backdrop,
   .v2-inspector-backdrop {
     display: block;
     position: fixed;
@@ -4790,59 +2750,7 @@ body.modern-ui.v2-canvas {
     background: rgba(15, 17, 21, 0.42);
     cursor: pointer;
   }
-
-  /* Close (X) inside the drawer header. Title row becomes a flex row so the
-     X sits at the far end. Drop the fixed 32px height so the 44px tap target
-     fits. */
-  .v2-pods__title {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: auto;
-    min-height: 44px;
-  }
-
-  .v2-pods__mobile-close {
-    display: inline-grid;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    margin-right: -8px;
-    color: var(--v2-text-secondary);
-    border: none;
-    background: transparent;
-    border-radius: var(--v2-radius-sm);
-  }
-
-  .v2-pods__mobile-close:hover {
-    background: var(--v2-surface-hover);
-    color: var(--v2-text-primary);
-  }
-
-  .v2-chat__state-strip {
-    grid-template-columns: 1fr;
-    gap: 4px;
-  }
 }
-
-/* Plan/Execute pill in pod chat header (replaces banner state-strip) */
-.v2-chat__mode-toggle--header {
-  height: 32px;
-  margin-right: 4px;
-}
-.v2-chat__mode-toggle--header .v2-chat__mode-option {
-  height: 24px;
-  font-size: 11.5px;
-}
-.v2-chat__mode-toggle--execute {
-  border-color: rgba(204, 92, 28, 0.4);
-  background: rgba(252, 232, 220, 0.55);
-}
-.v2-chat__goal-meta {
-  color: var(--v2-text-muted);
-  font-weight: 500;
-}
-
 
 /* ---------- Admin · Users (waitlist + invitation codes) ---------- */
 .v2-admin-users {
@@ -5206,30 +3114,6 @@ body.modern-ui.v2-canvas {
 
 }
 
-.v2-chat__reply-chip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
-  padding: 6px 12px;
-  font-size: 12.5px;
-  color: var(--v2-text-secondary);
-  background: var(--v2-surface-hover);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-sm);
-}
-.v2-chat__reply-chip-label { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.v2-root button.v2-chat__reply-chip-cancel {
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  font-size: 16px;
-  line-height: 1;
-  color: var(--v2-text-secondary);
-  cursor: pointer;
-}
-
 /* ============ Admin analytics (GH#662) ============ */
 .v2-admin-analytics {
   display: flex;
@@ -5315,72 +3199,6 @@ body.modern-ui.v2-canvas {
   color: var(--v2-text-tertiary);
 }
 
-/* ── Approval card (ADR-020 D3 / ADR-017) ──────────────────────────────────
-   Speaks the Signal needs-you idiom: white ground + cobalt 2px ring. The
-   ring identifies an unresolved human decision without turning the card into
-   generic tinted chrome. */
-
-.v2-gig__kv { display: flex; gap: 8px; align-items: baseline; }
-.v2-gig__badge { font: 500 11px var(--v2-font-mono); border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); padding: 2px 5px; white-space: nowrap; }
-.v2-gig__text { font-size: 14px; line-height: 1.45; font-weight: 600; min-width: 0; }
-.v2-gig__kv { font-size: 12px; color: var(--v2-text-secondary); margin-bottom: 8px; flex-wrap: wrap; }
-.v2-gig__kv strong { color: var(--v2-text-primary); font-weight: 500; }
-.v2-gig__list { margin: 0 0 8px; padding-left: 20px; }
-.v2-gig__link { color: var(--v2-accent-text); text-decoration: underline; text-underline-offset: 2px; font-size: 12px; }
-.v2-gig__link:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
-/* Inspector pending-approvals index (durable, row-backed — cards in chat
-   retire with message retention; this list never does). */
-.v2-inspector__approvals {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.v2-inspector__approval-row {
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  box-shadow: 0 0 0 2px var(--v2-accent);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.v2-inspector__approval-summary {
-  font-size: 13px;
-  color: var(--v2-text-primary);
-  line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.v2-inspector__approval-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.v2-inspector__approval-agent {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-}
-
-.v2-inspector__approval-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.v2-inspector__approval-waiting {
-  font-size: 12px;
-  color: var(--v2-text-muted);
-  font-style: italic;
-}
-
 /* ── Threading: headline card + reply rail (W-T 4/4) ────────────────────────
    Built to @ux-lead's render brief. Numbers here are theirs, not invented:
    NOTE the `.v2-root button.` prefix on every button rule below. It keeps the
@@ -5392,13 +3210,6 @@ body.modern-ui.v2-canvas {
    card radius 10 / border #e5e7eb / hover #d7dce7 / no shadow; type 13px
    secondary with the count at 500; rail 2px #eef0f6 at 28px, replies +40px,
    dropping to 24px at 390; layout transition 300ms. */
-
-/* This is deliberately outside the expand button: it must aim the composer
-   without toggling the rail, and nested controls are invalid HTML. */
-
-.v2-chat__reply-chip--thread .v2-chat__reply-chip-label {
-  color: #4b5563;
-}
 
 /* Activity is a feature-wide read surface: short attention rows first, then
    evidence of agent work and board movement. Every grid child is min-width:0
@@ -5419,9 +3230,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-activity__title,
-.v2-activity__section h2,
-.v2-activity__agent-card h3,
-.v2-activity__board-row h3 {
+.v2-activity__section h2 {
   margin: 0;
   color: var(--v2-text-primary);
 }
@@ -5434,9 +3243,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-activity__controls,
-.v2-activity__window,
-.v2-activity__agent-topline,
-.v2-activity__board-meta {
+.v2-activity__window {
   display: flex;
   align-items: center;
 }
@@ -5733,28 +3540,12 @@ body.modern-ui.v2-canvas {
   font: 500 11px/16px var(--v2-font-mono);
 }
 
-.v2-activity__eyebrow {
-  margin-bottom: 5px;
-  color: var(--v2-text-muted);
-  font-size: 11px;
-  font-family: var(--v2-font-mono);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .v2-activity__section h2 {
   margin: 0;
   font-size: 15px;
   line-height: 20px;
   font-weight: 600;
   letter-spacing: 0;
-}
-
-.v2-activity__board-list {
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius);
-  overflow: hidden;
 }
 
 /* Needs-you rows: no box, no dividers (TASK-122). Each
@@ -5784,19 +3575,6 @@ body.modern-ui.v2-canvas {
 .v2-activity__queue-more:disabled {
   opacity: 0.65;
   cursor: default;
-}
-
-.v2-activity__board-row {
-  display: grid;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-  padding: 15px 16px;
-  background: var(--v2-surface);
-}
-
-.v2-activity__board-row + .v2-activity__board-row {
-  border-top: 1px solid var(--v2-border-soft);
 }
 
 .v2-activity__queue-row {
@@ -5883,30 +3661,20 @@ body.modern-ui.v2-canvas {
   font: 600 12px/16px var(--v2-font);
 }
 
-.v2-activity__queue-copy,
-.v2-activity__board-main > div,
-.v2-activity__agent-card,
-.v2-activity__agent-topline > div {
+.v2-activity__queue-copy {
   min-width: 0;
 }
 
 .v2-activity__queue-kind,
 .v2-activity__queue-copy > span,
-.v2-activity__queue-topline > span,
-.v2-activity__agent-topline span,
-.v2-activity__board-meta,
-.v2-activity__task-id,
-.v2-activity__update-time {
+.v2-activity__queue-topline > span {
   color: var(--v2-text-muted);
   font-size: var(--v2-fs-meta);
   line-height: var(--v2-lh-meta);
 }
 
 .v2-activity__queue-copy strong,
-.v2-activity__queue-copy p,
-.v2-activity__board-row h3,
-.v2-activity__board-row p,
-.v2-activity__update-content {
+.v2-activity__queue-copy p {
   overflow-wrap: anywhere;
 }
 
@@ -5923,8 +3691,7 @@ body.modern-ui.v2-canvas {
   line-height: var(--v2-lh-body);
 }
 
-.v2-activity__queue-copy p,
-.v2-activity__board-row p {
+.v2-activity__queue-copy p {
   margin: 3px 0;
   color: var(--v2-text-secondary);
   font-size: var(--v2-fs-body);
@@ -5983,15 +3750,13 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-activity__queue-actions,
-.v2-activity__queue-row button,
-.v2-activity__board-meta button {
+.v2-activity__queue-row button {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.v2-activity__queue-row button,
-.v2-activity__board-meta button {
+.v2-activity__queue-row button {
   min-height: 30px;
   padding: 0 12px;
   border: 1px solid var(--v2-border);
@@ -6183,137 +3948,9 @@ body.modern-ui.v2-canvas {
   color: var(--v2-ink);
 }
 
-.v2-activity__queue-row button:disabled,
-.v2-activity__updates button:disabled {
+.v2-activity__queue-row button:disabled {
   cursor: default;
   opacity: 0.55;
-}
-
-.v2-activity__agent-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.v2-activity__agent-card {
-  padding: 16px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  background: var(--v2-surface);
-}
-
-.v2-activity__agent-topline {
-  gap: 10px;
-}
-
-.v2-activity__agent-topline h3 {
-  font-size: 14px;
-}
-
-.v2-activity__agent-topline > div > span {
-  display: block;
-  margin-top: 2px;
-}
-
-.v2-activity__count-chip,
-.v2-activity__status {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  font-size: 11px;
-  font-family: var(--v2-font-mono);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.v2-activity__count-chip {
-  margin-left: auto;
-  padding: 4px 7px;
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-secondary);
-}
-
-.v2-activity__agent-recap {
-  margin: 14px 0 10px;
-  color: var(--v2-text-secondary);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.v2-activity__updates {
-  display: grid;
-  gap: 2px;
-}
-
-.v2-root .v2-activity__updates button {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 7px;
-  min-width: 0;
-  padding: 7px 0;
-  color: var(--v2-text-secondary);
-  font-size: 12px;
-  text-align: left;
-}
-
-.v2-root .v2-activity__updates button:hover:not(:disabled) {
-  color: var(--v2-text-primary);
-}
-
-.v2-activity__update-pod {
-  color: var(--v2-accent-text);
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.v2-activity__update-content {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v2-activity__board-row {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.v2-activity__board-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
-}
-
-.v2-activity__status {
-  flex-shrink: 0;
-  padding: 4px 7px;
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-secondary);
-}
-
-.v2-activity__status--done { background: var(--v2-success-soft); color: #087946; }
-.v2-activity__status--blocked { background: var(--v2-danger-soft); color: #b42318; }
-.v2-activity__status--claimed { background: var(--v2-accent-soft); color: var(--v2-accent-text); }
-
-.v2-activity__task-id {
-  display: block;
-  margin-bottom: 2px;
-  font-weight: 700;
-}
-
-.v2-activity__board-row h3 { font-size: 14px; }
-
-.v2-activity__board-meta {
-  justify-content: flex-end;
-  gap: 9px;
-  white-space: nowrap;
-}
-
-.v2-activity__footer {
-  margin-top: 34px;
-  color: var(--v2-text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-  text-align: center;
 }
 
 @media (max-width: 640px) {
@@ -6346,10 +3983,8 @@ body.modern-ui.v2-canvas {
      touch target on phones. */
   .v2-root .v2-activity__compose .v2-activity__compose-picker-menu .v2-activity__compose-picker-option { min-height: 44px; }
   .v2-activity__section-heading { flex-wrap: wrap; }
-  .v2-activity__agent-grid { grid-template-columns: minmax(0, 1fr); }
 
   .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
-  .v2-activity__board-row { grid-template-columns: minmax(0, 1fr); }
 
   .v2-activity__queue-row > button,
   .v2-activity__queue-actions { grid-column: 2; }
@@ -6360,14 +3995,6 @@ body.modern-ui.v2-canvas {
   .v2-root .v2-activity__queue-actions button { min-height: 44px; }
   .v2-activity__option-choice { flex-basis: min(100%, 220px); }
   .v2-activity__decision-other { grid-template-columns: minmax(0, 1fr); }
-
-  .v2-activity__board-meta {
-    grid-column: 1;
-    justify-content: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .v2-activity__update-time { display: none; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -6383,13 +4010,8 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-rail__brand,
 .v2-root:lang(zh) .v2-tools__count strong,
 .v2-root:lang(zh) .v2-artifacts__title,
-.v2-root:lang(zh) .v2-pods__title,
 .v2-root:lang(zh) .v2-pods__page-title,
-.v2-root:lang(zh) .v2-chat__title,
 .v2-root:lang(zh) .v2-first-run__title,
-.v2-root:lang(zh) button.v2-inspector__tab,
-.v2-root:lang(zh) .v2-inspector__now-title,
-.v2-root:lang(zh) .v2-inspector__detail-name,
 .v2-root:lang(zh) .v2-login__title,
 .v2-root:lang(zh) .v2-feature__title,
 .v2-root:lang(zh) .v2-feature__header .v2-feature__title,
@@ -6404,9 +4026,7 @@ body.modern-ui.v2-canvas {
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h5,
 .v2-root:lang(zh) .v2-feature__legacy .MuiTypography-h6,
 .v2-root:lang(zh) .v2-activity__title,
-.v2-root:lang(zh) .v2-activity__section h2,
-.v2-root:lang(zh) .v2-activity__agent-card h3,
-.v2-root:lang(zh) .v2-activity__board-row h3 {
+.v2-root:lang(zh) .v2-activity__section h2 {
   letter-spacing: 0;
 }
 
@@ -6435,34 +4055,15 @@ body.modern-ui.v2-canvas {
  * legibility floor. Single-line nowrap+ellipsis rows are not touched — their
  * height is not text-driven. Guarded by v2-layout-invariants.test.ts.
  * ------------------------------------------------------------------------ */
-.v2-root:lang(zh) .v2-chat__composer-hint,
-.v2-root:lang(zh) .v2-chat__new-pod-text,
 .v2-root:lang(zh) .v2-first-run__lede,
 .v2-root:lang(zh) .v2-first-run__step-body,
-.v2-root:lang(zh) .v2-pods__join-notice,
-.v2-root:lang(zh) .v2-pods__discover-description,
-.v2-root:lang(zh) .v2-pods__community-copy,
 .v2-root:lang(zh) .v2-activity__queue-copy p,
 .v2-root:lang(zh) .v2-activity__queue-detail,
-.v2-root:lang(zh) .v2-activity__board-row p,
-.v2-root:lang(zh) .v2-activity__agent-recap,
 .v2-root:lang(zh) .v2-activity__empty,
-.v2-root:lang(zh) .v2-activity__footer,
-.v2-root:lang(zh) .v2-inspector__pod-meta,
-.v2-root:lang(zh) .v2-inspector__now-meta,
-.v2-root:lang(zh) .v2-inspector__goal-text,
-.v2-root:lang(zh) .v2-inspector__empty,
-.v2-root:lang(zh) .v2-inspector__danger-text,
-.v2-root:lang(zh) .v2-inspector__detail-body,
 .v2-root:lang(zh) .v2-modal__hint,
 .v2-root:lang(zh) .v2-invite-card__description,
 .v2-root:lang(zh) .v2-login__field-hint {
   line-height: 1.6;
-}
-
-.v2-root:lang(zh) .v2-chat__composer-hint,
-.v2-root:lang(zh) button.v2-inspector__tab {
-  font-size: 12px;
 }
 
 /* ── Connectors: the page itself is connectors.css; what is left here is the
@@ -6815,40 +4416,6 @@ body.modern-ui.v2-canvas {
     width: min(86vw, 320px);
   }
 
-  .v2-pods__mobile-close {
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    z-index: 1;
-  }
-
-}
-
-/* ---------- Workspace inspector (TASK-129 PR 2) ----------
-   Three factual cards replace the old tabbed inspector. The route keeps the
-   same invite, agent-profile, board, and attachment exits without retaining
-   a second, legacy inspector surface. */
-
-.v2-root button.v2-workspace-inspector__board-counts {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--v2-text-primary);
-  text-align: left;
-}
-
-.v2-root button.v2-workspace-inspector__board-counts:hover {
-  background: var(--v2-surface-hover);
-}
-
-.v2-root button.v2-workspace-inspector__board-counts {
-  margin: 0 0 6px;
-  padding: 0 4px 7px;
-  border-bottom: 1px solid var(--v2-border-soft);
-  color: var(--v2-text-muted);
-  font: 500 11px/16px var(--v2-font-mono);
 }
 
 /* ---------- Workspace decision card (TASK-129 PR 3) ----------
@@ -7044,21 +4611,6 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-mobile-tabs__item--active { background: var(--v2-ink); color: var(--v2-on-ink); }
   .v2-root button.v2-mobile-tabs__item:hover:not(:disabled) { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
   .v2-root button.v2-mobile-tabs__item--active:hover:not(:disabled) { background: var(--v2-ink-hover); color: var(--v2-on-ink); }
-  .v2-mobile-tabs__badge {
-    position: absolute;
-    top: -4px;
-    right: -2px;
-    display: grid;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 3px;
-    place-items: center;
-    border: 2px solid #fff;
-    border-radius: 999px;
-    background: var(--v2-accent);
-    color: #fff;
-    font: 700 11px/1 var(--v2-font-mono);
-  }
 }
 
 .v2-mobile-tabs { display: none; }
@@ -7507,7 +5059,6 @@ body.modern-ui.v2-canvas {
   }
 
   .v2-pods-aside:not(.v2-pods-aside--page) { display: none; }
-  .v2-mobile-backdrop { display: none; }
 
   /* Tab bar with labels; the count lives inside the label, one counter. */
   .v2-mobile-tabs {

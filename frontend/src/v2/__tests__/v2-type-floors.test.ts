@@ -114,18 +114,10 @@ const ALLOWLIST: string[] = [
   '.v2-avatar', // 11.0px — no-mono-family
   '.v2-avatar--md', // 11.0px — no-mono-family
   '.v2-avatar--sm', // 10.0px — no-mono-family
-  '.v2-chat__avatars-more', // 11.0px — no-mono-family
-  '.v2-chat__composer-footer', // 11.0px — no-mono-family
-  '.v2-chat__composer-hint', // 11.0px — no-mono-family
-  '.v2-chat__composer-hint kbd', // 10.5px — mono-below-floor
-  '.v2-chat__mode-toggle--header .v2-chat__mode-option', // 11.5px — no-mono-family
-  // Split in two by the D223 chat lift (S3d): the status half moved to chat/chat-states.css.
-  '.v2-chat__new-pod-action-text', // 11.0px — no-mono-family
+  // Split in two by the D223 chat lift (S3d): the status half moved to
+  // chat/chat-states.css, and the action-text half left with TASK-758.
   '.v2-chat__new-pod-status', // 11.0px — no-mono-family
   '.v2-chat__new-pod-error', // 11.0px — no-mono-family
-  '.v2-chat__title-mark', // 11.0px — no-mono-family
-  '.v2-msg__file-icon', // 10.0px — no-mono-family
-  '.v2-msg__file-size', // 11.0px — no-mono-family
   '.v2-msg__lead-badge', // 10.0px — mono-below-floor
   '.v2-msg__reaction-count', // 11.0px — no-mono-family
   '.v2-msg__reaction-error', // 11.0px — no-mono-family
@@ -144,19 +136,11 @@ const ALLOWLIST: string[] = [
   // TASK-169 took `.v2-byo__stat-label` (11.0px, no family) to mono 500 11px
   // with item 2, so its entry left this burn-down list rather than being
   // updated in place.
-  '.v2-runtime-host', // 9.5px — no-mono-family
-  '.v2-runtime-mono', // 9.5px — no-mono-family
-  '.v2-runtime-mono__byo', // 8.5px — no-mono-family
-  '.v2-runtime-pill', // 11.0px — no-mono-family
-  '.v2-runtime-pill__mono', // 10.0px — no-mono-family
-  '.v2-runtime-row__byo', // 9.0px — no-mono-family
-  '.v2-runtime-row__label', // 10.5px — no-mono-family
   // unassigned
   // R05 took `.v2-connect__number` (11.0px, no family) to mono 500 11.5px
   // with the Connect lift, so its entry left this list.
   '.v2-approval__badge', // 10.5px — mono-below-floor
   '.v2-approval__time', // 11.5px — no-mono-family
-  '.v2-filter-count', // 11.0px — no-mono-family
   '.v2-invite-card__meta', // 11.0px — no-mono-family
   '.v2-invite-link', // 11.0px — no-mono-family
   '.v2-invite-manage__empty', // 11.0px — no-mono-family
@@ -167,14 +151,8 @@ const ALLOWLIST: string[] = [
   '.v2-lang-switch__check', // 11.0px — no-mono-family
   '.v2-mention-item__sub', // 11.0px — no-mono-family
   '.v2-modal__error', // 11.0px — no-mono-family
-  '.v2-modal__hint--muted', // 11.0px — no-mono-family
   '.v2-pods__create-error', // 11.0px — no-mono-family
-  '.v2-pods__discover-meta', // 11.0px — no-mono-family
-  '.v2-pods__item-icon', // 11.0px — no-mono-family
-  '.v2-pods__item-time', // 11.0px — no-mono-family
   '.v2-pods__section-chevron', // 11.0px — no-mono-family
-  '.v2-pods__status', // 10.0px — no-mono-family
-  '.v2-role-chip', // 10.5px — no-mono-family
   '.v2-root button.v2-admin-users__inline-copy', // 11.0px — no-mono-family
   '.v2-root button.v2-invite-manage__action, .v2-invite-manage__action', // 11.0px — no-mono-family
   '.v2-syscard__time', // 11.5px — no-mono-family

@@ -707,7 +707,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // forcing a third column past a 390px viewport.
     // The desktop declaration shares its rule with the buttons, so it is not
     // eligible for ruleBody's exact-selector helper.
-    expect(v2).toMatch(/\.v2-activity__queue-actions,\n\.v2-activity__queue-row button,[\s\S]*?\{\n\s*display: flex;[\s\S]*?gap: 6px;/);
+    expect(v2).toMatch(/\.v2-activity__queue-actions,\n\.v2-activity__queue-row button \{\n\s*display: flex;[\s\S]*?gap: 6px;/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-actions \{ grid-column: 2; \}[\s\S]*?\.v2-activity__queue-actions \{ flex-wrap: wrap; \}/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
     // Every non-option card act is 32 tall at desktop, level with the options (ux-lead 67327):
@@ -1802,16 +1802,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The recap is a feature-wide page, but it is still reachable at 390px.
     // The zero-min grid tracks are the load-bearing no-horizontal-overflow
     // rule; jsdom cannot observe the scrollbar they prevent.
-    expect(ruleBody(v2, '.v2-activity__agent-grid'))
-      .toContain('repeat(2, minmax(0, 1fr))');
     expect(ruleBody(v2, '.v2-activity__queue-row'))
       .toContain('28px minmax(0, 1fr) auto');
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__agent-grid \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-row \{[\s\S]*?28px minmax\(0, 1fr\)/);
-    // Board rows do not inherit the queue icon column. At 390px that left
-    // only one character of a task title — an overflow-free but unusable
-    // primary identifier, which violates the craft baseline rule.
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__board-row \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\)/);
+    // The agent grid and board rows this also pinned are gone from the page,
+    // and their rules with them (TASK-758).
   });
 
   test('Activity queue actions distinguish an action from the thread handoff', () => {
@@ -2125,16 +2120,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   describe('Signal chat + inspector color contract (TASK-124)', () => {
+    // The composer's send and mode buttons left with the old composer (TASK-758).
     const filledControls = [
-      '.v2-root button.v2-chat__send',
-      '.v2-root button.v2-chat__send--execute',
-      '.v2-root button.v2-chat__mode-option--active',
       '.v2-root button.v2-first-run__hello',
       '.v2-syscard__cta',
       '.v2-root button.v2-approval__btn--approve',
     ];
 
-    test('all six ordinary filled controls use ink, never cobalt', () => {
+    test('every ordinary filled control uses ink, never cobalt', () => {
       for (const selector of filledControls) {
         const rule = selectorRuleBody(v2, selector);
         expect(rule).toContain('var(--v2-ink)');
@@ -2260,7 +2253,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(accentHoverDeclarations).toEqual([]);
     });
 
-    test('the nine allowed cobalt marks remain explicit', () => {
+    test('the allowed cobalt marks remain explicit', () => {
       for (const selector of [
         '.v2-thread-card__dot',
         '.v2-thread-card--addressed .v2-thread-card__count',
@@ -2270,7 +2263,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
         '.v2-root button.v2-approval__result-link',
         '.v2-root button.v2-chat__new-pod-copy',
         '.v2-root .v2-chat__new-pod-error button',
-        '.v2-chat__composer-input-wrap:focus-within',
       ]) {
         expect(selectorRuleBody(v2, selector)).toContain('var(--v2-accent');
       }
@@ -2411,9 +2403,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('zh-CN: body copy takes line-height 1.6 and a 12px floor under :lang(zh) (TASK-055)', () => {
-    // Measured in a real browser: .v2-msg__content rendered Chinese at 1.55,
-    // the composer hint at 1.45/11px. CJK glyphs fill the em box, so Latin
-    // leading leaves no white between lines and 11px is below legibility.
+    // Measured in a real browser: .v2-msg__content rendered Chinese at 1.55.
+    // CJK glyphs fill the em box, so Latin leading leaves no white between
+    // lines and 11px is below legibility. (The old composer hint this also
+    // named is gone from the composer, and its rule with it: TASK-758.)
     // Each selector's zh rule, wherever its surface file put it: the D223
     // lifts split the shared :lang(zh) lists by surface.
     const zhBlock = (sel: string): string => {
@@ -2421,9 +2414,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(at).toBeGreaterThan(-1);
       return v2.slice(at, v2.indexOf('}', at));
     };
-    for (const sel of ['.v2-msg__content', '.v2-chat__composer-hint']) {
-      expect(zhBlock(sel)).toContain('line-height: 1.6');
-    }
+    expect(zhBlock('.v2-msg__content')).toContain('line-height: 1.6');
     expect(ruleBody(v2, '.v2-root:lang(zh) .v2-workspace-inspector__empty')).toContain('line-height: 1.6');
     for (const sel of ['.v2-workspace-inspector__actor', '.v2-workspace-inspector__task-meta']) {
       expect(zhBlock(sel)).toContain('font-size: 12px');
