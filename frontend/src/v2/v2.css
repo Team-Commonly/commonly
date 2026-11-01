@@ -4238,6 +4238,8 @@ body.modern-ui.v2-canvas {
 .v2-connector-aside__refusal a { color: var(--v2-accent-text); text-decoration: underline; }
 
 .v2-connector-aside__note { margin-top: 12px !important; color: var(--v2-text-tertiary) !important; font-size: 12px !important; }
+/* A hosted connection's name beside its own Disconnect: the note's type, centred on the button. */
+.v2-connector-aside__conn { color: var(--v2-text-tertiary); font-size: 12px; }
 /* Row C: the refusal the row's own button earned, beside that button in the
    aside (and on the row itself) — same bordered grammar as the page slot. */
 .v2-connector-aside__refusal { margin-top: 10px !important; padding: 8px 10px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface-tint); color: var(--v2-ink); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }

@@ -165,7 +165,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
       <>
         {labelled.map(({ connection, label }) => (variant === 'aside' ? (
           <div key={connection.connectionId} className="v2-connector-aside__actions">
-            <span className="v2-connector-aside__note">{label}</span>
+            <span className="v2-connector-aside__conn">{label}</span>
             {renderDisconnectOne(entry, connection, variant, label)}
           </div>
         ) : (
