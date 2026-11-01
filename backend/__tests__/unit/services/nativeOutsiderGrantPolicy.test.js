@@ -22,6 +22,7 @@ const POD = '507f1f77bcf86cd799439011';
 const SEAT = '507f1f77bcf86cd799439013';
 const OTHER = '507f1f77bcf86cd799439014';
 const CONNECTION = '507f1f77bcf86cd799439015';
+const ELSEWHERE = '507f1f77bcf86cd799439016';
 const chain = (rows) => ({ select: () => ({ lean: async () => rows }) });
 const grant = (overrides = {}) => ({
   connectionId: CONNECTION,
@@ -71,10 +72,12 @@ test('batch census checks multiple installation pods with one query per collecti
   expect(mockConnectionFind).toHaveBeenCalledTimes(1);
 });
 
-test('a seat-targeted grant narrows every requested pod containing the seat', async () => {
-  mockPodFind.mockReturnValue(chain([{ _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }]));
+test('a seat-targeted grant narrows every requested pod containing the seat, and no other', async () => {
+  mockPodFind.mockReturnValue(chain([
+    { _id: POD, members: [SEAT] }, { _id: OTHER, members: [SEAT] }, { _id: ELSEWHERE, members: [OTHER] },
+  ]));
   mockGrantFind.mockReturnValue(chain([grant({ target: { kind: 'seat', id: SEAT }, audience: [SEAT] })]));
-  expect(await podsWithOutsiderWritableGrants([POD, OTHER])).toEqual(new Set([POD, OTHER]));
+  expect(await podsWithOutsiderWritableGrants([POD, OTHER, ELSEWHERE])).toEqual(new Set([POD, OTHER]));
 });
 
 test('a seat-targeted grant whose audience omits the seat narrows nothing', async () => {
