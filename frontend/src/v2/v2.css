@@ -32,7 +32,9 @@ body.modern-ui.v2-canvas {
   /* TASK-701: inactive rail glyphs, join-radio outlines (3:1 on white and
      #f2f4f7) and the neutral selected pod row. Dark values sit in both dark
      sets below. */
-  /* D223 ruling (Cofounder, 11-01): the artboard's --ph, exactly. */
+  /* D223 ruling (Cofounder, 11-01): the rail glyph is the artboard's --ph,
+     exactly, which puts it below the 3:1 above (2.34:1 on #f2f4f7); the
+     active glyph and the hover labels carry the rail's meaning. */
   --v2-rail-icon: #98a2b3;
   --v2-control-outline: #667085;
   /* D223 (TASK-735): the artboard's .pod.on in both themes, a neutral tint
