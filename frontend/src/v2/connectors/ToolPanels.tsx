@@ -88,6 +88,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     irreversibleTools,
     asksFirst,
     outcomeLabel,
+    reasonLabel,
     modeLabel,
     entryGrantModes,
     entryModeCopy,
@@ -598,7 +599,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             <ol className="v2-tools__trail">
               {trail.calls.map((line) => (
                 <li key={line.callId} className="v2-tools__trail-line">
-                  <span><span className="v2-tools__outcome" title={outcomeLabel(line.outcome)} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {outcomeLabel(line.outcome)}</span>
+                  <span><span className="v2-tools__outcome" title={outcomeLabel(line.outcome)} aria-hidden="true"><OutcomeGlyph outcome={line.outcome} /></span>{seatLabel(podId, line.agentUserId)} · {line.tool} · {outcomeLabel(line.outcome)}{line.reason && (line.outcome === 'refused' || line.outcome === 'failed') ? <span className="v2-tools__trail-reason"> · {reasonLabel(line.reason)}</span> : null}</span>
                   <span className="v2-tools__trail-when">{localizeRelativeTime(line.at, t, { now, pastEvent: true })}</span>
                 </li>
               ))}

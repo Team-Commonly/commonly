@@ -348,7 +348,7 @@ test('a partial installation owner cannot see identity-wide key controls', async
   renderPage();
   expect(await screen.findByRole('heading', { name: 'Policy' })).toBeInTheDocument();
   expect(await screen.findByText('Key management is unavailable for this agent. Ask an admin for access.')).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Pods' })).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Pods' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Regenerate key' })).not.toBeInTheDocument();
   expect(screen.queryByText('Laptop')).not.toBeInTheDocument();
   expect(axios.get.mock.calls.some(([url]) => url === '/api/agent-memory/maya-claude/default')).toBe(false);

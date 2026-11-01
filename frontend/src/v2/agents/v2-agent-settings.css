@@ -12,6 +12,14 @@
 
 .v2-agent-settings__state { padding: 32px; color: var(--v2-text-secondary); }
 
+/* Header: avatar, name and the Profile / Memory / Settings tabs on one row. */
+.v2-agent-settings__head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 28px; min-height: 76px; border-bottom: 1px solid var(--v2-border-soft); box-sizing: border-box; }
+.v2-agent-settings__ident h1 { margin: 0; font-size: 20px; }
+/* Scoped under the header so these beat the base tab rules declared later. */
+.v2-agent-settings__head .v2-agent-settings__seg { margin-left: auto; margin-top: 0; margin-bottom: 0; border-bottom: 0; }
+.v2-agent-settings__head .v2-agent-settings__seg [aria-current="page"] { border-bottom: 0; }
+@media (max-width: 600px) { .v2-agent-settings__head { padding: 12px 16px; } }
+
 .v2-agent-settings__tabs {
   display: flex;
   gap: 24px;
@@ -130,4 +138,19 @@
   .v2-agent-settings { padding: 16px; }
   .v2-agent-settings__section-head { flex-direction: column; align-items: flex-start; }
   .v2-agent-settings__key-meta { display: grid; gap: 4px; }
+  /* D223 (TASK-730): the same 52px phone top bar feature pages get from
+     .v2-feature__header. The page pads 16px, so the bar bleeds out of it. */
+  .v2-agent-settings > .v2-page-head,
+  .v2-agent-settings > .v2-agent-memory__head {
+    display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; min-height: 52px;
+    margin: -16px -16px 12px; padding: 0 10px 0 12px;
+    border-bottom: 1px solid var(--v2-border-soft);
+  }
+  .v2-agent-settings > .v2-page-head h1,
+  .v2-agent-settings > .v2-agent-memory__head .v2-agent-memory__ident { min-width: 0; }
+  .v2-agent-settings > .v2-agent-memory__head .v2-agent-memory__seg { flex: none; margin-top: 0; }
+  .v2-agent-settings > .v2-agent-memory__head .v2-agent-memory__ident h1 {
+    margin: 0; font: 800 21px/1 var(--v2-font-display); letter-spacing: -0.03em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
 }

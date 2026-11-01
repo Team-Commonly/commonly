@@ -199,6 +199,33 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     superseded: t('tools.outcomeSuperseded', { defaultValue: 'answered' }),
     failed: t('tools.outcomeFailed', { defaultValue: 'failed' }),
   })[outcome] || outcome;
+  // Plain words for why a refused or failed call did not run. An unlabelled code shows as-is.
+  const reasonLabel = (reason: string): string => {
+    const labels: Record<string, string> = {
+      not_in_audience: t('tools.reasonNotInAudience', { defaultValue: 'this seat is outside the grant audience' }),
+      tool_not_allowed: t('tools.reasonToolNotAllowed', { defaultValue: 'this tool is not on the allow-list' }),
+      write_mode_not_allowed: t('tools.reasonWriteNotAllowed', { defaultValue: 'writes are not granted' }),
+      grant_revoked: t('tools.reasonGrantRevoked', { defaultValue: 'the grant was revoked' }),
+      grant_expired: t('tools.reasonGrantExpired', { defaultValue: 'the grant expired' }),
+      budget_exhausted: t('tools.reasonBudgetExhausted', { defaultValue: 'the call budget is spent' }),
+      approval_unavailable: t('tools.reasonApprovalUnavailable', { defaultValue: 'no one could be asked to approve it' }),
+      approval_declined: t('tools.reasonApprovalDeclined', { defaultValue: 'approval was declined' }),
+      approval_expired: t('tools.reasonApprovalExpired', { defaultValue: 'approval expired before the call ran' }),
+      invalid_tool_args: t('tools.reasonInvalidArgs', { defaultValue: 'the arguments did not validate' }),
+      connection_mismatch: t('tools.reasonConnectionMismatch', { defaultValue: 'the connection no longer matches the grant' }),
+      reconnect_required: t('tools.reasonReconnect', { defaultValue: 'the connection needs reconnecting' }),
+      credential_missing: t('tools.reasonCredentialMissing', { defaultValue: 'no credential is stored' }),
+      credential_rejected: t('tools.reasonCredentialRejected', { defaultValue: 'the provider rejected the credential' }),
+      refresh_unreachable: t('tools.reasonRefreshUnreachable', { defaultValue: 'the credential could not be refreshed' }),
+      provider_error: t('tools.reasonProviderError', { defaultValue: 'the provider returned an error' }),
+      provider_unreachable: t('tools.reasonProviderUnreachable', { defaultValue: 'the provider could not be reached' }),
+      upstream_tool_error: t('tools.reasonUpstreamToolError', { defaultValue: 'the provider tool returned an error' }),
+      broker_unavailable: t('tools.reasonBrokerUnavailable', { defaultValue: 'the broker was unavailable' }),
+      broker_error: t('tools.reasonBrokerError', { defaultValue: 'the broker failed' }),
+    };
+    // Own keys only: a code such as `constructor` or `__proto__` must show as itself, not as an inherited member.
+    return Object.prototype.hasOwnProperty.call(labels, reason) ? labels[reason] : reason;
+  };
   const modeLabel = (mode: GrantWriteMode): string => ({
     read: t('tools.modeRead', { defaultValue: 'read' }),
     'write-with-confirm': t('tools.modeWriteConfirm', { defaultValue: 'read and write, ask first' }),
@@ -566,6 +593,7 @@ export const useToolConnectors = (pods: V2Pod[], manualRevokeNotice: HostedMcpMa
     irreversibleTools,
     asksFirst,
     outcomeLabel,
+    reasonLabel,
     modeLabel,
     entryGrantModes,
     entryModeCopy,

@@ -159,9 +159,10 @@ describe('V2PodBoard', () => {
       claimedBy: 'kai-id', claimExpiresAt: expiresAt,
       updates: [{ text: 'Lease renewed', author: 'Kai', authorId: 'kai-id' }],
     };
+    const assignedOnly = { taskId: 'TASK-271', title: 'Assigned only', status: 'pending', assignee: 'lily-shen', updates: [] };
     jest.useFakeTimers({ now });
     axios.get.mockImplementation((url) => {
-      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: [task, holderFromUpdate] } });
+      if (url.startsWith('/api/v1/tasks/')) return Promise.resolve({ data: { tasks: [task, holderFromUpdate, assignedOnly] } });
       if (url.endsWith('/focus')) return Promise.resolve({ data: FOCUS });
       if (url.startsWith('/api/pods/')) return Promise.resolve({ data: {
         name: 'My Workspace', members: [{ _id: 'forge-id', username: 'forge', displayName: 'Forge' }],
@@ -173,15 +174,19 @@ describe('V2PodBoard', () => {
       renderBoard();
       await act(async () => { await Promise.resolve(); });
       expect(new Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('America/Los_Angeles');
-      expect(screen.getByTitle('TASK-269')).toHaveTextContent('Forge · 1m left');
-      expect(screen.getByTitle('TASK-270')).toHaveTextContent('Kai · 1m left');
+      // The card line is the timer and the claimant's avatar (named by its title); no holder text.
+      expect(screen.getByTitle('TASK-269')).toHaveTextContent('1m');
+      expect(screen.getByTitle('TASK-269')).not.toHaveTextContent('Forge');
+      expect(screen.getByTitle('TASK-270')).toHaveTextContent('1m');
+      expect(screen.getByTitle('Forge')).toBeInTheDocument();
+      // An assigned task nobody has claimed shows no owner line at all.
+      expect(screen.getByTitle('TASK-271')).not.toHaveTextContent(/lily-shen|not claimed/);
 
       act(() => { jest.advanceTimersByTime(59_999); });
-      expect(screen.getByTitle('TASK-269')).toHaveTextContent('Forge · 1m left');
+      expect(screen.getByTitle('TASK-269')).toHaveTextContent('1m');
       act(() => { jest.advanceTimersByTime(1); });
-      expect(screen.queryByText(/1m left/)).not.toBeInTheDocument();
-      expect(screen.getByText('lease expired · Forge')).toBeInTheDocument();
-      expect(screen.getByText('lease expired · Kai')).toBeInTheDocument();
+      expect(screen.getByTitle('TASK-269')).toHaveTextContent('expired');
+      expect(screen.getByTitle('TASK-270')).toHaveTextContent('expired');
       expect(axios.get.mock.calls.filter(([url]) => url.startsWith('/api/v1/tasks/'))).toHaveLength(1);
     } finally {
       jest.useRealTimers();
