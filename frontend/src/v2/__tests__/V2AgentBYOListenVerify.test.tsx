@@ -146,7 +146,10 @@ describe('V2AgentBYO listening verification', () => {
   // TASK-721: a stranger copied the MCP snippet three times and never the
   // Terminal command (walk 2026-10-31). After three minutes the page names it.
   describe('the missed Terminal command', () => {
-    const copyBlock = (matcher) => fireEvent.copy(screen.getByText(matcher).closest('.v2-byo__command'));
+    // The missed-command line quotes the command too, so pick the snippet itself.
+    const snippetBlock = (matcher) => screen.getAllByText(matcher)
+      .find((el) => el.classList.contains('v2-byo__pre')).closest('.v2-byo__command');
+    const copyBlock = (matcher) => fireEvent.copy(snippetBlock(matcher));
     const waitingText = () => screen.getByTestId('byo-listen-waiting').textContent;
 
     test('MCP snippet copied, listener command not, after three minutes: names the Terminal command', async () => {
@@ -158,7 +161,23 @@ describe('V2AgentBYO listening verification', () => {
       expect(waitingText()).not.toMatch(/not the Terminal command/);
 
       await act(async () => { jest.advanceTimersByTime(61 * 1000); });
-      expect(waitingText()).toMatch(/copied the MCP snippet, but not the Terminal command that starts sam-claude/);
+      expect(waitingText()).toMatch(/copied the MCP snippet, but not the Terminal command that starts sam-claude, the one that ends in commonly agent run sam-claude/);
+    });
+
+    test('the Copy buttons count the same way as a manual copy', async () => {
+      jest.useFakeTimers();
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true, value: { writeText: jest.fn().mockResolvedValue(undefined) },
+      });
+      await issueToken();
+      const copyButtonFor = (matcher) => snippetBlock(matcher).querySelector('button');
+
+      await act(async () => { fireEvent.click(copyButtonFor(/claude mcp add/)); });
+      await act(async () => { jest.advanceTimersByTime(3 * 60 * 1000 + 1000); });
+      expect(waitingText()).toMatch(/not the Terminal command that starts sam-claude/);
+
+      await act(async () => { fireEvent.click(copyButtonFor(/commonly agent run sam-claude/)); });
+      expect(waitingText()).not.toMatch(/not the Terminal command/);
     });
 
     test('the listener command copied too: keeps the plain waiting line', async () => {
