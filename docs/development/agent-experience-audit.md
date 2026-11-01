@@ -4252,3 +4252,13 @@ It is not one. The watchdog counts a spawn as started when it writes any stdout 
 **Repair:** none in this entry. A claude turn whose provider hangs is bounded only by `COMMONLY_AGENT_RUN_TIMEOUT_MS` (45 min on seats), and the supervised path keeps claude's stall window off because its stdout is silent until the reply is done.
 
 **Lesson:** "first output" and "still making progress" are different signals. Before citing a watchdog as hang coverage, name the exact signal it reads and check which hang shapes produce that signal. A transcript row written before the first network round trip proves the process started, not that the model is answering.
+
+## 89. The `V2Message` type has no `pgId`, and every chat message carries one (2026-11-01, stack)
+
+*Origin: a CodeRabbit finding on #3148, which I first dismissed with "the message shape has no `pgId` field".*
+
+The frontend type `V2Message` (`frontend/src/v2/hooks/useV2PodDetail.ts`) declares `id` and `thread_root_id`, and no `pgId`. The API sends one. `formatMessage` (`backend/models/pg/Message.ts`) returns `id: legacy_mongo_id || pgId` and a separate `pgId`, and `normalizeMessage` spreads the raw message, so `pgId` reaches every component at runtime. For a row reconciled from Mongo the two ids differ. Its `id` is the old Mongo id, while replies point at it through `thread_root_id`, which is always the Postgres id. So code that matches a reply's `thread_root_id` against `message.id` misses every reconciled root, and nothing in the type says so.
+
+**Repair:** #3148 indexes the Threads panel's roots by both ids, and its rows keep the exposed `id`, the one the `#message-<id>` anchor uses. `frontend/src/v2/utils/threadView.ts` still matches roots by `m.id` alone (`idOf`). It is the same gap and has not been fixed.
+
+**Lesson:** a field missing from a consumer's type says nothing about the payload. To claim a field is absent, read the producer: here the backend formatter, not the frontend interface.
