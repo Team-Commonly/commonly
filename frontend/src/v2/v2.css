@@ -13957,6 +13957,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-board__focus[open] .v2-board__focus-chevron { transform: rotate(180deg); }
 .v2-board__focus[open] > :not(summary) { margin-left: 12px; margin-right: 12px; }
 .v2-board__focus[open] { max-height: 40vh; overflow-y: auto; }
+.v2-board__focus:not([open]) > :not(summary) { display: none; }
 
 .v2-board__tabs { display: none; }
 .v2-board__columns {
@@ -14020,16 +14021,16 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 @media (max-width: 760px) {
-  .v2-board__head { padding: 8px 12px; min-height: 52px; gap: 6px; flex-wrap: wrap; }
+  .v2-board__head { padding: 8px 12px; min-height: 52px; gap: 6px; flex-wrap: nowrap; row-gap: 0; }
   .v2-board__back-label, .v2-board__subtitle { display: none; }
   .v2-board__head > .v2-board__back { order: 1; }
-  .v2-board__title-wrap { order: 2; }
+  .v2-board__title-wrap { order: 2; flex: 1 1 0; min-width: 0; }
   .v2-board__head > .v2-board__icon-btn { order: 3; }
-  .v2-board__search { order: 3; }
-  .v2-board__head > .v2-board__new { order: 4; }
-  .v2-board__filters { order: 5; width: 100%; padding-bottom: 6px; }
-  .v2-board__focus { margin: 10px 12px 0; }
-  .v2-board__focus-strip .v2-board__focus-eyebrow { display: none; }
+  .v2-board__search { order: 3; flex: 1 1 0; min-width: 0; width: auto; }
+  .v2-board__head > .v2-board__new { order: 4; margin-left: 0; }
+  .v2-board__filters { padding: 8px 12px 0; }
+  /* The frame's phone board has no focus strip; the goal lives on desktop. */
+  .v2-board__focus { display: none; }
   .v2-board__new-label { display: none; }
   .v2-board__tabs { display: flex; gap: 4px; padding: 8px 12px 0; overflow-x: auto; }
   .v2-root button.v2-board__tab {
@@ -14050,6 +14051,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 .v2-root button.v2-board__card-main, .v2-root button.v2-board__card-main:hover { background: none; }
+/* The card already pads itself; a second 12px on the button doubled the frame's card height (85px vs ~57px). */
+.v2-root button.v2-board__card-main { padding: 0; }
 /* The action bar sits on the id row, so it never covers the title; the owner line yields to it. */
 .v2-board__card:hover .v2-board__owner-line, .v2-board__card:focus-within .v2-board__owner-line { visibility: hidden; }
 .v2-root button.v2-board__card-main:focus-visible, .v2-root button.v2-board__card-move:focus-visible {
