@@ -8291,22 +8291,24 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 .v2-settings__section .v2-billing__badge {
-  border-radius: var(--v2-radius-sm);
-  background: var(--v2-surface);
-  border-color: var(--v2-border);
+  /* The artboard reads the plan as plain text in the row's value, not a chip. */
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--v2-text-primary);
-  font-family: var(--v2-font-mono);
-  font-size: 12px;
-  font-weight: 500;
+  font-family: var(--v2-font);
+  font-size: 13.5px;
+  font-weight: 600;
   letter-spacing: 0;
-  line-height: 16px;
+  line-height: 18px;
   text-transform: none;
 }
 
 .v2-settings__section .v2-billing__badge--pro {
-  background: var(--v2-accent);
-  border-color: var(--v2-accent);
-  color: var(--v2-on-ink);
+  background: transparent;
+  border-color: transparent;
+  color: var(--v2-text-primary);
 }
 
 .v2-settings__section .v2-devices__item {

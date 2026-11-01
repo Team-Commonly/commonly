@@ -1331,9 +1331,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(billingPanel).not.toContain('free in beta');
     expect(billingPanel).not.toContain('included during beta');
     const badge = ruleBody(v2, '.v2-settings__section .v2-billing__badge');
-    expect(badge).toContain('background: var(--v2-surface)');
-    expect(badge).toContain('font-family: var(--v2-font-mono)');
-    expect(ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro')).toContain('background: var(--v2-accent)');
+    expect(badge).toContain('background: transparent');
+    expect(badge).toContain('border: 0');
+    expect(badge).toContain('padding: 0');
+    expect(ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro')).not.toContain('var(--v2-accent)');
   });
 
   test('Settings flattens connected apps and folds Developer Tips under the form', () => {
