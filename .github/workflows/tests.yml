@@ -89,7 +89,7 @@ jobs:
             files=$(git diff --no-renames --name-only "$base"...HEAD 2>/dev/null || git diff --no-renames --name-only "$base" HEAD)
             printf '%s\n' "$files"
             printf '%s\n' "$files" | grep -qE '^(backend/|cli/|packages/|package(-lock)?\.json)' && backend=true
-            printf '%s\n' "$files" | grep -qE '^(frontend/|backend/|README\.md$|docs/assets/)' && frontend=true
+            printf '%s\n' "$files" | grep -qE '^(frontend/|backend/|README\.md$|docs/assets/|e2e/|docs/adr/|docs/cli/|docs-site/|cli/src/commands/login\.js$|commonly-mcp/src/tools\.js$)' && frontend=true
             printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|scripts/verify-backend-worker-chart\.sh$|scripts/monitoring/apply-alerting\.py$|docs/runbooks/alerting\.md$|package(-lock)?\.json)' && chart=true
             # A change to this workflow runs the full suite as a self-test, so a
             # PR that edits the test pipeline proves every heavy leg still works.
