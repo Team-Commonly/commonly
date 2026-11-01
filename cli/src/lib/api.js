@@ -85,7 +85,7 @@ const capSignal = (capTimeout, callerSignal) => {
   return typeof AbortSignal.any === 'function' ? AbortSignal.any([callerSignal, capTimeout]) : callerSignal;
 };
 
-const formatLimit = (ms) => (ms < 1000 ? `${ms}ms` : `${Math.round(ms / 1000)}s`);
+export const formatLimit = (ms) => (ms < 1000 ? `${ms}ms` : `${Math.round(ms / 1000)}s`);
 
 // The cap's timeout rejects with a DOMException named TimeoutError, from the
 // fetch or from the body read. Name the request and the limit instead, so the
@@ -93,7 +93,9 @@ const formatLimit = (ms) => (ms < 1000 ? `${ms}ms` : `${Math.round(ms / 1000)}s`
 // Only the cap's own timeout is renamed: a caller's abort or its own shorter
 // timeout passes through as it was thrown.
 const nameTimeout = (capTimeout, method, path, ms) => (err) => {
-  if (err?.name !== 'TimeoutError' || !capTimeout.aborted) throw err;
+  // By identity: the caller's timeout can fire first and the cap's a moment
+  // later, and then `capTimeout.aborted` alone would claim the caller's error.
+  if (err?.name !== 'TimeoutError' || err !== capTimeout.reason) throw err;
   throw Object.assign(
     new Error(`${method} ${path} got no answer in ${formatLimit(ms)}`),
     { code: 'cap_timeout', timeoutMs: ms },

@@ -62,7 +62,7 @@
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
-import { capTimeoutMs } from './api.js';
+import { capTimeoutMs, formatLimit } from './api.js';
 
 export const INBOX_KINDS = ['mention', 'decision', 'handoff', 'approval'];
 export const TOKEN_FILE_ENV = 'COMMONLY_TOKEN_FILE';
@@ -416,7 +416,7 @@ export const createInboxRequest = ({
         text = await res.text();
       } catch (err) {
         if (err?.name !== 'TimeoutError') throw err;
-        throw new InboxRequestError(`${method} ${path} got no answer in ${Math.round(timeoutMs / 1000)}s`, null);
+        throw new InboxRequestError(`${method} ${path} got no answer in ${formatLimit(timeoutMs)}`, null);
       }
       let parsed;
       try {
