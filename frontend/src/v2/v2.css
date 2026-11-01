@@ -13335,7 +13335,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
    #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
 .v2-thread .v2-avatar--flat { border: 0; box-shadow: 0 0 0 1px var(--v2-av-ring, rgba(16, 24, 40, 0.08)); border-radius: var(--v2-r-9, 9px); font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
 .v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
-.v2-thread .v2-msg__mention { background: #e8ecfb; color: var(--v2-accent-text); border-radius: 3px; padding: 0 4px; }
 .v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: var(--v2-bg); }
 .v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { border-radius: var(--v2-r-6, 6px); font: 650 12px/1 var(--v2-font); }
 .v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }

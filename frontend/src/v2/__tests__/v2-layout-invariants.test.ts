@@ -1507,7 +1507,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(threadMessages).toContain('v2-thread-block__inner');
     expect(threadMessages).toContain('const collapsed = !openRoots.has(item.rootId)');
     expect(v2).not.toContain('.v2-thread-card__reply');
-    expect(ruleBody(v2, '.v2-thread .v2-msg__mention')).toContain('background: #e8ecfb');
+    // Thread mentions use the one chip rule; a 0,2,0 override here once beat it (D224).
+    expect(v2).not.toContain('.v2-thread .v2-msg__mention');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-agent')).toContain('var(--v2-accent)');
     expect(ruleBody(v2, '.v2-thread .v2-avatar--flat-human')).toContain('background: #f2f4f7');
   });
