@@ -335,7 +335,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="settings"
-                  element={feature('Settings', <V2SettingsPage />, false, false)}
+                  element={feature('Settings', <V2SettingsPage />, false, false, 'v2-feature--settings')}
                 />
                 <Route
                   path="settings/devices"

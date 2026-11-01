@@ -7799,16 +7799,6 @@ body.modern-ui.v2-canvas {
   gap: 24px;
 }
 
-.v2-settings__title {
-  margin: 0;
-  color: var(--v2-text-primary);
-  font-family: var(--v2-font-display);
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-}
-
 .v2-settings__section { min-width: 0; }
 
 .v2-settings__label {
@@ -8554,6 +8544,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   flex-direction: column;
   overflow: hidden;
 }
+.v2-feature--settings > .v2-feature__body { padding: 0; }
+.v2-feature--settings .v2p-ph { position: sticky; top: 0; z-index: 2; background: var(--v2-surface); }
 /* margin auto stops a flex item stretching, so the board sized to its 1240px
    max-content width and ran off a 390px phone. An explicit width keeps it full
    width on a phone, and the auto margin still centres it on desktop. */
@@ -10882,7 +10874,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-root:lang(zh) .v2-inspector__detail-name,
 .v2-root:lang(zh) .v2-login__title,
 .v2-root:lang(zh) .v2-feature__title,
-.v2-root:lang(zh) .v2-settings__title,
 .v2-root:lang(zh) .v2-settings__label,
 .v2-root:lang(zh) .v2-settings__account-name,
 .v2-root:lang(zh) .v2-settings__section .v2-billing__title,
