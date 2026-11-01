@@ -30,6 +30,11 @@
   border-bottom: 2px solid var(--v2-accent);
 }
 
+/* A labelled row in a list (the frame's Identity & access rows). */
+.v2-agent-settings__row { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--v2-border-soft); }
+.v2-agent-settings__row-label { min-width: 120px; color: var(--v2-text-secondary); font-size: 13px; }
+.v2-agent-settings__row-value { flex: 1; min-width: 0; }
+
 .v2-agent-settings__section { padding: 28px 0; }
 .v2-agent-settings__section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .v2-agent-settings__section h2 { margin: 0; font-family: var(--v2-font-display); font-size: 20px; }

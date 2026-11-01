@@ -19,18 +19,16 @@ const V2AgentControlSection: React.FC<Props> = ({ agentName, instanceId, podId, 
   const needsReconnect = connection.state === 'revoked' || connection.state === 'stale';
   const canRegenerateMachineKey = runtimeType === 'wrapper' && connection.state === 'connected';
   return (
-    <section className="v2-agent-settings__section" data-testid="agent-control-section">
-      <div className="v2-agent-settings__section-head">
-        <h2>{t('agentConnection.control')}</h2>
-        {(needsReconnect || canRegenerateMachineKey) && (
-          <Link className="v2-agent-settings__action"
-            to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&instanceId=${encodeURIComponent(instanceId)}&reconnect=1${runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
-            {t(needsReconnect ? 'agentConnection.reconnect' : 'agentSettings.regenerate')}
-          </Link>
-        )}
-      </div>
-      <p>{connectionLabel(connection, t)}</p>
-    </section>
+    <div className="v2-agent-settings__row" data-testid="agent-control-section">
+      <span className="v2-agent-settings__row-label">{t('agentSettings.connection', { defaultValue: 'Connection' })}</span>
+      <span className="v2-agent-settings__row-value">{connectionLabel(connection, t)}</span>
+      {(needsReconnect || canRegenerateMachineKey) && (
+        <Link className="v2-agent-settings__action"
+          to={`/v2/agents/byo?pod=${encodeURIComponent(podId)}&name=${encodeURIComponent(agentName)}&instanceId=${encodeURIComponent(instanceId)}&reconnect=1${runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
+          {t(needsReconnect ? 'agentConnection.reconnect' : 'agentSettings.regenerate')}
+        </Link>
+      )}
+    </div>
   );
 };
 
@@ -92,10 +90,10 @@ export const AgentControlLoader: React.FC<{
   }, [agentName, instanceId, refreshNonce, onConnectionState]);
 
   if (status) return <V2AgentControlSection {...status} />;
-  return <section className="v2-agent-settings__section" data-testid="agent-control-section">
-    <h2>{t('agentConnection.control')}</h2>
-    <p role={unavailable ? 'alert' : 'status'}>
+  return <div className="v2-agent-settings__row" data-testid="agent-control-section">
+    <span className="v2-agent-settings__row-label">{t('agentSettings.connection', { defaultValue: 'Connection' })}</span>
+    <span className="v2-agent-settings__row-value" role={unavailable ? 'alert' : 'status'}>
       {t(unavailable ? 'agentConnection.unavailable' : 'agentConnection.checking')}
-    </p>
-  </section>;
+    </span>
+  </div>;
 };
