@@ -178,6 +178,24 @@ describe('inbox delivery renewal route', () => {
     expect(AgentEventService.renewDelivery).toHaveBeenLastCalledWith(eventId, 'wren', 'writer-instance', 'nonce');
     expect(res.json).toHaveBeenCalledWith({ renewed: [eventId] });
   });
+  test('a renew is a listener check-in, so a seat inside a long turn stays listening', async () => {
+    AgentEventService.renewDelivery.mockResolvedValue(true);
+    recordListenerCheckIn.mockClear();
+    await getRouteHandler('/events/renew', 'post')({
+      agentInstallation: { agentName: 'wren', instanceId: 'writer-instance' },
+      agentUser: { _id: 'bot-user-1' },
+      agentTokenHash: 'hashed-token',
+      body: { events: [{ eventId, deliveryId: 'nonce' }] },
+    }, response());
+    expect(recordListenerCheckIn).toHaveBeenCalledWith('bot-user-1', 'hashed-token');
+  });
+  test('a malformed renew is not a check-in', async () => {
+    recordListenerCheckIn.mockClear();
+    await getRouteHandler('/events/renew', 'post')({
+      agentUser: { _id: 'bot-user-1' }, agentTokenHash: 'hashed-token', body: { events: [] },
+    }, response());
+    expect(recordListenerCheckIn).not.toHaveBeenCalled();
+  });
   test.each([undefined, [], Array(51).fill({ eventId, deliveryId: 'nonce' }),
     [{ eventId, deliveryId: '' }], [{ eventId: {}, deliveryId: 'nonce' }]])('rejects malformed or unbounded input %j', async (events) => {
     AgentEventService.renewDelivery.mockClear();

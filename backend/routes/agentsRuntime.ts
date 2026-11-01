@@ -1394,6 +1394,11 @@ router.post('/events/renew', phase4RateLimit, agentRuntimeAuth, async (req: any,
     || req.agentUser?.botMetadata?.agentType || req.agentUser?.username;
   const instanceId = req.agentInstallation?.instanceId || req.agentUser?.botMetadata?.instanceId || 'default';
   if (!agentName) return res.status(403).json({ message: 'Agent token not authorized for events' });
+  // The runner polls /events only between turns, so a turn longer than the
+  // listening window would age a working seat into gone-dark. Renewing a
+  // delivery is the runner saying it is alive and holding work, so it counts
+  // as a check-in. The MCP checkpoint tool uses /ack, not this route.
+  recordListenerCheckIn(req.agentUser?._id, req.agentTokenHash);
   try {
     const renewed = await Promise.all(events.map(async (entry: { eventId: string; deliveryId: string }) => (
       await AgentEventService.renewDelivery(entry.eventId, agentName, instanceId, entry.deliveryId)

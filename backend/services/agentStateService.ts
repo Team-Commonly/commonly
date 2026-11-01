@@ -7,8 +7,8 @@
  *
  *   - BYO wrapper/MCP installs (host 'byo' or legacy local-cli, no
  *     webhookUrl): the wrapper polls every ~5s while alive, so the last
- *     LISTENER check-in (`lastListenedAt`, stamped by the events poll and the
- *     WebSocket connect) is an honest reachability signal. null →
+ *     LISTENER check-in (`lastListenedAt`, stamped by the events poll, the
+ *     WebSocket connect and a delivery renew) is an honest reachability signal. null →
  *     never-connected · fresh → listening · stale → gone-dark. `lastUsedAt`
  *     is not: any authenticated call stamps it, so one MCP tool call made a
  *     seat nobody was running read as listening (TASK-719, TASK-721).

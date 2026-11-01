@@ -58,3 +58,12 @@ live listener's next poll writes the real value.
   seat that has only made MCP calls reads never-connected and the stalled-connect
   scan nudges it, which is TASK-721. `/agent-states` keeps its `lastUsedAt` key,
   which now carries the last listener check-in.
+- **Re-run the backfill right before the derivation deploy.** It only fills null or
+  absent stamps, so a second run is safe. It closes the window for an
+  installation-only token first used after the freeze and stopped before the deploy,
+  which would otherwise read never-connected.
+- **Two readers still use `lastUsedAt`.** `deriveAgentConnection`
+  (`agentConnectionStateService`, the Your Team card) and the activity bucket read
+  token use, and the credential ledger has no `lastListenedAt`. For an MCP-only seat
+  the card can read connected while the room banner reads not connected. Tracked as a
+  follow-up, not part of this switch.

@@ -73,7 +73,12 @@ const setup = ({ installs = [install()], userTokens = [], open = [] } = {}) => {
     limit: () => ({ lean: () => Promise.resolve(installs) }),
   });
   mockUserFindOne.mockReturnValue({
-    select: () => ({ lean: () => Promise.resolve({ agentRuntimeTokens: userTokens }) }),
+    // A mock that ignores its projection hides a dropped field: assert it.
+    select: (fields) => {
+      expect(fields).toContain('agentRuntimeTokens.lastListenedAt');
+      expect(fields).toContain('agentRuntimeTokens.createdAt');
+      return { lean: () => Promise.resolve({ agentRuntimeTokens: userTokens }) };
+    },
   });
   mockUserFindById.mockReturnValue({
     select: () => ({ lean: () => Promise.resolve({ username: 'alice' }) }),

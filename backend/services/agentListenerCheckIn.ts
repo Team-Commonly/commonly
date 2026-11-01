@@ -3,8 +3,9 @@ import { AgentInstallation } from '../models/AgentRegistry';
 
 /**
  * A listener check-in is the one signal that "mentions will wake this agent":
- * the events poll (`GET /api/agents/runtime/events`) or the agent WebSocket
- * connect. `lastUsedAt` cannot say that. `agentRuntimeAuth` stamps it on any
+ * the events poll (`GET /api/agents/runtime/events`), a delivery renew
+ * (`POST .../events/renew`, which keeps a seat alive through a long turn) or the
+ * agent WebSocket connect. `lastUsedAt` cannot say that. `agentRuntimeAuth` stamps it on any
  * authenticated call, so an MCP tool call alone used to read as "listening"
  * (TASK-719). The stamp lives on the same embedded token record, in its own
  * field, so the two meanings stay separate.
