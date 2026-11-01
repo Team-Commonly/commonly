@@ -29,7 +29,10 @@ export const isRunBot = (member, agentName) => {
 // removed and verified even when the owner match misses them, so a filter
 // miss cannot turn into a silent survivor. `onBotIds(podId, botIds)` is called
 // before each pod is deleted, so a throw later in the loop cannot lose the ids.
-export const cleanupRun = async ({ api, token, password, email, userId, agentName, podIds = [], onBotIds = () => {} }) => {
+// `deleteAccount: false` is the shared staging sign-in account: the run removes
+// only the pods it recorded, never pods that account owns from elsewhere, and
+// never the account itself.
+export const cleanupRun = async ({ api, token, password, email, userId, agentName, podIds = [], onBotIds = () => {}, deleteAccount = true }) => {
   const survivors = [];
   const botIds = new Set();
 
@@ -44,10 +47,16 @@ export const cleanupRun = async ({ api, token, password, email, userId, agentNam
   const stop = await api('POST', '/api/hosted/deprovision', { token, body: { agentName } });
   if (stop.status >= 300 && stop.status !== 404) survivors.push(`hosted:${agentName} (deprovision ${stop.status})`);
 
-  const owned = await listOwnPods();
-  if (owned === null) survivors.push('pods (list failed)');
+  let owned = [];
+  if (deleteAccount) {
+    owned = await listOwnPods();
+    if (owned === null) {
+      survivors.push('pods (list failed)');
+      owned = [];
+    }
+  }
   const known = new Set(podIds.map(String));
-  for (const pod of owned || []) known.add(String(pod._id));
+  for (const pod of owned) known.add(String(pod._id));
 
   // Pods only: the walk never joins a pod it did not create, so every pod
   // whose createdBy is this account is the run's own footprint. Bot members
@@ -75,23 +84,27 @@ export const cleanupRun = async ({ api, token, password, email, userId, agentNam
   // listed under this account, or still readable by id, is a survivor
   // whatever the delete said. A list that fails here cannot prove the pods
   // are gone, so it is a survivor too.
-  const after = await listOwnPods();
-  if (after === null) survivors.push('pods (list failed on verify)');
-  for (const pod of after || []) survivors.push(`pod:${String(pod._id)} (still listed)`);
+  if (deleteAccount) {
+    const after = await listOwnPods();
+    if (after === null) survivors.push('pods (list failed on verify)');
+    for (const pod of after || []) survivors.push(`pod:${String(pod._id)} (still listed)`);
+  }
   for (const id of known) {
     const check = await api('GET', `/api/pods/${id}`, { token });
     if (check.status === 200) survivors.push(`pod:${id} (still readable)`);
     else if (check.status !== 404) survivors.push(`pod:${id} (verify ${check.status})`);
   }
 
-  const del = await api('DELETE', '/api/users/me', { token, body: { password, confirmation: 'DELETE' } });
-  if (del.status >= 300) {
-    survivors.push(`account (delete ${del.status})`);
-  } else {
-    // The delete reply is not proof: the account is gone only if its own
-    // password no longer logs in.
-    const login = await api('POST', '/api/auth/login', { body: { email, password } });
-    if (login.status === 200) survivors.push('account (still logs in)');
+  if (deleteAccount) {
+    const del = await api('DELETE', '/api/users/me', { token, body: { password, confirmation: 'DELETE' } });
+    if (del.status >= 300) {
+      survivors.push(`account (delete ${del.status})`);
+    } else {
+      // The delete reply is not proof: the account is gone only if its own
+      // password no longer logs in.
+      const login = await api('POST', '/api/auth/login', { body: { email, password } });
+      if (login.status === 200) survivors.push('account (still logs in)');
+    }
   }
 
   return { ok: survivors.length === 0, survivors, botIds: [...botIds] };

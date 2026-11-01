@@ -194,3 +194,27 @@ test('the shared default bot is never recorded, even though it is a pod member',
   assert.deepEqual(result.botIds, ['scout', 'agent']);
   assert.ok(!result.botIds.includes('shared-bot'));
 });
+
+test('shared sign-in account: the run never deletes the account', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }] });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount: false });
+  assert.equal(result.ok, true);
+  assert.equal(backend.state.accountGone, false);
+  assert.ok(!backend.state.calls.includes('DELETE /api/users/me'), `calls: ${backend.state.calls}`);
+  assert.ok(!backend.state.calls.includes('POST /api/auth/login'), 'no login check when the account is kept');
+});
+
+test('shared sign-in account: only the recorded pods go, not other pods the account owns', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }, { _id: 'old', createdBy: USER }] });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount: false });
+  assert.equal(result.ok, true);
+  assert.deepEqual(backend.state.pods.map((p) => p._id), ['old']);
+  assert.ok(!backend.state.calls.includes('DELETE /api/pods/old'));
+});
+
+test('shared sign-in account: a recorded pod that survives is still a survivor', async () => {
+  const backend = fakeBackend({ pods: [{ _id: 'p1', createdBy: USER }], stuck: new Set(['p1']) });
+  const result = await run(backend, { podIds: ['p1'], deleteAccount: false });
+  assert.equal(result.ok, false);
+  assert.ok(result.survivors.includes('pod:p1 (still readable)'), `survivors: ${result.survivors}`);
+});

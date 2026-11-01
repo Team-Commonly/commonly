@@ -30,6 +30,24 @@ COMMONLY_WALK_PASSWORD="$(openssl rand -base64 24)" \
   cleanup, `2` the walk passed but a step is not yet covered (today, the
   Bring-your-own connect step).
 
+### Staging: the shared sign-in account
+
+Staging signup needs a verified email, which a walk address cannot receive, so
+staging runs sign in to one shared walk account that SRE pre-verifies. Set
+`COMMONLY_WALK_EMAIL` and `COMMONLY_WALK_PASSWORD` from the environment and pass
+the staging API as the target:
+
+```bash
+COMMONLY_WALK_EMAIL=<shared walk account> COMMONLY_WALK_PASSWORD=<its password> \
+  node scripts/first-user-walk.mjs --base https://api-staging.commonly.me
+```
+
+- The run signs in and never signs up. It removes only the pods, seats and
+  agents it created, and it never deletes the shared account.
+- `COMMONLY_WALK_EMAIL` aimed at any host other than staging is refused before
+  the walk starts, so the shared account cannot be used on prod.
+- The manifest records `"mode": "signin"` for these runs.
+
 ## Cleanup is part of the run
 
 The walk deletes its own account in a `finally` block, sending the password and
