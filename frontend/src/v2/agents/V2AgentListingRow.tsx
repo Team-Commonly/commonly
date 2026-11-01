@@ -82,8 +82,10 @@ const V2AgentListingRow: React.FC<Props> = ({ agentName, instanceId }) => {
         {ownsListing && <span className="mo">{t('agentSettings.ownedTitle')}</span>}
       </span>
       <span className="ac">
-        <Link className="b b-g b-sm" to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>
-          {t('agentSettings.viewPublicProfile')}<V2AgentSettingsIcon name="out" />
+        {/* On a phone the label folds away and the link is an icon button, so the status keeps the row. */}
+        <Link className="b b-g b-sm v2-agent-settings-page__textbtn" to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}
+          aria-label={t('agentSettings.viewPublicProfile')} title={t('agentSettings.viewPublicProfile')}>
+          <span className="v2-agent-settings-page__textbtn-label">{t('agentSettings.viewPublicProfile')}</span><V2AgentSettingsIcon name="out" />
         </Link>
         {ownsListing && <button type="button" className="b b-g ib b-sm" title={t('agentSettings.manageListing')}
           aria-label={t('agentSettings.manageListing')} aria-expanded={panelOpen} aria-controls={panelId}

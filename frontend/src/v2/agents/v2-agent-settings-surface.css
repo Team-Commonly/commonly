@@ -36,6 +36,14 @@
   font-family: var(--f-body);
 }
 
+/* The frame's header spans the pane and the body scrolls under it, so the feature-page
+   wrapper neither insets nor caps this page: the route passes v2-feature--agent-settings,
+   the same opt-out the memory page uses. */
+.v2-feature--agent-settings > .v2-feature__body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.v2-feature--agent-settings .v2-feature__legacy { flex: 1 1 auto; width: 100%; max-width: none; min-height: 0; margin: 0; display: flex; flex-direction: column; }
+.v2-feature--agent-settings .v2-agent-settings-page { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.v2-feature--agent-settings .v2-agent-settings-page .pbody { overflow-y: auto; }
+
 /* buttons */
 .v2-agent-settings-page .b { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--f-body); cursor: pointer; white-space: nowrap; transition: transform 120ms, background 160ms, box-shadow 140ms; }
 .v2-agent-settings-page .b svg.i { width: 16px; height: 16px; }
@@ -128,10 +136,13 @@
   .v2-agent-settings-page .ph { flex-wrap: wrap; min-height: 0; padding: 14px 16px; row-gap: 10px; }
   .v2-agent-settings-page .ph h1 { white-space: normal; overflow-wrap: anywhere; }
   .v2-agent-settings-page .ph .sp { display: none; }
-  .v2-agent-settings-page .lrow { grid-template-columns: minmax(0, 1fr) auto; min-height: 48px; padding: 8px 12px; }
+  /* The 390 frame keeps each row on one 48px line: the label, the value beside it, the
+     action. A long value (a refusal, a status) wraps inside its own cell, never under the label. */
+  .v2-agent-settings-page .lrow { grid-template-columns: max-content minmax(0, 1fr) auto; gap: 10px; min-height: 48px; padding: 4px 4px 4px 12px; }
   .v2-agent-settings-page .lrow .lb { font-weight: 500; }
-  .v2-agent-settings-page .lrow .vl { grid-column: 1; grid-row: 2; font-size: 12px; }
-  .v2-agent-settings-page .lrow .ac { grid-row: 1 / span 2; }
+  .v2-agent-settings-page .lrow .vl { justify-content: flex-end; text-align: right; font-size: 12px; color: var(--mu); }
+  .v2-agent-settings-page .lrow .ac .b.v2-agent-settings-page__textbtn { width: 44px; padding: 0; }
+  .v2-agent-settings-page__textbtn-label { display: none; }
 }
 @media (max-width: 760px) {
   .v2-agent-settings-page .wt thead { display: none; }
@@ -247,9 +258,8 @@
 .v2-agent-settings-page__confirm { display: inline-flex; gap: 6px; }
 
 @media (max-width: 600px) {
-  .v2-agent-settings-page details.disc > summary { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; padding: 8px 12px; }
-  .v2-agent-settings-page details.disc > summary .vl { grid-column: 1; grid-row: 2; font-size: 12px; }
-  .v2-agent-settings-page details.disc > summary .chev { grid-column: 2; grid-row: 1; }
+  .v2-agent-settings-page details.disc > summary { grid-template-columns: max-content minmax(0, 1fr) auto; gap: 10px; min-height: 48px; padding: 4px 14px 4px 12px; }
+  .v2-agent-settings-page details.disc > summary .vl { justify-content: flex-end; text-align: right; font-size: 12px; color: var(--mu); }
   .v2-agent-settings-page .dbody { padding: 0 12px 12px; }
   .v2-agent-settings-page__pair { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .v2-agent-settings-page__pair > .mu, .v2-agent-settings-page__pair--top > .mu { font-size: 12px; padding-top: 0; }
@@ -316,9 +326,10 @@
 .v2-agent-settings-page .mtop .b.ib { width: 44px; height: 44px; }
 .v2-agent-settings-page .seg.seg--full { display: flex; width: 100%; box-sizing: border-box; }
 .v2-agent-settings-page .seg--full > a, .v2-agent-settings-page .seg--full > button { flex: 1; justify-content: center; height: 44px; }
-.v2-agent-settings-page__phonestatus .st { display: flex; align-items: center; gap: 6px; margin: 12px 4px 0; font: 500 11.5px/1 var(--f-mono); color: var(--mu); }
+.v2-agent-settings-page__phonestatus .st { display: flex; align-items: center; gap: 6px; margin: 12px 4px 10px; font: 500 11.5px/1 var(--f-mono); color: var(--mu); }
 @media (max-width: 760px) {
-  .v2-agent-settings-page .pbody { padding: 12px 16px; }
+  .v2-agent-settings.v2-agent-settings-page { padding: 0; }
+  .v2-agent-settings-page .pbody { padding: 12px; }
   .v2-root .v2-agent-settings-page .v2-agent-skills button { min-height: 44px; }
   .v2-agent-settings-page .v2-agent-settings-page__panel--pad:not([hidden]) { padding: 10px 12px; }
 }
