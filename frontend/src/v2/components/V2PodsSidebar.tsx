@@ -468,7 +468,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
   const newPodButton = (
     <button
       type="button"
-      className="v2-pods__new"
+      className="v2p-b v2p-b-s v2p-ib v2-pods__new"
       onClick={() => {
         setShowCreate((open) => !open);
         setCreateError(null);
@@ -493,7 +493,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
             <button
               ref={searchToggleRef}
               type="button"
-              className="v2-icon-button v2-pods__search-open"
+              className="v2p-b v2p-b-g v2p-ib v2p-b-sm v2-pods__search-open"
               onClick={() => {
                 if (showSearch) {
                   // Closing removes the field that held focus; keep it here.
