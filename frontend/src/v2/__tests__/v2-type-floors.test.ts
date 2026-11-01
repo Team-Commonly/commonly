@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { readV2Css } from '../__testkit__/v2Css';
 
 /**
  * Signal's type floors (ruling h, 2026-09-06), enforced over the whole
@@ -24,10 +25,10 @@ import path from 'path';
  * fixed one fails the second (the allowlist may not carry a selector that no
  * longer violates). Target is an empty list.
  */
-// v2.css plus the per-surface sheets lifted out of it, so a rule that moved
-// file is still held to the floors (R04 moved the BYO page's rules, S4 the board's).
-const CSS = ['../v2.css', '../components/V2AgentBYO.css', '../components/V2PodBoard.css']
-  .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))
+// v2.css plus the surface files lifted out of it (D223): the chat sheets V2App
+// loads, and the per-surface sheets their components import (R04 BYO, S4 board).
+const CSS = [readV2Css(), ...['../components/V2AgentBYO.css', '../components/V2PodBoard.css']
+  .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))]
   .join('\n');
 
 const MONO_FLOOR = 11;
@@ -117,7 +118,9 @@ const ALLOWLIST: string[] = [
   '.v2-chat__composer-hint', // 11.0px — no-mono-family
   '.v2-chat__composer-hint kbd', // 10.5px — mono-below-floor
   '.v2-chat__mode-toggle--header .v2-chat__mode-option', // 11.5px — no-mono-family
-  '.v2-chat__new-pod-action-text, .v2-chat__new-pod-status', // 11.0px — no-mono-family
+  // Split in two by the D223 chat lift (S3d): the status half moved to chat/chat-states.css.
+  '.v2-chat__new-pod-action-text', // 11.0px — no-mono-family
+  '.v2-chat__new-pod-status', // 11.0px — no-mono-family
   '.v2-chat__new-pod-error', // 11.0px — no-mono-family
   '.v2-chat__title-mark', // 11.0px — no-mono-family
   '.v2-msg__file-icon', // 10.0px — no-mono-family
