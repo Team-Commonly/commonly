@@ -41,6 +41,7 @@ const { revokeConnectionGrants } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
 const {
   revokeTokenAtVendor,
+  PROVIDER_REVOKED_MARK,
 }: typeof import('../services/connectionRemovalService') = require('../services/connectionRemovalService');
 // eslint-disable-next-line global-require
 // Typed requires: tsc checks this route against the real module shapes, so an
@@ -645,6 +646,12 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
         errorMessage: 'Connection could not be completed. Try again.',
         errorMessageUserFacing: true,
       },
+      // A half-finished removal's provider-revoked mark describes the token it
+      // revoked, not the one about to replace it behind the same refs. Cleared
+      // here, before the first put, so no removal can read it against new
+      // material and skip the vendor revoke (the operator-key paste clears it
+      // for the same reason).
+      $unset: { [`config.${PROVIDER_REVOKED_MARK}`]: '' },
     },
     { new: true },
   );

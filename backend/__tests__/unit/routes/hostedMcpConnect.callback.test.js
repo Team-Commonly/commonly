@@ -249,7 +249,11 @@ describe('hosted-mcp connect: callback', () => {
           'config.authGeneration': { $exists: false },
           'config.pendingAuth': { $exists: false },
         },
-        { $set: { status: 'error', errorMessage: 'Connection could not be completed. Try again.', errorMessageUserFacing: true } },
+        {
+          $set: { status: 'error', errorMessage: 'Connection could not be completed. Try again.', errorMessageUserFacing: true },
+          // The old token's provider-revoked mark goes before new material does (F28).
+          $unset: { 'config.providerRevokedAt': '' },
+        },
         { new: true },
       ]);
     } finally {
