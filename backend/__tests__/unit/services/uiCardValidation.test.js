@@ -27,6 +27,14 @@ describe('untrusted UI card write validation', () => {
       expect(() => validate(card(`root = Text("hello")\nunused = Action(@OpenUrl("${url}"))`))).not.toThrow();
     }
   });
+  it('applies the same host rule to the Link presentation component', () => {
+    const link = (url) => card(`root = Card("Links", [Link("Open", "${url}", "button")])`);
+    expect(() => validate(link('https://linear.app/x'))).not.toThrow();
+    expect(() => validate(link('https://staging.commonly.me/v2'))).not.toThrow();
+    expect(() => validate(link('https://evil.example/x'))).toThrow(expect.objectContaining({
+      statusCode: 400, code: 'invalid_ui_card',
+    }));
+  });
   it.each([
     'https://linear.app.evil.com', 'https://evilatlassian.net', 'https://atlassian.net.evil.com',
     'https://sentry.io.evil.com', 'http://linear.app/x', 'https://user:pw@linear.app', 'https://linear.app:8443',
