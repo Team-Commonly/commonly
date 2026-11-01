@@ -200,6 +200,12 @@ export const resolveDecisionChoice = (options, value) => {
   const raw = String(value).trim();
   if (/^\d+$/.test(raw)) {
     const index = Number(raw);
+    const labelled = choices.findIndex((label) => label === raw);
+    // A digit-only label is also a position in the list. When the two point at
+    // different options, neither reading is safe to guess, so refuse.
+    if (labelled !== -1 && labelled !== index - 1) {
+      throw new InboxRefusal(`"${raw}" is both option ${labelled + 1}'s label and position ${raw}; refusing to guess. Choose by position (1-${choices.length}) or by a label that is not a number:\n${listing}`);
+    }
     if (index < 1 || index > choices.length) {
       throw new InboxRefusal(`option ${raw} is out of range; choose 1-${choices.length}:\n${listing}`);
     }

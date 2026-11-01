@@ -999,6 +999,35 @@ describe('ack and choose', () => {
     }
   });
 
+  test('choose refuses a digit label that collides with another option\'s position, posting nothing', async () => {
+    const file = writeTokenFile('digit-token', 'choose-secret\n');
+    const fetchImpl = stubFetch({
+      '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': decisionQueue([{ label: '2' }, { label: 'Ship it' }]),
+      '/choose': jsonRes({ status: 'ruled' }),
+    });
+    const io = capture();
+    expect(await runInboxChoose(hex(101), '2', { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(1);
+    expect(io.err.join('\n')).toContain('refusing to guess');
+    expect(fetchImpl.calls.some((c) => c.url.includes('/choose'))).toBe(false);
+  });
+
+  test('a digit label that points at its own position still chooses by position', async () => {
+    const file = writeTokenFile('digit-own-token', 'choose-secret\n');
+    const seen = [];
+    const fetchImpl = stubFetch({
+      '/api/auth/user': jsonRes(USER),
+      '/api/activity/decision-queue': decisionQueue([{ label: 'Ship it' }, { label: '2' }]),
+      '/choose': (url, init) => {
+        seen.push(init);
+        return jsonRes({ status: 'ruled' });
+      },
+    });
+    const io = capture();
+    expect(await runInboxChoose(hex(101), '2', { tokenFile: file }, { fetchImpl, env: {}, ...io })).toBe(0);
+    expect(JSON.parse(seen[0].body)).toEqual({ value: '2' });
+  });
+
   test('choose refuses when the decision is not open on the queue', async () => {
     const file = writeTokenFile('closed-token', 'choose-secret\n');
     const fetchImpl = stubFetch({
