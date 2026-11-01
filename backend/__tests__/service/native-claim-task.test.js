@@ -188,6 +188,19 @@ describe('commonly_claim_task (TASK-340)', () => {
       expect(await Task.findOne({ taskId: 'TASK-001' }).lean()).toMatchObject({ status: 'pending' });
     });
 
+    // CodeRabbit on #3258: in-pod-only is re-read every round, so a grant that
+    // lapses after its tool answered lifts the narrowing mid-turn. The claim's
+    // withdrawal follows the broker result, not the grant that produced it.
+    it('stays withdrawn after a granted tool answered, even once the pod holds no grant', async () => {
+      const names = toolsForConfig({ tools: [...HOSTED_NATIVE_TOOLS] }, false, { brokerCallSeen: true })
+        .map((tool) => tool.function.name);
+      expect(names).not.toContain('commonly_claim_task');
+      expect(names).toContain('commonly_post_message');
+      const result = await claimInPod({ taskId: 'TASK-001' }, { inPodOnly: false, brokerCallSeen: true });
+      expect(result.error).toBe('outsider_writable_grant_tool_denied');
+      expect(await Task.findOne({ taskId: 'TASK-001' }).lean()).toMatchObject({ status: 'pending' });
+    });
+
     // Review of F40 (security): a seat-targeted grant is projected into the
     // agent's turns in every pod, and the bound task's claim is checked against
     // the task's own pod. Once a hosted agent can claim in a pod with a grant,
