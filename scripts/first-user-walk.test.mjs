@@ -276,7 +276,7 @@ test('a missing password fails before any request, reports cleanup as not-run, a
   const counting = (url, init) => { requests += 1; return fetchImpl(url, init); };
   const { exitCode, result } = await runWalk({
     base: 'https://api.commonly.me',
-    env: {},
+    env: { COMMONLY_WALK_EMAIL: 'walk-test@commonly.test' },
     fetchImpl: counting,
     ...dirsFor,
     sleep: async () => {},
@@ -285,9 +285,20 @@ test('a missing password fails before any request, reports cleanup as not-run, a
   });
   assert.equal(exitCode, 1);
   assert.equal(result.overall, 'fail');
+  assert.equal(result.mode, 'signin-prod');
   assert.equal(result.cleanup.status, 'not-run');
   assert.equal(requests, 0);
   assert.equal(existsSync(dirsFor.resultPath), true);
+});
+
+test('prod over plain http is refused before any request, so the password never goes out in cleartext', async () => {
+  const dirsFor = dirs();
+  const { fetchImpl, state } = fakeBackend();
+  const { exitCode, result } = await run(fetchImpl, dirsFor, { base: 'http://api.commonly.me' });
+
+  assert.equal(exitCode, 1);
+  assert.equal(result.mode, 'not-chosen');
+  assert.equal(state.calls.length, 0);
 });
 
 test('a create that throws, with no match in the list, is recorded as unresolved and needs-admin-purge', async () => {

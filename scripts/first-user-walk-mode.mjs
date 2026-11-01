@@ -13,6 +13,8 @@ const PROD_HOSTS = new Set(['api.commonly.me']);
 export const chooseWalkMode = ({ base, env }) => {
   const url = new URL(base);
   const email = env.COMMONLY_WALK_EMAIL || '';
+  // Checked before the prod branch: over plain http the signup path would send the password in cleartext.
+  if (PROD_HOSTS.has(url.hostname) && url.protocol !== 'https:') throw new Error('prod walk requires https; refusing before any request');
   if (url.protocol === 'https:' && PROD_HOSTS.has(url.hostname)) {
     if (!email) throw new Error('prod has no walk signup: set COMMONLY_WALK_EMAIL to an existing test account');
     return { mode: 'signin-prod', email, deleteAccount: false };
