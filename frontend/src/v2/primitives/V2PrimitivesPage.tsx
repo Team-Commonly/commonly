@@ -9,7 +9,7 @@ const V2PrimitivesPage: React.FC = () => (
   <div className="v2p-root" data-testid="v2p-root">
     <div className="v2p-sh v2p-sh--page" style={{ height: '100vh' }}>
       <div className="v2p-rail" aria-hidden="true" />
-      <section className="v2p-pane" aria-label="Primitives">
+      <section className="v2p-pane v2p-pane--scroll" aria-label="Primitives">
         <header className="v2p-ph">
           <h1>Primitives</h1>
           <span className="meta">D223 · TASK-730</span>
@@ -58,6 +58,42 @@ const V2PrimitivesPage: React.FC = () => (
           <div className="v2p-tc">
             <div className="top1"><span>task-730</span><span className="sp" /><span>P0</span></div>
             <div className="tt">Build the shared primitives from the artboard frame</div>
+          </div>
+
+          <div className="v2p-gtitle">columns, empty state</div>
+          <div className="v2p-cols">
+            <div className="v2p-col">
+              <div className="v2p-chd">Todo <span className="mo">1</span><span className="sp" /></div>
+              <div className="v2p-cbody">
+                <div className="v2p-tc">
+                  <div className="top1"><span>task-731</span><span className="sp" /><span>P1</span></div>
+                  <div className="tt">Empty state and popover from the artboard</div>
+                </div>
+              </div>
+            </div>
+            <div className="v2p-col">
+              <div className="v2p-chd">Doing <span className="mo">0</span><span className="sp" /></div>
+              <div className="v2p-cbody">
+                <div className="v2p-empty">
+                  <strong>Nothing in progress</strong>
+                  <span>A claimed task shows up here.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="v2p-gtitle">tiles, popover</div>
+          <div className="v2p-tiles">
+            <button type="button" className="v2p-tile">
+              <span className="tn">Settings</span>
+            </button>
+            <button type="button" className="v2p-tile add">
+              <span className="tn">Add</span>
+            </button>
+          </div>
+          <div className="v2p-pop" role="note" aria-label="Popover example">
+            <div className="v2p-pop-h">Popover title</div>
+            <p>Shown inline here. On the live pages it floats over its anchor.</p>
           </div>
         </div>
 

@@ -148,6 +148,8 @@
   flex-direction: column;
   position: relative;
 }
+/* The showcase is longer than the viewport, so its pane scrolls at every width. */
+.v2p-pane--scroll { overflow-y: auto; }
 .v2p-ph {
   flex: none;
   height: 64px;
@@ -241,6 +243,86 @@
 .v2p-drawer .db { padding: 18px 20px; display: grid; gap: 14px; align-content: start; }
 .v2p-drawer h2 { font: 700 19px/1.25 var(--v2-font-display); letter-spacing: -0.02em; margin: 0; }
 
+/* ---- columns (board lanes) ---- */
+.v2p-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.v2p-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--v2-r-12);
+  background: var(--v2-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  overflow: hidden;
+}
+.v2p-chd {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  font: 600 13px/1 var(--v2-font);
+  color: var(--v2-text-primary);
+}
+.v2p-chd .mo { font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2p-chd .sp { flex: 1; }
+.v2p-cbody { padding: 0 8px 8px; display: grid; gap: 6px; align-content: start; overflow: hidden; }
+
+/* ---- empty state (no artboard class; built from the column and card tokens) ---- */
+.v2p-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 24px 16px;
+  border-radius: var(--v2-r-10);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  background: var(--v2-surface);
+  text-align: center;
+  font-size: 13px;
+  color: var(--v2-text-muted);
+}
+.v2p-empty strong { font-weight: 600; color: var(--v2-text-secondary); }
+
+/* ---- popover ---- */
+.v2p-pop {
+  position: relative;
+  width: 300px;
+  max-width: 100%;
+  padding: 14px;
+  border-radius: var(--v2-r-12);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pop);
+  display: grid;
+  gap: 10px;
+}
+.v2p-pop-h { display: flex; align-items: center; gap: 10px; font: 600 14px/1.2 var(--v2-font); color: var(--v2-text-primary); }
+.v2p-pop p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--v2-text-secondary); }
+
+/* ---- tile (the app grid) ---- */
+.v2p-tile {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 10px;
+  height: 128px;
+  border-radius: var(--v2-r-14);
+  background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b));
+  box-shadow: 0 0 0 1px var(--v2-key-edge), var(--v2-key-inset), 0 6px 14px -10px rgba(16, 24, 40, 0.2);
+  transition: box-shadow 140ms, transform 120ms;
+}
+.v2p-tile:hover { box-shadow: 0 0 0 1px var(--v2-border), var(--v2-key-inset), 0 12px 22px -12px rgba(16, 24, 40, 0.28); }
+.v2p-tile:focus-visible { box-shadow: 0 0 0 2px var(--v2-accent); }
+.v2p-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.v2p-tile .tn { font: 600 13px/1.2 var(--v2-font); color: var(--v2-ink-2); }
+.v2p-tile.add { background: transparent; box-shadow: none; border: 1.5px dashed var(--v2-border); color: var(--v2-text-muted); }
+.v2p-tile.add:focus-visible { box-shadow: 0 0 0 2px var(--v2-accent); }
+.v2p-tile.add .tn { color: var(--v2-text-muted); font-weight: 500; }
+
 /* ---- 390 (the artboard's phone frame): the rail goes, rows stack, the drawer
    becomes a full sheet, and the header wraps instead of overflowing ---- */
 @media (max-width: 480px) {
@@ -252,4 +334,6 @@
   .v2p-body { padding: 16px 14px; }
   .v2p-lrow { grid-template-columns: minmax(0, 1fr); min-height: 48px; padding: 8px 12px; }
   .v2p-drawer:not(.v2p-drawer--inline) { width: 100%; border-radius: 0; }
+  .v2p-cols { grid-template-columns: minmax(0, 1fr); }
+  .v2p-tile { height: 104px; }
 }
