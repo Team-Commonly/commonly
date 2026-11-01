@@ -315,7 +315,7 @@ describe('Connectors page: tools', () => {
       const lines = within(aside).getAllByRole('listitem');
       expect(lines.map((line) => line.textContent)).toEqual([
         'Scout · github.list_issues · 成功2分钟前',
-        'Scout · github.comment_on_issue · 已拒绝5分钟前',
+        'Scout · github.comment_on_issue · 已拒绝 · 此席位不在授权范围内5分钟前',
         'Scout · github.comment_on_issue · 等待人工确认7分钟前',
         'Scout · github.close_issue · 已回答8分钟前',
       ]);
@@ -386,7 +386,7 @@ describe('Connectors page: tools', () => {
     const lines = within(aside).getAllByRole('listitem');
     expect(lines.map((line) => line.textContent)).toEqual([
       'Scout · github.list_issues · ok2m ago',
-      'Scout · github.comment_on_issue · refused5m ago',
+      'Scout · github.comment_on_issue · refused · this seat is outside the grant audience5m ago',
       'Scout · github.comment_on_issue · awaiting a person7m ago',
       'Scout · github.close_issue · answered8m ago',
     ]);
@@ -404,6 +404,28 @@ describe('Connectors page: tools', () => {
     // The arguments never reach the page: only the digest does, and it is not rendered.
     expect(aside.textContent).not.toContain('a'.repeat(64));
     expect(axios.get).toHaveBeenCalledWith('/api/grants/grant_live/calls', expect.objectContaining({ headers: expect.any(Object) }));
+  });
+
+  it('TASK-188: a failed call says why it failed, and a code with no label shows as-is', async () => {
+    const failed = {
+      ...trail,
+      calls: [
+        { ...trail.calls[0], callId: 'f1', outcome: 'failed', reason: 'upstream_tool_error', at: iso(-120000) },
+        { ...trail.calls[0], callId: 'f2', outcome: 'failed', reason: 'some_new_code', at: iso(-300000) },
+        { ...trail.calls[0], callId: 'f3', outcome: 'ok', reason: 'provider_unreachable', at: iso(-420000) },
+        { ...trail.calls[0], callId: 'f4', outcome: 'failed', reason: 'constructor', at: iso(-600000) },
+      ],
+    };
+    mockTools({ trails: { grant_live: failed } });
+    renderPage();
+    const { aside } = await openRow('GitHub', 'View GitHub in Launch pod');
+    await waitFor(() => expect(within(aside).getAllByRole('listitem')).toHaveLength(4));
+    expect(within(aside).getAllByRole('listitem').map((line) => line.textContent)).toEqual([
+      'Scout · github.list_issues · failed · the provider tool returned an error2m ago',
+      'Scout · github.list_issues · failed · some_new_code5m ago',
+      'Scout · github.list_issues · ok7m ago',
+      'Scout · github.list_issues · failed · constructor10m ago',
+    ]);
   });
 
   it('TASK-050: a human member in the audience is named, not called "an agent"', async () => {
@@ -907,6 +929,19 @@ describe('Connectors page: tools', () => {
     expect(tools.querySelector('.v2-cx-tile')).toBeNull();
     expect(document.querySelector('.v2-connector-row')).toBeNull();
     expect(meta()).toHaveTextContent('0 on · 0 available');
+  });
+
+  it('TASK-752: a revoked grant whose catalogue entry is gone is not listed in Tools, only the live one is', async () => {
+    // No catalogue entry covers either grant, so both are orphans. Only the live one is
+    // still access; the revoked one must not draw a row beside it.
+    mockTools({ entries: [], grants: [grantLive, grantRevoked] });
+    renderPage();
+
+    const tools = await screen.findByRole('region', { name: 'Tools' });
+    await settle();
+    const rows = tools.querySelectorAll('.v2-connector-row');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).not.toHaveClass('v2-connector-row--dead');
   });
 
   /**

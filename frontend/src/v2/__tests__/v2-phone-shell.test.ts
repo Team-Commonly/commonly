@@ -39,6 +39,21 @@ describe('D223 phone shell', () => {
     expect(css.indexOf('.v2-feature__body {')).toBeLessThan(at);
   });
 
+  test('agent settings and memory pages get the same 52px bar inside the 760px query', () => {
+    const agentCss = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
+    const tail = agentCss.slice(agentCss.indexOf('D223 (TASK-730)'));
+    expect(tail).toMatch(/\.v2-agent-settings > \.v2-page-head,\s*\.v2-agent-settings > \.v2-agent-memory__head\s*\{[^}]*min-height:\s*52px/);
+    const at = agentCss.indexOf('D223 (TASK-730)');
+    expect(agentCss.slice(0, at).lastIndexOf('@media')).toBe(agentCss.lastIndexOf('@media (max-width: 760px)', at));
+  });
+
+  test('the memory bar lets the name shrink and drops the tab nav margin so it stays 52px', () => {
+    const agentCss = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
+    const tail = agentCss.slice(agentCss.indexOf('D223 (TASK-730)'));
+    expect(tail).toMatch(/__ident\s*\{\s*min-width:\s*0/);
+    expect(tail).toMatch(/__seg\s*\{[^}]*margin-top:\s*0/);
+  });
+
   test('the settings head spans the pane and only the body scrolls', () => {
     expect(settingsCss).toMatch(/\.v2-feature--settings > \.v2-feature__body\s*\{[^}]*padding:\s*0/);
     expect(settingsCss).toMatch(/\.v2-feature--settings \.v2-feature__legacy\s*\{[^}]*max-width:\s*none/);

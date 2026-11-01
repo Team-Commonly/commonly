@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
-import V2PageHead from '../components/V2PageHead';
+import V2Avatar from '../components/V2Avatar';
 import V2AgentRuntimeGrants, { Runtime } from '../components/V2AgentRuntimeGrants';
 import { AgentControlLoader } from '../components/V2AgentControlSection';
 import { AgentConnection } from '../utils/agentConnection';
@@ -254,13 +254,18 @@ const V2AgentSettingsPage: React.FC = () => {
 
   return (
     <main className="v2-agent-settings">
-      <V2PageHead title={access.displayName || agentName} actions={<Link to="/v2/agents">{t('agentSettings.yourTeam')}</Link>} />
-      <div className="v2-agent-settings__column">
-        <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
+      <header className="v2-agent-settings__head">
+        <V2Avatar name={access.displayName || agentName} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
+        <div className="v2-agent-settings__ident">
+          <h1>{access.displayName || agentName}</h1>
+        </div>
+        <nav className="v2-agent-settings__tabs v2-agent-settings__seg" aria-label={t('agentSettings.tabs')}>
           <Link to={`/v2/agent/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}`}>{t('agentSettings.profile')}</Link>
-          <span aria-current="page">{t('agentSettings.settings')}</span>
           <Link to={`/v2/agents/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId)}/memory`}>{t('agentSettings.memory', { defaultValue: 'Memory' })}</Link>
+          <span aria-current="page">{t('agentSettings.settings')}</span>
         </nav>
+      </header>
+      <div className="v2-agent-settings__column">
         <AgentControlLoader agentName={agentName} instanceId={instanceId}
           refreshNonce={connectionRefreshNonce} onConnectionState={onConnectionState} />
         <V2AgentWakePods agentName={agentName} instanceId={instanceId} updatePod={updatePod} onRemoved={onRemoved} />
