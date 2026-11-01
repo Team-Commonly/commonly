@@ -13986,7 +13986,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 /* The frame fixes the id row at 16px; its 20px avatar overflows it instead of growing the card. */
 .v2-board__card-kicker, .v2-board__card-kicker .v2-board__owner-line { height: 16px; }
 .v2-board__card-spacer { flex: 1 1 auto; }
-.v2-board__card-kicker .v2-board__owner-line { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
+.v2-board__card-kicker .v2-board__owner-line { min-width: 0; flex: 0 1 auto; overflow: visible; white-space: nowrap; font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-tertiary); }
 .v2-board__card-title {
   font: 500 13px/18px var(--v2-font); display: -webkit-box; -webkit-line-clamp: 2;
   -webkit-box-orient: vertical; overflow: hidden;
