@@ -2,7 +2,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import V2AgentMemory, { groupSections, journalDay } from '../agents/V2AgentMemory';
+import V2AgentMemory, { groupSections, journalDay, latestDay } from '../agents/V2AgentMemory';
 
 jest.mock('axios', () => {
   const mock = {
@@ -142,6 +142,21 @@ describe('V2AgentMemory', () => {
     expect(screen.queryByText('No memory recorded yet.')).toBeNull();
   });
 
+  it('names a runtime-hosted agent by its instance, never the runtime, before its profile loads', async () => {
+    axios.get.mockImplementation((url) => (url.startsWith('/api/agent-memory')
+      ? Promise.reject(Object.assign(new Error('403'), { response: { status: 403 } }))
+      : new Promise(() => {})));
+    render(
+      <MemoryRouter initialEntries={['/v2/agents/openclaw/aria/memory']}>
+        <Routes>
+          <Route path="/v2/agents/:agentName/:instanceId/memory" element={<V2AgentMemory />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent("Only aria's owner and admins can read its memory."));
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('aria');
+  });
+
   it('says the load failed, not that the agent has no memory, when the request errors', async () => {
     axios.get.mockRejectedValue(new Error('Network Error'));
     renderPage();
@@ -224,6 +239,14 @@ describe('V2AgentMemory', () => {
     expect(current()).toEqual(['Rules1']);
     fireEvent.click(screen.getByRole('link', { name: /Journal/ }));
     expect(current()).toEqual(['Journal1']);
+  });
+});
+
+describe('latestDay', () => {
+  it('takes the newest ISO day across daily and cycles, whatever their order', () => {
+    const sec = (headers) => ({ key: 'x', label: 'x', updatedAt: null, notes: headers.map((header) => ({ header, snippet: '' })) });
+    expect(latestDay([sec(['2026-10-25', '2026-10-24']), sec(['2026-10-28'])])).toBe('2026-10-28');
+    expect(latestDay([sec(['Heartbeat 3'])])).toBe('Heartbeat 3');
   });
 });
 

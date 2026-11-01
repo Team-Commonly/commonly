@@ -99,6 +99,14 @@ const countLabel = (n: number) => (n > 0 ? String(n) : '—');
 
 // Journal headers arrive as ISO days (2026-10-28); the frame prints "Oct 28".
 const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+// The newest ISO day across the journal's sections (daily and cycles each keep
+// their own order), else the first header.
+export const latestDay = (sections: GroupedSection[]) => {
+  const headers = sections.flatMap((sec) => sec.notes.map((n) => n.header.trim()));
+  const days = headers.filter((h) => ISO_DAY.test(h)).sort();
+  return days.length ? days[days.length - 1] : (headers[0] ?? '');
+};
+
 export const journalDay = (header: string, language: string) => {
   const m = ISO_DAY.exec(header.trim());
   if (!m) return header;
@@ -199,7 +207,9 @@ const V2AgentMemory: React.FC = () => {
   const memoryLabel = t('agentSettings.memory', { defaultValue: 'Memory' });
   const searchLabel = t('agentProfile.memory.search', { defaultValue: 'Search memory' });
   const groupLabel = (id: GroupId, fallback: string) => t(`agentProfile.memory.groups.${id}`, { defaultValue: fallback });
-  const agentLabel = head?.displayName || agentName;
+  // Until the profile loads, name the agent by its instance: for runtime-hosted
+  // agents the route's agentName is the runtime ("openclaw"), never the agent.
+  const agentLabel = head?.displayName || (instanceId && instanceId !== 'default' ? instanceId : agentName);
   const shellMessage = state === 'private'
     ? t('agentProfile.memory.private', { name: agentLabel })
     : t('agentProfile.memory.loadFailed');
@@ -220,9 +230,9 @@ const V2AgentMemory: React.FC = () => {
             <MemIcon name="back" size={17} />
           </button>
         )}
-        <V2Avatar name={head?.displayName || agentName} src={head?.profilePicture} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
+        <V2Avatar name={agentLabel} src={head?.profilePicture} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
         <div className="v2m-ahead">
-          <h1>{head?.displayName || agentName}</h1>
+          <h1>{agentLabel}</h1>
           {head && <p className="st">{t('agentProfile.hero.activeInPods', { count: head.pods })}</p>}
         </div>
         <span className="sp" />
@@ -231,8 +241,8 @@ const V2AgentMemory: React.FC = () => {
         <button
           type="button"
           className="v2p-b v2p-b-s v2p-ib"
-          title={t('agentProfile.hero.talkTo', { name: head?.displayName || agentName })}
-          aria-label={t('agentProfile.hero.talkTo', { name: head?.displayName || agentName })}
+          title={t('agentProfile.hero.talkTo', { name: agentLabel })}
+          aria-label={t('agentProfile.hero.talkTo', { name: agentLabel })}
           onClick={() => { void talkTo(); }}
           disabled={openingRoom}
         >
@@ -311,7 +321,7 @@ const V2AgentMemory: React.FC = () => {
                         <span className="v2m-ct">{group.sections.reduce((n, sec) => n + sec.notes.length, 0)}</span>
                       </span>
                       {group.id === 'journal' && (
-                        <span className="v2m-latest">{journalDay(group.sections[0]?.notes[0]?.header ?? '', i18n.language)}</span>
+                        <span className="v2m-latest">{journalDay(latestDay(group.sections), i18n.language)}</span>
                       )}
                       {updated && (
                         <span className="v2m-saved">
