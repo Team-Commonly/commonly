@@ -28,6 +28,7 @@ import { getLastTurn } from '../lib/session-store.js';
 import { getAdapter, providerKeyEnvNames } from '../lib/adapters/index.js';
 import {
   installDaemonService,
+  installSummary,
   uninstallDaemonService,
   startDaemonService,
   stopDaemonService,
@@ -432,7 +433,7 @@ Examples:
 
   daemon
     .command('install')
-    .description('Register the daemon as a login service (launchd/systemd) so it survives reboots')
+    .description('Register the daemon as a login service (launchd/systemd); on Linux, also turn on lingering so it starts at boot')
     .action(async () => {
       try {
         // A service without a credential just crash-loops at boot.
@@ -442,12 +443,12 @@ Examples:
         // adapter. The keys are captured here because this is the only moment
         // the operator's shell is in reach; the ones that are missing are named
         // by installDaemonService rather than left to be discovered per seat.
-        await installDaemonService({
+        const installed = await installDaemonService({
           ...serviceDeps(),
           providerKeyEnvNames: providerKeyEnvNames(),
           optionalEnvNames: [UPDATE_CHECK_OPT_OUT_ENV],
         });
-        console.log('The daemon now starts at login and is kept alive. Uninstall with: commonly daemon uninstall');
+        console.log(installSummary(installed));
       } catch (error) {
         console.error(`Daemon install failed: ${error.message}`);
         process.exitCode = 1;

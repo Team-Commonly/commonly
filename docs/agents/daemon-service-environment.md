@@ -8,7 +8,7 @@ that installed it, and that has cost a fleet of seats at least once.
 
 ## What the service is
 
-`commonly daemon install` registers the resident daemon so it survives reboots:
+`commonly daemon install` registers the resident daemon as a login service:
 
 | platform | file | manager |
 |---|---|---|
@@ -17,6 +17,14 @@ that installed it, and that has cost a fleet of seats at least once.
 
 Both run the exact interpreter and CLI entry that performed the install
 (resolved at install time), then `daemon run --foreground`.
+
+A login service starts at login. On Linux the install also runs `loginctl
+enable-linger` for you, which starts your systemd user manager, and so the
+daemon, at boot. It reports a boot start only when logind's linger file for your
+user exists. If lingering is refused, the daemon still runs, starts at your next
+login, and the install prints the command to run: `sudo loginctl enable-linger
+<you>`. A macOS LaunchAgent starts at your GUI login. `commonly daemon uninstall`
+leaves lingering on, since other user services may rely on it.
 
 ## The environment it carries
 

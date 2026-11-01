@@ -11,8 +11,8 @@
  */
 
 import { randomBytes } from 'crypto';
-import { renameSync, unlinkSync, writeFileSync } from 'fs';
-import { homedir } from 'os';
+import { existsSync, renameSync, unlinkSync, writeFileSync } from 'fs';
+import { homedir, userInfo } from 'os';
 import { join, dirname, resolve } from 'path';
 
 export const LAUNCHD_LABEL = 'me.commonly.daemon';
@@ -196,6 +196,59 @@ WantedBy=default.target
 `;
 };
 
+// D171: a systemd user unit is started by the user's own systemd manager, and
+// without lingering that manager starts at the user's login, not at boot. On a
+// headless box nobody logs in to, the daemon would then stay down after every
+// reboot. logind records lingering as one file per user, so that file is what
+// says the daemon starts at boot, not the exit code of the call that asked.
+// logind names the file cescape(user name) (src/basic/escape.c): the named
+// escapes, and octal for any other byte below a space or from 127 up.
+const NAMED_ESCAPES = {
+  7: 'a', 8: 'b', 12: 'f', 10: 'n', 13: 'r', 9: 't', 11: 'v', 92: '\\', 34: '"', 39: "'",
+};
+const cescape = (value) => [...Buffer.from(value, 'utf8')].map((byte) => {
+  if (NAMED_ESCAPES[byte]) return `\\${NAMED_ESCAPES[byte]}`;
+  if (byte < 32 || byte >= 127) return `\\${byte.toString(8).padStart(3, '0')}`;
+  return String.fromCharCode(byte);
+}).join('');
+export const lingerFile = (username) => join('/var/lib/systemd/linger', cescape(username));
+
+// The command is printed for a person to paste into a shell, so a user name the
+// shell would split or expand is single-quoted. The call above it takes argv.
+const shellWord = (value) => (/^[A-Za-z0-9._@%+=:,/-]+$/.test(value)
+  ? value : `'${value.replace(/'/g, "'\\''")}'`);
+
+// logind before v253 passes the escaped file name to manager_add_user_by_name at
+// boot, so it never starts a user whose name needs escaping. The version isn't read,
+// so for such a name the file alone doesn't prove a boot start.
+const lingeringStartsAtBoot = (username, warn) => {
+  if (cescape(username) === username) return true;
+  warn(`Lingering is on for ${username}, but systemd before v253 cannot start a user whose name needs escaping at boot, so the daemon is only sure to start when ${username} logs in.`);
+  return false;
+};
+
+const ensureLinger = async ({ username, existsFile, execCmd, warn }) => {
+  if (existsFile(lingerFile(username))) return lingeringStartsAtBoot(username, warn);
+  let failure = '';
+  try {
+    // --no-ask-password: the install must not stop at a polkit prompt; a refusal
+    // is answered below with the command to run instead.
+    await execCmd(['loginctl', '--no-ask-password', 'enable-linger', username]);
+  } catch (error) {
+    failure = ` (${error.message})`;
+  }
+  if (existsFile(lingerFile(username))) return lingeringStartsAtBoot(username, warn);
+  warn(`Lingering is off for ${username}${failure}, so the daemon starts when ${username} logs in, not at boot. On a machine nobody logs in to, it stays down after a reboot. To start it at boot, run: sudo loginctl enable-linger ${shellWord(username)}`);
+  return false;
+};
+
+// The line the install command ends with. "Survives reboots" is said only when
+// the service starts at boot: a LaunchAgent, like a systemd user unit without
+// lingering, starts at login.
+export const installSummary = ({ startsAtBoot }) => (startsAtBoot
+  ? 'The daemon now starts at boot and is kept alive, so it survives reboots. Uninstall with: commonly daemon uninstall'
+  : 'The daemon now starts at login and is kept alive. Uninstall with: commonly daemon uninstall');
+
 export const installDaemonService = async ({
   platform = process.platform,
   home = homedir(),
@@ -213,6 +266,11 @@ export const installDaemonService = async ({
   execCmd, // async (argv: string[]) => void — throws on failure
   chmod = () => {},
   ensureFile,
+  existsFile = existsSync,
+  // Resolved only on Linux, and only after the unit is up: userInfo() throws
+  // for a uid with no passwd entry.
+  username,
+  lookupUsername = () => userInfo().username,
   log = () => {},
   warn = log,
 }) => {
@@ -228,6 +286,7 @@ export const installDaemonService = async ({
   const providerEnv = providerEnvPairs({ names: [...new Set([...providerKeyEnvNames, ...optionalEnvNames])], env });
   const missing = missingProviderKeys({ names: providerKeyEnvNames, env });
 
+  let startsAtBoot = false;
   if (target.kind === 'launchd') {
     // The mode and the atomicity are the WRITER's, not an ordering rule here:
     // `writeServiceFile` creates a 0600 sibling and renames it over the target,
@@ -245,12 +304,22 @@ export const installDaemonService = async ({
     // the environment just written, the way launchd's unload/load does.
     await execCmd(['systemctl', '--user', 'enable', SYSTEMD_UNIT]);
     await execCmd(['systemctl', '--user', 'restart', SYSTEMD_UNIT]);
+    // After the unit is up, so a refused linger leaves a working login service.
+    let lingerUser = username;
+    if (!lingerUser) {
+      try {
+        lingerUser = lookupUsername();
+      } catch (error) {
+        warn(`Could not read this account's user name (${error.message}), so lingering could not be checked: the daemon starts at login, and at boot only if lingering is already on for this account.`);
+      }
+    }
+    if (lingerUser) startsAtBoot = await ensureLinger({ username: lingerUser, existsFile, execCmd, warn });
   }
   for (const name of missing) {
     warn(`${name} is not set in this shell, so it is NOT in the service file. A seat whose adapter needs it will fail to start; export it and re-run: commonly daemon install (docs/agents/daemon-service-environment.md)`);
   }
   log(`Installed ${target.kind} service (${target.file}). Logs: ${daemonLogPath(home)}`);
-  return target;
+  return { ...target, startsAtBoot };
 };
 
 export const uninstallDaemonService = async ({
