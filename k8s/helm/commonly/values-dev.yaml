@@ -443,14 +443,14 @@ hostedMcp:
     # Remove each line once its staging walk passes.
     - atlassian
     # Sentry passed connect and read: C0-C2 on staging with a non-admin user (10-23), C3 live
-    # on prod (10-25, again 10-31 and 11-01), so it is offered. TASK-308 still owes the
-    # write-with-confirm arm (C6) and a revoke taking effect (C9).
+    # on prod (10-25), so it is offered. TASK-308 still owes the write-with-confirm arm (C6)
+    # and a revoke taking effect (C9). Its allowlist key left the overlay secret with this change.
     # Added by #2429. Hidden until each is walked end to end.
     - notion
     - gitlab
     - supabase
     # Airtable passed a live prod walk on 10-31 (TASK-307: connect, a list_bases call,
-    # grant revoke, disconnect), so it is offered.
+    # grant revoke, disconnect), so it is offered. Its allowlist key left the overlay secret too.
     # Hidden until a fresh non-admin account walks connect, grant, call and
     # refusal end to end (TASK-290). That account joins the runner-only allowlist overlay (#2950).
     - github-mcp
