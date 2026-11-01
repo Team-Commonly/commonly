@@ -53,6 +53,21 @@ describe('D223 Signal tokens in v2.css', () => {
     expect(valueIn(media, 'v2-accent-fill-a')).toBe('#3d5ef2');
   });
 
+  test('design-system/tokens.css mirrors the light Signal tokens under the --c- names', () => {
+    const ds = fs.readFileSync(path.join(__dirname, '../../../design-system/tokens.css'), 'utf8');
+    const pairs: Array<[string, string]> = [
+      ['v2-ink-2', 'c-ink-2'], ['v2-fill-a', 'c-fill-a'], ['v2-fill-b', 'c-fill-b'],
+      ['v2-fill-edge', 'c-fill-edge'], ['v2-accent-fill-a', 'c-accent-fill-a'],
+      ['v2-accent-fill-b', 'c-accent-fill-b'], ['v2-key-a', 'c-key-a'], ['v2-key-b', 'c-key-b'],
+      ['v2-key-edge', 'c-key-edge'], ['v2-shadow-pane', 'c-shadow-pane'],
+      ['v2-shadow-pop', 'c-shadow-pop'], ['v2-scrim', 'c-scrim'],
+      ['v2-r-8', 'c-r-8'], ['v2-r-14', 'c-r-14'],
+    ];
+    pairs.forEach(([v2, ds_name]) => {
+      expect({ name: ds_name, value: valueIn(ds, ds_name) }).toEqual({ name: ds_name, value: valueIn(light, v2) });
+    });
+  });
+
   test('the radius scale is additive: the old --v2-radius-* aliases keep their values', () => {
     expect(valueIn(light, 'v2-radius-sm')).toBe('4px');
     expect(valueIn(light, 'v2-radius-lg')).toBe('6px');

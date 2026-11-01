@@ -89,6 +89,30 @@
   --c-radius-lg:       6px;      /* the content card, modals, the login card */
   --c-radius-pill:     999px;
 
+  /* D223 Signal primitives (TASK-730), mirror of v2.css. Light values from the
+     d215 artboard :root; dark values sit in the dark block below. */
+  --c-ink-2:           #1d2433;
+  --c-fill-a:          #333c4e;
+  --c-fill-b:          #161d2c;
+  --c-fill-edge:       #0b101b;
+  --c-on-fill:         #ffffff;
+  --c-accent-fill-a:   #2e50e2;
+  --c-accent-fill-b:   #1b3bc6;
+  --c-key-a:           #ffffff;
+  --c-key-b:           #f4f5f7;
+  --c-key-edge:        rgba(15, 23, 42, 0.14);
+  --c-key-inset:       inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(16, 24, 40, 0.06);
+  --c-shadow-pane:     0 0 0 1px rgba(16, 24, 40, 0.07), 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 28px -20px rgba(16, 24, 40, 0.18);
+  --c-shadow-pop:      0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28);
+  --c-scrim:           rgba(16, 24, 40, 0.18);
+  --c-font-display:    "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+  --c-r-6:  6px;
+  --c-r-8:  8px;
+  --c-r-9:  9px;
+  --c-r-10: 10px;
+  --c-r-12: 12px;
+  --c-r-14: 14px;
+
   /* ---------- Spacing scale ---------- */
   --c-space-xs:  4px;
   --c-space-sm:  8px;
