@@ -591,9 +591,27 @@ const listAgents = async (opts, deps) => {
  * reads as idle. An explicit --instance-id is used as given.
  */
 export const resolveLogsSeat = async (client, podId, typed, instanceId) => {
-  if (instanceId) return { agentName: typed, instanceId };
-  const want = String(typed).trim().replace(/^@/, '').toLowerCase();
-  const { agents = [] } = await client.get(`/api/registry/pods/${encodeURIComponent(podId)}/agents`);
+  // Activity is stored under the bare agentName, never an @ spelling.
+  const bare = String(typed).trim().replace(/^@/, '');
+  if (instanceId) return { agentName: bare, instanceId };
+  const want = bare.toLowerCase();
+  let agents;
+  try {
+    ({ agents = [] } = await client.get(`/api/registry/pods/${encodeURIComponent(podId)}/agents`));
+  } catch (err) {
+    // The default instance is still worth reading when the roster isn't.
+    return {
+      agentName: bare,
+      instanceId: 'default',
+      note: `The pod roster couldn't be read (${err.message}), so instance default was read for '${bare}'.`,
+    };
+  }
+  const seatOf = (inst) => ({ agentName: inst.name || inst.agentName, instanceId: inst.instanceId || 'default' });
+  // An @handle routes to one seat, so it wins over another seat's instance of the same name.
+  if (String(typed).trim().startsWith('@')) {
+    const byHandle = agents.filter((inst) => typeof inst.mention === 'string' && inst.mention.toLowerCase() === want);
+    if (byHandle.length === 1) return seatOf(byHandle[0]);
+  }
   const named = (inst) => [inst.mention, inst.name || inst.agentName, inst.instanceId !== 'default' && inst.instanceId]
     .some((n) => typeof n === 'string' && n.toLowerCase() === want);
   const hits = agents.filter(named);
@@ -606,12 +624,12 @@ export const resolveLogsSeat = async (client, podId, typed, instanceId) => {
     // A typo must not read like an idle seat, so say what was read instead.
     const handles = agents.map((inst) => inst.mention).filter(Boolean).map((m) => `@${m}`).join(', ');
     return {
-      agentName: typed,
+      agentName: bare,
       instanceId: 'default',
       note: `'${typed}' is not in this pod's roster, so instance default was read.${handles ? ` Seats here: ${handles}` : ''}`,
     };
   }
-  return { agentName: hits[0].name || hits[0].agentName, instanceId: hits[0].instanceId || 'default' };
+  return seatOf(hits[0]);
 };
 
 /**

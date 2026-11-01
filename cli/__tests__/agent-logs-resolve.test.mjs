@@ -45,6 +45,32 @@ describe('resolveLogsSeat', () => {
     expect(seat.note).toBe("'embr' is not in this pod's roster, so instance default was read. Seats here: @cto-walk-1016-cto-walk, @openclaw-pixel");
   });
 
+  test('an exact @handle wins over a seat whose instance has the same name', async () => {
+    // @bob routes to the seat whose handle is bob, so logs read that seat.
+    const instanceBob = { name: 'x', instanceId: 'bob', mention: 'x-bob' };
+    const handleBob = { name: 'bob', instanceId: 'default', mention: 'bob' };
+    await expect(resolveLogsSeat(roster([instanceBob, handleBob]), 'pod-1', '@bob'))
+      .resolves.toEqual({ agentName: 'bob', instanceId: 'default' });
+    // Without the @, both seats answer to the name, so it stays a choice.
+    await expect(resolveLogsSeat(roster([instanceBob, handleBob]), 'pod-1', 'bob')).rejects.toThrow(/2 seats are named 'bob'/);
+  });
+
+  test('a name the roster lacks is read without its @, and the notice keeps what was typed', async () => {
+    const seat = await resolveLogsSeat(roster([walk]), 'pod-1', '@ember');
+    expect(seat).toMatchObject({ agentName: 'ember', instanceId: 'default' });
+    expect(seat.note).toMatch(/^'@ember' is not in this pod's roster/);
+  });
+
+  test('a roster read that fails still reads the default instance, and says why', async () => {
+    const client = { get: jest.fn(async () => { throw new Error('HTTP 502'); }) };
+    const seat = await resolveLogsSeat(client, 'pod-1', '@ember');
+    expect(seat).toEqual({
+      agentName: 'ember',
+      instanceId: 'default',
+      note: "The pod roster couldn't be read (HTTP 502), so instance default was read for 'ember'.",
+    });
+  });
+
   test('typing "default" does not match every seat on the default instance', async () => {
     const seat = await resolveLogsSeat(roster([ember, { ...ember, name: 'rivet', mention: 'rivet' }]), 'pod-1', 'default');
     expect(seat).toMatchObject({ agentName: 'default', instanceId: 'default' });

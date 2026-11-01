@@ -49,3 +49,30 @@ test('each agent row carries the handle its @mentions route to', async () => {
   const byInstance = Object.fromEntries(res.body.agents.map((a) => [a.instanceId, a.mention]));
   expect(byInstance).toEqual({ 'cto-walk': 'cto-walk-1016-cto-walk', default: 'rivet' });
 });
+
+test('a mention map that fails to load leaves every row in place, with no handle', async () => {
+  const agents = [['cto-walk-1016', 'cto-walk'], ['rivet', 'default']];
+  const users = await Promise.all(agents.map(([agentName, instanceId]) => (
+    AgentIdentityService.getOrCreateAgentUser(agentName, { instanceId })
+  )));
+  const pod = await Pod.create({
+    name: 'Roster pod', type: 'chat', createdBy: mockOwner.id, members: [mockOwner.id, ...users.map((u) => u._id)],
+  });
+  await Promise.all(agents.map(([agentName, instanceId]) => AgentInstallation.create({
+    agentName, instanceId, podId: pod._id, installedBy: mockOwner.id, status: 'active', version: '1.0.0',
+  })));
+  const mentions = require('../../services/agentMentionService');
+  const load = jest.spyOn(mentions, 'loadPodMentionMap').mockRejectedValueOnce(new Error('mongo blip'));
+  const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+  try {
+    const res = await request(app).get(`/api/registry/pods/${pod._id}/agents`).expect(200);
+
+    expect(load).toHaveBeenCalled();
+    const byInstance = Object.fromEntries(res.body.agents.map((a) => [a.instanceId, a.mention]));
+    expect(byInstance).toEqual({ 'cto-walk': '', default: '' });
+  } finally {
+    load.mockRestore();
+    warn.mockRestore();
+  }
+});
