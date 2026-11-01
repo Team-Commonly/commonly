@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { HistorySearchState, V2Message, V2Start } from '../hooks/useV2PodDetail';
 import { UseV2ThreadState } from '../hooks/useV2ThreadState';
@@ -162,6 +162,21 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   messagesEndRef,
 }) => {
   const { t } = useTranslation();
+  // Loading → content: whatever replaces the spinner fades in once, over
+  // --v2-dur. A load that never showed the spinner (an older page, a
+  // reconnect catch-up) gets nothing, and a re-render never replays it.
+  const showSpinner = loading && messages.length === 0;
+  const spinnerShownRef = useRef(showSpinner);
+  const [revealed, setRevealed] = useState(false);
+  useLayoutEffect(() => {
+    if (showSpinner) {
+      spinnerShownRef.current = true;
+      setRevealed(false);
+    } else if (spinnerShownRef.current) {
+      spinnerShownRef.current = false;
+      setRevealed(true);
+    }
+  }, [showSpinner]);
   // Expanded threads show the newest MAX_EXPANDED_REPLIES; "N more replies"
   // reveals the rest for that root (walk-3 §3).
   const [expandedAll, setExpandedAll] = useState<Set<string>>(() => new Set());
@@ -258,7 +273,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
   };
 
   return (
-    <div className="v2-chat__messages" ref={messagesContainerRef}>
+    <div className={`v2-chat__messages${revealed ? ' v2-chat__messages--reveal' : ''}`} ref={messagesContainerRef}>
       {/* History edge: one mono line. Loads on scroll (observer in V2Thread);
           the button form stays reachable by keyboard. */}
       <div className="v2-thread__edge" ref={edgeRef} data-state={loadingOlder ? 'loading' : hasMore ? 'more' : messages.length > 0 ? 'beginning' : 'empty'}>
@@ -271,7 +286,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
         ) : null}
       </div>
       {error && <div className="v2-chat__error">{error}</div>}
-      {loading && messages.length === 0 && <div className="v2-empty"><span className="v2-spinner" /></div>}
+      {showSpinner && <div className="v2-empty"><span className="v2-spinner" /></div>}
       {starterPanel}
       {emptyState}
       {threadView.map((item, index, view) => {

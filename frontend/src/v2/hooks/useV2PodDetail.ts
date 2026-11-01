@@ -69,6 +69,10 @@ export interface V2Message {
     code: 'MENTION_NOT_IN_POD'; handle: string; message: string;
     pods?: Array<{ id: string; name: string }>;
   }>;
+  // Client-only, never sent or stored: when this row arrived live (a socket
+  // broadcast, or this tab's own send). History, a reconnect catch-up and
+  // older pages never carry it, so only a live arrival plays the enter motion.
+  liveArrivedAt?: number;
   // Sprint B5: per-message reactions, aggregated server-side.
   // Each entry is `{emoji, count, mine, users?}` — `users` is the
   // Google-Chat-style attribution list decorated by
@@ -693,7 +697,7 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
       if (normalized.pod_id && normalized.pod_id !== podId) return;
       setMessages((prev) => {
         if (prev.some((m) => m.id && m.id === normalized.id)) return prev;
-        const next = chronologicalMessages([...prev, normalized]);
+        const next = chronologicalMessages([...prev, { ...normalized, liveArrivedAt: Date.now() }]);
         messagesRef.current = next;
         return next;
       });
@@ -793,7 +797,9 @@ export const useV2PodDetail = (podId: string | null): UseV2PodDetailResult => {
           messagesRef.current = next;
           return next;
         }
-        const next = chronologicalMessages([...prev, normalized]);
+        // Your own send enters exactly like any live arrival, whichever of
+        // the POST and the socket copy wins the race.
+        const next = chronologicalMessages([...prev, { ...normalized, liveArrivedAt: Date.now() }]);
         messagesRef.current = next;
         return next;
       });

@@ -374,7 +374,8 @@ export const CollapsiblePre: React.FC<React.HTMLAttributes<HTMLPreElement>> = ({
 };
 
 // Agent prose past six lines (6 × 22px) folds in place; Show more expands it, Show less folds it.
-// Only the fold is measured, so a short reply renders exactly as before.
+// Only the fold is measured, so a short reply renders exactly as before. The measure only
+// decides WHETHER it folds; the open and close motion is CSS sizing to auto, never a JS height.
 const PROSE_COLLAPSE_PX = 132;
 export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.ReactNode }> = ({ collapsible, children }) => {
   const { t } = useTranslation();
@@ -398,7 +399,7 @@ export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.
       {/* Focus reaching a link below the fold opens the message, so the hidden link is never focused blind. */}
       <div
         ref={ref}
-        className={`v2-msg__prose${folded ? ' v2-msg__prose--closed' : ''}`}
+        className={`v2-msg__prose${overflows ? ' v2-msg__prose--fold' : ''}${folded ? ' v2-msg__prose--closed' : ''}`}
         onFocus={(event) => {
           if (!folded) return;
           setOpen(true);
@@ -460,8 +461,20 @@ export const landOnMessage = (id: string | number | null | undefined): boolean =
   return true;
 };
 
+// A live arrival enters once, when its row first mounts. The window keeps a
+// row that remounts later (a root gaining its first reply moves into a thread
+// block, a collapsed thread opens) from playing the motion a second time.
+export const LIVE_ENTER_WINDOW_MS = 1000;
+const arrivedJustNow = (message: V2Message): boolean => (
+  typeof message.liveArrivedAt === 'number' && Date.now() - message.liveArrivedAt < LIVE_ENTER_WINDOW_MS
+);
+
 const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, decision, onDecisionRuled, isDecisionRuling = false, isLead, agentDisplayNames, agentTags, agentAuthorKeys, onAuthorClick, onOpenFile, onReply, onThread, onQuoteNavigate, grouped, insideThreadRoot }) => {
   const { currentUser } = useAuth();
+  // Decided at mount and never again, so a re-render or a refetch that drops
+  // the flag cannot replay the enter.
+  const [enters] = useState(() => arrivedJustNow(message));
+  const enterClass = enters ? ' v2-msg--enter' : '';
   const { t } = useTranslation();
   const navigate = useNavigate();
   const api = useV2Api();
@@ -526,7 +539,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
       && message.payload.action === 'task-claimed') {
     const actorLabel = overriddenDisplay || message.payload.actorName || author;
     return (
-      <div id={`message-${message.id}`} className="v2-system-action-line">
+      <div id={`message-${message.id}`} className={`v2-system-action-line${enterClass}`}>
         <V2Avatar
           name={actorLabel}
           src={message.user?.profile_picture || undefined}
@@ -547,7 +560,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
 
   if (decision) {
     return (
-      <div id={`message-${message.id}`} data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined} tabIndex={-1} className="v2-message-row v2-message-row--decision">
+      <div id={`message-${message.id}`} data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined} tabIndex={-1} className={`v2-message-row v2-message-row--decision${enterClass}`}>
         <V2DecisionCard
           decision={{ ...decision, actorName: decision.actorName || author }}
           onRuled={onDecisionRuled}
@@ -563,16 +576,16 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   // wrapper, so landOnMessage (a Threads row, a Needs-you link) can reach a
   // card that roots a thread.
   if (message.payload?.kind === 'approval-card') {
-    return <><div id={`message-${message.id}`} tabIndex={-1}><V2ApprovalCard message={message} authorLabel={author} time={time} /></div><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
+    return <><div id={`message-${message.id}`} tabIndex={-1} className={enters ? 'v2-msg--enter' : undefined}><V2ApprovalCard message={message} authorLabel={author} time={time} /></div><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
   if (message.payload?.kind === 'byo-handoff') {
-    return <><div id={`message-${message.id}`} tabIndex={-1}><V2BYOHandoffCard message={message} authorLabel={author} time={time} /></div><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
+    return <><div id={`message-${message.id}`} tabIndex={-1} className={enters ? 'v2-msg--enter' : undefined}><V2BYOHandoffCard message={message} authorLabel={author} time={time} /></div><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
   if (message.payload?.kind === 'ui') {
     return <CardRenderBoundary key={message.id} fallback={<div id={`message-${message.id}`} tabIndex={-1} className="v2-msg__content">{message.content}</div>}><Suspense fallback={<div id={`message-${message.id}`} tabIndex={-1} className="v2-msg__content">{message.content}</div>}><V2UICard message={message} authorLabel={author} time={time} /></Suspense></CardRenderBoundary>;
   }
   if (message.payload?.kind === 'gig-card') {
-    return <><div id={`message-${message.id}`} tabIndex={-1}><V2GigCard message={message} time={time} /></div><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
+    return <><div id={`message-${message.id}`} tabIndex={-1} className={enters ? 'v2-msg--enter' : undefined}><V2GigCard message={message} time={time} /></div><V2RunTraceLink podId={message.payload?.runPodId || message.pod_id} runId={message.payload?.runId} /></>;
   }
 
   // §3.8 system event card. Detected by content shape (commonly-bot only
@@ -582,7 +595,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   const dmEvent = parseAgentDmEvent(message.content);
   if (dmEvent) {
     return (
-      <div className="v2-msg v2-msg--system">
+      <div className={`v2-msg v2-msg--system${enterClass}`}>
         <div className="v2-syscard v2-syscard--action">
           <div className="v2-syscard__icon" aria-hidden="true">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -705,7 +718,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
       data-source-message-id={sourceMessageId != null ? String(sourceMessageId) : undefined}
       tabIndex={-1}
       data-testid={isDecisionRuling ? 'decision-ruling-row' : undefined}
-      className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}${runtimeTag ? ' v2-msg--agent' : ''}`}
+      className={`v2-msg v2-message-row${mentionsMe ? ' v2-msg--mention' : ''}${grouped ? ' v2-msg--grouped' : ''}${actionsRevealed ? ' v2-msg--reveal' : ''}${runtimeTag ? ' v2-msg--agent' : ''}${enterClass}`}
       onClick={onBubbleTap}
       onPointerDown={onPressStart}
       onPointerUp={onPressEnd}
