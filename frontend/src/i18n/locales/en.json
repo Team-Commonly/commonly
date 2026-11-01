@@ -1513,6 +1513,10 @@
     "title": "Board",
     "backToChat": "Back to chat",
     "newTask": "New task",
+    "addTo": "Add to {{column}}",
+    "card": {
+      "needs": "Needs {{dep}}"
+    },
     "taskCount_one": "{{count}} task",
     "taskCount_other": "{{count}} tasks",
     "focus": {
@@ -1592,7 +1596,9 @@
       "saveError": "Could not save this change. Try again.",
       "statusLabel": "Status",
       "showEarlierUpdates": "Show {{count}} earlier updates",
-      "hideEarlierUpdates": "Hide earlier updates"
+      "hideEarlierUpdates": "Hide earlier updates",
+      "depends": "Depends on",
+      "noDeps": "None"
     },
     "form": {
       "title": "Title",
