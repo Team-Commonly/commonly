@@ -36,4 +36,10 @@ describe('the trail schema retrofit', () => {
       expect(RETROFIT).toContain(`ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS ${column} ${type};`);
     },
   );
+
+  it('0004 adds the provider columns a brokered seat push records', () => {
+    const provider = fs.readFileSync(path.join(MIGRATIONS, '0004_tool_call_provider_ref.sql'), 'utf8');
+    expect(provider).toContain('ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS provider_repo VARCHAR(255);');
+    expect(provider).toContain('ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS provider_ref VARCHAR(255);');
+  });
 });

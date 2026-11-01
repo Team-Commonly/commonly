@@ -1,7 +1,9 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
+import { createHash } from 'crypto';
 import { callTool, listToolsForGrant } from '../services/toolBrokerService';
 import { untrustedConnectorMarker } from '../services/brokerResultMarker';
+import { reserveBudgetLineage } from '../models/ToolCall';
 
 // The SDK is CommonJS-compatible, but its package exports use subpath entry
 // points. Requiring them here keeps this route compatible with the backend's
@@ -19,6 +21,8 @@ const { ListToolsRequestSchema, CallToolRequestSchema, McpError, ErrorCode } = m
 const agentRuntimeAuth = require('../middleware/agentRuntimeAuth');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { agentRateLimitKeyGenerator } = require('../middleware/agentRateLimit');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 
 const router = express.Router();
 
@@ -33,6 +37,17 @@ const brokerRateLimit = rateLimit({
   keyGenerator: agentRateLimitKeyGenerator,
   handler: (_req, res) => res.status(429).json({ error: 'rate_limit_exceeded' }),
 });
+// Mounted before the 9 MiB push parser in server.ts. An unauthenticated caller
+// can vary Authorization headers, so this early budget keys on the edge IP,
+// not the token header. The route separately applies the token-aware limiter.
+export const pushBodyRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: cloudflareIpRateLimitKeyGenerator,
+  handler: (_req, res) => res.status(429).json({ error: 'push_body_rate_limited' }),
+});
 
 const errorPayload = (error: unknown): Record<string, unknown> => {
   const e = error as { code?: string; message?: string; details?: unknown };
@@ -42,6 +57,124 @@ const errorPayload = (error: unknown): Record<string, unknown> => {
     ...(e.details ? { details: e.details } : {}),
   };
 };
+
+// This host-seat surface is deliberately smaller than the grant's MCP tool
+// catalogue. The shim sends one of these operation names, never a gh argv or
+// arbitrary GitHub URL. An agent cannot reach merge/close through this route.
+const HOST_GH_OPERATIONS = {
+  'pr.create': { tool: 'github.create_pull_request', tier: 'write' },
+  'pr.view': { tool: 'github.get_pull_request', tier: 'read' },
+  'pr.comment': { tool: 'github.comment_on_pull_request', tier: 'write' },
+  'pr.review_comment': { tool: 'github.review_pull_request_comment', tier: 'write' },
+  'issue.comment': { tool: 'github.comment_on_issue', tier: 'write' },
+} as const;
+
+const validSeatBranch = (head: unknown, agentUserId: string): boolean => (
+  typeof head === 'string'
+  && head.startsWith(`seat/${agentUserId}/`)
+  && head.length <= 200
+  && head.split('/').every((segment) => segment.length > 0
+    && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment)
+    && !segment.includes('..') && !segment.endsWith('.lock') && !segment.endsWith('.'))
+);
+
+/** A token and grant both consume a slot before a GitHub call. */
+const reserveHostGhCall = async (tokenHash: string, grantId: string, tier: 'read' | 'write'): Promise<boolean> => {
+  const digest = createHash('sha256').update(grantId).digest('hex');
+  const calls = tier === 'read' ? 30 : 10;
+  return reserveBudgetLineage([
+    { grantId: `host-gh:${tier}:token:${tokenHash}`, calls, windowMs: 60_000 },
+    { grantId: `host-gh:${tier}:grant:${digest}`, calls, windowMs: 60_000 },
+  ]);
+};
+
+router.post('/:grantId/push', brokerRateLimit, agentRuntimeAuth, async (
+  req: express.Request, res: express.Response,
+) => {
+  const agent = req.agentUser;
+  const agentUserId = String(agent?._id || '');
+  if (!agentUserId || !req.agentTokenHash) return res.status(401).json({ error: 'agent_identity_required' });
+  const args = req.body;
+  if (!args || typeof args !== 'object' || Array.isArray(args)
+    || Object.keys(args).some((key) => !['ref', 'baseOid', 'newOid', 'bundle'].includes(key))
+    || Buffer.byteLength(JSON.stringify(args), 'utf8') > 9 * 1024 * 1024) {
+    return res.status(400).json({ error: 'invalid_push_request' });
+  }
+  const installation = req.agentInstallation;
+  const identity = {
+    grantId: String(req.params.grantId),
+    agentUserId,
+    agentName: installation?.agentName || agent?.botMetadata?.agentName || agent?.username,
+    instanceId: installation?.instanceId || agent?.botMetadata?.instanceId || 'default',
+  };
+  try {
+    if (!(await listToolsForGrant(identity)).some((tool) => tool.name === 'github.push_branch')) {
+      return res.status(403).json({ error: 'operation_not_granted' });
+    }
+    const result = await callTool({ ...identity, agentTokenHash: req.agentTokenHash,
+      tool: 'github.push_branch', args });
+    return res.json({ callId: result.callId, outcome: result.outcome, result: result.result });
+  } catch (error) {
+    const e = error as { statusCode?: number };
+    return res.status(typeof e.statusCode === 'number' ? e.statusCode : 500).json(errorPayload(error));
+  }
+});
+
+/** No body or status ever carries a provider credential. */
+router.post('/:grantId/cli', brokerRateLimit, agentRuntimeAuth, async (req: express.Request, res: express.Response) => {
+  const agent = req.agentUser;
+  const agentUserId = String(agent?._id || '');
+  if (!agentUserId || !req.agentTokenHash) return res.status(401).json({ error: 'agent_identity_required' });
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || Object.keys(body).some((key) => key !== 'operation' && key !== 'args')
+    || Buffer.byteLength(JSON.stringify(body), 'utf8') > 64 * 1024) {
+    return res.status(400).json({ error: 'invalid_request' });
+  }
+  const operation = HOST_GH_OPERATIONS[body.operation as keyof typeof HOST_GH_OPERATIONS];
+  if (!operation) return res.status(400).json({ error: 'operation_not_allowed' });
+  const args = body.args;
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    return res.status(400).json({ error: 'invalid_tool_args' });
+  }
+  if (body.operation === 'pr.create' && !validSeatBranch(args.head, agentUserId)) {
+    return res.status(403).json({ error: 'branch_not_owned_by_seat' });
+  }
+  try {
+    const installation = req.agentInstallation;
+    const identity = {
+      grantId: String(req.params.grantId),
+      agentUserId,
+      agentName: installation?.agentName || agent?.botMetadata?.agentName || agent?.username,
+      instanceId: installation?.instanceId || agent?.botMetadata?.instanceId || 'default',
+    };
+    const listed = await listToolsForGrant(identity);
+    if (!listed.some((definition) => definition.name === operation.tool)) {
+      return res.status(403).json({ error: 'operation_not_granted' });
+    }
+    if (!await reserveHostGhCall(req.agentTokenHash, String(req.params.grantId), operation.tier)) {
+      return res.status(429).json({ error: 'host_github_rate_limited' });
+    }
+    const result = await callTool({
+      ...identity,
+      agentTokenHash: req.agentTokenHash,
+      tool: operation.tool,
+      args,
+    });
+    const data = result.result && typeof result.result === 'object' && !Array.isArray(result.result)
+      ? result.result as Record<string, unknown> : {};
+    // A PR body is untrusted and can be arbitrarily long. Preserve only a
+    // bounded preview; the operation receipt is always small.
+    const response = { ...data, ...(typeof data.body === 'string' ? { body: data.body.slice(0, 32 * 1024) } : {}) };
+    return res.json({ callId: result.callId, outcome: result.outcome, result: response });
+  } catch (error) {
+    const e = error as { statusCode?: number; code?: string; details?: { approvalId?: string } };
+    if (e.code === 'approval_required') {
+      return res.status(202).json({ status: 'pending_approval', approvalId: e.details?.approvalId || null });
+    }
+    return res.status(typeof e.statusCode === 'number' ? e.statusCode : 500).json(errorPayload(error));
+  }
+});
 
 /**
  * Stateless MCP endpoint. The bearer agent token authenticates the caller;
@@ -103,6 +236,7 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
       const result = await callTool({
         grantId: String(req.params.grantId),
         agentUserId,
+        agentTokenHash: req.agentTokenHash,
         agentName,
         instanceId,
         tool,

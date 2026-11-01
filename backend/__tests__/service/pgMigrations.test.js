@@ -9,16 +9,18 @@ const { waitFor } = require('../utils/testUtils');
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 // Every migration that ships, in order. A new migration adds its name here, so
 // two lanes claiming the same number conflict on this line.
-const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql', '0003_self_created_tables.sql'];
+const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql', '0003_self_created_tables.sql',
+  '0004_tool_call_provider_ref.sql'];
 // The three tables 0003 took over from runtime DDL, and every column each must
-// end with. Shared by the fresh and the retrofit case: both must reach it.
+// end with (0004 adds tool_calls' provider columns). Shared by the fresh and the
+// retrofit case: both must reach it.
 const SELF_CREATED = {
   message_claims: ['message_id', 'pod_id', 'claimed_by', 'instance_id', 'expires_at', 'state',
     'declined_by', 'created_at', 'refusal_reason', 'refusal_status'],
   tool_call_budgets: ['grant_id', 'calls_used', 'window_started_at'],
   tool_calls: ['call_id', 'grant_id', 'pod_id', 'installation_id', 'agent_user_id', 'tool',
     'args_digest', 'occurred_at', 'outcome', 'reason', 'approval_id', 'duration_ms',
-    'credential_owner_id', 'vendor_status', 'vendor_error'],
+    'credential_owner_id', 'vendor_status', 'vendor_error', 'provider_repo', 'provider_ref'],
 };
 const COLUMNS_SQL = `SELECT column_name FROM information_schema.columns
   WHERE table_schema = current_schema() AND table_name = $1`;

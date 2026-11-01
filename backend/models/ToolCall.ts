@@ -79,6 +79,9 @@ export interface ToolCallRecord {
   reason?: string;
   vendorStatus?: number;
   vendorError?: string;
+  /** Pinned provider repository and seat branch for a brokered Git push. */
+  providerRepo?: string;
+  providerRef?: string;
   approvalId?: string;
   durationMs?: number;
 }
@@ -196,8 +199,8 @@ class ToolCall {
       `INSERT INTO tool_calls
        (call_id, grant_id, pod_id, installation_id, agent_user_id, tool,
         args_digest, occurred_at, outcome, reason, approval_id, duration_ms,
-        credential_owner_id, vendor_status, vendor_error)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        credential_owner_id, vendor_status, vendor_error, provider_repo, provider_ref)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
       [
         record.callId,
         record.grantId,
@@ -214,6 +217,8 @@ class ToolCall {
         record.credentialOwnerId || null,
         record.vendorStatus ?? null,
         record.vendorError || null,
+        record.providerRepo || null,
+        record.providerRef || null,
       ],
     );
   }
@@ -255,7 +260,8 @@ class ToolCall {
       `SELECT tc.call_id, tc.grant_id, tc.pod_id, tc.installation_id, tc.agent_user_id,
               tc.tool, tc.args_digest, tc.occurred_at, tc.credential_owner_id,
               ${EFFECTIVE_OUTCOME} AS effective_outcome,
-              tc.reason, tc.approval_id, tc.duration_ms, tc.vendor_status, tc.vendor_error
+              tc.reason, tc.approval_id, tc.duration_ms, tc.vendor_status, tc.vendor_error,
+              tc.provider_repo, tc.provider_ref
        FROM tool_calls tc
        LEFT JOIN ${RESOLVED_SIBLINGS}
          ON resolved.grant_id = tc.grant_id AND resolved.approval_id = tc.approval_id
@@ -278,6 +284,8 @@ class ToolCall {
       vendorStatus: row.vendor_status === null || row.vendor_status === undefined
         ? undefined : Number(row.vendor_status),
       vendorError: row.vendor_error ? String(row.vendor_error) : undefined,
+      providerRepo: row.provider_repo ? String(row.provider_repo) : undefined,
+      providerRef: row.provider_ref ? String(row.provider_ref) : undefined,
       approvalId: row.approval_id ? String(row.approval_id) : undefined,
       durationMs: row.duration_ms === null || row.duration_ms === undefined
         ? undefined : Number(row.duration_ms),
