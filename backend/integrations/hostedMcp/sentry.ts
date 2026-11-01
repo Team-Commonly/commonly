@@ -1,21 +1,25 @@
 /**
  * Sentry hosted-MCP entry (TASK-241). The OAuth proxy requests its complete
- * five-scope set, including write scopes; any writer pinned here must therefore
+ * five-scope set, including write scopes; every pinned writer must therefore
  * have class `write` so the broker parks it for the credential owner's approval.
- * None is pinned today: Sentry moved update_issue behind its by-name dispatcher.
+ * The scope set is the proxy's, not ours to narrow
+ * (docs/plans/hosted-mcp-catalogue-sweep-2026-10-13.md).
  *
  * Resource and authorization-server metadata were fetched from mcp.sentry.dev
  * on 2026-10-19. The tool pin comes from connector-ops's consenting tools/list
- * capture at 2026-10-19T07:02:33Z, re-pinned from the capture at
- * 2026-11-01T22:13:49Z: seven search tools changed schema (a nullable string
- * respelled, minutes added to `period`, `1h` added to search_issues), and
- * update_issue, find_dropped_events and Seer left the list. The
- * get_sentry_resource pin deliberately omits the vendor's optional `url`: that
- * route can reach types outside the pinned enum, so its live schema always
- * reports a compatible addition in the assessment log. The by-name dispatcher
- * and its catalogue are excluded because they can reach operations outside this
- * reviewed pin. Seer analysis is excluded because it starts a vendor AI
- * workflow.
+ * capture at 2026-10-19T07:02:33Z, a row consented with the Triage skill. The
+ * seven search reads are re-pinned from a capture at 2026-11-01T22:13:49Z,
+ * where Sentry had respelled nullable strings, added minutes to `period` and
+ * added `1h` to search_issues. That row was consented without Triage or Seer,
+ * so its list leaves out update_issue and Seer analysis: update_issue keeps its
+ * 10-19 pin, and a row without Triage sees it as unavailable.
+ * find_dropped_events is no longer a top-level tool (it moved behind the
+ * dispatcher), so it is not pinned. The get_sentry_resource pin deliberately
+ * omits the vendor's optional `url`: that route can reach types outside the
+ * pinned enum, so its live schema always reports a compatible addition in the
+ * assessment log. The by-name dispatcher and its catalogue are excluded because
+ * they can reach operations outside this reviewed pin. Seer analysis is
+ * excluded because it starts a vendor AI workflow.
  */
 import type { HostedMcpEntry } from '../../services/hostedMcpEntryService';
 
@@ -124,6 +128,113 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
         $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    {
+      name: 'update_issue',
+      upstreamName: 'update_issue',
+      description: "Change a Sentry issue status or assignee, with an optional reason.",
+      class: 'write',
+      irreversible: true,
+      inputSchema: {
+        type: "object",
+        properties: {
+          organizationSlug: {
+            type: "string",
+            description: "The organization's slug. You can find a existing list of organizations you have access to using the `find_organizations()` tool.",
+          },
+          regionUrl: {
+            default: null,
+            anyOf: [
+              {
+                type: "string",
+                description: "The region URL for the organization you're querying, if known. For Sentry's Cloud Service (sentry.io), this is typically the region-specific URL like 'https://us.sentry.io'. For self-hosted Sentry installations, this parameter is usually not needed and should be omitted. You can find the correct regionUrl from the organization details using the `find_organizations()` tool.",
+              },
+              {
+                type: "null",
+              },
+            ],
+          },
+          issueId: {
+            type: "string",
+            description: "The Issue ID. e.g. `PROJECT-1Z43`",
+          },
+          issueUrl: {
+            type: "string",
+            format: "uri",
+            description: "The URL of the issue. e.g. https://my-organization.sentry.io/issues/PROJECT-1Z43",
+          },
+          status: {
+            type: "string",
+            enum: [
+              "resolved",
+              "resolvedInNextRelease",
+              "unresolved",
+              "ignored",
+            ],
+            description: "The new status for the issue. Valid values are 'resolved', 'resolvedInNextRelease', 'unresolved', and 'ignored'.",
+          },
+          assignedTo: {
+            anyOf: [
+              {
+                type: "string",
+                minLength: 1,
+              },
+              {
+                type: "null",
+              },
+            ],
+            description: "The assignee in format 'user:ID' or 'team:ID_OR_SLUG' where ID is numeric. Pass null to unassign the issue. Example: 'user:123456', 'team:789', or 'team:my-team-slug'. Use `execute_sentry_tool(name='whoami', arguments={})` to find your user ID.",
+          },
+          ignoreMode: {
+            type: "string",
+            enum: [
+              "untilEscalating",
+              "forever",
+              "forDuration",
+              "untilOccurrenceCount",
+              "untilUserCount",
+            ],
+            description: "How ignored issues should behave. Use 'untilEscalating' to match the Sentry UI default, 'forever' for a permanent ignore, 'forDuration' with ignoreDurationMinutes, 'untilOccurrenceCount' with ignoreCount and optional ignoreWindowMinutes, or 'untilUserCount' with ignoreUserCount and optional ignoreUserWindowMinutes.",
+          },
+          ignoreDurationMinutes: {
+            type: "integer",
+            exclusiveMinimum: 0,
+            maximum: 9007199254740991,
+            description: "How many minutes to ignore the issue when ignoreMode is 'forDuration'.",
+          },
+          ignoreCount: {
+            type: "integer",
+            exclusiveMinimum: 0,
+            maximum: 9007199254740991,
+            description: "How many times the issue must occur before it stops being ignored when ignoreMode is 'untilOccurrenceCount'.",
+          },
+          ignoreWindowMinutes: {
+            type: "integer",
+            exclusiveMinimum: 0,
+            maximum: 10080,
+            description: "Optional time window in minutes for ignoreCount. If omitted, Sentry counts all future occurrences.",
+          },
+          ignoreUserCount: {
+            type: "integer",
+            exclusiveMinimum: 0,
+            maximum: 9007199254740991,
+            description: "How many users must be affected before the issue stops being ignored when ignoreMode is 'untilUserCount'.",
+          },
+          ignoreUserWindowMinutes: {
+            type: "integer",
+            exclusiveMinimum: 0,
+            maximum: 10080,
+            description: "Optional time window in minutes for ignoreUserCount. If omitted, Sentry counts all future affected users.",
+          },
+          reason: {
+            type: "string",
+            minLength: 1,
+            description: "Optional reason for taking this action. When provided, it will be posted as a comment on the issue's activity feed.",
+          },
+        },
+        $schema: "https://json-schema.org/draft/2020-12/schema",
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     {
       name: 'search_errors',

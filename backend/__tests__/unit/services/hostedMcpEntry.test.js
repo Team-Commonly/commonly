@@ -25,9 +25,10 @@ const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const AIRTABLE_AS_CAPTURE = require('../../fixtures/hostedMcp/airtable-authorization-server-2026-10-28.json');
-// The consent capture records the scope Sentry granted; the 11-01 list is the one
-// the pin follows, after Sentry changed seven read schemas and dropped three tools.
-const SENTRY_CONSENT_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
+// Two Sentry captures, from rows consented with different skills. The 10-19 row
+// had Triage, so its list carries update_issue. The 11-01 row has neither Triage
+// nor Seer, and its list carries the seven search reads as Sentry now spells them.
+const SENTRY_TRIAGE_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
 const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-11-01.json');
 const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
 const GITLAB_CAPTURE = require('../../fixtures/hostedMcp/gitlab-tools-list-2026-10-19.json');
@@ -798,7 +799,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect([...entry.scopes].every((scope) => metadata.scopes_supported.includes(scope))).toBe(true);
   });
 
-  test('the Sentry pin follows the 11-01 list, restricts resource lookup to type and ID, and pins no writer', () => {
+  test('the Sentry pin follows the 11-01 list, keeps the Triage writer, and restricts resource lookup to type and ID', () => {
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
     const capture = SENTRY_CAPTURE;
     expect(entry).toMatchObject({
@@ -811,13 +812,20 @@ describe('the shipped catalogue cannot land half-wired', () => {
       },
     });
     expect(capture.server).toBe(entry.resource);
-    expect(SENTRY_CONSENT_CAPTURE.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
+    expect(SENTRY_TRIAGE_CAPTURE.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
     const excluded = new Set(['analyze_issue_with_seer', 'search_sentry_tools', 'execute_sentry_tool']);
-    expect(entry.tools.map((tool) => tool.upstreamName)).toEqual(
+    // update_issue needs the Triage skill, so only the 10-19 list carries it.
+    expect(entry.tools.map((tool) => tool.upstreamName).filter((name) => name !== 'update_issue')).toEqual(
       capture.tools.filter((tool) => !excluded.has(tool.name)).map((tool) => tool.name),
     );
     expect(capture.tools).toHaveLength(12);
-    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    expect(capture.tools.some((tool) => tool.name === 'update_issue')).toBe(false);
+    // find_dropped_events is no longer top-level for any row, so it is not pinned.
+    expect(entry.tools.some((tool) => tool.name === 'find_dropped_events')).toBe(false);
+    const measured = new Map([
+      ...SENTRY_TRIAGE_CAPTURE.tools.filter((tool) => tool.name === 'update_issue').map((tool) => [tool.name, tool]),
+      ...capture.tools.map((tool) => [tool.name, tool]),
+    ]);
     const resource = entry.tools.find((tool) => tool.name === 'get_sentry_resource');
     expect(resource.inputSchema.properties.url).toBeUndefined();
     expect(measured.get('get_sentry_resource').inputSchema.properties.url).toBeDefined();
@@ -827,9 +835,10 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(resource.description).toContain('by type and ID');
     expect(assessEntryTools(entry, capture.tools).find((tool) => tool.name === 'get_sentry_resource'))
       .toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatibly') });
-    // Sentry moved update_issue behind its by-name dispatcher, which stays excluded.
-    expect(entry.tools.find((tool) => tool.name === 'update_issue')).toBeUndefined();
-    expect(assessEntryTools(entry, capture.tools).filter((tool) => tool.verdict !== 'ok')).toEqual([]);
+    expect(entry.tools.find((tool) => tool.name === 'update_issue').irreversible).toBe(true);
+    // On the 11-01 row every read assesses ok; the writer is unavailable to it.
+    expect(assessEntryTools(entry, capture.tools).filter((tool) => tool.verdict !== 'ok'))
+      .toEqual([expect.objectContaining({ name: 'update_issue', verdict: 'tool_unavailable' })]);
     for (const tool of entry.tools) {
       const found = measured.get(tool.upstreamName);
       expect(found).toBeDefined();
@@ -838,7 +847,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
       }
       expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
-      expect(tool.class).toBe('read');
+      expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read');
     }
   });
 

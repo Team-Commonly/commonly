@@ -1,8 +1,9 @@
 {
   "server": "https://mcp.sentry.dev/mcp",
   "capturedAt": "2026-11-01T22:13:49.109Z",
-  "method": "tools/list through listHostedMcpTools (the broker drift check client, guarded fetch) with the consenting Lily-owned row credential, run from ops-runner; tool metadata only",
+  "method": "tools/list through listHostedMcpTools (the broker drift check's client, guarded fetch) with the consenting Lily-owned row's credential, run from ops-runner; tool metadata only",
   "toolCount": 12,
+  "consentedSkills": "inferred, not recorded: the list leaves out update_issue (Sentry's Triage skill) and analyze_issue_with_seer (its Seer skill), so the row was consented without either. Sentry grants all five scopes whatever the skills, so the scope cannot show them. Per getsentry/sentry-mcp main on 2026-11-01: packages/mcp-core/src/tools/surfaces.ts and packages/mcp-core/src/skills.ts",
   "tools": [
     {
       "name": "find_organizations",
