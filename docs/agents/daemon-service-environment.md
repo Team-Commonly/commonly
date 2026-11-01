@@ -23,7 +23,8 @@ enable-linger` for you, which starts your systemd user manager, and so the
 daemon, at boot. It reports a boot start only when logind's linger file for your
 user exists. If lingering is refused, the daemon still runs, starts at your next
 login, and the install prints the command to run: `sudo loginctl enable-linger
-<you>`. A macOS LaunchAgent starts at your GUI login.
+<you>`. A macOS LaunchAgent starts at your GUI login. `commonly daemon uninstall`
+leaves lingering on, since other user services may rely on it.
 
 ## The environment it carries
 
