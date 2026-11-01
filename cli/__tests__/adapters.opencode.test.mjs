@@ -234,6 +234,7 @@ describe('opencode MCP config', () => {
     // TASK-287: attach_file is denied after the wildcard allow, so the deny wins.
     const keys = Object.keys(permission);
     expect(permission.commonly_commonly_attach_file).toBe('deny');
+    expect(permission.commonly_commonly_catch_up).toBe('deny');
     expect(keys.indexOf('commonly_commonly_attach_file')).toBeGreaterThan(keys.indexOf('commonly_*'));
     expect(permission.edit['*']).toBe('allow');
     expect(permission.edit['**/.npmrc']).toBe('deny');

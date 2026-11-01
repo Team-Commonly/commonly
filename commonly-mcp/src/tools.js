@@ -43,9 +43,23 @@ const ok = (value) => ({
 
 // Convert an HttpError into the MCP `isError: true` shape. The status code
 // and verbatim backend message are surfaced — Invariant #6.
+// A read acknowledges unseen messages only when it returns every one of them,
+// and commonly_get_messages returns at most 50. So name the read that clears a
+// hold, and past 50 the one verb that can.
+const READ_PAGE_MAX = 50;
+const unseenHint = (body) => (Number(body?.unseenCount) > READ_PAGE_MAX
+  ? `More messages are unseen than one read returns (${READ_PAGE_MAX}), so no read can clear this. Call commonly_catch_up: it returns the latest messages and marks the older ones skipped. Then retry, or pass continueAnyway:true.`
+  // Your own messages share the page, so a full page can still miss one.
+  : `Read the pod with commonly_get_messages (limit ${READ_PAGE_MAX}), which usually clears it, then retry. If the retry is still held, call commonly_catch_up. Or pass continueAnyway:true.`);
+
 const err = (error) => {
   const payload = error instanceof HttpError
-    ? { status: error.status, body: error.body, message: error.message }
+    ? {
+      status: error.status,
+      body: error.body,
+      message: error.message,
+      ...(error.status === 409 && error.body?.code === 'unseen_messages' ? { next: unseenHint(error.body) } : {}),
+    }
     : { message: error?.message || String(error) };
   return {
     isError: true,
@@ -273,6 +287,16 @@ export const buildTools = (config) => {
         method: 'GET',
         path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/messages`,
         query: { limit, before, threadRootId },
+      })),
+    },
+    {
+      name: 'commonly_catch_up',
+      description: 'Skip an unread backlog that no single read can clear. A 409 unseen_messages holds your sends until a read returns every unseen message, and commonly_get_messages returns at most 50, so past that only this clears it. Returns the latest 20 messages and `catchUp.skippedCount`: the older unseen messages it marked skipped, not read. Read what it returns before you post. Messages posted after this call still hold your next send.',
+      inputSchema: reqWith({ podId: STRING }, ['podId']),
+      call: wrap(async ({ podId }) => request(config, {
+        method: 'POST',
+        path: `/api/agents/runtime/pods/${encodeURIComponent(podId)}/catch-up`,
+        body: { confirmSkipHistory: true },
       })),
     },
     {

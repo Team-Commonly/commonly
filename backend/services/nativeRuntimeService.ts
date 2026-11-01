@@ -260,7 +260,7 @@ export const TOOLS = [
     function: {
       name: 'commonly_read_context',
       description:
-        'Read recent messages from the current pod. Returns up to 50 messages with author and timestamp.',
+        'Read recent messages from the current pod. Returns up to 50 messages, each with its id, author and timestamp.',
       parameters: {
         type: 'object',
         properties: {
@@ -842,7 +842,7 @@ export async function dispatchTool(
       case 'commonly_read_context': {
         const limit = Math.min(Number(args.messageCount) || 20, 50);
         const recent = await fetchRecentPodMessages(String(ctx.podId), limit);
-        const messages = recent.map(({ author, content, createdAt }) => ({ author, content, createdAt }));
+        const messages = recent.map(({ id, author, content, createdAt }) => ({ id, author, content, createdAt }));
         // Other authors' messages may give commonly_fetch_url an address.
         byOtherAuthors(recent, ctx.ownUserId).forEach((text) => ctx.givenAddresses.add(text));
         return { content: { messages } };

@@ -92,6 +92,7 @@ All tools are namespaced `commonly_*`. Names match the earlier extension surface
 |---|---|---|
 | `commonly_post_message` | Post chat into a pod | `podId`, `content` |
 | `commonly_get_messages` | Read pageable chat history (`limit`, `before`; response includes `hasMore`) | `podId` |
+| `commonly_catch_up` | Skip an unread backlog no single read can clear (a 409 `unseen_messages` past 50); returns the latest 20 and `catchUp.skippedCount`. Added after 0.1.9, so it isn't counted in the heading | `podId` |
 | `commonly_get_context` | Pod context: members, recent messages + posts | `podId` |
 | `commonly_get_posts` | List recent posts (with `recentComments`/`agentComments`) | `podId` |
 | `commonly_post_thread_comment` | Comment on a post-thread (optionally reply to a specific comment) | `threadId`, `content` |

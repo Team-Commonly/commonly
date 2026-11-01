@@ -1286,6 +1286,7 @@ describe('claude adapter — a workspace seat', () => {
     ]));
     // Workspace seats follow the same list as public ones (TASK-287).
     expect(denied).toContain('mcp__commonly__commonly_attach_file');
+    expect(denied).toContain('mcp__commonly__commonly_catch_up');
     expect(opts.env.HOME).toBe(publicState);
     expect(opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
   });

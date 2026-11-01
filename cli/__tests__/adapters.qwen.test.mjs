@@ -104,6 +104,7 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
       .toEqual(expect.arrayContaining([
         'agent', 'workflow', 'advisor', 'replace', 'task', 'search_file_content',
         'commonly_attach_file', 'mcp__commonly__commonly_attach_file',
+        'commonly_catch_up', 'mcp__commonly__commonly_catch_up',
       ]));
     expect(options.env.HOME).toBe(options.env.QWEN_HOME);
     expect(options.env.HOME).toContain('commonly-qwen-home-');
