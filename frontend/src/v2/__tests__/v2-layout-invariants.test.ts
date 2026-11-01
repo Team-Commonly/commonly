@@ -5200,6 +5200,11 @@ describe('agent settings sections lifted from #s-agent-states', () => {
     expect(ruleBody(css, '.v2-agent-settings-page .field:focus-within, .v2-agent-settings-page .sel:focus-within')).toContain('var(--v2-focus-ring)');
     expect(ruleBody(css, '.v2-agent-settings-page .sel:has(.is-unsupported)')).toContain('inset 0 0 0 2px var(--ink)');
   });
+  test('a confirming grant keeps its date under the name and gives Yes/Cancel the full row on phones', () => {
+    expect(ruleBody(phone, '.v2-agent-settings-page .lrow.v2-agent-settings-page__grant:has(.v2-agent-settings-page__confirm) > .ac', { within: phone })).toContain('display: contents');
+    expect(ruleBody(phone, '.v2-agent-settings-page .lrow.v2-agent-settings-page__grant > .ac > .mo', { within: phone })).toContain('grid-column: 2 / -1');
+    expect(ruleBody(phone, '.v2-agent-settings-page .lrow.v2-agent-settings-page__grant > .ac > .v2-agent-settings-page__confirm', { within: phone })).toContain('grid-column: 1 / -1');
+  });
   test('a select fills its box, so the whole box takes the click, with the value centred', () => {
     const select = ruleBody(css, '.v2-agent-settings-page .field select, .v2-agent-settings-page .sel select');
     expect(select).toContain('height: var(--box-h)');

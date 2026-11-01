@@ -265,7 +265,10 @@
   .v2-agent-settings-page .lrow.v2-agent-settings-page__grant > .ac { grid-row: auto; grid-column: 2 / -1; justify-content: space-between; }
   .v2-agent-settings-page__move .sel { flex: 1 1 120px; min-width: 0; }
   .v2-agent-settings-page .lrow.v2-agent-settings-page__alert > .ac, .v2-agent-settings-page .lrow.v2-agent-settings-page__plain > .ac { grid-row: auto; }
-  .v2-agent-settings-page .lrow.v2-agent-settings-page__grant:has(.v2-agent-settings-page__confirm) > .ac { grid-column: 1 / -1; flex-wrap: wrap; }
+  /* Confirming, the slot dissolves so the date stays under the name and the Yes/Cancel pair takes the full row. */
+  .v2-agent-settings-page .lrow.v2-agent-settings-page__grant:has(.v2-agent-settings-page__confirm) > .ac { display: contents; }
+  .v2-agent-settings-page .lrow.v2-agent-settings-page__grant > .ac > .mo { grid-column: 2 / -1; }
+  .v2-agent-settings-page .lrow.v2-agent-settings-page__grant > .ac > .v2-agent-settings-page__confirm { grid-column: 1 / -1; }
   .v2-agent-settings-page__confirm { display: flex; flex: 1 1 100%; }
   .v2-agent-settings-page__confirm > .b { flex: 1; }
   .v2-agent-settings-page__keyentry { padding: 10px 12px; max-width: none; }
