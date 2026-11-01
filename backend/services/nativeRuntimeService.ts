@@ -41,6 +41,7 @@ import { isSearchConfigured, searchWeb } from './webSearchService';
 import { getFromPublicAddress, isOutboundUrlRefused } from './outboundUrlGuard';
 import { GivenAddresses } from './webAddressProvenance';
 import { nativeCueFromKernel } from './nativeKernelCue';
+import { askerStartCommandCue } from './askerStartCommandCue';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
 import { canonicalAssignee } from './taskAssigneeService';
@@ -2142,6 +2143,16 @@ export async function runAgent(
   // After the line above: the notice is our text, not the person's, so it
   // must not give an address.
   if (peerClaimFrame) userMessage = `${peerClaimFrame}\n${userMessage}`;
+  // F46: when the person writing owns an agent that has never connected, Scout's
+  // turn carries its start command, so the answer can't leave them stuck.
+  if (agentName === 'scout' && dispatchCtx.computerRequesterId) {
+    try {
+      const cue = await askerStartCommandCue(String(podId), dispatchCtx.computerRequesterId);
+      if (cue) userMessage = `${cue}\n\n${userMessage}`;
+    } catch (error) {
+      console.warn('[native-runtime] start-command cue unavailable:', (error as Error).message);
+    }
+  }
 
   const recentCount = Math.min(Math.max(Number(cfg.recentMessages) || 0, 0), RECENT_MESSAGES_MAX);
   if (recentCount > 0) {

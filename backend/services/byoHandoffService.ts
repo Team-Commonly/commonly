@@ -15,7 +15,7 @@ export const BYO_HANDOFF_ADAPTERS: readonly ByoHandoffAdapter[] = [
 ];
 export const BYO_HANDOFF_OSES: readonly ByoHandoffOs[] = ['mac', 'linux', 'windows'];
 
-const CLI_INSTALL = 'npm i -g @commonlyai/cli@latest';
+export const CLI_INSTALL = 'npm i -g @commonlyai/cli@latest';
 const DSH_INSTALL = `${CLI_INSTALL} @deepseek-ai/dsh@0.2.1-rc.2`;
 const OPENCODE_INSTALL = `${CLI_INSTALL} opencode-ai`;
 
