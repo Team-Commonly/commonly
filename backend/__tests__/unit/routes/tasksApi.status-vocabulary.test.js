@@ -11,9 +11,15 @@
 const request = require('supertest');
 const express = require('express');
 
+// A request with `x-test-seat` is a seat: `isSeatCaller` reads `req.agentUser` or
+// `req.user.isBot`, the two signals a bot's auth sets. Any other request is a person.
 jest.mock('../../../middleware/auth', () => (req, res, next) => {
   req.userId = 'u1';
   req.user = { id: 'u1', _id: 'u1' };
+  if (req.headers['x-test-seat']) {
+    req.user.isBot = true;
+    req.agentUser = { _id: 'u1' };
+  }
   next();
 });
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, res, next) => next());
@@ -65,6 +71,13 @@ jest.mock('../../../services/roomGrantService', () => ({
   onTaskClosed: (...args) => mockOnTaskClosed(...args),
 }));
 
+// The task-completed trigger (ADR-012 §4) writes system-exchange rows this file's mocked
+// models cannot back. A PATCH to done fires it, the same as /complete does.
+const mockRecordTaskCompleted = jest.fn(async () => {});
+jest.mock('../../../services/systemExchangeTriggers', () => ({
+  recordTaskCompleted: (...args) => mockRecordTaskCompleted(...args),
+}));
+
 const tasksApi = require('../../../routes/tasksApi');
 const Task = require('../../../models/Task');
 
@@ -79,18 +92,47 @@ beforeEach(() => {
   mockFindOneAndUpdate.mockResolvedValue({ taskId: 'TASK-001', status: 'claimed' });
   mockEmitTaskUpdated.mockReset();
   mockNotifyPodAgents.mockReset();
+  // mockReset clears a queued mockResolvedValueOnce, so one test's read cannot leak into the next.
+  Task.findOne.mockReset();
   Task.findOne.mockReturnValue({ select: () => ({ lean: async () => null }) });
   mockRecordTaskAttention.mockReset();
   mockRecordTaskAttention.mockResolvedValue(undefined);
   mockResolveTaskAttention.mockReset();
   mockResolveTaskAttention.mockResolvedValue(undefined);
   mockOnTaskClosed.mockClear();
+  mockRecordTaskCompleted.mockClear();
+});
+
+describe('PATCH to done is one transition', () => {
+  test('writes only a row that is not done yet, and stamps its completion time', async () => {
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'done' });
+
+    expect(res.status).toBe(200);
+    const [filter, update] = mockFindOneAndUpdate.mock.calls[0];
+    expect(filter.status).toEqual({ $ne: 'done' });
+    expect(update.$set.completedAt).toBeInstanceOf(Date);
+    expect(update.$inc).toEqual({ grantEpoch: 1 });
+  });
+
+  test('a repeated PATCH to done writes nothing and fires no close side effects', async () => {
+    Task.findOne.mockResolvedValueOnce({ taskId: 'TASK-001', status: 'done' });
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'done' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.task.status).toBe('done');
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockOnTaskClosed).not.toHaveBeenCalled();
+    expect(mockRecordTaskCompleted).not.toHaveBeenCalled();
+  });
 });
 
 describe('PATCH /:podId/:taskId status vocabulary', () => {
   test.each([
-    ['in_progress', 'claimed'],
-    ['In_Progress', 'claimed'],
     ['completed', 'done'],
     ['todo', 'pending'],
   ])("normalizes alias '%s' to canonical '%s'", async (alias, canonical) => {
@@ -156,6 +198,74 @@ describe('PATCH /:podId/:taskId status vocabulary', () => {
     expect(mockNotifyPodAgents).toHaveBeenCalledWith(
       POD_ID, task, 'updated', expect.any(Object), { status: 'claimed' },
     );
+  });
+
+  test.each(['claimed', 'in_progress', 'In_Progress'])(
+    "refuses status '%s' from a seat: a seat's claim is a lease, and this route writes none for a seat",
+    async (status) => {
+      const res = await request(app)
+        .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+        .set('x-test-seat', '1')
+        .send({ status });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/commonly_claim_task/);
+      expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each(['claimed', 'in_progress', 'In_Progress'])(
+    "accepts status '%s' from a person, and writes no lease",
+    async (status) => {
+      const res = await request(app)
+        .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+        .send({ status });
+
+      expect(res.status).toBe(200);
+      const [, update] = mockFindOneAndUpdate.mock.calls[0];
+      expect(update.$set).toMatchObject({ status: 'claimed' });
+      // A person's Start leaves whatever lease the row carries alone, as it does on main.
+      expect(update.$set).not.toHaveProperty('claimedBy');
+      expect(update.$set).not.toHaveProperty('claimedAt');
+      expect(update.$set).not.toHaveProperty('claimExpiresAt');
+      expect(update.$set).not.toHaveProperty('claimedByUserId');
+    },
+  );
+
+  test('a PATCH to done is a completion: it stamps completedAt and fires the task-completed trigger', async () => {
+    // A PATCH to done used to set the status and nothing else, so the row had no
+    // completedAt and no ADR-012 §4 trigger, where /complete gives it both.
+    const task = { _id: 'task-1', taskId: 'TASK-001', title: 'ship it', assignee: 'scout', status: 'claimed', podId: POD_ID, updates: [] };
+    mockFindOneAndUpdate.mockResolvedValueOnce(task);
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'done' });
+
+    expect(res.status).toBe(200);
+    expect(mockFindOneAndUpdate.mock.calls[0][1].$set.completedAt).toBeInstanceOf(Date);
+    expect(mockRecordTaskCompleted).toHaveBeenCalledWith({
+      podId: POD_ID,
+      assignee: 'scout',
+      taskTitle: 'ship it',
+      prUrlOrStatus: null,
+    });
+  });
+
+  test('a PATCH to done on a row already done does not announce the completion again', async () => {
+    // The early read is what makes this a repeat. The mock returns the done row for that
+    // one read, so if the early check is removed the write runs and this test fails.
+    const done = { _id: 'task-1', taskId: 'TASK-001', title: 'ship it', assignee: 'scout', status: 'done', podId: POD_ID, updates: [] };
+    Task.findOne.mockResolvedValueOnce(done);
+
+    const res = await request(app)
+      .patch(`/api/v1/tasks/${POD_ID}/TASK-001`)
+      .send({ status: 'done' });
+
+    expect(res.status).toBe(200);
+    expect(mockFindOneAndUpdate).not.toHaveBeenCalled();
+    expect(mockRecordTaskCompleted).not.toHaveBeenCalled();
+    expect(mockOnTaskClosed).not.toHaveBeenCalled();
   });
 
   test('rejects unknown statuses with the vocabulary in the error', async () => {
