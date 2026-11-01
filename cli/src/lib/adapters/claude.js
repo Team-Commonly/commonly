@@ -539,7 +539,8 @@ export const claudeResultText = (stdout, { credentials = [] } = {}) => {
 // Claude Code reports each server's state in the init event (`connected` or
 // `failed`), and a failed tool call as a `tool_result` with `is_error: true`
 // whose content is the server's text, the shipped MCP's `{status, body,
-// message}` JSON (both measured on Claude Code 2.1.314). Ready is a positive
+// message}` JSON (both measured on Claude Code 2.1.314; `-p` waits for a slow
+// server, so init reports it connected rather than pending). Ready is a positive
 // witness: a stream with no init event, or with a Commonly server in any other
 // state, never showed the server working, so the turn is withheld. A failed
 // Commonly call withholds it unless `isAnswerableToolError` names an answer the
@@ -572,7 +573,10 @@ export const claudePublicMcpWitness = (stdout, mcpServers) => {
       if (block?.type === 'tool_use' && block.id) toolNames.set(block.id, String(block.name || ''));
     }
   }
-  const prefixes = names.map((name) => `mcp__${name}__`);
+  // Init names a server as declared; tool names carry it with every character
+  // outside [A-Za-z0-9_-] turned to `_` (`commonly.me` → `mcp__commonly_me__`,
+  // measured on 2.1.314).
+  const prefixes = names.map((name) => `mcp__${name.replace(/[^A-Za-z0-9_-]/g, '_')}__`);
   for (const event of events) {
     if (event.type !== 'user' || !Array.isArray(event.message?.content)) continue;
     for (const block of event.message.content) {

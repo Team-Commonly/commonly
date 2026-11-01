@@ -1817,16 +1817,15 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
     for (const dir of [cwd, publicState, home]) fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  const turn = (stdout, { trust = 'public', mcp = COMMONLY_MCP } = {}) => {
-    const { impl } = makeSpawnImpl({ stdout });
-    return claude.spawn('hi', {
-      agentName: 'public-test', cwd,
+  const turn = (stdout, { trust = 'public', mcp = COMMONLY_MCP, impl = makeSpawnImpl({ stdout }).impl, sessionId } = {}) => (
+    claude.spawn('hi', {
+      agentName: 'public-test', cwd, ...(sessionId ? { sessionId } : {}),
       env: { PATH: process.env.PATH, USER: 'safe-user', LOGNAME: 'safe-user' },
       environment: { model: 'test-model', ...(trust ? { sandbox: { mode: 'workspace', trust } } : {}), mcp },
       _publicClaudeState: publicState,
       _spawnImpl: impl,
-    });
-  };
+    })
+  );
 
   test('posts when init shows Commonly connected and no Commonly call failed', async () => {
     await expect(turn(stream(init('connected'), result('Here you go.')))).resolves.toMatchObject({ text: 'Here you go.' });
@@ -1855,6 +1854,36 @@ describe('claude adapter: the public seat Commonly MCP witness (TASK-256)', () =
   test('posts an answer to a refusal the person can be told about (a 404)', async () => {
     const stdout = stream(init('connected'), call('t1', 'mcp__commonly__read_context'), failed('t1', API_404), result('I cannot see that pod.'));
     await expect(turn(stdout)).resolves.toMatchObject({ text: 'I cannot see that pod.' });
+  });
+
+  test('withholds a failed call from a server whose name Claude Code normalises in tool names', async () => {
+    const mcp = [{ ...COMMONLY_MCP[0], name: 'commonly.me' }];
+    const stdout = stream(
+      { type: 'system', subtype: 'init', mcp_servers: [{ name: 'commonly.me', status: 'connected' }] },
+      call('t1', 'mcp__commonly_me__list_pods'), failed('t1', API_503), result('Every call is failing.'),
+    );
+    await expect(turn(stdout, { mcp })).rejects.toMatchObject({ code: 'public_tool_failed' });
+  });
+
+  test('the fresh-session retry is witnessed too', async () => {
+    // The resumed session is refused, the retry runs fresh, and its server failed.
+    let spawns = 0;
+    const impl = () => {
+      spawns += 1;
+      const proc = new EventEmitter();
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.kill = jest.fn();
+      const first = spawns === 1;
+      setTimeout(() => {
+        if (first) proc.stderr.emit('data', Buffer.from('Error: Session ID abc-123 is already in use.'));
+        else proc.stdout.emit('data', Buffer.from(stream(init('failed'), result('HELLO'))));
+        proc.emit('close', first ? 1 : 0);
+      }, 0);
+      return proc;
+    };
+    await expect(turn('', { impl, sessionId: 'abc-123' })).rejects.toMatchObject({ code: 'public_mcp_not_ready' });
+    expect(spawns).toBe(2);
   });
 
   test("ignores another server's failed call", async () => {
