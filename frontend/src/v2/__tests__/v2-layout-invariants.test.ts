@@ -4201,7 +4201,10 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
   test('the bar is cobalt on the band and white past it, wordmark only', () => {
     const band = selectorRuleBody(landing, '.v2-landing__bar--band {');
     expect(band).toContain('background: #1d3fd1');
-    expect(band).toContain('backdrop-filter: none');
+    // No glass: the bar is a solid surface in both states (slop tell 4, TASK-749).
+    expect(landing).not.toContain('backdrop-filter');
+    expect(selectorRuleBody(landing, '.v2-landing__bar {')).toContain('background: var(--v2-bg)');
+    expect(read('../agents/v2-agent-profile.css')).not.toContain('backdrop-filter');
     expect(band).toContain('border-bottom-color: rgba(255, 255, 255, 0.22)');
     // The state starts ON in the component, so first paint is the band state
     // and there is no white flash before the observer runs.
