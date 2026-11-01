@@ -22,6 +22,8 @@ export const FAILURE_KINDS = Object.freeze({
   quota: { retryable: false, meaning: 'the account behind the CLI is out of quota or credits' },
   provider_unsupported: { retryable: false, meaning: 'the provider does not serve this model to this account' },
   capacity: { retryable: true, meaning: 'every entry the run config allows is at a host cap or held; it may run once one frees' },
+  refusal_retry_loop: { retryable: false, meaning: 'the provider rejected a request (4xx) the CLI would retry; stopped at the first one on the wire' },
+  provider_unavailable: { retryable: true, meaning: 'the provider answered 5xx, 408 or 429, or was unreachable; stopped at the first one on the wire' },
 });
 
 export class RunFailure extends Error {
