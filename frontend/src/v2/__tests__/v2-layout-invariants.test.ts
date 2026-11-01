@@ -2486,6 +2486,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(layoutBlocks('v2-connectors').filter((b) => b.includes('min-height'))).toEqual([]);
     expect(layoutBlocks('v2-connectors__content').filter((b) => b.includes('flex: 1'))).toEqual([]);
     expect(layoutBlocks('v2-connectors__rows').filter((b) => b.includes('flex: 1'))).toEqual([]);
+    // TASK-677 tile grid: the channel rows tile at 150px minimum, the fold spans
+    // the grid, and the icon act is centred. jsdom cannot see the cascade, so the
+    // 760px overrides are guarded by presence here.
+    // ruleBody takes the first line-start match, which is the base rule, so scan
+    // every block for the tile declarations instead.
+    expect(layoutBlocks('v2-connectors__rows').some((b) => b.includes('repeat(auto-fill, minmax(150px, 1fr))'))).toBe(true);
+    expect(layoutBlocks('v2-connectors__inactive-fold').some((b) => b.includes('grid-column: 1 / -1'))).toBe(true);
+    expect(layoutBlocks('v2-connector-row__action--icon').some((b) => b.includes('justify-self: center'))).toBe(true);
     expect(ruleBody(v2, '.v2-page-head__meta')).toContain('var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('width: 20px');
     expect(ruleBody(v2, '.v2-connector-row__glyph')).toContain('color: inherit');
