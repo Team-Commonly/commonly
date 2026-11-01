@@ -54,5 +54,21 @@
  "connectors-390": {
   "helperWords": 1,
   "innerRatio": 1
+ },
+ "byo-1440": {
+  "helperWords": 39,
+  "innerRatio": 1
+ },
+ "byo-handoff-1440": {
+  "helperWords": 141,
+  "innerRatio": 1
+ },
+ "byo-390": {
+  "helperWords": 28,
+  "innerRatio": 1.03
+ },
+ "byo-handoff-390": {
+  "helperWords": 106,
+  "innerRatio": 1.52
  }
 }

@@ -24,7 +24,11 @@ import path from 'path';
  * fixed one fails the second (the allowlist may not carry a selector that no
  * longer violates). Target is an empty list.
  */
-const CSS = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
+// v2.css plus the per-surface sheets lifted out of it, so a rule that moved
+// file is still held to the floors (R04 moved the BYO page's rules).
+const CSS = ['../v2.css', '../components/V2AgentBYO.css']
+  .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))
+  .join('\n');
 
 const MONO_FLOOR = 11;
 const SANS_FLOOR = 12;
