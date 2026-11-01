@@ -449,6 +449,30 @@ jobs:
           echo "::error title=Chat unavailable on the new backend::$POD has pg/status=$STATUS and pg/messages=$ROUTE (401 means mounted, 404 unmounted). Chat history fails until the pod restarts: kubectl rollout restart deploy/backend -n $NAMESPACE"
           exit 1
 
+      # Record THIS release as rollout-verified (and, for dev, chat-verified), so the rollback
+      # step below returns to a revision that actually passed verification — never merely "last
+      # deployed". With auto-deploy, a deploy cancelled mid-verify by a newer push leaves an
+      # unverified image at helm status=deployed, and prerev (last deployed) would pick it as the
+      # rollback target. Written ONLY after the rollout AND chat gates passed (if: success() =>
+      # no earlier step failed), so it always names a revision whose managed workloads became
+      # ready and whose backend served chat.
+      - name: Record this release as rollout-verified (rollback target)
+        if: success()
+        run: |
+          set -uo pipefail
+          CURREV=$(helm history commonly-dev -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.[-1].revision // 0')
+          if [ "${CURREV:-0}" = "0" ]; then
+            echo "::warning title=No revision to record::helm reports no current revision for commonly-dev; leaving the verified pointer unchanged."
+            exit 0
+          fi
+          if kubectl create configmap deploy-verified-revision -n "$NAMESPACE" \
+               --from-literal=revision="$CURREV" \
+               --dry-run=client -o yaml | kubectl apply -f -; then
+            echo "Recorded rollout-verified revision $CURREV for commonly-dev rollback."
+          else
+            echo "::warning title=Record failed::could not write the verified-revision ConfigMap ($CURREV) for commonly-dev; the next rollback will fall back to last-deployed. Check the deploy service account's configmap RBAC."
+          fi
+
       # D227 (Sam via Cofounder, 2026-11-01): the heavy test matrix is leaving the merge
       # path, so a bad image can reach prod and this post-deploy verify is the net. If any
       # deploy/verify step above failed, undo this release in-cluster by rolling back to the
@@ -467,33 +491,57 @@ jobs:
           set -uo pipefail
           HIST=$(helm history commonly-dev -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')
           CUR=$(printf '%s' "$HIST" | jq -r '.[-1].revision // 0')
-          # Roll back only to the revision recorded as `deployed` BEFORE this upgrade
-          # (steps.prerev). Two no-ops, each a release we must NOT demote:
-          #   - no recorded good revision (first install) -> nothing to roll back to;
-          #   - CUR == PRE -> the upgrade failed before Helm created a revision (chart
-          #     load / values parse): the live release is unchanged, so leave it.
-          if [ "${CUR:-0}" = "0" ] || [ "${PRE:-0}" = "0" ] || [ -z "${PRE:-}" ]; then
-            echo "::warning title=No rollback target::commonly-dev has no pre-upgrade good revision (CUR=${CUR:-0} PRE=${PRE:-0}); nothing to roll back to."
+          # Roll back to the revision THIS workflow last recorded as rollout-verified (the
+          # deploy-verified-revision ConfigMap), never to "last deployed": a deploy cancelled
+          # mid-verify by a newer push leaves an unverified image at helm status=deployed, which
+          # prerev would wrongly pick. Distinguish a genuinely-absent ConfigMap (first failed
+          # deploy after this change) from a read ERROR: absent -> fall back to prerev; any other
+          # kubectl/API error -> FAIL CLOSED, do NOT roll back to a possibly-unverified revision.
+          # Two further no-ops, each a release we must NOT demote: no target at all (first
+          # install) -> nothing to roll back to; CUR == TARGET -> the upgrade failed before Helm
+          # created a revision (chart load / values parse) or the live release already is the
+          # verified one, so leave it.
+          if CMOUT=$(kubectl get configmap deploy-verified-revision -n "$NAMESPACE" -o jsonpath='{.data.revision}' 2>&1); then
+            GOOD="$CMOUT"
+          elif printf '%s' "$CMOUT" | grep -q 'NotFound'; then
+            GOOD=""
+            echo "no verified-revision ConfigMap yet (first failed deploy after this change); falling back to last-deployed."
+          else
+            echo "::error title=Rollback aborted::could not read commonly-dev's verified-revision ConfigMap (not a NotFound): $CMOUT — NOT rolling back to a possibly-unverified revision. Investigate and roll back by hand."
+            exit 1
+          fi
+          TARGET="$GOOD"
+          if [ -z "$TARGET" ] || [ "$TARGET" = "0" ]; then
+            echo "::warning title=No verified revision::no rollout-verified revision recorded for commonly-dev; falling back to last-deployed $PRE (may not have passed verification)."
+            TARGET="$PRE"
+          fi
+          if [ "${CUR:-0}" = "0" ] || [ "${TARGET:-0}" = "0" ] || [ -z "${TARGET:-}" ]; then
+            echo "::warning title=No rollback target::commonly-dev has no good revision to roll back to (CUR=${CUR:-0} TARGET=${TARGET:-0})."
             exit 0
           fi
-          if [ "$CUR" = "$PRE" ]; then
-            echo "::warning title=No rollback needed::the upgrade created no new revision (CUR==PRE==$PRE); the live release is unchanged."
+          if [ "$CUR" = "$TARGET" ]; then
+            echo "::warning title=No rollback needed::the live release already is the verified revision (CUR==TARGET==$TARGET); the release is unchanged."
             exit 0
           fi
-          echo "Rolling commonly-dev back: revision $CUR -> $PRE (last successfully-deployed)"
+          echo "Rolling commonly-dev back: revision $CUR -> $TARGET (last rollout-verified)"
           # No `--wait`: like the upgrade above, a release-wide wait can be blocked by an
           # unrelated unhealthy workload and would then record the rollback itself as
           # failed, leaving the bad revision marked deployed. Apply, then verify only the
-          # workloads this job manages.
-          helm rollback commonly-dev "$PRE" -n "$NAMESPACE" --timeout 8m
+          # workloads this job manages. Check the exit explicitly: a swallowed failure (e.g.
+          # $TARGET aged out of helm history after a streak of failed deploys) would otherwise
+          # print the "rolled back" line below while the bad release stays live.
+          if ! helm rollback commonly-dev "$TARGET" -n "$NAMESPACE" --timeout 8m; then
+            echo "::error title=Rollback FAILED::helm could not roll back commonly-dev to $TARGET (aged out of history?); the bad release is STILL LIVE — manual intervention required."
+            exit 1
+          fi
           MANAGED=" backend backend-worker frontend clawdbot-gateway commonly-bot "
           for d in $(kubectl get deploy -n "$NAMESPACE" -o name); do
             n=${d##*/}
             case "$MANAGED" in *" $n "*) : ;; *) continue ;; esac
             kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m \
-              || echo "::warning title=Rollback not yet ready::$d did not report ready within 8m after rollback to $PRE; check the cluster."
+              || echo "::warning title=Rollback not yet ready::$d did not report ready within 8m after rollback to $TARGET; check the cluster."
           done
-          echo "::error title=Deploy rolled back::commonly-dev rolled back to revision $PRE after a failed deploy. Investigate the bad image before the next deploy."
+          echo "::error title=Deploy rolled back::commonly-dev rolled back to revision $TARGET after a failed deploy. Investigate the bad image before the next deploy."
 
       # The stranger journey walks signup -> Scout's welcome -> a real question
       # -> the connect card against the release just deployed
