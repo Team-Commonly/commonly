@@ -126,5 +126,29 @@
  "activity-error-390": {
   "helperWords": 0,
   "innerRatio": 1
+ },
+ "profile-person-1440": {
+  "helperWords": 5,
+  "innerRatio": 1
+ },
+ "profile-empty-1440": {
+  "helperWords": 14,
+  "innerRatio": 1
+ },
+ "profile-error-1440": {
+  "helperWords": 0,
+  "innerRatio": 1
+ },
+ "profile-person-390": {
+  "helperWords": 5,
+  "innerRatio": 1
+ },
+ "profile-empty-390": {
+  "helperWords": 14,
+  "innerRatio": 1
+ },
+ "profile-error-390": {
+  "helperWords": 0,
+  "innerRatio": 1
  }
 }
