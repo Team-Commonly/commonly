@@ -112,7 +112,7 @@ interface RefreshResult {
   accessToken: string;
   refreshToken?: string;
   expiresIn?: number;
-  /** Present only when the vendor restated the scope on refresh. */
+  /** Absent only when the vendor omitted the scope; empty when it sent an unusable one. */
   scope?: string;
 }
 
@@ -299,7 +299,10 @@ export const refreshTokenAtVendor = async ({
     accessToken: String(body.access_token),
     refreshToken: body.refresh_token ? String(body.refresh_token) : undefined,
     expiresIn: typeof body.expires_in === 'number' ? body.expires_in : undefined,
-    scope: typeof body.scope === 'string' ? body.scope : undefined,
+    // A scope that is present but not a string is read as no scope granted, so
+    // a stale write scope cannot outlive it. Only an omitted scope keeps the grant.
+    scope: !Object.prototype.hasOwnProperty.call(body, 'scope') ? undefined
+      : typeof body.scope === 'string' ? body.scope : '',
   };
 };
 

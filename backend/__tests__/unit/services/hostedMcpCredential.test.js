@@ -275,7 +275,7 @@ describe('the fast path', () => {
     expect(body.get('refresh_token')).toBe('old-refresh');
   });
 
-  test('a refresh carries a restated scope string and ignores any other shape', async () => {
+  test('a refresh carries a restated scope string and fails closed on any other shape', async () => {
     const metadata = {
       issuer: ENTRY.issuer,
       authorization_endpoint: `${ENTRY.issuer}/authorize`,
@@ -283,10 +283,12 @@ describe('the fast path', () => {
     };
     const refreshWith = (scope) => refreshTokenAtVendor({ entry: ENTRY, clientId: 'c1', refreshToken: 'old-refresh' }, jest.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => metadata })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ access_token: 'new-access', scope }) }));
-    expect((await refreshWith('read')).scope).toBe('read');
-    expect((await refreshWith(['read'])).scope).toBeUndefined();
-    expect((await refreshWith(undefined)).scope).toBeUndefined();
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ access_token: 'new-access', ...scope }) }));
+    expect((await refreshWith({ scope: 'read' })).scope).toBe('read');
+    // Present but unusable reads as no scope granted; only an omitted one keeps the grant.
+    expect((await refreshWith({ scope: ['read'] })).scope).toBe('');
+    expect((await refreshWith({ scope: null })).scope).toBe('');
+    expect((await refreshWith({})).scope).toBeUndefined();
   });
 
   test('a refresh refused with HTTP 200 and an error body ends the connection, not a retry', async () => {
@@ -572,6 +574,14 @@ describe('the winner of the fence', () => {
     await credentialFor(row, h.deps);
 
     expect(h.commit.mock.calls[0][2]['config.grantedScope']).toBe('read');
+  });
+
+  test('a refresh with an empty scope records no scope at all', async () => {
+    const row = stale({ grantedScope: 'read write openid' });
+    const h = harness({ row, refreshResult: { accessToken: 'new-access', expiresIn: 3600, scope: '' } });
+    await credentialFor(row, h.deps);
+
+    expect(h.commit.mock.calls[0][2]['config.grantedScope']).toBe('');
   });
 
   test('a refresh that restates no scope leaves the grant as it was', async () => {
