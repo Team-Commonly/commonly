@@ -6,6 +6,7 @@ import { getAvatarSrc } from '../../utils/avatarUtils';
 import { useAuth } from '../../context/AuthContext';
 import AppsManagement from '../../components/AppsManagement';
 import '../primitives/primitives.css';
+import './V2SettingsPage.css';
 import V2BillingPanel from './V2BillingPanel';
 import V2DevicesPanel from './V2DevicesPanel';
 import V2DeleteAccount from './V2DeleteAccount';
@@ -61,8 +62,8 @@ const SettingsSection: React.FC<SettingsSectionProps> = ({ id, title, children }
     id={settingsSectionId(id)}
     aria-labelledby={`${settingsSectionId(id)}-label`}
   >
-    <h2 className="v2-settings__label" id={`${settingsSectionId(id)}-label`}>{title}</h2>
-    <div className="v2-settings__group">{children}</div>
+    <h2 className="v2p-gtitle" id={`${settingsSectionId(id)}-label`}>{title}</h2>
+    <div className="v2p-list">{children}</div>
   </section>
 );
 
@@ -78,6 +79,7 @@ const Chat = () => <Svg><path d="M5 5h14v10H9l-4 4V5z" /></Svg>;
 const Card = () => <Svg><path d="M3 6h18v12H3zM3 10h18" /></Svg>;
 const Globe = () => <Svg><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></Svg>;
 const Moon = () => <Svg><path d="M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10z" /></Svg>;
+const Next = () => <Svg><path d="m9 6 6 6-6 6" /></Svg>;
 const Warn = () => <Svg><path d="M12 4 3 20h18L12 4zM12 10v4M12 17v.5" /></Svg>;
 
 const V2AccountSection: React.FC = () => {
@@ -233,46 +235,64 @@ const V2AccountSection: React.FC = () => {
 
   return (
     <form className="v2-settings__account" onSubmit={save}>
-      <div className="v2-settings__row v2-settings__account-row">
-        <V2Avatar
-          className="v2-settings__avatar"
-          name={name || accountName}
-          src={currentUser?.profilePicture || undefined}
-          kind="human"
-          seed={currentUser?._id || currentUser?.id}
-          title={`${name || accountName} avatar`}
-        />
-        <div className="v2-settings__account-copy">
-          <div className="v2-settings__account-name">{name || accountName}</div>
-          <div className="v2-settings__meta">
-            <span>@{savedUsername}</span> · {currentUser?.role === 'admin' ? 'administrator' : 'member'}
-          </div>
-        </div>
-        <button
-          type="button"
-          className="v2-settings__icon-btn"
-          aria-label="Edit profile"
-          aria-expanded={editing}
-          aria-controls="v2-settings-profile-edit"
-          onClick={() => setEditing((open) => !open)}
-        >
-          <Pencil />
-        </button>
+      <div className="v2p-lrow v2-settings__account-row">
+        <span className="lb">
+          <button
+            type="button"
+            className="v2p-b v2p-b-g v2-settings__photo-btn"
+            title="Change photo"
+            aria-label="Change photo"
+            aria-expanded={editing}
+            aria-controls="v2-settings-profile-edit"
+            onClick={() => setEditing(true)}
+          >
+            <V2Avatar
+              className="v2-settings__avatar"
+              name={name || accountName}
+              src={currentUser?.profilePicture || undefined}
+              kind="human"
+              seed={currentUser?._id || currentUser?.id}
+              title={`${name || accountName} avatar`}
+            />
+          </button>
+          <span className="v2-settings__account-copy">
+            <span className="v2-settings__account-name">{name || accountName}</span>
+            <span className="v2-settings__meta">
+              <span>@{savedUsername}</span> · {currentUser?.role === 'admin' ? 'administrator' : 'member'}
+            </span>
+          </span>
+        </span>
+        <span className="vl" />
+        <span className="ac">
+          <button
+            type="button"
+            className="v2p-b v2p-b-g v2p-ib v2p-b-sm"
+            title="Edit name and username"
+            aria-label="Edit profile"
+            aria-expanded={editing}
+            aria-controls="v2-settings-profile-edit"
+            onClick={() => setEditing((open) => !open)}
+          >
+            <Pencil />
+          </button>
+        </span>
       </div>
-      <div className="v2-settings__row">
-        <Chat />
-        <span className="v2-settings__row-label">Email</span>
-        <span className="v2-settings__row-value v2-settings__row-value--mono">{accountEmail || '—'}</span>
-        <button
-          type="button"
-          className="v2-settings__icon-btn"
-          aria-label="Edit email"
-          aria-expanded={editing}
-          aria-controls="v2-settings-profile-edit"
-          onClick={() => setEditing((open) => !open)}
-        >
-          <Pencil />
-        </button>
+      <div className="v2p-lrow">
+        <span className="lb"><Chat />Email</span>
+        <span className="vl"><span className="mo v2-settings__mail">{accountEmail || '—'}</span></span>
+        <span className="ac">
+          <button
+            type="button"
+            className="v2p-b v2p-b-g v2p-ib v2p-b-sm"
+            title="Change email"
+            aria-label="Edit email"
+            aria-expanded={editing}
+            aria-controls="v2-settings-profile-edit"
+            onClick={() => setEditing((open) => !open)}
+          >
+            <Pencil />
+          </button>
+        </span>
       </div>
       <div className={`v2-settings__edit${editing ? '' : ' v2-settings__edit--closed'}`} id="v2-settings-profile-edit">
       <input
@@ -286,7 +306,7 @@ const V2AccountSection: React.FC = () => {
       />
       <div className="v2-settings__avatar-actions">
         <button
-          className="v2-settings__secondary"
+          className="v2p-b v2p-b-s v2p-b-sm"
           type="button"
           onClick={() => { if (!regeneratingAvatar && !savingPhoto) void regenerateAvatar(); }}
           aria-disabled={regeneratingAvatar || savingPhoto}
@@ -295,7 +315,7 @@ const V2AccountSection: React.FC = () => {
         </button>
         <button
           ref={uploadPhotoButtonRef}
-          className="v2-settings__secondary"
+          className="v2p-b v2p-b-s v2p-b-sm"
           type="button"
           onClick={choosePhoto}
           disabled={regeneratingAvatar || savingPhoto}
@@ -330,7 +350,7 @@ const V2AccountSection: React.FC = () => {
               aria-describedby="v2-settings-username-help"
             />
             <button
-              className="v2-settings__secondary"
+              className="v2p-b v2p-b-s v2p-b-sm"
               type="button"
               onClick={() => { if (!usernameBusy) void saveUsername(); }}
               disabled={usernameBusy}
@@ -346,14 +366,14 @@ const V2AccountSection: React.FC = () => {
           <label htmlFor="v2-settings-email">Email</label>
           <div className="v2-settings__email-control">
             <input id="v2-settings-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-            <button className="v2-settings__secondary" type="button">Change</button>
+            <button className="v2p-b v2p-b-s v2p-b-sm" type="button">Change</button>
           </div>
         </div>
       </div>
       {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
       {notice && <p className="v2-settings__message" role="status">{notice}</p>}
       <div className="v2-settings__actions">
-        <button className="v2-settings__primary" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+        <button className="v2p-b v2p-b-p" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
       </div>
       </div>
       {avatarFile && (
@@ -389,16 +409,16 @@ const V2AccountActions: React.FC = () => {
   };
 
   return (
-    <details className="v2-settings__fold v2-settings__fold--actions">
-      <summary className="v2-settings__row v2-settings__summary">
-        <Warn />
-        <span className="v2-settings__row-label">Account actions</span>
+    <details className="v2p-disc v2-settings__actions-fold">
+      <summary>
+        <span className="lb"><Warn />Account actions</span>
+        <span className="vl" />
         <Chevron />
       </summary>
       <div className="v2-settings__fold-body">
         {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
         <div className="v2-settings__actions">
-          <button className="v2-settings__secondary" type="button" disabled={revokingSessions}
+          <button className="v2p-b v2p-b-s v2p-b-sm" type="button" disabled={revokingSessions}
             onClick={() => { void signOutEverywhere(); }}>
             {t('settings.sessions.signOutEverywhere')}
           </button>
@@ -493,25 +513,26 @@ const V2ApiTokenSection: React.FC = () => {
   const statusLabel = hasToken ? `Active${last4 ? ` · ends in ${last4}` : ''}` : 'None';
 
   return (
-    <div className="v2-settings__token">
-      <div className="v2-settings__row">
-        <Key />
-        <span className="v2-settings__row-label">API token</span>
-        <span className="v2-settings__row-value">{statusLabel}</span>
-        {hasToken ? (
-          <span className="v2-settings__row-actions">
-            <button type="button" className="v2-settings__secondary" onClick={() => void generate()} disabled={busy !== null}>
-              {busy === 'generate' ? 'Regenerating…' : 'Regenerate'}
+    <>
+      <div className="v2p-lrow">
+        <span className="lb"><Key />API token</span>
+        <span className="vl"><span className="mu">{statusLabel}</span></span>
+        <span className="ac">
+          {hasToken ? (
+            <>
+              <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => void generate()} disabled={busy !== null}>
+                {busy === 'generate' ? 'Regenerating…' : 'Regenerate'}
+              </button>
+              <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => void revoke()} disabled={busy !== null}>
+                {busy === 'revoke' ? 'Revoking…' : 'Revoke'}
+              </button>
+            </>
+          ) : (
+            <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => void generate()} disabled={busy !== null}>
+              {busy === 'generate' ? 'Generating…' : 'Generate'}
             </button>
-            <button type="button" className="v2-settings__secondary" onClick={() => void revoke()} disabled={busy !== null}>
-              {busy === 'revoke' ? 'Revoking…' : 'Revoke'}
-            </button>
-          </span>
-        ) : (
-          <button type="button" className="v2-settings__secondary" onClick={() => void generate()} disabled={busy !== null}>
-            {busy === 'generate' ? 'Generating…' : 'Generate API token'}
-          </button>
-        )}
+          )}
+        </span>
       </div>
       {(error || notice || token) && (
         <div className="v2-settings__token-detail">
@@ -521,17 +542,17 @@ const V2ApiTokenSection: React.FC = () => {
             <>
               <div className="v2-settings__token-value">
                 <code>{token && showToken ? token : maskedToken}</code>
-                <button type="button" className="v2-settings__secondary" onClick={() => setShowToken((visible) => !visible)}>
+                <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => setShowToken((visible) => !visible)}>
                   {showToken ? 'Hide' : 'Show'}
                 </button>
-                <button type="button" className="v2-settings__secondary" onClick={() => void copy()}>Copy</button>
+                <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => void copy()}>Copy</button>
               </div>
               {createdLabel && <p className="v2-settings__token-meta">{createdLabel}</p>}
             </>
           )}
         </div>
       )}
-    </div>
+    </>
   );
 };
 
@@ -542,28 +563,30 @@ const V2LanguageSection: React.FC = () => {
   const chooseTheme = (pref: V2ThemePref) => setV2Theme(pref);
 
   return (
-    <div className="v2-settings__look">
-      <div className="v2-settings__row">
-        <Globe /><span className="v2-settings__row-label">{t('common.language.label')}</span>
-        <V2Segmented
+    <>
+      <div className="v2p-lrow">
+        <span className="lb"><Globe />{t('common.language.label')}</span>
+        <span className="vl" />
+        <span className="ac"><V2Segmented
           size="sm"
           ariaLabel={t('common.language.label')}
           value={(LANGUAGE_REGISTRY.find((language) => language.code === active) || LANGUAGE_REGISTRY[0]).code}
           onChange={(code) => { void i18n.changeLanguage(code); }}
-          options={LANGUAGE_REGISTRY.map((language) => ({ value: language.code, label: language.label }))}
-        />
+          options={LANGUAGE_REGISTRY.map((language) => ({ value: language.code, label: language.short, ariaLabel: language.label }))}
+        /></span>
       </div>
-      <div className="v2-settings__row">
-        <Moon /><span className="v2-settings__row-label">{t('common.theme.label')}</span>
-        <V2Segmented
+      <div className="v2p-lrow">
+        <span className="lb"><Moon />{t('common.theme.label')}</span>
+        <span className="vl" />
+        <span className="ac"><V2Segmented
           size="sm"
           ariaLabel={t('common.theme.label')}
           value={theme}
           onChange={chooseTheme}
           options={V2_THEMES.map((pref) => ({ value: pref, label: t(`common.theme.${pref}`) }))}
-        />
+        /></span>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -589,20 +612,15 @@ const V2SettingsPage: React.FC = () => {
         <div className="v2-settings__content">
           <SettingsSection id="account" title="Account">
             <V2AccountSection />
-            <div className="v2-settings__row v2-settings__row--plan">
-              <Card />
-              <span className="v2-settings__row-label">Plan</span>
-              <V2BillingPanel showHeading={false} />
-            </div>
+            <V2BillingPanel />
           </SettingsSection>
           <SettingsSection id="access" title="Access">
             <V2DevicesPanel showHeading={false} asFold />
             <V2ApiTokenSection />
-            <Link className="v2-settings__row v2-settings__row--link" to="/v2/connectors">
-              <Plug />
-              <span className="v2-settings__row-label">Connectors</span>
-              <span className="v2-settings__row-value">Manage connected services</span>
-              <span className="v2-settings__row-arrow" aria-hidden="true">›</span>
+            <Link className="v2p-lrow v2-settings__link" to="/v2/connectors">
+              <span className="lb"><Plug />Connectors</span>
+              <span className="vl"><span className="mu">Manage connected services</span></span>
+              <span className="ac"><span className="v2p-b v2p-b-g v2p-ib v2p-b-sm" aria-hidden="true"><Next /></span></span>
             </Link>
             {developerAppsEnabled() && (
               <details className="v2-settings__developer-disclosure">
@@ -612,7 +630,7 @@ const V2SettingsPage: React.FC = () => {
             )}
           </SettingsSection>
           <SettingsSection id="look" title="Look"><V2LanguageSection /></SettingsSection>
-          <V2AccountActions />
+          <div className="v2p-list v2-settings__actions-list"><V2AccountActions /></div>
           {isAdmin && (
             <SettingsSection id={ADMIN_SECTION.id} title={ADMIN_SECTION.title}><V2AdminSection /></SettingsSection>
           )}

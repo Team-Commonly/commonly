@@ -24,6 +24,9 @@ import { blockAt, blockContaining } from '../lib/cssBlocks';
 const read = (rel: string): string =>
   fs.readFileSync(path.join(__dirname, rel), 'utf8');
 
+// Settings keeps its own sheet, lifted from the d215 frame (TASK-688).
+const ss = read('../components/V2SettingsPage.css');
+
 // The team's phone block: the `@media (max-width: 760px)` block that carries
 // `.v2-team__grid`, wherever it sits in the sheet — not the last one.
 const teamPhoneBlock = (css: string): string =>
@@ -1239,11 +1242,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('<AppsManagement variant="settings" showIntegrations={false} />');
     expect(settingsPage).toContain('to="/v2/connectors"');
     expect(settingsPage).toContain('<summary>Developer apps</summary>');
-    expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
+    expect(settingsPage).toContain('<V2BillingPanel />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 44px');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(ss, '.v2-settings__avatar')).toContain('width: 44px');
+    expect(ruleBody(ss, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(ss, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
     expect(avatar).toContain("borderRadius: 'inherit'");
     expect(v2App).toMatch(/path="settings\/devices"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toMatch(/path="profile"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
@@ -1252,12 +1255,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(app).toContain('<Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />');
   });
 
+  test('Settings errors never sit inside the value column the phone hides', () => {
+    const devicesPanel = read('../components/V2DevicesPanel.tsx');
+    // billing error is its own line under the row, not a child of .vl
+    expect(billingPanel).toMatch(/<\/span>\s*\{error && <span className="v2-settings__error v2-settings__error--row"/);
+    expect(billingPanel).not.toMatch(/<span className="vl">[^]*v2-settings__error[^]*<\/span>\s*<span className="ac">/);
+    expect(ruleBody(ss, '.v2-settings__error--row')).toContain('grid-column: 1 / -1');
+    // devices: a load failure keeps its summary visible at 390
+    expect(devicesPanel).toContain("'vl v2-settings__vl--error'");
+    expect(ss).toMatch(/\.v2-settings \.v2p-disc > summary \.v2-settings__vl--error \{ display: flex/);
+  });
+
   test('Settings is one screen: grouped cards, no jump nav', () => {
     expect(settingsPage).not.toContain('v2-settings__nav');
-    expect(ruleBody(v2, '.v2-settings__content')).toContain('width: min(100%, 760px)');
-    expect(ruleBody(v2, '.v2-settings__edit--closed')).toContain('display: none');
-    expect(ruleBody(v2, '.v2-settings__group,\n.v2-settings__fold')).toContain('overflow: hidden');
-    expect(ruleBody(v2, '.v2-settings__row > .v2-settings__row-value')).toContain('min-width: 0');
+    expect(ruleBody(ss, '.v2-settings__content')).toContain('width: min(100%, 760px)');
+    expect(ruleBody(ss, '.v2-settings__edit--closed')).toContain('display: none');
   });
 
   test('Settings saves a display name while allowing handle changes and exposing the email change affordance', () => {
@@ -1273,42 +1285,33 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('type="button">Change</button>');
     expect(settingsPage).not.toContain('Email changes go through re-verification; ask us for now.');
     expect(settingsPage).not.toContain('v2-settings__nav-note');
-    expect(ruleBody(v2, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-    expect(ruleBody(v2, '.v2-settings__account-fields > label')).toContain('align-content: start');
-    expect(ruleBody(v2, '.v2-settings__account-fields > .v2-settings__account-email')).toContain('grid-column: 1 / -1');
-    expect(ruleBody(v2, '.v2-settings__account-fields input')).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__email-control')).toContain('display: flex');
-    const accountForm = ruleBody(v2, '.v2-settings form.v2-settings__account');
+    expect(ruleBody(ss, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(ruleBody(ss, '.v2-settings__account-fields > label')).toContain('align-content: start');
+    expect(ruleBody(ss, '.v2-settings__account-fields > .v2-settings__account-email')).toContain('grid-column: 1 / -1');
+    expect(ruleBody(ss, '.v2-settings__account-fields input')).toContain('border-radius: var(--v2-radius-sm)');
+    expect(ruleBody(ss, '.v2-settings__email-control')).toContain('display: flex');
+    const accountForm = ruleBody(ss, '.v2-settings form.v2-settings__account');
     expect(accountForm).toContain('padding: 0');
     expect(accountForm).toContain('background: transparent');
     expect(accountForm).toContain('box-shadow: none');
   });
 
   test('Settings avatar controls keep the account face square and the crop step usable on phones', () => {
-    const avatar = ruleBody(v2, '.v2-settings__avatar');
+    const avatar = ruleBody(ss, '.v2-settings__avatar');
     expect(avatar).toContain('width: 44px');
     expect(avatar).toContain('height: 44px');
     expect(avatar).toContain('border-radius: var(--v2-radius-sm)');
-    expect(ruleBody(v2, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
+    expect(ruleBody(ss, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
     expect(avatarCropDialog).toContain('className="v2-root v2-modal__overlay v2-settings__avatar-overlay"');
     expect(avatarCropDialog).toContain('className="v2-modal v2-settings__avatar-dialog"');
-    expect(ruleBody(v2, '.v2-settings__avatar-crop-stage')).toContain('aspect-ratio: 392 / 260');
-    expect(ruleBody(v2, '.v2-settings__avatar-crop-frame')).toContain('border: 1px solid var(--v2-surface)');
-    expect(ruleBody(v2, '.v2-settings__avatar-crop-dim span')).toContain('background: rgba(16, 24, 40, 0.55)');
-    expect(ruleBody(v2, '.v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-thumb')).toContain('width: 16px');
-    expect(ruleBody(v2, '.v2-root .v2-settings__avatar-dialog-actions button')).toContain('min-width: 112px');
-    const ariaDisabledStyle = selectorRuleBody(
-      v2,
-      '.v2-root button.v2-settings__primary[aria-disabled="true"]',
-    );
-    expect(ariaDisabledStyle).toContain('cursor: default');
-    expect(ariaDisabledStyle).toContain('opacity: 0.55');
-    expect(v2).toContain('.v2-root button.v2-settings__primary:hover:not(:disabled):not([aria-disabled="true"])');
-    expect(v2).toContain('.v2-root button.v2-settings__secondary:hover:not(:disabled):not([aria-disabled="true"])');
-
-    const phone = blockContaining(v2, '@media (max-width: 680px)', '.v2-settings__avatar-actions');
+    expect(ruleBody(ss, '.v2-settings__avatar-crop-stage')).toContain('aspect-ratio: 392 / 260');
+    expect(ruleBody(ss, '.v2-settings__avatar-crop-frame')).toContain('border: 1px solid var(--v2-surface)');
+    expect(ruleBody(ss, '.v2-settings__avatar-crop-dim span')).toContain('background: rgba(16, 24, 40, 0.55)');
+    expect(ruleBody(ss, '.v2-root .v2-settings__avatar-zoom input[type="range"]::-webkit-slider-thumb')).toContain('width: 16px');
+    expect(ruleBody(ss, '.v2-root .v2-settings__avatar-dialog-actions button')).toContain('min-width: 112px');
+    const phone = blockContaining(ss, '@media (max-width: 680px)', '.v2-settings__avatar-actions');
     expect(ruleBody(phone, '.v2-settings__avatar-actions', { within: phone })).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');
-    expect(ruleBody(phone, '.v2-root .v2-settings__avatar-actions button.v2-settings__secondary', { within: phone })).toContain('min-height: 44px');
+    expect(ruleBody(phone, '.v2-settings__avatar-actions .v2p-b', { within: phone })).toContain('min-height: 44px');
     expect(ruleBody(phone, '.v2-settings__avatar-footer', { within: phone })).toContain('flex-direction: column');
     expect(ruleBody(phone, '.v2-root .v2-settings__avatar-dialog-actions button', { within: phone })).toContain('min-height: 44px');
 
@@ -1333,13 +1336,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(billingPanel).toContain("t(isPro ? 'billing.manage' : 'billing.upgrade')");
     expect(billingPanel).not.toContain('free in beta');
     expect(billingPanel).not.toContain('included during beta');
-    const badge = ruleBody(v2, '.v2-settings__section .v2-billing__badge');
-    expect(badge).toContain('background: transparent');
-    expect(badge).toContain('border: 0');
-    expect(badge).toContain('padding: 0');
-    const proBadge = ruleBody(v2, '.v2-settings__section .v2-billing__badge--pro');
-    expect(proBadge).toContain('background: transparent');
-    expect(proBadge).toContain('color: var(--v2-text-primary)');
+    // The frame reads the plan as plain text in the row value, not a chip.
+    expect(billingPanel).toContain('<span className="v2-settings__plan">');
+    expect(billingPanel).not.toContain('v2-billing__badge');
   });
 
   test('Settings flattens connected apps and folds Developer Tips under the form', () => {
@@ -1349,8 +1348,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(appsManagement).toContain('className="apps-management__developer-tips"');
     expect(appsManagement).toContain('{!isSettingsVariant && (');
     expect(appsManagement).toContain('? <Box className={className}>{children}</Box>');
-    expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__section + .apps-management__section')).toContain('border-top: 1px solid var(--v2-border-soft)');
-    expect(ruleBody(v2, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
+    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__section + .apps-management__section')).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(ruleBody(ss, '.v2-settings .apps-management--settings .apps-management__integration')).toContain('border: 1px solid var(--v2-border)');
   });
 
   test('mention treatment is a tight chip on the handle, never a row wash or rail', () => {
