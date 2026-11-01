@@ -54,7 +54,7 @@ export async function noteNeverConnectedMention({
   }).select('username profilePicture botMetadata agentRuntimeTokens').lean() as {
     _id: unknown; username?: string; profilePicture?: string | null;
     botMetadata?: { displayName?: string; instanceId?: string };
-    agentRuntimeTokens?: Array<{ lastUsedAt?: Date | string | null }>;
+    agentRuntimeTokens?: Array<{ lastListenedAt?: Date | string | null }>;
   } | null;
   if (!agent) return false;
 

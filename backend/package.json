@@ -27,6 +27,7 @@
     "backfill:message-author-kind": "node dist/scripts/backfill-message-author-kind.js",
     "backfill:listener-check-in": "node dist/scripts/backfill-listener-check-in.js",
     "backfill:local-messages": "node dist/scripts/backfill-local-messages-to-pg.js",
+    "backfill:task-created-by": "node dist/scripts/backfill-task-created-by.js",
     "migrate:task-priority": "node dist/scripts/migrate-task-priority.js",
     "migrate:task-source-ref-identity": "node dist/scripts/migrate-task-source-ref-identity.js",
     "sweep:resolved-mention-attention": "node dist/scripts/sweep-resolved-mention-attention.js",

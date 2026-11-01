@@ -159,22 +159,21 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     ]);
   });
 
-  it('a PATCH to claimed records the claim without reporting the row\'s older lease as its own', async () => {
+  it('a seat PATCH to claimed is refused and records no claim', async () => {
     expect((await claim()).status).toBe(200);
     const asOwner = as(generateTestToken(owner._id));
     expect((await request(app).patch(`/api/v1/tasks/${pod._id}/TASK-1`).set(asOwner).send({ status: 'blocked' })).status).toBe(200);
     // The first claim's lease is still on the row; this PATCH sets none.
     expect((await Task.findOne({ podId: pod._id, taskId: 'TASK-1' }).lean()).claimExpiresAt).toBeInstanceOf(Date);
-    expect((await request(app).patch(`/api/v1/tasks/${pod._id}/TASK-1`).set(asOwner).send({ status: 'in_progress' })).status).toBe(200);
+    // Seats only: a person's Start is still a PATCH, and a seat's writes no lease, so it is refused before any write or record.
+    expect((await request(app).patch(`/api/v1/tasks/${pod._id}/TASK-1`).set(as(AGENT_TOKEN)).send({ status: 'in_progress' })).status).toBe(400);
     await flushRecordWrites();
     const res = await read(generateTestToken(owner._id));
     const lines = res.text.trimEnd().split('\n').map((line) => JSON.parse(line));
     expect(lines.map((l) => [l.kind, l.data])).toEqual([
       ['task.claimed', { leaseUntil: expect.any(String) }],
       ['task.released', { reason: 'blocked' }],
-      ['task.claimed', {}],
     ]);
-    expect(lines[2].actor).toEqual({ type: 'human', id: String(owner._id) });
   });
 
   it('refuses everyone else before any record byte is read', async () => {
@@ -201,6 +200,29 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     process.env.RECORD_V1_PODS = podIds().join(',');
     await Pod.updateOne({ _id: pod._id }, { $pull: { members: agent._id } });
     expect(await read(AGENT_TOKEN)).toMatchObject({ status: 404 });
+    expect(readChain).not.toHaveBeenCalled();
+  });
+
+  it('an agent-DM observer can view the DM but reads neither of its records', async () => {
+    // §3.7: a person who shares a pod with either DM member may view the DM.
+    const peer = await User.create({
+      username: `record-peer-${Date.now()}`,
+      email: `record-peer-${Date.now()}@agents.commonly.local`,
+      password: 'Password123!',
+      isBot: true,
+      botType: 'agent',
+      botMetadata: { agentName: 'record-peer', instanceId: 'default', ownerUserId: String(owner._id) },
+    });
+    const dm = await Pod.create({ name: 'agent DM', type: 'agent-dm', createdBy: agent._id, members: [agent._id, peer._id] });
+    await Pod.create({ name: 'Shared pod', type: 'team', createdBy: owner._id, members: [outsider._id, agent._id] });
+    await Task.create({ podId: dm._id, taskNum: 1, taskId: 'TASK-1', title: 'dm task', status: 'pending' });
+    process.env.RECORD_V1_PODS = [...podIds(), String(dm._id)].join(',');
+    const readChain = jest.spyOn(repository, 'readChain');
+    const observer = generateTestToken(outsider._id);
+
+    expect(await read(observer, dm._id)).toMatchObject({ status: 403, body: { error: 'record_requires_membership' } });
+    expect(await request(app).get(`/api/pods/${dm._id}/record`).set(as(observer)))
+      .toMatchObject({ status: 403, body: { error: 'record_requires_membership' } });
     expect(readChain).not.toHaveBeenCalled();
   });
 

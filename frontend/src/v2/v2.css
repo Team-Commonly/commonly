@@ -171,6 +171,32 @@ body.modern-ui.v2-canvas {
   --v2-radius-lg: 6px;
   --v2-radius-pill: 999px;
 
+  /* D223 Signal primitives (TASK-730), from the d215 artboard :root. Additive:
+     the old --v2-radius-*/--v2-shadow-* values above stay until PR2 moves
+     consumers onto the scale. Pinned by __tests__/signalTokens.test.ts. */
+  --v2-ink-2: #1d2433;
+  --v2-fill-a: #333c4e;
+  --v2-fill-b: #161d2c;
+  --v2-fill-edge: #0b101b;
+  --v2-on-fill: #ffffff;
+  --v2-accent-fill-a: #2e50e2;
+  --v2-accent-fill-b: #1b3bc6;
+  --v2-key-a: #ffffff;
+  --v2-key-b: #f4f5f7;
+  --v2-key-edge: rgba(15, 23, 42, 0.14);
+  --v2-key-inset: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(16, 24, 40, 0.06);
+  --v2-shadow-pane: 0 0 0 1px rgba(16, 24, 40, 0.07), 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 28px -20px rgba(16, 24, 40, 0.18);
+  --v2-shadow-pop: 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28);
+  --v2-av-ring: rgba(16, 24, 40, 0.07);
+  --v2-scrim: rgba(16, 24, 40, 0.18);
+  --v2-font-display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+  --v2-r-6: 6px;
+  --v2-r-8: 8px;
+  --v2-r-9: 9px;
+  --v2-r-10: 10px;
+  --v2-r-12: 12px;
+  --v2-r-14: 14px;
+
   /* Elevation */
   --v2-shadow-sm: none;
   --v2-shadow: none;
@@ -213,6 +239,22 @@ body.modern-ui.v2-canvas {
    Not from the artboard, pending ux-lead: --v2-focus-ring, the success and
    danger text lifts, and the soft fills. Avatar and persona tints stay literal. */
 :root[data-v2-theme="dark"] .v2-root {
+    /* D223 Signal primitives (TASK-730); dark values from the d215 artboard. */
+    --v2-ink-2: #d3d8e1;
+    --v2-fill-a: #f4f5f8;
+    --v2-fill-b: #dce0e8;
+    --v2-fill-edge: #c4cad5;
+    --v2-on-fill: #0b0e13;
+    --v2-accent-fill-a: #3d5ef2;
+    --v2-accent-fill-b: #2948d8;
+    --v2-key-a: #1e2531;
+    --v2-key-b: #191f29;
+    --v2-key-edge: rgba(255, 255, 255, 0.10);
+    --v2-key-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --v2-shadow-pane: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 28px -20px rgba(0, 0, 0, 0.6);
+    --v2-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.10), 0 18px 36px -14px rgba(0, 0, 0, 0.75);
+    --v2-av-ring: rgba(255, 255, 255, 0.10);
+    --v2-scrim: rgba(0, 0, 0, 0.45);
     --v2-bg: #141922;
     --v2-page-bg: #0b0e13;
     --v2-bg-subtle: #181e28;
@@ -271,6 +313,22 @@ body.modern-ui.v2-canvas {
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-v2-theme="light"]) .v2-root {
+      /* D223 Signal primitives (TASK-730); dark values from the d215 artboard. */
+      --v2-ink-2: #d3d8e1;
+      --v2-fill-a: #f4f5f8;
+      --v2-fill-b: #dce0e8;
+      --v2-fill-edge: #c4cad5;
+      --v2-on-fill: #0b0e13;
+      --v2-accent-fill-a: #3d5ef2;
+      --v2-accent-fill-b: #2948d8;
+      --v2-key-a: #1e2531;
+      --v2-key-b: #191f29;
+      --v2-key-edge: rgba(255, 255, 255, 0.10);
+      --v2-key-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 2px rgba(0, 0, 0, 0.3);
+      --v2-shadow-pane: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 12px 28px -20px rgba(0, 0, 0, 0.6);
+      --v2-shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.10), 0 18px 36px -14px rgba(0, 0, 0, 0.75);
+      --v2-av-ring: rgba(255, 255, 255, 0.10);
+      --v2-scrim: rgba(0, 0, 0, 0.45);
       --v2-bg: #141922;
       --v2-page-bg: #0b0e13;
       --v2-bg-subtle: #181e28;

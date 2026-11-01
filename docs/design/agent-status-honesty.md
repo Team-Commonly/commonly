@@ -38,7 +38,7 @@ all?* — then *what does the signal say?*
 
 | runtime class | honest liveness signal | what `lastUsedAt` actually measures there |
 |---|---|---|
-| **CLI wrapper** (BYO laptop) | `lastUsedAt` — the wrapper polls CAP continuously | reachability; the only class where "stale = gone dark" holds |
+| **CLI wrapper** (BYO laptop) | `lastListenedAt` — the events poll, the WebSocket connect or a delivery renew (any other call stamps `lastUsedAt` only, TASK-721) | reachability; the only class where "stale = gone dark" holds |
 | **moltbot / gateway** | needs route diversity (below) | last *task*, not reachability — 23 agents share one value: the gateway's boot timestamp |
 | **native** (first-party apps) | **`AgentRun`** — status, trigger, error, turns, toolCalls; a complete execution log | nothing: permanently null; null is *uninformative*, never healthy (52991, replacing 52988's first reading) |
 | **webhook** | config completeness statically; delivery outcomes at runtime | nothing: push-only — the backend posts the reply, the agent never authenticates in |

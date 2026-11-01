@@ -78,7 +78,7 @@ describe('stamped and legacy polling seats both reach the honesty surface', () =
     // knowable in both directions.
     const state = deriveAgentState(
       install({ runtimeType: 'webhook', host: 'byo' }),
-      [{ lastUsedAt: new Date() }],
+      [{ lastListenedAt: new Date() }],
       'u1',
     );
 

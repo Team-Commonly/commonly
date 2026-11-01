@@ -36,11 +36,11 @@ jest.mock('../../../models/Pod', () => ({
 }));
 
 const mockFindOneAndUpdate = jest.fn();
-// `findOne` carries the lease-guard read now (AX 61 / TASK-138), so it has to
-// answer the query chain the route actually uses. `null` is the honest answer for
-// this suite's fixtures: there is no row to inspect, so the guard lets the write
-// through exactly as it did before it existed. A bare `jest.fn()` returned
-// `undefined` and turned an agent PATCH into a 500.
+// `findOne` carries the lease-guard read (AX 61 / TASK-138), so it has to answer the
+// query chain the route actually uses: select → lean. `null` is the honest answer for
+// this suite's fixtures: there is no row to inspect, so the guard lets the write through
+// exactly as it did before it existed. A bare `jest.fn()` returned `undefined`
+// and turned an agent PATCH into a 500.
 const mockFindOne = jest.fn(() => ({
   select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(null) })),
 }));
@@ -77,7 +77,8 @@ const POD_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const patch = (token) => {
   const req = request(app).patch(`/api/v1/tasks/${POD_ID}/TASK-001`);
   if (token) req.set('Authorization', `Bearer ${token}`);
-  return req.send({ status: 'in_progress' });
+  // A claim cannot go through PATCH (it takes a lease), so the board write is a release.
+  return req.send({ status: 'pending' });
 };
 
 beforeEach(() => {
