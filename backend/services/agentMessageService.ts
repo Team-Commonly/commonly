@@ -2350,28 +2350,44 @@ class AgentMessageService {
   }
 
   /**
-   * Adds `mention` (the @handle mention routing resolves for the author) to
-   * each message. A message's `username` is the display label, and for bots
-   * `userId.username` is that label too, so the handle has to come from the
-   * author's User row. One query per page, not per message.
+   * Adds `mention` to each message: the handle that routes to its author in
+   * this pod (agentMentionService.mentionHandleForUser), or '' when nothing
+   * does. A message's `username` is the display label, and for bots
+   * `userId.username` is that label too, so the handle comes from the
+   * author's User row and the pod's mention map. One query per page, not per
+   * message. Best effort: a failed lookup keeps every message and gives each
+   * an empty `mention`, since a page without handles beats no page.
    */
   static async withMentionHandles<T extends { userId?: { _id?: unknown } | null }>(
     messages: T[],
+    podId: unknown,
+    { mentionMap }: { mentionMap?: Map<string, { agentName: string; instanceId?: string }> } = {},
   ): Promise<Array<T & { mention: string }>> {
+    const unaddressed = () => messages.map((m) => ({ ...m, mention: '' }));
     const ids = Array.from(new Set(messages
       .map((m) => String(m?.userId?._id ?? ''))
       .filter((id) => /^[a-f0-9]{24}$/i.test(id))));
-    const handleById = new Map<string, string>();
-    if (ids.length) {
-      const users = await User.find({ _id: { $in: ids } }).select('_id username').lean();
-      (users as Array<{ _id: unknown; username?: string }>).forEach((user) => {
-        handleById.set(String(user._id), user.username || '');
+    if (!ids.length) return unaddressed();
+    try {
+      // Lazy: agentMentionService requires this module.
+      // eslint-disable-next-line global-require
+      const mentions = require('./agentMentionService');
+      const [users, map] = await Promise.all([
+        User.find({ _id: { $in: ids } }).select('_id username isBot botMetadata').lean(),
+        mentionMap || mentions.loadPodMentionMap(podId),
+      ]);
+      const handleById = new Map<string, string>();
+      (users as Array<Record<string, unknown>>).forEach((user) => {
+        handleById.set(String(user._id), mentions.mentionHandleForUser(map, user));
       });
+      return messages.map((m) => ({
+        ...m,
+        mention: handleById.get(String(m?.userId?._id ?? '')) || '',
+      }));
+    } catch (error) {
+      console.warn('Message mention handles unavailable:', (error as Error).message);
+      return unaddressed();
     }
-    return messages.map((m) => ({
-      ...m,
-      mention: handleById.get(String(m?.userId?._id ?? '')) || '',
-    }));
   }
 }
 

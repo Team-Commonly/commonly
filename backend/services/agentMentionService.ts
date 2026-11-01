@@ -210,12 +210,28 @@ const slugify = (value = ''): string => value
   .replace(/-+/g, '-')
   .replace(/^-+|-+$/g, '');
 
+// How firmly a key names one install when two installs claim it. A canonical
+// username is a User row's username, so it is unique and always wins. Then the
+// explicit agent-instance key, then the bare name and its curated aliases
+// (single-install only), then the instanceId and the display-name slug, which
+// nothing keeps unique. An equal claim keeps the rule every key had before
+// ranks existed: the later install wins.
+const KEY_STRENGTH = {
+  canonical: 4, explicit: 3, bare: 2, loose: 1,
+} as const;
+
 const buildMentionMap = (
   installations: Array<Record<string, unknown>> = [],
   profiles: Array<Record<string, unknown>> = [],
 ): { map: Map<string, MentionTarget>; byAgent: Map<string, MentionMapEntry[]> } => {
   const map = new Map<string, MentionTarget>();
   const byAgent = new Map<string, MentionMapEntry[]>();
+  const strength = new Map<string, number>();
+  const claim = (key: string, target: MentionTarget, rank: number): void => {
+    if ((strength.get(key) ?? 0) > rank) return;
+    map.set(key, target);
+    strength.set(key, rank);
+  };
 
   installations.forEach((installation) => {
     const agentName = installation.agentName as string;
@@ -233,33 +249,88 @@ const buildMentionMap = (
     byAgent.set(agentName, list);
 
     // Always allow explicit instance references
-    map.set(`${agentName}-${instanceId}`.toLowerCase(), { agentName, instanceId });
-    // The canonical username: the handle the platform shows for this agent in
-    // members and message authors, and the one the intro advertises. When it
-    // is the bare agentName (default or same-as-type instance) the single-
-    // install rule below governs it, so it is not added here.
+    claim(`${agentName}-${instanceId}`.toLowerCase(), { agentName, instanceId }, KEY_STRENGTH.explicit);
+    // The canonical username: the agent's own username, which members and
+    // message authors carry. When it is the bare agentName (default or
+    // same-as-type instance) the single-install rule below governs it, so it
+    // is not added here.
     const canonical = buildAgentUsername(agentName, instanceId);
     if (canonical !== agentName.toLowerCase()) {
-      map.set(canonical, { agentName, instanceId });
+      claim(canonical, { agentName, instanceId }, KEY_STRENGTH.canonical);
     }
-    map.set(instanceId.toLowerCase(), { agentName, instanceId });
+    claim(instanceId.toLowerCase(), { agentName, instanceId }, KEY_STRENGTH.loose);
     if (displaySlug) {
-      map.set(displaySlug, { agentName, instanceId });
+      claim(displaySlug, { agentName, instanceId }, KEY_STRENGTH.loose);
     }
   });
 
   // Only allow bare agentName if there's a single installation in the pod
   byAgent.forEach((list, agentName) => {
     if (list.length === 1) {
-      map.set(agentName.toLowerCase(), { agentName, instanceId: list[0].instanceId });
+      claim(agentName.toLowerCase(), { agentName, instanceId: list[0].instanceId }, KEY_STRENGTH.bare);
       const aliases = MENTION_ALIASES[agentName] || [];
       aliases.forEach((alias) => {
-        map.set(alias.toLowerCase(), { agentName, instanceId: list[0].instanceId });
+        claim(alias.toLowerCase(), { agentName, instanceId: list[0].instanceId }, KEY_STRENGTH.bare);
       });
     }
   });
 
   return { map, byAgent };
+};
+
+// The handle shape extractMentions can read out of a message.
+const MENTIONABLE_HANDLE = /^[a-z0-9_-]{2,}$/;
+
+const sameTarget = (a: MentionTarget | undefined, b: MentionTarget): boolean => !!a
+  && a.agentName.toLowerCase() === b.agentName.toLowerCase()
+  && (a.instanceId || 'default').toLowerCase() === (b.instanceId || 'default').toLowerCase();
+
+/**
+ * The handle that routes to this install through a pod's mention map, or ''
+ * when none does. Its canonical username first (the name the platform shows),
+ * then the explicit agent-instance key, which is what a default install beside
+ * a sibling of the same agent answers to. Everything that tells an agent or a
+ * person what to type (the install intro, get_context, get_messages) takes the
+ * handle from here, so the name it shows is the name routing resolves.
+ */
+const routedMentionHandle = (map: Map<string, MentionTarget>, target: MentionTarget): string => {
+  const instanceId = target.instanceId || 'default';
+  const candidates = [
+    buildAgentUsername(target.agentName, instanceId),
+    `${target.agentName}-${instanceId}`.toLowerCase(),
+  ];
+  return candidates.find((key) => MENTIONABLE_HANDLE.test(key) && sameTarget(map.get(key), target)) || '';
+};
+
+/**
+ * A message author's or member's handle in this pod. An agent gets the handle
+ * that routes to its install here. A human gets their username, unless the
+ * pod's agents or the curated aliases already answer to it: routing gives
+ * those to the agent (see enqueueMentions' humanMentionHandles).
+ */
+const mentionHandleForUser = (
+  map: Map<string, MentionTarget>,
+  user: { username?: unknown; isBot?: unknown; botMetadata?: { agentName?: unknown; instanceId?: unknown } } | null,
+): string => {
+  if (!user) return '';
+  if (user.isBot) {
+    const agentName = String(user.botMetadata?.agentName || '');
+    if (!agentName) return '';
+    return routedMentionHandle(map, { agentName, instanceId: String(user.botMetadata?.instanceId || 'default') });
+  }
+  const handle = String(user.username || '').toLowerCase();
+  if (!MENTIONABLE_HANDLE.test(handle) || map.has(handle) || aliasMap.has(handle)) return '';
+  return String(user.username);
+};
+
+/** The mention map for a pod, built from the same rows enqueueMentions reads. */
+const loadPodMentionMap = async (podId: unknown): Promise<Map<string, MentionTarget>> => {
+  const installations = await AgentInstallation.find({ podId, status: 'active' }).lean();
+  const profiles = await AgentProfile.find({ podId }).lean();
+  return buildMentionMap(
+    installations as Array<Record<string, unknown>>,
+    profiles as Array<Record<string, unknown>>,
+  ).map;
 };
 
 const buildSummaryPayload = (
@@ -2522,6 +2593,9 @@ export {
   // Sender feedback must recognize the exact same routed handles (including
   // legacy aliases and profile display names) as the delivery path.
   buildMentionMap,
+  routedMentionHandle,
+  mentionHandleForUser,
+  loadPodMentionMap,
   // Exported for the escaping test: the property that matters — a metacharacter
   // in a handle matches literally — is unreachable through `enqueueMentions`
   // while `extractMentions` still excludes metacharacters. A test that can only
