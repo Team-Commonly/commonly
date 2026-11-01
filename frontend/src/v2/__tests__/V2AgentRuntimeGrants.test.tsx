@@ -249,3 +249,48 @@ test('Connector grants is one heading, named by its title and not its count', as
   expect(headings[0]).toHaveClass('gtitle');
   expect(screen.getByRole('heading', { name: 'Connector grants' })).toBe(headings[0]);
 });
+
+test('each grant shows its tools as text, so two grants for one connector are told apart', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
+    : { grants: [response.grants[0], { ...response.grants[0], grantId: 'grant-2', tools: ['linear.create_issue', 'linear.update_issue'] }] } }));
+  renderSection();
+  expect(await screen.findByText('linear.list_issues')).toBeVisible();
+  expect(screen.getByText('linear.create_issue, linear.update_issue')).toBeVisible();
+});
+
+test('a revoke error clears on Cancel and when a new confirm opens', async () => {
+  axios.post.mockRejectedValue(new Error('denied'));
+  renderSection();
+  await screen.findByText(/Work · Granted by Owner/);
+  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
+  expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not revoke the grant.');
+  fireEvent.click(within(grantsSection).getByRole('button', { name: 'Cancel' }));
+  expect(within(grantsSection).queryByRole('alert')).toBeNull();
+});
+
+test('opening another grant\'s confirm clears the last revoke error', async () => {
+  axios.post.mockRejectedValue(new Error('denied'));
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: null, boundMachineRevoked: false, activeMachines: [] }
+    : { grants: [response.grants[0], { ...response.grants[0], grantId: 'grant-2', connector: 'sentry', tools: ['sentry.list_issues'] }] } }));
+  renderSection();
+  await screen.findByText('sentry.list_issues');
+  const grantsSection = screen.getByRole('heading', { name: 'Connector grants' }).closest('section');
+  fireEvent.click(screen.getAllByRole('button', { name: 'Revoke' })[0]);
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, revoke it' }));
+  expect(await within(grantsSection).findByRole('alert')).toHaveTextContent('Could not revoke the grant.');
+  fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+  expect(within(grantsSection).queryByRole('alert')).toBeNull();
+});
+
+test('a revoked machine and a requested one both show', async () => {
+  axios.get.mockImplementation((url) => Promise.resolve({ data: url.includes('/agent-binding/placement')
+    ? { boundMachineId: null, requestedMachineId: 'new', boundMachineRevoked: true,
+      activeMachines: [{ machineId: 'new', name: 'New Mac' }] } : response }));
+  renderSection();
+  expect(await screen.findByText('This computer’s key was revoked. Choose another computer to run this agent.')).toBeInTheDocument();
+  expect(screen.getByText('Waiting for New Mac to start this agent')).toBeInTheDocument();
+});

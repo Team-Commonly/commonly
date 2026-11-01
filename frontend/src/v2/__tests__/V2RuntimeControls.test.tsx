@@ -114,3 +114,15 @@ test('a row with no confirmation reads "unconfirmed", never "confirmed unconfirm
   expect(row.textContent).toContain('last spawn actual-model · unconfirmed');
   expect(row.textContent).not.toContain('confirmed unconfirmed');
 });
+test('a set key keeps its date and Remove when the harness cannot take a key, and while replacing it', async () => {
+  mockApi.get.mockResolvedValue({ set: true, setAt: at, setBy: 'owner', lastUsedAt: null });
+  const view = render(<Key name="seat" instanceId="default" editable capability={{ available: false, provider: null }} harness="Hermes" />);
+  expect(await screen.findByText(/^set · /)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+  view.unmount();
+  render(<Key name="seat" instanceId="default" editable capability={{ available: true, provider: 'anthropic' }} harness="Claude Code" />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Replace key' }));
+  expect(screen.getByLabelText('API key')).toBeInTheDocument();
+  expect(screen.getByText(/^set · /)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument();
+});

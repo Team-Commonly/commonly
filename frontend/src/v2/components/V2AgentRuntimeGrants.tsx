@@ -182,10 +182,11 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
 
   const machineName = (id: string | null) => placement?.activeMachines.find((machine) => machine.machineId === id)?.name || id;
   const canMove = Boolean(placement && (placement.boundMachineRevoked || !placement.boundMachineId));
-  const machineState = placement && (placement.boundMachineRevoked ? <span role="status">{t('agentManage.runtime.machineRevoked')}</span>
-    : placement.boundMachineId ? <><span className="dot" aria-hidden="true" />{t('agentManage.runtime.currentMachine', { name: machineName(placement.boundMachineId) })}</>
-      : placement.requestedMachineId ? <span role="status">{t('agentManage.runtime.machineRequested', { name: machineName(placement.requestedMachineId) })}</span>
-        : null);
+  const machineState = placement && <>
+    {placement.boundMachineRevoked && <span role="status">{t('agentManage.runtime.machineRevoked')}</span>}
+    {!placement.boundMachineRevoked && placement.boundMachineId && <span><span className="dot" aria-hidden="true" />{t('agentManage.runtime.currentMachine', { name: machineName(placement.boundMachineId) })}</span>}
+    {placement.requestedMachineId && !placement.boundMachineId && <span role="status">{t('agentManage.runtime.machineRequested', { name: machineName(placement.requestedMachineId) })}</span>}
+  </>;
   const alertRow = (text: string, tone?: 'muted', action?: React.ReactNode) => <div className={`lrow v2-agent-settings-page__alert${tone ? ` v2-agent-settings-page__alert--${tone}` : ''}`}>
     <span className="lb" role="alert"><V2AgentSettingsIcon name="alert" />{text}</span>
     {action && <span className="ac">{action}</span>}
@@ -259,18 +260,19 @@ const V2AgentRuntimeGrants: React.FC<Props> = ({
               <div key={grant.grantId} className={`lrow v2-agent-settings-page__grant${ended ? ' is-ended' : ''}`}>
                 <span className="lg">{connector ? <ConnectorLogo type={connector} size={28} /> : null}</span>
                 <span className="v2-agent-settings-page__grantname">
-                  <strong title={grant.tools.join(', ')}>{connector ? connectorName(connector) : t('agentManage.grants.tool', { defaultValue: 'Tool' })}</strong>
+                  <strong>{connector ? connectorName(connector) : t('agentManage.grants.tool', { defaultValue: 'Tool' })}</strong>
                   <span className="mo">{grant.podName || t('agentManage.grants.direct', { defaultValue: 'Direct to this agent' })} · {t('agentManage.grants.by', { defaultValue: 'Granted by' })} {grant.grantedBy || t('agentManage.grants.unknown', { defaultValue: 'unknown' })} · {dateLabel(grant.createdAt)}</span>
+                  <span className="mo v2-agent-settings-page__tools">{grant.tools.join(', ')}</span>
                 </span>
                 <span className="ac">
                   <span className="mo">{ended ? t('agentManage.grants.ended', { defaultValue: 'Ended' }) : t('agentManage.grants.ends', { defaultValue: 'Ends' })} {dateLabel(grant.revokedAt || grant.expiresAt)}</span>
                   {!ended && grant.canRevoke && (confirmGrantId === grant.grantId ? (
                     <span className="v2-agent-settings-page__confirm">
                       <button type="button" className="b b-p b-sm" disabled={busy} onClick={() => { void revoke(grant.grantId); }}>{t('agentManage.grants.confirmRevoke', { defaultValue: 'Yes, revoke it' })}</button>
-                      <button type="button" className="b b-g b-sm" disabled={busy} onClick={() => setConfirmGrantId(null)}>{t('agentManage.grants.cancel', { defaultValue: 'Cancel' })}</button>
+                      <button type="button" className="b b-g b-sm" disabled={busy} onClick={() => { setRevokeError(''); setConfirmGrantId(null); }}>{t('agentManage.grants.cancel', { defaultValue: 'Cancel' })}</button>
                     </span>
                   ) : (
-                    <button type="button" className="b b-g b-sm" disabled={busy} onClick={() => setConfirmGrantId(grant.grantId)}>{t('agentManage.grants.revoke', { defaultValue: 'Revoke' })}</button>
+                    <button type="button" className="b b-g b-sm" disabled={busy} onClick={() => { setRevokeError(''); setConfirmGrantId(grant.grantId); }}>{t('agentManage.grants.revoke', { defaultValue: 'Revoke' })}</button>
                   ))}
                 </span>
               </div>

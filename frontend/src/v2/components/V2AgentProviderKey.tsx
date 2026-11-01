@@ -38,10 +38,14 @@ const V2AgentProviderKey: React.FC<{ name: string; instanceId: string; editable:
   };
   const alert = error && <span role="alert" className="v2-agent-settings-page__note"><V2AgentSettingsIcon name="alert" />{error}</span>;
   const canEdit = editable && capability?.available;
+  const keySet = editable && metadata?.set;
+  const setLine = keySet && <>{k('set')} · {metadata?.setAt ? new Date(metadata.setAt).toLocaleString() : ''}</>;
+  const removeButton = (size = ' b-sm') => keySet && <button className={`b b-g${size}`} type="button" disabled={busy} onClick={() => { void remove(); }}>{k('remove')}</button>;
   return <>
     <h3 className="gtitle"><V2AgentSettingsIcon name="key" />{k('title')}</h3>
     <div className="list">
       {canEdit && editing ? <form className="v2-agent-settings-page__keyentry" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+        {setLine && <span className="mo">{setLine}</span>}
         <label className="mu" htmlFor="own-provider-key">{k('input')}</label>
         <span className="field">
           <input id="own-provider-key" type="password" autoComplete="new-password" value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} />
@@ -50,23 +54,22 @@ const V2AgentProviderKey: React.FC<{ name: string; instanceId: string; editable:
         <span className="v2-agent-settings-page__actions">
           <button className="b b-p" type="submit" disabled={busy || !draft.trim()}>{k('save')}</button>
           <button className="b b-g" type="button" disabled={busy} onClick={() => { setDraft(''); setEditing(false); }}>{k('cancel')}</button>
+          {removeButton('')}
         </span>
       </form> : canEdit ? <div className="lrow v2-agent-settings-page__stack">
         <span className="lb"><V2AgentSettingsIcon name="lock" />{k('provider', { provider: capability?.provider || '' })}</span>
         <span className="vl">
-          {metadata?.set && <><span className="dot" aria-hidden="true" />{k('set')} · {metadata.setAt ? new Date(metadata.setAt).toLocaleString() : ''}<span className="mo">{k('neverShown')}</span></>}
+          {setLine && <><span className="dot" aria-hidden="true" />{setLine}<span className="mo">{k('neverShown')}</span></>}
           {alert}
         </span>
         <span className="ac">
           <button className="b b-s b-sm" type="button" disabled={busy || !metadata} onClick={() => setEditing(true)}>{metadata?.set ? k('replace') : k('setAction')}</button>
-          {metadata?.set && <button className="b b-g b-sm" type="button" disabled={busy} onClick={() => { void remove(); }}>{k('remove')}</button>}
+          {removeButton()}
         </span>
       </div> : <div className="lrow v2-agent-settings-page__plain">
         <span className="lb">{!editable ? k('readOnly') : k('unavailable', { harness })}</span>
-        <span className="vl">{alert}</span>
-        <span className="ac">
-          {editable && metadata?.set && <button className="b b-g b-sm" type="button" disabled={busy} onClick={() => { void remove(); }}>{k('remove')}</button>}
-        </span>
+        <span className="vl">{setLine && <><span className="dot" aria-hidden="true" />{setLine}</>}{alert}</span>
+        <span className="ac">{removeButton()}</span>
       </div>}
     </div>
   </>;

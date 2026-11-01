@@ -122,3 +122,16 @@ it('a failed trust save stays in the action slot', async () => {
   expect(alert).toHaveTextContent('Could not save changes.');
   expect(alert.closest('.ac')).toContainElement(screen.getByRole('button', { name: 'Save trust mode' }));
 });
+
+it('the memory editor keeps its Saved until the next action', async () => {
+  renderPolicy();
+  await screen.findByDisplayValue('Original');
+  jest.useFakeTimers();
+  try {
+    fireEvent.change(screen.getByLabelText('Long-term'), { target: { value: 'Changed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save memory' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Saved');
+    await act(async () => { jest.advanceTimersByTime(5000); });
+    expect(screen.getByRole('status')).toHaveTextContent('Saved');
+  } finally { jest.useRealTimers(); }
+});

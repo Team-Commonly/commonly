@@ -104,9 +104,10 @@ const V2AgentPolicy: React.FC<Props> = ({ agentName, instanceId, installation, u
     setFeedback(null);
   };
 
-  // The check and "Saved" stand in the action slot for a moment, then the slot is the button alone again.
+  // The trust row's check and "Saved" stand in the action slot for a moment, then the slot is the button alone again.
+  // The memory editor's "Saved" stays until the next action.
   useEffect(() => {
-    if (feedback?.kind !== 'saved') return undefined;
+    if (feedback?.kind !== 'saved' || feedback.group !== 'trust') return undefined;
     const timer = window.setTimeout(() => setFeedback((current) => (current === feedback ? null : current)), 2500);
     return () => window.clearTimeout(timer);
   }, [feedback]);
