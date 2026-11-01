@@ -54,8 +54,12 @@ const SEAT = 'cccccccccccccccccccccc01';
 let mongod;
 let RoomGrant;
 let app;
+// The grant limiter keys on the caller's credential, so each test is its own
+// caller: one shared bucket would cap the whole file at 60 requests a minute.
+let caller = 0;
 
-const mint = (body) => request(app).post('/api/grants').set('x-test-user', OWNER).send({
+const mint = (body) => request(app).post('/api/grants').set('x-test-user', OWNER)
+  .set('x-auth-token', `test-caller-${caller}`).send({
   connectionId: 'conn-1',
   target: { kind: 'pod', id: POD },
   tools: ['github.list_issues'],
@@ -85,6 +89,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  caller += 1;
   jest.clearAllMocks();
   outsiderGrantPodRefusal.mockResolvedValue(null);
   await RoomGrant.deleteMany({});
@@ -271,9 +276,10 @@ const OTHER_ENTRY = {
   tools: [pinned({ name: 'list_tickets', upstreamName: 'list_tickets', description: 'List tickets' })],
 };
 
+// A Linear connection made since writes were added holds the write scope.
 const hostedRow = (config = {}, over = {}) => ({
   _id: HOSTED_ID, type: 'hosted-mcp', status: 'connected', createdBy: OWNER,
-  config: { entryId: 'linear', credentialRef: 'secret-ref-1', ...config }, ...over,
+  config: { entryId: 'linear', credentialRef: 'secret-ref-1', grantedScope: 'read write openid', ...config }, ...over,
 });
 
 const hostedMint = (body = {}) => mint({ connectionId: HOSTED_ID, tools: ['linear.list_issues'], ...body });
@@ -387,7 +393,7 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
   });
 
   test('write is refused on a hosted row, and write-with-confirm is not', async () => {
-    Integration.findById.mockResolvedValue(hostedRow());
+    Integration.findById.mockResolvedValue(hostedRow({ grantedScope: 'read write openid' }));
     const refused = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'write' }));
     expect(refused.status).toBe(403);
     expect(refused.body).toMatchObject({ error: 'write_requires_confirm' });
@@ -397,6 +403,16 @@ describe('POST /api/grants on a hosted-mcp connection', () => {
     // and the mint proceeds — so the refusal is about the mode, not the type.
     const allowed = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'write-with-confirm' }));
     expect(allowed.status).toBe(201);
+  });
+
+  test.each(['read openid', '', undefined, 'read overwrite openid'])('Linear scope %s cannot mint confirmation mode', async (grantedScope) => {
+    Integration.findById.mockResolvedValue(hostedRow({ grantedScope }));
+    const res = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'write-with-confirm' }));
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('write_scope_required');
+    expect(await RoomGrant.countDocuments({})).toBe(0);
+    const read = await withCatalog([ENTRY], () => hostedMint({ writeMode: 'read' }));
+    expect(read.status).toBe(201);
   });
 
   test('a github-app write grant is refused by the CTO pod-eligibility ruling', async () => {

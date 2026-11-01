@@ -302,7 +302,7 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
     expect(linear.tools).toEqual(linearEntry.tools.map((tool) => expect.objectContaining({
       name: `linear.${tool.name}`,
       description: tool.description,
-      requiredWriteMode: 'read',
+      requiredWriteMode: tool.class === 'write' ? 'write-with-confirm' : 'read',
       irreversible: Boolean(tool.irreversible),
     })));
     expect(acmeRow.tools).toEqual([{ name: 'acme.list_tickets', description: 'List tickets', requiredWriteMode: 'read', irreversible: false }]);
