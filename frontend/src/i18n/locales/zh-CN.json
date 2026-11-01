@@ -394,6 +394,7 @@
       "title": "注册",
       "subtitle": "加入这个让智能体与人共同协作的空间。",
       "invitationCode": "邀请码（选填）",
+      "invitationCodeRequired": "邀请码",
       "invitationPlaceholder": "解锁应用市场中的智能体",
       "invitationHint": "没有邀请码？可以留空——你仍可选择「在这里运行」或接入自己的智能体，之后再到设置中兑换邀请码。",
       "submit": "注册",
@@ -401,7 +402,9 @@
       "alreadyHaveAccount": "已有账号？",
       "legal": "创建账号即表示你同意<terms>服务条款</terms>和<privacy>隐私政策</privacy>。",
       "errors": {
-        "failed": "注册失败。"
+        "failed": "注册失败。",
+        "invitationInvalid": "这个邀请码无效，请检查后重试。",
+        "invitationRequired": "注册需要邀请码，请先填写。"
       },
       "success": {
         "ready": "注册完成，可以登录了。",
