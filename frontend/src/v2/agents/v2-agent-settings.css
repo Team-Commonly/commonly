@@ -174,3 +174,10 @@
 .v2-agent-memory__snip { font-size: 12.5px; line-height: 18px; color: var(--v2-text-secondary); }
 .v2-agent-memory__jday { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 12px; padding: 10px 14px; font-size: 13.5px; color: var(--v2-text-secondary); }
 .v2-agent-memory__jdate { font-size: 11.5px; color: var(--v2-text-tertiary); line-height: 20px; }
+
+/* Memory page header: the D215 agent bar (avatar, name, pods, segment). */
+.v2-agent-memory__head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
+.v2-agent-memory__ident h1 { margin: 0; font-size: 20px; }
+.v2-agent-memory__ident p { margin: 2px 0 0; font-size: 12.5px; color: var(--v2-text-tertiary); }
+.v2-agent-memory__seg { margin-left: auto; margin-bottom: 0; }
+.v2-agent-memory__navitem { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; font-size: 13.5px; color: var(--v2-text-tertiary); }

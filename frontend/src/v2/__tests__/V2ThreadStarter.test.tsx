@@ -117,16 +117,14 @@ describe('V2Thread teaching empty states', () => {
     expect(document.querySelector('.v2-teammate')).toBeNull();
   });
 
-  test('compact header shows the member count; the agent count stays in the desktop meta', () => {
+  test('the desktop meta labels the member faces with both counts; the phone head carries no counts', () => {
     const detail = makeDetail({
       agents: [{ agentName: 'openclaw', instanceId: 'aria', displayName: 'Aria' }],
     });
     renderChat(detail);
 
-    const compact = document.querySelector('.v2-pod-header__meta--compact');
-    expect(compact).toHaveTextContent('1 member');
-    expect(compact).not.toHaveTextContent('agent');
-    expect(document.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)')).toHaveTextContent('1 agent');
+    expect(document.querySelector('.v2-pod-header__meta--compact')).toBeNull();
+    expect(document.querySelector('.v2-pod-header__faces')).toHaveAttribute('aria-label', '1 member, 1 agent');
   });
 
   test('multi-member regular pods use the same teaching state', () => {

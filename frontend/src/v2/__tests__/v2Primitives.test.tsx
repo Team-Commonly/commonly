@@ -37,4 +37,25 @@ describe('D223 primitives', () => {
     expect(screen.getByLabelText('Drawer example')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Drawer title' })).toBeInTheDocument();
   });
+
+  test('the page renders the columns, empty state, tiles and popover', () => {
+    render(<V2PrimitivesPage />);
+    expect(screen.getByText('Todo')).toBeInTheDocument();
+    expect(screen.getByText('Doing')).toBeInTheDocument();
+    expect(screen.getByText('Nothing in progress')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Popover example')).toBeInTheDocument();
+    expect(screen.getByText('Popover title')).toBeInTheDocument();
+  });
+
+  test('the dashed Add tile keeps a visible keyboard focus ring', () => {
+    expect(css).toMatch(/\.v2p-tile\.add:focus-visible\s*\{[^}]*box-shadow:[^;]*--v2-accent/);
+  });
+
+  test('the showcase pane scrolls, so the long page is not clipped', () => {
+    expect(css).toMatch(/\.v2p-pane--scroll\s*\{[^}]*overflow-y:\s*auto/);
+    render(<V2PrimitivesPage />);
+    expect(screen.getByLabelText('Primitives')).toHaveClass('v2p-pane--scroll');
+  });
 });

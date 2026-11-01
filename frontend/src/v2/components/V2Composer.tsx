@@ -143,7 +143,7 @@ const V2Composer: React.FC<V2ComposerProps> = ({
         <div className="v2-composer__plus-wrap" ref={menuRef}>
           <button
             type="button"
-            className="v2-composer__plus"
+            className="v2p-b v2p-b-g v2p-ib v2-composer__plus"
             aria-label={t('podChat.composer.more')}
             title={t('podChat.composer.more')}
             aria-haspopup="menu"
@@ -209,7 +209,7 @@ const V2Composer: React.FC<V2ComposerProps> = ({
         {hasText && (
           <button
             type="button"
-            className="v2-composer__send"
+            className="v2p-b v2p-b-p v2p-ib v2-composer__send"
             onClick={onSend}
             disabled={sending}
             aria-label={sending ? t('podChat.composer.sending') : t('podChat.composer.sendAria')}

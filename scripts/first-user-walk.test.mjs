@@ -23,7 +23,7 @@ const SHARED_EMAIL = 'walk-shared@commonly.test';
 const fakeBackend = ({
   preview = 200, create = 'ok', password = PASSWORD, echoRegister = false, seeded = false,
 } = {}) => {
-  const state = { accountExists: seeded, pods: [], lastAgent: null, calls: [] };
+  const state = { accountExists: seeded, pods: [], lastAgent: null, calls: [], loginEmails: [] };
   const reply = (status, data) => ({ status, json: async () => data });
   const fetchImpl = async (url, init = {}) => {
     const u = new URL(url);
@@ -40,6 +40,7 @@ const fakeBackend = ({
       return reply(201, {});
     }
     if (method === 'POST' && p === '/api/auth/login') {
+      state.loginEmails.push(body.email);
       if (state.accountExists && body.password === password) {
         return reply(200, { token: TOKEN, user: { _id: USER_ID, role: 'user' } });
       }
@@ -95,7 +96,8 @@ const dirs = () => {
   return { stateDir: path.join(root, 'state'), resultPath: path.join(root, 'result', 'result.json') };
 };
 
-const run = (fetchImpl, { stateDir, resultPath }, { password = PASSWORD, env = {}, base = 'https://api.commonly.me' } = {}) => runWalk({
+// Non-prod, non-staging by default: a run with no account given signs up, as the signup tests expect.
+const run = (fetchImpl, { stateDir, resultPath }, { password = PASSWORD, env = {}, base = 'https://api-dev.commonly.test' } = {}) => runWalk({
   base,
   env: { COMMONLY_WALK_PASSWORD: password, ...env },
   fetchImpl,
@@ -198,6 +200,50 @@ test('signin mode never deletes the shared account, and the result says so', asy
   assert.equal(result.steps.some((s) => s.name === 'signup-workspace'), false);
 });
 
+test('prod signs in to the existing test account: no signup, the six covered steps, the account is never deleted', async () => {
+  const dirsFor = dirs();
+  const { fetchImpl, state } = fakeBackend({ seeded: true });
+  const { exitCode, result } = await run(fetchImpl, dirsFor, {
+    base: 'https://api.commonly.me',
+    env: { COMMONLY_WALK_EMAIL: 'walk-test@commonly.test' },
+  });
+
+  assert.equal(result.mode, 'signin-prod');
+  assert.equal(exitCode, 2);
+  assert.equal(result.overall, 'incomplete');
+  assert.deepEqual(result.steps.map((st) => st.name), ['login', 'first-pod', 'hosted-install', 'hosted-reply', 'invite-preview-api', 'byo-connect']);
+  assert.equal(state.calls.includes('POST /api/auth/register'), false);
+  assert.equal(state.calls.includes('DELETE /api/users/me'), false);
+  assert.equal(state.accountExists, true);
+  assert.equal(state.pods.length, 0);
+  assert.equal(result.cleanup.ok, true);
+  // The run signs in with the env email, and that email never reaches the result or manifest.
+  assert.deepEqual(state.loginEmails, ['walk-test@commonly.test']);
+  assert.equal(readFileSync(dirsFor.resultPath, 'utf8').includes('walk-test@commonly.test'), false);
+  const [manifestFile] = readdirSync(dirsFor.stateDir);
+  assert.equal(readFileSync(path.join(dirsFor.stateDir, manifestFile), 'utf8').includes('walk-test@commonly.test'), false);
+});
+
+test('a trailing dot on the prod host is still prod: refused without an account, never signed up', async () => {
+  const dirsFor = dirs();
+  const { fetchImpl, state } = fakeBackend();
+  const { exitCode } = await run(fetchImpl, dirsFor, { base: 'https://api.commonly.me.' });
+
+  assert.equal(exitCode, 1);
+  assert.equal(state.calls.includes('POST /api/auth/register'), false);
+  assert.equal(state.calls.length, 0);
+});
+
+test('prod without an existing test account is refused before any request', async () => {
+  const dirsFor = dirs();
+  const { fetchImpl, state } = fakeBackend({ seeded: true });
+  const { exitCode, result } = await run(fetchImpl, dirsFor, { base: 'https://api.commonly.me' });
+
+  assert.equal(exitCode, 1);
+  assert.equal(result.mode, 'not-chosen');
+  assert.equal(state.calls.length, 0);
+});
+
 test('a refused mode (shared email aimed at prod) makes no request, is not reported as signup, and exits 1', async () => {
   const dirsFor = dirs();
   const { fetchImpl, state } = fakeBackend({ seeded: true });
@@ -246,7 +292,7 @@ test('a missing password fails before any request, reports cleanup as not-run, a
   const counting = (url, init) => { requests += 1; return fetchImpl(url, init); };
   const { exitCode, result } = await runWalk({
     base: 'https://api.commonly.me',
-    env: {},
+    env: { COMMONLY_WALK_EMAIL: 'walk-test@commonly.test' },
     fetchImpl: counting,
     ...dirsFor,
     sleep: async () => {},
@@ -255,9 +301,20 @@ test('a missing password fails before any request, reports cleanup as not-run, a
   });
   assert.equal(exitCode, 1);
   assert.equal(result.overall, 'fail');
+  assert.equal(result.mode, 'signin-prod');
   assert.equal(result.cleanup.status, 'not-run');
   assert.equal(requests, 0);
   assert.equal(existsSync(dirsFor.resultPath), true);
+});
+
+test('prod over plain http is refused before any request, so the password never goes out in cleartext', async () => {
+  const dirsFor = dirs();
+  const { fetchImpl, state } = fakeBackend();
+  const { exitCode, result } = await run(fetchImpl, dirsFor, { base: 'http://api.commonly.me' });
+
+  assert.equal(exitCode, 1);
+  assert.equal(result.mode, 'not-chosen');
+  assert.equal(state.calls.length, 0);
 });
 
 test('a create that throws, with no match in the list, is recorded as unresolved and needs-admin-purge', async () => {

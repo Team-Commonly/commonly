@@ -2071,7 +2071,7 @@ body.modern-ui.v2-canvas {
      mis-sized row makes the whole pane horizontally swipeable (the
      thread-block did exactly that; mobile report 2026-08-24). */
   overflow-x: hidden;
-  padding: 0 24px 12px;
+  padding: 0 28px 12px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -2163,8 +2163,8 @@ body.modern-ui.v2-canvas {
 .v2-chat__delivery-hint,
 .v2-chat__no-agents,
 .v2-chat__starts {
-  width: calc(100% - 36px);
-  margin: -4px 0 8px 36px;
+  width: calc(100% - 48px);
+  margin: -4px 0 8px 48px;
 }
 
 /* The delivery hint above requires an agent to name (`agentsInPod > 0`), which
@@ -3007,8 +3007,8 @@ body.modern-ui.v2-canvas {
 /* TASK-406: quiet, non-interactive kernel action line in the pod timeline. */
 .v2-system-action-line {
   box-sizing: border-box;
-  width: calc(100% - 36px);
-  margin-left: 36px;
+  width: calc(100% - 48px);
+  margin-left: 48px;
   display: grid;
   grid-template-columns: 16px minmax(0, max-content) auto minmax(0, 1fr) auto;
   align-items: center;
@@ -7789,7 +7789,8 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Settings (/v2/settings) ---------- */
 .v2-settings {
-  width: 100%;
+  width: min(100%, 1040px);
+  margin: 0 auto;
   color: var(--v2-text-primary);
 }
 
@@ -7797,6 +7798,17 @@ body.modern-ui.v2-canvas {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  padding-top: 40px;
+}
+
+.v2-settings__title {
+  margin: 0;
+  color: var(--v2-text-primary);
+  font-family: var(--v2-font-display);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
 }
 
 .v2-settings__section { min-width: 0; }
@@ -7868,7 +7880,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-settings__group .v2-settings__developer-disclosure { margin: 0; padding: 12px 14px; }
 .v2-settings__token-detail { padding: 0 14px 12px; }
 @media (max-width: 560px) {
-  .v2-settings__layout { gap: 16px; }
+  .v2-settings__layout { padding-top: 20px; gap: 16px; }
   .v2-settings__row > .v2-settings__row-label { min-width: 0; }
   .v2-settings__token > .v2-settings__row { flex-wrap: wrap; }
   .v2-settings__row-actions { flex: 1 0 100%; justify-content: flex-end; }
@@ -8483,7 +8495,15 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 @media (max-width: 680px) {
-  .v2-settings__layout { display: block; }
+  .v2-settings__layout {
+    display: block;
+    padding-top: 24px;
+  }
+
+  .v2-settings__title {
+    margin-bottom: 24px;
+    font-size: 28px;
+  }
 
 
   .v2-settings__token-value {
@@ -8544,8 +8564,6 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   flex-direction: column;
   overflow: hidden;
 }
-.v2-feature--settings > .v2-feature__body { padding: 0; }
-.v2-feature--settings .v2p-ph { position: sticky; top: 0; z-index: 2; background: var(--v2-surface); }
 /* margin auto stops a flex item stretching, so the board sized to its 1240px
    max-content width and ran off a 390px phone. An explicit width keeps it full
    width on a phone, and the auto margin still centres it on desktop. */
@@ -10874,6 +10892,8 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-root:lang(zh) .v2-inspector__detail-name,
 .v2-root:lang(zh) .v2-login__title,
 .v2-root:lang(zh) .v2-feature__title,
+.v2-root:lang(zh) .v2-feature__header .v2-feature__title,
+.v2-root:lang(zh) .v2-settings__title,
 .v2-root:lang(zh) .v2-settings__label,
 .v2-root:lang(zh) .v2-settings__account-name,
 .v2-root:lang(zh) .v2-settings__section .v2-billing__title,
@@ -11377,9 +11397,47 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   min-height: 32px;
   flex: none;
   align-items: center;
-  justify-content: flex-end;
   gap: 6px;
+  /* D215 (TASK-734): Pod | Threads on the left, the icon keys on the right. */
   padding: 8px 10px 0;
+}
+
+.v2-workspace-inspector__head-spacer { flex: 1; }
+
+/* Hide panel is the desktop key; the phone sheet keeps its close X. The key
+   is a primitive (.v2p-b, 0,1,0), so .v2-root button.<class> outranks its
+   display. */
+@media (max-width: 760px) {
+  .v2-root button.v2-workspace-inspector__hide { display: none; }
+}
+
+.v2-workspace-inspector__threads { display: grid; gap: 2px; align-content: start; }
+
+.v2-root button.v2-workspace-inspector__thread {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--v2-r-8, 8px);
+  background: transparent;
+  color: var(--v2-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.v2-root button.v2-workspace-inspector__thread:hover { background: var(--v2-surface-tint); }
+.v2-root button.v2-workspace-inspector__thread:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+.v2-workspace-inspector__thread-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.v2-workspace-inspector__thread-author { font: 600 13px/18px var(--v2-font); }
+.v2-workspace-inspector__thread-when { margin-left: auto; color: var(--v2-text-muted); font: 500 11px/16px var(--v2-font-mono); }
+.v2-workspace-inspector__thread-text {
+  overflow: hidden;
+  color: var(--v2-text-secondary);
+  font: 400 12.5px/18px var(--v2-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .v2-workspace-inspector__card.v2-workspace-inspector__group { flex: none; padding: 0; overflow: hidden; }
@@ -11721,14 +11779,16 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-thread__header {
   flex: 0 0 auto;
   box-sizing: border-box;
-  min-height: 50px;
-  padding: 0 14px;
+  /* D215 (TASK-734): the pane head is 64px, title left at 24px. */
+  min-height: 64px;
+  padding: 0 20px 0 24px;
   border-bottom: 1px solid var(--v2-border-soft);
   background: var(--v2-surface);
 }
 
 .v2-thread__header-row {
   display: flex;
+  min-height: 64px;
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -11750,10 +11810,10 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   margin: 0;
   overflow: hidden;
   color: var(--v2-text-primary);
-  /* Direction C (walk-1 ruling b): a pod is a conversation, not a page — sans
-     15/600 replaces the display face here; Bricolage stays on page titles. */
-  font: 600 15px/20px var(--v2-font);
-  letter-spacing: 0;
+  /* D215 (TASK-734) brings the display face back to the pod title, at 18/700
+     with the artboard's tracking. */
+  font: 700 18px/24px var(--v2-font-display);
+  letter-spacing: -0.025em;
   text-overflow: ellipsis;
   white-space: nowrap;
   /* The description gives way before the name truncates (walk-1 §3). */
@@ -11762,53 +11822,38 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   max-width: 100%;
 }
 
-.v2-root button.v2-thread__inspector-toggle {
-  display: inline-grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  padding: 0;
-  place-items: center;
-  border: 1px solid var(--v2-border);
-  border-radius: 4px;
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-}
+/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-g v2p-ib. */
+.v2-root button.v2-thread__inspector-toggle { flex: 0 0 32px; }
 
-.v2-root button.v2-thread__inspector-toggle:hover,
-.v2-root button.v2-thread__inspector-toggle--active { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+/* The pod header shows the toggle only while the panel is hidden; the open
+   panel carries its own Hide button in its head (D215, TASK-734). */
 
 /* TASK-702: the header Invite. Same height and frame as the inspector
    toggle beside it, with a label so it reads as an action, not decoration. */
-.v2-root button.v2-pod-header__invite {
-  display: inline-flex;
-  height: 28px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 1px solid var(--v2-border);
-  border-radius: 4px;
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font: inherit;
-  font-size: 13px;
-  white-space: nowrap;
-  cursor: pointer;
-}
+/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-s v2p-b-sm. */
+.v2-root button.v2-pod-header__invite { flex: 0 0 auto; }
 
-.v2-root button.v2-pod-header__invite:hover { background: var(--v2-surface-hover); }
 
 /* On a phone the label would take the pod name's width, so the button keeps
    only its glyph, square like the inspector toggle. The label stays in the
    accessibility tree as the button's name. */
 @media (max-width: 760px) {
+  /* The phone head's keys are ghosts (D215 phone frame), Invite included. */
   .v2-root button.v2-pod-header__invite {
-    width: 28px;
-    flex: 0 0 28px;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
     justify-content: center;
     padding: 0;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    color: var(--v2-text-secondary);
   }
+
+  /* box-shadow: none above outranks the primitive's focus ring, so the ring
+     is restated for keyboard focus. */
+  .v2-root button.v2-pod-header__invite:focus-visible { box-shadow: 0 0 0 3px var(--v2-accent-soft), 0 0 0 1px var(--v2-accent); }
 
   .v2-root button.v2-pod-header__invite span {
     position: absolute;
@@ -11825,25 +11870,29 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 .v2-thread .v2-msg {
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 8px;
-  padding: 8px 0;
+  /* D215 (TASK-734): 36px faces at radius 9, 12px to the text. */
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
 }
 
 .v2-thread .v2-msg--grouped { padding: 2px 0; }
-.v2-thread .v2-msg__avatar-ghost { width: 28px; }
+.v2-thread .v2-msg__avatar-ghost { width: 36px; }
 .v2-thread .v2-avatar {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border: 0;
-  border-radius: 4px;
-  box-shadow: none;
+  border-radius: var(--v2-r-9, 9px);
+  box-shadow: 0 0 0 1px var(--v2-av-ring, rgba(16, 24, 40, 0.08));
 }
-.v2-thread .v2-msg__head { height: 18px; gap: 6px; }
+.v2-thread .v2-msg__head { height: 20px; gap: 8px; }
 .v2-thread .v2-msg__author,
 .v2-thread .v2-msg__author-btn { font-size: 14px; font-weight: 600; }
-.v2-thread .v2-msg__time { font: 500 12px/16px var(--v2-font-mono); }
-.v2-thread .v2-msg__avatar-btn { border-radius: 4px; }
+/* The runtime and the time read as one mono line: "claude · 1:16 AM". */
+.v2-thread .v2-msg__time { font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-thread .v2-msg__avatar-btn { border-radius: var(--v2-r-9, 9px); }
+/* The typing line keeps small faces; the 36px message face is not its size. */
+.v2-thread .v2-chat__typing-avatars .v2-avatar { width: 20px; height: 20px; border-radius: var(--v2-r-6, 6px); }
 .v2-thread .v2-msg__actions { border-radius: 4px; box-shadow: none; }
 
 .v2-message-row--decision { padding: 8px 0; }
@@ -12111,72 +12160,19 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 /* The artboard's .b.b-s.ib: a 32px raised key holding a plus glyph. */
-.v2-root button.v2-pods__new {
-  display: inline-grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  padding: 0;
-  place-items: center;
-  border: 1px solid var(--v2-key-edge, var(--v2-border));
-  border-radius: var(--v2-r-8, 8px);
-  background: linear-gradient(180deg, var(--v2-key-a, var(--v2-surface)), var(--v2-key-b, var(--v2-surface)));
-  box-shadow: var(--v2-key-inset, none);
-  color: var(--v2-text-primary);
-}
+/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-s v2p-ib. */
+.v2-root button.v2-pods__new { flex: 0 0 32px; }
 
-.v2-root button.v2-pods__new:hover:not(:disabled),
-.v2-root button.v2-pods__new[aria-expanded="true"] {
-  background: var(--v2-surface-hover);
-  color: var(--v2-text-primary);
-}
+.v2-root button.v2-pods__new[aria-expanded="true"] { background: var(--v2-surface-hover); }
 
-.v2-root button.v2-pods__new:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 
 /* ---------- D215 sidebar controls (TASK-691) ----------
    Controls look like controls: an icon button, a chip or a segment, never grey
    words that click. The segment is shared by the pod list (Recent · All ·
    Pinned), the panel's Who can join and Settings › Look. */
-.v2-seg {
-  display: inline-flex;
-  flex: none;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--v2-surface-tint);
-  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
-}
-
-.v2-root button.v2-seg__option {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--v2-text-secondary);
-  font: 500 13px/1 var(--v2-font);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.v2-root .v2-seg--sm button.v2-seg__option {
-  height: 24px;
-  padding: 0 8px;
-  font-size: 12px;
-}
-
+/* The segment's look is the primitives' v2p-seg; these keep its states. */
 .v2-root button.v2-seg__option:hover:not(:disabled) { color: var(--v2-text-primary); }
 
-.v2-root button.v2-seg__option--on,
-.v2-root button.v2-seg__option--on:hover:not(:disabled) {
-  background: var(--v2-surface);
-  color: var(--v2-text-primary);
-  font-weight: 600;
-  box-shadow: 0 0 0 1px var(--v2-border);
-}
 
 .v2-root button.v2-seg__option:focus-visible {
   outline: none;
@@ -12449,16 +12445,17 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-pods__empty { padding: 20px 12px; }
 .v2-pods__empty--mono { color: var(--v2-text-muted); font: 400 12px/16px var(--v2-font-mono); }
 
-/* Pod header: 50px, sans 15/600 title, description inline, meta on the right. */
+/* Pod header (D215, TASK-734): 64px, display 18/700 title, description
+   inline, then the board chip and the member faces on the right. */
 .v2-pod-header .v2-thread__header-row {
-  min-height: 50px;
+  min-height: 64px;
 }
 
 .v2-pod-header__meta {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--v2-text-muted);
   font: 400 11px/16px var(--v2-font-mono);
   white-space: nowrap;
@@ -12467,6 +12464,18 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 /* The compact meta is the phone's; both carry the base class, so the
    compact rule must out-rank the base `display: flex` above it. */
 .v2-pod-header__meta.v2-pod-header__meta--compact { display: none; }
+
+/* Three faces, overlapped, then "+N" for the rest of the pod. */
+.v2-pod-header__stack { display: inline-flex; align-items: center; }
+.v2-thread .v2-pod-header__stack .v2-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--v2-r-6, 6px);
+  box-shadow: 0 0 0 2px var(--v2-surface);
+  font-size: 12px;
+}
+.v2-thread .v2-pod-header__stack .v2-avatar + .v2-avatar { margin-left: -6px; }
+.v2-pod-header__more { color: var(--v2-text-muted); font: 500 11.5px/1 var(--v2-font-mono); }
 
 /* D215: the board is a chip, a board glyph and the count. */
 .v2-root button.v2-pod-header__board {
@@ -12590,12 +12599,39 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   .v2-pods-aside:not(.v2-pods-aside--page) { display: none; }
   .v2-mobile-backdrop { display: none; }
 
+  /* D215 phone head: 52px, back, title, board chip, panel. */
+  .v2-thread__header { min-height: 52px; padding: 0 10px 0 12px; }
   .v2-pod-header .v2-thread__header-row {
     box-sizing: border-box;
-    min-height: 50px;
-    padding: 11px 0;
+    min-height: 52px;
+    padding: 10px 0;
+    /* 12px, not the artboard's 8: the 44px tap areas below reach 6px past
+       each 32px key, and 12px keeps neighbours from overlapping. */
+    gap: 12px;
     align-items: flex-start;
   }
+  /* The phone keys draw at 32px and take touches at 44px (D223 standing
+     rule, 11-01): a pseudo-element extends the hit area, the box stays.
+     z-index keeps it above later positioned siblings such as the transcript. */
+  .v2-root button.v2-thread__back,
+  .v2-root button.v2-pod-header__invite,
+  .v2-root button.v2-thread__inspector-toggle,
+  .v2-root button.v2-composer__plus,
+  .v2-root button.v2-composer__send { position: relative; z-index: 1; }
+  .v2-root button.v2-thread__back::after,
+  .v2-root button.v2-pod-header__invite::after,
+  .v2-root button.v2-thread__inspector-toggle::after,
+  .v2-root button.v2-composer__plus::after,
+  .v2-root button.v2-composer__send::after {
+    content: '';
+    position: absolute;
+    /* From the padding box, inside each key's 1px border: 30 + 2 x 7 = 44. */
+    inset: -7px;
+  }
+  /* The keys are 32px; an open description grows the title block downward
+     while the name stays centred on the keys. */
+  .v2-pod-header .v2-thread__title { display: flex; min-height: 32px; flex-direction: column; justify-content: center; }
+  .v2-thread__title h1 { font: 700 16px/20px var(--v2-font-display); letter-spacing: -0.02em; }
   .v2-pod-header__meta { display: none; }
   .v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; flex: 0 0 auto; white-space: nowrap; }
   /* TASK-647 item 3: the board link keeps a 44px tap target without growing
@@ -12605,23 +12641,15 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   .v2-root button.v2-pod-header__board--compact::before {
     content: '';
     position: absolute;
-    inset: -14px -10px;
+    /* 6px sideways, not 10: with the 12px header gap, the next key's 44px
+       area reaches 6px toward this one, so 6 + 6 meets without overlap. */
+    inset: -14px -6px;
   }
   .v2-thread__title-line > h1 { max-width: calc(100% - 36px); }
   .v2-pod-header__meta--compact { gap: 4px; }
 
-  .v2-root button.v2-thread__back {
-    display: inline-grid;
-    width: 28px;
-    height: 28px;
-    flex: 0 0 28px;
-    place-items: center;
-    padding: 0;
-    border: 1px solid var(--v2-border);
-    border-radius: 4px;
-    background: var(--v2-surface);
-    color: var(--v2-text-secondary);
-  }
+  /* Look from the primitives: v2p-b v2p-b-g v2p-ib. */
+  .v2-root button.v2-thread__back { display: inline-flex; flex: 0 0 32px; }
 
   /* Tab bar with labels; the count lives inside the label, one counter. */
   .v2-mobile-tabs {
@@ -12703,54 +12731,52 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 
 .v2-composer {
   flex: 0 0 auto;
-  margin: 0 16px 14px;
-  border: 1px solid var(--v2-border);
-  border-radius: 6px;
+  /* D215 (TASK-734): a floating card, radius 14 on the pop shadow, no border. */
+  margin: 4px 18px 16px;
+  border: 0;
+  border-radius: var(--v2-r-14, 14px);
   background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pop, 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28));
 }
 
+/* Typing or focused, a darker hairline sits over the card's own; the drop stays. */
 .v2-composer--typing,
-.v2-composer:focus-within { border-color: var(--v2-border-strong); }
+.v2-composer:focus-within {
+  box-shadow: 0 0 0 1px var(--v2-border-strong), var(--v2-shadow-pop, 0 18px 36px -14px rgba(16, 24, 40, 0.28));
+}
 
 .v2-composer__row {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  min-height: 42px;
-  padding: 7px 8px 7px 10px;
+  min-height: 52px;
+  padding: 10px;
 }
 
-.v2-composer__plus-wrap { position: relative; flex: 0 0 auto; align-self: flex-end; padding-bottom: 2px; }
+.v2-composer__plus-wrap { position: relative; flex: 0 0 auto; align-self: flex-end; }
 
-.v2-root button.v2-composer__plus {
-  display: inline-grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--v2-border);
-  border-radius: 4px;
-  background: var(--v2-surface);
-  color: var(--v2-text-secondary);
-}
 
-.v2-root button.v2-composer__plus::before { content: '+'; font: 500 16px/1 var(--v2-font); }
-.v2-root button.v2-composer__plus:hover:not(:disabled),
-.v2-root button.v2-composer__plus[aria-expanded="true"] { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+.v2-root button.v2-composer__plus::before { content: '+'; font: 500 18px/1 var(--v2-font); }
+/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-g v2p-ib; the open menu keeps the hover tint. */
+.v2-root button.v2-composer__plus[aria-expanded="true"] { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+/* Disabled while a file uploads: the primitive's ghost hover has no :disabled guard. */
+.v2-root button.v2-composer__plus:disabled { cursor: progress; }
+.v2-root button.v2-composer__plus:disabled:hover { background: transparent; color: var(--v2-text-secondary); }
 
 .v2-composer__menu {
   position: absolute;
   left: 0;
-  bottom: 32px;
+  bottom: 40px;
   z-index: 4;
   display: flex;
   min-width: 220px;
   flex-direction: column;
   gap: 2px;
   padding: 4px;
-  border: 1px solid var(--v2-border);
-  border-radius: 6px;
+  border: 0;
+  border-radius: var(--v2-r-10, 10px);
   background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pop, 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28));
 }
 
 .v2-root .v2-composer__menu > button {
@@ -12841,22 +12867,13 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   font: 400 11px/16px var(--v2-font-mono);
 }
 
+/* Look from the D223 primitives (primitives.css): v2p-b v2p-b-p v2p-ib. The glyph keeps its mono face. */
 .v2-root button.v2-composer__send {
-  display: inline-grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  place-items: center;
-  padding: 0;
+  flex: 0 0 32px;
   margin-bottom: 0;
-  border: 1px solid var(--v2-ink);
-  border-radius: 4px;
-  background: var(--v2-ink);
-  color: var(--v2-on-ink);
   font: 500 14px/1 var(--v2-font-mono);
 }
 
-.v2-root button.v2-composer__send:hover:not(:disabled) { background: var(--v2-ink-hover); }
 .v2-root button.v2-composer__send:disabled { cursor: progress; opacity: 0.6; }
 
 .v2-composer__error,
@@ -13151,7 +13168,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 
 @media (max-width: 760px) {
   /* Sits above the 56px tab bar; the row itself keeps its desktop shape. */
-  .v2-composer { margin: 0 12px 64px; }
+  .v2-composer { margin: 4px 10px 64px; }
   .v2-composer__menu { min-width: 200px; }
   .v2-root button.v2-msg__thumb { width: calc(50% - 3px); height: 84px; }
   .v2-composer__tag { max-width: 120px; }
@@ -13170,25 +13187,23 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-thread .v2-msg { border-radius: 4px; }
 .v2-thread .v2-msg--landed { background: var(--v2-accent-soft, #e8ecfb); transition: background 0.6s ease; }
 
-/* Runtime tag after the time on agent rows. */
+/* Runtime label before the time on agent rows. D215 (TASK-734): plain mono,
+   no box, joined to the time by a middle dot. */
 .v2-msg__tag {
   display: inline-block;
-  height: 16px;
-  padding: 0 5px;
-  margin-left: 8px;
-  border-radius: 3px;
-  background: var(--v2-surface-tint);
   color: var(--v2-text-muted);
-  font: 500 11px/16px var(--v2-font-mono);
-  vertical-align: middle;
+  font: 500 11.5px/16px var(--v2-font-mono);
+  vertical-align: baseline;
 }
+.v2-msg__tag + .v2-msg__time { margin-left: -4px; }
+.v2-msg__tag + .v2-msg__time::before { content: '· '; }
 
 /* Grouped rows: the time shows in the gutter on hover. */
 .v2-msg__gutter-time {
   position: absolute;
   left: 0;
   top: 4px;
-  width: 28px;
+  width: 36px;
   color: var(--v2-text-placeholder);
   font: 400 11px/16px var(--v2-font-mono);
   text-align: center;
@@ -13302,10 +13317,10 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-thread .v2-thread-card__time { color: var(--v2-text-muted); font: 400 11px/16px var(--v2-font-mono); }
 
 /* Expanded thread: the ROOT and its replies share one band (ux-lead 64476
-   (2)); the chip / rule / replies sit at the text column (28px avatar + 8px
-   gap = 36px). */
+   (2)); the chip / rule / replies sit at the text column (36px avatar + 12px
+   gap = 48px, D215). */
 .v2-thread .v2-thread-block { margin: 0 0 10px; width: 100%; }
-.v2-thread .v2-thread-block__inner { margin-left: 36px; }
+.v2-thread .v2-thread-block__inner { margin-left: 48px; }
 .v2-thread .v2-thread-block--open { background: var(--v2-bg-subtle); border-radius: 4px; padding: 0 8px 6px 0; }
 .v2-thread .v2-thread-block--open > .v2-msg:hover,
 .v2-thread .v2-thread-block--open > .v2-msg:focus-within { background: transparent; }
@@ -13313,7 +13328,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-thread .v2-thread-replies { margin: 6px 0 0; padding-left: 14px; border-left: 2px solid var(--v2-border); }
 .v2-thread .v2-thread-replies .v2-msg { grid-template-columns: 24px minmax(0, 1fr); gap: 8px; padding: 4px 0; }
 .v2-thread .v2-thread-replies .v2-msg:hover { background: transparent; }
-.v2-thread .v2-thread-replies .v2-msg .v2-avatar { width: 24px; height: 24px; font-size: 12px; }
+.v2-thread .v2-thread-replies .v2-msg .v2-avatar { width: 24px; height: 24px; border-radius: var(--v2-r-6, 6px); font-size: 12px; }
 .v2-thread-replies__foot {
   display: flex;
   align-items: center;
@@ -13348,10 +13363,10 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 
 /* Transcript avatars are two-tone squares (ux-lead 64476 (1)): human tint +
    #4f5c6e initials, agent cobalt + white initials; a photo still wins. */
-.v2-thread .v2-avatar--flat { border: 0; box-shadow: none; border-radius: 4px; font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
+.v2-thread .v2-avatar--flat { border: 0; box-shadow: 0 0 0 1px var(--v2-av-ring, rgba(16, 24, 40, 0.08)); border-radius: var(--v2-r-9, 9px); font: 650 12px/1 var(--v2-font); letter-spacing: 0.02em; }
 .v2-thread .v2-avatar--flat-human { background: #f2f4f7; color: #4f5c6e; }
 .v2-thread .v2-avatar--flat-agent { background: var(--v2-accent); color: var(--v2-bg); }
-.v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { font: 650 12px/1 var(--v2-font); }
+.v2-thread .v2-thread-replies .v2-msg .v2-avatar--flat { border-radius: var(--v2-r-6, 6px); font: 650 12px/1 var(--v2-font); }
 .v2-thread .v2-thread-card__faces .v2-avatar--flat { font: 650 11px/1 var(--v2-font-mono); }
 .v2-root .v2-thread button.v2-thread-replies__aim { margin-left: auto; padding: 0; color: var(--v2-text-muted); font: 500 12px/16px var(--v2-font); }
 
@@ -13944,6 +13959,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-board__focus[open] .v2-board__focus-chevron { transform: rotate(180deg); }
 .v2-board__focus[open] > :not(summary) { margin-left: 12px; margin-right: 12px; }
 .v2-board__focus[open] { max-height: 40vh; overflow-y: auto; }
+.v2-board__focus:not([open]) > :not(summary) { display: none; }
 
 .v2-board__tabs { display: none; }
 .v2-board__columns {
@@ -14007,16 +14023,16 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 @media (max-width: 760px) {
-  .v2-board__head { padding: 8px 12px; min-height: 52px; gap: 6px; flex-wrap: wrap; }
+  .v2-board__head { padding: 8px 12px; min-height: 52px; gap: 6px; flex-wrap: nowrap; row-gap: 0; }
   .v2-board__back-label, .v2-board__subtitle { display: none; }
   .v2-board__head > .v2-board__back { order: 1; }
-  .v2-board__title-wrap { order: 2; }
+  .v2-board__title-wrap { order: 2; flex: 1 1 0; min-width: 0; }
   .v2-board__head > .v2-board__icon-btn { order: 3; }
-  .v2-board__search { order: 3; }
-  .v2-board__head > .v2-board__new { order: 4; }
-  .v2-board__filters { order: 5; width: 100%; padding-bottom: 6px; }
-  .v2-board__focus { margin: 10px 12px 0; }
-  .v2-board__focus-strip .v2-board__focus-eyebrow { display: none; }
+  .v2-board__search { order: 3; flex: 1 1 0; min-width: 0; width: auto; }
+  .v2-board__head > .v2-board__new { order: 4; margin-left: 0; }
+  .v2-board__filters { padding: 8px 12px 0; }
+  /* The frame's phone board has no focus strip; the goal lives on desktop. */
+  .v2-board__focus { display: none; }
   .v2-board__new-label { display: none; }
   .v2-board__tabs { display: flex; gap: 4px; padding: 8px 12px 0; overflow-x: auto; }
   .v2-root button.v2-board__tab {
@@ -14037,8 +14053,45 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 }
 
 .v2-root button.v2-board__card-main, .v2-root button.v2-board__card-main:hover { background: none; }
+/* The card already pads itself; a second 12px on the button doubled the frame's card height (85px vs ~57px). */
+.v2-root button.v2-board__card-main { padding: 0; }
 /* The action bar sits on the id row, so it never covers the title; the owner line yields to it. */
 .v2-board__card:hover .v2-board__owner-line, .v2-board__card:focus-within .v2-board__owner-line { visibility: hidden; }
 .v2-root button.v2-board__card-main:focus-visible, .v2-root button.v2-board__card-move:focus-visible {
   outline: 2px solid var(--v2-accent); outline-offset: 2px; box-shadow: none;
+}
+
+/* D223 (TASK-730 shell): the artboard's 390 frame is a 52px top bar over one
+   column. Feature pages (connectors, team, settings) share V2PageHead and the
+   V2FeaturePage body, so the bar and the tighter body live here once instead
+   of in each page. The tab bar's height is already reserved on .v2-feature. */
+@media (max-width: 760px) {
+  .v2-feature__header {
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    padding: 0 10px 0 12px;
+    gap: 8px;
+  }
+  .v2-feature__header .v2-page-head__identity { align-items: center; gap: 8px; }
+  .v2-feature__header .v2-feature__title {
+    font: 800 21px/1 var(--v2-font-display);
+    letter-spacing: -0.03em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .v2-feature__header .v2-page-head__meta { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .v2-feature__body { padding: 12px 12px 16px; }
+  .v2-settings__layout { padding-top: 0; }
+  .v2-settings__title {
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    margin: -12px -12px 12px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--v2-border-soft);
+    font: 800 21px/1 var(--v2-font-display);
+    letter-spacing: -0.03em;
+  }
 }

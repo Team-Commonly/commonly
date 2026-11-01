@@ -5,7 +5,6 @@ import axios from '../../utils/axiosConfig';
 import { getAvatarSrc } from '../../utils/avatarUtils';
 import { useAuth } from '../../context/AuthContext';
 import AppsManagement from '../../components/AppsManagement';
-import '../primitives/primitives.css';
 import V2BillingPanel from './V2BillingPanel';
 import V2DevicesPanel from './V2DevicesPanel';
 import V2DeleteAccount from './V2DeleteAccount';
@@ -586,8 +585,8 @@ const V2SettingsPage: React.FC = () => {
 
   return (
     <div className="v2-settings" aria-label="Settings">
-      <header className="v2p-ph"><h1>Settings</h1></header>
-      <div className="v2p-body v2-settings__layout">
+      <div className="v2-settings__layout">
+        <h1 className="v2-settings__title">Settings</h1>
         <div className="v2-settings__content">
           <SettingsSection id="account" title="Account">
             <V2AccountSection />
