@@ -630,10 +630,10 @@
     "agentRoomLiveness": {
       "neverConnected": "{{agentName}} 尚未连接。发送到这里的消息会等待该席位连接。",
       "goneDark": "{{agentName}} 最近没有接入，回复可能需要更长时间。",
-      "unknown": "{{agentName}} 的可用状态未知，回复可能需要更长时间。",
       "waiting": "正在等待 {{agentName}} 回复…",
       "timedOut": "{{agentName}} 还没有回复。你的消息仍在此对话中。",
-      "runCommand": "要连接它，请运行："
+      "runCommand": "要连接它，请运行：",
+      "copyCommand": "复制命令"
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} 还没有连接，运行起来之前不会在这里回复。",
@@ -712,7 +712,9 @@
       "agents_other": "{{count}}个智能体",
       "boardOpen": "看板{{count}}项待办",
       "backToPods": "返回 Pod 列表",
-      "invite": "邀请"
+      "invite": "邀请",
+      "dm": "私信",
+      "readOnly": "只读"
     },
     "team": {
       "view": "查看 Pod 团队",

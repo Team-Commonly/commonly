@@ -648,11 +648,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // liveness and the bounded reply wait outside the scrollable transcript
     // and outside the textarea, so both remain visible while composing.
     const status = ruleBody(v2, '.v2-chat__agent-room-status');
-    expect(status).toContain('margin: 8px 24px 0');
-    expect(status).toContain('font-size: 12px');
+    expect(status).toContain('margin: 6px 18px 0');
+    expect(status).toContain('flex: none');
     const waiting = ruleBody(v2, '.v2-chat__agent-room-status--wait');
-    expect(waiting).toContain('background: var(--v2-surface-hover)');
-    expect(waiting).toContain('font-family: var(--v2-font-mono)');
+    expect(waiting).toContain('var(--v2-font-mono)');
+    // The waiting dot is ink, never the success green (d215 frame).
+    expect(ruleBody(v2, '.v2-chat__agent-room-status-dot')).toContain('background: var(--v2-ink)');
+    // The copy key is a 44px target on a phone (an exception to the 32px desktop key).
+    const phone = mediaBlockContaining(v2, '.v2-root button.v2-chat__agent-room-copy { width: 44px');
+    expect(phone).toContain('.v2-root button.v2-chat__agent-room-copy { width: 44px; height: 44px; }');
+    // The read-only note replaces the composer, so on a phone it clears the
+    // fixed 54px tab bar as the composer does.
+    expect(mediaBlockContaining(v2, '.v2-chat__readonly { margin')).toContain('.v2-chat__readonly { margin: 4px 12px 66px; }');
   });
 
   test('runtime vocabulary stays off Your Team cards (ADR-022 D1, ratified)', () => {

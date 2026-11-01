@@ -271,50 +271,122 @@
   border: 1px solid rgba(239, 68, 68, 0.16);
 }
 
-/* A 1:1 agent room must not make a successful POST look like an active
-   agent. The liveness row is deliberately adjacent to, but outside, the
-   composer: it remains visible while someone writes and never becomes part
-   of the scrollable transcript. */
+/* Agent room state rows (d215 .rstat): the direct agent's reach, the bounded
+   reply wait, and a group pod's not-running agents. Each row is adjacent to,
+   but outside, the composer, so it stays visible while someone writes and
+   never becomes part of the scrollable transcript. */
 .v2-chat__agent-room-status {
-  margin: 8px 24px 0;
-  padding: 8px 10px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-sm);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 6px 18px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
   background: var(--v2-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
   color: var(--v2-text-secondary);
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 12.5px;
+  line-height: 1.5;
+  flex: none;
 }
 
+.v2-chat__agent-room-status-icon {
+  display: flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--v2-text-muted);
+}
+
+.v2-chat__agent-room-status-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.v2-chat__agent-room-status--wait {
+  font: 500 12px/1.5 var(--v2-font-mono);
+}
+
+/* The waiting dot is ink, not green: a reply that has not come is not a
+   success. It pulses like the "is thinking" presence. */
+.v2-chat__agent-room-status-dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 7px 3px 0;
+  border-radius: 50%;
+  background: var(--v2-ink);
+}
+
+.v2-chat__agent-room-status-dot::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid var(--v2-ink);
+  opacity: 0;
+  animation: v2-presence-pulse var(--motion-pulse) var(--motion-ease-state) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2-chat__agent-room-status-dot::after { animation: none; }
+}
+
+.v2-chat__agent-room-lede {
+  margin-top: 6px;
+}
+
+/* The owner's one next step: a mono command with a copy key (d215 .rcmd). */
 .v2-chat__agent-room-command {
-  display: block;
-  margin-top: 4px;
-  font-family: var(--v2-font-mono, ui-monospace, monospace);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 8px;
+  background: var(--v2-surface-tint);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+}
+
+.v2-chat__agent-room-command code {
+  flex: 1;
+  min-width: 0;
+  font: 500 12.5px/1.4 var(--v2-font-mono);
+  color: var(--v2-ink);
   overflow-wrap: anywhere;
   user-select: all;
 }
 
-.v2-chat__agent-room-status--wait {
-  border-color: var(--v2-border);
+.v2-root button.v2-chat__agent-room-copy {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--v2-text-secondary);
+  cursor: pointer;
+}
+
+.v2-root button.v2-chat__agent-room-copy:hover {
   background: var(--v2-surface-hover);
-  color: var(--v2-text-secondary);
-  font-family: var(--v2-font-mono);
-  font-weight: 500;
+  color: var(--v2-ink);
 }
 
-.v2-chat__agent-room-status-dot {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--v2-success);
+.v2-root button.v2-chat__agent-room-copy:focus-visible {
+  outline: none;
+  box-shadow: var(--v2-focus-ring);
 }
 
-.v2-chat__agent-room-status--timeout {
-  border-color: var(--v2-border-strong);
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-secondary);
-  font-weight: 500;
+@media (max-width: 760px) {
+  .v2-chat__agent-room-status { margin: 6px 12px 0; }
+  .v2-root button.v2-chat__agent-room-copy { width: 44px; height: 44px; }
 }
 
 .v2-chat__starter-prompts {
@@ -507,49 +579,57 @@
   }
 }
 
-/* Read-only banner shown in place of the composer when the viewer can read
-   an agent-dm pod (§3.7) but isn't a formal member. Styled as a soft note,
-   not an error — being a read-only observer is the intended state. */
+/* Read-only note in place of the composer when the viewer can read an
+   agent-dm pod (§3.7) but isn't a member (d215 .rro). A quiet note, not an
+   error: observing is the intended state, and there is no box that would
+   refuse a post. */
 .v2-chat__readonly {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  margin: 4px 18px 16px;
   padding: 14px 16px;
-  margin: 12px 16px 16px;
+  border-radius: 12px;
   background: var(--v2-bg-subtle);
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  flex: none;
 }
 
 .v2-chat__readonly-icon {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
+  flex: none;
   width: 28px;
   height: 28px;
-  border-radius: var(--v2-radius-pill);
-  background: var(--v2-surface-hover);
+  border-radius: 50%;
+  background: var(--v2-surface-tint);
   color: var(--v2-ink);
 }
 
 .v2-chat__readonly-body {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  min-width: 0;
 }
 
 .v2-chat__readonly-title {
+  display: block;
   font-size: 13px;
   font-weight: 600;
-  color: var(--v2-text-primary);
+  color: var(--v2-ink);
 }
 
 .v2-chat__readonly-text {
+  display: block;
+  margin-top: 2px;
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--v2-text-secondary);
+}
+
+/* The frame's 12px below the note, plus the fixed 54px phone tab bar, which
+   the composer clears the same way (an exception to the lifted frame, whose
+   tab bar is in flow). */
+@media (max-width: 760px) {
+  .v2-chat__readonly { margin: 4px 12px 66px; }
 }
 
 /* GitHub PR preview card. Rendered below a message body when the content

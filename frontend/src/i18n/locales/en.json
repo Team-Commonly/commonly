@@ -630,10 +630,10 @@
     "agentRoomLiveness": {
       "neverConnected": "{{agentName}} isn't connected yet. Messages sent here will wait until it runs.",
       "goneDark": "{{agentName}} hasn't checked in recently. A reply may take longer.",
-      "unknown": "{{agentName}}'s availability is unknown. A reply may take longer.",
       "waiting": "Waiting for {{agentName}} to reply…",
       "timedOut": "{{agentName}} hasn't replied yet. Your message is still in this conversation.",
-      "runCommand": "To connect it, run:"
+      "runCommand": "To connect it, run:",
+      "copyCommand": "Copy command"
     },
     "podAgentLiveness": {
       "notConnected": "{{agentName}} isn't connected yet, so it won't answer here until it's running.",
@@ -713,7 +713,9 @@
       "agents_other": "{{count}} agents",
       "boardOpen": "board {{count}} open",
       "backToPods": "Back to pods",
-      "invite": "Invite"
+      "invite": "Invite",
+      "dm": "DM",
+      "readOnly": "read only"
     },
     "team": {
       "view": "View pod team",
