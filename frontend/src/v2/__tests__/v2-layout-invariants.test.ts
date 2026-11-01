@@ -5474,6 +5474,8 @@ describe('Connect lifted from the d215 frame (R05)', () => {
     const phone = mediaBlockContaining(connectCss, '.v2-connect .v2-connect__link');
     expect(ruleBody(connectCss, '.v2-connect .v2-connect__link', { within: phone })).toContain('min-height: 44px');
     expect(selectorRuleBody(phone, '.v2-connect .v2-connect__cta, ')).toContain('height: 44px');
+    // The same rule must size both keys, the CTA and the secondary, not the CTA alone.
+    expect(phone).toContain('.v2-connect .v2-connect__cta, .v2-connect .v2-connect__lane > .v2-connect__secondary, .v2-connect .v2-connect__secondary { align-self: stretch; height: 44px;');
   });
 
   // The v2.css :lang(zh) reset (TASK-055) scans only v2.css, so the entry that
