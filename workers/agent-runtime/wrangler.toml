@@ -29,9 +29,13 @@ MODEL_PROVIDER = "deepseek"
 # two `wrangler secret put ... --env staging` piped from staging Secret Manager so
 # nothing is typed by hand:
 #   RUNTIME_ADMIN_TOKEN  <- commonly-staging-hosted-runtime-admin-token (gates provision)
-#   DEEPSEEK_API_KEY     <- commonly-deepseek-api-key (MODEL_PROVIDER=deepseek; a turn
-#                           throws "DEEPSEEK_API_KEY unset" without it, so hosted-reply
-#                           would fail even once provision succeeds)
+#   DEEPSEEK_API_KEY     <- commonly-staging-deepseek-api-key — a SEPARATE, spend-capped
+#                           staging DeepSeek key, NOT prod's key (same fresh-keys rule as
+#                           the admin token: a staging leak must not spend on prod's key).
+#                           MODEL_PROVIDER=deepseek, so a turn throws "DEEPSEEK_API_KEY
+#                           unset" without it and hosted-reply fails even once provision
+#                           succeeds. The worker calls DeepSeek directly (no base-URL env),
+#                           so staging LiteLLM's virtual key is not an option here.
 [env.staging]
 name = "commonly-agent-runtime-staging"
 
