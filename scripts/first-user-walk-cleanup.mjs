@@ -28,20 +28,23 @@ export const isRunBot = (member, agentName, { scout = true } = {}) => {
 
 // After an ambiguous pod create (an error, or a reply without an id), the pod
 // may exist. Find this run's pods by their unique name and record them, so
-// cleanup removes them. Returns false when the list cannot be read, which means
-// the caller must report the name as an unresolved survivor.
+// cleanup removes them. Returns true only when a matching pod is found. It
+// returns false when the list cannot be read or holds no match, and the caller
+// must report the name as an unresolved survivor. An empty match would let
+// cleanup mark the run clean while the pod is still live.
 export const recoverRunPods = async ({ api, token, userId, podName, podIds }) => {
   try {
     const list = await api('GET', '/api/pods', { token });
     // A 200 whose body is not a pod list is unreadable, not an empty list.
     if (list.status !== 200 || !(Array.isArray(list.data) || Array.isArray(list.data?.pods))) return false;
-    const pods = ids(list.data);
-    for (const p of pods) {
-      if (p.name === podName && ownerOf(p) === String(userId) && !podIds.includes(String(p._id))) {
-        podIds.push(String(p._id));
+    let found = false;
+    for (const p of ids(list.data)) {
+      if (p.name === podName && ownerOf(p) === String(userId)) {
+        found = true;
+        if (!podIds.includes(String(p._id))) podIds.push(String(p._id));
       }
     }
-    return true;
+    return found;
   } catch {
     return false;
   }
