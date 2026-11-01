@@ -338,12 +338,14 @@ describe('a turn frozen with SIGSTOP', () => {
         _spawnImpl: (_cmd, _args, options) => {
           const grand = `process.on('SIGTERM', () => { require('fs').writeFileSync(${JSON.stringify(mark)}, 'term'); process.exit(143); });`
             + " process.stderr.write('ready ' + process.pid + '\\n'); setInterval(() => {}, 1000);";
-          // The root outlives the descendant's handler (bounded), so the survivor
-          // sweep on its exit cannot race that handler. Root-only SIGCONT leaves
-          // the descendant stopped, the bound runs out, and the mark never lands.
-          const root = `process.on('SIGTERM', () => { const t0 = Date.now(); const wait = () => (require('fs').existsSync(${JSON.stringify(mark)}) || Date.now() - t0 > 4000 ? process.exit(143) : setTimeout(wait, 20)); wait(); });`
-            + ` require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grand)}], { stdio: ['ignore', 'ignore', 'inherit'] });`
-            + ' setInterval(() => {}, 1000);';
+          // The root outlives the descendant (bounded) and reaps it, so the
+          // survivor sweep on its exit cannot race the handler and no zombie is
+          // left for the probe below. Root-only SIGCONT leaves the descendant
+          // stopped, the bound runs out, and the mark never lands.
+          const root = "let gone = false; process.on('SIGTERM', () => { const t0 = Date.now();"
+            + " const wait = () => (gone || Date.now() - t0 > 4000 ? process.exit(143) : setTimeout(wait, 20)); wait(); });"
+            + ` require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grand)}], { stdio: ['ignore', 'ignore', 'inherit'] })`
+            + ".on('exit', () => { gone = true; }); setInterval(() => {}, 1000);";
           child = realSpawn(process.execPath, ['-e', root], { ...options, cwd: sessionsTmpDir });
           child.stderr.once('data', (chunk) => {
             grandchild = Number(/ready (\d+)/.exec(String(chunk))?.[1]) || 0;
