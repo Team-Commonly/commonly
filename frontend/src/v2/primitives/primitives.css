@@ -234,6 +234,9 @@
   flex-direction: column;
   z-index: 5;
 }
+/* The showcase shows the drawer in flow, so it never covers the rows above it.
+   The live drawer keeps the absolute overlay above. */
+.v2p-drawer--inline { position: static; width: auto; border-radius: var(--v2-r-14); margin: 0 28px 24px; box-shadow: var(--v2-shadow-pane); }
 .v2p-drawer .dh { height: 64px; display: flex; align-items: center; gap: 8px; padding: 0 14px 0 20px; border-bottom: 1px solid var(--v2-border-soft); }
 .v2p-drawer .db { padding: 18px 20px; display: grid; gap: 14px; align-content: start; }
 .v2p-drawer h2 { font: 700 19px/1.25 var(--v2-font-display); letter-spacing: -0.02em; margin: 0; }

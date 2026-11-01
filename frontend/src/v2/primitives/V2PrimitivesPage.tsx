@@ -61,11 +61,11 @@ const V2PrimitivesPage: React.FC = () => (
           </div>
         </div>
 
-        <aside className="v2p-drawer" aria-label="Drawer example">
+        <aside className="v2p-drawer v2p-drawer--inline" aria-label="Drawer example">
           <div className="dh"><span className="v2p-chip">drawer</span></div>
           <div className="db">
             <h2>Drawer title</h2>
-            <p className="v2p-body" style={{ padding: 0 }}>The drawer sits over the pane at 400px.</p>
+            <p className="v2p-body" style={{ padding: 0 }}>Shown in flow here. On the live pages it sits over the pane at 400px.</p>
           </div>
         </aside>
       </section>
