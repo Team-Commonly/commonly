@@ -735,12 +735,6 @@ body.modern-ui.v2-canvas {
   gap: 8px;
 }
 
-.v2-rail__foot-sep {
-  width: 24px;
-  height: 1px;
-  background: var(--v2-border);
-}
-
 /* The language switch left the rail for Settings › Look (D215, TASK-691). */
 
 .v2-rail__brand {
@@ -883,7 +877,6 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-rail__feedback,
-.v2-rail__signout,
 .v2-rail__account {
   width: 24px;
   height: 24px;
@@ -899,15 +892,13 @@ body.modern-ui.v2-canvas {
 
 .v2-rail__feedback:hover,
 .v2-rail__feedback[aria-expanded="true"],
-.v2-rail__signout:hover,
 .v2-rail__account:hover,
 .v2-rail__account[aria-expanded="true"] {
   background: var(--v2-surface-hover);
   color: var(--v2-text-primary);
 }
 
-.v2-rail__feedback svg,
-.v2-rail__signout svg {
+.v2-rail__feedback svg {
   width: 18px;
   height: 18px;
 }
