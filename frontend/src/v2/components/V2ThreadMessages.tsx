@@ -7,6 +7,9 @@ import { ThreadViewItem } from '../utils/threadView';
 import { isGroupedWithPrevious } from '../utils/messageGrouping';
 import V2MessageRow from './V2MessageRow';
 import V2ThreadCard from './V2ThreadCard';
+import V2Avatar from './V2Avatar';
+import { ShellGlyph } from '../icons/glyphs';
+import { formatRelativeTime } from '../utils/grouping';
 import { V2DecisionCardData, V2DecisionRuling } from './V2DecisionCard';
 
 // Expanded threads show the newest eight; a `N more replies` line reveals the rest.
@@ -376,20 +379,51 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
           const open = openClaimRuns.has(item.key);
           const first = item.messages[0].payload?.taskId ?? '';
           const last = item.messages[item.messages.length - 1].payload?.taskId ?? '';
+          // D215 .sumrow: up to four distinct claimers' faces and the run's
+          // last time. The accessible name stays the one-line label.
+          const claimers = item.messages.filter((message, claimIndex) => item.messages
+            .findIndex((other) => (other.user_id || other.payload?.actorName) === (message.user_id || message.payload?.actorName)) === claimIndex)
+            .slice(0, 4);
+          const lastAt = item.messages[item.messages.length - 1].created_at;
           return (
             <div className="v2-claim-run" key={`claims-${item.key}`}>
               <button
                 type="button"
                 className="v2-claim-run__toggle"
                 aria-expanded={open}
+                aria-label={t('podChat.claimRun.label', { count: item.messages.length, first, last })}
                 onClick={() => toggleClaimRun(item.key)}
               >
-                <span>{t('podChat.claimRun.label', { count: item.messages.length, first, last })}</span>
+                <ShellGlyph name="board" size={18} />
+                <span className="v2-claim-run__faces" aria-hidden="true">
+                  {claimers.map((message) => (
+                    <V2Avatar
+                      key={String(message.id)}
+                      name={message.payload?.actorName || message.user?.username || ''}
+                      src={message.user?.profile_picture || undefined}
+                      size="sm"
+                      tone="flat"
+                      kind={message.user?.isBot === false ? 'human' : 'agent'}
+                      seed={message.user_id || undefined}
+                    />
+                  ))}
+                </span>
+                <span className="v2-claim-run__label" aria-hidden="true">
+                  <b>{t('podChat.claimRun.count', { count: item.messages.length })}</b>
+                  {' · '}
+                  {t('podChat.claimRun.range', { first, last })}
+                </span>
+                {lastAt && <span className="v2-claim-run__time" aria-hidden="true">{formatRelativeTime(lastAt)}</span>}
+                <span className="v2-claim-run__chev" aria-hidden="true"><ShellGlyph name="chevron" size={15} /></span>
               </button>
-              {open && item.messages.map((message, claimIndex) => renderMessage(
-                message,
-                claimIndex === 0 ? view[index - 1] : { kind: 'message', message: item.messages[claimIndex - 1] },
-              ))}
+              {open && (
+                <div className="v2-claim-run__list">
+                  {item.messages.map((message, claimIndex) => renderMessage(
+                    message,
+                    claimIndex === 0 ? view[index - 1] : { kind: 'message', message: item.messages[claimIndex - 1] },
+                  ))}
+                </div>
+              )}
             </div>
           );
         }

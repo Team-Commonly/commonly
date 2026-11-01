@@ -600,7 +600,9 @@
       "taskClaimedVerb": "认领了"
     },
     "claimRun": {
-      "label": "{{count}}次认领 · {{first}} 至 {{last}}"
+      "label": "{{count}}次认领 · {{first}} 至 {{last}}",
+      "count": "{{count}}次认领",
+      "range": "{{first}} 至 {{last}}"
     },
     "starts": {
       "label": "开始方式",

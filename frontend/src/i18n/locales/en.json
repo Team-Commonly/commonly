@@ -600,7 +600,9 @@
       "taskClaimedVerb": "claimed"
     },
     "claimRun": {
-      "label": "{{count}} claims · {{first}} to {{last}}"
+      "label": "{{count}} claims · {{first}} to {{last}}",
+      "count": "{{count}} claims",
+      "range": "{{first}} to {{last}}"
     },
     "starts": {
       "label": "Ways to start",

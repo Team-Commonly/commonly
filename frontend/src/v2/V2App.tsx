@@ -17,6 +17,12 @@ import '@fontsource/ibm-plex-mono/500.css';
 import './v2.css';
 // D223 shared primitives (TASK-730): the keys and segment chat and the sidebar use.
 import './primitives/primitives.css';
+// Chat surface CSS lifted out of v2.css (D223, S3). Imported here, after
+// v2.css, so its rules still win the order ties they won inside v2.css (a
+// component-level import would load before v2.css: V2Layout is imported above).
+// No chat rule ties a primitive on specificity, so following primitives.css
+// changes nothing.
+import './chat/chat-message.css';
 import { applyV2Theme, getV2Theme } from './utils/theme';
 
 // TASK-145 — inside the shell, only the surfaces the composer path needs stay

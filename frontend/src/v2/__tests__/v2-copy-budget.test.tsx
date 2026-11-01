@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import fs from 'fs';
 import path from 'path';
 import V2PageHead from '../components/V2PageHead';
+import { readV2Css } from '../__testkit__/v2Css';
 
 const source = (name: string) => fs.readFileSync(path.resolve(__dirname, '..', name), 'utf8');
 
@@ -51,7 +52,7 @@ describe('page head copy budget', () => {
   });
 
   test('phone disclosure keeps its trigger in the title row and uses the shared focus ring', () => {
-    const css = source('v2.css');
+    const css = readV2Css();
     expect(css).toContain('.v2-page-head__identity .v2-hint--open,\n  .v2-thread__title-line .v2-hint--open { display: contents; }');
     expect(css).toContain('.v2-thread__title-line { display: flex; flex-wrap: wrap; align-items: center; }');
     expect(css).toContain('.v2-thread__title-line .v2-hint__content { width: 100%; flex-basis: 100%; order: 1; }');

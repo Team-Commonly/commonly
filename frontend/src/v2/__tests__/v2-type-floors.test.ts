@@ -1,5 +1,4 @@
-import fs from 'fs';
-import path from 'path';
+import { readV2Css } from '../__testkit__/v2Css';
 
 /**
  * Signal's type floors (ruling h, 2026-09-06), enforced over the whole
@@ -24,7 +23,8 @@ import path from 'path';
  * fixed one fails the second (the allowlist may not carry a selector that no
  * longer violates). Target is an empty list.
  */
-const CSS = fs.readFileSync(path.join(__dirname, '../v2.css'), 'utf8');
+// v2.css plus the surface files lifted out of it (D223).
+const CSS = readV2Css();
 
 const MONO_FLOOR = 11;
 const SANS_FLOOR = 12;
