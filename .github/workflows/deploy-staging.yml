@@ -323,12 +323,16 @@ jobs:
         if: failure()
         run: |
           set -uo pipefail
-          CUR=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.[-1].revision // 0')
-          PREV=$(( CUR - 1 ))
-          if [ "$PREV" -lt 1 ]; then
-            echo "::warning title=No rollback target::$RELEASE is at revision ${CUR:-0}; nothing to roll back to."
+          HIST=$(helm history "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null || echo '[]')
+          CUR=$(printf '%s' "$HIST" | jq -r '.[-1].revision // 0')
+          # Target the newest revision BELOW current that Helm recorded as a real deploy
+          # (status superseded or deployed), skipping failed/pending revisions a retry may
+          # have left — a blind CUR-1 could land on another bad image (Cofounder, 2026-11-01).
+          TARGET=$(printf '%s' "$HIST" | jq -r --argjson cur "${CUR:-0}" '[.[] | select((.revision < $cur) and (.status=="superseded" or .status=="deployed"))] | (sort_by(.revision) | last | .revision) // empty')
+          if [ -z "$TARGET" ]; then
+            echo "::warning title=No rollback target::$RELEASE has no prior superseded/deployed revision below ${CUR:-0}; nothing to roll back to."
             exit 0
           fi
-          echo "Rolling $RELEASE back: revision $CUR -> $PREV"
-          helm rollback "$RELEASE" "$PREV" -n "$NAMESPACE" --wait --timeout 8m
-          echo "::error title=Deploy rolled back::$RELEASE rolled back to revision $PREV after a failed deploy. Investigate before the next deploy."
+          echo "Rolling $RELEASE back: revision $CUR -> $TARGET (last successfully-deployed)"
+          helm rollback "$RELEASE" "$TARGET" -n "$NAMESPACE" --wait --timeout 8m
+          echo "::error title=Deploy rolled back::$RELEASE rolled back to revision $TARGET after a failed deploy. Investigate before the next deploy."
