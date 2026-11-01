@@ -392,6 +392,24 @@ describe('V2Inspector', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/v2/agents');
   });
 
+  test('lists this pod\'s own queue rows even when the global slice misses them', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve(url.startsWith('/api/activity/decision-queue?podId=pod-1')
+      ? { items: [{ id: 'pod-row', kind: 'decision', title: 'Pod-only decision', podId: 'pod-1' }] }
+      : { tasks: [] }));
+    renderInspector({ attentionCount: 1, attentionItems: [] });
+    expect(await screen.findByText('Pod-only decision')).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith('/api/activity/decision-queue?podId=pod-1&limit=50');
+  });
+
+  test('members see the join policy as read-only text, not a segment', () => {
+    renderInspector({
+      currentUserId: 'another-user',
+      detail: { ...detail, pod: { ...detail.pod, createdBy: { _id: 'owner-1' }, joinPolicy: 'invite-only' } } as any,
+    });
+    expect(screen.queryByRole('radiogroup', { name: 'Who can join' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Who can join/ })).toBeInTheDocument();
+  });
+
   test('does not render a stale attention item from another pod', async () => {
     mockGet.mockResolvedValue({ tasks: [] });
     renderInspector({ attentionCount: 0, attentionItems: [{ id: 'other', kind: 'decision', title: 'Other pod', podId: 'pod-2' }] });
