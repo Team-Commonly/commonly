@@ -314,6 +314,41 @@ it("a hosted entry's tool row carries its connect descriptor and only its own co
   }
 });
 
+it("a hosted entry's connections each say how they differ: when, and for a key its agent", async () => {
+  const shipped = HOSTED_MCP_ENTRIES.slice();
+  const linearEntry = shipped.find((entry) => entry.id === 'linear');
+  try {
+    mockInstallables([], [buildHostedMcpToolInstallable(linearEntry)]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([
+      {
+        _id: 'conn-oauth', type: 'hosted-mcp', status: 'connected', createdBy: userId,
+        createdAt: new Date('2026-10-30T10:00:00Z'),
+        config: { entryId: 'linear', intake: 'oauth', credentialRef: 'ref-oauth', providerSubject: 'subject-1' },
+      },
+      {
+        _id: 'conn-key', type: 'hosted-mcp', status: 'connected', createdBy: userId,
+        createdAt: new Date('2026-10-31T11:00:00Z'),
+        config: { entryId: 'linear', agentId: '6a0000000000000000000007', credentialHint: 'lin…9f', credentialRef: 'ref-key' },
+      },
+    ]));
+
+    const catalog = await catalogFor(userId);
+    const linear = catalog.installables.find((entry) => entry.list === 'tools' && entry.installableId === 'linear');
+
+    expect(linear.connections).toEqual([
+      { connectionId: 'conn-oauth', owner: '', repo: '', connectedAt: '2026-10-30T10:00:00.000Z' },
+      {
+        connectionId: 'conn-key', owner: '', repo: '', connectedAt: '2026-10-31T11:00:00.000Z',
+        agentId: '6a0000000000000000000007',
+      },
+    ]);
+    expect(JSON.stringify(linear.connections)).not.toMatch(/ref-oauth|ref-key|subject-1|lin…9f/);
+  } finally {
+    HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
+  }
+});
+
 it('hides an instance-listed hosted entry from offerings while keeping its connection removable', async () => {
   const prior = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
   process.env.HOSTED_MCP_HIDDEN_ENTRIES = '["airtable"]';
