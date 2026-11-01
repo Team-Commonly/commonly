@@ -112,7 +112,7 @@ describe('V2AgentMemory', () => {
     expect(document.querySelectorAll('.v2-agent-memory__mnote .v2-agent-memory__gmeta')).toHaveLength(0);
   });
 
-  it('shows a denied notice instead of the index when the viewer is not owner or admin', async () => {
+  it('keeps the agent header, tabs and nav when the viewer cannot read entries, with the empty state inside', async () => {
     axios.get.mockRejectedValue(new Error('403'));
     render(
       <MemoryRouter initialEntries={['/v2/agents/maya-claude/default/memory']}>
@@ -122,6 +122,9 @@ describe('V2AgentMemory', () => {
       </MemoryRouter>,
     );
     await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
-    expect(screen.queryByRole('heading', { name: /Rules/ })).toBeNull();
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Profile' })).toBeInTheDocument();
+    expect(document.querySelector('.v2-agent-memory__nav')).not.toBeNull();
+    expect(document.querySelector('.v2-agent-memory__body [role="status"]')).not.toBeNull();
   });
 });

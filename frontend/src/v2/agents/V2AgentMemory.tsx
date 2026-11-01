@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
-import V2PageHead from '../components/V2PageHead';
+import V2Avatar from '../components/V2Avatar';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
 import './v2-agent-settings.css';
 
@@ -80,12 +80,52 @@ const MemIcon: React.FC<{ name: keyof typeof ICON_PATHS; size?: number; classNam
 );
 const GROUP_ICON: Record<GroupId, 'pin' | 'brain' | 'cal'> = { rules: 'pin', how: 'brain', journal: 'cal' };
 
+// The D215 frame without entries: same nav and body, the state sits inside it.
+const MemoryShell: React.FC<{ loading: boolean; message: string; loadingLabel: string; query: string; setQuery: (q: string) => void; searchLabel: string; navLabel: string }> = ({ loading, message, loadingLabel, query, setQuery, searchLabel, navLabel }) => (
+  <div className="v2-agent-memory">
+    <aside className="v2-agent-memory__nav" aria-label={navLabel}>
+      <ul>
+        {MEMORY_GROUPS.map((g) => (
+          <li key={g.id}>
+            <span className="v2-agent-memory__navitem">
+              <MemIcon name={GROUP_ICON[g.id]} />
+              {g.label}
+              <span className="v2-agent-memory__count">0</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <label className="v2-agent-memory__search">
+        <MemIcon name="search" size={15} />
+        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={searchLabel} aria-label={searchLabel} />
+      </label>
+    </aside>
+    <div className="v2-agent-memory__body">
+      <p className="v2-agent-settings__muted" role="status">{loading ? loadingLabel : message}</p>
+    </div>
+  </div>
+);
+
 const V2AgentMemory: React.FC = () => {
   const { t } = useTranslation();
   const { agentName = '', instanceId = '' } = useParams<{ agentName: string; instanceId: string }>();
   const [index, setIndex] = useState<MemoryIndex | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'denied'>('loading');
   const [query, setQuery] = useState('');
+  // Public header facts (name, avatar, pod count). Readable by any viewer, so the
+  // shell renders the same for owners, admins and everyone else.
+  const [head, setHead] = useState<{ displayName: string; profilePicture?: string; pods: number } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    axios
+      .get(`/api/agent-profile/${encodeURIComponent(agentName)}/${encodeURIComponent(instanceId || 'default')}`)
+      .then((res) => {
+        if (!cancelled) setHead({ displayName: res.data?.agent?.displayName || agentName, profilePicture: res.data?.agent?.profilePicture, pods: res.data?.pods?.count ?? 0 });
+      })
+      .catch(() => { if (!cancelled) setHead(null); });
+    return () => { cancelled = true; };
+  }, [agentName, instanceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,19 +148,19 @@ const V2AgentMemory: React.FC = () => {
 
   return (
     <main className="v2-agent-settings">
-      <V2PageHead title={t('agentSettings.memory', { defaultValue: 'Memory' })} />
-      <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
-        <Link to={profileHref}>{t('agentSettings.profile')}</Link>
-        <Link to={settingsHref}>{t('agentSettings.settings')}</Link>
-        <span aria-current="page">{t('agentSettings.memory', { defaultValue: 'Memory' })}</span>
-      </nav>
-
-      {state === 'loading' && <p className="v2-agent-settings__muted">{t('common.loading', { defaultValue: 'Loading…' })}</p>}
-      {state === 'denied' && (
-        <p className="v2-agent-settings__muted" role="status">
-          {t('agentProfile.memory.none', { defaultValue: 'Memory is visible to the agent owner and admins.' })}
-        </p>
-      )}
+      <header className="v2-agent-memory__head">
+        <V2Avatar name={head?.displayName || agentName} src={head?.profilePicture} size="lg" kind="agent" seed={`${agentName}:${instanceId}`} />
+        <div className="v2-agent-memory__ident">
+          <h1>{head?.displayName || agentName}</h1>
+          {head && <p>{t('agentProfile.hero.activeInPods', { count: head.pods })}</p>}
+        </div>
+        <nav className="v2-agent-settings__tabs v2-agent-memory__seg" aria-label={t('agentSettings.tabs')}>
+          <Link to={profileHref}>{t('agentSettings.profile')}</Link>
+          <span aria-current="page">{t('agentSettings.memory', { defaultValue: 'Memory' })}</span>
+          <Link to={settingsHref}>{t('agentSettings.settings')}</Link>
+        </nav>
+      </header>
+      {state === 'ready' && index ? null : <MemoryShell loading={state === 'loading'} message={state === 'denied' ? t('agentProfile.memory.none', { defaultValue: 'No memory recorded yet.' }) : ''} loadingLabel={t('common.loading', { defaultValue: 'Loading…' })} query={query} setQuery={setQuery} searchLabel={t('agentProfile.memory.search', { defaultValue: 'Search memory' })} navLabel={t('agentSettings.memory', { defaultValue: 'Memory' })} />}
       {state === 'ready' && index && (() => {
         const needle = query.trim().toLowerCase();
         const groups = groupSections(index.sections)
