@@ -129,12 +129,14 @@ const GUARDRAIL_REJECTION = /guardrail|moderation|prompt-injection/i;
 const GUARD_CHECK_TIMEOUT_MS = 10_000;
 // The free-name walk is advisory; past this it gives up and the default name posts.
 const BYO_NAME_LOOKUP_TIMEOUT_MS = 3_000;
-// Rejects if `work` has not settled in time, so a hung registry read cannot
-// keep the handoff card from posting.
+// The start-command cue is advisory too; past this Scout's turn goes on without it.
+const START_COMMAND_CUE_TIMEOUT_MS = 2_000;
+// Rejects if `work` has not settled in time, so a hung read cannot keep the
+// handoff card from posting or hold a turn.
 const withDeadline = <T>(work: Promise<T>, ms: number): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('name lookup timed out')), ms);
+    timer = setTimeout(() => reject(new Error('lookup timed out')), ms);
   });
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 };
@@ -2147,7 +2149,10 @@ export async function runAgent(
   // turn carries its start command, so the answer can't leave them stuck.
   if (agentName === 'scout' && dispatchCtx.computerRequesterId) {
     try {
-      const cue = await askerStartCommandCue(String(podId), dispatchCtx.computerRequesterId);
+      const cue = await withDeadline(
+        askerStartCommandCue(String(podId), dispatchCtx.computerRequesterId),
+        START_COMMAND_CUE_TIMEOUT_MS,
+      );
       if (cue) userMessage = `${cue}\n\n${userMessage}`;
     } catch (error) {
       console.warn('[native-runtime] start-command cue unavailable:', (error as Error).message);
