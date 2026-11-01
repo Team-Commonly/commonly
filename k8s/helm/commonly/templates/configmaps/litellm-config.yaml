@@ -337,16 +337,27 @@ data:
           # tested in a throwaway litellm — all injection attacks (ignore+reveal
           # system prompt / print original instructions / disregard-safety+DAN)
           # block; normal chat ("act as if the demo works", "sql query for users",
-          # "reveal the winner") passes. Known residual FP: the jailbreak category's
-          # standalone "you are now" keyword. Mitigated by default_on:false (opt-in
-          # only, same callers as above) + the per-path env off-switches
-          # (NATIVE_RUNTIME_GUARDRAILS / LLMSERVICE_GUARDRAILS). sql + malicious_code
-          # categories are intentionally OFF — this is a dev-agent platform; blocking
-          # SQL/code discussion would be absurd. See docs/runbooks/litellm-guardrails.md.
+          # "reveal the winner") passes. NB severity_threshold does NOT spare the
+          # 11 medium always_block_keywords — all 79 block regardless (measured
+          # v1.106.2). sql + malicious_code categories are intentionally OFF — this
+          # is a dev-agent platform; blocking SQL/code discussion would be absurd.
+          #
+          # skip_system_message_in_guardrail: scope the guard to UNTRUSTED input
+          # (user + tool content) and never scan our OWN system-role text. Our
+          # system prompts legitimately contain always_block substrings — a hosted
+          # agent named "Daniel" made the system prompt open "You are Daniel…",
+          # matching the jailbreak keyword "you are dan" and blocking EVERY turn
+          # (P0 2026-11-01). The guard exists to catch a poisoned pod message or a
+          # user prompt-injecting a native agent, both of which arrive as user/tool
+          # roles — scanning our own authored system text only produces FPs. The
+          # registry reads this from litellm_params and the translation layer drops
+          # role=="system" before the content_filter sees the text; user + tool are
+          # still scanned. See docs/runbooks/litellm-guardrails.md.
           guardrail: litellm_content_filter
           mode: "pre_call"
           default_on: false
           severity_threshold: "high"
+          skip_system_message_in_guardrail: true
           categories:
             - { category: "prompt_injection_jailbreak", action: "BLOCK" }
             - { category: "prompt_injection_system_prompt", action: "BLOCK" }
