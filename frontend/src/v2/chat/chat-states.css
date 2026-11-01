@@ -943,7 +943,9 @@
   }
 
   .v2-approval__exact summary {
+    min-height: 44px;
     padding-block: 12px;
+    box-sizing: border-box;
   }
 }
 

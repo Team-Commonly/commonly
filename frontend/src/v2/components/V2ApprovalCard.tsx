@@ -137,7 +137,8 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
           || (cardMessageId && String(approval.messageId || '').trim() === cardMessageId)
         ));
         const envelope = match?.toolCall;
-        if (!envelope?.tool || !envelope.canonicalArgs || typeof envelope.canonicalArgs !== 'object') {
+        if (!envelope?.tool || !envelope.canonicalArgs || typeof envelope.canonicalArgs !== 'object'
+          || Array.isArray(envelope.canonicalArgs)) {
           throw new Error('approval details unavailable');
         }
         setPendingToolCall(envelope);
@@ -245,7 +246,7 @@ const V2ApprovalCard: React.FC<V2ApprovalCardProps> = ({ message, authorLabel, t
             {readable && readable.rows.length > 0 && (
               <dl className="v2-approval__args" data-testid="approval-args">
                 {readable.rows.map((row) => (
-                  <div className="v2-approval__arg" key={row.keys.join('+')} data-testid={`approval-arg-${row.keys.join('-')}`}>
+                  <div className="v2-approval__arg" key={JSON.stringify(row.keys)} data-testid={`approval-arg-${row.keys.join('-')}`}>
                     <dt>{row.labelKey ? t(row.labelKey) : row.label}</dt>
                     <dd className={`v2-approval__arg-value v2-approval__arg-value--${row.kind}`} title={row.title}>
                       {row.href

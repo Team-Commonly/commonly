@@ -251,6 +251,16 @@ describe('tool-call approval details stay owner-scoped', () => {
     expect(screen.queryByText(/tool call refused/i)).not.toBeInTheDocument();
   });
 
+  test('arguments that are not an object leave the call unreadable and Approve disabled', async () => {
+    mockGet.mockResolvedValue({
+      approvals: [{ approvalId: 'tool-arr', messageId: 'm1', toolCall: { tool: 'github.merge_pull_request', canonicalArgs: [42, 'squash'] } }],
+    });
+    renderCard({ kind: 'approval-card', approvalId: 'tool-arr', status: 'flagged', ownerUserId: 'viewer-1', actionType: 'tool_call' });
+    await waitFor(() => expect(screen.getByTestId('approval-tool-call-state')).toHaveTextContent(en.approvalCard.toolCall.unavailable));
+    expect(screen.queryByTestId('approval-args')).not.toBeInTheDocument();
+    expect(screen.getByText(en.approvalCard.approve)).toBeDisabled();
+  });
+
   test('the owner fetches canonical args and must see them before approving', async () => {
     mockGet.mockResolvedValue({
       approvals: [{

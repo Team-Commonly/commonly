@@ -73,7 +73,10 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
     ? `https://github.com/${owner}/${repo}`
     : undefined;
 
-  if (owner !== undefined || repo !== undefined) {
+  // GitHub-shaped rows (repository, PR, issue, head) are GitHub's vocabulary.
+  // On any other tool `owner` may be a person, so those keys stay plain rows
+  // under their own names.
+  if (isGithub && (owner !== undefined || repo !== undefined)) {
     const keys = ['owner', 'repo'].filter((key) => key in args);
     rows.push({
       keys,
@@ -87,7 +90,7 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
   }
 
   const numbered = (key: 'pullNumber' | 'issueNumber', path: 'pull' | 'issues', labelKey: string) => {
-    if (!(key in args)) return;
+    if (!isGithub || !(key in args)) return;
     const raw = args[key];
     rows.push({
       keys: [key],
@@ -102,7 +105,7 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
   numbered('pullNumber', 'pull', 'approvalCard.toolCall.label.pullRequest');
   numbered('issueNumber', 'issues', 'approvalCard.toolCall.label.issue');
 
-  if ('headSha' in args) {
+  if (isGithub && 'headSha' in args) {
     const raw = args.headSha;
     const sha = typeof raw === 'string' && COMMIT_SHA.test(raw) ? raw : null;
     rows.push({
@@ -126,7 +129,8 @@ export const toolCallView = (tool: string, args: Record<string, unknown>): ToolC
       ...(labelKey ? { labelKey } : {}),
       label: key,
       value: isLabels ? JSON.stringify(raw) : asText(raw),
-      kind: BLOCK_KEYS.has(key) && typeof raw === 'string'
+      // A multi-line string keeps its line breaks, whatever its key.
+      kind: typeof raw === 'string' && (BLOCK_KEYS.has(key) || raw.includes('\n'))
         ? 'block'
         : (typeof raw === 'string' || isLabels ? 'text' : 'mono'),
     });

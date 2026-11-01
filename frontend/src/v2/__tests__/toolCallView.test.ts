@@ -74,6 +74,19 @@ describe('toolCallView', () => {
     const view = toolCallView('linear.create_issue', { owner: 'Team-Commonly', repo: 'demo-day', issueNumber: 3 });
     expect(view.rows.every((row) => row.href === undefined)).toBe(true);
   });
+
+  test('another tool keeps owner, repo, number and SHA keys as plain rows under their own names', () => {
+    const view = toolCallView('linear.create_issue', { owner: 'alice', repo: 'notes', issueNumber: 3, headSha: 'abc1234' });
+    expect(view.rows.map((row) => row.keys)).toEqual([['owner'], ['repo'], ['issueNumber'], ['headSha']]);
+    expect(view.rows.every((row) => row.labelKey === undefined)).toBe(true);
+    expect(view.rows.map((row) => row.value)).toEqual(['alice', 'notes', '3', 'abc1234']);
+  });
+
+  test('a multi-line string keeps its line breaks whatever its key', () => {
+    const view = toolCallView('linear.create_issue', { description: 'one\ntwo', team: 'ENG' });
+    expect(view.rows.find((row) => row.keys[0] === 'description')).toMatchObject({ kind: 'block' });
+    expect(view.rows.find((row) => row.keys[0] === 'team')).toMatchObject({ kind: 'text' });
+  });
 });
 
 test.each(['toString', 'constructor', 'hasOwnProperty', '__proto__', 'extra'])('unknown argument %s retains its raw label', key => {
