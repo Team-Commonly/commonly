@@ -931,7 +931,10 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
         revokeGrants: revokeConnectionGrants,
       });
       if (!result.removed) {
-        return res.status(502).json({
+        // `removal_busy` is not a provider failure: nothing was sent, and the
+        // retry finishes it. 409 keeps it out of the page's provider-refusal
+        // handling, which would hide the row and point at the vendor's page.
+        return res.status(result.code === 'removal_busy' ? 409 : 502).json({
           code: result.code,
           message: result.message,
           ...(result.revokeAt ? { revokeAt: result.revokeAt } : {}),

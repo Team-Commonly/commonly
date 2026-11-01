@@ -59,7 +59,7 @@ import {
   type HostedMcpClientConfiguration,
 } from './hostedMcpIntakeService';
 import * as connectorSecrets from './connectorSecrets';
-import { upstreamFetch } from './upstreamFetch';
+import { upstreamFetch, UPSTREAM_TIMEOUT_MS } from './upstreamFetch';
 import { hostedVendorFetch } from './hostedVendorFetch';
 import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
 
@@ -81,6 +81,21 @@ export const PROVIDER_REVOKED_MARK = 'providerRevokedAt';
  */
 export const REVOKE_PAGE_KEY = 'revokePage';
 
+/**
+ * How long a removal holds the row against new writers (F34). It covers the
+ * removal's own vendor round trip (discovery and the revoke, each bounded by
+ * `UPSTREAM_TIMEOUT_MS`) with room to spare; a removal that dies leaves a lease
+ * that expires on its own.
+ */
+export const REMOVAL_LEASE_MS = 60 * 1000;
+
+/**
+ * How long past its expiry a writer's lease still counts. A refresh's lease
+ * (`REFRESH_LEASE_MS`) equals its two vendor calls' timeouts and nothing more,
+ * so its puts can land just after it lapses.
+ */
+export const WRITER_LEASE_OVERRUN_MS = UPSTREAM_TIMEOUT_MS;
+
 /** The row fields this sequence reads. Deliberately loose: a strict row type hides the schema change that matters. */
 export interface RemovableConnection {
   _id?: unknown;
@@ -94,13 +109,30 @@ export interface RemovableConnection {
     refreshTokenRef?: string;
     revokePage?: string;
     [PROVIDER_REVOKED_MARK]?: string | Date | null;
+    authGeneration?: number;
+    /** The write lease: a callback or refresh is putting material behind the refs until then. */
+    refreshingUntil?: string | Date | null;
+    /** The removal lease: a removal is revoking and sweeping until then. */
+    removingUntil?: string | Date | null;
   };
 }
 
 export interface RemovalDeps {
   now: () => Date;
-  /** Step 2. `isActive` is not among the fields, and must not be. */
-  markDisconnected: (id: unknown, at: Date) => Promise<void>;
+  /**
+   * Step 2, and the fence (F34): one write that also moves the row's
+   * authorization generation and drops any pending authorization, answered
+   * with the row AFTER it. Everything removal reads about the row comes from
+   * that answer. `isActive` is not among the fields, and must not be.
+   */
+  markDisconnected: (id: unknown, at: Date) => Promise<RemovableConnection | null>;
+  /**
+   * The removal lease, taken only while the row is still at `generation` and
+   * no writer or other removal holds a lease. False means try again.
+   */
+  takeRemovalLease: (id: unknown, generation: number | undefined, until: Date, now: Date) => Promise<boolean>;
+  /** Releases this removal's lease and no other; never throws. */
+  releaseRemovalLease: (id: unknown, until: Date) => Promise<void>;
   /** Step 3b, between the provider revoke and any material going. Idempotent. */
   markProviderRevoked: (id: unknown, at: Date) => Promise<void>;
   entryFor: (connection: RemovableConnection) => HostedMcpEntry | null;
@@ -141,13 +173,16 @@ export type RemovalResult =
     /**
      * `provider_revoke_failed` — step 3 did not take, the row keeps its
      * references and a retry still holds the token to send.
+     * `removal_busy` — a writer was storing a new token, or another removal
+     * held the row (F34). Nothing was read or sent; the row is `disconnected`
+     * and its grants are revoked, and a retry finishes it.
      * `provider_revoked_removal_incomplete` — step 3 is behind us and steps 4
      * or 5 failed; the retry finds the mark, skips the vendor, and finishes.
      * "Behind us" includes a step 3 that never called the vendor (a page-only
      * entry), so the name does not say the vendor revoked: `providerRevoked`
      * does.
      */
-    code: 'provider_revoke_failed' | 'provider_revoked_removal_incomplete';
+    code: 'provider_revoke_failed' | 'provider_revoked_removal_incomplete' | 'removal_busy';
     message: string;
     grantsRevoked: number;
     /** On `provider_revoked_removal_incomplete` only: as on success. */
@@ -243,11 +278,48 @@ export const revokeTokenAtVendor = async (input: {
 
 export const defaultDeps = (): RemovalDeps => ({
   now: () => new Date(),
-  markDisconnected: async (id, at) => {
-    await Integration.updateOne(
-      { _id: id },
-      { $set: { status: 'disconnected', revokedAt: at } },
-    );
+  // The generation and the pending authorization go in the same write as the
+  // status. A callback that consumed its state before this write can no longer
+  // retire or publish the row (both are guarded on the generation), a `/start`
+  // that has not been consumed yet can no longer be, and a refresh can no
+  // longer commit. Writers already past those guards hold the lease instead,
+  // which `removeConnection` reads from this answer.
+  markDisconnected: (id, at) => Integration.findOneAndUpdate(
+    { _id: id },
+    {
+      $set: { status: 'disconnected', revokedAt: at },
+      $inc: { 'config.authGeneration': 1 },
+      $unset: { 'config.pendingAuth': '' },
+    },
+    { new: true },
+  ).lean() as unknown as Promise<RemovableConnection | null>,
+  takeRemovalLease: async (id, generation, until, now) => {
+    const free = (path: string, at: Date) => ({
+      $or: [{ [path]: { $exists: false } }, { [path]: null }, { [path]: { $lte: at } }],
+    });
+    const taken = await Integration.findOneAndUpdate(
+      {
+        _id: id,
+        'config.authGeneration': generation === undefined ? { $exists: false } : generation,
+        $and: [
+          free('config.refreshingUntil', new Date(now.getTime() - WRITER_LEASE_OVERRUN_MS)),
+          free('config.removingUntil', now),
+        ],
+      },
+      { $set: { 'config.removingUntil': until } },
+      { new: true },
+    ).select('_id').lean();
+    return taken !== null;
+  },
+  releaseRemovalLease: async (id, until) => {
+    try {
+      await Integration.updateOne(
+        { _id: id, 'config.removingUntil': until },
+        { $set: { 'config.removingUntil': null } },
+      );
+    } catch {
+      // The lease expires on its own.
+    }
   },
   markProviderRevoked: async (id, at) => {
     await Integration.updateOne(
@@ -282,65 +354,29 @@ const holdsNothingToRevoke = (error: unknown): boolean =>
  * default would be a silent no-op on the one step whose omission recreates
  * TASK-145. A caller has to name it.
  */
-export const removeConnection = async (options: {
-  connection: RemovableConnection;
-  removedBy: string;
-  revokeGrants: (input: { connection: RemovableConnection; revokedBy: string }) => Promise<number>;
-  deps?: Partial<RemovalDeps>;
+/**
+ * Steps 3 to 5, run only while the removal holds its lease: nothing can put new
+ * material behind the refs in the meantime, so what is read here is what is
+ * revoked and what is swept.
+ */
+const revokeThenSweep = async (input: {
+  deps: RemovalDeps;
+  id: unknown;
+  entry: HostedMcpEntry | null;
+  target: ReturnType<typeof hostedMcpRevokeTarget> | null;
+  config: NonNullable<RemovableConnection['config']>;
+  grantsRevoked: number;
+  revokePage: string;
 }): Promise<RemovalResult> => {
-  const deps: RemovalDeps = { ...defaultDeps(), ...options.deps };
-  const { connection, removedBy } = options;
-  const id = connection?._id;
-
-  const grantsRevoked = await options.revokeGrants({ connection, revokedBy: removedBy });
-
-  const entry = deps.entryFor(connection);
-
-  // The row is marked BEFORE the entry is resolved, because resolving it is
-  // part of step 3: an attempt that cannot complete must still leave the row
-  // refusing at the broker. Marking is idempotent and the retry reads the
-  // token directly, so a row left `disconnected` is still finishable.
-  await deps.markDisconnected(id, deps.now());
-
-  // The entry decides, and the decision is read once, here (§3). No endpoint
-  // means no provider call at all; an endpoint means the token goes to it,
-  // which is why the material must still exist at this point.
-  const target = entry ? hostedMcpRevokeTarget(entry) : null;
-  if (entry && !target) {
-    return {
-      removed: false,
-      code: 'provider_revoke_failed',
-      message: `hosted-mcp entry does not say how to revoke (${entry.id})`,
-      grantsRevoked,
-    };
-  }
-
-  // The page the person is handed: the entry's, when we still hold the entry;
-  // otherwise the copy the connect step left on the row. A row naming an entry
-  // we no longer hold is finishable ONLY through that copy — nothing is known
-  // about where to revoke, so nothing is sent, and this is the authority the
-  // person keeps. A row with neither keeps the refusal below, which is the only
-  // case left: `entry` present with an unusable `revoke` returned above.
-  const revokePage = target ? target.page : String(connection?.config?.[REVOKE_PAGE_KEY] || '');
-  if (!revokePage) {
-    return {
-      removed: false,
-      code: 'provider_revoke_failed',
-      message: `hosted-mcp row names no known entry (${String(connection?.config?.entryId || '')})`,
-      grantsRevoked,
-    };
-  }
-
-  const refreshTokenRef = connection?.config?.refreshTokenRef
-    ? String(connection.config.refreshTokenRef)
-    : undefined;
-  const credentialRef = connection?.config?.credentialRef
-    ? String(connection.config.credentialRef)
-    : undefined;
+  const {
+    deps, id, entry, target, config, grantsRevoked, revokePage,
+  } = input;
+  const refreshTokenRef = config.refreshTokenRef ? String(config.refreshTokenRef) : undefined;
+  const credentialRef = config.credentialRef ? String(config.credentialRef) : undefined;
 
   // A retry after a completed provider revoke must not call the vendor again:
   // the material may be half-swept, and the token is already dead.
-  const alreadyRevokedAtVendor = Boolean(connection?.config?.[PROVIDER_REVOKED_MARK]);
+  const alreadyRevokedAtVendor = Boolean(config[PROVIDER_REVOKED_MARK]);
   let providerRevoked = alreadyRevokedAtVendor;
 
   // Only OAuth entries have a vendor revoke. An operator key is a static bearer
@@ -352,7 +388,7 @@ export const removeConnection = async (options: {
     // new client. During this first rollout, legacy rows without a snapshot use
     // the current Linear client; the post-rollout backfill closes that window.
     // A missing current client value hands the member the page instead.
-    const recordedClientId = connection?.config?.clientId;
+    const recordedClientId = config.clientId;
     let clientId: string | undefined;
     let clientSecret: string | undefined;
     let tokenEndpointAuthMethod: HostedMcpClientConfiguration['tokenEndpointAuthMethod'];
@@ -479,10 +515,103 @@ export const removeConnection = async (options: {
   return { removed: true, grantsRevoked, revokeAt: revokePage, providerRevoked };
 };
 
+export const removeConnection = async (options: {
+  connection: RemovableConnection;
+  removedBy: string;
+  revokeGrants: (input: { connection: RemovableConnection; revokedBy: string }) => Promise<number>;
+  deps?: Partial<RemovalDeps>;
+}): Promise<RemovalResult> => {
+  const deps: RemovalDeps = { ...defaultDeps(), ...options.deps };
+  const { connection, removedBy } = options;
+  const id = connection?._id;
+
+  const grantsRevoked = await options.revokeGrants({ connection, revokedBy: removedBy });
+
+  const entry = deps.entryFor(connection);
+
+  // The row is marked BEFORE the entry is resolved, because resolving it is
+  // part of step 3: an attempt that cannot complete must still leave the row
+  // refusing at the broker. Marking is idempotent and the retry reads the
+  // token directly, so a row left `disconnected` is still finishable.
+  //
+  // The refs, the mark and the lease are read from this write's answer, never
+  // from `connection`. The caller read that before any writer could finish in
+  // between: a mark read from it can skip the vendor for a token a reconnect
+  // has since put behind the same refs (F34). A row already gone answers null,
+  // and then there is nothing left here to revoke.
+  const row = await deps.markDisconnected(id, deps.now());
+  const config = row?.config || {};
+
+  // The entry decides, and the decision is read once, here (§3). No endpoint
+  // means no provider call at all; an endpoint means the token goes to it,
+  // which is why the material must still exist at this point.
+  const target = entry ? hostedMcpRevokeTarget(entry) : null;
+  if (entry && !target) {
+    return {
+      removed: false,
+      code: 'provider_revoke_failed',
+      message: `hosted-mcp entry does not say how to revoke (${entry.id})`,
+      grantsRevoked,
+    };
+  }
+
+  // The page the person is handed: the entry's, when we still hold the entry;
+  // otherwise the copy the connect step left on the row. A row naming an entry
+  // we no longer hold is finishable ONLY through that copy — nothing is known
+  // about where to revoke, so nothing is sent, and this is the authority the
+  // person keeps. A row with neither keeps the refusal below, which is the only
+  // case left: `entry` present with an unusable `revoke` returned above.
+  const revokePage = target ? target.page : String(config[REVOKE_PAGE_KEY] || '');
+  if (!revokePage) {
+    return {
+      removed: false,
+      code: 'provider_revoke_failed',
+      message: `hosted-mcp row names no known entry (${String(connection?.config?.entryId || '')})`,
+      grantsRevoked,
+    };
+  }
+
+  if (!row) {
+    // Gone before this write: another removal finished it. Nothing was sent
+    // from here, so nothing here can say the vendor revoked.
+    return { removed: true, grantsRevoked, revokeAt: revokePage, providerRevoked: false };
+  }
+
+  // The removal's own lease (F34), taken only at the generation the write
+  // above fenced and only when no writer holds the row's write lease. A
+  // callback past its retire write, or a refresh past its fence, holds that
+  // one while it puts new material behind the refs; its puts go to the secret
+  // store, which no row write fences, so reading now could revoke the token it
+  // is replacing and sweep the one it puts. While this lease is held, the
+  // callback's retire write refuses, so a `/start` begun after the fence cannot
+  // put anything either. A writer's lease counts until one vendor timeout past
+  // its expiry, because a refresh's two vendor calls can use all of it.
+  const removalLease = new Date(deps.now().getTime() + REMOVAL_LEASE_MS);
+  const leased = await deps.takeRemovalLease(id, config.authGeneration, removalLease, deps.now());
+  if (!leased) {
+    return {
+      removed: false,
+      code: 'removal_busy',
+      message: 'this connection is storing a new token; try again in a few seconds',
+      grantsRevoked,
+      revokeAt: revokePage,
+    };
+  }
+  try {
+    return await revokeThenSweep({
+      deps, id, entry, target, config, grantsRevoked, revokePage,
+    });
+  } finally {
+    await deps.releaseRemovalLease(id, removalLease);
+  }
+};
+
 module.exports = {
   HOSTED_MCP_TYPE,
   PROVIDER_REVOKED_MARK,
   REVOKE_PAGE_KEY,
+  REMOVAL_LEASE_MS,
+  WRITER_LEASE_OVERRUN_MS,
   defaultDeps,
   removeConnection,
   revokeTokenAtVendor,

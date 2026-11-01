@@ -14,6 +14,11 @@
 jest.mock('jsonwebtoken', () => ({}));
 jest.mock('../../../models/Integration', () => ({
   updateOne: jest.fn(async () => ({ acknowledged: true })),
+  findOneAndUpdate: jest.fn(() => {
+    const query = { lean: async () => null };
+    query.select = () => query;
+    return query;
+  }),
   findByIdAndDelete: jest.fn(async () => ({ _id: 'row' })),
 }));
 
@@ -22,6 +27,7 @@ const {
   revokeTokenAtVendor,
   defaultDeps,
   PROVIDER_REVOKED_MARK,
+  WRITER_LEASE_OVERRUN_MS,
 } = require('../../../services/connectionRemovalService');
 
 const Integration = require('../../../models/Integration');
@@ -55,12 +61,24 @@ const hostedRow = (over = {}) => ({
 /** An error carrying the code `connectorSecrets` throws, without importing it. */
 const codedError = (code, message = code) => Object.assign(new Error(message), { code });
 
+// The removal reads the row back from its own disconnect write (F34), so the
+// recorder answers that write with the row the arm handed to `remove`, as it
+// stands after the write.
+let rowOnDisk = null;
+
 /** A deps set that records the order every step was reached in. */
 const recorder = (over = {}) => {
   const calls = [];
   const deps = {
     now: () => new Date('2026-09-29T23:00:00.000Z'),
-    markDisconnected: jest.fn(async () => { calls.push('row'); }),
+    markDisconnected: jest.fn(async () => {
+      calls.push('row');
+      return rowOnDisk && { ...rowOnDisk, status: 'disconnected' };
+    }),
+    // Silent in `calls`: the order arms are about the removal's steps, and
+    // the lease brackets all of them.
+    takeRemovalLease: jest.fn(async () => true),
+    releaseRemovalLease: jest.fn(async () => {}),
     markProviderRevoked: jest.fn(async () => { calls.push('mark'); }),
     entryFor: jest.fn(() => ENTRY),
     clientIdFor: jest.fn(() => 'commonly-client'),
@@ -77,12 +95,15 @@ const recorder = (over = {}) => {
   return { calls, deps, revokeGrants };
 };
 
-const remove = (row, deps, revokeGrants) => removeConnection({
-  connection: row,
-  removedBy: 'owner-1',
-  revokeGrants,
-  deps,
-});
+const remove = (row, deps, revokeGrants) => {
+  rowOnDisk = row;
+  return removeConnection({
+    connection: row,
+    removedBy: 'owner-1',
+    revokeGrants,
+    deps,
+  });
+};
 
 describe('removeConnection (a hosted-MCP row)', () => {
   it('revokes a retired DCR row with its recorded client rather than the current registration', async () => {
@@ -457,10 +478,90 @@ describe('removeConnection (a hosted-MCP row)', () => {
   it('the default row step writes status and revokedAt only', async () => {
     const deps = defaultDeps();
     await deps.markDisconnected('row-1', new Date('2026-09-29T23:00:00.000Z'));
-    const [, update] = Integration.updateOne.mock.calls[0];
+    const [filter, update, options] = Integration.findOneAndUpdate.mock.calls[0];
+    expect(filter).toEqual({ _id: 'row-1' });
     expect(Object.keys(update.$set).sort()).toEqual(['revokedAt', 'status']);
     expect(update.$set.status).toBe('disconnected');
-    Integration.updateOne.mockClear();
+    // F34: the same write fences the writers and answers with the row after it.
+    expect(update.$inc).toEqual({ 'config.authGeneration': 1 });
+    expect(update.$unset).toEqual({ 'config.pendingAuth': '' });
+    expect(options).toEqual({ new: true });
+    Integration.findOneAndUpdate.mockClear();
+  });
+
+  // F34: a callback or refresh holding the write lease is putting new material
+  // behind the refs, and a removal that cannot take its own lease reads,
+  // sends and sweeps nothing.
+  it('refuses as busy, reading and sending nothing, when it cannot take the removal lease', async () => {
+    const { calls, deps, revokeGrants } = recorder({ takeRemovalLease: jest.fn(async () => false) });
+    const result = await remove(hostedRow({ config: {
+      entryId: 'linear', credentialRef: 'access-ref', refreshTokenRef: 'refresh-ref', authGeneration: 7,
+    } }), deps, revokeGrants);
+    expect(result).toEqual(expect.objectContaining({ removed: false, code: 'removal_busy', revokeAt: PAGE }));
+    expect(calls).toEqual(['grants', 'row']);
+    expect(deps.takeRemovalLease).toHaveBeenCalledWith('row-1', 7, expect.any(Date), expect.any(Date));
+    expect(deps.releaseRemovalLease).not.toHaveBeenCalled();
+  });
+
+  it('releases the lease it took on every exit, success and refusal alike', async () => {
+    for (const over of [{}, { revokeAtVendor: jest.fn(async () => { throw new Error('vendor down'); }) }]) {
+      const { deps, revokeGrants } = recorder(over);
+      await remove(hostedRow(), deps, revokeGrants);
+      const until = deps.takeRemovalLease.mock.calls[0][2];
+      expect(deps.releaseRemovalLease).toHaveBeenCalledWith('row-1', until);
+    }
+  });
+
+  it('the default lease is taken only at the fenced generation, past every writer lease plus the overrun', async () => {
+    const deps = defaultDeps();
+    const now = new Date('2026-09-29T23:00:00.000Z');
+    const until = new Date('2026-09-29T23:01:00.000Z');
+    await deps.takeRemovalLease('row-1', 4, until, now);
+    const [filter, update] = Integration.findOneAndUpdate.mock.calls[0];
+    expect(filter._id).toBe('row-1');
+    expect(filter['config.authGeneration']).toBe(4);
+    expect(filter.$and).toEqual([
+      { $or: [
+        { 'config.refreshingUntil': { $exists: false } },
+        { 'config.refreshingUntil': null },
+        { 'config.refreshingUntil': { $lte: new Date(now.getTime() - WRITER_LEASE_OVERRUN_MS) } },
+      ] },
+      { $or: [
+        { 'config.removingUntil': { $exists: false } },
+        { 'config.removingUntil': null },
+        { 'config.removingUntil': { $lte: now } },
+      ] },
+    ]);
+    expect(update).toEqual({ $set: { 'config.removingUntil': until } });
+    expect(WRITER_LEASE_OVERRUN_MS).toBeGreaterThan(0);
+    Integration.findOneAndUpdate.mockClear();
+  });
+
+  // F34: the caller's row can predate a reconnect that cleared the mark and put
+  // a new token. What the disconnect write answers is what is on the row now.
+  it('reads the mark and the refs from its own write, not from the row it was handed', async () => {
+    const { deps, revokeGrants } = recorder();
+    deps.markDisconnected.mockImplementation(async () => ({
+      ...hostedRow({ config: { entryId: 'linear', refreshTokenRef: 'refresh-now' } }),
+      status: 'disconnected',
+    }));
+    const handed = hostedRow({ config: {
+      entryId: 'linear', refreshTokenRef: 'refresh-then', [PROVIDER_REVOKED_MARK]: '2026-09-29T22:00:00.000Z',
+    } });
+    const result = await removeConnection({ connection: handed, removedBy: 'owner-1', revokeGrants, deps });
+    expect(deps.secrets.get).toHaveBeenCalledWith('refresh-now');
+    expect(deps.revokeAtVendor).toHaveBeenCalledTimes(1);
+    expect(deps.secrets.revoke).toHaveBeenCalledWith('refresh-now');
+    expect(result).toEqual(expect.objectContaining({ removed: true, providerRevoked: true }));
+  });
+
+  it('a row already gone sends nothing and does not claim the vendor revoked', async () => {
+    const { deps, revokeGrants } = recorder();
+    deps.markDisconnected.mockImplementation(async () => null);
+    const result = await removeConnection({ connection: hostedRow(), removedBy: 'owner-1', revokeGrants, deps });
+    expect(deps.secrets.get).not.toHaveBeenCalled();
+    expect(deps.revokeAtVendor).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ removed: true, providerRevoked: false, revokeAt: PAGE }));
   });
 
   it('the default mark step writes the mark and nothing else', async () => {

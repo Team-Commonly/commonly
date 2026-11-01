@@ -54,6 +54,7 @@ jest.mock('../../../middleware/integrationRateLimit', () => ({
 jest.mock('../../../models/Integration', () => ({
   findOne: jest.fn(),
   findOneAndUpdate: jest.fn(),
+  updateOne: jest.fn(),
 }));
 jest.mock('../../../services/hostedMcpDcrRegistry', () => ({
   ensureDcrClient: jest.fn(),
@@ -248,14 +249,32 @@ describe('hosted-mcp connect: callback', () => {
           _id: 'row-1',
           'config.authGeneration': { $exists: false },
           'config.pendingAuth': { $exists: false },
+          // Refused while a removal holds the row (F34).
+          $or: [
+            { 'config.removingUntil': { $exists: false } },
+            { 'config.removingUntil': null },
+            { 'config.removingUntil': { $lte: expect.any(Date) } },
+          ],
         },
         {
-          $set: { status: 'error', errorMessage: 'Connection could not be completed. Try again.', errorMessageUserFacing: true },
+          $set: {
+            status: 'error',
+            errorMessage: 'Connection could not be completed. Try again.',
+            errorMessageUserFacing: true,
+            // The write lease a removal waits out while the pair is stored (F34).
+            'config.refreshingUntil': expect.any(Date),
+          },
           // The old token's provider-revoked mark goes before new material does (F28).
           $unset: { 'config.providerRevokedAt': '' },
         },
         { new: true },
       ]);
+      // It stopped writing, so it releases its own lease, and only its own.
+      const lease = Integration.findOneAndUpdate.mock.calls[1][1].$set['config.refreshingUntil'];
+      expect(Integration.updateOne).toHaveBeenCalledWith(
+        { _id: 'row-1', 'config.refreshingUntil': lease },
+        { $set: { 'config.refreshingUntil': null } },
+      );
     } finally {
       log.mockRestore();
     }

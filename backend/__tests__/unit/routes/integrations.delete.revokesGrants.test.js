@@ -304,6 +304,24 @@ describe('DELETE /api/integrations/:id over a hosted-MCP row', () => {
     expect(grant.revokedAt).toBeInstanceOf(Date);
   });
 
+  // F34: a writer storing a new token holds the row, so the removal reads and
+  // sends nothing. That is not a provider failure, and a 502 would have the
+  // page hide the row and send the person to the vendor's page.
+  it('answers 409 removal_busy while a writer is storing a token, keeping the row and its refs', async () => {
+    const connection = await seedHostedRow({ refreshingUntil: new Date(Date.now() + 20 * 1000) });
+
+    const res = await request(app)
+      .delete(`/api/integrations/${connection._id}`)
+      .set('x-test-user', OWNER);
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('removal_busy');
+    const row = await Integration.findById(connection._id).lean();
+    expect(row.status).toBe('disconnected');
+    expect(row.config.credentialRef).toBe('access-ref');
+    expect(row.config.refreshTokenRef).toBe('refresh-ref');
+  });
+
   it('carries a page entry back as revokeAt and completes the removal', async () => {
     const page = 'https://linear.app/settings/security';
     mockHostedEntryOverride = {
