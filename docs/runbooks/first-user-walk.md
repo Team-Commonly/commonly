@@ -103,6 +103,7 @@ Write is atomic (temp file, then rename), so a reader never sees a half file.
   (Bring your own connect). Today every full run is `incomplete`, never `pass`,
   until that step is built. Roll back on `fail` only; treat `incomplete` as
   not-green but not as a regression.
+- `mode` is `signup` or `signin`, or `not-chosen` when the run was refused before a mode was accepted (no request was made).
 - `cleanup.status` is `not-run` (and `ok` null) when the run stopped before cleanup could start, for example a refused mode.
 - The file holds no password, token or email. A `needs-admin-purge` cleanup
   points SRE at the manifest in `~/.commonly/state/walk-706/`.

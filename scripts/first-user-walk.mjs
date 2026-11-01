@@ -238,7 +238,8 @@ export const runWalk = async ({
   };
 
   let exitCode = 0;
-  let cleanupOk = true;
+  // Starts false: a cleanup that throws must not be reported as ok.
+  let cleanupOk = false;
   try {
     expect(password, 'COMMONLY_WALK_PASSWORD is not set');
     walkMode = chooseWalkMode({ base: BASE, env });
