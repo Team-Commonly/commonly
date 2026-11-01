@@ -211,6 +211,13 @@ app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawBody);
 app.use('/api/webhooks/github', githubGigWebhookRoutes.githubGigRawError);
 
 // JSON parsing for all other routes
+// The seat push channel carries a bounded incremental Git bundle. Keep its
+// larger parser scoped to this one route, and authenticate the agent before
+// buffering it; every other JSON API retains the default body limit.
+const mcpGrantsRoutes = require('./routes/mcpGrants');
+const pushAgentAuth = require('./middleware/agentRuntimeAuth');
+app.use('/api/mcp/grants/:grantId/push', mcpGrantsRoutes.pushBodyRateLimit, pushAgentAuth,
+  express.json({ limit: '9mb' }));
 app.use(express.json());
 
 // Refuse `$`-prefixed keys in every query string and body, after every
@@ -263,7 +270,7 @@ app.use('/api/v1/tasks', tasksApiRoutes); // Task management for dev agents
 app.use('/api/registry', registryRoutes); // Agent Registry (package manager for agents)
 app.use('/api/credentials', require('./routes/credentials')); // ADR-026 Phase 0: credential lineage + revocation
 app.use('/api/grants', require('./routes/grants')); // ADR-001 room-grant record: server-enforced attenuation + cascade revocation
-app.use('/api/mcp/grants', require('./routes/mcpGrants')); // ADR-001 tool broker: stateless MCP transport + attributed trail
+app.use('/api/mcp/grants', mcpGrantsRoutes); // ADR-001 tool broker: stateless MCP transport + attributed trail
 app.use('/api/agent-binding', require('./routes/agentBinding')); // ADR-026 D3: machine adoption CAS
 app.use('/api/machines', require('./routes/machines')); // ADR-026 Phase 1: local daemon lifecycle
 app.use('/api/hosted', require('./routes/hosted')); // ADR-023 W2: hosted runtime provision surface (metered)

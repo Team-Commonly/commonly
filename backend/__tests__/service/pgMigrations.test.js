@@ -9,7 +9,7 @@ const { waitFor } = require('../utils/testUtils');
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 // Every migration that ships, in order. A new migration adds its name here, so
 // two lanes claiming the same number conflict on this line.
-const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql'];
+const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql', '0003_tool_call_provider_ref.sql'];
 real('Postgres migrations: real DDL, rollback and competing boots', () => {
   let database;
   let pool;
