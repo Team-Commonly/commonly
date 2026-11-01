@@ -539,11 +539,29 @@ describe('a row whose entry is gone', () => {
 });
 
 describe('revokeTokenAtVendor (RFC 7009)', () => {
+  // TASK-252: every revoke first reads the issuer's RFC 8414 metadata, and the
+  // request goes out only when the entry's pinned endpoint is the one the issuer
+  // advertises. `vendor` answers that GET and hands every other request to `answer`.
+  const metadataFor = (entry, over = {}) => ({
+    issuer: entry.issuer,
+    authorization_endpoint: `${entry.issuer}/authorize`,
+    token_endpoint: `${entry.issuer}/token`,
+    revocation_endpoint: entry.revoke.endpoint,
+    ...over,
+  });
+  const vendor = (entry, answer, metadata = metadataFor(entry)) => jest.fn(async (url, init) => (
+    String(url).includes('/.well-known/oauth-authorization-server')
+      ? { ok: true, status: 200, json: async () => metadata }
+      : answer(url, init)
+  ));
+  const revokeCalls = (fetchImpl) => fetchImpl.mock.calls
+    .filter(([url]) => !String(url).includes('/.well-known/'));
+
   it('marks only the refused DCR client when the vendor returns invalid_client', async () => {
     const registry = require('../../../services/hostedMcpDcrRegistry');
     const refuse = jest.spyOn(registry, 'refuseDcrClient').mockResolvedValue();
     const dcrEntry = { ...ENTRY, client: 'dcr' };
-    const fetchImpl = jest.fn(async () => ({
+    const fetchImpl = vendor(dcrEntry, async () => ({
       ok: false, status: 401, json: async () => ({ error: 'invalid_client' }),
     }));
     try {
@@ -552,15 +570,15 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
         tokenTypeHint: 'refresh_token',
       }, fetchImpl)).rejects.toMatchObject({ code: 'invalid_client' });
       expect(refuse).toHaveBeenCalledWith(dcrEntry, 'retired-client');
-      expect(new URLSearchParams(fetchImpl.mock.calls[0][1].body).get('client_id'))
+      expect(new URLSearchParams(revokeCalls(fetchImpl)[0][1].body).get('client_id'))
         .toBe('retired-client');
     } finally {
       refuse.mockRestore();
     }
   });
-  it('a post-registered DCR client revokes with post, though a dcr removal reads no metadata', async () => {
+  it('a post-registered DCR client revokes with post', async () => {
     const dcrEntry = { ...ENTRY, client: 'dcr' };
-    const fetchImpl = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({}) }));
+    const fetchImpl = vendor(dcrEntry, async () => ({ ok: true, status: 200, json: async () => ({}) }));
     await revokeTokenAtVendor({
       entry: dcrEntry,
       clientId: 'conf-1',
@@ -569,16 +587,16 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
       token: 'held-token',
       tokenTypeHint: 'refresh_token',
     }, fetchImpl);
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [, init] = fetchImpl.mock.calls[0];
+    expect(revokeCalls(fetchImpl)).toHaveLength(1);
+    const [, init] = revokeCalls(fetchImpl)[0];
     expect(init.headers.Authorization).toBeUndefined();
     const body = new URLSearchParams(init.body);
     expect(body.get('client_id')).toBe('conf-1');
     expect(body.get('client_secret')).toBe('registered-secret');
   });
 
-  const call = (response) => {
-    const fetchImpl = jest.fn(async () => response);
+  const call = (response, metadata = metadataFor(ENTRY)) => {
+    const fetchImpl = vendor(ENTRY, async () => response, metadata);
     return {
       fetchImpl,
       run: () => revokeTokenAtVendor({
@@ -593,7 +611,7 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
   it("the provider revoke sends the token to the entry's revocation endpoint", async () => {
     const { fetchImpl, run } = call({ ok: true, status: 200, json: async () => ({}) });
     await run();
-    const [url, init] = fetchImpl.mock.calls[0];
+    const [url, init] = revokeCalls(fetchImpl)[0];
     expect(url).toBe(ENDPOINT);
     expect(init.method).toBe('POST');
     expect(init.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
@@ -683,6 +701,32 @@ describe('revokeTokenAtVendor (RFC 7009)', () => {
   it('refuses a server error rather than reporting a revoke', async () => {
     const { run } = call({ ok: false, status: 502, json: async () => ({}) });
     await expect(run()).rejects.toThrow(/HTTP 502/);
+  });
+
+  it('sends nothing when the issuer advertises a different revocation endpoint than the entry pins', async () => {
+    const { fetchImpl, run } = call(
+      { ok: true, status: 200, json: async () => ({}) },
+      metadataFor(ENTRY, { revocation_endpoint: 'https://mcp.linear.app/oauth/revoke' }),
+    );
+    await expect(run()).rejects.toThrow(/not the revocation_endpoint .* advertises/);
+    expect(revokeCalls(fetchImpl)).toHaveLength(0);
+  });
+
+  it('sends nothing when the issuer advertises no revocation endpoint at all', async () => {
+    const metadata = metadataFor(ENTRY);
+    delete metadata.revocation_endpoint;
+    const { fetchImpl, run } = call({ ok: true, status: 200, json: async () => ({}) }, metadata);
+    await expect(run()).rejects.toThrow(/not the revocation_endpoint/);
+    expect(revokeCalls(fetchImpl)).toHaveLength(0);
+  });
+
+  it('sends nothing when the metadata is written for another issuer', async () => {
+    const { fetchImpl, run } = call(
+      { ok: true, status: 200, json: async () => ({}) },
+      metadataFor(ENTRY, { issuer: 'https://elsewhere.example' }),
+    );
+    await expect(run()).rejects.toMatchObject({ code: 'issuer_mismatch' });
+    expect(revokeCalls(fetchImpl)).toHaveLength(0);
   });
 
   it('refuses an entry that names no endpoint rather than guessing from the page', async () => {
