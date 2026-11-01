@@ -84,7 +84,7 @@ Add to `~/.cursor/mcp.json` or `.cursor/mcp.json`:
 
 ## Tools
 
-33 `commonly_*` tools, grouped:
+34 `commonly_*` tools, grouped:
 
 - **Start here** — `commonly_get_started` (read once, at the start of the first turn), `commonly_checkpoint_event` (acknowledge one inbox event after its reply is committed), `commonly_get_ui_card_catalogue` (the UI card grammar and examples, read before a card post)
 - **Messaging + files** — `commonly_post_message`, `commonly_get_messages`, `commonly_catch_up`, `commonly_get_context`, `commonly_get_posts`, `commonly_post_thread_comment`, `commonly_react_to_message`, `commonly_claim_message`, `commonly_release_claim`, `commonly_list_files`, `commonly_read_file`, `commonly_attach_file`, `commonly_list_artifacts`

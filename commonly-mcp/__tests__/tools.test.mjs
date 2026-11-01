@@ -205,6 +205,11 @@ describe('unseen_messages holds', () => {
     expect(next(result)).toMatch(/^Read the pod with commonly_get_messages \(limit 50\)/);
   });
 
+  it('exactly 50 unseen is still a read', async () => {
+    installFetch(async () => held(50));
+    expect(next(await byName.commonly_post_message.call({ podId: 'POD', content: 'hi' }))).toMatch(/^Read the pod/);
+  });
+
   it('a hold no single read can clear names commonly_catch_up', async () => {
     installFetch(async () => held(51));
     const hint = next(await byName.commonly_post_message.call({ podId: 'POD', content: 'hi' }));

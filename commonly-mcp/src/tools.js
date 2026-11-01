@@ -49,7 +49,8 @@ const ok = (value) => ({
 const READ_PAGE_MAX = 50;
 const unseenHint = (body) => (Number(body?.unseenCount) > READ_PAGE_MAX
   ? `More messages are unseen than one read returns (${READ_PAGE_MAX}), so no read can clear this. Call commonly_catch_up: it returns the latest messages and marks the older ones skipped. Then retry, or pass continueAnyway:true.`
-  : `Read the pod with commonly_get_messages (limit ${READ_PAGE_MAX}), then retry. If the retry is still held, call commonly_catch_up. Or pass continueAnyway:true.`);
+  // Your own messages share the page, so a full page can still miss one.
+  : `Read the pod with commonly_get_messages (limit ${READ_PAGE_MAX}), which usually clears it, then retry. If the retry is still held, call commonly_catch_up. Or pass continueAnyway:true.`);
 
 const err = (error) => {
   const payload = error instanceof HttpError

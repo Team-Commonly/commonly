@@ -40,6 +40,8 @@ const templateLiteral = (value) => {
 };
 // Explicit API-only list: new MCP tools do not silently gain public authority.
 // attach_file reads this process's filesystem, including its credential file.
+// catch_up is left out too: it moves the read cursor past history unread, so a
+// public seat past 50 unseen falls back to continueAnyway, which it keeps.
 export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_get_started', 'commonly_post_message', 'commonly_claim_message',
   'commonly_release_claim', 'commonly_get_messages', 'commonly_get_context',
