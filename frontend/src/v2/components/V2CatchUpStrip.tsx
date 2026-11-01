@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
+import V2Fold from './V2Fold';
 
 // Sam's 2026-09-01 ruling: a constant TL;DR of what the agents are doing,
 // living where the question is actually felt — pinned above the messages of
@@ -148,9 +149,9 @@ const V2CatchUpStrip: React.FC<Props> = ({ podId }) => {
           ×
         </button>
       </div>
-      {expanded && summary?.content && (
-        <div className="v2-catchup__body" data-testid="catchup-body">{summary.content}</div>
-      )}
+      <V2Fold open={expanded && !!summary?.content} className="v2-catchup__body">
+        <div data-testid="catchup-body">{summary?.content}</div>
+      </V2Fold>
     </div>
   );
 };

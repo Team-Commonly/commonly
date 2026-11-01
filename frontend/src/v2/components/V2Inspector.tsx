@@ -12,6 +12,7 @@ import V2Segmented from './V2Segmented';
 import { ShellGlyph, ShellGlyphName } from '../icons/glyphs';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { buildAgentUsername, rawAgentName } from '../utils/threadAgentIdentity';
+import V2Fold from './V2Fold';
 
 interface V2InspectorProps {
   detail: UseV2PodDetailResult;
@@ -294,7 +295,7 @@ const V2Inspector: React.FC<V2InspectorProps> = ({ detail, currentUserId, onPodC
             <span className="v2-workspace-inspector__fold-chevron"><ShellGlyph name="chevron" /></span>
           </button>
         </h2>
-        {open && <div id={`${headId}-body`} className="v2-workspace-inspector__group-body">{content}</div>}
+        <V2Fold open={open} id={`${headId}-body`} className="v2-workspace-inspector__group-body">{content}</V2Fold>
       </section>
     );
   };

@@ -11,6 +11,7 @@ import V2Avatar from './V2Avatar';
 import { ShellGlyph } from '../icons/glyphs';
 import { formatRelativeTime } from '../utils/grouping';
 import { V2DecisionCardData, V2DecisionRuling } from './V2DecisionCard';
+import V2Fold from './V2Fold';
 
 // Expanded threads show the newest eight; a `N more replies` line reveals the rest.
 const MAX_EXPANDED_REPLIES = 8;
@@ -416,14 +417,12 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                 {lastAt && <span className="v2-claim-run__time" aria-hidden="true">{formatRelativeTime(lastAt)}</span>}
                 <span className="v2-claim-run__chev" aria-hidden="true"><ShellGlyph name="chevron" size={15} /></span>
               </button>
-              {open && (
-                <div className="v2-claim-run__list">
-                  {item.messages.map((message, claimIndex) => renderMessage(
-                    message,
-                    claimIndex === 0 ? view[index - 1] : { kind: 'message', message: item.messages[claimIndex - 1] },
-                  ))}
-                </div>
-              )}
+              <V2Fold open={open} className="v2-claim-run__list">
+                {item.messages.map((message, claimIndex) => renderMessage(
+                  message,
+                  claimIndex === 0 ? view[index - 1] : { kind: 'message', message: item.messages[claimIndex - 1] },
+                ))}
+              </V2Fold>
             </div>
           );
         }

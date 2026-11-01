@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import V2Avatar from './V2Avatar';
 import './V2YourTeamPage.css';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
+import V2Fold from './V2Fold';
 
 /**
  * Your Team — direction C, built to `YourTeam.dc.html` (canvas: Workspace in C)
@@ -593,13 +594,11 @@ const V2YourTeamPage: React.FC = () => {
           >
             {t('yourTeam.tiers.internalCount', { count: internal.length })}
           </button>
-          {internalOpen && (
-            <div className="v2-team__internal-list">
-              {internal.map((a) => (
-                <span key={agentKey(a)} className="v2-team-card__pod">{a.displayName || a.name}</span>
-              ))}
-            </div>
-          )}
+          <V2Fold open={internalOpen} className="v2-team__internal-list">
+            {internal.map((a) => (
+              <span key={agentKey(a)} className="v2-team-card__pod">{a.displayName || a.name}</span>
+            ))}
+          </V2Fold>
         </section>
       )}
     </div>

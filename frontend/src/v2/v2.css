@@ -5563,6 +5563,37 @@ body.modern-ui.v2-canvas {
   transition-duration: var(--v2-dur);
 }
 
+/* Custom folds (V2Fold): the body is a grid whose one row goes 0fr <-> 1fr, fading
+   on the same curve. It clips only while it moves, so an open fold keeps focus
+   rings and anything that hangs past its edge. */
+@keyframes v2-fold-open {
+  from { grid-template-rows: 0fr; opacity: 0; }
+  to { grid-template-rows: 1fr; opacity: 1; }
+}
+@keyframes v2-fold-close {
+  from { grid-template-rows: 1fr; opacity: 1; }
+  to { grid-template-rows: 0fr; opacity: 0; }
+}
+.v2-fold {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+.v2-fold > .v2-fold__inner {
+  display: flow-root;
+  min-height: 0;
+}
+.v2-fold--opening {
+  animation: v2-fold-open var(--v2-dur) var(--v2-ease) both;
+}
+.v2-fold--closing {
+  animation: v2-fold-close var(--v2-dur-fast) var(--v2-ease) both;
+}
+.v2-fold--opening > .v2-fold__inner,
+.v2-fold--closing > .v2-fold__inner {
+  overflow: clip;
+  overflow-clip-margin: 6px;
+}
+
 /* One reduced-motion switch, global rather than scoped to .v2-root, so it reaches
    portals too. Every moment lands in its end state at once. */
 @media (prefers-reduced-motion: reduce) {

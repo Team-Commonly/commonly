@@ -93,6 +93,10 @@ describe('V2Inspector', () => {
     expect(await screen.findByText('Slack default mode')).toBeInTheDocument();
     expect(JSON.parse(sessionStorage.getItem(INSPECTOR_OPEN_KEY) || '[]')).toEqual(['join', 'needs-you']);
     fireEvent.click(folds[0]);
+    // The group body closes by size, inert, then unmounts when its animation ends.
+    const closing = screen.getByText('Slack default mode').closest('.v2-fold') as Element;
+    expect(closing).toHaveClass('v2-fold--closing');
+    fireEvent.animationEnd(closing);
     expect(screen.queryByText('Slack default mode')).not.toBeInTheDocument();
   });
 
