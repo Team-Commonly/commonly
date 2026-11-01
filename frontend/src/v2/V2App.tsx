@@ -39,7 +39,7 @@ const V2AgentMemory = React.lazy(() => import('./agents/V2AgentMemory'));
 const UserProfile = React.lazy(() => import('../components/UserProfile'));
 const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
-const V2ConnectorsPage = React.lazy(() => import('./components/V2ConnectorsPage'));
+const ConnectorsPage = React.lazy(() => import('./connectors/ConnectorsPage'));
 const V2PodBoard = React.lazy(() => import('./components/V2PodBoard'));
 const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
@@ -306,10 +306,11 @@ const V2App: React.FC = () => {
                   path="connectors"
                   element={feature(
                     'Connectors',
-                    <V2ConnectorsPage />,
+                    <ConnectorsPage />,
                     false,
                     // The Signal artboard owns this page's display-sized head.
                     false,
+                    'v2-feature--connectors',
                   )}
                 />
                 <Route
