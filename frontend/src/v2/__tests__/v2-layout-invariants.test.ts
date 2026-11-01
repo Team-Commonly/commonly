@@ -2644,18 +2644,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       }
     });
 
-    test('Needs-you rows: every open ask wears the 2px cobalt ring, no shadow, no dividers (66390)', () => {
+    test('Needs-you rows: open asks sit on a 1px neutral border, no shadow, no dividers (66390; ring moved to focus, TASK-748)', () => {
       const row = ruleBody(v2, '.v2-activity__queue-row');
-      expect(row).toContain('border: 2px solid var(--v2-accent)');
+      expect(row).toContain('border: 1px solid var(--v2-border)');
       expect(row).toContain('border-radius: var(--v2-radius)');
       expect(v2).not.toContain('.v2-activity__queue-row + .v2-activity__queue-row');
       const hover = ruleBody(v2, '.v2-activity__queue-row:hover');
       const declarations = hover.slice(hover.indexOf('{') + 1).split(';').map((d) => d.trim()).filter(Boolean);
       expect(declarations.length).toBeGreaterThan(0);
       for (const declaration of declarations) expect(declaration).toMatch(/^background/);
-      // A pending decision or approval is a ring like every other ask — never a lift.
+      // A pending decision or approval wears the same neutral border as every other ask — never a lift.
       const pending = ruleBody(v2, '.v2-activity__queue-row--decision,\n.v2-activity__queue-row--approval');
-      expect(pending).toContain('border-color: var(--v2-accent)');
+      expect(pending).toContain('border-color: var(--v2-border)');
       expect(pending).toContain('box-shadow: none');
       expect(cssVariable(v2Root, '--v2-shadow-pending')).toBe(cssVariable(tokens, '--c-shadow-pending'));
       // A ruled decision settles to a flat bordered row.
@@ -2691,8 +2691,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain('shortPodName(item.podName)');
       expect(lastRuleBody(v2, '.v2-activity__queue-kind')).toContain('500 11px/16px var(--v2-font-mono)');
       expect(lastRuleBody(v2, '.v2-activity__queue-kind')).toContain('text-transform: lowercase');
-      // Every open ask rings 2px cobalt in the LAST rule too (66400 fix 1); settled and day-zero rows are flat.
-      expect(lastRuleBody(v2, '.v2-activity__queue-row')).toContain('border: 2px solid var(--v2-accent)');
+      // Open asks sit on a 1px neutral border (slop tell 2); the cobalt ring belongs to the focused row only.
+      expect(lastRuleBody(v2, '.v2-activity__queue-row')).toContain('border: 1px solid var(--v2-border)');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row')).not.toContain('var(--v2-accent)');
+      expect(lastRuleBody(v2, '.v2-activity__queue-row--approval')).toContain('border-color: var(--v2-border)');
+      expect(v2).toContain('.v2-activity__queue-row--approval:focus-within { border-color: var(--v2-accent); box-shadow: 0 0 0 1px var(--v2-accent); }');
       expect(lastRuleBody(v2, '.v2-activity__queue-row--decision')).toContain('box-shadow: none');
       expect(v2).toContain('.v2-activity__queue-row--settled,\n.v2-activity__queue-row--onboarding { padding: 12px; border: 1px solid var(--v2-border); }');
       // Day zero (66658/66666): Get started is its own card above Needs you; a step is not an ask.

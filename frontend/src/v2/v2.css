@@ -10264,7 +10264,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
   gap: 12px;
   min-width: 0;
   padding: 11px 13px;
-  border: 2px solid var(--v2-accent);
+  border: 1px solid var(--v2-border);
   border-radius: var(--v2-radius);
   background: var(--v2-surface);
   transition: background 80ms ease;
@@ -10280,7 +10280,7 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-activity__queue-row--decision,
 .v2-activity__queue-row--approval {
   background: var(--v2-surface);
-  border-color: var(--v2-accent);
+  border-color: var(--v2-border);
   border-radius: var(--v2-radius);
   box-shadow: none;
 }
@@ -13393,10 +13393,14 @@ details[open] > .v2-settings__summary > .v2-settings__icon:last-child { transfor
 .v2-activity__sections { width: min(100%, 760px); margin: 28px auto 0; gap: 34px; }
 .v2-activity__section-heading { margin-bottom: 10px; }
 .v2-activity__queue { gap: 10px; }
-.v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 11px; border: 2px solid var(--v2-accent); border-radius: var(--v2-radius); background: var(--v2-surface); }
+.v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr) auto; padding: 11px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); }
 .v2-activity__queue-row:hover { background: var(--v2-surface); }
-.v2-activity__queue-row--decision { border-color: var(--v2-accent); box-shadow: none; }
-.v2-activity__queue-row--approval { border-color: var(--v2-accent); box-shadow: none; }
+.v2-activity__queue-row--decision { border-color: var(--v2-border); box-shadow: none; }
+.v2-activity__queue-row--approval { border-color: var(--v2-border); box-shadow: none; }
+/* The cobalt ring marks the row you are in, not every open ask (slop tell 2). */
+.v2-activity__queue-row:focus-within,
+.v2-activity__queue-row--decision:focus-within,
+.v2-activity__queue-row--approval:focus-within { border-color: var(--v2-accent); box-shadow: 0 0 0 1px var(--v2-accent); }
 .v2-activity__queue-row--settled,
 .v2-activity__queue-row--onboarding { padding: 12px; border: 1px solid var(--v2-border); }
 .v2-activity__queue-kind { font: 500 11px/16px var(--v2-font-mono); text-transform: lowercase; }
