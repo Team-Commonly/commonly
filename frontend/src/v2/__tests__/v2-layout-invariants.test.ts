@@ -5536,6 +5536,15 @@ test('the card Source line (TASK-607) uses v2 tokens only, one value per token, 
   expect(css).toMatch(/--m:var\(--v2-text-muted\);--s:var\(--v2-text-secondary\)/);
 });
 
+test('OpenUI card styles take every colour from v2 tokens, so cards follow dark mode (TASK-336)', () => {
+  const css = read('../cards/uiCard.css');
+  // Attribute selectors name the bundled brand marks' own fills, so they are stripped first.
+  const colourless = css.replace(/\[[^\]]*\]/g, '');
+  expect(colourless).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  expect(colourless).not.toMatch(/\b(rgba?|hsla?)\(/);
+  expect(css).toContain('--b:var(--v2-border)');
+});
+
 describe('v2 board on a phone (TASK-576)', () => {
   test('the board head is the frame\'s one-row 52px top bar, title taking the free width', () => {
     // S4 (d215 .mtop): back, title, search, New task in one row; the title ellipsizes.

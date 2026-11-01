@@ -22,6 +22,35 @@ describe('untrusted UI card write validation', () => {
   it.each(['system', 'approval', null, 1])('refuses non-agent message type %s without a payload', (type) => {
     expect(() => validateAgentCardPayload(type, undefined, 'hello')).toThrow('text or card');
   });
+  it('accepts the Linear, Sentry and Atlassian site links the renderer opens', () => {
+    for (const url of ['https://linear.app/x', 'https://sentry.io/x', 'https://acme.atlassian.net/x', 'https://my-organization.sentry.io/issues/123/']) {
+      expect(() => validate(card(`root = Text("hello")\nunused = Action(@OpenUrl("${url}"))`))).not.toThrow();
+    }
+  });
+  it('applies the same host rule to the Link presentation component', () => {
+    const link = (url) => card(`root = Card("Links", [Link("Open", "${url}", "button")])`);
+    expect(() => validate(link('https://linear.app/x'))).not.toThrow();
+    expect(() => validate(link('https://staging.commonly.me/v2'))).not.toThrow();
+    // An unknown host degrades the card to its text fallback instead of dropping the message.
+    expect(validate(link('https://evil.example/x'))).toBe(true);
+  });
+  it.each([
+    'https://linear.app.evil.com', 'https://evilatlassian.net', 'https://atlassian.net.evil.com',
+    'https://sentry.io.evil.com', 'https://a.b.sentry.io/issues/1/',
+  ])('degrades a card with an unapproved host %s to the text fallback', (url) => {
+    expect(validate(card(`root = Text("hello")\nunused = Action(@OpenUrl("${url}"))`))).toBe(true);
+    expect(validate(card(`root = Card("Links", [Link("Open", "${url}", "button")])`))).toBe(true);
+  });
+  it.each([
+    'http://linear.app/x', 'https://user:pw@linear.app', 'https://linear.app:8443',
+  ])('still refuses the scheme, credential or port fault %s', (url) => {
+    expect(() => validate(card(`root = Text("hello")\nunused = Action(@OpenUrl("${url}"))`))).toThrow(expect.objectContaining({
+      statusCode: 400, code: 'invalid_ui_card',
+    }));
+  });
+  it('returns false for a card whose links are all approved', () => {
+    expect(validate(card('root = Text("hello")\nunused = Action(@OpenUrl("https://linear.app/x"))'))).toBe(false);
+  });
   it('accepts a complete known component without evaluating it', () => {
     expect(() => validate()).not.toThrow();
     expect(() => validate(card('root = Text("Query Mutation @Run are just quoted text")'))).not.toThrow();

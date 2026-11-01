@@ -17,6 +17,15 @@ test('permits only exact approved HTTPS hosts without credentials or ports', () 
   }
 });
 
+test('permits the Linear, Sentry and Atlassian site hosts and refuses lookalikes', () => {
+  for (const url of ['https://linear.app/x', 'https://sentry.io/x', 'https://acme.atlassian.net/x', 'https://staging.commonly.me/v2', 'https://my-organization.sentry.io/issues/123/']) {
+    expect(cardHref(url)?.href).toBe(url);
+  }
+  for (const url of ['https://linear.app.evil.com', 'https://evilatlassian.net', 'https://atlassian.net.evil.com', 'https://sentry.io.evil.com', 'http://linear.app/x', 'https://user:pw@linear.app', 'https://linear.app:8443', 'https://a.b.atlassian.net', 'https://a.b.sentry.io/issues/1/']) {
+    expect(cardHref(url)).toBeNull();
+  }
+});
+
 test.each([
   'OpenUrl("javascript:alert(1)")',
   'Action(OpenUrl("javascript:alert(1)"))',

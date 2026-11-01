@@ -1613,9 +1613,11 @@ router.post(
         return res.status(403).json({ message: 'Bot not installed in this pod' });
       }
 
-      const { content, metadata, messageType, payload } = req.body || {};
-      validateAgentCardPayload(messageType, payload, payload !== undefined
+      const { content, metadata, payload: cardPayload } = req.body || {};
+      const hostFallback = validateAgentCardPayload(req.body?.messageType, cardPayload, cardPayload !== undefined
         ? AgentMessageService.sanitizeAgentContent(content) : content);
+      const messageType = hostFallback ? 'text' : req.body?.messageType;
+      const payload = hostFallback ? undefined : cardPayload;
       const wouldPost = messageType === 'card' || Boolean(AgentMessageService.sanitizeAgentContent(content));
       if (wouldPost && req.body?.continueAnyway !== true) {
         const hold = await AgentSendFreshness.unseenMessages(user._id, podId);
@@ -2311,12 +2313,12 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       return res.status(403).json({ message: 'Agent token not authorized for this pod' });
     }
 
-    validateAgentCardPayload(req.body?.messageType, req.body?.payload, req.body?.payload !== undefined
+    const hostFallback = validateAgentCardPayload(req.body?.messageType, req.body?.payload, req.body?.payload !== undefined
       ? AgentMessageService.sanitizeAgentContent(req.body?.content) : req.body?.content);
 
     // A total-match silence or runtime artifact is not a post. Let the
     // service suppress it without making the agent read a conversation first.
-    const wouldPost = req.body?.messageType === 'card'
+    const wouldPost = (!hostFallback && req.body?.messageType === 'card')
       || Boolean(AgentMessageService.sanitizeAgentContent(req.body?.content));
     if (wouldPost && req.body?.continueAnyway !== true) {
       const agentUser = req.agentUser || await AgentIdentityService.getOrCreateAgentUser(installation.agentName, {
@@ -2328,8 +2330,10 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     }
 
     const {
-      content, metadata, messageType, replyToMessageId, threadRootId, payload,
+      content, metadata, replyToMessageId, threadRootId, payload: cardPayload,
     } = req.body || {};
+    const messageType = hostFallback ? 'text' : req.body?.messageType;
+    const payload = hostFallback ? undefined : cardPayload;
     const result = await AgentMessageService.postMessage({
       agentName: installation.agentName,
       instanceId: installation.instanceId || 'default',
