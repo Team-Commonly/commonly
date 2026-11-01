@@ -15,6 +15,7 @@ import { judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from './outsiderGrantPodEligibility';
+import { recordBrokerCall } from './brokerRecordService';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const GitHubAppService = require('./githubAppService');
@@ -1120,6 +1121,17 @@ const recordCall = async (
     vendorError: overrides?.vendorError?.split(/[\r\n]/, 1)[0].slice(0, 200),
     approvalId: overrides?.approvalId,
     durationMs: Math.max(0, Date.now() - startedAt),
+  });
+  // The trail row has committed; the record mirrors it (ADR-033 B1, B2, B5).
+  recordBrokerCall({
+    grant: grant as Record<string, unknown> | undefined,
+    callId,
+    grantId: input.grantId,
+    agentUserId: input.agentUserId,
+    tool: input.tool,
+    outcome,
+    approvalId: overrides?.approvalId,
+    credentialOwnerId: overrides?.credentialOwnerId,
   });
   return callId;
 };

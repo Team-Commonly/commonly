@@ -6,9 +6,12 @@
  * `lastUsedAt` lying for every class except the polling one:
  *
  *   - BYO wrapper/MCP installs (host 'byo' or legacy local-cli, no
- *     webhookUrl): the wrapper polls every ~5s while alive, so lastUsedAt is
- *     an honest reachability signal. null → never-connected · fresh →
- *     listening · stale → gone-dark.
+ *     webhookUrl): the wrapper polls every ~5s while alive, so the last
+ *     LISTENER check-in (`lastListenedAt`, stamped by the events poll, the
+ *     WebSocket connect and a delivery renew) is an honest reachability signal. null →
+ *     never-connected · fresh → listening · stale → gone-dark. `lastUsedAt`
+ *     is not: any authenticated call stamps it, so one MCP tool call made a
+ *     seat nobody was running read as listening (TASK-719, TASK-721).
  *   - push webhooks (webhookUrl set) and native runtime: reachable by
  *     construction — no dot, no guess.
  *   - everything else (gateway moltbots, cloud): 'unknown'. The gateway
@@ -20,9 +23,9 @@
  * an instruction addressed to someone who cannot perform it is the P1/P2
  * contradiction the review caught.
  *
- * lastUsedAt is the max across BOTH token stores (User.agentRuntimeTokens
- * and AgentInstallation.runtimeTokens) — the legacy/new split that made
- * live agents read null (finding D). Pure function: callers fetch, this
+ * The check-in time is the max across BOTH token stores
+ * (User.agentRuntimeTokens and AgentInstallation.runtimeTokens) — the
+ * legacy/new split that made live agents read null (finding D). Pure function: callers fetch, this
  * derives; the seam is what makes the honesty rules testable without a DB.
  */
 import { hostedRunsNative } from './hostedEngine';
@@ -32,7 +35,7 @@ export const AGENT_LISTENING_STALE_MS = 5 * 60 * 1000;
 
 export type AgentReachState = 'listening' | 'gone-dark' | 'never-connected' | 'reachable' | 'unknown';
 
-interface TokenRow { lastUsedAt?: Date | string | null }
+interface TokenRow { lastUsedAt?: Date | string | null; lastListenedAt?: Date | string | null }
 
 interface InstallationRow {
   agentName?: string;
@@ -48,6 +51,10 @@ export interface AgentStateRow {
   instanceId: string;
   displayName: string;
   state: AgentReachState;
+  /**
+   * For a polling BYO seat, the last LISTENER check-in, not the last token use.
+   * The key keeps its old name because the shell reads it (V2Thread "last seen").
+   */
   lastUsedAt: string | null;
   isOwner: boolean;
   /** A Commonly-hosted agent ("Run it here"); the beta allows one per account. */
@@ -55,12 +62,12 @@ export interface AgentStateRow {
   fixCommand?: string;
 }
 
-const latestUse = (tokenLists: TokenRow[][]): Date | null => {
+const latestListen = (tokenLists: TokenRow[][]): Date | null => {
   let latest: Date | null = null;
   for (const list of tokenLists) {
     for (const row of list || []) {
-      if (!row?.lastUsedAt) continue;
-      const used = new Date(row.lastUsedAt as string);
+      if (!row?.lastListenedAt) continue;
+      const used = new Date(row.lastListenedAt as string);
       if (Number.isNaN(used.getTime())) continue;
       if (!latest || used > latest) latest = used;
     }
@@ -120,7 +127,7 @@ export function deriveAgentState(
   } else if (!isByo) {
     state = 'unknown';
   } else {
-    lastUsedAt = latestUse([installation.runtimeTokens || [], userTokens || []]);
+    lastUsedAt = latestListen([installation.runtimeTokens || [], userTokens || []]);
     if (!lastUsedAt) state = 'never-connected';
     else if (now - lastUsedAt.getTime() <= AGENT_LISTENING_STALE_MS) state = 'listening';
     else state = 'gone-dark';

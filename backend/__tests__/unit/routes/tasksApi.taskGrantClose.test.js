@@ -88,6 +88,17 @@ test.each(['complete', 'patch', 'github', 'onboarding'])('%s close revokes the b
   ]);
 });
 
+test('a repeated PATCH to done keeps its completion time, closes once, and still applies its note', async () => {
+  expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'done' })).status).toBe(200);
+  const first = await Task.findOne({ podId: POD, taskId: 'TASK-1' });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'done', notes: 'closed again' })).status).toBe(200);
+  const second = await Task.findOne({ podId: POD, taskId: 'TASK-1' });
+  expect(second.completedAt.getTime()).toBe(first.completedAt.getTime());
+  expect(second.grantEpoch).toBe(1);
+  expect(second.notes).toBe('closed again');
+});
+
 test('a failed revocation write leaves the close committed and the grant refused by its epoch', async () => {
   const spy = jest.spyOn(RoomGrant, 'findOneAndUpdate').mockRejectedValueOnce(new Error('revocation write failed'));
   expect((await request(app).post(`/tasks/${POD}/TASK-1/complete`).send({})).status).toBe(200);
@@ -117,7 +128,10 @@ test('status-only release and reclaim cannot reuse the previous authenticated pr
   await Task.updateOne({ taskId: 'TASK-1' }, { $set: { claimedByUserId: mockActor.id } });
   expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'pending' })).status).toBe(200);
   expect((await Task.findOne({ taskId: 'TASK-1' })).claimedByUserId).toBeNull();
-  expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'claimed', claimedByUserId: mockActor.id })).status).toBe(200);
+  // A seat cannot PATCH a claim (a claim is a lease, and this route writes none for a seat),
+  // so this reclaim by the agent principal is refused and binds nothing.
+  mockActor.bot = true;
+  expect((await request(app).patch(`/tasks/${POD}/TASK-1`).send({ status: 'claimed', claimedByUserId: mockActor.id })).status).toBe(400);
   expect((await Task.findOne({ taskId: 'TASK-1' })).claimedByUserId).toBeNull();
   await expect(assertGrantUsable({ grantId: grant.grantId, agentUserId: mockActor.id, currentMemberIds: [mockActor.id] }))
     .rejects.toMatchObject({ code: 'task_claim_required' });

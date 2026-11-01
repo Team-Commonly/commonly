@@ -516,6 +516,142 @@ test('Revoke is two-click and posts the revoke verb, then reloads; a dead grant 
   await waitFor(() => expect(within(gone).getByText('No calls yet.')).toBeInTheDocument());
 });
 
+// Atlassian walk, launch day: the card kept saying "granted" after Revoke until a reload.
+// The page now treats a confirmed revoke as final, so a stale or failed re-read
+// cannot put the card back.
+test('after Revoke the grant card says revoked in place, even when the re-read is stale or fails', async () => {
+  let reads = 0;
+  axios.get.mockImplementation((url) => {
+    if (url === '/api/installables') return Promise.resolve({ data: { installables: [githubEntry] } });
+    if (url === '/api/grants') {
+      reads += 1;
+      if (reads === 1) return Promise.resolve({ data: { grants: [grantLive] } });
+      if (reads === 2) return Promise.resolve({ data: { grants: [grantLive] } }); // stale: server read lags the revoke
+      return Promise.reject(new Error('network')); // then a failed read
+    }
+    if (url.includes('/registry/pods/')) return Promise.resolve({ data: { agents: [{ name: 'scout', displayName: 'Scout', userId: 'a1' }] } });
+    if (url.includes('/calls')) return Promise.resolve({ data: { grantId: 'grant_live', calls: [], counts: { total: 0, ok: 0, refused: 0, pending_approval: 0, failed: 0 } } });
+    return Promise.reject(new Error(`unmocked ${url}`));
+  });
+  axios.post.mockResolvedValue({ data: { revoked: 1 } });
+  renderTools();
+  fireEvent.click(await screen.findByRole('button', { name: 'View GitHub in Launch pod' }));
+  const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+  expect(within(aside).getByText(/Granted by sam .*Ends /)).toBeInTheDocument();
+  fireEvent.click(within(aside).getByRole('button', { name: 'Revoke' }));
+  fireEvent.click(within(aside).getByRole('button', { name: 'Yes, revoke it' }));
+  await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2));
+  // A tab refocus re-reads, and that read fails.
+  fireEvent(document, new Event('visibilitychange'));
+  await waitFor(() => expect(reads).toBeGreaterThanOrEqual(3));
+  const card = await screen.findByRole('complementary', { name: 'Grant details' });
+  await waitFor(() => expect(within(card).getByText(/Revoked by sam just now\./)).toBeInTheDocument());
+  expect(within(card).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
+  // The row went hollow with it, and the list did not blank on the failed read.
+  expect(screen.getByRole('button', { name: 'View GitHub in Launch pod' })).toBeInTheDocument();
+  expect(screen.getByText(/revoked by sam/)).toBeInTheDocument();
+});
+
+// Atlassian walk, launch day: only a connection that is no longer offered got
+// "Remove connection", so nobody could disconnect Atlassian from the page.
+describe('Disconnect on a live connection of an offered hosted connector', () => {
+  const atlassian = { ...linearEntry, installableId: 'atlassian', entryId: 'atlassian', label: 'Atlassian',
+    tools: [{ name: 'atlassian.search', requiredWriteMode: 'read', irreversible: false }],
+    connections: [{ connectionId: 'conn-atl', owner: 'me', repo: 'atlassian' }] };
+  const grantAtl = { ...grantLinear, grantId: 'grant_atl', tools: ['atlassian.search'] };
+
+  test('an ungranted connection offers Disconnect, two clicks, and says so afterwards', async () => {
+    mockTwoEntries({ catalog: [atlassian], grants: { p1: [], p2: [] } });
+    axios.delete.mockResolvedValue({ data: { message: 'Integration deleted successfully' } });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect Atlassian' }));
+    expect(axios.delete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, disconnect' }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-atl', expect.any(Object)));
+    expect(await screen.findByText('Disconnected Atlassian.')).toBeInTheDocument();
+    await waitFor(() => expect(axios.get.mock.calls.filter(([u]) => u === '/api/installables')).toHaveLength(2));
+  });
+
+  test('a stale catalogue read after Disconnect does not bring the connection back', async () => {
+    mockTwoEntries({ catalog: [atlassian], grants: { p1: [], p2: [] } }); // every read still lists the connection
+    axios.delete.mockResolvedValue({ data: { message: 'ok' } });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect Atlassian' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, disconnect' }));
+    expect(await screen.findByText('Disconnected Atlassian.')).toBeInTheDocument();
+    await waitFor(() => expect(axios.get.mock.calls.filter(([u]) => u === '/api/installables')).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /Disconnect Atlassian|Yes, disconnect/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
+  });
+
+  test('a granted connection offers it in the grant card, and a provider page from the server is linked', async () => {
+    mockTwoEntries({ catalog: [atlassian], grants: { p1: [grantAtl], p2: [] } });
+    axios.delete.mockResolvedValue({ data: { message: 'ok', revokeAt: 'https://id.atlassian.com/manage-profile/apps' } });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'View Atlassian in Launch pod' }));
+    const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+    fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian' }));
+    fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/conn-atl', expect.any(Object)));
+    const link = await screen.findByRole('link', { name: 'Open provider settings' });
+    expect(link).toHaveAttribute('href', 'https://id.atlassian.com/manage-profile/apps');
+  });
+
+  test('a network failure says so and keeps the connection', async () => {
+    mockTwoEntries({ catalog: [atlassian], grants: { p1: [], p2: [] } });
+    axios.delete.mockRejectedValue(new Error('network'));
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect Atlassian' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, disconnect' }));
+    expect(await screen.findByText('Could not disconnect Atlassian.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Yes, disconnect' })).toBeInTheDocument();
+  });
+
+  // A 502 is the server's partial removal: grants already revoked, row disconnected,
+  // only the provider's revoke failed, and the body names the page to visit.
+  test('a 502 partial removal shows the grant revoked and links the provider page', async () => {
+    mockTwoEntries({ catalog: [atlassian], grants: { p1: [grantAtl], p2: [] } });
+    axios.delete.mockRejectedValue({ response: { status: 502, data: { code: 'provider_revoke_failed', revokeAt: 'https://id.atlassian.com/manage-profile/apps' } } });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'View Atlassian in Launch pod' }));
+    const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+    fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian' }));
+    fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
+    expect(await screen.findByRole('link', { name: 'Open provider settings' })).toHaveAttribute('href', 'https://id.atlassian.com/manage-profile/apps');
+    const card = await screen.findByRole('complementary', { name: 'Grant details' });
+    expect(within(card).getByText(/Revoked by sam/)).toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
+  });
+
+  // A 502 from the ingress while a pod restarts never reached the route: nothing was revoked.
+  test('a bare 502 (no route code) leaves the grant live and says the disconnect failed', async () => {
+    mockTwoEntries({ catalog: [atlassian], grants: { p1: [grantAtl], p2: [] } });
+    axios.delete.mockRejectedValue({ response: { status: 502, data: '<html>Bad gateway</html>' } });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'View Atlassian in Launch pod' }));
+    const aside = await screen.findByRole('complementary', { name: 'Grant details' });
+    fireEvent.click(within(aside).getByRole('button', { name: 'Disconnect Atlassian' }));
+    fireEvent.click(within(aside).getByRole('button', { name: 'Yes, disconnect' }));
+    expect(await within(aside).findByText('Could not disconnect Atlassian.')).toBeInTheDocument();
+    expect(within(aside).getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+    expect(within(aside).queryByText(/Revoked by/)).not.toBeInTheDocument();
+  });
+
+  test('two connections of one entry offer no Disconnect, since a grant does not name its connection', async () => {
+    const two = { ...atlassian, connections: [...atlassian.connections, { connectionId: 'conn-atl-2', owner: 'me', repo: 'atlassian' }] };
+    mockTwoEntries({ catalog: [two], grants: { p1: [], p2: [] } });
+    renderTools();
+    await screen.findByText('Atlassian');
+    expect(screen.queryByRole('button', { name: /Disconnect/ })).not.toBeInTheDocument();
+  });
+
+  test('GitHub (the instance App connection) never offers Disconnect', async () => {
+    renderTools();
+    await screen.findByRole('button', { name: 'View GitHub in Launch pod' });
+    expect(screen.queryByRole('button', { name: /Disconnect/ })).not.toBeInTheDocument();
+  });
+});
+
 test('the catalogue draws the not-yet row, and Add mints the grant exactly as the server takes it — never a brokerId', async () => {
   mockApi([githubEntry]);
   // No live grant anywhere → a not-yet row; the two dead/live fixtures are replaced by a revoked one only.
@@ -663,7 +799,8 @@ test('Change access mints a new grant then revokes the old one; Grant again on a
   expect(axios.post.mock.calls[1][0]).toBe('/api/grants/grant_live/revoke');
 
   axios.post.mockClear();
-  fireEvent.click(screen.getByRole('button', { name: 'Grant again' }));
+  // The first grant is revoked too now (the page keeps a confirmed revoke), so pick the Ops row's own button.
+  fireEvent.click(within(screen.getByRole('button', { name: 'View GitHub in Ops' }).closest('article')).getByRole('button', { name: 'Grant again' }));
   const again = await screen.findByRole('complementary', { name: 'Add GitHub' });
   expect(within(again).getByRole('heading', { name: 'GitHub · Ops' })).toBeInTheDocument();
   fireEvent.click(within(again).getByRole('button', { name: 'Grant' }));

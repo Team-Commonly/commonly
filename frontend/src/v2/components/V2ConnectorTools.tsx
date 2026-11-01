@@ -21,6 +21,7 @@ import { PlatformGlyph } from '../icons/platforms';
 import { ActGlyph } from '../icons/glyphs';
 import { hostedMcpErrorNotice } from './hostedMcpErrorNotice';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
+import { safeProviderRevokePage } from '../utils/safeProviderRevokePage';
 import V2InactiveFold from './V2InactiveFold';
 
 export type GrantWriteMode = 'read' | 'write' | 'write-with-confirm';
@@ -214,8 +215,10 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const { currentUser } = useAuth();
   const viewerId = currentUser?._id ? String(currentUser._id) : '';
   const isGranter = (grant: ToolGrant): boolean => Boolean(viewerId) && grant.grantedBy === viewerId;
-  const [grants, setGrants] = useState<ToolGrant[] | null>(null);
-  const [catalog, setCatalog] = useState<ToolCatalogEntry[]>([]);
+  const [rawGrants, setGrants] = useState<ToolGrant[] | null>(null);
+  const [rawCatalog, setCatalog] = useState<ToolCatalogEntry[]>([]);
+  // A connection the server confirmed removed stays removed on this page, as a stale catalogue read could bring it back.
+  const [disconnectedHere, setDisconnectedHere] = useState<string[]>([]);
   const [hiddenConnections, setHiddenConnections] = useState<HiddenToolConnection[]>([]);
   const [seats, setSeats] = useState<Record<string, PodSeat[]>>({});
   const [lastUse, setLastUse] = useState<Record<string, string | null>>({});
@@ -227,13 +230,27 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   // Change access minted the new grant but the revoke of the old one failed: only the revoke is retried.
   const [staleAfterChange, setStaleAfterChange] = useState<{ oldGrantId: string; newGrantId: string } | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<string | null>(null);
+  const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
+  // A revoke is irreversible, so once the server has said yes the grant stays
+  // revoked on this page whatever a later read returns. Without this, the card
+  // kept saying "granted" when the reload came back stale or failed.
+  const [revokedHere, setRevokedHere] = useState<Record<string, string>>({});
   const [confirmHiddenRemoval, setConfirmHiddenRemoval] = useState<string | null>(null);
-  const [removedHiddenNotice, setRemovedHiddenNotice] = useState<{ label: string; revokePage: string } | null>(null);
+  const [removedHiddenNotice, setRemovedHiddenNotice] = useState<{ label: string; revokePage: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [joinPolicyFixPodId, setJoinPolicyFixPodId] = useState<string | null>(null);
   const [policyFixedPodId, setPolicyFixedPodId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const catalog = useMemo(() => (disconnectedHere.length === 0 ? rawCatalog : rawCatalog.map((entry) => ({
+    ...entry,
+    connections: entry.connections.filter((connection) => !disconnectedHere.includes(connection.connectionId)),
+  }))), [rawCatalog, disconnectedHere]);
+  const grants = useMemo(() => (rawGrants === null ? null : rawGrants.map((grant) => (
+    revokedHere[grant.grantId] && !grant.revokedAt
+      ? { ...grant, revokedAt: revokedHere[grant.grantId], revokedBy: grant.revokedBy ?? (viewerId || null) }
+      : grant
+  ))), [rawGrants, revokedHere, viewerId]);
   // Grants and trail rows carry relative ages; they must advance while the
   // page sits open and be re-read when the tab comes back (TASK-131).
   const now = useRelativeNow();
@@ -254,7 +271,8 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
       })),
     ]);
     const ownedGrants = grantRes?.grants || [];
-    setGrants(ownedGrants);
+    // A failed read must not blank a list the person is looking at.
+    if (grantRes) setGrants(ownedGrants); else setGrants((current) => current ?? []);
     setSeats(Object.fromEntries(seatResults));
     // "used in the last 10 min" reads the newest trail row's `at` (§6).
     const uses = await Promise.all(ownedGrants.filter((grant) => !isDead(grant)).map(async (grant) => {
@@ -501,6 +519,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         const newGrantId = String(minted?.grantId || '');
         try {
           await api.post(`/api/grants/${oldGrantId}/revoke`);
+          markRevoked(oldGrantId);
         } catch {
           setStaleAfterChange({ oldGrantId, newGrantId });
           setDraft(null);
@@ -611,12 +630,17 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     }
   };
 
+  const markRevoked = (grantId: string) => {
+    setRevokedHere((current) => ({ ...current, [grantId]: new Date().toISOString() }));
+  };
+
   const retryStaleRevoke = async () => {
     if (!staleAfterChange) return;
     setBusy(true);
     setError(null);
     try {
       await api.post(`/api/grants/${staleAfterChange.oldGrantId}/revoke`);
+      markRevoked(staleAfterChange.oldGrantId);
       setStaleAfterChange(null);
       await load();
     } catch {
@@ -631,6 +655,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     setError(null);
     try {
       await api.post(`/api/grants/${grant.grantId}/revoke`);
+      markRevoked(grant.grantId);
       setConfirmRevoke(null);
       await load();
     } catch {
@@ -653,6 +678,78 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     } finally {
       setBusy(false);
     }
+  };
+
+  // A live connection of an offered hosted connector. The removal verb is the
+  // same one the not-offered row uses; the server revokes the connection's grants
+  // as part of it, and answers `revokeAt` when the provider's own page still
+  // needs a visit.
+  const disconnect = async (entry: ToolCatalogEntry, connectionId: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.del<{ revokeAt?: string }>(`/api/integrations/${encodeURIComponent(connectionId)}`);
+      setConfirmDisconnect(null);
+      setDisconnectedHere((current) => [...current, connectionId]);
+      // The removal revokes every grant on the connection, so the page says so
+      // now rather than waiting on a re-read that may fail.
+      const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
+      setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
+      setRemovedHiddenNotice({ label: entry.label, revokePage: safeProviderRevokePage(res?.revokeAt) ? res.revokeAt : null });
+      await load();
+    } catch (err) {
+      // The route answers 502 with one of these codes when the grants are already
+      // revoked and the row is disconnected, and only the provider's own revoke
+      // failed. A bare 502 (ingress, a pod restarting) reached nothing, so it takes
+      // the plain error below and marks nothing revoked.
+      const response = (err as { response?: { status?: number; data?: { code?: string; revokeAt?: string } } })?.response;
+      const partial = response?.status === 502
+        && (response.data?.code === 'provider_revoke_failed' || response.data?.code === 'provider_revoked_removal_incomplete');
+      if (partial) {
+        const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
+        setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
+        setConfirmDisconnect(null);
+        setDisconnectedHere((current) => [...current, connectionId]);
+        await load();
+        if (safeProviderRevokePage(response?.data?.revokeAt)) {
+          setRemovedHiddenNotice({ label: entry.label, revokePage: response?.data?.revokeAt as string });
+        } else {
+          setError(t('tools.disconnectPartial', { defaultValue: 'Disconnected {{label}} here, but {{label}} did not confirm. Remove Commonly in its connected apps.', label: entry.label }));
+        }
+      } else {
+        setError(t('tools.disconnectError', { defaultValue: 'Could not disconnect {{label}}.', label: entry.label }));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Hosted connections only: a GitHub App connection is the instance's, not the viewer's to drop.
+  const renderDisconnect = (entry: ToolCatalogEntry | null, variant: 'row' | 'aside') => {
+    // One connection only: a grant does not say which connection it was minted on,
+    // so with several the button could drop the wrong one.
+    const connection = entry && entry.connectionType === 'hosted-mcp' && entry.connections.length === 1 ? entry.connections[0] : null;
+    if (!entry || !connection) return null;
+    const cls = variant === 'row'
+      ? 'v2-connector-row__action v2-connector-row__action--secondary'
+      : 'v2-connector-aside__secondary';
+    if (confirmDisconnect === connection.connectionId) {
+      return (
+        <>
+          <button type="button" className={variant === 'row' ? 'v2-connector-row__action' : 'v2-connector-aside__primary'} disabled={busy} onClick={() => { void disconnect(entry, connection.connectionId); }}>
+            {t('tools.confirmDisconnect', { defaultValue: 'Yes, disconnect' })}
+          </button>
+          <button type="button" className={cls} disabled={busy} onClick={() => setConfirmDisconnect(null)}>
+            {t('tools.keep', { defaultValue: 'Keep it' })}
+          </button>
+        </>
+      );
+    }
+    return (
+      <button type="button" className={cls} aria-label={t('tools.disconnectLabel', { defaultValue: 'Disconnect {{label}}', label: entry.label })} onClick={() => setConfirmDisconnect(connection.connectionId)}>
+        {t('tools.disconnect', { defaultValue: 'Disconnect' })}
+      </button>
+    );
   };
 
   const renderHiddenConnection = (connection: HiddenToolConnection) => (
@@ -841,6 +938,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
             {t('tools.add', { defaultValue: 'Add' })}
           </button>
         )}
+        {renderDisconnect(entry, 'row')}
         {canInstallGithubApp && (
           <button type="button" className="v2-connector-row__action" onClick={openGithubAppSetup}>
             {t('tools.installGitHubApp', { defaultValue: 'Install GitHub App' })}
@@ -1080,6 +1178,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
               </button>
             </div>
           ))}
+          {isGranter(grant) && (
+            <div className="v2-connector-aside__actions">{renderDisconnect(entry, 'aside')}</div>
+          )}
           {error && <p className="v2-connector-aside__note" role="alert">{error}</p>}
         </section>
         <section className="v2-connector-aside__card">
@@ -1132,7 +1233,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         {error && !draft && !selected && !githubAppSetup && (
           <p className="v2-connector-aside__note" role="alert">{error}</p>
         )}
-        {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></p>}
+        {removedHiddenNotice && <p className="v2-connector-aside__note" role="status">{removedHiddenNotice.revokePage
+          ? <>{t('tools.removedReviewProvider', { defaultValue: 'Connection removed. Review its access at {{label}}.', label: removedHiddenNotice.label })} <a href={removedHiddenNotice.revokePage} target="_blank" rel="noopener noreferrer">{t('tools.openProviderSettings', { defaultValue: 'Open provider settings' })}</a></>
+          : t('tools.disconnected', { defaultValue: 'Disconnected {{label}}.', label: removedHiddenNotice.label })}</p>}
         <div className="v2-connectors__rows">
           {liveRows.map(renderRow)}
           {notYet.map(renderNotYet)}

@@ -11,6 +11,10 @@ jest.mock('../../models/User', () => ({
   updateOne: jest.fn(),
 }));
 
+const mockRecordListenerCheckIn = jest.fn();
+jest.mock('../../services/agentListenerCheckIn', () => ({
+  recordListenerCheckIn: (...args) => mockRecordListenerCheckIn(...args),
+}));
 const mockMarkByoConnectionAttempt = jest.fn();
 jest.mock('../../services/onboardingMarks', () => ({
   markByoConnectionAttempt: (...args) => mockMarkByoConnectionAttempt(...args),
@@ -147,7 +151,13 @@ describe('agentWebSocketService', () => {
       });
       expect(AgentInstallation.updateOne).toHaveBeenCalledWith(
         { _id: 'install-1', 'runtimeTokens.tokenHash': hash(token) },
-        { $set: { 'runtimeTokens.$.lastUsedAt': expect.any(Date) } },
+        // An installation-bound token is stamped as a listener check-in too (TASK-721).
+        {
+          $set: {
+            'runtimeTokens.$.lastUsedAt': expect.any(Date),
+            'runtimeTokens.$.lastListenedAt': expect.any(Date),
+          },
+        },
       );
       expect(result).toEqual({
         agentName: 'openclaw',
@@ -352,6 +362,25 @@ describe('agentWebSocketService', () => {
 
       // lastPong should be updated
       expect(agentData.lastPong).toBeGreaterThan(initialPong);
+    });
+
+    it('a pong from the live socket is a listener check-in, one from a replaced socket is not', () => {
+      AgentInstallation.findOne.mockResolvedValue({ agentName: 'openclaw', instanceId: 'default' });
+      agentWebSocketService.init(mockIo);
+      if (connectionHandler) connectionHandler(mockSocket);
+      mockSocket.agentUserId = 'bot-user-1';
+      mockSocket.tokenHash = 'hashed-token';
+      const pongHandler = mockSocket.on.mock.calls.find((call) => call[0] === 'pong')?.[1];
+
+      mockRecordListenerCheckIn.mockClear();
+      pongHandler();
+      expect(mockRecordListenerCheckIn).toHaveBeenCalledWith('bot-user-1', 'hashed-token');
+
+      // A reconnect replaced this socket: the old one must not keep the seat listening.
+      agentWebSocketService.connectedAgents.get('openclaw:default').socket = { id: 'socket-2' };
+      mockRecordListenerCheckIn.mockClear();
+      pongHandler();
+      expect(mockRecordListenerCheckIn).not.toHaveBeenCalled();
     });
 
     it('sends ping to all connected agents every 30 seconds', () => {

@@ -128,6 +128,10 @@ const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
   && !pod.communityListed
   && pod.joinPolicy === 'invite-only'
 );
+// How long a person may wait, MCP snippet copied and listener command not, before
+// the page names the command they missed.
+const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
+
 const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex', pod?: V2Pod): boolean => (
   os === 'mac' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod))
 );
@@ -260,6 +264,12 @@ const V2AgentBYO: React.FC = () => {
   // finish the page, mention the agent, and get silence with no way to know
   // which step they missed. 'waiting' → 'listening' | 'timeout'.
   const [listenState, setListenState] = useState<'waiting' | 'listening' | 'timeout'>('waiting');
+  // Which command the person copied for THIS issue, and whether they have been
+  // waiting long enough to say so. A stranger copied the MCP snippet three
+  // times and never the Terminal command (walk 2026-10-31, TASK-721): the page
+  // then names the one they missed instead of waiting in silence.
+  const [copiedKinds, setCopiedKinds] = useState({ mcp: false, listen: false });
+  const [missedWindowOver, setMissedWindowOver] = useState(false);
   // ADR-023 W2 "Run it here" — the zero-terminal path. Offered only when the
   // instance reports a configured hosted runtime, and the default there: the
   // stranger this page exists for has no runtime to bring. The kernel mints
@@ -928,6 +938,16 @@ const V2AgentBYO: React.FC = () => {
     }
   };
 
+  // A new issue starts a new copy record and a new clock. Three minutes is long
+  // enough to run a pasted command; the server nudge in the room waits longer.
+  useEffect(() => {
+    setCopiedKinds({ mcp: false, listen: false });
+    setMissedWindowOver(false);
+    if (!issued) return undefined;
+    const timer = setTimeout(() => setMissedWindowOver(true), MISSED_LISTENER_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [issued?.issuedAt]);
+
   // Poll the kernel for THIS agent's first listener check-in after
   // issuance (an events poll or socket connect, not a tool call).
   // `/api/users/me/agent-connection` reports the caller's latest
@@ -1030,6 +1050,10 @@ const V2AgentBYO: React.FC = () => {
     };
   }, [api, issued, offerSessionKey, hasCopied, hosting?.configured, listenState]);
 
+  const markCopiedKind = (kind: 'mcp' | 'listen') => {
+    setCopiedKinds((prev) => (prev[kind] ? prev : { ...prev, [kind]: true }));
+  };
+
   const copiedIssuedContent = () => {
     rememberHostedOffer();
     setHasCopied(true);
@@ -1040,6 +1064,8 @@ const V2AgentBYO: React.FC = () => {
     try {
       await navigator.clipboard.writeText(value);
       copiedIssuedContent();
+      if (key === 'claude' || key === 'cursor') markCopiedKind('mcp');
+      else if (key === 'listen') markCopiedKind('listen');
       setCopied(key);
       setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
       if (key === 'claude' || key === 'cursor') byoStep('mcp-command-copied');
@@ -1682,7 +1708,7 @@ const V2AgentBYO: React.FC = () => {
               </button>
             </p>
             {listenerAvailable && (
-              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
+              <div className="v2-byo__command" onCopy={() => { copiedIssuedContent(); markCopiedKind('listen'); }}>
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
                 <button
                   type="button"
@@ -1709,9 +1735,11 @@ const V2AgentBYO: React.FC = () => {
               </p>
             ) : (
               <p className="v2-byo__listen-note" data-testid="byo-listen-waiting">
-                {listenState === 'timeout'
-                  ? t('agentByo.listen.stillWaiting', { name: issued.agentName })
-                  : t('agentByo.listen.waiting', { name: issued.agentName })}
+                {missedWindowOver && copiedKinds.mcp && !copiedKinds.listen
+                  ? t('agentByo.listen.missedCommand', { name: issued.agentName })
+                  : listenState === 'timeout'
+                    ? t('agentByo.listen.stillWaiting', { name: issued.agentName })
+                    : t('agentByo.listen.waiting', { name: issued.agentName })}
               </p>
             )}
             {listenerAvailable && (
@@ -1786,7 +1814,7 @@ const V2AgentBYO: React.FC = () => {
                     { name: issued.agentName },
                   )}
                 </p>
-                <div className="v2-byo__command" onCopy={copiedIssuedContent}>
+                <div className="v2-byo__command" onCopy={() => { copiedIssuedContent(); markCopiedKind('mcp'); }}>
                   <pre className="v2-byo__pre">{setupOs === 'windows' ? claudeSnippetWindows : claudeSnippet}</pre>
                   <button
                     type="button"
@@ -1842,7 +1870,7 @@ const V2AgentBYO: React.FC = () => {
               </div>
               <a className="v2-byo__cursor-link" href={cursorInstallHref}>{t('agentByo.snippets.cursorInstall')}</a>
               <p className="v2-byo__hint">{t('agentByo.snippets.cursorInstallHint')}</p>
-              <div className="v2-byo__command" onCopy={copiedIssuedContent}>
+              <div className="v2-byo__command" onCopy={() => { copiedIssuedContent(); markCopiedKind('mcp'); }}>
                 <pre className="v2-byo__pre">{cursorSnippet}</pre>
                 <button type="button" onClick={() => copy('cursor', cursorSnippet)} className="v2-byo__copy">
                   {copied === 'cursor' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
