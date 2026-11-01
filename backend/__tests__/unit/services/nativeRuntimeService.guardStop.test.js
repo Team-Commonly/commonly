@@ -170,8 +170,9 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(posted()).toEqual(['Here is the changelog. I could not use the blog page.']);
   });
 
-  // The extra round is one model call, not the rest of the budget.
-  describe('the extra round is one model call', () => {
+  // The extra round is one model call, not the rest of the budget. A call that
+  // asked only for tools it was not offered gets one more, after the refusal.
+  describe('the extra round is one model call, or two when the first asks only for other tools', () => {
     const neverAsked = reply('A later round.');
 
     test('a reply posted through the tool ends the run, with one post', async () => {
@@ -207,21 +208,76 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(posted()).toEqual(['Recovered once.']);
     });
 
-    test('a lookup asked for in that call is refused and the run ends with the fixed line', async () => {
+    // F33 (11-01): a research turn read two releases pages, the guard stopped
+    // one, and in the extra round the model asked for that page again. The
+    // refusal ended the run before the model saw it, 4 runs in 3 days.
+    test('a lookup asked for in that call is refused, and one more call answers', async () => {
+      chatReplies = [
+        toolCalls(fetchCall('c1', CLEAN_URL), fetchCall('c2', STOPPED_URL)),
+        guardStop,
+        toolCalls(fetchCall('c3', STOPPED_URL)),
+        toolCalls(call('c4', 'commonly_post_message', { podId: POD, content: 'The changelog says this. I could not use the blog page.' })),
+        neverAsked,
+      ];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result.status).toBe('succeeded');
+      expect(chatBodies).toHaveLength(4);
+      expect(mockGetPage.mock.calls).toEqual([[CLEAN_URL], [STOPPED_URL]]);
+      // The model reads the refusal before its last call, offered a post only.
+      const last = chatBodies[3];
+      expect(offeredIn(last)).toEqual(['commonly_post_message']);
+      expect(last.messages[last.messages.length - 1]).toEqual(expect.objectContaining({ role: 'tool', tool_call_id: 'c3' }));
+      expect(String(last.messages[last.messages.length - 1].content)).toMatch(/No more lookups/);
+      expect(JSON.stringify(last.messages)).not.toContain(STOPPED_TEXT);
+      expect(posted()).toEqual(['The changelog says this. I could not use the blog page.']);
+      expect(savedRun.metered).toBeUndefined();
+    });
+
+    test('a second refused lookup ends the run, naming the step and the tool, with the fixed line', async () => {
       chatReplies = [
         toolCalls(fetchCall('c1', STOPPED_URL)),
         guardStop,
         toolCalls(fetchCall('c2', CLEAN_URL)),
+        toolCalls(fetchCall('c3', CLEAN_URL)),
         neverAsked,
       ];
 
       const result = await runAgent(hostedInstall(), mention);
 
       expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'guardrail_blocked' }));
-      expect(chatBodies).toHaveLength(3);
+      expect(savedRun.errorMessage).toMatch(/round after .* ended without a reply/);
+      expect(savedRun.errorMessage).toContain('commonly_fetch_url');
+      expect(chatBodies).toHaveLength(4);
       expect(mockGetPage.mock.calls).toEqual([[STOPPED_URL]]);
       expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
       expect(savedRun.metered).toBe(false);
+    });
+
+    test('a post refused in that call ends the run, with no second call', async () => {
+      // The bridge is added once the page is in the turn, so the post is refused.
+      mockBridged.mockImplementation(async () => mockGetPage.mock.calls.length > 0);
+      chatReplies = [
+        toolCalls(fetchCall('c1', STOPPED_URL)),
+        guardStop,
+        toolCalls(call('c2', 'commonly_post_message', { podId: POD, content: 'Recovered.' })),
+        neverAsked,
+      ];
+
+      const result = await runAgent(hostedInstall(), mention);
+
+      expect(result.status).toBe('failed');
+      expect(chatBodies).toHaveLength(3);
+      expect(posted()).toEqual([]);
+    });
+
+    test('the set-aside notice says no lookups are left', async () => {
+      chatReplies = [toolCalls(fetchCall('c1', STOPPED_URL)), guardStop, reply('I could not use the blog page.')];
+
+      await runAgent(hostedInstall(), mention);
+
+      expect(JSON.stringify(chatBodies[2].messages)).toMatch(/No more lookups are possible in this turn/);
     });
 
     test('a declined reply in that call ends the run without the fixed line', async () => {
