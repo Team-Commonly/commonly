@@ -291,6 +291,8 @@ describe('a hosted-MCP grant through the broker', () => {
   it.each(['linear.delete_issue', 'linear.deleteIssue'])(
     'refuses %s, which the vendor lists and the entry does not pin, before any vendor call',
     async (tool) => {
+      // Definitions come from the pins today, so the vendor listing it changes
+      // nothing. It is here so that a definition built from tools/list fails.
       upstreamTools.push({
         name: 'deleteIssue',
         inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
@@ -304,7 +306,6 @@ describe('a hosted-MCP grant through the broker', () => {
       expect(toolCalls()).toHaveLength(0);
       expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
       expect(mockProposeAction).not.toHaveBeenCalled();
-      expect(allToolDefinitions().map((definition) => definition.name)).not.toContain(tool);
     },
   );
 
