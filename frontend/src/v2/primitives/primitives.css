@@ -148,6 +148,8 @@
   flex-direction: column;
   position: relative;
 }
+/* The showcase is longer than the viewport, so its pane scrolls at every width. */
+.v2p-pane--scroll { overflow-y: auto; }
 .v2p-ph {
   flex: none;
   height: 64px;
