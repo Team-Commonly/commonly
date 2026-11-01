@@ -125,7 +125,7 @@ describe('V2SettingsPage', () => {
     const language = within(look).getByRole('radiogroup', { name: 'Language' });
     expect(language).toHaveClass('v2-seg');
     expect(within(language).getByRole('radio', { name: 'English' })).toHaveAttribute('aria-checked', 'true');
-    expect(within(look).getByRole('radiogroup', { name: 'Appearance' })).toHaveClass('v2-seg');
+    expect(within(look).getByRole('radiogroup', { name: 'Theme' })).toHaveClass('v2-seg');
 
     await act(async () => { fireEvent.click(within(language).getByRole('radio', { name: '中文' })); });
     expect(i18n.resolvedLanguage).toBe('zh-CN');

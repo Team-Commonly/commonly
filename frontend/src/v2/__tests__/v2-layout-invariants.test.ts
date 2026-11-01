@@ -1183,7 +1183,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('<summary>Developer apps</summary>');
     expect(settingsPage).toContain('<V2BillingPanel showHeading={false} />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
-    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 40px');
+    expect(ruleBody(v2, '.v2-settings__avatar')).toContain('width: 44px');
     expect(ruleBody(v2, '.v2-settings__avatar')).toContain('border-radius: var(--v2-radius-sm)');
     expect(ruleBody(v2, '.v2-settings__avatar img')).toContain('border-radius: var(--v2-radius-sm)');
     expect(avatar).toContain("borderRadius: 'inherit'");
@@ -1228,8 +1228,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
 
   test('Settings avatar controls keep the account face square and the crop step usable on phones', () => {
     const avatar = ruleBody(v2, '.v2-settings__avatar');
-    expect(avatar).toContain('width: 40px');
-    expect(avatar).toContain('height: 40px');
+    expect(avatar).toContain('width: 44px');
+    expect(avatar).toContain('height: 44px');
     expect(avatar).toContain('border-radius: var(--v2-radius-sm)');
     expect(ruleBody(v2, '.v2-settings__avatar-overlay')).toContain('background: rgba(16, 24, 40, 0.55)');
     expect(avatarCropDialog).toContain('className="v2-root v2-modal__overlay v2-settings__avatar-overlay"');
