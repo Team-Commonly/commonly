@@ -1247,6 +1247,12 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
     });
     await assertSeatCanConfine(input);
     await assertOutsiderGrantPodEligible(grant);
+    // The call-time half of hostedBrokerToolsForRun's rule: a hosted turn uses a
+    // task-bound grant only from inside its task's pod.
+    const binding = (grant as { binding?: { podId?: unknown } }).binding;
+    if (input.hostedTurn && binding && String(binding.podId) !== String(input.runPodId || '')) {
+      throw new RoomGrantError('task_pod_mismatch', 'a task-bound grant is usable only in its task pod', 403);
+    }
 
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;

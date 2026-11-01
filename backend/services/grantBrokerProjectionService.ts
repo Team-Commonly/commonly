@@ -192,7 +192,11 @@ export const hostedBrokerToolsForRun = async (
     identityIds: [String(identityId)],
     podIds: [String(podId)],
   });
-  const grants = byIdentity.get(String(identityId)) || [];
+  // A task-bound grant is offered only in a run in its task's own pod. A seat
+  // grant reaches the agent in every pod, and its claim is checked against the
+  // task's pod, so without this a turn elsewhere could use that task's tools.
+  const grants = (byIdentity.get(String(identityId)) || [])
+    .filter((grant) => !grant.binding || String(grant.binding.podId) === String(podId));
   if (!grants.length) return { tools, dispatch };
 
   const readable = allToolDefinitions().filter((definition) => definition.requiredWriteMode === 'read');

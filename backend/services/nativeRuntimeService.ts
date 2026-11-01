@@ -597,9 +597,10 @@ const IN_POD_NATIVE_TOOLS = new Set(['commonly_read_context', 'commonly_post_mes
 // F40: a task-bound grant can be used only once its task is claimed, and a pod
 // holding any live grant keeps every turn in-pod-only. Without the claim here, a
 // grant minted before the claim could never be used. A claim changes only this
-// pod's board. It stays only until a granted tool has answered in the turn, so
-// text an outsider can write never picks which task is claimed. Web taint still
-// refuses it: WEB_TAINTED_TOOLS is built from IN_POD_NATIVE_TOOLS alone.
+// pod's board. It stays only until a granted tool has answered in the turn, so a
+// connector result in this turn never picks the task (pod messages from earlier
+// turns can still be read, so this is not a promise about all outsider text).
+// Web taint still refuses it: WEB_TAINTED_TOOLS is built from IN_POD_NATIVE_TOOLS alone.
 const IN_POD_BOARD_TOOLS: ReadonlySet<string> = new Set(['commonly_claim_task']);
 const keptInPod = (name: string, brokerCallSeen: boolean): boolean => (
   IN_POD_NATIVE_TOOLS.has(name) || (!brokerCallSeen && IN_POD_BOARD_TOOLS.has(name))
@@ -805,8 +806,11 @@ export async function dispatchTool(
   // The model may emit a name it was not offered. The live grant boundary is
   // enforced at dispatch as well as in the advertised tool list.
   if (ctx.inPodOnly && !keptInPod(name, Boolean(ctx.brokerCallSeen))) {
+    const reason = IN_POD_BOARD_TOOLS.has(name)
+      ? 'for the rest of this turn because a granted tool has answered in it'
+      : 'while this pod holds an outsider-writable grant';
     return {
-      content: { ok: false, error: `${name} is unavailable while this pod holds an outsider-writable grant` },
+      content: { ok: false, error: `${name} is unavailable ${reason}` },
       error: 'outsider_writable_grant_tool_denied',
     };
   }

@@ -152,7 +152,9 @@ describe('a claim mid-turn re-reads the grant projection (TASK-340)', () => {
     brokerProjection.hostedBrokerToolsForRun.mockReset();
     brokerProjection.hostedBrokerToolsForRun
       .mockResolvedValue({ tools: [GRANTED], dispatch: new Map([['sentry_find_organizations', {}]]) });
-    brokerProjection.dispatchHostedBrokerTool.mockResolvedValue({ callId: 'b', outcome: 'ok', content: { ok: true } });
+    // As the real one does: null for a name outside the projection it was given.
+    brokerProjection.dispatchHostedBrokerTool.mockImplementation(async ({ projection, name }) => (
+      projection.dispatch.has(name) ? { callId: 'b', outcome: 'ok', content: { ok: true } } : null));
     axios.post.mockReset();
     axios.post
       .mockResolvedValueOnce(toolCalls(call('c1', 'sentry_find_organizations', {})))
@@ -163,6 +165,33 @@ describe('a claim mid-turn re-reads the grant projection (TASK-340)', () => {
       expect(offeredIn(1)).toContain('sentry_find_organizations');
       expect(offeredIn(1)).not.toContain('commonly_claim_task');
       expect(mockClaimTaskAs).not.toHaveBeenCalled();
+    } finally {
+      podHasOutsiderWritableGrant.mockResolvedValue(false);
+    }
+  });
+
+  test('a claim after a granted tool in the same response is refused, though it was offered', async () => {
+    const { podHasOutsiderWritableGrant } = require('../../../services/nativeOutsiderGrantPolicy');
+    podHasOutsiderWritableGrant.mockResolvedValue(true);
+    brokerProjection.hostedBrokerToolsForRun.mockReset();
+    brokerProjection.hostedBrokerToolsForRun
+      .mockResolvedValue({ tools: [GRANTED], dispatch: new Map([['sentry_find_organizations', {}]]) });
+    // As the real one does: null for a name outside the projection it was given.
+    brokerProjection.dispatchHostedBrokerTool.mockImplementation(async ({ projection, name }) => (
+      projection.dispatch.has(name) ? { callId: 'b', outcome: 'ok', content: { ok: true } } : null));
+    axios.post.mockReset();
+    axios.post
+      .mockResolvedValueOnce(toolCalls(
+        call('c1', 'sentry_find_organizations', {}),
+        call('c2', 'commonly_claim_task', { taskId: 'TASK-001' }),
+      ))
+      .mockResolvedValueOnce(modelSays('Done.'));
+    try {
+      await runAgent(SEAT, MENTION);
+      expect(offeredIn(0)).toContain('commonly_claim_task');
+      expect(mockClaimTaskAs).not.toHaveBeenCalled();
+      const refused = axios.post.mock.calls[1][1].messages.find((m) => m.role === 'tool' && m.tool_call_id === 'c2');
+      expect(JSON.parse(refused.content)).toMatchObject({ ok: false, error: expect.stringMatching(/a granted tool has answered/) });
     } finally {
       podHasOutsiderWritableGrant.mockResolvedValue(false);
     }

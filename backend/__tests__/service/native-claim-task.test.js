@@ -37,7 +37,7 @@ const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { mintGrant } = require('../../services/roomGrantService');
-const { selectLiveGrantsForIdentities } = require('../../services/grantBrokerProjectionService');
+const { selectLiveGrantsForIdentities, hostedBrokerToolsForRun } = require('../../services/grantBrokerProjectionService');
 const { GRANT_BROKER_ID } = require('../../services/installable/toolInstallables');
 const { dispatchTool, toolsForConfig } = require('../../services/nativeRuntimeService');
 const { HOSTED_NATIVE_TOOLS } = require('../../services/hostedEngine');
@@ -186,6 +186,29 @@ describe('commonly_claim_task (TASK-340)', () => {
       const result = await claimInPod({ taskId: 'TASK-001' }, { brokerCallSeen: true });
       expect(result.error).toBe('outsider_writable_grant_tool_denied');
       expect(await Task.findOne({ taskId: 'TASK-001' }).lean()).toMatchObject({ status: 'pending' });
+    });
+
+    // Review of F40 (security): a seat-targeted grant is projected into the
+    // agent's turns in every pod, and the bound task's claim is checked against
+    // the task's own pod. Once a hosted agent can claim in a pod with a grant,
+    // a turn elsewhere could use that task's tools. Bound grants stay home.
+    it('offers a task-bound grant only in a run in its own pod', async () => {
+      const elsewhere = await Pod.create({ name: 'Elsewhere', createdBy: bot._id, members: [bot._id] });
+      await mintGrant({
+        connectionId: 'fixture', installationId: 'fixture', target: { kind: 'seat', id: String(bot._id) },
+        tools: ['github.list_issues'], writeMode: 'read', audience: [String(bot._id)],
+        expiresAt: new Date(Date.now() + 3600000), brokerId: GRANT_BROKER_ID,
+        binding: { podId: String(pod._id), taskId: 'TASK-001' },
+      });
+      expect((await claimInPod({ taskId: 'TASK-001' })).error).toBeUndefined();
+
+      const home = await hostedBrokerToolsForRun({ identityId: String(bot._id), podId: String(pod._id) });
+      const away = await hostedBrokerToolsForRun({ identityId: String(bot._id), podId: String(elsewhere._id) });
+      expect(home.dispatch.size).toBe(1);
+      expect(away.dispatch.size).toBe(0);
+
+      // The call-time refusal is in toolBrokerService.hosted.test.js: the broker
+      // records every refusal in Postgres, which this suite does not run.
     });
 
     it('stays out of a turn that has read the web', async () => {
