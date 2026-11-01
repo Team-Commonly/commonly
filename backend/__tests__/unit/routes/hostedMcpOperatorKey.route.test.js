@@ -13,7 +13,7 @@ jest.mock('../../../models/Integration', () => ({ findOneAndUpdate: jest.fn(), u
 jest.mock('../../../models/User', () => ({ findOne: jest.fn() }));
 jest.mock('../../../models/AgentRegistry', () => ({ AgentInstallation: { find: jest.fn() } }));
 jest.mock('../../../models/Pod', () => ({ find: jest.fn() }));
-jest.mock('../../../services/connectorSecrets', () => ({ put: jest.fn(), revoke: jest.fn() }));
+jest.mock('../../../services/connectorSecrets', () => ({ put: jest.fn(), revoke: jest.fn(), revokeOwnWrite: jest.fn() }));
 jest.mock('../../../services/roomGrantService', () => ({ revokeConnectionGrants: jest.fn() }));
 jest.mock('../../../services/hostedMcpToolDefinitions', () => ({
   guardedFetch: jest.fn(),
@@ -101,7 +101,6 @@ beforeEach(() => {
   listHostedMcpTools.mockResolvedValue([{ name: 'list_jobs' }]);
   Integration.findOneAndUpdate.mockResolvedValue({ _id: ROW_ID, config: { authGeneration: 1 } });
   Integration.updateOne.mockResolvedValue({ acknowledged: true, matchedCount: 1 });
-  Integration.exists.mockResolvedValue({ _id: ROW_ID });
   connectorSecrets.put.mockResolvedValue('secret-ref-1');
 });
 afterEach(() => {
@@ -267,13 +266,16 @@ describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
     expect(update.$unset).toEqual({ 'config.providerRevokedAt': '' });
   });
 
+  // The paste's own write is generation 1 (authGeneration 1, refresh 0).
+  const OWN_WRITE = 1_000_000;
+
   test('a row removed while the key was being saved: the new secret is revoked and the paste refused', async () => {
     Integration.updateOne.mockResolvedValue({ acknowledged: true, matchedCount: 0 });
-    Integration.exists.mockResolvedValue(null);
     const res = await submit();
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: 'connection_changed', message: 'the connection changed while the key was saved; paste it again' });
-    expect(connectorSecrets.revoke).toHaveBeenCalledWith('secret-ref-1');
+    expect(connectorSecrets.revokeOwnWrite).toHaveBeenCalledWith('secret-ref-1', OWN_WRITE);
+    expect(connectorSecrets.revoke).not.toHaveBeenCalled();
   });
 
   // Removal marks the row disconnected and revoked before it deletes it
@@ -288,18 +290,21 @@ describe('POST /connect/hosted-mcp/:entryId/operator-key', () => {
     Integration.updateOne.mockImplementation(async (filter) => ({
       acknowledged: true, matchedCount: matches(filter) ? 1 : 0,
     }));
-    Integration.exists.mockImplementation(async (filter) => (matches(filter) ? { _id: ROW_ID } : null));
     const res = await submit();
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('connection_changed');
-    expect(connectorSecrets.revoke).toHaveBeenCalledWith('secret-ref-1');
+    expect(connectorSecrets.revokeOwnWrite).toHaveBeenCalledWith('secret-ref-1', OWN_WRITE);
   });
 
-  test('a newer paste that won the row keeps its secret: the older paste is refused without revoking it', async () => {
+  // The ref is reused, so a newer paste may own it by now. The delete is fenced
+  // on this paste's own write generation, which a newer write has replaced
+  // (the store's own test pins that), never a delete by ref alone.
+  test('a newer paste that won the row keeps its secret: the older paste deletes only its own write', async () => {
     Integration.updateOne.mockResolvedValue({ acknowledged: true, matchedCount: 0 });
     const res = await submit();
     expect(res.status).toBe(409);
     expect(connectorSecrets.revoke).not.toHaveBeenCalled();
+    expect(connectorSecrets.revokeOwnWrite).toHaveBeenCalledWith('secret-ref-1', OWN_WRITE);
   });
 
   test('the key appears in no response, no row write, and no thrown error text', async () => {

@@ -213,6 +213,17 @@ export const revoke = async (ref: string | undefined): Promise<void> => {
   await ConnectorSecret.deleteOne({ _id: ref });
 };
 
+/**
+ * Delete a secret only while it still holds the material `writeGeneration`
+ * wrote. For a writer cleaning up after itself: the ref is stable per
+ * (integration, kind), so a newer writer may already own it, and a delete by
+ * ref alone would destroy that writer's key.
+ */
+export const revokeOwnWrite = async (ref: string | undefined, writeGeneration: number): Promise<void> => {
+  if (!ref) return;
+  await ConnectorSecret.deleteOne({ _id: ref, writeGeneration });
+};
+
 export const rewrap = async (ref: string): Promise<string> => {
   const secret = await ConnectorSecret.findById(ref) as IConnectorSecret | null;
   if (!secret) throw new ConnectorSecretNotFoundError(ref);
@@ -237,6 +248,7 @@ module.exports = {
   putIfAbsent,
   get,
   revoke,
+  revokeOwnWrite,
   rewrap,
   listWithUnavailableKey,
 };

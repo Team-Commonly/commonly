@@ -136,10 +136,12 @@ export const submitOperatorKey = async (req: OperatorKeyRequest, res: Response) 
   );
   if (published?.matchedCount === 0) {
     // A removal took the row mid-paste (deleted it, or marked it on the way),
-    // or a newer paste took it. Only a removal leaves this secret with nothing
-    // that will use it; a newer paste wrote the same ref and cleared the
-    // revocation, so its row still exists unrevoked and the secret is left alone.
-    if (!(await Integration.exists({ _id: row._id, revokedAt: null }))) await connectorSecrets.revoke(credentialRef);
+    // or a newer paste took it. Either way nothing will use this paste's key.
+    // The ref is reused per row, so a newer paste may own it by now: delete
+    // only while it still holds this paste's own write. A row lookup here
+    // would race that newer paste, which can clear the mark and overwrite the
+    // ref between the lookup and the delete.
+    await connectorSecrets.revokeOwnWrite(credentialRef, writeGeneration);
     return res.status(409).json({
       error: 'connection_changed',
       message: 'the connection changed while the key was saved; paste it again',
