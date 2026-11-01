@@ -182,6 +182,17 @@
   --c-platform-groupme: #00aff0;
   --c-platform-groupme-soft: #e3f5fd;
 
+  /* ---------- Board status & priority (D215 B-lite, TASK-727) ----------
+     Mirrors v2.css light values. Blocked and P0 are red; in progress stays
+     cobalt; P1, P2, pending and done stay grey, with no green. Dark values
+     live in the dark blocks of frontend/src/v2/v2.css. */
+  --c-status-pending:       #667085;   /* 4.97:1 on white */
+  --c-status-blocked:       #d92d20;   /* 4.83:1 on white; icon + 3px edge */
+  --c-status-blocked-edge:  #d92d20;
+  --c-prio-p0-bg:           #b42318;
+  --c-prio-p0-fg:           #ffffff;   /* 6.57:1 on P0 fill */
+  --c-prio-p2-fg:           #667085;   /* 4.97:1 on white */
+
 }
 
 /* ============================================================
