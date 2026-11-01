@@ -21,5 +21,5 @@
 .v2-agent-wake-pods__table tbody th a { color: var(--v2-accent-text); font: 600 14px/20px var(--v2-font); }
 .v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__remove { border: 1px solid var(--v2-border); border-radius: 4px; padding: 7px 10px; background: var(--v2-surface); color: var(--v2-text-secondary); cursor: pointer; }
 .v2-agent-wake-pods__remove:disabled { opacity: .5; cursor: default; }
-.v2-agent-wake-pods__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.v2-agent-wake-pods__sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 @media (max-width: 600px) { .v2-agent-wake-pods__table thead { display: none; } .v2-agent-wake-pods__table, .v2-agent-wake-pods__table tbody, .v2-agent-wake-pods__table tr, .v2-agent-wake-pods__table td, .v2-agent-wake-pods__table th { display: block; width: 100%; } }
