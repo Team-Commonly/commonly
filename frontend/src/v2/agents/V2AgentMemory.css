@@ -59,9 +59,14 @@
 
 /* Phone (frame 390): search first, groups become the frame's details.grp rows. */
 @media (max-width: 767px) {
-  .v2m-page .v2p-ph { height: auto; min-height: 64px; flex-wrap: wrap; padding: 12px 16px; }
-  .v2m-page .v2p-ph .v2p-seg { order: 3; flex: 1 1 100%; display: flex; }
-  .v2m-page .v2p-ph .v2p-seg button { flex: 1; justify-content: center; }
+  /* D223 (TASK-730): the same 52px phone top bar feature pages get. The segment
+     stays in the bar, the name shrinks and ellipsizes. */
+  .v2m-page .v2p-ph { height: auto; min-height: 52px; flex-wrap: nowrap; gap: 8px; padding: 0 10px 0 12px; }
+  .v2m-page .v2p-ph .sp { display: none; }
+  .v2m-page .v2p-ph .v2m-ahead { min-width: 0; flex: 1; }
+  .v2m-page .v2p-ph .v2m-ahead h1 { font: 800 21px/1 var(--v2-font-display); letter-spacing: -0.03em; overflow: hidden; text-overflow: ellipsis; }
+  .v2m-page .v2p-ph .v2m-ahead .st { display: none; }
+  .v2m-page .v2p-ph .v2p-seg { flex: none; margin-top: 0; }
   .v2m-pbody { padding: 12px; }
   .v2m-mem { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .v2m-mnav ul { display: none; }

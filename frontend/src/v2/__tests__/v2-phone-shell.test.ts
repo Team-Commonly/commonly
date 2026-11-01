@@ -41,16 +41,19 @@ describe('D223 phone shell', () => {
   test('agent settings and memory pages get the same 52px bar inside the 760px query', () => {
     const agentCss = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
     const tail = agentCss.slice(agentCss.indexOf('D223 (TASK-730)'));
-    expect(tail).toMatch(/\.v2-agent-settings > \.v2-page-head,\s*\.v2-agent-settings > \.v2-agent-memory__head\s*\{[^}]*min-height:\s*52px/);
+    expect(tail).toMatch(/\.v2-agent-settings > \.v2-page-head\s*\{[^}]*min-height:\s*52px/);
+    expect(agentCss).not.toContain('v2-agent-memory');
     const at = agentCss.indexOf('D223 (TASK-730)');
     expect(agentCss.slice(0, at).lastIndexOf('@media')).toBe(agentCss.lastIndexOf('@media (max-width: 760px)', at));
   });
 
-  test('the memory bar lets the name shrink and drops the tab nav margin so it stays 52px', () => {
-    const agentCss = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
-    const tail = agentCss.slice(agentCss.indexOf('D223 (TASK-730)'));
-    expect(tail).toMatch(/__ident\s*\{\s*min-width:\s*0/);
-    expect(tail).toMatch(/__seg\s*\{[^}]*margin-top:\s*0/);
+  test('the memory bar is the same 52px phone bar, in the memory sheet on its v2m names', () => {
+    const memCss = fs.readFileSync(path.join(__dirname, '../agents/V2AgentMemory.css'), 'utf8');
+    const phoneBlock = memCss.slice(memCss.indexOf('@media (max-width: 767px)'));
+    expect(phoneBlock).toMatch(/\.v2m-page \.v2p-ph\s*\{[^}]*min-height:\s*52px[^}]*flex-wrap:\s*nowrap/);
+    expect(phoneBlock).toMatch(/\.v2m-ahead\s*\{\s*min-width:\s*0/);
+    expect(phoneBlock).toMatch(/\.v2m-ahead h1\s*\{[^}]*text-overflow:\s*ellipsis/);
+    expect(phoneBlock).toMatch(/\.v2p-seg\s*\{[^}]*flex:\s*none/);
   });
 
   test('the settings head spans the pane and only the body scrolls', () => {
