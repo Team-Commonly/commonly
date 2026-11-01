@@ -216,7 +216,9 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const viewerId = currentUser?._id ? String(currentUser._id) : '';
   const isGranter = (grant: ToolGrant): boolean => Boolean(viewerId) && grant.grantedBy === viewerId;
   const [rawGrants, setGrants] = useState<ToolGrant[] | null>(null);
-  const [catalog, setCatalog] = useState<ToolCatalogEntry[]>([]);
+  const [rawCatalog, setCatalog] = useState<ToolCatalogEntry[]>([]);
+  // A connection the server confirmed removed stays removed on this page, as a stale catalogue read could bring it back.
+  const [disconnectedHere, setDisconnectedHere] = useState<string[]>([]);
   const [hiddenConnections, setHiddenConnections] = useState<HiddenToolConnection[]>([]);
   const [seats, setSeats] = useState<Record<string, PodSeat[]>>({});
   const [lastUse, setLastUse] = useState<Record<string, string | null>>({});
@@ -240,6 +242,10 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
   const [joinPolicyFixPodId, setJoinPolicyFixPodId] = useState<string | null>(null);
   const [policyFixedPodId, setPolicyFixedPodId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const catalog = useMemo(() => (disconnectedHere.length === 0 ? rawCatalog : rawCatalog.map((entry) => ({
+    ...entry,
+    connections: entry.connections.filter((connection) => !disconnectedHere.includes(connection.connectionId)),
+  }))), [rawCatalog, disconnectedHere]);
   const grants = useMemo(() => (rawGrants === null ? null : rawGrants.map((grant) => (
     revokedHere[grant.grantId] && !grant.revokedAt
       ? { ...grant, revokedAt: revokedHere[grant.grantId], revokedBy: grant.revokedBy ?? (viewerId || null) }
@@ -684,6 +690,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
     try {
       const res = await api.del<{ revokeAt?: string }>(`/api/integrations/${encodeURIComponent(connectionId)}`);
       setConfirmDisconnect(null);
+      setDisconnectedHere((current) => [...current, connectionId]);
       // The removal revokes every grant on the connection, so the page says so
       // now rather than waiting on a re-read that may fail.
       const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
@@ -702,6 +709,7 @@ const V2ConnectorTools: React.FC<Props> = ({ pods, manualRevokeNotice = null }) 
         const ended = (grants || []).filter((grant) => !isDead(grant) && entryCovers(entry, grant));
         setRevokedHere((current) => ({ ...current, ...Object.fromEntries(ended.map((grant) => [grant.grantId, new Date().toISOString()])) }));
         setConfirmDisconnect(null);
+        setDisconnectedHere((current) => [...current, connectionId]);
         await load();
         if (safeProviderRevokePage(response?.data?.revokeAt)) {
           setRemovedHiddenNotice({ label: entry.label, revokePage: response?.data?.revokeAt as string });

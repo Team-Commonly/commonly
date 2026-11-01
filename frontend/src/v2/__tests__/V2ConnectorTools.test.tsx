@@ -572,6 +572,18 @@ describe('Disconnect on a live connection of an offered hosted connector', () =>
     await waitFor(() => expect(axios.get.mock.calls.filter(([u]) => u === '/api/installables')).toHaveLength(2));
   });
 
+  test('a stale catalogue read after Disconnect does not bring the connection back', async () => {
+    mockTwoEntries({ catalog: [atlassian], grants: { p1: [], p2: [] } }); // every read still lists the connection
+    axios.delete.mockResolvedValue({ data: { message: 'ok' } });
+    renderTools();
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect Atlassian' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, disconnect' }));
+    expect(await screen.findByText('Disconnected Atlassian.')).toBeInTheDocument();
+    await waitFor(() => expect(axios.get.mock.calls.filter(([u]) => u === '/api/installables')).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /Disconnect Atlassian|Yes, disconnect/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add' })).not.toBeInTheDocument();
+  });
+
   test('a granted connection offers it in the grant card, and a provider page from the server is linked', async () => {
     mockTwoEntries({ catalog: [atlassian], grants: { p1: [grantAtl], p2: [] } });
     axios.delete.mockResolvedValue({ data: { message: 'ok', revokeAt: 'https://id.atlassian.com/manage-profile/apps' } });
