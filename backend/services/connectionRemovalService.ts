@@ -182,12 +182,23 @@ export const revokeTokenAtVendor = async (input: {
     // would answer the empty string 200 for a request that revoked nothing.
     throw new Error('provider revoke refused: no token to revoke');
   }
-  const metadata = input.entry.client === 'pre-registered'
-    ? await discoverAuthorizationServer(input.entry.issuer, fetchImpl)
-    : {};
+  // TASK-252: this request carries the token and, for a registered client, its
+  // secret, so it goes only to the endpoint the issuer itself advertises. The
+  // pin is reviewed by PR, but a vendor can move its endpoint, and an unchecked
+  // pin would keep sending credentials to the old host. The metadata is read
+  // with its identity checked (`discoverAuthorizationServer`), and the compare is
+  // exact, as the issuer's is. Every pin equalled its issuer's
+  // `revocation_endpoint` when this landed (measured 2026-11-01).
+  const metadata = await discoverAuthorizationServer(input.entry.issuer, fetchImpl);
+  if (metadata.revocation_endpoint !== target.endpoint) {
+    throw new Error(
+      `provider revoke refused: ${target.endpoint} is not the revocation_endpoint ${input.entry.issuer} advertises`,
+    );
+  }
   const request = buildRevocationRequest(
     input.entry,
-    metadata,
+    // Only a registered client reads its auth method from the metadata.
+    input.entry.client === 'pre-registered' ? metadata : {},
     {
       clientId: input.clientId,
       ...(input.clientSecret ? { clientSecret: input.clientSecret } : {}),
