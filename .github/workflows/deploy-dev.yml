@@ -355,30 +355,31 @@ jobs:
           # must not fail the deploy or trip the rollback below. A scaled-to-zero managed
           # workload passes instantly (0 of 0 updated) — parked is not stuck.
           MANAGED=" backend backend-worker frontend clawdbot-gateway commonly-bot "
-          FAILED=""
-          CHECKED=""
+          TARGETS=""
           for d in $(kubectl get deploy -n "$NAMESPACE" -o name); do
             n=${d##*/}
-            case "$MANAGED" in *" $n "*) : ;; *) continue ;; esac
-            CHECKED="$CHECKED $n"
-            echo "::group::rollout status $d"
-            if kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m; then
-              echo "$d: rolled out"
-            else
-              echo "::error title=Rollout failed::$d did not become ready within 8m"
-              FAILED="$FAILED $d"
-            fi
-            echo "::endgroup::"
+            case "$MANAGED" in *" $n "*) TARGETS="$TARGETS $d" ;; esac
           done
-          if [ -z "$CHECKED" ]; then
+          if [ -z "$TARGETS" ]; then
             echo "::error title=Rollout failed::none of the image-tagged workloads (backend/frontend/clawdbot-gateway/commonly-bot) found in $NAMESPACE — nothing to verify is itself a failure"
             exit 1
           fi
-          if [ -n "$FAILED" ]; then
-            echo "Deploy failed for:$FAILED"
-            exit 1
-          fi
-          echo "Deployed workloads live:$CHECKED"
+          # Short-circuit on the FIRST stuck workload. The loop runs sequentially and each
+          # kubectl rollout status waits up to 8m; a bad image tag fails ALL managed
+          # workloads, so continuing would burn ~8m x N (~40m for 5) and could hit the 45m
+          # job cap before the rollback step runs. One failure already means the deploy is
+          # bad — stop and let the failure() rollback fire.
+          for d in $TARGETS; do
+            echo "::group::rollout status $d"
+            if kubectl rollout status "$d" -n "$NAMESPACE" --timeout=8m; then
+              echo "$d: rolled out"; echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              echo "::error title=Rollout failed::$d did not become ready within 8m — stopping verification; the deploy is failing and the rollback step will run"
+              exit 1
+            fi
+          done
+          echo "Deployed workloads live:$TARGETS"
 
       # A pod can be Ready and still unable to serve chat. The backend decides
       # once at boot whether Postgres is available, and /ready answers 200 in
