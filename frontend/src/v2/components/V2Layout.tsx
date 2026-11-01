@@ -19,6 +19,9 @@ interface V2LayoutProps {
 }
 
 const INSPECTOR_PREF_KEY = 'v2.inspectorCollapsed';
+// A 1:1 room keeps its own panel state: the d215 dm frame draws the room without the pod panel,
+// which carries a team pod's furniture (members, board, files), so the room starts with it closed.
+const DIRECT_INSPECTOR_PREF_KEY = 'v2.inspectorCollapsed.direct';
 const LAST_POD_KEY = 'v2:lastPodId';
 const INVITE_BLOCKED_POD_TYPES = new Set(['agent-room', 'agent-dm']);
 const PHONE_MEDIA_QUERY = '(max-width: 760px)';
@@ -27,21 +30,22 @@ const isPhoneViewport = (): boolean => (
   typeof window !== 'undefined' && !!window.matchMedia?.(PHONE_MEDIA_QUERY).matches
 );
 
-const readInspectorCollapsed = (): boolean => {
+const readInspectorCollapsed = (key: string = INSPECTOR_PREF_KEY): boolean => {
   try {
-    const v = localStorage.getItem(INSPECTOR_PREF_KEY);
+    const v = localStorage.getItem(key);
     if (v !== null) return v === '1';
   } catch {
     // Unavailable storage uses the same default as a fresh session.
   }
+  if (key === DIRECT_INSPECTOR_PREF_KEY) return true;
   // The artboard opens the desktop inspector by default; narrower viewports
   // keep it closed until requested. Explicit preferences take precedence.
   return !(typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1200px)').matches);
 };
 
-const writeInspectorCollapsed = (next: boolean) => {
+const writeInspectorCollapsed = (key: string, next: boolean) => {
   try {
-    localStorage.setItem(INSPECTOR_PREF_KEY, next ? '1' : '0');
+    localStorage.setItem(key, next ? '1' : '0');
   } catch {
     // localStorage unavailable; revert to default on next render.
   }
@@ -90,8 +94,11 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // prevents its first rendered frame from flashing open; the media listener
   // below handles later viewport changes. On phones the sheet opens only
   // through the header or bottom control.
-  const [inspectorCollapsed, setInspectorCollapsed] = useState<boolean>(() => (
+  const [podInspectorCollapsed, setPodInspectorCollapsed] = useState<boolean>(() => (
     isPhoneViewport() ? true : readInspectorCollapsed()
+  ));
+  const [directInspectorCollapsed, setDirectInspectorCollapsed] = useState<boolean>(() => (
+    isPhoneViewport() ? true : readInspectorCollapsed(DIRECT_INSPECTOR_PREF_KEY)
   ));
   // Invite modal lives here (not in V2Inspector) so the chat header
   // invite icon and the inspector "+ Invite" button can both open it. The
@@ -108,7 +115,10 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
     const phoneViewport = window.matchMedia(PHONE_MEDIA_QUERY);
     const onChange = () => {
       setPhone(phoneViewport.matches);
-      if (phoneViewport.matches) setInspectorCollapsed(true);
+      if (phoneViewport.matches) {
+        setPodInspectorCollapsed(true);
+        setDirectInspectorCollapsed(true);
+      }
     };
     onChange();
     phoneViewport.addEventListener('change', onChange);
@@ -119,17 +129,7 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
   // decides whether it should open; an established/dismissed user flips it off
   // as soon as the probe resolves.
   const [firstRunVisible, setFirstRunVisible] = useState(true);
-  const toggleInspector = useCallback(() => {
-    setInspectorCollapsed((prev) => {
-      const next = !prev;
-      writeInspectorCollapsed(next);
-      return next;
-    });
-  }, []);
-  const openInspector = useCallback(() => {
-    setInspectorCollapsed(false);
-    writeInspectorCollapsed(false);
-  }, []);
+
   // File pills stay useful without an artifact sub-page in the compact
   // inspector: mint the same authorized ObjectStore URL and open it directly.
   const openFile = useCallback((fileName: string) => {
@@ -181,6 +181,19 @@ const V2Layout: React.FC<V2LayoutProps> = ({ selectionMode = 'auto' }) => {
 
   const selectedPodId = paramPodId || null;
   const detail = useV2PodDetail(selectedPodId);
+  // The sidebar's list already knows the type, so a room never paints the pod panel while its detail loads.
+  const selectedPodType = pods.find((pod) => pod._id === selectedPodId)?.type ?? detail.pod?.type;
+  const directPod = INVITE_BLOCKED_POD_TYPES.has(String(selectedPodType));
+  const inspectorCollapsed = directPod ? directInspectorCollapsed : podInspectorCollapsed;
+  const toggleInspector = useCallback(() => {
+    const next = !inspectorCollapsed;
+    (directPod ? setDirectInspectorCollapsed : setPodInspectorCollapsed)(next);
+    writeInspectorCollapsed(directPod ? DIRECT_INSPECTOR_PREF_KEY : INSPECTOR_PREF_KEY, next);
+  }, [directPod, inspectorCollapsed]);
+  const openInspector = useCallback(() => {
+    (directPod ? setDirectInspectorCollapsed : setPodInspectorCollapsed)(false);
+    writeInspectorCollapsed(directPod ? DIRECT_INSPECTOR_PREF_KEY : INSPECTOR_PREF_KEY, false);
+  }, [directPod]);
   // Agent-room creation happens outside this pod-list hook. After navigation,
   // refresh the membership list once if that newly selected room is not in it
   // yet, so it immediately appears in the sidebar instead of waiting for a

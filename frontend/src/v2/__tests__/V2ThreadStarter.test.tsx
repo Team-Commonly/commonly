@@ -159,6 +159,22 @@ describe('V2Thread teaching empty states', () => {
     expect([...compact.querySelectorAll('.v2-pod-header__chip')].map((chip) => chip.textContent)).toEqual(['DM']);
   });
 
+  test("a 1:1 room's head leads with the agent's face, before the name; a team pod's does not", () => {
+    const { unmount } = renderChat(makeAgentRoom());
+    const header = document.querySelector('.v2-pod-header');
+    expect(header).toHaveClass('v2-pod-header--direct');
+    const face = screen.getByTestId('agent-room-header-avatar');
+    // The name follows, so the face is not read out a second time.
+    expect(face).toHaveAttribute('aria-hidden', 'true');
+    expect(face.firstElementChild).toHaveClass('v2-avatar');
+    expect(face.nextElementSibling).toHaveClass('v2-thread__title');
+    unmount();
+
+    renderChat(makeDetail());
+    expect(screen.queryByTestId('agent-room-header-avatar')).toBeNull();
+    expect(document.querySelector('.v2-pod-header')).not.toHaveClass('v2-pod-header--direct');
+  });
+
   test('a 1:1 room whose runtime is unknown shows DM alone', () => {
     renderChat(makeAgentRoom());
     const meta = document.querySelector('.v2-pod-header__meta:not(.v2-pod-header__meta--compact)');

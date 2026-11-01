@@ -297,6 +297,44 @@ describe('V2Layout default pod selection', () => {
     expect(localStorage.getItem('v2.inspectorCollapsed')).toBe(preference);
   });
 
+  test('a 1:1 room starts with the pod panel closed and keeps its own choice, apart from team pods', () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: jest.fn((query: string) => ({
+        matches: query !== '(max-width: 760px)',
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+      })),
+    });
+    mockPodsState.pods = [workspacePod, { ...workspacePod, _id: 'room', name: 'Scout', type: 'agent-room' } as V2Pod];
+    const renderAt = (podId: string) => render(
+      <MemoryRouter initialEntries={[`/v2/pods/${podId}`]}>
+        <Routes>
+          <Route path="/v2/pods/:podId" element={<V2Layout selectionMode="param" />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const room = renderAt('room');
+    expect(screen.queryByTestId('workspace-inspector')).toBeNull();
+    // Opening it in the room is remembered for rooms only; the team pod keeps its own default.
+    fireEvent.click(screen.getByRole('button', { name: 'toggle inspector' }));
+    expect(screen.getByTestId('workspace-inspector')).toBeInTheDocument();
+    expect(localStorage.getItem('v2.inspectorCollapsed.direct')).toBe('0');
+    expect(localStorage.getItem('v2.inspectorCollapsed')).toBeNull();
+    room.unmount();
+
+    const team = renderAt('workspace');
+    expect(screen.getByTestId('workspace-inspector')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'toggle inspector' }));
+    expect(localStorage.getItem('v2.inspectorCollapsed')).toBe('1');
+    team.unmount();
+
+    renderAt('room');
+    expect(screen.getByTestId('workspace-inspector')).toBeInTheDocument();
+  });
+
   test('lands a new user in their oldest own workspace instead of auto-joined HQ', async () => {
     renderAutoLayout();
 

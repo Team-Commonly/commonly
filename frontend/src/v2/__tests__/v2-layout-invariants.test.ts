@@ -320,6 +320,15 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(memory).toContain('background: transparent');
   });
 
+  test("a 1:1 room's head: a 28px face, and the chips beside the name with the spacer after them (d215 dm)", () => {
+    const pane = read('../chat/chat-pane.css');
+    const face = ruleBody(pane, '.v2-thread .v2-pod-header__avatar .v2-avatar');
+    expect(face).toContain('width: 28px');
+    expect(face).toContain('height: 28px');
+    expect(ruleBody(pane, '.v2-pod-header--direct .v2-thread__title')).toContain('flex: 0 1 auto');
+    expect(ruleBody(pane, '.v2-pod-header--direct .v2-pod-header__meta')).toContain('margin-right: auto');
+  });
+
   test('agent Control reconnect remains an ink action with a focus edge', () => {
     const action = ruleBody(agentSettings, '.v2-root .v2-agent-settings a.v2-agent-settings__action');
     expect(action).toContain('background: var(--v2-ink)');
@@ -1832,7 +1841,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   test('the pod header is 64px: display 18/700 name, inline description, board chip and member faces (D215, TASK-734)', () => {
     // D215 brings the display face back to the pod title (walk-1 ruling (b)
     // had moved it to sans 15/600); the working count stays in the inspector.
-    expect(podChat).toContain('className="v2-thread__header v2-pod-header"');
+    expect(podChat).toContain("className={`v2-thread__header v2-pod-header${isDirectPod ? ' v2-pod-header--direct' : ''}`}");
     expect(podChat).toContain('podChat.header.boardOpen');
     expect(podChat).toContain('v2-thread__inspector-toggle');
     expect(podChat).toContain('v2-pod-header__stack');
