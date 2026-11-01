@@ -27,6 +27,8 @@ describe('v2 motion (D220)', () => {
     expect(block).toContain('transition-duration: 0.01ms !important;');
     expect(block).toContain('::view-transition-old(*),');
     expect(block).toContain('animation: none !important;');
+    // The fold body is a pseudo-element the wildcards miss; it needs its own rule.
+    expect(block).toContain('  ::details-content {\n    transition-duration: 0.01ms !important;\n  }');
   });
 
   test('details folds open by size over --v2-dur and close over --v2-dur-fast', () => {

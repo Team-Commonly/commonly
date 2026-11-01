@@ -5578,4 +5578,9 @@ body.modern-ui.v2-canvas {
   ::view-transition-group(*) {
     animation: none !important;
   }
+  /* A rule of its own: the wildcards above don't reach this pseudo-element, and a
+     browser without it would drop any selector list that named it. */
+  ::details-content {
+    transition-duration: 0.01ms !important;
+  }
 }
