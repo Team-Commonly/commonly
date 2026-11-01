@@ -113,9 +113,10 @@
    column of the transcript they sit in. Both are siblings of `.v2-msg` inside
    `.v2-chat__messages`, so the indent is the avatar track plus the gap of the
    rule that governs those rows HERE, which is the thread override
-   `.v2-thread .v2-msg { grid-template-columns: 28px minmax(0, 1fr); gap: 8px }`
-   — 28 + 8 = 36, NOT the base `.v2-msg` grid (38 + 12 = 50), which that
-   override replaces (0,3,0 beats 0,1,0). The first cut of this rule derived
+   `.v2-thread .v2-msg { grid-template-columns: 36px minmax(0, 1fr); gap: 12px }`
+   — 36 + 12 = 48 (30 + 10 = 40 on a phone, in the 760 block below), NOT the
+   base `.v2-msg` grid (38 + 12 = 50), which that override replaces (0,3,0
+   beats 0,1,0). The first cut of this rule derived
    from the base grid and was 14px out; ux-lead's #1860 gate measured it at
    390, 720 and 1440 — 50px put both rows 14px right of `.v2-msg__content`,
    36px put them on it (injection on their fixture, right edge and scrollWidth
@@ -199,9 +200,12 @@
 .v2-root button.v2-chat__start {
   min-height: 32px;
   padding: 6px 12px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius);
-  background: var(--v2-surface);
+  /* D215 keys: the Signal key material (secondary) and fill (primary) the
+     lifted surfaces already wear, at the frame's 10px radius. */
+  border: 1px solid var(--v2-key-edge);
+  border-radius: var(--v2-r-10);
+  background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b));
+  box-shadow: var(--v2-key-inset);
   color: var(--v2-text-primary);
   font-size: 13px;
   font-weight: 500;
@@ -224,15 +228,22 @@
 /* TASK-647 item 4: the run-hosted start is the screen's one filled action.
    Keyed on the action in the component, not on its position. */
 .v2-root button.v2-chat__start.v2-chat__start--primary {
-  background: var(--v2-ink);
-  border-color: var(--v2-ink);
-  color: var(--v2-on-ink);
+  background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b));
+  border-color: var(--v2-fill-edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(16, 24, 40, 0.18);
+  color: var(--v2-on-fill);
   font-weight: 600;
 }
 
 .v2-root button.v2-chat__start.v2-chat__start--primary:hover:not(:disabled) {
   background: var(--v2-ink-hover);
   border-color: var(--v2-ink-hover);
+}
+
+/* The key's own shadow outranks the shell's focus ring at equal specificity,
+   so the ring is restated here. */
+.v2-root button.v2-chat__start:focus-visible {
+  box-shadow: var(--v2-focus-ring);
 }
 
 /* A line that belongs to the start above it: the hosted start's beta limits,
@@ -259,6 +270,15 @@
   /* Scout's starts are touch targets too: 44 tall on a phone, as drawn. */
   .v2-root button.v2-chat__start {
     min-height: 44px;
+  }
+  /* The phone grid is 30 + 10 (`.v2-thread .v2-msg`, S3b), so the side-row
+     slot moves to 40 with it. At 48 Scout's starts sat 8px right of the text
+     they answer. */
+  .v2-chat__delivery-hint,
+  .v2-chat__no-agents,
+  .v2-chat__starts {
+    width: calc(100% - 40px);
+    margin-left: 40px;
   }
 }
 

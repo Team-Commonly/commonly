@@ -578,6 +578,15 @@
   padding: 6px 0 10px;
 }
 
+/* D215 .stream bottom-anchors: a conversation shorter than the pane sits on
+   the composer, not under the header, so a new pod's welcome is read where the
+   reader types. The edge takes the slack above it; once rows overflow the
+   auto margin resolves to 0 and scrolling is untouched. An empty pod keeps
+   its empty state where it is. */
+.v2-thread__edge:not([data-state="empty"]) {
+  margin-top: auto;
+}
+
 .v2-thread__edge-line {
   padding: 0;
   border: 0;

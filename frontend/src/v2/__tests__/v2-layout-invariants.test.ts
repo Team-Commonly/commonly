@@ -3213,6 +3213,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // S3b: D215 .app.m .stream is 8 12 4.
       expect(phone).toContain('padding: 8px 12px 4px');
       expect(phone).not.toMatch(/\.v2-chat__(?:delivery-hint|no-agents|starts\b)/);
+      // On a phone the thread grid is narrower, so the slot follows it in its
+      // own block, derived the same way. At 48 Scout's starts sat 8px right of
+      // the text they answer (frame-diff at 390, 2026-11-01).
+      const phoneGrid = ruleBody(v2, '.v2-thread .v2-msg', { within: mediaBlockContaining(v2, '.v2-thread .v2-msg {') });
+      const phoneLead = /grid-template-columns:\s*(\d+)px/.exec(phoneGrid);
+      const phoneGap = /(?:^|\s)gap:\s*(\d+)px/.exec(phoneGrid);
+      const phoneIndent = `${Number(phoneLead?.[1]) + Number(phoneGap?.[1])}px`;
+      expect(phoneIndent).toBe('40px');
+      const phoneSlotBlock = mediaBlockContaining(v2, '  .v2-chat__delivery-hint,\n  .v2-chat__no-agents,\n  .v2-chat__starts {');
+      const phoneSlot = phoneSlotBlock.slice(phoneSlotBlock.indexOf('.v2-chat__delivery-hint,'));
+      expect(phoneSlot.slice(0, phoneSlot.indexOf('}'))).toContain(`margin-left: ${phoneIndent};`);
+      expect(phoneSlot.slice(0, phoneSlot.indexOf('}'))).toContain(`width: calc(100% - ${phoneIndent});`);
     });
 
     test("Scout's starts sit in the shared side-row slot and are 44px touch targets on a phone", () => {
@@ -3225,7 +3237,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // equal specificity the later rule wins, and a base rule placed after
       // the media block would silently render 32 on a phone.
       expect(ruleBody(v2, '.v2-root button.v2-chat__start')).toContain('min-height: 32px');
-      expect(ruleBody(v2, '.v2-root button.v2-chat__start')).toContain('border-radius: var(--v2-radius)');
+      // D215 keys: the Signal key and fill material, at the frame's 10px radius.
+      expect(ruleBody(v2, '.v2-root button.v2-chat__start')).toContain('border-radius: var(--v2-r-10)');
+      expect(ruleBody(v2, '.v2-root button.v2-chat__start')).toContain('linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b))');
+      expect(ruleBody(v2, '.v2-root button.v2-chat__start.v2-chat__start--primary')).toContain('linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
+      // The key shadow outranks the shell's focus ring, so the ring is restated.
+      expect(ruleBody(v2, '.v2-root button.v2-chat__start:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
       const phone = mediaBlockContaining(v2, 'button.v2-chat__start');
       expect(phone).toContain('min-height: 44px');
       const base = v2.indexOf('\n.v2-root button.v2-chat__start {');
@@ -5931,5 +5948,14 @@ describe('chat sheets lifted out of v2.css (S3)', () => {
     expect(list).toContain('display: grid');
     expect(list).toContain('max-height: 132px');
     expect(list).toContain('overflow-y: auto');
+  });
+
+  test('a conversation shorter than the pane sits on the composer, and an empty pod does not move', () => {
+    const pane = chatSheets[1];
+    // The edge is the scroller's first row, so its auto margin takes the slack
+    // above every message. A justify-content: flex-end on the scroller would
+    // also bottom-anchor, but it makes overflowed rows above unreachable.
+    expect(ruleBody(pane, '.v2-thread__edge:not([data-state="empty"])')).toContain('margin-top: auto');
+    expect(ruleBody(pane, '.v2-chat__messages')).not.toContain('justify-content: flex-end');
   });
 });
