@@ -238,5 +238,21 @@ describe('backfill-task-created-by (service)', () => {
 
       expect(fs.readFileSync(outPath, 'utf8')).toBe('reviewed by SRE\n');
     });
+
+    it('reads --out from process.argv when main is called with no arguments', async () => {
+      const wren = String(new mongoose.Types.ObjectId());
+      const _id = await insert(legacyRow('TASK-053', [update('Created by wren', wren)]));
+      const outPath = path.join(dir, 'argv.txt');
+      const argv = process.argv;
+      process.argv = [argv[0], 'backfill-task-created-by', '--out', outPath];
+
+      try {
+        await main();
+      } finally {
+        process.argv = argv;
+      }
+
+      expect(fs.readFileSync(outPath, 'utf8').trim().split('\n')).toEqual([String(_id)]);
+    });
   });
 });
