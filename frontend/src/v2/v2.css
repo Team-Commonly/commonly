@@ -12814,8 +12814,28 @@ body.modern-ui.v2-canvas {
     box-sizing: border-box;
     min-height: 52px;
     padding: 10px 0;
-    gap: 8px;
+    /* 12px, not the artboard's 8: the 44px tap areas below reach 6px past
+       each 32px key, and 12px keeps neighbours from overlapping. */
+    gap: 12px;
     align-items: flex-start;
+  }
+  /* The phone keys draw at 32px and take touches at 44px (D223 standing
+     rule, 11-01): a pseudo-element extends the hit area, the box stays.
+     z-index keeps it above later positioned siblings such as the transcript. */
+  .v2-root button.v2-thread__back,
+  .v2-root button.v2-pod-header__invite,
+  .v2-root button.v2-thread__inspector-toggle,
+  .v2-root button.v2-composer__plus,
+  .v2-root button.v2-composer__send { position: relative; z-index: 1; }
+  .v2-root button.v2-thread__back::after,
+  .v2-root button.v2-pod-header__invite::after,
+  .v2-root button.v2-thread__inspector-toggle::after,
+  .v2-root button.v2-composer__plus::after,
+  .v2-root button.v2-composer__send::after {
+    content: '';
+    position: absolute;
+    /* From the padding box, inside each key's 1px border: 30 + 2 x 7 = 44. */
+    inset: -7px;
   }
   /* The keys are 32px; an open description grows the title block downward
      while the name stays centred on the keys. */

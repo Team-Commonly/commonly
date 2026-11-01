@@ -5338,5 +5338,14 @@ describe('pod board column scroll (TASK-698)', () => {
     const block = mediaBlockContaining(read('../v2.css'), '.v2-pod-header__invite span');
     expect(block).toMatch(/\.v2-pod-header__invite span\s*\{[^}]*clip-path:\s*inset\(50%\)/);
     expect(block).toMatch(/\.v2-pod-header__invite\s*\{[^}]*width:\s*32px/);
+    // 32px keys take touches at 44px. The inset runs from the padding box,
+    // inside a 1px border, so it is -7px: 30 + 2 x 7 = 44 (-6px measured 42 in a browser).
+    const phoneHead = mediaBlockContaining(read('../v2.css'), '.v2-root button.v2-thread__back::after');
+    for (const key of ['v2-thread__back', 'v2-pod-header__invite', 'v2-thread__inspector-toggle', 'v2-composer__plus', 'v2-composer__send']) {
+      expect(phoneHead).toContain(`.v2-root button.${key}::after`);
+    }
+    expect(phoneHead).toMatch(/::after \{\s*content: '';\s*position: absolute;[^}]*inset: -7px;\s*\}/);
+    // z-index keeps the hit area above later positioned siblings.
+    expect(phoneHead).toContain('.v2-root button.v2-composer__send { position: relative; z-index: 1; }');
   });
 });
