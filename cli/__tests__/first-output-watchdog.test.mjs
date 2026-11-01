@@ -338,7 +338,10 @@ describe('a turn frozen with SIGSTOP', () => {
         _spawnImpl: (_cmd, _args, options) => {
           const grand = `process.on('SIGTERM', () => { require('fs').writeFileSync(${JSON.stringify(mark)}, 'term'); process.exit(143); });`
             + " process.stderr.write('ready ' + process.pid + '\\n'); setInterval(() => {}, 1000);";
-          const root = "process.on('SIGTERM', () => process.exit(143));"
+          // The root outlives the descendant's handler (bounded), so the survivor
+          // sweep on its exit cannot race that handler. Root-only SIGCONT leaves
+          // the descendant stopped, the bound runs out, and the mark never lands.
+          const root = `process.on('SIGTERM', () => { const t0 = Date.now(); const wait = () => (require('fs').existsSync(${JSON.stringify(mark)}) || Date.now() - t0 > 4000 ? process.exit(143) : setTimeout(wait, 20)); wait(); });`
             + ` require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grand)}], { stdio: ['ignore', 'ignore', 'inherit'] });`
             + ' setInterval(() => {}, 1000);';
           child = realSpawn(process.execPath, ['-e', root], { ...options, cwd: sessionsTmpDir });
@@ -358,6 +361,13 @@ describe('a turn frozen with SIGSTOP', () => {
       expect(outcome?.code).toBe('spawn_stalled');
       expect(grandchild).toBeGreaterThan(0);
       expect(fs.readFileSync(mark, 'utf8')).toBe('term');
+      // And it is gone, before the cleanup below could hide a survivor.
+      const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+      const deadline = Date.now() + 2_000;
+      while (alive(grandchild) && Date.now() < deadline) {
+        await new Promise((resolve) => { setTimeout(resolve, 20); });
+      }
+      expect(alive(grandchild)).toBe(false);
     } finally {
       for (const pid of [grandchild, child?.pid]) {
         if (pid) { try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } }
