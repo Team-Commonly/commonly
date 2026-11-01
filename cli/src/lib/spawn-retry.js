@@ -122,13 +122,16 @@ const errorText = (error) => [
   .join('\n');
 
 export const classifySpawnFailure = (error) => {
+  const text = errorText(error);
   // A public seat's withheld turn (TASK-256) quotes the tool's own error, which
   // is vendor text: the code decides, so the event stays unacked for retry and
-  // is never acked as refused or parked behind a quota cooldown by that text.
+  // is never acked as refused or parked behind a quota or configuration
+  // cooldown by that text. A throttle keeps its backoff, which also retries.
   if (error?.code === PUBLIC_TOOL_FAILED_CODE || error?.code === PUBLIC_MCP_NOT_READY_CODE) {
-    return SPAWN_FAILURE_CLASS.RUNTIME;
+    return error?.status === 429 || RATE_LIMIT_RE.test(text)
+      ? SPAWN_FAILURE_CLASS.RATE_LIMIT
+      : SPAWN_FAILURE_CLASS.RUNTIME;
   }
-  const text = errorText(error);
   // First: the refusal text carries none of the words below today, but a
   // refusal must never be read as a transient condition and retried.
   if (CONTENT_REFUSED_RE.test(text)) return SPAWN_FAILURE_CLASS.CONTENT_REFUSED;
