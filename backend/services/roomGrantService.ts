@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { recordGrantExpired, recordGrantsRevoked } from './brokerRecordService';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import Pod from '../models/Pod';
@@ -235,7 +236,10 @@ const assertGrantLineageActive = async (
   const lineage = await loadGrantLineage(grant);
   for (const item of lineage) {
     if (grantIsRevoked(item)) throw new RoomGrantError('grant_revoked', 'grant lineage is revoked', 403);
-    if (grantIsExpired(item, now)) throw new RoomGrantError('grant_expired', 'grant lineage is expired', 403);
+    if (grantIsExpired(item, now)) {
+      recordGrantExpired(item);
+      throw new RoomGrantError('grant_expired', 'grant lineage is expired', 403);
+    }
   }
   return lineage;
 };
@@ -611,7 +615,9 @@ export const revokeGrant = async (grantId: string, revokedBy: string): Promise<n
   const actor = asId(revokedBy, 'revokedBy');
   const root = await RoomGrant.findOne({ grantId: id }).select('grantId').lean();
   if (!root) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
-  return RoomGrant.revokeCascade(id, actor);
+  const moved = await RoomGrant.revokeCascadeMoved(id, actor);
+  recordGrantsRevoked(id, moved, actor);
+  return moved.length;
 };
 
 /**
@@ -647,7 +653,10 @@ export const assertGrantUsable = async (
     : null);
   if (!grant) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
   if (grantIsRevoked(grant)) throw new RoomGrantError('grant_revoked', 'grant is revoked', 403);
-  if (grantIsExpired(grant)) throw new RoomGrantError('grant_expired', 'grant is expired', 403);
+  if (grantIsExpired(grant)) {
+    recordGrantExpired(grant);
+    throw new RoomGrantError('grant_expired', 'grant is expired', 403);
+  }
   const lineage = await assertGrantLineageActive(grant);
   for (const item of lineage) await assertBoundTaskOpen(item);
 

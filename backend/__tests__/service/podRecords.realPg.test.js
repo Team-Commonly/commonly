@@ -203,6 +203,29 @@ real('task record route on real PostgreSQL and MongoDB', () => {
     expect(readChain).not.toHaveBeenCalled();
   });
 
+  it('an agent-DM observer can view the DM but reads neither of its records', async () => {
+    // §3.7: a person who shares a pod with either DM member may view the DM.
+    const peer = await User.create({
+      username: `record-peer-${Date.now()}`,
+      email: `record-peer-${Date.now()}@agents.commonly.local`,
+      password: 'Password123!',
+      isBot: true,
+      botType: 'agent',
+      botMetadata: { agentName: 'record-peer', instanceId: 'default', ownerUserId: String(owner._id) },
+    });
+    const dm = await Pod.create({ name: 'agent DM', type: 'agent-dm', createdBy: agent._id, members: [agent._id, peer._id] });
+    await Pod.create({ name: 'Shared pod', type: 'team', createdBy: owner._id, members: [outsider._id, agent._id] });
+    await Task.create({ podId: dm._id, taskNum: 1, taskId: 'TASK-1', title: 'dm task', status: 'pending' });
+    process.env.RECORD_V1_PODS = [...podIds(), String(dm._id)].join(',');
+    const readChain = jest.spyOn(repository, 'readChain');
+    const observer = generateTestToken(outsider._id);
+
+    expect(await read(observer, dm._id)).toMatchObject({ status: 403, body: { error: 'record_requires_membership' } });
+    expect(await request(app).get(`/api/pods/${dm._id}/record`).set(as(observer)))
+      .toMatchObject({ status: 403, body: { error: 'record_requires_membership' } });
+    expect(readChain).not.toHaveBeenCalled();
+  });
+
   it('answers a store outage with 503, never an empty record', async () => {
     jest.spyOn(repository, 'readChain').mockRejectedValueOnce(new repository.RecordStoreUnavailableError());
     expect(await read(generateTestToken(owner._id))).toMatchObject({ status: 503, body: { error: 'record_store_unavailable' } });
