@@ -58,8 +58,10 @@ const TASK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 //
 // LIVE means one state and one only. `deriveAgentState` returns five, and only
 // `listening` is backed by evidence: for BYO/wrapper installs the seat polls
-// every ~5s, so a fresh `lastUsedAt` is a measurement. The other four are not
-// the opposite of live, they are differently-shaped:
+// every ~5s, so a fresh listener check-in (`lastListenedAt`) is a
+// measurement. A holder that only makes MCP calls never checks in, so it reads
+// never-connected and gets no deferral: it cannot receive the lease warning.
+// The other four are not the opposite of live, they are differently-shaped:
 //   - 'reachable' is asserted BY CONSTRUCTION for native + push-webhook
 //     installs. Deferring on it would defer forever on a class whose liveness
 //     was never checked.

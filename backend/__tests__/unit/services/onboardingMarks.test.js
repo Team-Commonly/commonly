@@ -10,7 +10,8 @@ jest.mock('../../../models/User', () => ({
 
 const {
   markPodOpened, markStartPicked, markByoOpened, markByoCommandCopied,
-  markByoConnectionAttempt, markWelcomeHostedStart, markSurface, resetOnboardingMarksForTest,
+  markByoConnectionAttempt, markWelcomeHostedStart, markSurface, markByoDaemonRegistered,
+  resetOnboardingMarksForTest,
   markByoCopyType, markByoSetup,
 } = require('../../../services/onboardingMarks');
 
@@ -305,6 +306,37 @@ describe('markByoCopyType and markByoSetup (TASK-714)', () => {
     markByoSetup('u1', { setupOs: 'plan9', listenerAvailable: true });
     markByoSetup('u1', { setupOs: 'linux', listenerAvailable: 'yes' });
     markByoSetup('u1', undefined);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+});
+
+describe('markByoDaemonRegistered (TASK-661)', () => {
+  test('sets byoDaemonRegisteredAt write-once in the filter, never for bots', () => {
+    markByoDaemonRegistered('u1');
+
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: 'u1', isBot: { $ne: true }, 'onboarding.byoDaemonRegisteredAt': { $exists: false } },
+      { $set: { 'onboarding.byoDaemonRegisteredAt': expect.any(Date) } },
+    );
+  });
+
+  test('one write per person per process, however many machines they register', () => {
+    markByoDaemonRegistered('u1');
+    markByoDaemonRegistered('u1');
+    markByoDaemonRegistered('u2');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+
+  test('a failed write is retried on the next registration and never throws', async () => {
+    mockUpdateOne.mockRejectedValueOnce(new Error('db down'));
+    markByoDaemonRegistered('u1');
+    await flush();
+    markByoDaemonRegistered('u1');
+    expect(mockUpdateOne).toHaveBeenCalledTimes(2);
+  });
+
+  test('no person, no write', () => {
+    markByoDaemonRegistered(undefined);
     expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 });

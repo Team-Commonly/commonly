@@ -300,6 +300,31 @@ export function markByoConnectionAttempt(
   }
 }
 
+/**
+ * The first `commonly daemon register` for a person (TASK-661). Written from
+ * the machine route, after registration succeeds, so a failed register writes
+ * nothing. The byo_telemetry row is keyed per person by the caller, so the
+ * row and this mark each land once however many machines are registered.
+ */
+const daemonRegisteredMarked = new Set<string>();
+
+export function markByoDaemonRegistered(userId: unknown): void {
+  const id = String(userId || '');
+  if (!id || daemonRegisteredMarked.has(id)) return;
+  daemonRegisteredMarked.add(id);
+  try {
+    User.updateOne(
+      { _id: id, isBot: { $ne: true }, 'onboarding.byoDaemonRegisteredAt': { $exists: false } },
+      { $set: { 'onboarding.byoDaemonRegisteredAt': new Date() } },
+    ).catch(() => {
+      daemonRegisteredMarked.delete(id);
+    });
+  } catch {
+    // Telemetry fails open: a registration must never fail on its mark.
+    daemonRegisteredMarked.delete(id);
+  }
+}
+
 /** Record the first time a person met one of the onboarding surfaces. */
 export function markSurface(userId: unknown, mark: SurfaceMark): void {
   const id = String(userId || '');
@@ -332,5 +357,6 @@ export function resetOnboardingMarksForTest(): void {
   byoCopyTypeMarked.clear();
   byoSetupMarked.clear();
   byoConnectionAttemptMarked.clear();
+  daemonRegisteredMarked.clear();
   surfaceMarked.clear();
 }

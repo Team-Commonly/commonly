@@ -18,6 +18,7 @@ import ApprovalAction, {
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { assertAgentRuntimeMayJoinPod } from './outsiderGrantAgentJoinPolicy';
+import { recordApprovalOutcome } from './brokerRecordService';
 import { nextFreeByoName } from './byoNameAllocator';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -904,6 +905,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     expired.toolCallCode = 'approval_expired';
     expired.toolCallTrailId = await recordToolCallDecision(expired, 'refused', 'approval_expired', parkedCall);
     await expired.save();
+    recordApprovalOutcome(expired, parkedCall, { kind: 'expired' });
     await updateCardEverywhere(expired);
     await enqueueToolCallResolvedEvent(expired);
     return { status: 409, body: { error: 'expired', approval: buildCardPayload(expired) } };
@@ -998,6 +1000,12 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
     transitioned.toolCallTrailId = await recordToolCallDecision(transitioned, 'refused', 'approval_declined', parkedCall);
     await transitioned.save();
   }
+  // One terminal decision per parked call, after its ending has been saved
+  // (ADR-033 B3). The broker's own trail row for an approved run carries the
+  // approval id, so recordBrokerCall leaves it to this line.
+  if (parkedCall) {
+    recordApprovalOutcome(transitioned, parkedCall, { kind: decision });
+  }
 
   await updateCardEverywhere(transitioned);
   if (decision === 'approved' && !parkedCall) {
@@ -1069,6 +1077,7 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
       result.toolCallCode = 'approval_expired';
       result.toolCallTrailId = await recordToolCallDecision(result, 'refused', 'approval_expired', row.toolCall);
       await result.save();
+      recordApprovalOutcome(result, row.toolCall, { kind: 'expired' });
       await updateCardEverywhere(result);
       await enqueueToolCallResolvedEvent(result);
     }

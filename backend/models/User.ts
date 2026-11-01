@@ -233,6 +233,8 @@ export interface IUser extends Document {
     byoListenerEligible?: boolean;
     /** First authenticated BYO runtime request, never overwritten. */
     byoFirstConnectionAttemptAt?: Date;
+    /** First successful `commonly daemon register`, never overwritten (TASK-661). */
+    byoDaemonRegisteredAt?: Date;
     /** First "invite a teammate" card mounted, and first dismissed. */
     inviteCardShownAt?: Date;
     inviteCardDismissedAt?: Date;
@@ -496,6 +498,7 @@ const userSchema = new Schema<IUser>({
     byoSetupOs: { type: String, enum: ['mac', 'linux', 'windows', 'other'] },
     byoListenerEligible: { type: Boolean },
     byoFirstConnectionAttemptAt: { type: Date },
+    byoDaemonRegisteredAt: { type: Date },
     inviteCardShownAt: { type: Date },
     inviteCardDismissedAt: { type: Date },
     byoOfferShownAt: { type: Date },
