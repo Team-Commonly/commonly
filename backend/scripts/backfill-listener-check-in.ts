@@ -171,27 +171,50 @@ const argValue = (flag: string): string | undefined => {
   return at >= 0 ? process.argv[at + 1] : undefined;
 };
 
-export async function main(): Promise<void> {
-  const apply = process.argv.includes('--apply');
-  const idsPath = argValue('--ids');
-  const outPath = argValue('--out');
-  if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
+export interface RunOptions {
+  apply: boolean;
+  idsPath?: string;
+  outPath?: string;
+}
+
+/**
+ * Everything `main` does once a connection exists: the `--out` write of a dry
+ * run's frozen set, the `--ids` read for an apply, the report. A failed stamp
+ * makes the run fail, after the whole set has been tried, so a scripted caller
+ * cannot read a partial apply as success; the per-token errors are already
+ * printed for the retry.
+ */
+export async function runBackfill(deps: ListenerBackfillDeps, options: RunOptions): Promise<ListenerBackfillReport> {
+  const { apply, idsPath, outPath } = options;
   if (apply && !idsPath) throw new Error('--apply needs --ids <file from the dry run>');
   const frozen = idsPath
     ? (JSON.parse(fs.readFileSync(idsPath, 'utf8')) as { candidates: TokenCandidate[] }).candidates
     : undefined;
+  if (!apply && outPath) {
+    const { candidates } = await deps.listCandidates();
+    fs.writeFileSync(outPath, JSON.stringify({ createdAt: new Date().toISOString(), candidates }, null, 2));
+    console.log(`[backfill-listener-check-in] wrote ${candidates.length} candidates to ${outPath}`);
+  }
+  const report = await backfillListenerCheckIn(deps, { apply, frozen });
+  console.log(`[backfill-listener-check-in] ${JSON.stringify(report)}`);
+  if (!apply) console.log('DRY RUN — nothing written. Re-run with --apply --ids <file>.');
+  if (report.failed > 0) {
+    throw new Error(`${report.failed} token(s) failed to stamp; re-run the same --ids file to retry them`);
+  }
+  return report;
+}
 
+export async function main(): Promise<void> {
+  if (!process.env.MONGO_URI) throw new Error('MONGO_URI is required');
+  const options: RunOptions = {
+    apply: process.argv.includes('--apply'),
+    idsPath: argValue('--ids'),
+    outPath: argValue('--out'),
+  };
+  if (options.apply && !options.idsPath) throw new Error('--apply needs --ids <file from the dry run>');
   await mongoose.connect(process.env.MONGO_URI);
   try {
-    const deps = productionDeps();
-    if (!apply && outPath) {
-      const { candidates } = await deps.listCandidates();
-      fs.writeFileSync(outPath, JSON.stringify({ createdAt: new Date().toISOString(), candidates }, null, 2));
-      console.log(`[backfill-listener-check-in] wrote ${candidates.length} candidates to ${outPath}`);
-    }
-    const report = await backfillListenerCheckIn(deps, { apply, frozen });
-    console.log(`[backfill-listener-check-in] ${JSON.stringify(report)}`);
-    if (!apply) console.log('DRY RUN — nothing written. Re-run with --apply --ids <file>.');
+    await runBackfill(productionDeps(), options);
   } finally {
     await mongoose.disconnect();
   }

@@ -2,6 +2,9 @@
 // sibling suite stubs the deps, so it cannot see a field the schema strips or a
 // filter that does not match.
 /* eslint-disable global-require */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
@@ -10,6 +13,7 @@ let User;
 let AgentInstallation;
 let backfillListenerCheckIn;
 let productionDeps;
+let runBackfill;
 
 const USED = new Date('2026-10-01T00:00:00Z');
 const LISTENED = new Date('2026-10-30T00:00:00Z');
@@ -19,7 +23,7 @@ beforeAll(async () => {
   await mongoose.connect(mongod.getUri());
   User = require('../../../models/User');
   ({ AgentInstallation } = require('../../../models/AgentRegistry'));
-  ({ backfillListenerCheckIn, productionDeps } = require('../../../scripts/backfill-listener-check-in'));
+  ({ backfillListenerCheckIn, productionDeps, runBackfill } = require('../../../scripts/backfill-listener-check-in'));
 });
 afterEach(async () => {
   await User.deleteMany({});
@@ -119,5 +123,60 @@ describe('backfill-listener-check-in against the real schemas', () => {
     expect(listing.candidates).toHaveLength(0);
     expect(listing.unaddressable).toBe(3);
     expect(JSON.stringify(listing)).not.toContain('secret');
+  });
+
+  describe('runBackfill: the dry-run file handoff', () => {
+    let dir;
+    beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'listener-backfill-')); });
+    afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+    const quiet = () => jest.spyOn(console, 'log').mockImplementation(() => {});
+
+    it('freezes the set with --out and applies only that set with --ids', async () => {
+      const log = quiet();
+      const frozenUser = await makeAgentUser([{ tokenHash: 'secret-a', lastUsedAt: USED }]);
+      const outPath = path.join(dir, 'ids.json');
+      const dry = await runBackfill(productionDeps(), { apply: false, outPath });
+      expect(dry).toMatchObject({ dryRun: true, candidates: 1, applied: 0 });
+      const file = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+      expect(file.candidates).toHaveLength(1);
+      expect(fs.readFileSync(outPath, 'utf8')).not.toContain('secret');
+      expect((await User.findById(frozenUser._id).lean()).agentRuntimeTokens[0].lastListenedAt).toBeUndefined();
+
+      // A token that becomes a candidate after the freeze is not part of it.
+      const later = await makeAgentUser([{ tokenHash: 'secret-b', lastUsedAt: USED }]);
+      const applied = await runBackfill(productionDeps(), { apply: true, idsPath: outPath });
+      expect(applied).toMatchObject({ dryRun: false, frozen: 1, applied: 1 });
+      expect((await User.findById(frozenUser._id).lean()).agentRuntimeTokens[0].lastListenedAt).toEqual(USED);
+      expect((await User.findById(later._id).lean()).agentRuntimeTokens[0].lastListenedAt).toBeUndefined();
+      log.mockRestore();
+    });
+
+    it('refuses --apply without --ids and writes nothing', async () => {
+      const log = quiet();
+      const user = await makeAgentUser([{ tokenHash: 'secret-a', lastUsedAt: USED }]);
+      await expect(runBackfill(productionDeps(), { apply: true })).rejects.toThrow(/--ids/);
+      expect((await User.findById(user._id).lean()).agentRuntimeTokens[0].lastListenedAt).toBeUndefined();
+      log.mockRestore();
+    });
+
+    it('fails the run after trying the whole set when a stamp fails', async () => {
+      const log = quiet();
+      const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+      await makeAgentUser([{ tokenHash: 'secret-a', lastUsedAt: USED }]);
+      const idsPath = path.join(dir, 'ids.json');
+      fs.writeFileSync(idsPath, JSON.stringify({
+        candidates: [
+          {
+            store: 'user', ownerId: 'not-an-id', tokenId: 'nope', lastUsedAt: USED.toISOString(), 
+          },
+          ...(await productionDeps().listCandidates()).candidates,
+        ],
+      }));
+      await expect(runBackfill(productionDeps(), { apply: true, idsPath })).rejects.toThrow(/1 token\(s\) failed/);
+      // The good token after the bad one was still stamped.
+      expect((await productionDeps().listCandidates()).candidates).toHaveLength(0);
+      log.mockRestore();
+      err.mockRestore();
+    });
   });
 });

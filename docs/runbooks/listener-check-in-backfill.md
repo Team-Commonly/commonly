@@ -46,5 +46,10 @@ live listener's next poll writes the real value.
   subdocument has no ObjectId `_id`; the script cannot stamp them, and they would
   flip from gone-dark to never-connected. Resolve them (or accept them) first.
 - A write that comes back unacknowledged counts as `failed`, never as skipped.
-- Installation-only tokens (no copy on the agent's User row) keep their backfilled
-  value forever until the switch PR adds a live stamp for them.
+- **Deploy gate: installation tokens need a live stamp first.** Today only the
+  User-row copy of a token is stamped on a listener check-in
+  (`agentListenerCheckIn`, #3114). A token that exists only in
+  `AgentInstallation.runtimeTokens`, backfilled or first used after the freeze, never
+  gets a live `lastListenedAt`, so a derivation that reads the field would read it as
+  gone-dark or never-connected. The derivation PR must not ship before that stamp
+  exists.
