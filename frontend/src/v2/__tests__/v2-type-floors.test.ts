@@ -26,8 +26,9 @@ import { readV2Css } from '../__testkit__/v2Css';
  * longer violates). Target is an empty list.
  */
 // v2.css plus the surface files lifted out of it (D223): the chat sheets V2App
-// loads, and the per-surface sheets their components import (R04 BYO, S4 board).
-const CSS = [readV2Css(), ...['../components/V2AgentBYO.css', '../components/V2PodBoard.css']
+// loads, and the per-surface sheets their components import (R04 BYO, S4 board,
+// R05 Connect).
+const CSS = [readV2Css(), ...['../components/V2AgentBYO.css', '../components/V2PodBoard.css', '../components/V2ConnectPage.css']
   .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))]
   .join('\n');
 
@@ -151,9 +152,10 @@ const ALLOWLIST: string[] = [
   '.v2-runtime-row__byo', // 9.0px — no-mono-family
   '.v2-runtime-row__label', // 10.5px — no-mono-family
   // unassigned
+  // R05 took `.v2-connect__number` (11.0px, no family) to mono 500 11.5px
+  // with the Connect lift, so its entry left this list.
   '.v2-approval__badge', // 10.5px — mono-below-floor
   '.v2-approval__time', // 11.5px — no-mono-family
-  '.v2-connect__number', // 11.0px — no-mono-family
   '.v2-filter-count', // 11.0px — no-mono-family
   '.v2-invite-card__meta', // 11.0px — no-mono-family
   '.v2-invite-link', // 11.0px — no-mono-family

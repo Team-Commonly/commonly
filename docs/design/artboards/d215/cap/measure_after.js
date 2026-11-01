@@ -18,7 +18,7 @@ const fs = require('fs');
 const HERE = __dirname;
 const TARGETS = path.join(HERE, '..', 'targets.json');
 
-const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff', 'firstrun-welcome', 'firstrun-waiting', 'firstrun-connected', 'firstrun-error'];
+const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff', 'firstrun-welcome', 'firstrun-waiting', 'firstrun-connected', 'firstrun-error', 'connect'];
 // byo-handoff is drawn but can't be captured on prod: reaching it issues a real key. The first-run
 // dialog is a latch-gated overlay, and the Scout welcome only exists in a brand-new pod, so neither is measured on prod.
 const PROD_SURFACES = SURFACES.filter(s => s !== 'byo-handoff' && !s.startsWith('firstrun-'));
@@ -165,6 +165,7 @@ async function prod(only) {
     ['board', () => `/v2/pods/${pod}/board`],
     ['connectors', () => '/v2/connectors'],
     ['byo', () => '/v2/agents/byo'],
+    ['connect', () => '/v2/connect'],
     ['chat', () => `/v2/pods/${pod}`],
     ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];
