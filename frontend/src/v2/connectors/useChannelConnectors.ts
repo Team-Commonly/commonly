@@ -266,11 +266,13 @@ export const useChannelConnectors = () => {
         // list — built from that same endpoint — offers exactly what those verbs
         // accept (TASK-171).
         const data = await api.get<V2Pod[]>('/api/pods');
-        const eligible = Array.isArray(data) ? data : [];
+        const confirmed = Array.isArray(data);
+        const eligible = confirmed ? data : [];
         if (!cancelled) {
-          setPods(eligible);
-          // A non-array body is not a confirmed pod list either.
-          setPodListFailed(!Array.isArray(data));
+          // A non-array body is not a confirmed pod list either: leave `pods`
+          // unread so the zero-pod CTA never shows for it.
+          setPods(confirmed ? eligible : null);
+          setPodListFailed(!confirmed);
           setNewPodId((current) => current || defaultPodForChannel(eligible));
         }
       } catch {
