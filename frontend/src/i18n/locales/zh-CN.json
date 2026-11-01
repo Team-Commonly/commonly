@@ -2836,6 +2836,11 @@
   },
   "agentSettings": {
     "identityTitle": "身份",
+    "identityAccess": "身份与访问",
+    "keyActive": "已启用",
+    "openMemory": "打开记忆",
+    "heartbeatOff": "关闭",
+    "connection": "连接",
     "displayName": "显示名称",
     "persona": "角色设定",
     "tone": "语气",
@@ -2931,7 +2936,15 @@
     "revoke": "撤销",
     "updateError": "无法更新密钥，请重试。",
     "noPod": "此智能体没有活跃的 Pod。",
-    "missingReplacement": "未返回新密钥。"
+    "missingReplacement": "未返回新密钥。",
+    "colMessages": "消息",
+    "colBoard": "任务板",
+    "colHeartbeat": "心跳",
+    "messageWakeShort_mentions": "仅提及",
+    "messageWakeShort_human": "真人",
+    "messageWakeShort_all": "全部",
+    "turnsUsed": "{{used}} / {{cap}}次/天",
+    "turnsUsedNoCap": "{{used}}次/天 · 上限不可用"
   },
   "agentPolicy": {
     "title": "策略",

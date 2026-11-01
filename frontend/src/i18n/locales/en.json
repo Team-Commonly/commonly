@@ -2833,6 +2833,11 @@
   },
   "agentSettings": {
     "identityTitle": "Identity",
+    "identityAccess": "Identity & access",
+    "keyActive": "active",
+    "openMemory": "Open memory",
+    "heartbeatOff": "Off",
+    "connection": "Connection",
     "displayName": "Display name",
     "persona": "Persona",
     "tone": "Tone",
@@ -2928,7 +2933,15 @@
     "revoke": "Revoke",
     "updateError": "Could not update the key. Try again.",
     "noPod": "This agent has no active pod.",
-    "missingReplacement": "The replacement key was not returned."
+    "missingReplacement": "The replacement key was not returned.",
+    "colMessages": "messages",
+    "colBoard": "board",
+    "colHeartbeat": "heartbeat",
+    "messageWakeShort_mentions": "Mentions",
+    "messageWakeShort_human": "People",
+    "messageWakeShort_all": "All",
+    "turnsUsed": "{{used}} / {{cap}} turns a day",
+    "turnsUsedNoCap": "{{used}} turns a day · cap unavailable"
   },
   "agentPolicy": {
     "title": "Policy",

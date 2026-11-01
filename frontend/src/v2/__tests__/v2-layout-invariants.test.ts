@@ -221,7 +221,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   });
 
   test('agent Settings buttons retain their chrome over the v2 button reset', () => {
-    const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root)');
+    const button = ruleBody(agentSettings, '.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button)');
     expect(button).toContain('border: 1px solid var(--v2-border)');
     expect(button).toContain('background: var(--v2-surface)');
     expect(ruleBody(agentSettings, '.v2-root .v2-agent-settings .v2-agent-settings__section-head button')).toContain('background: var(--v2-ink)');
@@ -5112,29 +5112,45 @@ describe('GitHub gig card fits the chat column', () => {
   });
 });
 
-describe('agent Wake and Pods controls', () => {
-  const css = read('../agents/v2-agent-wake-pods.css');
-  test('action buttons keep a visible surface over the v2 button reset', () => {
-    const save = ruleBody(css, '.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__pod button');
-    const remove = ruleBody(css, '.v2-agent-settings .v2-agent-wake-pods .v2-agent-wake-pods__remove');
-    expect(save).toContain('background: var(--v2-surface)');
-    expect(remove).toContain('background: var(--v2-surface)');
-    expect(remove).toContain('border: 1px solid var(--v2-border)');
+describe('agent settings surface (D223 lift)', () => {
+  const css = read('../agents/v2-agent-settings-surface.css');
+  test('the Save action keeps a visible surface over the v2 button reset', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .b-s')).toContain('background: linear-gradient');
   });
 
-  test('message-wake segment wraps its options instead of overflowing the row', () => {
-    const segment = ruleBody(css, '.v2-agent-wake-pods__segment');
-    expect(segment).toContain('display: flex');
+  test('segment tabs keep a keyboard focus ring now that the old base rule skips them', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .seg > button:focus-visible, .v2-agent-settings-page .seg > a:focus-visible'))
+      .toContain('box-shadow: 0 0 0 3px var(--c-soft)');
+  });
+
+  test('disabled lifted controls still dim, since the old :disabled rule skips .b and seg tabs', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .b:disabled, .v2-agent-settings-page .seg > button:disabled'))
+      .toContain('opacity: .55');
+  });
+
+  test('lifted .b-sm controls keep their 28px size', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .b-sm')).toContain('height: 28px');
+  });
+
+  test('message-wake segment wraps its options instead of overflowing the Wake row', () => {
+    const segment = ruleBody(css, '.v2-agent-settings-page .wt .seg');
+    expect(segment).toContain('display: inline-flex');
     expect(segment).toContain('flex-wrap: wrap');
   });
 
-  it('keeps the settings header on one row with the tabs at its end', () => {
-    const css = fs.readFileSync(path.join(__dirname, '../agents/v2-agent-settings.css'), 'utf8');
-    const head = ruleBody(css, '.v2-agent-settings__head');
-    expect(head).toContain('display: flex');
-    expect(head).toContain('align-items: center');
-    expect(ruleBody(css, '.v2-agent-settings__head .v2-agent-settings__seg')).toContain('margin-left: auto');
-    expect(ruleBody(css, '.v2-agent-settings__head .v2-agent-settings__seg [aria-current="page"]')).toContain('border-bottom: 0');
+  test('the avatar header, Identity & access rows and Wake table keep their frame layout', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .ph')).toContain('min-height: 76px');
+    expect(ruleBody(css, '.v2-agent-settings-page .lrow')).toContain('grid-template-columns: 180px minmax(0, 1fr) auto');
+    expect(ruleBody(css, '.v2-agent-settings-page .wt')).toContain('border-collapse: collapse');
+  });
+
+  test('menu and disclosure glyphs keep their frame size instead of stretching or shrinking', () => {
+    expect(ruleBody(css, '.v2-agent-settings-page .ib svg.i')).toContain('width: 17px');
+    expect(ruleBody(css, '.v2-agent-settings-page details.disc > summary .lb svg.i')).toContain('width: 16px');
+    expect(ruleBody(css, '.v2-agent-settings-page .b svg.i, .v2-agent-settings-page .ib svg.i')).toContain('flex: none');
+    expect(ruleBody(css, '.v2-agent-settings-page .lrow')).toContain('grid-template-columns: 180px minmax(0, 1fr) auto');
+    expect(css).toContain('.v2-agent-settings-page .lrow { grid-template-columns: minmax(0, 1fr) auto;');
+    expect(css).toContain('.v2-agent-settings-page .ph { flex-wrap: wrap;');
   });
 });
 

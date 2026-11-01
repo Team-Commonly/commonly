@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { AgentPodWakePatch } from './useAgentSettings';
-import './v2-agent-wake-pods.css';
 
 interface InstallationSettings {
   podId: string;
@@ -45,6 +44,9 @@ const V2AgentWakePods: React.FC<{
   const [podCount, setPodCount] = useState(0);
   const [turnCap, setTurnCap] = useState<number | null>(null);
   const [draftMinutes, setDraftMinutes] = useState<Record<string, number>>({});
+  // A pod whose heartbeat select is set to Off, until its Save applies it.
+  const [draftOff, setDraftOff] = useState<Record<string, boolean>>({});
+  const [openPods, setOpenPods] = useState<Record<string, boolean>>({});
   const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
   const query = `instanceId=${encodeURIComponent(instanceId)}`;
   const base = `/api/registry/agents/${encodeURIComponent(agentName)}/manage-settings`;
@@ -63,6 +65,7 @@ const V2AgentWakePods: React.FC<{
     setBusyPod(null);
     setError(null);
     setDraftMinutes({});
+    setDraftOff({});
     committedRef.current = {};
     queuedRef.current = {};
     sendingRef.current = {};
@@ -175,6 +178,14 @@ const V2AgentWakePods: React.FC<{
     }
   };
 
+  // Sum of the draft heartbeat turns, so the header previews the cap as the select changes.
+  const turnsUsed = installations.reduce((total, entry) => {
+    const off = draftOff[entry.podId] ?? !entry.heartbeatEnabled;
+    const minutes = draftMinutes[entry.podId] ?? entry.heartbeatMinutes;
+    return off ? total : total + Math.ceil(1440 / minutes);
+  }, 0);
+  const overCap = turnCap !== null && turnsUsed > turnCap;
+
   if (loading || loadedIdentity !== identity) {
     return <div className="v2-agent-wake-pods__loading">{t('agentProfile.loading')}</div>;
   }
@@ -182,85 +193,101 @@ const V2AgentWakePods: React.FC<{
   return (
     <div className="v2-agent-wake-pods">
       {error && <p className="v2-agent-wake-pods__error" role="alert">{error}</p>}
-      <section className="v2-agent-wake-pods__section" aria-labelledby="agent-wake-title">
-        <h2 id="agent-wake-title">{t('agentSettings.wakeTitle')}</h2>
-        <p className="v2-agent-wake-pods__hint">{t('agentSettings.mentionsAlwaysWake')}</p>
+      <h2 className="gtitle">
+        <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 13, height: 13 }} aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
+        {t('agentSettings.wakeTitle')}
+        <span className="info" tabIndex={0} aria-label={t('agentSettings.mentionsAlwaysWake')}>
+          <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></svg>
+          <span className="tip" role="tooltip">{t('agentSettings.mentionsAlwaysWake')}</span>
+        </span>
+        <span className="v2-agent-wake-pods__cap">
+          {turnCap === null
+            ? t('agentSettings.turnsUsedNoCap', { used: turnsUsed })
+            : t('agentSettings.turnsUsed', { used: turnsUsed, cap: turnCap })}
+        </span>
+      </h2>
+      {overCap && <p className="v2-agent-wake-pods__hint">{t('agentSettings.overCap')}</p>}
+      <div className="list">
         {installations.length ? (
-          <table className="v2-agent-wake-pods__table">
+          <table className="wt">
             <thead>
               <tr>
                 <th scope="col">{t('agentSettings.podsTitle')}</th>
-                <th scope="col">{t('agentSettings.messageWake')}</th>
-                <th scope="col">{t('agentSettings.boardWake')}</th>
-                <th scope="col">{t('agentSettings.heartbeat')}</th>
+                <th scope="col">{t('agentSettings.colMessages')}</th>
+                <th scope="col">{t('agentSettings.colBoard')}</th>
+                <th scope="col">{t('agentSettings.colHeartbeat')}</th>
                 <th scope="col"><span className="v2-agent-wake-pods__sr">{t('agentSettings.remove')}</span></th>
               </tr>
             </thead>
             <tbody>
               {installations.map((entry) => (
-                <tr className="v2-agent-wake-pods__pod" key={entry.podId}>
-                  <th scope="row"><Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link></th>
+                <tr className="v2-agent-wake-pods__pod" key={entry.podId} data-open={openPods[entry.podId] ? 'true' : undefined}>
                   <td>
-                    <div className="v2-agent-wake-pods__choice" role="group" aria-busy={busyPod === entry.podId}
+                    <Link to={`/v2/pods/${entry.podId}`}>{entry.podName}</Link>
+                    <span className="v2-agent-wake-pods__mode">{t(`agentSettings.messageWakeShort_${messageWakeChoice(entry)}`)}</span>
+                    <button type="button" className="v2-agent-wake-pods__fold" aria-expanded={!!openPods[entry.podId]}
+                      aria-label={entry.podName}
+                      onClick={() => setOpenPods((current) => ({ ...current, [entry.podId]: !current[entry.podId] }))}>
+                      <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6" /></svg>
+                    </button>
+                  </td>
+                  <td data-label={t('agentSettings.colMessages')}>
+                    <div className="seg seg--sm v2-agent-wake-pods__segment" role="group" aria-busy={busyPod === entry.podId}
                       aria-label={t('agentSettings.messageWake')}>
-                      <div className="v2-agent-wake-pods__segment">
-                        {MESSAGE_WAKE_CHOICES.map((choice) => (
-                          <label className="v2-agent-wake-pods__option" key={choice}>
-                            <input type="radio" name={`message-wake-${entry.podId}`} value={choice}
-                              checked={messageWakeChoice(entry) === choice}
-                              onChange={() => { void save(entry, MESSAGE_WAKE_SETTINGS[choice]); }} />
-                            <span>{t(`agentSettings.messageWake_${choice}`)}</span>
-                          </label>
-                        ))}
-                      </div>
+                      {MESSAGE_WAKE_CHOICES.map((choice) => (
+                        <label className="v2-agent-wake-pods__option" key={choice}>
+                          <input type="radio" name={`message-wake-${entry.podId}`} value={choice}
+                            aria-label={t(`agentSettings.messageWake_${choice}`)}
+                            checked={messageWakeChoice(entry) === choice}
+                            onChange={() => { void save(entry, MESSAGE_WAKE_SETTINGS[choice]); }} />
+                          <span aria-hidden="true">{t(`agentSettings.messageWakeShort_${choice}`)}</span>
+                        </label>
+                      ))}
                     </div>
                   </td>
-                  <td>
-                    <label className="v2-agent-wake-pods__row">
-                      <span>{t('agentSettings.boardWake')}</span>
+                  <td data-label={t('agentSettings.colBoard')}>
+                    <label className="v2-agent-wake-pods__toggle">
                       <input type="checkbox" checked={entry.boardWake} disabled={busyPod === entry.podId}
                         onChange={(event) => { void save(entry, { boardWake: event.target.checked }); }} />
+                      <span className={`tg${entry.boardWake ? ' on' : ''}`} aria-hidden="true" />
+                      <span className="v2-agent-wake-pods__sr">{t('agentSettings.boardWake')}</span>
                     </label>
                   </td>
-                  <td>
-                    <label className="v2-agent-wake-pods__row">
-                      <span>{t('agentSettings.heartbeat')}</span>
-                      <input type="checkbox" checked={entry.heartbeatEnabled} disabled={busyPod === entry.podId}
-                        onChange={(event) => { void save(entry, { heartbeatEnabled: event.target.checked,
-                          heartbeatMinutes: draftMinutes[entry.podId] ?? entry.heartbeatMinutes }); }} />
-                    </label>
-                    <label className="v2-agent-wake-pods__row v2-agent-wake-pods__subrow">
-                      <span>{t('agentSettings.heartbeatInterval')}</span>
-                      <select value={draftMinutes[entry.podId] ?? entry.heartbeatMinutes} disabled={busyPod === entry.podId}
-                        onChange={(event) => { setDraftMinutes((current) => ({ ...current,
-                          [entry.podId]: Number(event.target.value) })); }}>
-                        {[...new Set([15, 30, 60, 120, 360, 720, 1440, entry.heartbeatMinutes])]
-                          .sort((a, b) => a - b).map((minutes) => (
-                            <option value={minutes} key={minutes}>{t('agentSettings.everyMinutes', { count: minutes })}</option>
-                          ))}
-                      </select>
-                    </label>
-                    <p className="v2-agent-wake-pods__hint">
-                      {turnCap === null
-                        ? t('agentSettings.capUnavailable', {
-                          count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)),
-                        })
-                        : t('agentSettings.turnsPerDay', {
-                          count: Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)), cap: turnCap,
-                        })}
-                      {turnCap !== null && Math.ceil(1440 / (draftMinutes[entry.podId] ?? entry.heartbeatMinutes)) > turnCap
-                        && ` ${t('agentSettings.overCap')}`}
-                    </p>
-                    {entry.heartbeatEnabled && draftMinutes[entry.podId] !== entry.heartbeatMinutes
-                      && <button type="button" disabled={busyPod === entry.podId}
-                        onClick={() => { void save(entry, { heartbeatMinutes: draftMinutes[entry.podId] }); }}>
-                        {t('agentSettings.saveInterval')}
-                      </button>}
+                  <td data-label={t('agentSettings.colHeartbeat')}>
+                    {(() => {
+                      const off = draftOff[entry.podId] ?? !entry.heartbeatEnabled;
+                      const minutes = draftMinutes[entry.podId] ?? entry.heartbeatMinutes;
+                      const dirty = off === entry.heartbeatEnabled || (!off && minutes !== entry.heartbeatMinutes);
+                      return (
+                        <>
+                          <label className="sel v2-agent-wake-pods__interval">
+                            <span className="v2-agent-wake-pods__sr">{t('agentSettings.heartbeat')}</span>
+                            <select value={off ? 'off' : String(minutes)} disabled={busyPod === entry.podId}
+                              onChange={(event) => {
+                                const { value } = event.target;
+                                setDraftOff((current) => ({ ...current, [entry.podId]: value === 'off' }));
+                                if (value !== 'off') setDraftMinutes((current) => ({ ...current, [entry.podId]: Number(value) }));
+                              }}>
+                              <option value="off">{t('agentSettings.heartbeatOff')}</option>
+                              {[...new Set([15, 30, 60, 120, 360, 720, 1440, entry.heartbeatMinutes])]
+                                .sort((a, b) => a - b).map((value) => (
+                                  <option value={value} key={value}>{t('agentSettings.everyMinutes', { count: value })}</option>
+                                ))}
+                            </select>
+                          </label>
+                          {dirty && <button type="button" className="b b-g b-sm" disabled={busyPod === entry.podId}
+                            onClick={() => { void save(entry, { heartbeatEnabled: !off, heartbeatMinutes: minutes }); }}>
+                            {t('agentSettings.saveInterval')}
+                          </button>}
+                        </>
+                      );
+                    })()}
                   </td>
                   <td>
-                    <button type="button" className="v2-agent-wake-pods__remove" disabled={busyPod === entry.podId}
+                    <button type="button" className="b b-g ib b-sm" title={t('agentSettings.remove')}
+                      aria-label={t('agentSettings.remove')} disabled={busyPod === entry.podId}
                       onClick={() => { void remove(entry); }}>
-                      {t('agentSettings.remove')}
+                      <svg className="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1.2" fill="currentColor" stroke="none" /></svg>
                     </button>
                   </td>
                 </tr>
@@ -268,7 +295,7 @@ const V2AgentWakePods: React.FC<{
             </tbody>
           </table>
         ) : <p className="v2-agent-wake-pods__empty">{t('agentSettings.noPods')}</p>}
-      </section>
+      </div>
     </div>
   );
 };

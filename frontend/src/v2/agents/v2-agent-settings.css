@@ -41,7 +41,9 @@
 .v2-agent-settings__section { padding: 28px 0; }
 .v2-agent-settings__section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .v2-agent-settings__section h2 { margin: 0; font-family: var(--v2-font-display); font-size: 20px; }
-.v2-root .v2-agent-settings button:not(.MuiButtonBase-root) {
+/* Lifted buttons (.b, icon .ib, segment tabs) belong to the surface (v2-agent-settings-surface.css);
+   excluded here so this (0,3,1) rule does not out-rank their sizing or focus ring. */
+.v2-root .v2-agent-settings button:not(.MuiButtonBase-root):not(.b):not(.seg > button) {
   min-height: 34px;
   padding: 6px 12px;
   border: 1px solid var(--v2-border);
@@ -53,9 +55,9 @@
   font-weight: 600;
   cursor: pointer;
 }
-.v2-root .v2-agent-settings button:hover { background: var(--v2-surface-hover); }
-.v2-root .v2-agent-settings button:focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
-.v2-root .v2-agent-settings button:disabled { opacity: .55; cursor: default; }
+.v2-root .v2-agent-settings button:not(.b):not(.seg > button):hover { background: var(--v2-surface-hover); }
+.v2-root .v2-agent-settings button:not(.b):not(.seg > button):focus-visible { box-shadow: var(--v2-focus-ring); outline: 1px solid var(--v2-accent); }
+.v2-root .v2-agent-settings button:not(.b):not(.seg > button):disabled { opacity: .55; cursor: default; }
 .v2-root .v2-agent-settings .v2-agent-settings__section-head button { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
 .v2-root .v2-agent-settings .v2-agent-settings__actions button:first-child { background: var(--v2-ink); color: var(--v2-on-ink); border-color: var(--v2-ink); }
 .v2-root .v2-agent-settings .v2-agent-settings__section-head button:hover,
