@@ -58,7 +58,7 @@ export const recoverRunPods = async ({ api, token, userId, podName, podIds }) =>
 // `deleteAccount: false` is the shared staging sign-in account: the run removes
 // only the pods it recorded, never pods that account owns from elsewhere, and
 // never the account itself.
-export const cleanupRun = async ({ api, token, password, email, userId, agentName, podIds = [], onBotIds = () => {}, deleteAccount = true, hostedOptional = false }) => {
+export const cleanupRun = async ({ api, token, password, email, userId, agentName, podIds = [], onBotIds = () => {}, deleteAccount = true, hostedProvisioned = true }) => {
   const survivors = [];
   const botIds = new Set();
 
@@ -69,14 +69,16 @@ export const cleanupRun = async ({ api, token, password, email, userId, agentNam
   };
 
   // Stop the runtime before the seat goes: uninstalling the seat does not stop
-  // the hosted worker. 404 means there was no hosted install to stop. On a staging
-  // run where provisioning was skipped (hostedOptional), the backend answers
-  // deprovision with the same not-ready code (503 unconfigured / 502 unreachable):
-  // nothing was provisioned, so that is not a leaked runtime and must not become a
-  // survivor that reddens the run. On prod the agent WAS provisioned, so a failed
-  // deprovision stays a survivor.
+  // the hosted worker. 404 means there was no hosted install to stop. A not-ready
+  // deprovision (503 unconfigured / 502 unreachable by code) is exempt from
+  // survivor-tracking ONLY when provisioning did NOT succeed (hostedProvisioned
+  // false — skipped or failed, so nothing was created to leak). When provision
+  // succeeded, the backend revokes the runtime token only after a SUCCESSFUL stop,
+  // so a failed deprovision leaves the worker + token live — a real survivor,
+  // staging or not. Default hostedProvisioned=true keeps the conservative behaviour
+  // for any caller that does not pass the provisioning outcome.
   const stop = await api('POST', '/api/hosted/deprovision', { token, body: { agentName } });
-  const stopNotReady = hostedOptional
+  const stopNotReady = !hostedProvisioned
     && (stop.data?.code === 'hosted_runtime_unconfigured' || stop.data?.code === 'hosted_runtime_unreachable');
   if (stop.status >= 300 && stop.status !== 404 && !stopNotReady) survivors.push(`hosted:${agentName} (deprovision ${stop.status})`);
 

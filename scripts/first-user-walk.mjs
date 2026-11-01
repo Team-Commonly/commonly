@@ -105,6 +105,10 @@ export const runWalk = async ({
   // Null until chooseWalkMode accepts the run, so a refused run is never reported as signup.
   let walkMode = null;
   let cleanupRan = false;
+  // True only once provision returned 200: a worker + runtime token were actually
+  // created, so cleanup must treat a FAILED deprovision as a survivor even on staging.
+  // False when provision was skipped or failed — nothing was created to leak.
+  let hostedProvisioned = false;
   // Signup returns no user id, so the manifest carries the exact username instead:
   // SRE finds the account by that name, not by a prefix. Never the email.
   const manifest = { mode: null, userId: null, username: null, podIds: [], unresolvedPodNames: [], agentName: null, botIds: [], survivors: [], status: 'running' };
@@ -219,10 +223,11 @@ export const runWalk = async ({
         agentName,
         podIds: manifest.podIds,
         deleteAccount: walkMode.deleteAccount,
-        // Staging run only: a not-ready deprovision (503 unconfigured / 502 unreachable)
-        // is not a leaked agent — provisioning was skipped, nothing was created — so it
-        // must not become a survivor and redden the run. On prod it stays a survivor.
-        hostedOptional: walkMode.mode === 'signin',
+        // A not-ready deprovision (503/502 by code) is exempt from survivor-tracking
+        // ONLY when provisioning did not succeed — nothing was created to leak. If
+        // provision returned 200, a failed deprovision IS a leak (the backend revokes
+        // the token only after a successful stop), so it stays a survivor, staging or not.
+        hostedProvisioned,
         // Persist each pod's bot ids before that pod is deleted, so a throw
         // later in the loop still leaves the ids SRE needs.
         onBotIds: (podId, bots) => {
@@ -375,6 +380,9 @@ export const runWalk = async ({
           && (p.data?.code === 'hosted_runtime_unconfigured' || p.data?.code === 'hosted_runtime_unreachable');
         if (hostedOptional && notReady) { hostedSkipped = true; throw new SkipStep(`no staging worker (${p.data.code})`); }
         expect(p.status === 200 && p.data?.provisioned, `provision ${p.status}: ${JSON.stringify(p.data)}`);
+        // Provision succeeded: a worker + token now exist, so a failed deprovision in
+        // cleanup is a real leak (survivor), staging or not.
+        hostedProvisioned = true;
       });
 
       if (hostedSkipped) skipStep('hosted-reply', 'no staging worker (hosted runtime not ready)');
