@@ -48,6 +48,16 @@ export const parseSeatPushArgs = (raw: Record<string, unknown>, agentUserId: str
   return { ref, baseOid, newOid, bundle };
 };
 
+/** Provider git output cap. Exported so the tests prove the checks against it. */
+export const PROVIDER_GIT_MAX_BUFFER = 64 * 1024;
+
+// The protected-path checks list names on these paths only. Every PROTECTED_PATH
+// match is inside them, and PROTECTED_PATH stays the exact filter. Without the
+// pathspec, a seat branch far behind the default branch lists every file the
+// default branch has changed since, which overflows PROVIDER_GIT_MAX_BUFFER and
+// refuses an ordinary push as provider_git_failed.
+const PROTECTED_PATHSPEC = ['--', ':(icase).github', ':(icase,glob)**/CODEOWNERS'];
+
 const PROTECTED_PATH = (name: string) => {
   const file = name.replace(/^\n+/, '');
   return /^\.github(?:\/(?:workflows|actions)(?:\/|$)|$)/i.test(file)
@@ -106,14 +116,18 @@ export const validateSeatBundle = async (options: {
   // accepted seat tip are not the seat's, and a merge is read only where its
   // result differs from every parent, so taking the default branch's version
   // in a merge is not an edit.
+  // `--full-history`: with a pathspec, git's default simplification follows only
+  // a merge's TREESAME parent, which would skip a side branch whose protected
+  // edit a later commit on that branch undid.
   const history = await git(['log', '--format=', '--name-only', '-z', '--no-renames',
-    '--diff-merges=dense-combined', newOid, `^${defaultTip}`,
-    ...(oldOid !== ZERO_OID ? [`^${oldOid}`] : [])], repo);
+    '--full-history', '--diff-merges=dense-combined', newOid, `^${defaultTip}`,
+    ...(oldOid !== ZERO_OID ? [`^${oldOid}`] : []), ...PROTECTED_PATHSPEC], repo);
   if (history.split('\0').some(PROTECTED_PATH)) throw new SeatPushError('push_protected_path', 403);
   // The pushed tree must carry the default branch's protected files exactly. A
   // comparison with the seat's own base would let it bring back the workflow
   // files of any earlier commit.
-  const drift = await git(['diff', '--name-only', '-z', '--no-renames', defaultTip, newOid], repo);
+  const drift = await git(['diff', '--name-only', '-z', '--no-renames', defaultTip, newOid,
+    ...PROTECTED_PATHSPEC], repo);
   if (drift.split('\0').some(PROTECTED_PATH)) {
     throw new SeatPushError('protected_path_behind_default', 409);
   }
@@ -197,7 +211,7 @@ export const pushSeatBranch = async (
     const git = async (args: string[], cwd = repo, failure?: SeatPushError) => {
       try {
         const answer = await runFile('/usr/bin/git', args, {
-          cwd, env, timeout: 45_000, maxBuffer: 64 * 1024,
+          cwd, env, timeout: 45_000, maxBuffer: PROVIDER_GIT_MAX_BUFFER,
         });
         return answer.stdout.trim();
       } catch {

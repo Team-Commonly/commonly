@@ -160,8 +160,12 @@ describe('host GitHub push boundary', () => {
   it('preserves the larger push parser before the global JSON parser in the real server', async () => {
     expect(typeof router.pushBodyRateLimit).toBe('function');
     const source = readFileSync(join(__dirname, '../../../server.ts'), 'utf8');
-    expect(source.indexOf("app.use('/api/mcp/grants/:grantId/push', mcpGrantsRoutes.pushBodyRateLimit,"))
-      .toBeGreaterThan(-1);
+    // The whole chain, in order: the rate limit, then agent auth, then the 9 MB
+    // parser, so no unauthenticated body is ever buffered.
+    const mount = source.indexOf("app.use('/api/mcp/grants/:grantId/push',");
+    expect(mount).toBeGreaterThan(-1);
+    const chain = source.slice(mount, source.indexOf(');', mount));
+    expect(chain).toMatch(/pushBodyRateLimit,\s*pushAgentAuth,\s*express\.json\(\{ limit: '9mb' \}\)/);
     expect(source.indexOf("app.use('/api/mcp/grants/:grantId/push'"))
       .toBeLessThan(source.indexOf('app.use(express.json());'));
     mockListToolsForGrant.mockResolvedValue([{ name: 'github.push_branch' }]);
