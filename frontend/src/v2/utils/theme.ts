@@ -55,8 +55,10 @@ export function setV2Theme(pref: V2ThemePref): void {
   const doc = document as ViewTransitionDocument;
   if (doc.startViewTransition && !reduce) {
     doc.startViewTransition(() => applyV2Theme(pref));
-    return;
+  } else {
+    applyV2Theme(pref);
   }
-  applyV2Theme(pref);
+  // Subscribers (the theme switch, the Settings picker) hear every change,
+  // whichever way it was painted.
   listeners.forEach((listener) => listener());
 }

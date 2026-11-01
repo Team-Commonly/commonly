@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { applyV2Theme, getV2Theme, setV2Theme, V2_THEME_KEY } from '../theme';
+import { applyV2Theme, getV2Theme, setV2Theme, subscribeV2Theme, V2_THEME_KEY } from '../theme';
 
 const v2css = fs.readFileSync(path.join(__dirname, '../../v2.css'), 'utf8');
 
@@ -58,6 +58,20 @@ describe('v2 appearance preference (D216)', () => {
       expect(startViewTransition).toHaveBeenCalledTimes(1);
       expect(document.documentElement.getAttribute('data-v2-theme')).toBe('dark');
     } finally {
+      delete doc.startViewTransition;
+    }
+  });
+
+  test('subscribers hear a change that crossfades, not only an instant one', () => {
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+    doc.startViewTransition = jest.fn((cb: () => void) => cb()) as unknown as Document['startViewTransition'];
+    const heard = jest.fn();
+    const unsubscribe = subscribeV2Theme(heard);
+    try {
+      setV2Theme('light');
+      expect(heard).toHaveBeenCalledTimes(1);
+    } finally {
+      unsubscribe();
       delete doc.startViewTransition;
     }
   });

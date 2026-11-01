@@ -158,6 +158,25 @@ describe('board motion: an agent claims a task', () => {
     expect(document.querySelector('.v2-board__col[data-glide]')).toBeNull();
   });
 
+  test('an edit that lands while a glide waits is not overwritten by the older rows', async () => {
+    let pending = null;
+    document.startViewTransition = jest.fn((update) => { pending = update; return { finished: Promise.resolve() }; });
+    renderBoard();
+    fireEvent.click(await within(await screen.findByRole('region', { name: 'Pending' })).findByText('Stay put'));
+    const priority = await screen.findByLabelText(/priority/i);
+
+    await liveUpdate(CLAIMED);
+    expect(pending).not.toBeNull();
+
+    // The edit resolves inside the gap; the server now holds P0 for TASK-2.
+    taskRows = [CLAIMED[0], { ...PENDING[1], priority: 'P0' }];
+    axios.patch.mockResolvedValueOnce({ data: { task: { ...PENDING[1], priority: 'P0', updatedAt: new Date().toISOString() } } });
+    await act(async () => { fireEvent.change(priority, { target: { value: 'P0' } }); });
+
+    await act(async () => { pending(); });
+    await waitFor(() => expect(screen.getByLabelText(/priority/i)).toHaveValue('P0'));
+  });
+
   test('no glide under reduced motion: the card is simply in its new column', async () => {
     stubViewTransitions();
     media.reduce = true;

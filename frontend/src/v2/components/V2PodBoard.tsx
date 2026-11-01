@@ -390,11 +390,17 @@ const V2PodBoard: React.FC = () => {
     if (!podId) return;
     const requestId = ++taskRequestRef.current;
     taskLoadPendingRef.current = true;
+    // A glide applies the rows a frame later, inside the view transition. Until
+    // then the read is still pending, so an edit that lands in that gap reloads.
+    let deferred = false;
     try {
       const data = await api.get<{ tasks: BoardTask[]; permissions?: { canWrite: boolean; canReadRecord?: boolean } }>(`/api/v1/tasks/${podId}`);
       if (requestId !== taskRequestRef.current) return;
       const next = data.tasks || [];
       const apply = () => {
+        // An edit or a newer read may have taken over while a glide waited.
+        if (requestId !== taskRequestRef.current) return;
+        taskLoadPendingRef.current = false;
         setTasks(next);
         setTaskWriteAllowed(data.permissions?.canWrite === true);
         setRecordReadAllowed(data.permissions?.canReadRecord === true);
@@ -436,6 +442,7 @@ const V2PodBoard: React.FC = () => {
           glidesRunning = Math.max(0, glidesRunning - 1);
           if (!glidesRunning) root.classList.remove(GLIDE_CLASS);
         };
+        deferred = true;
         const transition = runViewTransition(() => { flushSync(apply); });
         if (!transition?.finished) settle();
         else transition.finished.catch(() => undefined).then(settle);
@@ -443,7 +450,10 @@ const V2PodBoard: React.FC = () => {
     } catch {
       if (requestId === taskRequestRef.current) setLoadError(true);
     } finally {
-      if (requestId === taskRequestRef.current) { taskLoadPendingRef.current = false; setLoading(false); }
+      if (requestId === taskRequestRef.current) {
+        if (!deferred) taskLoadPendingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [api, podId]);
 
