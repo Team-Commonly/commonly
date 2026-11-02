@@ -154,6 +154,13 @@ const bareElementSelectors = (css: string): string[] => {
 };
 
 describe('v2 layout invariants (CSS rule presence)', () => {
+  test('/v2/agent: keyboard focus on Cancel, a truncating Talk key, 44px not-found keys on a phone', () => {
+    const css = read('../agents/v2-agent-profile.css');
+    expect(css).toMatch(/\.v2-aprofile__avatar-cancel:focus-visible \{[^}]*box-shadow: var\(--v2-focus-ring\)/);
+    expect(css).toMatch(/\.v2-aprofile__btn-label \{[^}]*text-overflow: ellipsis/);
+    const phone = css.slice(css.lastIndexOf('@media (max-width: 760px)'));
+    expect(phone).toMatch(/\.v2-aprofile__cta-row \.v2-aprofile__btn \{[^}]*height: 44px/);
+  });
   test('/v2/profile: on a phone the header wraps and its one key takes the full row (d215 s-profile 390)', () => {
     const profile = read('../components/V2PersonProfile.css');
     const phone = profile.slice(profile.indexOf('@media (max-width: 760px)'));

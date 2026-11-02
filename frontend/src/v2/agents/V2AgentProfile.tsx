@@ -141,6 +141,13 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
   const [openingRoom, setOpeningRoom] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
   const [showAllPods, setShowAllPods] = useState(false);
+  const podListRef = useRef<HTMLUListElement | null>(null);
+  // "Show all" removes itself, so focus moves to the first pod it revealed
+  // instead of falling back to the page.
+  useEffect(() => {
+    if (!showAllPods) return;
+    podListRef.current?.querySelectorAll<HTMLElement>('.v2-aprofile__pod-name')[OWNER_POD_CUT]?.focus();
+  }, [showAllPods]);
   const signedIn = Boolean(shell);
 
   const fetchProfile = useCallback(async () => {
@@ -375,14 +382,15 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
       <button
         type="button"
         className="v2-aprofile__btn v2-aprofile__btn--primary"
+        title={talkLabel}
         onClick={() => { void handleTalkTo(); }}
         disabled={openingRoom}
       >
-        {openingRoom ? t('agentProfile.hero.opening') : talkLabel}
+        <span className="v2-aprofile__btn-label">{openingRoom ? t('agentProfile.hero.opening') : talkLabel}</span>
       </button>
     );
   } else {
-    primaryKey = <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{talkLabel}</Link>;
+    primaryKey = <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register" title={talkLabel}><span className="v2-aprofile__btn-label">{talkLabel}</span></Link>;
   }
 
   const avatar = (
@@ -490,7 +498,7 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
             <span className="v2-aprofile__count">{podList.length}</span>
             {ownerPods && <span className="v2-aprofile__owner-tag">{t('agentProfile.pods.everyPod')}</span>}
           </h2>
-          <ul className="v2-aprofile__list">
+          <ul className="v2-aprofile__list" ref={podListRef}>
             {shownPods.map((p) => (
               <li key={p.id} className="v2-aprofile__row v2-aprofile__pod">
                 <span className="v2-aprofile__pod-id">

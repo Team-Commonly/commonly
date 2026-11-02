@@ -174,6 +174,8 @@ describe('V2AgentProfile (d215 s-agent-profile)', () => {
     fireEvent.click(within(pods).getByRole('button', { name: 'Show all 7 pods' }));
     expect(within(pods).getByText('Private pod 6')).toBeInTheDocument();
     expect(within(pods).queryByRole('button', { name: /Show all/ })).toBeNull();
+    // The key removed itself, so focus moves to the first pod it revealed.
+    expect(document.activeElement).toBe(within(pods).getAllByRole('link')[5]);
 
     const memory = lane(/^Memory/);
     expect(within(memory).getByRole('heading', { level: 2 })).toHaveTextContent('Memoryowner view · private');
