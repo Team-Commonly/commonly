@@ -124,11 +124,22 @@ backend:
   tolerations: []
   # Keep these probes deliberately different. Liveness must remain I/O-free so
   # database or realtime dependency failures never restart a healthy process.
+  # timeoutSeconds + failureThreshold tolerate a short event-loop block. The
+  # backend is single-threaded Node; a cluster of periodic sweeps (stalled-connect
+  # scanning ~169 candidates, installable-reconciler, kernel-sweep over ~436 pods)
+  # fires every few minutes and blocks the loop ~8-15s, during which even the
+  # I/O-free /live cannot be served. At the k8s defaults (timeout 1s, threshold 3)
+  # that block flips the probe and — with a single backend replica — pulls the pod
+  # from the ingress (503s) or restarts it. Tolerances below ride out ~60s
+  # (liveness) / ~30s (readiness) of block before acting; a genuinely dead backend
+  # still drops out, and recovery stays one period fast (successThreshold 1).
   livenessProbe:
     enabled: true
     path: /api/health/live
     initialDelaySeconds: 30
     periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
   # Readiness gates this pod's Mongo connection AND whether its PostgreSQL
   # routes are mounted. PG's liveness is still NOT gated: PG and Redis are
   # shared, deliberately non-fatal dependencies, the app falls back to
@@ -146,6 +157,8 @@ backend:
     path: /api/health/ready
     initialDelaySeconds: 10
     periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 6
   env:
     # Agent computer is an opt-in staging experiment. Empty endpoints keep it
     # unavailable even when the flag is enabled.
