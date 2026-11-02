@@ -197,4 +197,14 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
     expect(screen.queryByRole('heading', { name: 'Nothing shared yet' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /^Open / })).not.toBeInTheDocument();
   });
+
+  test.each([
+    ['a search', '/v2/artifacts?q=unmatched'],
+    ['a pod', '/v2/artifacts?podId=w1'],
+  ])('%s with no matches keeps the controls and the filtered line, never day zero', async (_label, url) => {
+    const { container } = renderEmpty(url, { pods: [workspace] });
+    expect(await screen.findByText('Nothing matches. Clear a filter or the search.')).toBeInTheDocument();
+    expect(container.querySelector('.v2-artifacts__controls')).not.toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Nothing shared yet' })).not.toBeInTheDocument();
+  });
 });

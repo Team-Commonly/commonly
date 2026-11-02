@@ -1075,6 +1075,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(key).toContain('background: var(--v2-ink)');
     expect(key).toContain('color: var(--v2-on-ink)');
     expect(key).toContain('min-height: 32px');
+    // Pod names have no length limit: the label wraps inside the card instead of running past it.
+    expect(key).toContain('overflow-wrap: anywhere');
+    expect(key).not.toContain('nowrap');
     // The 44px rule must sit INSIDE a ≤760 block, not at top level or in a narrower query:
     // resolve the media block that actually encloses it (the enclosingMedia pattern above).
     const enclosingMedia = (rule: string): string | null => {
