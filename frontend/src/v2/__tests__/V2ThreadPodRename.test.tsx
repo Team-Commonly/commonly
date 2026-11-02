@@ -116,7 +116,7 @@ describe('V2Thread — owner-only pod rename (TASK-419)', () => {
     chips.forEach((chip) => {
       expect(chip).toHaveAttribute('title', 'board 2 open');
       // The count carries its noun: a bare "2" read as an unread count (walk 11-02).
-      expect(chip).toHaveTextContent(/^2 tasks$/);
+      expect(chip).toHaveTextContent(/^2 to do$/);
       expect(chip.querySelector('svg')).toBeTruthy();
     });
     fireEvent.click(chips[0]);
