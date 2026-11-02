@@ -729,6 +729,12 @@ spec:
             port: http
           initialDelaySeconds: {{ .Values.backend.livenessProbe.initialDelaySeconds }}
           periodSeconds: {{ .Values.backend.livenessProbe.periodSeconds }}
+          {{- with .Values.backend.livenessProbe.timeoutSeconds }}
+          timeoutSeconds: {{ . }}
+          {{- end }}
+          {{- with .Values.backend.livenessProbe.failureThreshold }}
+          failureThreshold: {{ . }}
+          {{- end }}
         {{- end }}
 
         {{- if .Values.backend.readinessProbe.enabled }}
@@ -738,6 +744,12 @@ spec:
             port: http
           initialDelaySeconds: {{ .Values.backend.readinessProbe.initialDelaySeconds }}
           periodSeconds: {{ .Values.backend.readinessProbe.periodSeconds }}
+          {{- with .Values.backend.readinessProbe.timeoutSeconds }}
+          timeoutSeconds: {{ . }}
+          {{- end }}
+          {{- with .Values.backend.readinessProbe.failureThreshold }}
+          failureThreshold: {{ . }}
+          {{- end }}
         {{- end }}
 
       {{- if and .worker .Values.backend.worker.nodeSelector (gt (len .Values.backend.worker.nodeSelector) 0) }}
