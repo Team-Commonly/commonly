@@ -7,7 +7,9 @@
  *  - under cap → runs normally
  *  - count failure fails OPEN (#887's shape — infrastructure faults must
  *    not silence an agent)
- *  - no cap configured → the counter is never consulted
+ *  - no cap configured → the default cap applies (F64), so two agents that
+ *    answer each other's @mentions cannot run without end
+ *  - an explicit 0 lifts the cap (admin-only, configWriteGuard)
  */
 
 jest.mock('axios', () => ({
@@ -45,7 +47,7 @@ jest.mock('../../../services/messageClaimService', () => ({
 const axios = require('axios').default;
 const AgentRun = require('../../../models/AgentRun');
 const MessageClaimService = require('../../../services/messageClaimService');
-const { runAgent } = require('../../../services/nativeRuntimeService');
+const { runAgent, DEFAULT_NATIVE_DAILY_RUN_CAP } = require('../../../services/nativeRuntimeService');
 
 const installation = (config = {}) => ({
   podId: 'pod-1',
@@ -138,8 +140,53 @@ describe('nativeRuntimeService daily run cap (D4)', () => {
     expect(query.startedAt.$gte).toBeInstanceOf(Date);
   });
 
-  test('no cap configured: the counter is never consulted', async () => {
-    await runAgent(installation({ dailyRunCap: undefined }), mentionTrigger);
+  // F64: once a native post wakes the agents it @mentions (F62), two native
+  // agents can answer each other. An install with no cap of its own (the
+  // first-party apps, a Scout added from the hub) still stops at the default.
+  test('the default cap is 60 runs a day', () => {
+    // Pinned as a literal: the tests below use the constant, so they would
+    // pass unchanged if the default moved.
+    expect(DEFAULT_NATIVE_DAILY_RUN_CAP).toBe(60);
+  });
+
+  test('no cap configured: the default cap applies', async () => {
+    AgentRun.countDocuments.mockResolvedValue(DEFAULT_NATIVE_DAILY_RUN_CAP);
+    const result = await runAgent(installation({ dailyRunCap: undefined }), mentionTrigger);
+    expect(result).toEqual({
+      runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+    });
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('no cap configured: under the default, it runs', async () => {
+    AgentRun.countDocuments.mockResolvedValue(DEFAULT_NATIVE_DAILY_RUN_CAP - 1);
+    const result = await runAgent(installation({ dailyRunCap: undefined }), mentionTrigger);
+    expect(result.status).toBe('succeeded');
+    expect(AgentRun.create).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([null, '', '  ', 'abc', false, -1])('a malformed cap (%p) gets the default, not no cap', async (value) => {
+    AgentRun.countDocuments.mockResolvedValue(DEFAULT_NATIVE_DAILY_RUN_CAP);
+    const result = await runAgent(installation({ dailyRunCap: value }), mentionTrigger);
+    expect(result.totalTurns).toBe(0);
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test.each([null, '', '  ', 'abc', false, -1])('a malformed cap (%p) runs under the default', async (value) => {
+    AgentRun.countDocuments.mockResolvedValue(DEFAULT_NATIVE_DAILY_RUN_CAP - 1);
+    const result = await runAgent(installation({ dailyRunCap: value }), mentionTrigger);
+    expect(result.status).toBe('succeeded');
+    expect(AgentRun.create).toHaveBeenCalledTimes(1);
+  });
+
+  test('a cap written as a numeric string is still the install\'s own', async () => {
+    AgentRun.countDocuments.mockResolvedValue(5);
+    const result = await runAgent(installation({ dailyRunCap: '5' }), mentionTrigger);
+    expect(result.totalTurns).toBe(0);
+  });
+
+  test('an explicit 0 lifts the cap: the counter is never consulted', async () => {
+    await runAgent(installation({ dailyRunCap: 0 }), mentionTrigger);
     expect(AgentRun.countDocuments).not.toHaveBeenCalled();
   });
 });
