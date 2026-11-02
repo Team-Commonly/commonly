@@ -424,6 +424,23 @@ const commentPullRequest: GithubToolDefinition = {
     const pullNumber = positiveInteger(rawArgs.pullNumber, 'pullNumber');
     const body = nonEmptyString(rawArgs.body, 'body');
     if (body.length > 65536) throw new RoomGrantError('invalid_tool_args', 'body is too long', 400);
+    // The issue-comment endpoint takes issues too, so confirm the number is a
+    // pull request first; otherwise this grant would reach comment_on_issue.
+    try {
+      await GitHubAppService.getPullRequest({
+        owner: connection.owner,
+        repo: connection.repo,
+        installationId: connection.installationId,
+        forceApp: true,
+        pullNumber,
+      });
+    } catch (error) {
+      const status = (error as { response?: { status?: unknown } }).response?.status;
+      if (Number(status) === 404) {
+        throw new RoomGrantError('not_a_pull_request', 'pullNumber is not a pull request in the connected repository', 404);
+      }
+      throw error;
+    }
     const comment = await GitHubAppService.addIssueComment({
       owner: connection.owner,
       repo: connection.repo,
@@ -707,9 +724,10 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
 
 /**
  * The seat push tool lands dark. Until the server sets
- * SEAT_GITHUB_PUSH_ENABLED=true it is not offered, cannot be granted and cannot
- * be called: the supervised staging walk (#2546) runs before any instance
- * turns it on. Exactly 'true'; any other value leaves it off.
+ * SEAT_GITHUB_PUSH_ENABLED=true it is not offered and cannot be called, even
+ * on a grant that already names it (an attenuated child inherits stored tool
+ * names). The supervised staging walk (#2546) runs before any instance turns
+ * it on. Exactly 'true'; any other value leaves it off.
  */
 const SEAT_PUSH_TOOL = pushSeatBranchDefinition.name;
 export const seatGithubPushEnabled = (): boolean => process.env.SEAT_GITHUB_PUSH_ENABLED === 'true';

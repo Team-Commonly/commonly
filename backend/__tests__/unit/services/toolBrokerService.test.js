@@ -12,6 +12,7 @@ const mockGithub = {
   closeIssue: jest.fn(),
   createPullRequest: jest.fn(),
   createPullReview: jest.fn(),
+  getPullRequest: jest.fn(),
 };
 const mockReserveBudgetLineage = jest.fn();
 const mockPushSeatBranch = jest.fn();
@@ -124,6 +125,7 @@ beforeEach(() => {
   mockUser.findById.mockReturnValue({ select: () => ({ lean: async () => ({ banned: false }) }) });
   mockReserveBudgetLineage.mockResolvedValue(true);
   mockGithub.listOpenIssues.mockResolvedValue([]);
+  mockGithub.getPullRequest.mockResolvedValue({ number: 12, head: { sha: 'a'.repeat(40) } });
   mockGithub.createIssue.mockResolvedValue({
     number: 1,
     title: 'test',
@@ -618,6 +620,26 @@ describe('host GitHub command tools', () => {
       forceApp: true,
       ...expected,
     }));
+  });
+
+  it('refuses a PR comment on a plain issue before posting', async () => {
+    // The issue-comment endpoint accepts issues too, so a PR-comment grant
+    // must not reach one. GitHub answers 404 on /pulls/:n for an issue.
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({
+      tools: ['github.comment_on_pull_request'], writeMode: 'write',
+    }));
+    mockGithub.getPullRequest.mockRejectedValue(Object.assign(new Error('Not Found'), { response: { status: 404 } }));
+    const args = { pullNumber: 7, body: 'hi', owner: 'Team-Commonly', repo: 'commonly' };
+    await expect(executeApprovedToolCall({
+      grantId: 'grant-1',
+      agentUserId: 'agent-a',
+      tool: 'github.comment_on_pull_request',
+      args,
+      expectedArgsDigest: digest(args),
+      approvalId: 'approval-test',
+    })).rejects.toMatchObject({ code: 'not_a_pull_request' });
+    expect(mockGithub.getPullRequest).toHaveBeenCalledWith(expect.objectContaining({ pullNumber: 7, forceApp: true }));
+    expect(mockGithub.addIssueComment).not.toHaveBeenCalled();
   });
 
   it('refuses an ungranted PR write before provider use', async () => {
