@@ -251,11 +251,31 @@
   .v2-thread-card {
     flex-wrap: wrap;
   }
-  /* Follow is not drawn in the frame, so it keeps the 44px touch floor it
-     had. Reply in thread and Collapse are drawn at 32px on phone and take
-     their 44px hit area from a ring (chat-pane.css, 760px block). */
+  /* D215 .app.m .thr .tfoot: the open thread's replies are on screen, so the
+     count gives way (screen readers still hear it) and Follow takes the right
+     edge, keeping the foot on one line. Follow is drawn at 32px like the keys
+     beside it; its ring takes the hit area to 44px (52 across) and reaches 6px
+     out, so it meets Collapse's ring across the 12px gap without overlapping. */
+  .v2-root .v2-thread-replies__foot .v2-thread-replies__count {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .v2-root .v2-thread-replies__foot button.v2-thread-replies__follow {
-    min-height: 44px;
+    position: relative;
+    height: 32px;
+    margin-left: auto;
+  }
+  .v2-root .v2-thread-replies__foot button.v2-thread-replies__follow::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
   }
   .v2-root button.v2-thread-card__main {
     flex: 1 1 100%;
@@ -748,8 +768,7 @@
 .v2-thread .v2-thread-replies .v2-msg .v2-avatar { width: 24px; height: 24px; border-radius: var(--v2-r-6, 6px); font-size: 12px; }
 
 /* D215 .tfoot: Reply in thread (secondary key), Collapse (ghost key, chevron
-   turned up), the count pushed right. Follow is not drawn; it keeps its look
-   and sits after the count. */
+   turned up), the count pushed right, Follow after it. */
 .v2-thread-replies__foot {
   display: flex;
   flex-wrap: wrap;
