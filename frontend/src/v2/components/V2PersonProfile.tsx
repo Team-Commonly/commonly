@@ -206,7 +206,7 @@ const V2PersonProfile: React.FC = () => {
         <>
           {pods.length > 0 && (
             <section className="v2-profile__lane" aria-labelledby="v2-profile-pods">
-              <h2 id="v2-profile-pods">{t('profile.podsInCommon')}</h2>
+              <h2 id="v2-profile-pods">{t(isSelf ? 'profile.yourPods' : 'profile.podsInCommon')}</h2>
               <ul className="v2-profile__list">
                 {pods.map((pod) => (
                   <li key={pod.id}>

@@ -3065,6 +3065,7 @@
     "followingCount_one": "{{count}} following",
     "followingCount_other": "{{count}} following",
     "podsInCommon": "Pods in common",
+    "yourPods": "Your pods",
     "recentPosts": "Recent posts",
     "podMembers_one": "{{count}} member",
     "podMembers_other": "{{count}} members",

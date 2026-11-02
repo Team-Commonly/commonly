@@ -3064,6 +3064,7 @@
     "followers_other": "{{count}}位粉丝",
     "followingCount_other": "关注了{{count}}人",
     "podsInCommon": "共同的 Pod",
+    "yourPods": "你的 Pod",
     "recentPosts": "最近的帖子",
     "podMembers_other": "{{count}}位成员",
     "notFound": "找不到这个人。",

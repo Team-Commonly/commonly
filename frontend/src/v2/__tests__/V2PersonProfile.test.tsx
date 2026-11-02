@@ -112,6 +112,8 @@ describe('V2PersonProfile', () => {
     const edit = await screen.findByRole('link', { name: 'Edit profile' });
     expect(edit).toHaveAttribute('href', '/v2/settings');
     expect(screen.queryByRole('button', { name: 'Follow' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your pods' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Pods in common' })).not.toBeInTheDocument();
   });
 
   it('omits the pods and posts sections when they are empty', async () => {
