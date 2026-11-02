@@ -431,27 +431,31 @@ describe('Connectors page: tools', () => {
   // The broker records any refusal it throws as the line's reason, and these were
   // shown as raw codes: a hosted tool that drifted, an approved call whose PR or
   // arguments moved, a task-bound grant used off its task (F18, 11-02 prod walk).
-  it.each([
-    ['en', [
-      ' · the provider changed this tool since Commonly checked it',
-      " · this connection's tool list does not include this tool",
-      ' · the pull request changed after approval',
-      ' · the agent has to claim the bound task first',
-    ]],
-    ['zh-CN', [
-      ' · 服务商在 Commonly 核对后改动了此工具',
-      ' · 此连接的工具列表中没有这个工具',
-      ' · PR 在审批后有变动',
-      ' · 智能体需要先认领绑定的任务',
-    ]],
-  ])('F18: a refusal from a hosted tool, an approval or a task binding reads as words, in %s', async (language, expected) => {
+  // Every code is listed, so dropping any one label turns this red.
+  const REFUSAL_LABELS = [
+    ['tool_drift', 'the provider changed this tool since Commonly checked it', '服务商在 Commonly 核对后改动了此工具'],
+    ['tool_unavailable', 'this connection\'s tool list does not include this tool', '此连接的工具列表中没有这个工具'],
+    ['tool_not_found', 'this tool is not registered with Commonly', '此工具未在 Commonly 中注册'],
+    ['definition_digest_mismatch', 'the tool changed after approval was asked for, so it needs asking again', '工具在申请审批后有变动，需要重新审批'],
+    ['args_digest_mismatch', 'the arguments no longer match the ones sent for approval', '参数与提交审批时的不一致'],
+    ['repo_mismatch', 'the connected repository changed after approval was asked for', '连接的仓库在申请审批后有变动'],
+    ['merge_head_mismatch', 'the pull request changed after approval was asked for', 'PR 在申请审批后有变动'],
+    ['merge_head_unavailable', 'the pull request\'s latest commit could not be read', '无法读取 PR 的最新提交'],
+    ['task_pod_mismatch', 'this grant works only in its task\'s pod', '此授权只能在其任务所在的 Pod 中使用'],
+    ['task_claim_required', 'the agent has to claim the bound task first', '智能体需要先认领绑定的任务'],
+    ['task_closed', 'the bound task is closed', '绑定的任务已关闭'],
+    ['task_not_found', 'the bound task no longer exists', '绑定的任务已不存在'],
+    ['agent_identity_required', 'the call did not say which agent made it', '调用没有说明是哪个智能体发起的'],
+    ['grant_not_found', 'the grant no longer exists', '授权已不存在'],
+  ];
+  it.each([['en', 1], ['zh-CN', 2]])('F18: every refusal the broker records reads as words, in %s', async (language, column) => {
     await i18nReady;
     await act(async () => { await i18n.changeLanguage(language); });
     try {
       const refused = {
         ...trail,
-        calls: ['tool_drift', 'tool_unavailable', 'merge_head_mismatch', 'task_claim_required'].map((reason, i) => (
-          { ...trail.calls[0], callId: `r${i}`, outcome: 'refused', reason, at: iso(-120000 * (i + 1)) }
+        calls: REFUSAL_LABELS.map(([reason], i) => (
+          { ...trail.calls[0], callId: `r${i}`, outcome: 'refused', reason, at: iso(-60000 * (i + 1)) }
         )),
       };
       mockTools({ trails: { grant_live: refused } });
@@ -459,8 +463,9 @@ describe('Connectors page: tools', () => {
       const drawer = await openTool('GitHub');
       fireEvent.click(drawer.querySelector('.v2-connector-row__selection'));
       const aside = await screen.findByRole('complementary');
-      await waitFor(() => expect(within(aside).getAllByRole('listitem')).toHaveLength(4));
-      expect(Array.from(aside.querySelectorAll('.v2-tools__trail-reason')).map((node) => node.textContent)).toEqual(expected);
+      await waitFor(() => expect(within(aside).getAllByRole('listitem')).toHaveLength(REFUSAL_LABELS.length));
+      expect(Array.from(aside.querySelectorAll('.v2-tools__trail-reason')).map((node) => node.textContent))
+        .toEqual(REFUSAL_LABELS.map((row) => ` · ${row[column]}`));
     } finally {
       await act(async () => { await i18n.changeLanguage('en'); });
     }
