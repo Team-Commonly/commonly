@@ -91,6 +91,10 @@ beforeEach(async () => {
   await AgentEvent.deleteMany({});
   await AgentMemory.deleteMany({});
   await AgentDigestState.deleteMany({});
+  // Each test is a fresh process. A turn an earlier test left in flight (a
+  // runner promise that never settles) must not hold this test's pod lane.
+  AgentEventService.inProcessLanes?.clear();
+  AgentEventService.inProcessLaneHolders?.clear();
 });
 
 describe('holdsEvent (the listener check-in on /events/renew)', () => {

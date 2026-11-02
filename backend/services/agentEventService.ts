@@ -573,11 +573,33 @@ const signalAgentTyping = async (event: EventDoc): Promise<void> => {
   }
 };
 
+type LaneRelease = () => void;
+
 class AgentEventService {
   private static inProcessDraining = false;
   private static inProcessWork = new Set<Promise<unknown>>();
   private static inProcessRequeued = 0;
   private static inProcessRunning = new Map<string, EventDoc>();
+  // One agent answers one pod a turn at a time. Two turns that start together
+  // both read the pod before either posts, so both answer the newest message
+  // (F52: a marker wake and the ask posted a second later, two identical
+  // replies). Each (agent, instance, pod) key holds the last turn's `over`
+  // gate; the next turn starts once it opens, so it reads that turn's reply.
+  // In-process only: the backend runs one replica today, and a second
+  // replica would need a lease here.
+  private static inProcessLanes = new Map<string, { over: Promise<void> }>();
+  // Release of the lane slot held by each event's current delivery. A sweep
+  // that re-runs an event has declared its earlier delivery dead, so the
+  // re-run releases that slot instead of queueing behind it.
+  private static inProcessLaneHolders = new Map<string, LaneRelease>();
+  // How long a turn may hold the lane once its own wait ends: longer than any
+  // turn (MAX_WALL_CLOCK_MS plus one model call), well inside the 10-minute
+  // requeue threshold. A turn that never ends then counts as over, and each
+  // turn behind it still waits for the one directly ahead. The wait itself
+  // does not refresh deliveredAt, so an event queued past that threshold in
+  // one pod is re-run by the sweep at the back of the lane, and one re-run
+  // past the attempt cap is retired.
+  private static inProcessLaneWaitMs = 180_000;
   private static inProcessDrain: Promise<{ timedOut: boolean; requeued: number }> | undefined;
 
   static isInProcessDraining(): boolean { return this.inProcessDraining; }
@@ -1755,15 +1777,73 @@ class AgentEventService {
     void this.trackInProcessWork(async () => {
       if (this.inProcessDraining) { await this.requeueInProcess(event); return; }
       const deliveryKey = `${String(event._id)}:${event.deliveryNonce || ''}`;
+      // Running from here, so a drain deadline requeues a turn still waiting
+      // for its lane as well as one in its model call.
       this.inProcessRunning.set(deliveryKey, event);
+      const lane = this.enterInProcessLane(
+        `${agentName.toLowerCase()}:${instanceId}:${String(event.podId || '')}`,
+        String(event._id),
+      );
       try {
+        if (lane.waitFor) {
+          await lane.waitFor;
+          // While it waited, the stuck sweep may have claimed this event with
+          // a new nonce and dispatched it again. That copy owns the turn. If
+          // it is still ours, restart its requeue clock: the sweep's threshold
+          // then measures this turn, not the time it spent waiting.
+          const stillOurs = await AgentEvent.updateOne(
+            { _id: event._id, status: 'delivered', deliveryNonce: event.deliveryNonce ?? null },
+            { $set: { deliveredAt: new Date() } },
+          ).catch((err: Error) => {
+            // Left 'delivered'; the stuck sweep re-runs it.
+            console.warn(`[native-runtime] lane re-check failed for event ${String(event._id)}:`, err.message);
+            return null;
+          }) as { matchedCount?: number } | null;
+          if (!stillOurs?.matchedCount) return;
+        }
         await this.runInProcess(event, nativeInstallation, agentName, instanceId, type, () => {
           this.inProcessRunning.delete(deliveryKey);
+          lane.release();
         });
       } finally {
         this.inProcessRunning.delete(deliveryKey);
+        lane.release();
       }
     }).catch((error: Error) => console.warn('[native-runtime] dispatch error:', error.message));
+  }
+
+  /**
+   * Join the lane for one (agent, instance, pod). `waitFor` is absent when the
+   * lane was free. The slot is released once the turn's model call ends, before
+   * its digest settle and ack, so the next turn may be shown digest rows this
+   * one already saw; it never misses this turn's reply. A turn that never ends
+   * keeps its holder entry until its event is re-run.
+   */
+  private static enterInProcessLane(
+    key: string,
+    eventId: string,
+  ): { waitFor?: Promise<void>; release: () => void } {
+    this.inProcessLaneHolders.get(eventId)?.();
+    const previous = this.inProcessLanes.get(key);
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const capMs = this.inProcessLaneWaitMs;
+    const waitFor = previous?.over;
+    // Over when released, or capMs after this turn could start: the cap runs
+    // from the end of this turn's own wait, never from when it queued.
+    const over = (waitFor || Promise.resolve()).then(() => new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, capMs);
+      timer.unref?.();
+      void released.then(() => { clearTimeout(timer); resolve(); });
+    }));
+    const slot = { over };
+    this.inProcessLanes.set(key, slot);
+    this.inProcessLaneHolders.set(eventId, release);
+    void over.then(() => { if (this.inProcessLanes.get(key) === slot) this.inProcessLanes.delete(key); });
+    void released.then(() => {
+      if (this.inProcessLaneHolders.get(eventId) === release) this.inProcessLaneHolders.delete(eventId);
+    });
+    return { waitFor, release };
   }
 
   private static async runInProcess(
