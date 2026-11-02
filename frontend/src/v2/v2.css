@@ -1960,10 +1960,17 @@ body.modern-ui.v2-canvas {
 
 /* ---------- Login ---------- */
 
+/* The auth page is its own scroll container: .v2-root and html hide overflow,
+   so a card taller than the window (a short laptop, a phone with the keyboard
+   up) would otherwise lose its last rows. The card centres with auto margins,
+   which fall to zero when it overflows; place-items: center would push its top
+   out of reach instead. */
 .v2-login {
   flex: 1;
-  display: grid;
-  place-items: center;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
   padding: 24px;
   background: var(--v2-page-bg);
 }
@@ -1973,6 +1980,7 @@ body.modern-ui.v2-canvas {
 .v2-login__card {
   width: 100%;
   max-width: 400px;
+  margin: auto;
   background: var(--v2-surface);
   border-radius: 14px;
   padding: 32px;
@@ -2313,12 +2321,12 @@ body.modern-ui.v2-canvas {
    after the base rules above, which it overrides at equal specificity. */
 @media (max-width: 480px) {
   .v2-login {
-    place-items: start stretch;
     padding: 0;
     background: var(--v2-surface);
   }
 
   .v2-login__card {
+    margin: 0;
     max-width: none;
     box-shadow: none;
     border-radius: 0;

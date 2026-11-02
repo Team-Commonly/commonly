@@ -287,6 +287,14 @@ describe('auth card styles', () => {
     return v2.slice(i, v2.indexOf('}', i));
   };
 
+  test('the auth page scrolls, and the card centres with auto margins', () => {
+    const page = rule('.v2-login');
+    expect(page).toMatch(/overflow-y: auto/);
+    expect(page).toMatch(/min-height: 0/);
+    expect(page).not.toMatch(/place-items: center/);
+    expect(rule('.v2-login__card')).toMatch(/margin: auto/);
+  });
+
   test('a form inside a lifted card lends its rows to the card grid', () => {
     expect(rule('.v2-login__card--stack > form')).toMatch(/display: contents/);
   });
