@@ -61,7 +61,6 @@ const V2ForgotPassword: React.FC = () => {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                aria-invalid={Boolean(error) || undefined}
                 required
               />
             </label>

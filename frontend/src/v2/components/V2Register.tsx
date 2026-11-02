@@ -136,7 +136,7 @@ const V2Register: React.FC = () => {
       setVerifyPending(/check your email|verify your email/i.test(message));
       setDone(message);
     } catch (err) {
-      const e1 = err as { response?: { data?: { error?: string; msg?: string; code?: string } } };
+      const e1 = err as { response?: { status?: number; data?: { error?: string; msg?: string; code?: string } } };
       const code = e1.response?.data?.code;
       if (code === 'INVITATION_INVALID') {
         // Forget the bad code so a reload doesn't carry it back into the form.
@@ -148,7 +148,9 @@ const V2Register: React.FC = () => {
         setErrorField('invite');
       } else {
         setError(e1.response?.data?.error || e1.response?.data?.msg || t('auth.register.errors.failed'));
-        setErrorField('credentials');
+        // Only a 4xx is about what was typed; a network or server failure marks no field.
+        const status = e1.response?.status || 0;
+        setErrorField(status >= 400 && status < 500 ? 'credentials' : null);
       }
     } finally {
       setSubmitting(false);

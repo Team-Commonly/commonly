@@ -5,11 +5,12 @@
 import fs from 'fs';
 import path from 'path';
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import V2Register from '../components/V2Register';
 import V2ForgotPassword from '../components/V2ForgotPassword';
 import V2ResetPassword from '../components/V2ResetPassword';
+import V2AuthNotice from '../components/V2AuthNotice';
 import RegistrationInviteRequired from '../../components/RegistrationInviteRequired';
 import VerifyEmail from '../../components/VerifyEmail';
 import { AuthContext } from '../../context/AuthContext';
@@ -97,7 +98,7 @@ describe('sign up', () => {
 
   test('a failed sign-up is one alert at the top that marks email and password', async () => {
     routeGets();
-    axios.post.mockRejectedValue({ response: { data: { error: 'Registration failed.' } } });
+    axios.post.mockRejectedValue({ response: { status: 400, data: { error: 'Registration failed.' } } });
     mount(<V2Register />, '/v2/register');
     const github = await screen.findByRole('link', { name: /continue with github/i });
     fill();
@@ -108,6 +109,21 @@ describe('sign up', () => {
     expect(screen.getByLabelText(/^email$/i)).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText(/^password$/i)).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText(/invitation code/i)).not.toHaveAttribute('aria-invalid');
+  });
+
+  test.each([
+    ['a network failure', {}],
+    ['a server failure', { response: { status: 503, data: { error: 'Try again shortly.' } } }],
+  ])('%s is an alert that marks no field', async (_, rejection) => {
+    routeGets();
+    axios.post.mockRejectedValue(rejection);
+    mount(<V2Register />, '/v2/register');
+    await screen.findByRole('link', { name: /continue with github/i });
+    fill();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /create account/i })); });
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByLabelText(/^email$/i)).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByLabelText(/^password$/i)).not.toHaveAttribute('aria-invalid');
   });
 
   test('a rejected code marks the code, not the email and password', async () => {
@@ -163,7 +179,7 @@ describe('invitation required', () => {
     fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'alex@studio.dev' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /request waitlist access/i })); });
     const status = screen.getByRole('status');
-    expect(status).toHaveTextContent('Waitlist request submitted.');
+    await waitFor(() => expect(status).toHaveTextContent('Waitlist request submitted.'));
     expect(before(status, screen.getByRole('button', { name: /request waitlist access/i }))).toBe(true);
     expect(screen.getByLabelText(/^email$/i)).toHaveValue('alex@studio.dev');
   });
@@ -182,7 +198,8 @@ describe('verify email', () => {
     axios.get.mockResolvedValue({ data: { message: 'Email verified successfully' } });
     mount(<VerifyEmail />, '/v2/verify-email?token=a+b/c');
     expect(screen.getByText(/verifying your email/i)).toBeInTheDocument();
-    expect(await screen.findByRole('status')).toHaveTextContent('Email verified successfully');
+    const verified = await screen.findByRole('status');
+    await waitFor(() => expect(verified).toHaveTextContent('Email verified successfully'));
     expect(axios.get).toHaveBeenCalledWith('/api/auth/verify-email?token=a%20b%2Fc');
     const go = screen.getByRole('button', { name: /go to sign in/i });
     expect(go).not.toHaveClass('v2-login__submit--ghost');
@@ -211,15 +228,28 @@ describe('verify email', () => {
   });
 });
 
+describe('V2AuthNotice', () => {
+  test('a status row mounts empty and takes its text a frame later, so it is announced', async () => {
+    render(<V2AuthNotice kind="status">Sent.</V2AuthNotice>);
+    expect(screen.getByRole('status')).toHaveTextContent(/^$/);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Sent.'));
+  });
+
+  test('an alert carries its text from the start', () => {
+    render(<V2AuthNotice>Failed.</V2AuthNotice>);
+    expect(screen.getByRole('alert')).toHaveTextContent('Failed.');
+  });
+});
+
 describe('forgot password', () => {
-  test('a failure is the alert above the field, and marks it', async () => {
+  test('a failure is the alert above the field, which stays unmarked (the answer is never about the address)', async () => {
     axios.post.mockRejectedValue({});
     mount(<V2ForgotPassword />, '/v2/forgot-password');
     fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'alex@studio.dev' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /send reset link/i })); });
     const alert = screen.getByRole('alert');
     expect(before(alert, screen.getByLabelText(/^email$/i))).toBe(true);
-    expect(screen.getByLabelText(/^email$/i)).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText(/^email$/i)).not.toHaveAttribute('aria-invalid');
   });
 
   test('once sent, the form goes and one status row says so', async () => {
@@ -227,7 +257,7 @@ describe('forgot password', () => {
     mount(<V2ForgotPassword />, '/v2/forgot-password');
     fireEvent.change(screen.getByLabelText(/^email$/i), { target: { value: 'alex@studio.dev' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /send reset link/i })); });
-    expect(screen.getByRole('status')).toHaveTextContent(/valid for one hour/i);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/valid for one hour/i));
     expect(screen.queryByLabelText(/^email$/i)).toBeNull();
     expect(screen.getByRole('link', { name: /sign in/i })).toHaveAttribute('href', '/v2/login');
   });
@@ -266,7 +296,7 @@ describe('reset password', () => {
     mount(<V2ResetPassword />, '/v2/reset-password?token=t');
     fill('longenough1', 'longenough1');
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /update password/i })); });
-    expect(screen.getByRole('status')).toHaveTextContent(/password updated/i);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/password updated/i));
     fireEvent.click(screen.getByRole('button', { name: /go to sign in/i }));
     expect(screen.getByText('at /v2/login')).toBeInTheDocument();
   });
