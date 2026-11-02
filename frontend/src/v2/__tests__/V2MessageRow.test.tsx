@@ -336,7 +336,7 @@ it('server-bound origin pod links a plain message after its content', () => {
     user_id: 'agent-1', message_type: 'text', content: 'Approval requested.', created_at: '2026-10-25T00:00:00Z',
     user: { username: 'lark', isBot: true }, payload: { runId, runPodId },
   }} /></MemoryRouter>);
-  const link = screen.getByRole('link', { name: 'View run trace' });
+  const link = screen.getByRole('link', { name: 'How this reply was made' });
   expect(link).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
   const content = link.closest('.v2-msg__body').querySelector('.v2-msg__content');
   expect(content.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -354,7 +354,7 @@ it('the approval-card branch links to its server-bound original pod', () => {
   expect(screen.getByTestId('approval-card')).toBeInTheDocument();
   // A Threads row lands on this card by its standard anchor.
   expect(screen.getByTestId('approval-card').closest('#message-approval-origin-run')).toHaveAttribute('tabindex', '-1');
-  expect(screen.getByRole('link', { name: 'View run trace' })).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
+  expect(screen.getByRole('link', { name: 'How this reply was made' })).toHaveAttribute('href', `/v2/pods/${runPodId}/runs/${runId}`);
 });
 
 

@@ -13,9 +13,10 @@ export const runTracePath = (podId: unknown, runId: unknown): string | null => (
 const V2RunTraceLink: React.FC<{ podId: string; runId?: string }> = ({ podId, runId }) => {
   const { t } = useTranslation();
   const href = runTracePath(podId, runId);
+  // Walk 11-02: one plain, quiet link. Retention is stated on the trace page,
+  // not under every reply.
   return href ? <div className="v2-run-trace-link">
     <Link to={href}>{t('runTrace.view')}</Link>
-    <span>{t('runTrace.linkRetention')}</span>
   </div> : null;
 };
 export default V2RunTraceLink;
