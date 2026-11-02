@@ -402,18 +402,68 @@ describe('server mounts', () => {
   });
 
   // The access log names a request by `req.baseUrl` + the route's pattern
-  // (middleware/accessLog). `baseUrl` is the URL text a mount matched, so a
-  // router mounted on a parameter path would put a raw id in every line.
-  it('mounts no router on a parameter path', () => {
-    const { app } = require('../../server');
-    const paramMounts = [];
-    const walk = (stack) => (stack || [])
+  // (middleware/accessLog). `baseUrl` is the URL text a mount matched, so it is
+  // safe only when every router sits on literal segments (`/api/users`,
+  // `/api/v1.2`). A parameter (`/api/:id`), a wildcard, or a regular-expression
+  // mount (`/^\/api\/[^/]+/`, which Express compiles with no keys) would put
+  // caller text in every line. Express compiles a literal string mount to
+  // `^\/api\/users\/?(?=\/|$)`; anything else is not one.
+  const LITERAL_MOUNT = /^\^(?:\\\/(?:[A-Za-z0-9_~-]|\\\.)+)*\\\/\?\(\?=\\\/\|\$\)$/;
+  const nonLiteralMounts = (stack, found = []) => {
+    (stack || [])
       .filter((layer) => layer.handle && Array.isArray(layer.handle.stack) && !layer.route)
       .forEach((layer) => {
-        if ((layer.keys || []).length) paramMounts.push(String(layer.regexp));
-        walk(layer.handle.stack);
+        if (!LITERAL_MOUNT.test(layer.regexp.source)) found.push(layer.regexp.source);
+        nonLiteralMounts(layer.handle.stack, found);
       });
-    walk(app._router.stack);
-    expect(paramMounts).toEqual([]);
+    return found;
+  };
+
+  it('mounts every router on a literal path', () => {
+    const { app } = require('../../server');
+    expect(nonLiteralMounts(app._router.stack)).toEqual([]);
+  });
+
+  it('tells a literal mount from a parameter, wildcard or regular-expression one', () => {
+    const probe = express();
+    const router = express.Router();
+    probe.use('/api/users', router);
+    probe.use('/api/v1.2/a-b_c', router);
+    probe.use(router);
+    probe.use('/api/:id', router);
+    probe.use('/api/files*', router);
+    probe.use(/^\/api\/[^/]+/, router);
+    expect(nonLiteralMounts(probe._router.stack)).toHaveLength(3);
+  });
+
+  it('mounts the PG message routes on a literal path when they arrive after boot', async () => {
+    // The late mount (pgBootService mountRoutes) only runs once PG connects,
+    // which the test above never reaches. Boot it, wait for the mount, check again.
+    process.env.PG_HOST = 'x';
+    process.env.PG_BOOT_RETRY_BASE_DELAY_MS = '1';
+    mockConnectPG = jest.fn().mockResolvedValue({});
+    mockInitPGDB = jest.fn().mockResolvedValue(true);
+    try {
+      const { app } = require('../../server');
+      const { pgRoutesAreMounted } = require('../../services/pgBootService');
+      await new Promise((resolve) => {
+        const check = (left) => (pgRoutesAreMounted() || left === 0
+          ? resolve() : setTimeout(() => check(left - 1), 10));
+        check(300);
+      });
+      expect(pgRoutesAreMounted()).toBe(true);
+      expect(nonLiteralMounts(app._router.stack)).toEqual([]);
+    } finally {
+      delete process.env.PG_HOST;
+      delete process.env.PG_BOOT_RETRY_BASE_DELAY_MS;
+    }
+  });
+
+  it('checks the real PG routers too, which this file mocks above', () => {
+    ['pg-status', 'pg-messages'].forEach((name) => {
+      const router = jest.requireActual(`../../routes/${name}`);
+      expect(Array.isArray(router.stack)).toBe(true);
+      expect(nonLiteralMounts(router.stack)).toEqual([]);
+    });
   });
 });
