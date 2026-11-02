@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useV2Api } from '../hooks/useV2Api';
 import V2Avatar from './V2Avatar';
 import './V2PersonProfile.css';
 
@@ -25,6 +25,8 @@ interface SocialProfile {
   isBot?: boolean;
   botMetadata?: { agentName?: string; instanceId?: string } | null;
 }
+
+interface FollowResponse { target?: { followersCount?: number } }
 
 export interface ProfilePod { id: string; name: string; membersCount: number }
 export interface ProfilePost { id: string; content: string; createdAt?: string }
@@ -53,8 +55,6 @@ type LoadState = 'loading' | 'ready' | 'notFound' | 'error';
 const JOINED_FORMAT: Intl.DateTimeFormatOptions = { month: 'short', year: 'numeric' };
 const POST_DATE_FORMAT: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
 
-const authHeaders = () => ({ 'x-auth-token': localStorage.getItem('token') ?? '' });
-
 const formatDate = (value: string | undefined, language: string, options: Intl.DateTimeFormatOptions): string => {
   if (!value) return '';
   const date = new Date(value);
@@ -76,6 +76,11 @@ const V2PersonProfile: React.FC = () => {
   const [posts, setPosts] = useState<ProfilePost[]>([]);
   const [followBusy, setFollowBusy] = useState(false);
   const [followError, setFollowError] = useState(false);
+  const api = useV2Api();
+  // The profile on screen. A follow request that settles after the page has
+  // moved to another person must not touch that person's header.
+  const shownId = useRef(id);
+  shownId.current = id;
 
   useEffect(() => {
     let cancelled = false;
@@ -84,17 +89,15 @@ const V2PersonProfile: React.FC = () => {
     setPods([]);
     setPosts([]);
     setFollowError(false);
-    const headers = authHeaders();
+    setFollowBusy(false);
     Promise.all([
-      axios.get<SocialProfile>(`/api/users/${encodeURIComponent(id)}`, { headers }),
+      api.get<SocialProfile>(`/api/users/${encodeURIComponent(id)}`),
       // The activity lanes are secondary: a failure there still shows the person.
-      axios.get<PublicActivity>(`/api/users/${encodeURIComponent(id)}/public-activity`, { headers })
-        .then((res) => res.data)
-        .catch(() => null),
-    ]).then(([profileRes, activity]) => {
+      api.get<PublicActivity>(`/api/users/${encodeURIComponent(id)}/public-activity`).catch(() => null),
+    ]).then(([person, activity]) => {
       if (cancelled) return;
       const mapped = mapPublicActivity(activity);
-      setProfile(profileRes.data);
+      setProfile(person);
       setPods(mapped.pods);
       setPosts(mapped.posts);
       setState('ready');
@@ -104,7 +107,7 @@ const V2PersonProfile: React.FC = () => {
       setState(status === 404 || status === 400 ? 'notFound' : 'error');
     });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [api, id]);
 
   if (state === 'loading') {
     return <div className="v2-profile" aria-busy="true" />;
@@ -132,20 +135,28 @@ const V2PersonProfile: React.FC = () => {
 
   const toggleFollow = async () => {
     if (followBusy) return;
+    const targetId = profile._id;
+    const before = { isFollowing: following, followersCount: profile.followersCount || 0 };
     const next = !following;
-    const delta = next ? 1 : -1;
+    // Applies only while this person is still the one on screen.
+    const forTarget = (update: (p: SocialProfile) => SocialProfile) => setProfile((p) => (
+      p && p._id === targetId ? update(p) : p
+    ));
     setFollowBusy(true);
     setFollowError(false);
-    setProfile((p) => (p ? { ...p, isFollowing: next, followersCount: Math.max(0, (p.followersCount || 0) + delta) } : p));
+    forTarget((p) => ({ ...p, isFollowing: next, followersCount: Math.max(0, before.followersCount + (next ? 1 : -1)) }));
     try {
-      const url = `/api/users/${encodeURIComponent(profile._id)}/follow`;
-      if (next) await axios.post(url, {}, { headers: authHeaders() });
-      else await axios.delete(url, { headers: authHeaders() });
+      const url = `/api/users/${encodeURIComponent(targetId)}/follow`;
+      const res = await (next
+        ? api.post<FollowResponse>(url, {})
+        : api.del<FollowResponse>(url));
+      const count = res?.target?.followersCount;
+      if (typeof count === 'number') forTarget((p) => ({ ...p, followersCount: count }));
     } catch {
-      setProfile((p) => (p ? { ...p, isFollowing: !next, followersCount: Math.max(0, (p.followersCount || 0) - delta) } : p));
-      setFollowError(true);
+      forTarget((p) => ({ ...p, ...before }));
+      if (shownId.current === targetId) setFollowError(true);
     } finally {
-      setFollowBusy(false);
+      if (shownId.current === targetId) setFollowBusy(false);
     }
   };
 

@@ -52,7 +52,7 @@ const stubApi = (profile = person, activityData = activity) => {
 };
 
 const renderProfile = (id = PERSON_ID, viewerId = VIEWER_ID) => render(
-  <AuthContext.Provider value={{ currentUser: { _id: viewerId }, loading: false } as any}>
+  <AuthContext.Provider value={{ currentUser: { _id: viewerId }, token: 'test-token', loading: false } as any}>
     <MemoryRouter initialEntries={[`/v2/profile/${id}`]}>
       <Routes>
         <Route path="/v2/profile/:id" element={<V2PersonProfile />} />
@@ -65,7 +65,6 @@ describe('V2PersonProfile', () => {
   beforeAll(async () => { await i18nReady; });
   beforeEach(() => {
     jest.clearAllMocks();
-    localStorage.setItem('token', 'test-token');
   });
 
   it('renders the header, counts and pods in common from the API', async () => {
@@ -79,7 +78,7 @@ describe('V2PersonProfile', () => {
     expect(screen.getByText('7 members')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Recent posts' })).toBeInTheDocument();
     expect(screen.getByText('Shipped the onboarding checklist.')).toBeInTheDocument();
-    expect(mockGet).toHaveBeenCalledWith(`/api/users/${PERSON_ID}`, { headers: { 'x-auth-token': 'test-token' } });
+    expect(mockGet).toHaveBeenCalledWith(`/api/users/${PERSON_ID}`, { headers: { Authorization: 'Bearer test-token' } });
   });
 
   it('follows with an optimistic count and flips the key to Following', async () => {
@@ -88,11 +87,45 @@ describe('V2PersonProfile', () => {
     mockPost.mockImplementation(() => new Promise((resolve) => { resolvePost = resolve; }));
     renderProfile();
     fireEvent.click(await screen.findByRole('button', { name: 'Follow' }));
-    expect(mockPost).toHaveBeenCalledWith(`/api/users/${PERSON_ID}/follow`, {}, { headers: { 'x-auth-token': 'test-token' } });
+    expect(mockPost).toHaveBeenCalledWith(`/api/users/${PERSON_ID}/follow`, {}, { headers: { Authorization: 'Bearer test-token' } });
     expect(screen.getByRole('button', { name: 'Following' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByTestId('profile-counts')).toHaveTextContent('13 followers');
     resolvePost({ data: {} });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Following' })).not.toBeDisabled());
+  });
+
+  it('takes the follower count the server returns', async () => {
+    stubApi();
+    mockPost.mockResolvedValue({ data: { following: true, target: { followersCount: 40 } } });
+    renderProfile();
+    fireEvent.click(await screen.findByRole('button', { name: 'Follow' }));
+    await waitFor(() => expect(screen.getByTestId('profile-counts')).toHaveTextContent('40 followers'));
+  });
+
+  it('sends one request for a double click while the first is in flight', async () => {
+    stubApi();
+    mockPost.mockImplementation(() => new Promise(() => {}));
+    renderProfile();
+    const key = await screen.findByRole('button', { name: 'Follow' });
+    fireEvent.click(key);
+    fireEvent.click(screen.getByRole('button', { name: 'Following' }));
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+
+  it('restores the exact count when following fails, even from zero', async () => {
+    stubApi({ ...person, followersCount: 0, isFollowing: true });
+    mockDelete.mockRejectedValue(new Error('network'));
+    renderProfile();
+    fireEvent.click(await screen.findByRole('button', { name: 'Following' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByTestId('profile-counts')).toHaveTextContent('0 followers');
+  });
+
+  it('shows the load error, not "not found", when the profile read fails on the server', async () => {
+    mockGet.mockRejectedValue(Object.assign(new Error('boom'), { response: { status: 500 } }));
+    renderProfile();
+    expect(await screen.findByText(/This profile didn.t load\./)).toBeInTheDocument();
   });
 
   it('unfollows with DELETE and reverts the count when the request fails', async () => {
@@ -100,7 +133,7 @@ describe('V2PersonProfile', () => {
     mockDelete.mockRejectedValue(new Error('network'));
     renderProfile();
     fireEvent.click(await screen.findByRole('button', { name: 'Following' }));
-    expect(mockDelete).toHaveBeenCalledWith(`/api/users/${PERSON_ID}/follow`, { headers: { 'x-auth-token': 'test-token' } });
+    expect(mockDelete).toHaveBeenCalledWith(`/api/users/${PERSON_ID}/follow`, { headers: { Authorization: 'Bearer test-token' } });
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Following' })).toBeInTheDocument();
     expect(screen.getByTestId('profile-counts')).toHaveTextContent('12 followers');

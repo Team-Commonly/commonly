@@ -47,6 +47,13 @@ describe('V2MessageRow author click', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/chat/pod-1');
   });
 
+  it('leaves a kernel line and a row with no isBot as plain text', () => {
+    renderRow({ id: 'k1', user_id: HUMAN_ID, author_kind: 'kernel', content: 'claimed', user: { username: 'board', isBot: false } });
+    renderRow({ id: 'u1', user_id: '64b7f0c2a1b2c3d4e5f60720', content: 'hello', user: { username: 'ida' } });
+    expect(screen.queryByRole('button', { name: "View board's profile" })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "View ida's profile" })).not.toBeInTheDocument();
+  });
+
   it('leaves synthetic rows without a real user id as plain text', () => {
     renderRow({ id: 'r1', user_id: 'decision-ruling', content: 'Ship now', user: { username: 'You', isBot: false } });
     expect(screen.queryByRole('button', { name: /profile/ })).not.toBeInTheDocument();
