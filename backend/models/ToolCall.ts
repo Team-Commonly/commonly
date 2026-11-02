@@ -87,7 +87,7 @@ export interface ToolCallRecord {
 }
 
 // The tables are created by the numbered migrations (0001, retrofitted by
-// 0003); this model only reads and writes them.
+// 0003 and 0004); this model only reads and writes them.
 const ensurePool = (): PgPool => {
   if (!pool) throw new Error('tool broker requires PostgreSQL');
   return pool;

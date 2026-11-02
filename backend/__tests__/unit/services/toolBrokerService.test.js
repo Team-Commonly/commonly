@@ -672,6 +672,16 @@ describe('the seat push tool stays off until the server enables it', () => {
     })).rejects.toMatchObject({ code: 'tool_not_found' });
     expect(mockPushSeatBranch).not.toHaveBeenCalled();
   });
+
+  it('refuses a push approved while the flag was on once it is off', async () => {
+    delete process.env.SEAT_GITHUB_PUSH_ENABLED;
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'write' }));
+    await expect(executeApprovedToolCall({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args,
+      expectedArgsDigest: digest(args), approvalId: 'approval-test',
+    })).rejects.toMatchObject({ code: 'tool_not_found' });
+    expect(mockPushSeatBranch).not.toHaveBeenCalled();
+  });
 });
 
 describe('host GitHub push authority', () => {

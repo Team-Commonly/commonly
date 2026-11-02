@@ -127,9 +127,10 @@ real('Postgres migrations: real DDL, rollback and competing boots', () => {
       FROM message_claims`)).rows).toEqual([{
       message_id: '7', state: 'claimed', declined_by: [], refusal_reason: null, refusal_status: null,
     }]);
-    expect((await pool.query(`SELECT call_id, credential_owner_id, vendor_status, vendor_error
-      FROM tool_calls`)).rows).toEqual([{
+    expect((await pool.query(`SELECT call_id, credential_owner_id, vendor_status, vendor_error,
+      provider_repo, provider_ref FROM tool_calls`)).rows).toEqual([{
       call_id: 'old-call', credential_owner_id: null, vendor_status: null, vendor_error: null,
+      provider_repo: null, provider_ref: null,
     }]);
     expect(await runPgMigrations(pool)).toEqual([]);
   });
