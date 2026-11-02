@@ -1795,11 +1795,13 @@ class AgentEventService {
             { _id: event._id, status: 'delivered', deliveryNonce: event.deliveryNonce ?? null },
             { $set: { deliveredAt: new Date() } },
           ).catch((err: Error) => {
-            // Left 'delivered'; the stuck sweep re-runs it.
-            console.warn(`[native-runtime] lane re-check failed for event ${String(event._id)}:`, err.message);
-            return null;
-          }) as { matchedCount?: number } | null;
-          if (!stillOurs?.matchedCount) return;
+            // Ownership is unknown, not lost, so run the turn: a skipped turn
+            // is an answer nobody sees for 10-20 minutes, and the settle below
+            // is nonce-fenced, so a stale copy cannot end a replacement.
+            console.warn(`[native-runtime] lane re-check failed for event ${String(event._id)}; running it:`, err.message);
+            return { matchedCount: 1 };
+          }) as { matchedCount?: number };
+          if (!stillOurs.matchedCount) return;
         }
         await this.runInProcess(event, nativeInstallation, agentName, instanceId, type, () => {
           this.inProcessRunning.delete(deliveryKey);
