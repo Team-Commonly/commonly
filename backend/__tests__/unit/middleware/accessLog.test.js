@@ -134,6 +134,14 @@ describe('access log', () => {
     expect(lines[0].route).toBe('/api/users/:id/public-activity');
   });
 
+  it('waits for a line written after the response, as on a loaded host', async () => {
+    const lines = [];
+    const late = (line) => { setTimeout(() => lines.push(JSON.parse(line)), 40); };
+    await request(buildApp(lines, { log: late })).get(`/api/users/${OTHER}/public-activity`).expect(200);
+    await logged(lines);
+    expect(lines).toEqual([expect.objectContaining({ route: '/api/users/:id/public-activity', status: 200 })]);
+  });
+
   it('skips the health probes', async () => {
     const lines = [];
     const app = buildApp(lines);

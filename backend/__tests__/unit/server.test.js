@@ -436,6 +436,29 @@ describe('server mounts', () => {
     expect(nonLiteralMounts(probe._router.stack)).toHaveLength(3);
   });
 
+  it('mounts the PG message routes on a literal path when they arrive after boot', async () => {
+    // The late mount (pgBootService mountRoutes) only runs once PG connects,
+    // which the test above never reaches. Boot it, wait for the mount, check again.
+    process.env.PG_HOST = 'x';
+    process.env.PG_BOOT_RETRY_BASE_DELAY_MS = '1';
+    mockConnectPG = jest.fn().mockResolvedValue({});
+    mockInitPGDB = jest.fn().mockResolvedValue(true);
+    try {
+      const { app } = require('../../server');
+      const { pgRoutesAreMounted } = require('../../services/pgBootService');
+      await new Promise((resolve) => {
+        const check = (left) => (pgRoutesAreMounted() || left === 0
+          ? resolve() : setTimeout(() => check(left - 1), 10));
+        check(300);
+      });
+      expect(pgRoutesAreMounted()).toBe(true);
+      expect(nonLiteralMounts(app._router.stack)).toEqual([]);
+    } finally {
+      delete process.env.PG_HOST;
+      delete process.env.PG_BOOT_RETRY_BASE_DELAY_MS;
+    }
+  });
+
   it('checks the real PG routers too, which this file mocks above', () => {
     ['pg-status', 'pg-messages'].forEach((name) => {
       const router = jest.requireActual(`../../routes/${name}`);
