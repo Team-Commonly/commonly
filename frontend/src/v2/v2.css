@@ -1979,9 +1979,10 @@ body.modern-ui.v2-canvas {
 .v2-root .v2-login__card--stack button.v2-login__submit {
   margin-top: 0;
   /* A key can carry a pod name ("Join <pod>"); an unbroken one wraps
-     inside the key instead of painting past the card. One line stays 40px. */
+     inside the key instead of painting past the card. One line stays 40px
+     (border-box 9 + 20 + 9 + 2). No min-height here: it would outrank the
+     phone rule's 44px. */
   height: auto;
-  min-height: 40px;
   padding-block: 9px;
   line-height: 20px;
   overflow-wrap: anywhere;
