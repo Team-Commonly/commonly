@@ -261,7 +261,7 @@ export const useToolConnectors = (
       merge_head_unavailable: t('tools.reasonPrHeadUnavailable', { defaultValue: 'the pull request\'s latest commit could not be read' }),
       task_pod_mismatch: t('tools.reasonTaskPodMismatch', { defaultValue: 'this grant works only in its task\'s pod' }),
       task_claim_required: t('tools.reasonTaskClaimRequired', { defaultValue: 'the agent has to claim the bound task first' }),
-      task_closed: t('tools.reasonTaskClosed', { defaultValue: 'the bound task is closed' }),
+      task_closed: t('tools.reasonTaskClosed', { defaultValue: 'the bound task closed after this grant was issued' }),
       task_not_found: t('tools.reasonTaskNotFound', { defaultValue: 'the bound task no longer exists' }),
       agent_identity_required: t('tools.reasonAgentIdentityRequired', { defaultValue: 'the call did not say which agent made it' }),
       grant_not_found: t('tools.reasonGrantNotFound', { defaultValue: 'the grant no longer exists' }),

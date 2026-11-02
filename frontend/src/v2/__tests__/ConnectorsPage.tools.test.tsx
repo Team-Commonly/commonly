@@ -443,7 +443,7 @@ describe('Connectors page: tools', () => {
     ['merge_head_unavailable', 'the pull request\'s latest commit could not be read', '无法读取 PR 的最新提交'],
     ['task_pod_mismatch', 'this grant works only in its task\'s pod', '此授权只能在其任务所在的 Pod 中使用'],
     ['task_claim_required', 'the agent has to claim the bound task first', '智能体需要先认领绑定的任务'],
-    ['task_closed', 'the bound task is closed', '绑定的任务已关闭'],
+    ['task_closed', 'the bound task closed after this grant was issued', '绑定的任务在授权签发后关闭过'],
     ['task_not_found', 'the bound task no longer exists', '绑定的任务已不存在'],
     ['agent_identity_required', 'the call did not say which agent made it', '调用没有说明是哪个智能体发起的'],
     ['grant_not_found', 'the grant no longer exists', '授权已不存在'],

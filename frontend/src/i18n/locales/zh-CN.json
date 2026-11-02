@@ -2743,7 +2743,7 @@
     "reasonPrHeadUnavailable": "无法读取 PR 的最新提交",
     "reasonTaskPodMismatch": "此授权只能在其任务所在的 Pod 中使用",
     "reasonTaskClaimRequired": "智能体需要先认领绑定的任务",
-    "reasonTaskClosed": "绑定的任务已关闭",
+    "reasonTaskClosed": "绑定的任务在授权签发后关闭过",
     "reasonTaskNotFound": "绑定的任务已不存在",
     "reasonAgentIdentityRequired": "调用没有说明是哪个智能体发起的",
     "reasonGrantNotFound": "授权已不存在",

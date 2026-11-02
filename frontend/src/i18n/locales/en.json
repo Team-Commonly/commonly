@@ -2740,7 +2740,7 @@
     "reasonPrHeadUnavailable": "the pull request's latest commit could not be read",
     "reasonTaskPodMismatch": "this grant works only in its task's pod",
     "reasonTaskClaimRequired": "the agent has to claim the bound task first",
-    "reasonTaskClosed": "the bound task is closed",
+    "reasonTaskClosed": "the bound task closed after this grant was issued",
     "reasonTaskNotFound": "the bound task no longer exists",
     "reasonAgentIdentityRequired": "the call did not say which agent made it",
     "reasonGrantNotFound": "the grant no longer exists",
