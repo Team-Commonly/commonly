@@ -30,8 +30,8 @@ jest.mock('../../../models/User', () => {
     mockSaved.push(JSON.parse(JSON.stringify(this)));
     return this;
   };
-  // `apiToken` is select:false on the schema, so production code loads the
-  // agent user with `.select('+apiToken')`. The mock therefore has to be a
+  // `apiTokenHash` is select:false on the schema, so production code loads the
+  // agent user with `.select('+apiTokenHash')`. The mock therefore has to be a
   // thenable query builder, not a bare promise.
   const findOneResult = (query) => {
     if (mockExisting && query.username === mockExisting.username
@@ -51,6 +51,8 @@ jest.mock('../../../models/User', () => {
       // `userSchema.methods.revokeApiToken` in models/User.ts.
       doc.revokeApiToken = function revokeApiToken() {
         this.apiToken = undefined;
+        this.apiTokenHash = undefined;
+        this.apiTokenLast4 = undefined;
         this.apiTokenCreatedAt = undefined;
       };
       return doc;
@@ -309,7 +311,7 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
     // not the only thing that happens to it: a person can mint an apiToken from
     // their own session and a CLI device bearer from the device flow, and both
     // would otherwise survive into the agent's identity — `routes/registry/
-    // tokens.ts` hands a surviving apiToken back as the agent's user token, with
+    // tokens.ts` keeps a surviving token as the agent's user token, with
     // nothing in the response to say a stranger minted it.
     mockExisting = {
       _id: 'squatter-id',
@@ -317,7 +319,8 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
       email: 'scout-7-scout@agents.commonly.local',
       isBot: false,
       botMetadata: { agentName: 'scout-7' },
-      apiToken: 'cm_brought_by_the_row',
+      apiTokenHash: 'digest-brought-by-the-row',
+      apiTokenLast4: 'last',
       apiTokenCreatedAt: new Date('2026-09-01T00:00:00.000Z'),
       apiTokenScopes: ['messages:write'],
       deviceTokens: [
@@ -333,7 +336,8 @@ describe('inline displayName collision resolver (sticky dedup)', () => {
 
     // Identity kept, credential lost.
     expect(agentUser.isBot).toBe(true);
-    expect(agentUser.apiToken).toBeUndefined();
+    expect(agentUser.apiTokenHash).toBeUndefined();
+    expect(agentUser.apiTokenLast4).toBeUndefined();
     expect(agentUser.apiTokenCreatedAt).toBeUndefined();
     expect(agentUser.apiTokenScopes).toEqual([]);
 

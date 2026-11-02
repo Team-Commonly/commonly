@@ -11,9 +11,9 @@ const {
 const { PERSONAL_POD_TYPES } = require('../services/podTypePolicyService');
 
 // Credentials. These must never reach a response body under any circumstance,
-// not even the account's own profile: `apiToken` is a live `cm_` bearer that
-// authenticates as this user (middleware/auth.ts), and `agentRuntimeTokens`
-// carries agent runtime credentials. The UI receives a freshly minted token
+// not even the account's own profile: `apiToken` is the retired plaintext form
+// of a `cm_` bearer, which a leftover row may still hold, and
+// `agentRuntimeTokens` carries agent runtime credentials. The UI receives a freshly minted token
 // from POST /api/auth/api-token/generate, which is the only place it belongs.
 const SECRET_USER_FIELDS = [
   'password',

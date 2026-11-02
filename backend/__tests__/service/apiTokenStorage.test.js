@@ -41,13 +41,16 @@ describe('API token storage rollout', () => {
     expect((await get(token)).status).toBe(401);
     expect(await users().findOne({ _id: user._id })).not.toHaveProperty('apiTokenHash');
   });
-  it('preserves legacy human/bot bearers and metadata across dry run and repeat apply', async () => {
+  it('authenticates a legacy human/bot bearer only once the backfill has stored its digest', async () => {
+    // The plaintext reader is gone (runbook step 6). A self-hosted instance that
+    // upgrades before running the backfill gets 401s until it runs it, and the
+    // backfill still restores every bearer with its metadata.
     const tokens = ['cm_human-secret', 'cm_bot-secret'];
     for (let i = 0; i < tokens.length; i += 1) {
       const user = await create(`legacy-${i}`, Boolean(i));
       await users().updateOne({ _id: user._id }, { $set: { apiToken: tokens[i], apiTokenCreatedAt: new Date('2026-01-01') } });
     }
-    for (const token of tokens) expect((await get(token)).status).toBe(200);
+    for (const token of tokens) expect((await get(token)).status).toBe(401);
     const before = await users().find().toArray();
     expect(await backfillApiTokenStorage()).toMatchObject({ candidates: 2, migrated: 0, remaining: 2 });
     expect((await users().find().toArray()).map(withoutLastActive)).toEqual(before.map(withoutLastActive));
@@ -145,12 +148,39 @@ describe('API token storage rollout', () => {
   it('rotates a legacy credential loaded with the default hidden projection', async () => {
     const user = await create('rotation');
     await users().updateOne({ _id: user._id }, { $set: { apiToken: 'cm_old' } });
+    expect((await get('cm_old')).status).toBe(401);
     const hidden = await User.findById(user._id);
     const token = hidden.generateApiToken();
     await hidden.save();
     expect((await users().findOne({ _id: user._id })).apiToken).toBeUndefined();
     expect((await get('cm_old')).status).toBe(401);
     expect((await get(token)).status).toBe(200);
+  });
+
+  it('clears a leftover plaintext field on revoke, on a document saved before', async () => {
+    const user = await create('revoke-leftover');
+    await users().updateOne({ _id: user._id }, { $set: { apiToken: 'cm_old' } });
+    const loaded = await User.findById(user._id);
+    loaded.apiTokenScopes = ['messages:write'];
+    await loaded.save();
+    loaded.revokeApiToken();
+    await loaded.save();
+    expect((await users().findOne({ _id: user._id })).apiToken).toBeUndefined();
+  });
+
+  it('revokes the digest on a document saved before, loaded without selecting it', async () => {
+    const user = await create('revoke-digest');
+    const token = user.generateApiToken();
+    await user.save();
+    const loaded = await User.findById(user._id);
+    loaded.apiTokenScopes = ['messages:write'];
+    await loaded.save();
+    loaded.revokeApiToken();
+    await loaded.save();
+    const stored = await users().findOne({ _id: user._id });
+    expect(stored).not.toHaveProperty('apiTokenHash');
+    expect(stored).not.toHaveProperty('apiTokenLast4');
+    expect((await get(token)).status).toBe(401);
   });
 
   it('keeps CLI failure output fixed even when invalid input contains a credential', () => {
@@ -179,12 +209,34 @@ describe('API token storage rollout', () => {
     expect((await get(token)).status).toBe(200);
   });
 
-  it.each(['hashed', 'legacy', 'device'])('preserves pending-deletion refusal for %s credentials', async (kind) => {
+  it('leaves a leftover plaintext token for the backfill instead of minting over it', async () => {
+    // A provision or reprovision on an instance that skipped the backfill must
+    // not erase a bearer the backfill can still restore (an external agent may
+    // hold it). Only an explicit force rotation replaces it.
+    const identity = require('../../services/agentIdentityService');
+    const { issueUserTokenForInstallation } = require('../../routes/registry/tokens');
+    const bot = await identity.getOrCreateAgentUser('leftover-probe', { instanceId: 'test' });
+    await users().updateOne({ _id: bot._id }, { $set: { apiToken: 'cm_leftover-plaintext' } });
+    const issue = (force) => issueUserTokenForInstallation({ agentName: 'leftover-probe', instanceId: 'test', scopes: ['agent:context:read'], force });
+    expect(await issue(false)).toMatchObject({ existing: true, token: null, requiresRotation: true });
+    expect((await users().findOne({ _id: bot._id })).apiToken).toBe('cm_leftover-plaintext');
+    expect(await backfillApiTokenStorage({ apply: true })).toMatchObject({ migrated: 1, remaining: 0 });
+    expect((await get('cm_leftover-plaintext')).status).toBe(200);
+
+    await users().updateOne({ _id: bot._id }, { $set: { apiToken: 'cm_second-leftover' }, $unset: { apiTokenHash: '', apiTokenLast4: '' } });
+    const forced = await issue(true);
+    expect(forced.existing).toBe(false);
+    const stored = await users().findOne({ _id: bot._id });
+    expect(stored.apiToken).toBeUndefined();
+    expect(stored.apiTokenHash).toBe(hash(forced.token));
+    expect((await get(forced.token)).status).toBe(200);
+  });
+
+  it.each(['hashed', 'device'])('preserves pending-deletion refusal for %s credentials', async (kind) => {
     const user = await create(`deleting-${kind}`);
     const token = `cm_deleting-${kind}`;
     const credential = kind === 'hashed' ? { apiTokenHash: hash(token) }
-      : kind === 'legacy' ? { apiToken: token }
-        : { deviceTokens: [{ tokenHash: hash(token), label: 'test', createdAt: new Date() }] };
+      : { deviceTokens: [{ tokenHash: hash(token), label: 'test', createdAt: new Date() }] };
     await users().updateOne({ _id: user._id }, { $set: { ...credential, accountDeletionRequestedAt: new Date() } });
     const response = await get(token);
     expect(response.status).toBe(403);

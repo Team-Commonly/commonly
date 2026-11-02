@@ -451,13 +451,21 @@ const issueUserTokenForInstallation = async ({
   await AgentIdentityService.ensureAgentInPod(agentUser, podId);
   const normalizedScopes = normalizeScopes(scopes);
 
-  // Preserve existing token unless force-rotation is requested
-  if ((agentUser.apiTokenHash || agentUser.apiToken) && !force) {
+  // Preserve existing token unless force-rotation is requested. Only the digest
+  // is stored, so an existing token can be kept but never handed back. A row
+  // still holding a retired plaintext token counts as existing too: minting
+  // here would erase a bearer the backfill can still restore. Presence only;
+  // the plaintext is never loaded.
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../../models/User');
+  const hasRetiredToken = !agentUser.apiTokenHash && !force
+    && Boolean(await User.exists({ _id: agentUser._id, apiToken: { $type: 'string' } }));
+  if ((agentUser.apiTokenHash || hasRetiredToken) && !force) {
     agentUser.apiTokenScopes = normalizedScopes;
     await agentUser.save();
     return {
-      token: agentUser.apiTokenHash ? null : agentUser.apiToken,
-      requiresRotation: Boolean(agentUser.apiTokenHash),
+      token: null,
+      requiresRotation: true,
       scopes: normalizedScopes,
       createdAt: agentUser.apiTokenCreatedAt,
       existing: true,

@@ -411,7 +411,7 @@ router.get('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res: Re
     // eslint-disable-next-line global-require
     const User = require('../models/User');
     const user = await User.findById(req.user?.id).select(
-      '+apiToken +apiTokenHash +apiTokenLast4 apiTokenCreatedAt apiTokenScopes',
+      '+apiTokenHash +apiTokenLast4 apiTokenCreatedAt apiTokenScopes',
     );
     if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -419,10 +419,10 @@ router.get('/api-token', deviceManageLimiter, auth, async (req: AuthReq, res: Re
     // only by POST /api-token/generate, when the user explicitly creates or
     // rotates it; a reload must never turn this endpoint into a secret reader.
     return res.json({
-      hasToken: !!(user.apiTokenHash || user.apiToken),
+      hasToken: !!user.apiTokenHash,
       createdAt: user.apiTokenCreatedAt || null,
       scopes: user.apiTokenScopes || [],
-      last4: user.apiTokenLast4 || (user.apiToken ? user.apiToken.slice(-4) : null),
+      last4: user.apiTokenLast4 || null,
     });
   } catch (error) {
     console.error('Error fetching API token:', error);

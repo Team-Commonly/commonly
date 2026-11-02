@@ -539,7 +539,7 @@ const registry = {
     const admin = await seedUser(s, 'ADMIN', { role: 'admin' });
     const pod = await model.Pod().create({ name: 'Registry Room', createdBy: owner, members: [owner, member] });
     // agent-tokens looks the agent up by buildAgentUsername(type, 'default') === type.
-    // seedUser gives it an apiToken (read by GET user-token via +apiToken) and an
+    // seedUser gives it a retired apiToken (GET user-token must not read it) and an
     // agentRuntimeTokens[].tokenHash (read by GET runtime-tokens).
     await seedUser(s, 'REG_AGENT', {
       username: REG_AGENT,

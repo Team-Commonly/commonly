@@ -72,8 +72,10 @@ describe('Self-serve account deletion', () => {
 
   it('deletes own bytes and legacy uploads, revokes credentials, preserves agents and other users', async () => {
     const deviceToken = 'cm_delete-device';
-    const human = await makeUser({ apiToken: 'cm_delete-api', deviceTokens: [{
+    const human = await makeUser({ deviceTokens: [{
       tokenHash: createHash('sha256').update(deviceToken).digest('hex'), label: 'Laptop' }] });
+    const apiToken = human.generateApiToken(); await human.save();
+    await request(app).get('/api/users/profile').set('Authorization', `Bearer ${apiToken}`).expect(200);
     const other = await makeUser();
     const agent = await makeUser({ isBot: true });
     const sharedPod = await Pod.create({ name: 'Keep shared pod', createdBy: human._id,
@@ -129,7 +131,7 @@ describe('Self-serve account deletion', () => {
     await sweepAccountDeletions();
     expect((await mockPg.query('SELECT username FROM users WHERE _id = $1', [String(human._id)])).rows[0].username).toBe('Deleted user');
     expect((await AgentCredential.findById(credential._id)).status).toBe('revoked');
-    for (const bearer of [token, 'cm_delete-api', deviceToken]) {
+    for (const bearer of [token, apiToken, deviceToken]) {
       await request(app).get('/api/users/profile').set('Authorization', `Bearer ${bearer}`).expect(401);
     }
     await request(app).get('/api/uploads/own.png').expect(404);
@@ -190,14 +192,15 @@ describe('Self-serve account deletion', () => {
   });
 
   it('requires explicit confirmation, the right password and a browser session', async () => {
-    const user = await makeUser({ apiToken: 'cm_no-deletion' }); const token = issueSessionToken(user);
+    const user = await makeUser(); const apiToken = user.generateApiToken(); await user.save();
+    const token = issueSessionToken(user);
     await deletion(app, token, { password }).expect(400);
     await deletion(app, token, { confirmation: 'DELETE' }).expect(401);
     await deletion(app, token, { confirmation: 'DELETE', password: 'wrong' }).expect(401);
-    await deletion(app, 'cm_no-deletion').expect(403);
-    const after = await User.findById(user._id).select('+apiToken');
+    await deletion(app, apiToken).expect(403);
+    const after = await User.findById(user._id).select('+apiTokenHash');
     expect(after).not.toBeNull();
-    expect(after.apiToken).toBe('cm_no-deletion');
+    expect(after.apiTokenHash).toBe(createHash('sha256').update(apiToken).digest('hex'));
     expect(after.accountDeletionRequestedAt).toBeUndefined();
     await request(app).get('/session-probe').set('Authorization', `Bearer ${issueSessionToken(user)}`).expect(204);
   });
@@ -302,13 +305,13 @@ describe('Self-serve account deletion', () => {
   });
 
   it('leaves the account and uploads intact if subscription cancellation fails', async () => {
-    const user = await makeUser({ apiToken: 'cm_keep-on-billing-failure',
-      billing: { subscriptionId: 'sub_fail', subscriptionStatus: 'active' } });
+    const user = await makeUser({ billing: { subscriptionId: 'sub_fail', subscriptionStatus: 'active' } });
+    const apiToken = user.generateApiToken(); await user.save();
     await addFile(user, 'billing.png');
     mockStripe.subscriptions.cancel.mockRejectedValueOnce(new Error('Provider unavailable'));
     await deletion(app, issueSessionToken(user)).expect(503);
-    const after = await User.findById(user._id).select('+apiToken');
-    expect(after.apiToken).toBe('cm_keep-on-billing-failure');
+    const after = await User.findById(user._id).select('+apiTokenHash');
+    expect(after.apiTokenHash).toBe(createHash('sha256').update(apiToken).digest('hex'));
     expect(after.accountDeletionRequestedAt).toBeUndefined();
     await request(app).get('/session-probe').set('Authorization', `Bearer ${issueSessionToken(user)}`).expect(204);
     expect(await MediaObject.findOne({ key: 'billing.png' })).not.toBeNull();
