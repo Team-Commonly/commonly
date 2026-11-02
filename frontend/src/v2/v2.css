@@ -5621,7 +5621,8 @@ body.modern-ui.v2-canvas {
 }
 /* Get started, checking (d215 s-activity): while the roster and connector count are in flight the
    card holds its place — real head, two step rows of bars on the same line boxes as the loaded
-   rows (20px lines, 32px key; 44px full width at ≤760) — so nothing below it moves. */
+   rows (20px lines, 32px key; 44px full width at ≤760) — so for the two-step day-zero card nothing
+   below it moves; one or three steps shift it by a row. */
 .v2-activity__start--pending .v2-activity__start-num--pending { background: var(--v2-surface-hover); }
 .v2-activity__start-bar { display: block; position: relative; height: 20px; }
 .v2-activity__start-bar::after { content: ""; position: absolute; left: 0; top: 5px; width: 92%; height: 10px; border-radius: 5px; background: var(--v2-surface-hover); }

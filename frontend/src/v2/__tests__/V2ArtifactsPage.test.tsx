@@ -126,12 +126,10 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
   });
 
   // Day zero (d215 s-artifacts): nothing shared and no filter set → no controls, no count, one card.
-  const renderEmpty = (initial, { pods = [], agents = {} } = {}) => {
-    axios.get.mockImplementation((url, config) => {
+  const renderEmpty = (initial, { pods = [] } = {}) => {
+    axios.get.mockImplementation((url) => {
       if (url === '/api/pods') return Promise.resolve({ data: pods });
       if (url === '/api/artifacts') return Promise.resolve({ data: { items: [], nextCursor: null, total: 0, limit: 50 } });
-      const seat = /^\/api\/registry\/pods\/([^/]+)\/agents$/.exec(url);
-      if (seat) return Promise.resolve({ data: { agents: agents[seat[1]] || [] } });
       return Promise.resolve({ data: {} });
     });
     return render(<MemoryRouter initialEntries={[initial]}><V2ArtifactsPage /></MemoryRouter>);
@@ -151,19 +149,16 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
     expect(container.querySelector('.v2-artifacts__controls')).toBeNull();
     expect(container.querySelector('.v2-page-head__meta')).toBeNull();
     expect(screen.queryByText(/Nothing matches/)).not.toBeInTheDocument();
-    // One pod is the answer either way, so no seat lookup is spent on it.
-    expect(axios.get).not.toHaveBeenCalledWith(expect.stringMatching(/^\/api\/registry\//), expect.anything());
   });
 
-  test('day zero picks the pod Activity’s Get started opens: the oldest pod with a seat, else the oldest pod', async () => {
+  test('day zero opens the oldest pod, the one signup creates, whatever order /api/pods lists', async () => {
     const team = { _id: 'p2', name: 'Launch room', createdAt: '2026-10-05T00:00:00.000Z' };
     const later = { _id: 'p3', name: 'Field notes', createdAt: '2026-10-09T00:00:00.000Z' };
-    // /api/pods lists by last update, newest first; the choice reads them oldest first.
-    renderEmpty('/v2/artifacts', { pods: [later, team, workspace], agents: { w1: [{ name: 'helper', internal: true }], p2: [{ name: 'scout' }], p3: [{ name: 'fern' }] } });
-    expect(await screen.findByRole('link', { name: 'Open Launch room' })).toHaveAttribute('href', '/v2/pods/p2');
-    cleanup();
-    renderEmpty('/v2/artifacts', { pods: [later, workspace], agents: {} });
+    // /api/pods lists by last update, newest first.
+    renderEmpty('/v2/artifacts', { pods: [later, team, workspace] });
     expect(await screen.findByRole('link', { name: 'Open My Workspace' })).toHaveAttribute('href', '/v2/pods/w1');
+    // No extra lookups: the choice is made from /api/pods alone.
+    expect(axios.get.mock.calls.map(([url]) => url).sort()).toEqual(['/api/artifacts', '/api/pods']);
   });
 
   test('day zero with no pods keeps the card and omits the key', async () => {

@@ -81,7 +81,6 @@ const V2ArtifactsPage: React.FC = () => {
   const [podMenuOpen, setPodMenuOpen] = useState(false);
   // ux-lead 66462: an image row opens the chat lightbox; pages and docs open in a new tab.
   const [lightbox, setLightbox] = useState<ArtifactItem | null>(null);
-  const [workspacePod, setWorkspacePod] = useState<PodRef | null>(null);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -154,25 +153,12 @@ const V2ArtifactsPage: React.FC = () => {
   // Day zero (d215 s-artifacts): nothing shared and nothing filtered, so there is nothing to
   // filter — no controls, no count, one card. A filtered empty result keeps the controls.
   const dayZero = !loading && !error && total === 0 && items.length === 0 && !urlQ && !kind && !podId;
-  // The card's key opens the pod Activity's Get started step opens (V2ActivityPage speakPod):
-  // the first pod holding a seat, else the account's first pod. Activity reads the account's
-  // pods oldest first and checks at most 20; /api/pods lists by last update, so re-sort.
-  useEffect(() => {
-    if (!dayZero || pods.length === 0) return undefined;
-    let active = true;
+  // The card's key opens the account's oldest pod: signup creates My Workspace first. /api/pods
+  // lists by last update, so pick by createdAt rather than position.
+  const workspacePod = useMemo(() => {
     const createdMs = (pod: PodRef) => (pod.createdAt ? Date.parse(pod.createdAt) : Number.POSITIVE_INFINITY);
-    const ordered = [...pods].sort((a, b) => createdMs(a) - createdMs(b));
-    if (ordered.length === 1) {
-      setWorkspacePod(ordered[0]);
-      return undefined;
-    }
-    Promise.all(ordered.slice(0, 20).map((pod) => axios
-      .get<{ agents?: Array<{ internal?: boolean }> }>(`/api/registry/pods/${pod._id}/agents`, { headers })
-      .then((res) => (Array.isArray(res.data?.agents) ? res.data.agents : []).some((agent) => !agent.internal))
-      .catch(() => false)))
-      .then((seated) => { if (active) setWorkspacePod(ordered[seated.indexOf(true)] ?? ordered[0]); });
-    return () => { active = false; };
-  }, [dayZero, pods, headers]);
+    return pods.reduce<PodRef | null>((oldest, pod) => (!oldest || createdMs(pod) < createdMs(oldest) ? pod : oldest), null);
+  }, [pods]);
 
   const openItem = async (item: ArtifactItem) => {
     if (item.kind === 'image') { setLightbox(item); return; }
