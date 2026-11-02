@@ -298,6 +298,39 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
     expect(edited.differing).toContain(POD);
   });
 
+  test('--verify reads Postgres in bounded pages and still sees a row past the first page', async () => {
+    const { VERIFY_PAGE } = require('../../scripts/backfill-local-messages-to-pg');
+    const base = Date.now() - DAY;
+    await MongoMessage.insertMany(Array.from({ length: VERIFY_PAGE + 1 }, (_, i) => ({
+      podId: POD, userId: USER, content: `${MARKER} page ${i}`, messageType: 'text', createdAt: new Date(base + i),
+    })));
+    await backfillLocalMessages(productionDeps(pool), { apply: true, force: true });
+
+    const limits = [];
+    const query = pool.query.bind(pool);
+    const spy = jest.spyOn(pool, 'query').mockImplementation((sql, params) => {
+      if (/legacy_mongo_id IS NOT NULL AND id > \$1/.test(String(sql))) limits.push(params);
+      return query(sql, params);
+    });
+    try {
+      // A page lost or read twice changes this pod's count, so a clean verify needs every page.
+      expect((await verifyCopied(productionDeps(pool))).differing).not.toContain(POD);
+      expect(limits.length).toBeGreaterThan(1);
+      expect(limits.every(([, limit]) => limit === VERIFY_PAGE)).toBe(true);
+      expect(limits[1][0]).toBeGreaterThan(limits[0][0]);
+
+      // This pod's newest copy has at least VERIFY_PAGE copied rows below it, so it is past page one.
+      await pool.query(
+        `UPDATE messages SET content = content || ' (edited)' WHERE id = (
+          SELECT max(id) FROM messages WHERE pod_id = $1 AND legacy_mongo_id IS NOT NULL)`,
+        [POD],
+      );
+      expect((await verifyCopied(productionDeps(pool))).differing).toContain(POD);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('refuses when PG holds unmarked history older than the newest Mongo message', async () => {
     await pgUnmarked('copied by an older migration', new Date('2026-01-01T00:00:00Z'));
     await mongoMessage('same history', new Date('2026-01-02T00:00:00Z'));

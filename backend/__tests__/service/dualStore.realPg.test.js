@@ -91,5 +91,8 @@ real('pgTableAdapter on real PostgreSQL', () => {
     expect(() => pgTableAdapter({
       pool, table: 'widgets', idColumn: 'id', columns: ['pg_version'],
     })).toThrow();
+    expect(() => pgTableAdapter({
+      pool, table: 'widgets', idColumn: 'id', columns: ['title'], jsonColumns: ['payload'],
+    })).toThrow(/jsonColumns must be listed in columns/);
   });
 });

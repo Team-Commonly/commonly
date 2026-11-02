@@ -177,7 +177,7 @@ export interface CopiedRow {
 export interface PodDigest { count: number; hash: string }
 
 /** Rows per page when --verify reads Postgres. */
-const VERIFY_PAGE = 1000;
+export const VERIFY_PAGE = 1000;
 
 export interface VerifyDeps {
   /** Per pod: the Mongo rows stamped as copied, past-retention rows left out. */
