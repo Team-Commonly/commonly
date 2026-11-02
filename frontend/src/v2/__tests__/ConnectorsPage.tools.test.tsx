@@ -434,14 +434,14 @@ describe('Connectors page: tools', () => {
   it.each([
     ['en', [
       ' · the provider changed this tool since Commonly checked it',
-      ' · the provider no longer offers this tool on this connection',
+      " · this connection's tool list does not include this tool",
       ' · the pull request changed after approval',
       ' · the agent has to claim the bound task first',
     ]],
     ['zh-CN', [
-      ' · 服务商改动了此工具，等待重新核对',
-      ' · 服务商在此连接上不再提供此工具',
-      ' · PR 在审批后有新的提交',
+      ' · 服务商在 Commonly 核对后改动了此工具',
+      ' · 此连接的工具列表中没有这个工具',
+      ' · PR 在审批后有变动',
       ' · 智能体需要先认领绑定的任务',
     ]],
   ])('F18: a refusal from a hosted tool, an approval or a task binding reads as words, in %s', async (language, expected) => {
