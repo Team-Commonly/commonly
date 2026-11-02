@@ -193,6 +193,23 @@ describe('one agent answers one pod a turn at a time', () => {
     await waitFor(() => Service.inProcessWork.size === 0);
     expect((await AgentEvent.findById(waiting._id)).status).toBe('acked');
   });
+  test('a waiting delivery the sweep superseded does not run, even when its re-check fails', async () => {
+    const first = deferred(); runAgent.mockReturnValueOnce(first.promise).mockResolvedValue(success);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input); await settle();
+    await AgentEvent.updateOne({ _id: waiting._id }, { $set: { deliveredAt: new Date(Date.now() - 60 * 60000) } });
+    const original = AgentEvent.updateOne.bind(AgentEvent);
+    jest.spyOn(AgentEvent, 'updateOne').mockImplementation((filter, update, ...rest) => {
+      const recheck = update?.$set?.deliveredAt && !('status' in update.$set);
+      if (recheck && String(filter._id) === String(waiting._id)) return Promise.reject(new Error('mongo unavailable'));
+      return original(filter, update, ...rest);
+    });
+    expect(await Service.redispatchStuckInProcess(new Date(Date.now() - 10 * 60000), 5))
+      .toEqual({ redispatched: 1, acked: 0 });
+    first.resolve(success); await waitFor(() => runAgent.mock.calls.length >= 2);
+    await waitFor(() => Service.inProcessWork.size === 0);
+    expect(runAgent).toHaveBeenCalledTimes(2);
+  });
   test('a turn that waited starts its own requeue clock when it starts', async () => {
     const first = deferred(), second = deferred();
     runAgent.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);

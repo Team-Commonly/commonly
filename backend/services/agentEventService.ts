@@ -573,7 +573,7 @@ const signalAgentTyping = async (event: EventDoc): Promise<void> => {
   }
 };
 
-type LaneRelease = () => void;
+type LaneHold = { release: () => void; superseded: boolean };
 
 class AgentEventService {
   private static inProcessDraining = false;
@@ -588,10 +588,10 @@ class AgentEventService {
   // In-process only: the backend runs one replica today, and a second
   // replica would need a lease here.
   private static inProcessLanes = new Map<string, { over: Promise<void> }>();
-  // Release of the lane slot held by each event's current delivery. A sweep
-  // that re-runs an event has declared its earlier delivery dead, so the
-  // re-run releases that slot instead of queueing behind it.
-  private static inProcessLaneHolders = new Map<string, LaneRelease>();
+  // The lane slot held by each event's current delivery. A sweep that re-runs
+  // an event has declared its earlier delivery dead, so the re-run marks that
+  // delivery superseded and releases its slot instead of queueing behind it.
+  private static inProcessLaneHolders = new Map<string, LaneHold>();
   // How long a turn may hold the lane once its own wait ends: longer than any
   // turn (MAX_WALL_CLOCK_MS plus one model call), well inside the 10-minute
   // requeue threshold. A turn that never ends then counts as over, and each
@@ -1787,6 +1787,8 @@ class AgentEventService {
       try {
         if (lane.waitFor) {
           await lane.waitFor;
+          // A re-run in this process replaced this delivery: known without a read.
+          if (lane.hold.superseded) return;
           // While it waited, the stuck sweep may have claimed this event with
           // a new nonce and dispatched it again. That copy owns the turn. If
           // it is still ours, restart its requeue clock: the sweep's threshold
@@ -1805,11 +1807,11 @@ class AgentEventService {
         }
         await this.runInProcess(event, nativeInstallation, agentName, instanceId, type, () => {
           this.inProcessRunning.delete(deliveryKey);
-          lane.release();
+          lane.hold.release();
         });
       } finally {
         this.inProcessRunning.delete(deliveryKey);
-        lane.release();
+        lane.hold.release();
       }
     }).catch((error: Error) => console.warn('[native-runtime] dispatch error:', error.message));
   }
@@ -1824,11 +1826,12 @@ class AgentEventService {
   private static enterInProcessLane(
     key: string,
     eventId: string,
-  ): { waitFor?: Promise<void>; release: () => void } {
-    this.inProcessLaneHolders.get(eventId)?.();
+  ): { waitFor?: Promise<void>; hold: LaneHold } {
+    const prior = this.inProcessLaneHolders.get(eventId);
+    if (prior) { prior.superseded = true; prior.release(); }
     const previous = this.inProcessLanes.get(key);
-    let release: () => void = () => undefined;
-    const released = new Promise<void>((resolve) => { release = resolve; });
+    const hold: LaneHold = { release: () => undefined, superseded: false };
+    const released = new Promise<void>((resolve) => { hold.release = resolve; });
     const capMs = this.inProcessLaneWaitMs;
     const waitFor = previous?.over;
     // Over when released, or capMs after this turn could start: the cap runs
@@ -1840,12 +1843,12 @@ class AgentEventService {
     }));
     const slot = { over };
     this.inProcessLanes.set(key, slot);
-    this.inProcessLaneHolders.set(eventId, release);
+    this.inProcessLaneHolders.set(eventId, hold);
     void over.then(() => { if (this.inProcessLanes.get(key) === slot) this.inProcessLanes.delete(key); });
     void released.then(() => {
-      if (this.inProcessLaneHolders.get(eventId) === release) this.inProcessLaneHolders.delete(eventId);
+      if (this.inProcessLaneHolders.get(eventId) === hold) this.inProcessLaneHolders.delete(eventId);
     });
-    return { waitFor, release };
+    return { waitFor, hold };
   }
 
   private static async runInProcess(
