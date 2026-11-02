@@ -22,6 +22,9 @@ interface V2OAuthButtonsProps {
   invite?: string;
   // App-relative path to land on after the session is established.
   next?: string;
+  // Where "or" sits. Sign-in leads with the providers (d215 signin frame), so
+  // the line follows them; sign-up still puts its form first.
+  separator?: 'before' | 'after';
 }
 
 const PROVIDER_ICONS: Record<string, React.ReactNode> = {
@@ -70,7 +73,7 @@ const submitOAuth = (action: string, params: URLSearchParams, hasInvite: boolean
   form.submit();
 };
 
-const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
+const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next, separator = 'before' }) => {
   const { t } = useTranslation();
   // Seed from cache so repeat visitors see the buttons instantly; the fetch
   // below reconciles. A *successful* empty response (self-hosted w/o OAuth)
@@ -124,9 +127,11 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
     return params;
   };
 
+  const or = <div className="v2-login__or"><span>{t('auth.oauth.or')}</span></div>;
+
   return (
     <>
-      <div className="v2-login__or"><span>{t('auth.oauth.or')}</span></div>
+      {separator === 'before' && or}
       <div className="v2-login__oauth">
         {providers.map((p) => (
           invite || source || ref ? (
@@ -151,6 +156,7 @@ const V2OAuthButtons: React.FC<V2OAuthButtonsProps> = ({ invite, next }) => {
           )
         ))}
       </div>
+      {separator === 'after' && or}
     </>
   );
 };
