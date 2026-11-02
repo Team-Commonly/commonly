@@ -79,7 +79,8 @@ export interface NativeAgentDefinition {
   // signup (authController.createDefaultWorkspacePod).
   perUser?: boolean;
   // Hard ceiling on runs per installation per day, enforced by
-  // nativeRuntimeService before any model call. Absent = uncapped.
+  // nativeRuntimeService before any model call. Absent or malformed =
+  // DEFAULT_NATIVE_DAILY_RUN_CAP (60); an explicit 0 = uncapped (F64).
   dailyRunCap?: number;
   // ADR-018 D8: opt the installation into wake-on-message at install time.
   wakeOnMessage?: boolean;
