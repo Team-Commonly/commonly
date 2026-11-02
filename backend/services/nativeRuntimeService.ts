@@ -842,6 +842,15 @@ const fanOutAgentPost = (
   }).catch((error: Error) => console.warn('[native-runtime] post fan-out failed:', error.message));
 };
 
+/**
+ * The daily run cap of a native install that sets none (F64). Once a native
+ * post wakes the agents it @mentions (F62), two native agents can answer each
+ * other; the mention dampener slows that loop and this stops it, at this many
+ * runs per agent per pod per UTC day. Measured 11-02: no native agent made
+ * more than 47 runs in one pod on any day of the prior 14.
+ */
+export const DEFAULT_NATIVE_DAILY_RUN_CAP = 60;
+
 export async function dispatchTool(
   name: string,
   rawArgs: unknown,
@@ -1894,7 +1903,11 @@ export async function runAgent(
   // workspace — bounded by construction, not by hope. Count failure fails
   // OPEN (#887's shape: an infrastructure fault must not silence an agent);
   // only an actual at-cap count declines, loudly.
-  const dailyRunCap = Number(cfg.dailyRunCap);
+  // An install with no cap of its own gets the default (F64); an explicit 0
+  // lifts it, which only an admin can write (configWriteGuard).
+  const dailyRunCap = cfg.dailyRunCap === undefined || cfg.dailyRunCap === null || cfg.dailyRunCap === ''
+    ? DEFAULT_NATIVE_DAILY_RUN_CAP
+    : Number(cfg.dailyRunCap);
   if (Number.isFinite(dailyRunCap) && dailyRunCap > 0) {
     try {
       const AgentRunModel = require('../models/AgentRun');
