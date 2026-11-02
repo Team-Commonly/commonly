@@ -144,7 +144,7 @@ describe("V2Thread — Scout's starts", () => {
 
   test('a click sends the start as a root message, leaves the draft alone, and that start goes away', async () => {
     const sendSpy = renderThread([welcome]);
-    const composer = screen.getByPlaceholderText(/message my workspace/i);
+    const composer = screen.getByPlaceholderText(/tell scout: i'm working on/i);
     fireEvent.change(composer, { target: { value: 'half typed' } });
 
     fireEvent.click(within(startsGroup()).getByRole('button', { name: POD_START }));
@@ -171,7 +171,7 @@ describe("V2Thread — Scout's starts", () => {
 
   test('typing something else leaves the starts in place, so connecting stays one click away', async () => {
     const sendSpy = renderThread([welcome]);
-    fireEvent.change(screen.getByPlaceholderText(/message my workspace/i), { target: { value: 'hello' } });
+    fireEvent.change(screen.getByPlaceholderText(/tell scout: i'm working on/i), { target: { value: 'hello' } });
     fireEvent.click(screen.getByRole('button', { name: /send message/i }));
 
     expect(await screen.findByText('hello', { selector: '.v2-msg *' })).toBeInTheDocument();
@@ -212,6 +212,57 @@ describe("V2Thread — Scout's starts", () => {
 // to link Bring your own, so the thread links it under the person's own
 // message, from the moment it is sent.
 const OPEN_BYO = 'Open Bring your own';
+
+// Staging walk 2026-11-02: every start asked for a tool or a project, and the
+// composer named the pod rather than the agent who had just spoken.
+describe('V2Thread — a first message that asks nothing', () => {
+  const ASK = 'Show me what you can do';
+  const withAsk = (extra = []) => ({
+    ...welcome,
+    payload: { kind: 'starts', starts: [...extra, { id: 'ask-scout', label: ASK }, ...welcome.payload.starts] },
+  });
+
+  test('where no hosted start is offered, the ask start is the one ink key', () => {
+    renderThread([withAsk()]);
+    const primary = startsGroup().querySelectorAll('.v2-chat__start--primary');
+    expect(primary).toHaveLength(1);
+    expect(primary[0]).toHaveTextContent(ASK);
+  });
+
+  test('where the hosted start is offered, it keeps the ink key and the ask start is bordered', () => {
+    renderThread([withAsk([{ id: 'run-hosted', label: 'Run an agent here', href: '/v2/agents/byo?pod=pod-1&mode=hosted', action: 'run-hosted' }])]);
+    const primary = startsGroup().querySelectorAll('.v2-chat__start--primary');
+    expect(primary).toHaveLength(1);
+    expect(primary[0]).toHaveTextContent('Run an agent here');
+  });
+
+  test('one tap sends it as the person\'s own message', async () => {
+    const sendSpy = renderThread([withAsk()]);
+    fireEvent.click(screen.getByRole('button', { name: ASK }));
+    await waitFor(() => expect(sendSpy).toHaveBeenCalled());
+    expect(sendSpy.mock.calls[0][0]).toBe(ASK);
+  });
+
+  test('the composer names the agent who welcomed them until they send anything', () => {
+    renderThread([withAsk()]);
+    expect(screen.getByPlaceholderText("Tell scout: I'm working on…")).toBeInTheDocument();
+  });
+
+  test('after their first message the composer names the pod again', () => {
+    renderThread([withAsk(), message('mine', 'u1', 'maya', 'hello', 3)]);
+    expect(screen.getByPlaceholderText('Message My Workspace…')).toBeInTheDocument();
+  });
+
+  test('an older welcome without the ask start still gets the agent composer', () => {
+    renderThread([welcome]);
+    expect(screen.getByPlaceholderText("Tell scout: I'm working on…")).toBeInTheDocument();
+  });
+
+  test("in a pod the viewer didn't create, the composer names the pod", () => {
+    renderThread([withAsk()], jest.fn(), { pod: { ...OWN_POD, createdBy: 'someone-else' } });
+    expect(screen.getByPlaceholderText('Message My Workspace…')).toBeInTheDocument();
+  });
+});
 
 describe('V2Thread — the connect start links Bring your own', () => {
   test("clicking the connect start shows the link under the person's message at once", async () => {
@@ -440,7 +491,7 @@ describe('Scout starts and the composer after a hosted agent goes live', () => {
         </MemoryRouter>
       </AuthContext.Provider>,
     );
-    const composer = await screen.findByPlaceholderText(/message my workspace/i);
+    const composer = await screen.findByPlaceholderText(/tell scout: i'm working on/i);
     await waitFor(() => expect(composer).toHaveValue('@maya-agent '));
   });
 
@@ -452,7 +503,7 @@ describe('Scout starts and the composer after a hosted agent goes live', () => {
         </MemoryRouter>
       </AuthContext.Provider>,
     );
-    const composer = await screen.findByPlaceholderText(/message my workspace/i);
+    const composer = await screen.findByPlaceholderText(/tell scout: i'm working on/i);
     await waitFor(() => expect(composer).toHaveValue('@maya-agent '));
   });
 });

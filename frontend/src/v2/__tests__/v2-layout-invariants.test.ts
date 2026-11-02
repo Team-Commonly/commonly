@@ -3285,7 +3285,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // row under Scout's message, in the slot the delivery cue and the
       // no-agent row share, so they land on the message text column too.
       expect(threadMessages).toContain('className="v2-chat__starts"');
-      expect(threadMessages).toContain('v2-chat__start${start.action === WELCOME_HOSTED_ACTION ? \' v2-chat__start--primary\' : \'\'}');
+      expect(threadMessages).toContain('v2-chat__start${primary ? \' v2-chat__start--primary\' : \'\'}');
+      // One ink key: the hosted start where offered, otherwise the start that asks nothing (walk 11-02).
+      expect(threadMessages).toMatch(/const primary = start\.action === WELCOME_HOSTED_ACTION\s*\|\| \(start\.id === ASK_START_ID && !starts\.some/);
       // The 44px phone minimum must come AFTER the 32px base in the sheet: at
       // equal specificity the later rule wins, and a base rule placed after
       // the media block would silently render 32 on a phone.

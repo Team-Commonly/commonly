@@ -609,6 +609,7 @@
       "label": "开始方式",
       "openByo": "去接入自己的智能体",
       "labels": {
+        "ask-scout": "看看你能做什么",
         "connect-agent": "接入我在用的智能体",
         "start-pod": "新建项目 Pod",
         "run-hosted": "在这里运行智能体"
@@ -715,6 +716,7 @@
       "agents_one": "{{count}}个智能体",
       "agents_other": "{{count}}个智能体",
       "boardOpen": "看板{{count}}项待办",
+      "boardTasks_other": "{{count}}项待办",
       "backToPods": "返回 Pod 列表",
       "invite": "邀请",
       "dm": "私信",
@@ -745,6 +747,7 @@
     },
     "composer": {
       "placeholder": "发消息到 {{podName}}…",
+      "placeholderAgent": "告诉 {{agent}}：我在做…",
       "uploading": "正在上传…",
       "attachFile": "添加文件",
       "sending": "正在发送…",

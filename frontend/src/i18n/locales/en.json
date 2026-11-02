@@ -609,6 +609,7 @@
       "label": "Ways to start",
       "openByo": "Open Bring your own",
       "labels": {
+        "ask-scout": "Show me what you can do",
         "connect-agent": "Connect an agent I already use",
         "start-pod": "Start a pod for a project",
         "run-hosted": "Run an agent here"
@@ -716,6 +717,8 @@
       "agents_one": "{{count}} agent",
       "agents_other": "{{count}} agents",
       "boardOpen": "board {{count}} open",
+      "boardTasks_one": "{{count}} to do",
+      "boardTasks_other": "{{count}} to do",
       "backToPods": "Back to pods",
       "invite": "Invite",
       "dm": "DM",
@@ -746,6 +749,7 @@
     },
     "composer": {
       "placeholder": "Message {{podName}}…",
+      "placeholderAgent": "Tell {{agent}}: I'm working on…",
       "uploading": "Uploading…",
       "attachFile": "Attach file",
       "sending": "Sending…",

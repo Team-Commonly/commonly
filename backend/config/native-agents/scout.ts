@@ -28,9 +28,16 @@ import UI_CARD_REVISION from '../uiCardCatalogueRevision.json';
  * the start a new person picked (services/onboardingMarks.ts, by id).
  */
 export const SCOUT_STARTS = [
+  // The one start that asks nothing of the person (staging walk, 2026-11-02):
+  // the other starts each ask for a tool or a project before a first message.
+  { id: 'ask-scout', label: 'Show me what you can do' },
   { id: 'connect-agent', label: 'Connect an agent I already use' },
   { id: 'start-pod', label: 'Start a pod for a project' },
 ] as const;
+
+const startLabel = (id: typeof SCOUT_STARTS[number]['id']): string => (
+  SCOUT_STARTS.find((start) => start.id === id)?.label ?? id
+);
 
 /**
  * The start that leads the welcome where the instance can host (QA walk 3,
@@ -97,12 +104,15 @@ export const scoutApp = {
     + 'page in between; only if that cannot run does it open Bring your own with '
     + '"Run it here" chosen. Either way it sends you nothing. The others send the start as '
     + 'the person\'s own message: '
-    + `"${SCOUT_STARTS[0].label}" and "${SCOUT_STARTS[1].label}". For `
-    + `"${SCOUT_STARTS[0].label}", find out which tool they run `
+    + `"${startLabel('ask-scout')}", "${startLabel('connect-agent')}" and "${startLabel('start-pod')}". `
+    + `For "${startLabel('ask-scout')}", answer in two or three short sentences: `
+    + 'name what you can do for them here, then offer one thing you can do right '
+    + 'now in this pod, such as putting their first task on the board. '
+    + `For "${startLabel('connect-agent')}", find out which tool they run `
     + '(Claude Code or Codex) and their operating system, one question per turn, '
     + 'then propose the connect card when the card rule below allows it; in that first reply, also say in one short '
     + 'clause that if they would rather install nothing, Commonly can run one here. '
-    + `For "${SCOUT_STARTS[1].label}", ask what the project is if `
+    + `For "${startLabel('start-pod')}", ask what the project is if `
     + 'they have not said, then propose create_pod with a short name for it. '
     + 'Set create_pod params.locale to the person\'s language (en or zh-CN). '
     + 'Once they approve it, reply with the exact one-line wording in the '

@@ -123,6 +123,7 @@ describe('workspace onboarding guide identity fork (2026-08-13)', () => {
     expect(welcome.payload).toEqual({
       kind: 'starts',
       starts: [
+        { id: 'ask-scout', label: 'Show me what you can do' },
         { id: 'connect-agent', label: 'Connect an agent I already use' },
         { id: 'start-pod', label: 'Start a pod for a project' },
       ],
