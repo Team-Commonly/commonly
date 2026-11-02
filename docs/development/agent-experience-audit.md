@@ -4278,7 +4278,7 @@ Two different things went into that 191 s, and neither was a 120 s window. First
 
 *Origin: the first draft of #3283, on 2026-11-01, said a vendor had removed a hosted-MCP tool. It had not.*
 
-When a pinned hosted-MCP tool was missing from a connection's `tools/list`, the `tool_unavailable` detail read `upstream no longer lists X`. That reads as a vendor removal. But the check only sees one connection's list, and the list depends on what that row's owner consented to. Sentry offers `update_issue` only with its Triage skill. The Linear smoke row lists 26 pins as absent because its scope is read-only. The tool was there; that connection had not been granted it.
+When a pinned hosted-MCP tool was missing from a connection's `tools/list`, the `tool_unavailable` detail read `upstream no longer lists X`. That reads as a vendor removal. But the check only sees one connection's list, and the list depends on what that row's owner consented to. Sentry appears to offer `update_issue` only with its Triage skill (inferred from a captured list, not recorded). The Linear smoke row lists 26 pins as absent because its scope is read-only. The tool was there; that connection had not been granted it.
 
 **Repair:** #3286 rewords the detail to `this connection's tools/list does not include X`. For the same reason an absent tool files no drift card. Only a schema that moved under its pin does.
 
@@ -4290,6 +4290,6 @@ When a pinned hosted-MCP tool was missing from a connection's `tools/list`, the 
 
 `isCloudRuntime` (`backend/services/agentIdentityService.ts`) decides which installs need the `cloudAgents` entitlement. It returned "BYO" for any install whose `config.runtime.host` was `'byo'`, before it looked at `runtimeType`. The install route stores the caller's `config.runtime` as given, `host` included. Dispatch decides where a turn runs from `runtimeType` alone (`inProcessInstallationFrom` in `agentEventService.ts`) and never reads `host`. So the gate and the runtime read two different fields, and the gate trusted the one the caller writes. A read of every active install after the fix deployed found none that had used the gap.
 
-**Repair:** #3287. The four types only Commonly runs (`moltbot`, `internal`, `native`, `managed-agents`) are cloud whatever `host` says. `host: 'byo'` still marks every type that has a real BYO variant: codex, webhook, claude-code and unknown types.
+**Repair:** #3287. The four types only Commonly runs (`moltbot`, `internal`, `native`, `managed-agents`) are cloud whatever `host` says. `host: 'byo'` still makes a codex install BYO; webhook, claude-code and unknown types are BYO either way.
 
 **Lesson:** a gate must decide on the field the enforcing path reads. A label the caller supplies may narrow a decision, never override it. Before trusting a field in a gate, read what the consumer, here dispatch, actually reads.
