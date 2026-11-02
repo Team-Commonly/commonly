@@ -2510,8 +2510,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(mediaBlockContaining(v2, '.v2-root .v2-thread button.v2-msg__action::after'))
       .toContain(".v2-root .v2-thread button.v2-msg__action::after { content: ''; position: absolute; inset: -8px; }");
     // Reply in thread / Follow / Collapse moved from the chip to the band's
-    // foot (ux-lead 64476 (3)) — the 44px floor moved with them.
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-replies__foot button[\s\S]*?min-height: 44px/);
+    // foot (ux-lead 64476 (3)). On a phone the foot stays one line: the count
+    // is visually hidden, Follow is drawn at 32px and a ring takes it to 44px.
+    const phoneFoot = blockContaining(v2, '@media (max-width: 640px)', '.v2-root .v2-thread-replies__foot button.v2-thread-replies__follow::after');
+    expect(phoneFoot).toMatch(/\.v2-thread-replies__foot \.v2-thread-replies__count \{[^}]*clip-path: inset\(50%\)/);
+    expect(phoneFoot).toMatch(/button\.v2-thread-replies__follow \{[^}]*height: 32px;[^}]*margin-left: auto;/);
+    expect(phoneFoot).toMatch(/button\.v2-thread-replies__follow::after \{[^}]*inset: -6px -8px;/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-card\s*\{[\s\S]*?flex-wrap: wrap/);
   });
 
