@@ -407,14 +407,12 @@ describe('server mounts', () => {
   it('mounts no router on a parameter path', () => {
     const { app } = require('../../server');
     const paramMounts = [];
-    const walk = (stack) => {
-      for (const layer of stack || []) {
-        const isRouter = Boolean(layer.handle && Array.isArray(layer.handle.stack) && !layer.route);
-        if (!isRouter) continue;
+    const walk = (stack) => (stack || [])
+      .filter((layer) => layer.handle && Array.isArray(layer.handle.stack) && !layer.route)
+      .forEach((layer) => {
         if ((layer.keys || []).length) paramMounts.push(String(layer.regexp));
         walk(layer.handle.stack);
-      }
-    };
+      });
     walk(app._router.stack);
     expect(paramMounts).toEqual([]);
   });
