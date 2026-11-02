@@ -3,7 +3,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import TestUtils from 'react-dom/test-utils';
 import { act } from 'react-dom/test-utils';
-import Login from './Login';
 import Register from './Register';
 import VerifyEmail from './VerifyEmail';
 import UserProfile from './UserProfile';
@@ -84,19 +83,6 @@ function render(comp) {
   act(() => { root.render(comp); });
   return container.textContent;
 }
-
-test('Login renders and submits', async () => {
-  axios.post.mockResolvedValue({ data: { token: 't', verified: true } });
-  await TestUtils.act(async () => {
-    root.render(<Login />);
-  });
-  const form = container.querySelector('form');
-  await TestUtils.act(async () => {
-    TestUtils.Simulate.submit(form);
-  });
-  expect(axios.post).toHaveBeenCalled();
-  expect(localStorage.getItem('token')).toBe('t');
-});
 
 test('Register renders and submits', async () => {
   axios.get.mockResolvedValueOnce({ data: { inviteOnly: false } });

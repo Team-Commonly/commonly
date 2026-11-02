@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -6,6 +6,7 @@ import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
 import { pathOfLocation, safeNextPath } from '../utils/safeNextPath';
 import { forgetInviteOAuthStart } from '../utils/pendingInvite';
+import { ShellGlyph } from '../icons/glyphs';
 
 interface LocationState {
   from?: { pathname?: string; search?: string; hash?: string };
@@ -34,6 +35,7 @@ const V2Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const passwordId = useId();
 
   // Where to land after sign-in, the same for password and OAuth: ?next= (the
   // invite redirect), else the page ProtectedRoute sent them from, with its
@@ -73,14 +75,26 @@ const V2Login: React.FC = () => {
 
   const errorMessage = localError || authError || oauthError;
 
+  // Only a failed password sign-in marks the fields; a provider error is about
+  // the provider, not what was typed.
+  const fieldsBad = Boolean(localError) || undefined;
+
+  // Order follows the d215 signin frame: providers, "or", the email form, then
+  // one line to sign up. Errors sit at the top, under the title.
   return (
     <div className="v2-login">
-      <form className="v2-login__card" onSubmit={handleSubmit}>
+      <form className="v2-login__card v2-login__card--stack" onSubmit={handleSubmit}>
         <V2AuthBrand />
         <h1 className="v2-login__title">{t('auth.login.title')}</h1>
-        <p className="v2-login__subtitle">
-          {t('auth.login.subtitle')}
-        </p>
+
+        {errorMessage && (
+          <div className="v2-login__error" role="alert">
+            <ShellGlyph name="alert" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
+        <V2OAuthButtons next={destination || undefined} separator="after" />
 
         <label className="v2-login__field">
           <span className="v2-login__label">{t('auth.fields.email')}</span>
@@ -90,21 +104,29 @@ const V2Login: React.FC = () => {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={fieldsBad}
             required
           />
         </label>
 
-        <label className="v2-login__field">
-          <span className="v2-login__label">{t('auth.fields.password')}</span>
+        {/* Not a <label> wrapper: the row holds a link, and a link inside a
+            label would also focus the field. */}
+        <div className="v2-login__field">
+          <div className="v2-login__label-row">
+            <label className="v2-login__label" htmlFor={passwordId}>{t('auth.fields.password')}</label>
+            <Link to="/v2/forgot-password" className="v2-login__link">{t('auth.login.forgotPassword')}</Link>
+          </div>
           <input
+            id={passwordId}
             className="v2-login__input"
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            aria-invalid={fieldsBad}
             required
           />
-        </label>
+        </div>
 
         <button
           type="submit"
@@ -114,20 +136,11 @@ const V2Login: React.FC = () => {
           {submitting ? t('auth.login.signingIn') : t('auth.login.submit')}
         </button>
 
-        <div className="v2-login__forgot">
-          <Link to="/v2/forgot-password" className="v2-login__link">{t('auth.login.forgotPassword')}</Link>
-        </div>
-
-        {errorMessage && <div className="v2-login__error" role="alert">{errorMessage}</div>}
-
-        <V2OAuthButtons next={destination || undefined} />
-
-        <div className="v2-login__hint">
+        <p className="v2-login__alt">
           {t('auth.login.newToCommonly')}
           {' '}
           <Link to="/v2/register" className="v2-login__link">{t('auth.login.createAccount')}</Link>
-        </div>
-
+        </p>
       </form>
     </div>
   );

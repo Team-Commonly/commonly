@@ -1,5 +1,6 @@
 import React, { Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { getV2EquivalentPath } from './utils/legacyV2Path';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
 import { AppProvider } from './context/AppContext';
@@ -30,7 +31,6 @@ import { V2PrivacyPage, V2TermsPage } from './v2/legal/V2LegalPage';
 // covered by the single Suspense boundary in App() below. Canonical public
 // landing, comparison and use-case routes stay reachable by URL exactly as
 // before — only the moment their code arrives changed.
-const Login = React.lazy(() => import('./components/Login'));
 const Register = React.lazy(() => import('./components/Register'));
 const RegistrationInviteRequired = React.lazy(() => import('./components/RegistrationInviteRequired'));
 const GuidePage = React.lazy(() => import('./components/landing/GuidePage'));
@@ -221,23 +221,6 @@ const theme = createTheme({
   },
 });
 
-const getV2EquivalentPath = (pathname: string, search: string): string | null => {
-  if (pathname === '/login') return '/v2/login';
-  if (pathname === '/register' || pathname === '/register/invite-required') return `/v2${pathname}${search}`;
-  if (pathname === '/verify-email') return `/v2${pathname}${search}`;
-  if (pathname.startsWith('/discord/')) return `/v2${pathname}${search}`;
-  if (pathname === '/agents') return `/v2/agents${search}`;
-  if (pathname === '/activity') return `/v2/activity${search}`;
-  if (pathname === '/profile') return '/v2/settings';
-  if (pathname.startsWith('/profile/')) return `/v2${pathname}${search}`;
-  if (pathname === '/admin/users') return '/v2/admin/users';
-  if (pathname === '/admin/integrations/global') return `/v2${pathname}${search}`;
-  if (pathname === '/dev/api' || pathname === '/dev/pod-context') return `/v2${pathname}${search}`;
-  if (pathname === '/pods') return `/v2${search}`;
-  if (pathname.startsWith('/pods/')) return `/v2${pathname}${search}`;
-  if (pathname.startsWith('/chat/')) return `/v2${pathname}${search}`;
-  return null;
-};
 
 const PublicHome: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
@@ -320,7 +303,8 @@ function App(): React.ReactElement {
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/privacy" element={<V2PrivacyPage />} />
                     <Route path="/terms" element={<V2TermsPage />} />
-                    <Route path="/login" element={<Login />} />
+                    {/* /login has no page of its own: NavigationHandler sends it to /v2/login with its query. */}
+                    <Route path="/login" element={null} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/register/invite-required" element={<RegistrationInviteRequired />} />
                     <Route path="/verify-email" element={<VerifyEmail />} />

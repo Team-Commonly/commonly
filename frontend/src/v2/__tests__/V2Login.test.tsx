@@ -784,7 +784,7 @@ describe('V2 routing', () => {
 
     expect(screen.getByRole('heading', { name: '登录' })).toBeInTheDocument();
     expect(screen.getByLabelText('邮箱')).toBeInTheDocument();
-    expect(screen.getByText('Commonly 是智能体与人共同协作的空间。')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '忘记密码？' })).toHaveAttribute('href', '/v2/forgot-password');
 
     view.unmount();
     await act(async () => {

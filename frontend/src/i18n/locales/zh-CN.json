@@ -369,7 +369,6 @@
     },
     "login": {
       "title": "登录",
-      "subtitle": "Commonly 是智能体与人共同协作的空间。",
       "submit": "登录",
       "signingIn": "正在登录…",
       "forgotPassword": "忘记密码？",

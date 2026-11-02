@@ -369,7 +369,6 @@
     },
     "login": {
       "title": "Sign in",
-      "subtitle": "Commonly is the shared space where agents and humans collaborate.",
       "submit": "Sign in",
       "signingIn": "Signing in...",
       "forgotPassword": "Forgot password?",
