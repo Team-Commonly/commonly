@@ -150,8 +150,8 @@ describe('board motion: an agent claims a task', () => {
 
     expect(document.startViewTransition).toHaveBeenCalledTimes(1);
     expect(seen[0].glide).toBe(true);
-    expect(seen[0].named.sort()).toEqual(['In Progress', 'Pending']);
-    expect(within(column('In Progress')).getByText('Claim me')).toBeInTheDocument();
+    expect(seen[0].named.sort()).toEqual(['In progress', 'Pending']);
+    expect(within(column('In progress')).getByText('Claim me')).toBeInTheDocument();
     expect(within(column('Pending')).queryByText('Claim me')).toBeNull();
     // Once it has landed the class goes, so the lease ring starts pulsing.
     await waitFor(() => expect(document.documentElement.classList.contains('v2-board-glide')).toBe(false));
@@ -184,14 +184,14 @@ describe('board motion: an agent claims a task', () => {
     await within(await screen.findByRole('region', { name: 'Pending' })).findByText('Claim me');
     await liveUpdate(CLAIMED);
     expect(document.startViewTransition).not.toHaveBeenCalled();
-    expect(within(column('In Progress')).getByText('Claim me')).toBeInTheDocument();
+    expect(within(column('In progress')).getByText('Claim me')).toBeInTheDocument();
   });
 
   test('no glide on first load, even for a claim already made elsewhere', async () => {
     stubViewTransitions();
     taskRows = CLAIMED;
     renderBoard();
-    await within(await screen.findByRole('region', { name: 'In Progress' })).findByText('Claim me');
+    await within(await screen.findByRole('region', { name: 'In progress' })).findByText('Claim me');
     expect(document.startViewTransition).not.toHaveBeenCalled();
   });
 
@@ -201,7 +201,7 @@ describe('board motion: an agent claims a task', () => {
     renderBoard();
     await within(await screen.findByRole('region', { name: 'Pending' })).findByText('Stay put');
     await liveUpdate(CLAIMED);
-    expect(within(column('In Progress')).getByText('Claim me')).toBeInTheDocument();
+    expect(within(column('In progress')).getByText('Claim me')).toBeInTheDocument();
     expect(document.startViewTransition).not.toHaveBeenCalled();
   });
 
@@ -213,7 +213,7 @@ describe('board motion: an agent claims a task', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'New task' })[0]);
     fireEvent.change(screen.getByPlaceholderText(/what needs/i), { target: { value: 'Another' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Create task' })); });
-    await within(column('In Progress')).findByText('Claim me');
+    await within(column('In progress')).findByText('Claim me');
     expect(document.startViewTransition).not.toHaveBeenCalled();
   });
 
@@ -221,7 +221,7 @@ describe('board motion: an agent claims a task', () => {
     renderBoard();
     await within(await screen.findByRole('region', { name: 'Pending' })).findByText('Claim me');
     await liveUpdate(CLAIMED);
-    expect(within(column('In Progress')).getByText('Claim me')).toBeInTheDocument();
+    expect(within(column('In progress')).getByText('Claim me')).toBeInTheDocument();
     expect(document.documentElement.classList.contains('v2-board-glide')).toBe(false);
   });
 });
@@ -240,7 +240,7 @@ describe('board motion at 390: a card leaves the open tab', () => {
     expect(ghost).toHaveClass('is-leaving', 'is-leaving--next');
     expect(ghost).toHaveAttribute('inert');
     expect(screen.getByRole('tab', { name: /Pending/ })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: /In Progress/ }).querySelector('.v2-board__tab-count')).toHaveClass('is-ticking');
+    expect(screen.getByRole('tab', { name: /In progress/ }).querySelector('.v2-board__tab-count')).toHaveClass('is-ticking');
     expect(screen.getByRole('tab', { name: /Pending/ }).querySelector('.v2-board__tab-count')).not.toHaveClass('is-ticking');
 
     fireEvent.animationEnd(ghost);
@@ -252,11 +252,11 @@ describe('board motion at 390: a card leaves the open tab', () => {
     taskRows = CLAIMED;
     renderBoard();
     await within(await screen.findByRole('region', { name: 'Pending' })).findByText('Stay put');
-    fireEvent.click(screen.getByRole('tab', { name: /In Progress/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /In progress/ }));
     await liveUpdate(PENDING);
-    const ghost = within(column('In Progress')).getByText('Claim me').closest('article');
+    const ghost = within(column('In progress')).getByText('Claim me').closest('article');
     expect(ghost).toHaveClass('is-leaving--prev');
-    await waitFor(() => expect(within(column('In Progress')).queryByText('Claim me')).toBeNull(), { timeout: EXIT_SAFETY_MS + 500 });
+    await waitFor(() => expect(within(column('In progress')).queryByText('Claim me')).toBeNull(), { timeout: EXIT_SAFETY_MS + 500 });
   });
 
   test('no leaving card under reduced motion', async () => {
