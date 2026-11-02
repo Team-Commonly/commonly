@@ -26,13 +26,20 @@ beforeEach(() => {
 });
 
 describe('recording the reported CLI', () => {
-  test('writes only on BYO rows without a declared adapter, and only the label', () => {
+  test('writes only on BYO rows (stamped, or unstamped polling webhook) without a declared adapter, and only the label', () => {
     recordReportedCli(['i1', 'i2'], 'Claude ');
     expect(mockUpdateMany).toHaveBeenCalledTimes(1);
     const [filter, update] = mockUpdateMany.mock.calls[0];
     expect(filter).toEqual({
       _id: { $in: ['i1', 'i2'] },
-      'config.runtime.host': 'byo',
+      $or: [
+        { 'config.runtime.host': 'byo' },
+        {
+          'config.runtime.runtimeType': { $regex: /^webhook$/i },
+          'config.runtime.host': { $in: [null, ''] },
+          'config.runtime.webhookUrl': { $in: [null, ''] },
+        },
+      ],
       'config.runtime.adapter': null,
       'config.runtime.reportedCli': { $ne: 'claude' },
     });
