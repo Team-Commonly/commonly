@@ -717,6 +717,70 @@ describe('AgentMentionService', () => {
     expect(result.enqueued).toEqual(['codex']);
   });
 
+  // F62: one fan-out for a message an agent posted, whichever runtime posted
+  // it. The 11-02 Slack walk found the native runtime had none, so Scout's
+  // @mention of another agent reached no one.
+  describe('enqueueAgentPost', () => {
+    test('wakes the peer in an agent-dm without a mention', async () => {
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-dm-3', type: 'agent-dm', members: ['aria-user', 'codex-user'] }),
+      });
+      User.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([
+          { _id: 'codex-user', username: 'codex-default', botMetadata: { agentName: 'codex', instanceId: 'default' } },
+        ]),
+      });
+      AgentInstallation.find.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([{
+          _id: 'inst-3', podId: 'pod-dm-3', installedBy: 'aria-user', agentName: 'codex', instanceId: 'default', status: 'active',
+        }]),
+      });
+      Pod.find.mockReturnValue({ select: jest.fn().mockReturnThis(), lean: jest.fn().mockResolvedValue([{ _id: 'pod-dm-3' }]) });
+      User.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({ _id: 'aria-user', isBot: true, botMetadata: { agentName: 'aria', instanceId: 'default' } }),
+      });
+
+      await AgentMentionService.enqueueAgentPost({
+        podId: 'pod-dm-3', message: { id: 100, content: 'can you review this PR?' }, userId: 'aria-user', username: 'aria',
+      });
+
+      expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+        agentName: 'codex', payload: expect.objectContaining({ dmKind: 'agent-agent' }),
+      }));
+    });
+
+    test("routes another agent's @mention in a team pod to the agent it names", async () => {
+      AgentInstallation.find.mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ agentName: 'scout', instanceId: 'default', displayName: 'Scout' }]),
+      });
+      AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+      Pod.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One', type: 'team', members: ['user-1'] }),
+      });
+      User.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({ _id: 'codex-user', isBot: true, botMetadata: { agentName: 'codex', instanceId: 'default' } }),
+      });
+
+      await AgentMentionService.enqueueAgentPost({
+        podId: 'pod-1', message: { content: 'Over to you @scout', id: 'msg-2' }, userId: 'codex-user', username: 'codex',
+      });
+
+      expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+      expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+        agentName: 'scout',
+        instanceId: 'default',
+        podId: 'pod-1',
+        type: 'chat.mention',
+        payload: expect.objectContaining({ messageId: 'msg-2' }),
+      }));
+    });
+  });
+
   test('enqueueDmEvent still blocks bot sender in legacy agent-admin', async () => {
     Pod.findById.mockReturnValue({
       lean: jest.fn().mockResolvedValue({

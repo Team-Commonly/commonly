@@ -335,8 +335,6 @@ const postInlineReply = async (
   const AgentMentionService = require('./agentMentionService');
   // eslint-disable-next-line global-require
   const AgentSendFreshness = require('./agentSendFreshness');
-  // eslint-disable-next-line global-require
-  const PodModel = require('../models/Pod');
 
   const agentUser = await AgentIdentityService.getOrCreateAgentUser(event.agentName, {
     instanceId: event.instanceId || 'default',
@@ -362,16 +360,9 @@ const postInlineReply = async (
   if (result?.skipped) return { outcome: 'skipped', reason: String(result.reason || 'skipped') };
   if (!result?.success || !result.message) throw new Error('post returned no message');
 
-  PodModel.findById(event.podId).select('type').lean()
-    .then((podDoc: { type?: string } | null) => {
-      const args = {
-        podId: event.podId, message: result.message, userId: agentUser._id, username: agentUser.username,
-      };
-      return podDoc?.type === 'agent-dm'
-        ? AgentMentionService.enqueueDmEvent(args)
-        : AgentMentionService.enqueueMentions(args);
-    })
-    .catch((err: Error) => console.warn('[webhook] inline reply enqueue failed:', err.message));
+  AgentMentionService.enqueueAgentPost({
+    podId: event.podId, message: result.message, userId: agentUser._id, username: agentUser.username,
+  }).catch((err: Error) => console.warn('[webhook] inline reply enqueue failed:', err.message));
   return null;
 };
 

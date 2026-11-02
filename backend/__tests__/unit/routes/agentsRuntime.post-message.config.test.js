@@ -122,6 +122,32 @@ describe('agentsRuntime post message installation config forwarding', () => {
     expect(res.json).toHaveBeenCalledWith({ success: true, mentionNotices: [] });
   });
 
+  it('wakes the agents a stored post names, as its poster (F62)', async () => {
+    // eslint-disable-next-line global-require
+    const AgentMentionService = require('../../../services/agentMentionService');
+    const fanOut = jest.spyOn(AgentMentionService, 'enqueueAgentPost').mockResolvedValue({});
+    const handler = getRouteHandler('/pods/:podId/messages', 'post');
+    const message = { id: 9, content: 'over to you @scout' };
+    AgentMessageService.postMessage.mockResolvedValue({ success: true, message });
+    const installation = {
+      podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik', displayName: 'Tarik', config: {},
+    };
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    await handler({
+      params: { podId: 'pod-1' },
+      body: { content: 'over to you @scout', messageType: 'text' },
+      agentUser: { _id: 'bot-1', username: 'openclaw-tarik' },
+      agentInstallation: installation,
+      agentInstallations: [installation],
+    }, res);
+
+    expect(fanOut).toHaveBeenCalledWith({
+      podId: 'pod-1', message, userId: 'bot-1', username: 'openclaw-tarik',
+    });
+    fanOut.mockRestore();
+  });
+
   it('returns structured non-member feedback in the MCP post result', async () => {
     const handler = getRouteHandler('/pods/:podId/messages', 'post');
     AgentMessageService.postMessage.mockResolvedValue({
