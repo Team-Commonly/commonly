@@ -69,7 +69,7 @@ function resolvePositiveNumber(raw: string | undefined, fallback: number): numbe
   return parsed;
 }
 
-function resolveRetentionDays(): number {
+export function resolveRetentionDays(): number {
   return resolvePositiveNumber(process.env.PG_MESSAGE_RETENTION_DAYS, DEFAULT_RETENTION_DAYS);
 }
 

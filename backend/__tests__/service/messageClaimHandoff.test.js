@@ -15,6 +15,7 @@ const { AgentInstallation } = require('../../models/AgentRegistry');
 const { pool } = require('../../config/db-pg');
 const MessageClaimService = require('../../services/messageClaimService');
 const MessageClaimHandoffService = require('../../services/messageClaimHandoffService');
+const { runPgMigrations } = require('../../config/run-pg-migrations');
 
 const describeTier1 = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 
@@ -53,15 +54,13 @@ describeTier1('message claim decline handoff — real Mongo + PostgreSQL', () =>
     // than importing testUtils: that helper also initialises pg-mem for Tier
     // 0 and cannot exercise PostgreSQL's array/CAS expression.
     await mongoose.connect(process.env.MONGO_URI);
+    // The claim table is migration 0003's, as at boot.
+    await runPgMigrations(pool);
   });
 
   beforeEach(async () => {
     await mongoose.connection.dropDatabase();
-    // The self-bootstrapping claim table is intentionally not in schema.sql.
-    // It exists after the first test; tolerate first-run before its creation.
-    await pool.query('DELETE FROM message_claims').catch((err) => {
-      if (!/message_claims/i.test(err.message)) throw err;
-    });
+    await pool.query('DELETE FROM message_claims');
   });
 
   afterAll(async () => {

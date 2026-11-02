@@ -467,6 +467,8 @@ if (startServices && process.env.PG_HOST) {
             cleanupErr?.message || cleanupErr,
           );
         }
+        // Chat that never reached PostgreSQL does not show; say how much (ADR-034 D6).
+        void require('./services/legacyMessageCopy').logMongoOnlyMessages();
       }
     },
   })
@@ -827,6 +829,8 @@ module.exports = {
 };
 
 if (require.main === module) {
+  // Before anything starts: an instance without PostgreSQL has no chat store (ADR-034 D6).
+  require('./services/pgBootService').requirePgConfigured(process.env);
   const app = getDefaultApp();
   const port = process.env.PORT || 5000;
   require('./services/hostedShutdownService').installHostedShutdown(app.locals.httpServer);

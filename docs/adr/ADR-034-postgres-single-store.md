@@ -78,7 +78,7 @@ boundary holds.
 | 1. Extract | Callers move to the repository, which still reads and writes Mongo. No behaviour change. | Revert the PR. |
 | 2. Dual | Writes go to both stores. Reads stay on Mongo, and a sample is read from Postgres too, compared, and any mismatch logged. A per-model mode (`mongo`, `dual`, `pg-read`, `pg`; default `mongo`) selects the step. A backfill copies history. | Mode to `mongo`. The next backfill discards the Postgres rows. |
 | 3. Read cut | Reads come from Postgres; writes still go to both. | Mode to `dual`. Mongo is still complete. |
-| 4. Drop | Mongo writes stop, and the Mongo code is deleted one release later. | Before deletion: mode to `dual` plus a reverse backfill. After: restore from backup. |
+| 4. Drop | Mongo writes stop, and the Mongo code is deleted one release later. | Before deletion: mode to `dual` plus a reverse backfill that carries each row's `pg_version` into the document's version. After: restore from backup. |
 
 **Mongo stays the system of record until step 4.** In `dual` and `pg-read`, a write commits to Mongo
 first and is acknowledged only once it has; the Postgres write follows. **The repair marker travels in
@@ -92,8 +92,14 @@ halfway is therefore still a flagged document. A sparse index on `pgPending` mak
 scan: it re-copies each flagged document, or deletes its Postgres row if it is marked deleted, then
 clears the marker the same conditional way. The dual-store helper's tests cover two writes interleaving,
 and a delete crashing at each step. A failed Postgres write counts as a mismatch, and a model in `pg-read` goes back to `dual` while
-any of its documents are flagged, including after a restart, until the repair finds none. So rolling back
-from `pg-read` to `dual` never loses an acknowledged write: Mongo has every one of them.
+any of its documents are flagged, including after a restart, until the repair finds none. Each replica
+caches that check for up to 5 seconds, so after another replica's write fails a read can still come
+from Postgres for that long. So rolling back
+from `pg-read` to `dual` never loses an acknowledged write: Mongo has every one of them. In `pg` mode
+an update or delete applies only to the row version it read, and re-reads on a lost race, so an update
+racing a delete never brings the row back. A Postgres row at a version Mongo never wrote, which a
+rollback from `pg` without carrying `pg_version` back would produce, counts as a `pg-ahead` mismatch and
+keeps the document flagged, so reads stay on Mongo instead of serving the row.
 
 Step 4 is the only one-way door, and it is taken per model. **A model reaches step 3 when the
 `commonly verify` scenarios pass against both stores and the compare log shows zero unexplained
@@ -116,19 +122,40 @@ deployment's change is its own planned change with a backup taken first. Compose
 can move in an ordinary PR.
 
 ### D6. Order
-**Wave 0, what is left.** Make Postgres required: remove the no-`PG_HOST` message mode, so an instance
-without Postgres refuses to boot instead of running degraded, and Mongo `Message` keeps only the history
-the backfill copies. Message reads come from Postgres alone once `PG_HOST` is set, so an instance moving
-off that mode would hide its history until it is copied. The backfill runs with the backend stopped, after one boot with `PG_HOST` has applied
-the migrations (the script does not create tables), so no write or delete lands in Mongo mid-copy; a
-self-host upgrade can take that window. The step is done
-on an instance only when a report-only run of `scripts/backfill-local-messages-to-pg.ts`, without `--since` so no older history
-is out of scope, shows `pending` equal to `orphanedPending`. That means every pending row left belongs to a
-deleted pod and stays in Mongo by design. The release that removes the mode says so in its upgrade
-note, and boot logs the pending count, so an instance that skipped the backfill shows. Move the three self-creating tables into numbered migrations. Build the dual-store helper (D3's mode,
-write-both, sampled compare), a shared expiry sweeper for TTL models, and a jest helper on real
-Postgres for anything with claims or SQL aggregates (`ToolCall.ts` already records that `pg-mem`
-cannot run a correlated `EXISTS`).
+**Wave 0, what is left.** Make Postgres required: the process entry refuses to start without
+`PG_HOST` (`requirePgConfigured`, `server.ts`), so an instance without Postgres no longer runs with
+no chat store. Message reads already come from Postgres alone once `PG_HOST` is set, so an instance
+moving off the no-Postgres mode would hide its history until it is copied; boot logs how many chat
+messages are still only in MongoDB, so an instance that skipped the backfill shows. The backfill
+(`scripts/backfill-local-messages-to-pg.ts`) runs with the backend stopped, after one boot with
+`PG_HOST` has applied the migrations (the script does not create tables), so no write or delete lands
+in Mongo mid-copy; a self-host upgrade can take that window.
+
+The backfill skips two kinds of row and says how many of each: rows whose pod is gone
+(`orphanedPending`), and rows older than the message retention window in a pod that neither the Pro
+tier nor `PG_RETENTION_EXEMPT_POD_IDS` protects (`expiredPending`), which the nightly retention run would
+delete on arrival. Both stay in Mongo. The backfill applies the retention delete's own rule, read from
+the same settings and measured by the Postgres clock. **The step is done on an instance when a report-only run, without `--since`, shows
+`toCopy: 0`.** Measured on production 2026-11-02: 10,441 Mongo messages, none ever copied: 10,427 from before
+August 2026, past retention unless their pod is protected, and 14 since. **Each instance runs it in
+this order, staging first:** a report-only run; `--apply`; then `--verify`, which compares the copied
+rows per pod by count and by a checksum over every column the copy writes (author kind and card payload
+included), and exits 1 on any difference.
+Production runs only after staging verifies clean.
+
+The three self-creating tables move into a numbered migration, `0003_self_created_tables.sql`,
+written to be a no-op on an instance that already has them. The dual-store helper
+(`backend/repositories/dualStore.ts`) implements D3: the per-model mode (`STORE_MODE_<MODEL>`, default
+`mongo`, which makes no Postgres call at all), the write-both with the versioned marker, the two-phase
+delete, the repair scan and the sampled compare. Its unit tests run the interleavings on a real Mongo,
+and the SQL runs on real Postgres in CI's integration job through the existing
+`__tests__/utils/realPgSchema.js`, which already covers the jest-on-real-Postgres need named here.
+**Moved to Wave 2:** the shared expiry sweeper. Its first consumer is Wave 2's TTL models; built now it
+would have none, since the one self-created table with expiring rows, `message_claims`, already prunes
+on every claim. **Still to do in Wave 0:** deleting the Mongo message code paths that only the
+no-`PG_HOST` mode reached. Once the entry refuses that mode they run in no deployment, only in tests
+that build the app without `PG_HOST`. They are deleted in their own change, because about 30 test
+files exercise them and have to move to Postgres first.
 
 **Waves 1 to 5** go from fewest callers to most, and lanes are split by caller-file overlap, because
 step 1 is the only step that edits callers:

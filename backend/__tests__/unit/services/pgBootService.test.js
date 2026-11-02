@@ -12,7 +12,7 @@
  * what delay between them) rather than just the end state.
  */
 const {
-  createPgBoot, routerIsMounted, setPgMountProbe, pgRoutesAreMounted,
+  createPgBoot, routerIsMounted, setPgMountProbe, pgRoutesAreMounted, requirePgConfigured,
 } = require('../../../services/pgBootService');
 
 const makeState = () => ({
@@ -284,5 +284,17 @@ describe('pgBootService — the route-table probe (TASK-168)', () => {
     app._router.stack.push(layer(pgMessages));
     expect(pgRoutesAreMounted()).toBe(true);
     setPgMountProbe(() => false);
+  });
+});
+
+describe('requirePgConfigured (ADR-034 D6)', () => {
+  it('refuses to start an instance with no PG_HOST, and says how to fix it', () => {
+    expect(() => requirePgConfigured({})).toThrow(/PostgreSQL is required/);
+    expect(() => requirePgConfigured({ PG_HOST: '' })).toThrow(/PG_HOST/);
+    expect(() => requirePgConfigured({ PG_HOST: '   ' })).toThrow(/backfill:local-messages/);
+  });
+
+  it('lets an instance with PG_HOST start', () => {
+    expect(() => requirePgConfigured({ PG_HOST: 'postgres' })).not.toThrow();
   });
 });

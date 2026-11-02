@@ -7,18 +7,17 @@
  * held by THIS agent instance in THIS pod counts. A lapsed, released, declined
  * or someone else's lease answers nobody, and then the row is recorded.
  */
+const fs = require('fs');
+const path = require('path');
 const { newDb } = require('pg-mem');
+const { applyTable } = require('../../utils/schemaTable');
 
 const mockDb = newDb();
 const realPool = new (mockDb.adapters.createPg().Pool)();
-// The service bootstraps its table with an array-column default pg-mem cannot
-// parse (the same limit messageClaimHandoff.test.js names). That DDL is skipped
-// here, the table is created below without it, and every other statement,
-// including the query under test, runs for real.
-const BOOTSTRAP_DDL = /^\s*(CREATE TABLE IF NOT EXISTS message_claims|ALTER TABLE message_claims|CREATE INDEX IF NOT EXISTS idx_message_claims)/;
-const mockPool = {
-  query: (sql, params) => (BOOTSTRAP_DDL.test(sql) ? Promise.resolve({ rows: [] }) : realPool.query(sql, params)),
-};
+// The service issues no DDL; the table is migration 0003's, applied below from
+// the shipped file. Every statement, including the query under test, runs for real.
+const mockPool = realPool;
+const MIGRATION_0003 = path.join(__dirname, '../../../config/migrations/0003_self_created_tables.sql');
 
 jest.mock('../../../config/db-pg', () => ({ pool: mockPool }));
 
@@ -39,15 +38,10 @@ beforeAll(async () => {
   await realPool.query(`CREATE TABLE messages (
     id INTEGER PRIMARY KEY, pod_id TEXT NOT NULL, thread_root_id INTEGER
   )`);
-  await realPool.query(`CREATE TABLE message_claims (
-    message_id TEXT PRIMARY KEY,
-    pod_id TEXT NOT NULL,
-    claimed_by TEXT NOT NULL,
-    instance_id TEXT NOT NULL DEFAULT 'default',
-    expires_at TIMESTAMPTZ NOT NULL,
-    state TEXT NOT NULL DEFAULT 'claimed',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`);
+  // 0003 also retrofits 0001's tool_calls, so that table goes in first. pg-mem
+  // cannot parse 0001 whole, hence the one table rather than the runner.
+  await applyTable(realPool, 'tool_calls');
+  await realPool.query(fs.readFileSync(MIGRATION_0003, 'utf8'));
 });
 
 beforeEach(async () => {

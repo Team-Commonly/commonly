@@ -1,7 +1,9 @@
-/** The changed ToolCall DDL, INSERT and SELECT must run on real PostgreSQL. */
+/** The ToolCall INSERT and SELECT must run on real PostgreSQL. */
+/* eslint-disable import/no-unresolved, import/extensions -- TypeScript modules expose CJS exports. */
 const { Pool } = require('pg');
 const ToolCall = require('../../models/ToolCall');
-const { TOOL_CALL_DDL } = require('../../models/ToolCall');
+const { pool } = require('../../config/db-pg');
+const { runPgMigrations } = require('../../config/run-pg-migrations');
 
 const run = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 const GRANT_ID = `task263-vendor-diagnostic-tier1-${Date.now()}`;
@@ -20,8 +22,10 @@ run('ToolCall vendor diagnostics on real PostgreSQL', () => {
 
   beforeAll(async () => {
     observer = observerPool();
-    // create() runs the model's CREATE/ALTER path, including an existing table
-    // that predates these columns. The row is then read through a second pool.
+    // The table comes from the migrations, as at boot; the retrofit of a table
+    // that predates these columns is pgMigrations.test.js's. The row is then
+    // read through a second pool.
+    await runPgMigrations(pool);
     await ToolCall.create({
       callId: `${GRANT_ID}-${Date.now()}`,
       grantId: GRANT_ID,
@@ -41,8 +45,6 @@ run('ToolCall vendor diagnostics on real PostgreSQL', () => {
       await observer.end();
     }
     // The model's pool is distinct from the observing connection.
-    // eslint-disable-next-line global-require
-    const { pool } = require('../../config/db-pg');
     if (pool?.end) await pool.end();
   });
 
@@ -65,46 +67,5 @@ run('ToolCall vendor diagnostics on real PostgreSQL', () => {
     const withoutDiagnostics = (await ToolCall.listForGrant(GRANT_ID)).find((item) => item.outcome === 'ok');
     expect(withoutDiagnostics.vendorStatus).toBeUndefined();
     expect(withoutDiagnostics.vendorError).toBeUndefined();
-  });
-
-  test('the same DDL creates a fresh table and retrofits an old table', async () => {
-    const schema = `task263_${Date.now()}`;
-    await observer.query(`CREATE SCHEMA "${schema}"`);
-    const client = await observer.connect();
-    try {
-      await client.query(`SET search_path TO "${schema}"`);
-      await client.query(TOOL_CALL_DDL);
-      const fresh = await client.query(
-        "SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'tool_calls'",
-        [schema],
-      );
-      expect(fresh.rows.map((row) => row.column_name)).toEqual(expect.arrayContaining([
-        'vendor_status', 'vendor_error',
-      ]));
-
-      await client.query('DROP TABLE tool_calls');
-      await client.query(`CREATE TABLE tool_calls (
-        call_id VARCHAR(255) PRIMARY KEY, grant_id VARCHAR(255) NOT NULL,
-        pod_id VARCHAR(255), installation_id VARCHAR(255), agent_user_id VARCHAR(255) NOT NULL,
-        tool VARCHAR(255) NOT NULL, args_digest CHAR(64) NOT NULL,
-        occurred_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        outcome VARCHAR(32) NOT NULL, reason VARCHAR(255), approval_id VARCHAR(255),
-        duration_ms INTEGER, credential_owner_id VARCHAR(255)
-      )`);
-      await client.query(TOOL_CALL_DDL);
-      await client.query(`INSERT INTO tool_calls
-        (call_id, grant_id, agent_user_id, tool, args_digest, outcome, vendor_status, vendor_error)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [
-        'retrofit-row', GRANT_ID, 'agent-a', 'atlassian.test', 'c'.repeat(64),
-        'failed', 400, 'session required',
-      ]);
-      const { rows } = await client.query('SELECT vendor_status, vendor_error FROM tool_calls WHERE call_id = $1',
-        ['retrofit-row']);
-      expect(rows[0]).toMatchObject({ vendor_status: 400, vendor_error: 'session required' });
-    } finally {
-      await client.query('RESET search_path');
-      client.release();
-      await observer.query(`DROP SCHEMA "${schema}" CASCADE`);
-    }
   });
 });

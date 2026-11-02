@@ -19,6 +19,7 @@ let pool;
 let MongoMessage;
 let backfillLocalMessages;
 let productionDeps;
+let verifyCopied;
 let ensureLegacyIdIndex;
 
 const POD = new mongoose.Types.ObjectId().toHexString();
@@ -48,7 +49,11 @@ const pgCopies = async () => (await pool.query(
 )).rows.map((r) => r.legacy_mongo_id).sort();
 
 d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const retentionBefore = process.env.PG_MESSAGE_RETENTION_DAYS;
   beforeAll(async () => {
+    // The fixed dates below predate any 30-day window; retention has its own tests.
+    process.env.PG_MESSAGE_RETENTION_DAYS = '36500';
     pool = connect();
     await pool.query(fs.readFileSync(path.join(__dirname, '../../config/schema.sql'), 'utf8'));
     // Added by migration 0001, which schema.sql alone does not carry.
@@ -62,7 +67,7 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
     // eslint-disable-next-line global-require
     MongoMessage = require('../../models/Message');
     // eslint-disable-next-line global-require
-    ({ backfillLocalMessages, productionDeps } = require('../../scripts/backfill-local-messages-to-pg'));
+    ({ backfillLocalMessages, productionDeps, verifyCopied } = require('../../scripts/backfill-local-messages-to-pg'));
     // eslint-disable-next-line global-require
     ({ ensureLegacyIdIndex } = require('../../services/legacyMessageCopy'));
     expect(await ensureLegacyIdIndex()).toBeTruthy();
@@ -74,6 +79,8 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
   });
 
   afterAll(async () => {
+    if (retentionBefore === undefined) delete process.env.PG_MESSAGE_RETENTION_DAYS;
+    else process.env.PG_MESSAGE_RETENTION_DAYS = retentionBefore;
     await pool.query('DELETE FROM messages WHERE content LIKE $1', [`${MARKER}%`]);
     await pool.query('DELETE FROM pods WHERE id = $1', [POD]);
     await pool.end();
@@ -176,6 +183,105 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
     const applied = await backfillLocalMessages(deps, { apply: true, force: true });
     expect(applied).toMatchObject({ pending: 2, moved: 2, failed: 0 });
     expect(await pgCopies()).toEqual([atSince._id.toString(), after._id.toString()].sort());
+  });
+
+  test('a row past retention in a pod Pro does not protect stays in Mongo; a protected pod\'s row copies', async () => {
+    // eslint-disable-next-line global-require
+    const retention = require('../../services/pgRetentionService');
+    const protectedPod = new mongoose.Types.ObjectId().toHexString();
+    await pool.query(
+      "INSERT INTO pods (id, name, type, created_by) VALUES ($1, $2, 'chat', $3) ON CONFLICT (id) DO NOTHING",
+      [protectedPod, 'local-backfill-503-pro', USER],
+    );
+    const spy = jest.spyOn(retention, 'resolveProtectedPodIds').mockResolvedValue([protectedPod]);
+    process.env.PG_MESSAGE_RETENTION_DAYS = '30';
+    try {
+      const old = new Date(Date.now() - 40 * DAY);
+      const expired = await mongoMessage('past retention', old);
+      const kept = await MongoMessage.create({
+        podId: protectedPod, userId: USER, content: `${MARKER} pro history`, messageType: 'text', createdAt: old,
+      });
+      const recent = await mongoMessage('recent');
+
+      const dry = await backfillLocalMessages(productionDeps(pool), { force: true });
+      expect(dry).toMatchObject({
+        pending: 3, expiredPending: 1, orphanedPending: 0, toCopy: 2,
+      });
+
+      const applied = await backfillLocalMessages(productionDeps(pool), { apply: true, force: true });
+      expect(applied).toMatchObject({ moved: 2, expired: 1, failed: 0 });
+      expect(await pgCopies()).toEqual([kept._id.toString(), recent._id.toString()].sort());
+      expect((await MongoMessage.findById(expired._id).lean()).reconciledAt).toBeUndefined();
+
+      const after = await backfillLocalMessages(productionDeps(pool), { force: true });
+      expect(after).toMatchObject({ pending: 1, expiredPending: 1, toCopy: 0 });
+    } finally {
+      process.env.PG_MESSAGE_RETENTION_DAYS = '36500';
+      spy.mockRestore();
+      await pool.query('DELETE FROM messages WHERE pod_id = $1', [protectedPod]);
+      await pool.query('DELETE FROM pods WHERE id = $1', [protectedPod]);
+    }
+  });
+
+  test('a row past retention in a pod PG_RETENTION_EXEMPT_POD_IDS lists copies, as the delete keeps it', async () => {
+    const exempt = new mongoose.Types.ObjectId().toHexString();
+    await pool.query(
+      "INSERT INTO pods (id, name, type, created_by) VALUES ($1, $2, 'chat', $3) ON CONFLICT (id) DO NOTHING",
+      [exempt, 'local-backfill-503-exempt', USER],
+    );
+    const envBefore = process.env.PG_RETENTION_EXEMPT_POD_IDS;
+    process.env.PG_RETENTION_EXEMPT_POD_IDS = `other, ${exempt}`;
+    process.env.PG_MESSAGE_RETENTION_DAYS = '30';
+    try {
+      const kept = await MongoMessage.create({
+        podId: exempt, userId: USER, content: `${MARKER} exempt history`, messageType: 'text',
+        createdAt: new Date(Date.now() - 40 * DAY),
+      });
+      const dry = await backfillLocalMessages(productionDeps(pool), { force: true });
+      expect(dry).toMatchObject({ pending: 1, expiredPending: 0, toCopy: 1 });
+      const applied = await backfillLocalMessages(productionDeps(pool), { apply: true, force: true });
+      expect(applied).toMatchObject({ moved: 1, expired: 0, failed: 0 });
+      expect(await pgCopies()).toEqual([kept._id.toString()]);
+    } finally {
+      process.env.PG_MESSAGE_RETENTION_DAYS = '36500';
+      if (envBefore === undefined) delete process.env.PG_RETENTION_EXEMPT_POD_IDS;
+      else process.env.PG_RETENTION_EXEMPT_POD_IDS = envBefore;
+      await pool.query('DELETE FROM messages WHERE pod_id = $1', [exempt]);
+      await pool.query('DELETE FROM pods WHERE id = $1', [exempt]);
+    }
+  });
+
+  test('--verify matches copied rows per pod, and names the pod once a copy differs', async () => {
+    await mongoMessage('one');
+    await MongoMessage.create({
+      podId: POD, userId: USER, content: `${MARKER} card`, messageType: 'card', authorKind: 'kernel',
+      payload: { state: 'open', kind: 'approval', at: new Date('2026-10-01T12:00:00Z') },
+    });
+    await backfillLocalMessages(productionDeps(pool), { apply: true, force: true });
+
+    const clean = await verifyCopied(productionDeps(pool));
+    // Other suites may leave copied rows in the shared database, so only this pod is asserted.
+    expect(clean.differing).not.toContain(POD);
+
+    await pool.query(
+      "UPDATE messages SET payload = jsonb_set(payload, '{state}', '\"done\"') WHERE pod_id = $1 AND payload IS NOT NULL",
+      [POD],
+    );
+    expect((await verifyCopied(productionDeps(pool))).differing).toContain(POD);
+    await pool.query(
+      "UPDATE messages SET payload = jsonb_set(payload, '{state}', '\"open\"'), author_kind = NULL WHERE pod_id = $1 AND payload IS NOT NULL",
+      [POD],
+    );
+    expect((await verifyCopied(productionDeps(pool))).differing).toContain(POD);
+    await pool.query("UPDATE messages SET author_kind = 'kernel' WHERE pod_id = $1 AND payload IS NOT NULL", [POD]);
+    expect((await verifyCopied(productionDeps(pool))).differing).not.toContain(POD);
+
+    await pool.query(
+      'UPDATE messages SET content = content || $2 WHERE pod_id = $1 AND legacy_mongo_id IS NOT NULL',
+      [POD, ' (edited)'],
+    );
+    const edited = await verifyCopied(productionDeps(pool));
+    expect(edited.differing).toContain(POD);
   });
 
   test('refuses when PG holds unmarked history older than the newest Mongo message', async () => {
