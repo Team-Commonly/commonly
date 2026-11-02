@@ -119,7 +119,6 @@ const pruneStatement = async () => {
 describe('messageClaimService', () => {
   beforeEach(() => {
     pool.query.mockReset();
-    // ensureTable() is module-level-latched; feed CREATE/INDEX generously.
     pool.query.mockResolvedValue({ rows: [] });
   });
 
@@ -135,8 +134,29 @@ describe('messageClaimService', () => {
     expect(r.claimedBy).toBe('ux-lead'); // lowercased — one identity casing, learned the hard way (#804)
     const cas = pool.query.mock.calls.find(([sql]) => /INSERT INTO message_claims/.test(sql));
     expect(cas[0]).toMatch(CAS);
-    expect(pool.query.mock.calls.some(([sql]) => /ADD COLUMN IF NOT EXISTS state/.test(sql))).toBe(true);
-    expect(pool.query.mock.calls.some(([sql]) => /ADD COLUMN IF NOT EXISTS declined_by/.test(sql))).toBe(true);
+  });
+
+  test('issues no DDL: the table and its retrofits are migration 0003', async () => {
+    // A fresh module, so a latch set by an earlier test cannot hide a first-use
+    // bootstrap. Every entry point that used to run one is called below.
+    let service;
+    let freshPool;
+    jest.isolateModules(() => {
+      /* eslint-disable global-require -- a fresh registry is the point */
+      freshPool = require('../../../config/db-pg').pool;
+      service = require('../../../services/messageClaimService');
+      /* eslint-enable global-require */
+    });
+    freshPool.query.mockResolvedValue({ rows: [] });
+    await service.claim({ messageId: '52907', podId: 'p1', agentName: 'ux-lead' });
+    await service.release({ messageId: '52907', agentName: 'ux-lead' });
+    await service.liveClaimsHeldBy({ podId: 'p1', agentName: 'ux-lead' });
+    await service.liveClaimantsInThread('p1', 7);
+    await service.holder('52907');
+    expect(freshPool.query).toHaveBeenCalled();
+    const ddl = freshPool.query.mock.calls.map(([sql]) => String(sql))
+      .filter((sql) => /^\s*(CREATE|ALTER|DROP)\b/i.test(sql));
+    expect(ddl).toEqual([]);
   });
 
   test('prunes expired completed, abandoned-decline and refusal history', async () => {

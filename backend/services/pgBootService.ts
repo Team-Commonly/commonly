@@ -107,6 +107,18 @@ const messageOf = (error: unknown): string => {
 export const PG_MESSAGE_PATH = '/api/pg/messages';
 
 /**
+ * PostgreSQL is the only chat store (ADR-034 D6), so an instance without it
+ * refuses to start instead of running with no place to put a message. Called
+ * by the process entry only: tests build the app without PG_HOST on purpose.
+ */
+export const requirePgConfigured = (env: NodeJS.ProcessEnv): void => {
+  if (String(env.PG_HOST || '').trim()) return;
+  throw new Error('PostgreSQL is required: set PG_HOST (with PG_PORT, PG_DATABASE, PG_USER and PG_PASSWORD).'
+    + ' Chat is stored only in PostgreSQL. An instance that ran chat on MongoDB copies that history with'
+    + ' `npm run backfill:local-messages` after its first start with PostgreSQL.');
+};
+
+/**
  * Is this exact router on the app's route table, right now?
  *
  * This is deliberately NOT `pgBootState.mounted`. The boot block and the route

@@ -30,12 +30,11 @@ jest.mock('../../config/socket', () => {
 });
 
 const mongoose = require('mongoose');
-const fs = require('fs');
-const path = require('path');
 const axios = require('axios').default;
 
 const { setupMongoDb, closeMongoDb } = require('../utils/testUtils');
 const { pool } = require('../../config/db-pg');
+const { runPgMigrations } = require('../../config/run-pg-migrations');
 const User = require('../../models/User');
 const Pod = require('../../models/Pod');
 const Task = require('../../models/Task');
@@ -93,7 +92,9 @@ d('TASK-002 credit when the addressed agent lost the claim (real PG + Mongo)', (
 
   beforeAll(async () => {
     await setupMongoDb();
-    await pool.query(fs.readFileSync(path.join(__dirname, '../../config/schema.sql'), 'utf8'));
+    // The migrations, as at boot: schema.sql is only 0001, and the claim
+    // table is 0003's.
+    await runPgMigrations(pool);
     process.env.LITELLM_BASE_URL = 'http://litellm.test';
     process.env.LITELLM_MASTER_KEY = 'test-key';
   });

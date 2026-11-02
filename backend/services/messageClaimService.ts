@@ -8,9 +8,8 @@
  *
  * Deviation from ADR-018's sketch, recorded: the ADR says "claim state lives
  * with the message row". It lives in a dedicated table KEYED by message id
- * instead — the messages table is hot, has no in-repo DDL to migrate, and
- * vectorSearchService already sets the self-bootstrapping-table precedent.
- * Same ownership semantics, no ALTER on the busiest table in the system.
+ * instead, created by migration 0003_self_created_tables.sql. Same ownership
+ * semantics, no ALTER on the busiest table in the system.
  *
  * The CAS is the whole design: INSERT … ON CONFLICT DO UPDATE … WHERE the
  * existing lease is expired, RETURNING. Exactly one caller gets a row back;
@@ -59,48 +58,6 @@ interface ClaimResult {
   state?: 'claimed' | 'declined' | 'completed' | 'refused';
   declinedBy?: string[];
   reason?: string;
-}
-
-let bootstrapped = false;
-
-async function ensureTable(): Promise<void> {
-  if (bootstrapped) return;
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS message_claims (
-      message_id TEXT PRIMARY KEY,
-      pod_id TEXT NOT NULL,
-      claimed_by TEXT NOT NULL,
-      instance_id TEXT NOT NULL DEFAULT 'default',
-      expires_at TIMESTAMPTZ NOT NULL,
-      state TEXT NOT NULL DEFAULT 'claimed',
-      declined_by TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  // The table self-bootstraps rather than being part of schema.sql, so this
-  // retrofit is required for instances that created it before decline
-  // handoff existed. CREATE TABLE IF NOT EXISTS alone never adds columns.
-  await pool.query(
-    "ALTER TABLE message_claims ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT 'claimed'",
-  );
-  await pool.query(
-    'ALTER TABLE message_claims ADD COLUMN IF NOT EXISTS declined_by TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]',
-  );
-  // TASK-099: the named half of a released refusal. Nullable by design —
-  // every pre-existing row, and every non-refused outcome, has no reason.
-  await pool.query(
-    'ALTER TABLE message_claims ADD COLUMN IF NOT EXISTS refusal_reason TEXT',
-  );
-  await pool.query(
-    'ALTER TABLE message_claims ADD COLUMN IF NOT EXISTS refusal_status INTEGER',
-  );
-  // Expired rows are dead weight; the CAS treats them as absent. A small
-  // index makes the pod-scoped sweep cheap if one is ever added.
-  await pool.query('CREATE INDEX IF NOT EXISTS idx_message_claims_pod ON message_claims (pod_id)');
-  await pool.query(
-    'CREATE INDEX IF NOT EXISTS idx_message_claims_terminal_expiry ON message_claims (state, expires_at)',
-  );
-  bootstrapped = true;
 }
 
 function clampLease(seconds: unknown): number {
@@ -307,7 +264,6 @@ class MessageClaimService {
     if (!messageId || !podId || !agentName) {
       throw new Error('messageId, podId, and agentName are required');
     }
-    await ensureTable();
     // Handoff rows are short-lived history, not an ever-growing ledger.
     // Pruning happens on the same claim traffic that creates them; the
     // retention window outlives the requeue cap so attempted-seat history
@@ -429,7 +385,6 @@ class MessageClaimService {
   }> {
     const { messageId, agentName, instanceId = 'default' } = options;
     if (!messageId || !agentName) throw new Error('messageId and agentName are required');
-    await ensureTable();
     const canonicalAgentName = agentName.toLowerCase();
     const outcome = options.outcome;
     // Every write below is reachable only from a LIVE LEASE (`state='claimed'`).
@@ -585,7 +540,6 @@ class MessageClaimService {
   }): Promise<string[]> {
     const { podId, agentName, instanceId = 'default' } = options;
     if (!podId || !agentName) return [];
-    await ensureTable();
     const res = await pool.query(
       `SELECT message_id FROM message_claims
        WHERE pod_id = $1 AND LOWER(claimed_by) = $2 AND instance_id = $3
@@ -600,7 +554,6 @@ class MessageClaimService {
   /** Current claimants on any message in this thread, scoped to this pod. */
   static async liveClaimantsInThread(podId: string, threadRootId: number): Promise<Set<string>> {
     if (!podId || !Number.isSafeInteger(threadRootId) || threadRootId <= 0) return new Set();
-    await ensureTable();
     const res = await pool.query(
       `SELECT DISTINCT LOWER(c.claimed_by) AS agent_name, c.instance_id
          FROM message_claims c
@@ -615,7 +568,6 @@ class MessageClaimService {
   }
 
   static async holder(messageId: string): Promise<ClaimResult> {
-    await ensureTable();
     const res = await pool.query(
       `SELECT claimed_by, instance_id, expires_at, state, declined_by FROM message_claims
        WHERE message_id = $1 AND state = 'claimed' AND expires_at >= NOW()`,

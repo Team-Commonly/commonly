@@ -18,6 +18,7 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const ToolCall = require('../../../models/ToolCall');
 const { pool } = require('../../../config/db-pg');
+const { applyTable } = require('../../utils/schemaTable');
 const { boundRunValue, RUN_TRACE_BYTES } = require('../../../services/agentRunLimits');
 const { BSON } = require('mongodb');
 const MEMBER = new mongoose.Types.ObjectId();
@@ -29,6 +30,8 @@ let run;
 beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
+  // The trail table comes from the shipped migration (0001), not the model.
+  await applyTable(pool, 'tool_calls');
   app = express();
   app.use('/api/pods', require('../../../routes/runTraces'));
 });

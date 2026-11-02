@@ -8,6 +8,15 @@ jest.mock('../../../config/db-pg', () => {
 
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const ToolCall = require('../../../models/ToolCall');
+// eslint-disable-next-line import/no-unresolved, import/extensions
+const { pool } = require('../../../config/db-pg');
+const { applyTable } = require('../../utils/schemaTable');
+
+// The tables come from the shipped migration (0001), not from the model.
+beforeAll(async () => {
+  await applyTable(pool, 'tool_call_budgets');
+  await applyTable(pool, 'tool_calls');
+});
 
 it('persists only the bounded vendor status and error line on a failed ToolCall', async () => {
   await ToolCall.create({

@@ -1,10 +1,13 @@
 /** Read joins must execute against real PostgreSQL, not only pg-mem. */
 const ToolCall = require('../../models/ToolCall');
 const { pool } = require('../../config/db-pg');
+const { runPgMigrations } = require('../../config/run-pg-migrations');
 const run = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 const grantId = `lark-trace-${Date.now()}`;
 const podId = `${grantId}-pod`;
 run('run trace attribution on real PostgreSQL', () => {
+  // The trail tables come from the migrations, as at boot.
+  beforeAll(async () => { await runPgMigrations(pool); });
   afterAll(async () => { await pool.query('DELETE FROM tool_calls WHERE grant_id = $1', [grantId]); });
   it('reads only referenced calls in the authorized pod, with current approval outcome', async () => {
     const record = (id, over = {}) => ({ callId: `${grantId}-${id}`, grantId, podId,

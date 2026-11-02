@@ -83,60 +83,11 @@ export interface ToolCallRecord {
   durationMs?: number;
 }
 
-export const TOOL_CALL_DDL = `
-CREATE TABLE IF NOT EXISTS tool_call_budgets (
-  grant_id VARCHAR(255) PRIMARY KEY,
-  calls_used INTEGER NOT NULL DEFAULT 0,
-  window_started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE TABLE IF NOT EXISTS tool_calls (
-  call_id VARCHAR(255) PRIMARY KEY,
-  grant_id VARCHAR(255) NOT NULL,
-  pod_id VARCHAR(255),
-  installation_id VARCHAR(255),
-  agent_user_id VARCHAR(255) NOT NULL,
-  tool VARCHAR(255) NOT NULL,
-  args_digest CHAR(64) NOT NULL,
-  occurred_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  outcome VARCHAR(32) NOT NULL CHECK (outcome IN ('ok', 'refused', 'pending_approval', 'failed')),
-  reason VARCHAR(255),
-  approval_id VARCHAR(255),
-  duration_ms INTEGER,
-  credential_owner_id VARCHAR(255),
-  vendor_status INTEGER,
-  vendor_error VARCHAR(200)
-);
-CREATE INDEX IF NOT EXISTS idx_tool_calls_grant_at ON tool_calls(grant_id, occurred_at DESC);
--- The table self-bootstraps rather than being part of schema.sql, so an
--- instance that created it before the trail carried a credential owner needs
--- the retrofitted column; CREATE TABLE IF NOT EXISTS alone never adds one.
-ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS credential_owner_id VARCHAR(255);
-ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS vendor_status INTEGER;
-ALTER TABLE tool_calls ADD COLUMN IF NOT EXISTS vendor_error VARCHAR(200);
-`;
-
-let ensured = false;
-let ensureInFlight: Promise<PgPool> | null = null;
-
+// The tables are created by the numbered migrations (0001, retrofitted by
+// 0003); this model only reads and writes them.
 const ensurePool = (): PgPool => {
   if (!pool) throw new Error('tool broker requires PostgreSQL');
   return pool;
-};
-
-const ensureTables = async (): Promise<PgPool> => {
-  const db = ensurePool();
-  if (ensured) return db;
-  if (!ensureInFlight) {
-    ensureInFlight = db.query(TOOL_CALL_DDL)
-      .then(() => {
-        ensured = true;
-        return db;
-      })
-      .finally(() => {
-        ensureInFlight = null;
-      });
-  }
-  return ensureInFlight;
 };
 
 const stableJson = (value: unknown): string => {
@@ -210,7 +161,7 @@ export const reserveBudgetLineage = async (
   entries: Array<{ grantId: string; calls: number; windowMs?: number }>,
 ): Promise<boolean> => {
   if (entries.length === 0) return true;
-  const db = await ensureTables();
+  const db = ensurePool();
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -240,7 +191,7 @@ class ToolCall {
   static countsForGrant: (grantId: string) => Promise<ToolCallCounts>;
 
   static async create(record: ToolCallRecord): Promise<void> {
-    const db = await ensureTables();
+    const db = ensurePool();
     await db.query(
       `INSERT INTO tool_calls
        (call_id, grant_id, pod_id, installation_id, agent_user_id, tool,
@@ -273,7 +224,7 @@ class ToolCall {
     outcome: string; tool: string; at: Date; durationMs: number | null;
   }>> {
     if (!callIds.length) return [];
-    const db = await ensureTables();
+    const db = ensurePool();
     const ids = [...new Set(callIds)].slice(0, 8192);
     const placeholders = ids.map((_id, index) => `$${index + 2}`).join(', ');
     const result = await db.query(
@@ -299,7 +250,7 @@ class ToolCall {
   }
 
   static async listForGrant(grantId: string, limit = 100): Promise<ToolCallListRecord[]> {
-    const db = await ensureTables();
+    const db = ensurePool();
     const result = await db.query(
       `SELECT tc.call_id, tc.grant_id, tc.pod_id, tc.installation_id, tc.agent_user_id,
               tc.tool, tc.args_digest, tc.occurred_at, tc.credential_owner_id,
@@ -355,7 +306,7 @@ export interface ToolCallListRecord extends Omit<ToolCallRecord, 'outcome'> {
  * `pending_approval`. The row that resolved it is counted instead, so
  * `ok + refused + failed + pending_approval === total`. */
 ToolCall.countsForGrant = async function countsForGrant(grantId: string): Promise<ToolCallCounts> {
-  const db = await ensureTables();
+  const db = ensurePool();
   const result = await db.query(
     `SELECT outcome, COUNT(*) AS n FROM (
        SELECT ${EFFECTIVE_OUTCOME} AS outcome

@@ -42,11 +42,27 @@
  * they never fail the run. `orphanedPending` reports how many of the pending
  * rows are orphans before anything is written, dry run included.
  *
- * Exit codes: 0 done, or a dry run that would proceed; 1 some rows failed;
- * 2 refused (a dry run that finds the overlap refuses too, so it also exits 2).
+ * A row older than the message retention window, in a pod the Pro tier does
+ * not protect, is not copied: the nightly retention run (pgRetentionService)
+ * would delete it on arrival. It stays in Mongo, counted as `expiredPending`
+ * in the report and `expired` when an `--apply` run passes it. `toCopy` is
+ * what is left once orphans and expired rows are set aside, so a report-only
+ * run showing `toCopy: 0` means the instance has nothing more to copy
+ * (ADR-034 D6).
+ *
+ * `--verify` copies nothing. It compares the rows this script copied, per pod:
+ * the Mongo rows stamped `reconciledAt` against the PG rows carrying their
+ * `legacy_mongo_id`, by count and by a checksum over the copied fields. Rows
+ * past retention are left out on both sides. Run it after `--apply`, on
+ * staging before production; it exits 1 when any pod differs.
+ *
+ * Exit codes: 0 done, or a dry run that would proceed, or a clean verify;
+ * 1 some rows failed, or a verify found a difference; 2 refused (a dry run
+ * that finds the overlap refuses too, so it also exits 2).
  */
 /* eslint-disable no-console, no-await-in-loop */
 
+import { createHash } from 'crypto';
 import mongoose from 'mongoose';
 import { copyOne, ensureLegacyIdIndex } from '../services/legacyMessageCopy';
 
@@ -67,6 +83,10 @@ export interface LocalBackfillDeps {
   countOverlap: (at: Date) => Promise<number>;
   /** Pending rows whose pod exists in neither MongoDB nor PG `pods`. */
   countOrphaned: () => Promise<number>;
+  /** Pending rows, in pods that still exist, that retention would delete on arrival. */
+  countExpired: () => Promise<number>;
+  /** Whether retention would delete this row on arrival (its pod still exists). */
+  isExpired: (doc: PendingDoc) => Promise<boolean>;
   /** The next pending docs after `afterId`, oldest id first. */
   nextBatch: (afterId: string | null, limit: number) => Promise<PendingDoc[]>;
   copy: (doc: PendingDoc) => Promise<CopyResult>;
@@ -81,8 +101,14 @@ export interface LocalBackfillReport {
   alreadyPresent: number;
   /** Pending rows whose pod is gone, counted before any write. */
   orphanedPending: number;
+  /** Pending rows past retention, counted before any write. */
+  expiredPending: number;
+  /** Pending rows that are neither orphaned nor past retention. */
+  toCopy: number;
   /** Rows this run skipped because their pod is gone. */
   orphaned: number;
+  /** Rows this run skipped because they are past retention. */
+  expired: number;
   failed: number;
 }
 
@@ -94,6 +120,7 @@ export async function backfillLocalMessages(
   const newest = pending ? await deps.newestPendingAt() : null;
   const overlap = newest ? await deps.countOverlap(newest) : 0;
   const orphanedPending = pending ? await deps.countOrphaned() : 0;
+  const expiredPending = pending ? await deps.countExpired() : 0;
   const report: LocalBackfillReport = {
     dryRun: !apply,
     pending,
@@ -102,7 +129,10 @@ export async function backfillLocalMessages(
     moved: 0,
     alreadyPresent: 0,
     orphanedPending,
+    expiredPending,
+    toCopy: Math.max(0, pending - orphanedPending - expiredPending),
     orphaned: 0,
+    expired: 0,
     failed: 0,
   };
   if (!apply || report.refused || !pending) return report;
@@ -113,6 +143,10 @@ export async function backfillLocalMessages(
     if (!batch.length) break;
     for (const doc of batch) {
       try {
+        if (await deps.isExpired(doc)) {
+          report.expired += 1;
+          continue;
+        }
         const result = await deps.copy(doc);
         if (result === 'moved') report.moved += 1;
         else if (result === 'orphaned') report.orphaned += 1;
@@ -127,6 +161,112 @@ export async function backfillLocalMessages(
   return report;
 }
 
+/** The fields a copy carries, read from either store. */
+export interface CopiedRow {
+  legacyId: string;
+  podId: string;
+  userId: string;
+  content: string;
+  messageType: string;
+  createdAt: Date;
+  /** 'kernel' or null, as `copyOne` writes `author_kind`. */
+  authorKind: string | null;
+  payload: unknown;
+}
+
+export interface PodDigest { count: number; hash: string }
+
+/** Rows per page when --verify reads Postgres. */
+export const VERIFY_PAGE = 1000;
+
+export interface VerifyDeps {
+  /** Per pod: the Mongo rows stamped as copied, past-retention rows left out. */
+  copiedInMongo: () => Promise<Map<string, PodDigest>>;
+  /** Per pod: the PG rows carrying a Mongo id, past-retention rows left out. */
+  copiedInPg: () => Promise<Map<string, PodDigest>>;
+}
+
+// A payload as JSON with its keys sorted. Postgres jsonb returns keys in its own
+// order and dates as strings, so the same payload read from Mongo and from PG
+// only compares equal after this.
+const canonicalJson = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(obj).sort().map((key) => [key, canonicalJson(obj[key])]));
+  }
+  return value;
+};
+const canonicalPayload = (payload: unknown): unknown => (payload == null
+  ? null
+  : canonicalJson(JSON.parse(JSON.stringify(payload))));
+
+export const rowDigest = (row: CopiedRow): string => createHash('sha256')
+  .update(JSON.stringify([
+    row.legacyId, row.podId, row.userId, row.content, row.messageType, row.createdAt.getTime(),
+    row.authorKind ?? null, canonicalPayload(row.payload),
+  ]))
+  .digest('hex');
+
+// XOR, so the order the rows are read in cannot matter. Two equal rows would
+// cancel, but a row's digest includes its Mongo id, which is unique in both
+// stores (the PG column has a unique index), so no two rows are equal.
+export const foldDigests = (digests: string[]): string => {
+  const acc = Buffer.alloc(32);
+  digests.forEach((hex) => {
+    const bytes = Buffer.from(hex, 'hex');
+    // eslint-disable-next-line no-bitwise -- XOR is the fold
+    for (let i = 0; i < acc.length; i += 1) acc[i] ^= bytes[i];
+  });
+  return acc.toString('hex');
+};
+
+/**
+ * Per-pod counts and checksums, folded one row at a time so a run holds one
+ * 32-byte accumulator per pod, never the rows.
+ */
+export const podDigests = () => {
+  const byPod = new Map<string, { count: number; acc: Buffer }>();
+  return {
+    add(row: CopiedRow): void {
+      const entry = byPod.get(row.podId) || { count: 0, acc: Buffer.alloc(32) };
+      const bytes = Buffer.from(rowDigest(row), 'hex');
+      // eslint-disable-next-line no-bitwise -- XOR is the fold, as in foldDigests
+      for (let i = 0; i < entry.acc.length; i += 1) entry.acc[i] ^= bytes[i];
+      entry.count += 1;
+      byPod.set(row.podId, entry);
+    },
+    result(): Map<string, PodDigest> {
+      return new Map([...byPod].map(([pod, { count, acc }]) => [pod, { count, hash: acc.toString('hex') }]));
+    },
+  };
+};
+
+/** Folds rows into per-pod counts and checksums. */
+export const digestByPod = (rows: Iterable<CopiedRow>): Map<string, PodDigest> => {
+  const digests = podDigests();
+  for (const row of rows) digests.add(row);
+  return digests.result();
+};
+
+export interface VerifyReport { pods: number; mongoRows: number; pgRows: number; differing: string[] }
+
+export async function verifyCopied(deps: VerifyDeps): Promise<VerifyReport> {
+  const [mongo, pg] = [await deps.copiedInMongo(), await deps.copiedInPg()];
+  const pods = new Set([...mongo.keys(), ...pg.keys()]);
+  const sum = (digests: Map<string, PodDigest>) => [...digests.values()].reduce((n, d) => n + d.count, 0);
+  return {
+    pods: pods.size,
+    mongoRows: sum(mongo),
+    pgRows: sum(pg),
+    differing: [...pods].filter((pod) => {
+      const a = mongo.get(pod);
+      const b = pg.get(pod);
+      return !a || !b || a.count !== b.count || a.hash !== b.hash;
+    }),
+  };
+}
+
 interface PgPool {
   query: (sql: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
   end: () => Promise<void>;
@@ -134,16 +274,62 @@ interface PgPool {
 
 export interface BackfillScope { since?: Date }
 
-export const productionDeps = (pool: PgPool, { since }: BackfillScope = {}): LocalBackfillDeps => {
+export const productionDeps = (
+  pool: PgPool,
+  { since }: BackfillScope = {},
+): LocalBackfillDeps & VerifyDeps => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const Message = require('../models/Message');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const { syncPodFromMongo } = require('../services/pgPodSyncService');
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const MongoPod = require('../models/Pod');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const retention = require('../services/pgRetentionService');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const PGMessage = require('../models/pg/Message');
   const unreconciled = since
     ? { reconciledAt: { $exists: false }, createdAt: { $gte: since } }
     : { reconciledAt: { $exists: false } };
+  // Read once per run. Pending rows in pods that exist in neither store.
+  let gonePods: Promise<Array<{ toString(): string }>> | null = null;
+  const pendingGonePods = () => {
+    gonePods ??= (async () => {
+      const podIds: Array<{ toString(): string }> = await Message.distinct('podId', unreconciled);
+      if (!podIds.length) return [];
+      const inMongo: Array<{ toString(): string }> = await MongoPod.find({ _id: { $in: podIds } }).distinct('_id');
+      const { rows } = await pool.query('SELECT id FROM pods WHERE id = ANY($1)', [podIds.map(String)]);
+      const live = new Set([...inMongo.map(String), ...rows.map((r) => String(r.id))]);
+      return podIds.filter((id) => !live.has(String(id)));
+    })();
+    return gonePods;
+  };
+  // The retention delete's own rule (PGMessage.deleteOlderThan): older than
+  // the run's window (retentionWindowDays: whole days, at least one) by the
+  // Postgres clock, in a pod
+  // neither the Pro tier nor PG_RETENTION_EXEMPT_POD_IDS protects. No valid
+  // window means nothing expires, as the run then skips. A protected-pod lookup
+  // that fails throws, so the backfill stops rather than skipping rows a paying
+  // pod should keep.
+  let rule: Promise<{ cutoff: Date | null; protectedPods: Set<string> }> | null = null;
+  const expiryRule = () => {
+    rule ??= (async () => {
+      const days = retention.resolveRetentionDays();
+      if (!Number.isFinite(days) || days <= 0) return { cutoff: null, protectedPods: new Set<string>() };
+      const protectedPods = new Set<string>([
+        ...PGMessage.retentionExemptPodIds(),
+        ...(await retention.resolveProtectedPodIds()).map(String),
+      ]);
+      const window = `${retention.retentionWindowDays(days)} days`;
+      const { rows } = await pool.query('SELECT NOW() - $1::interval AS cutoff', [window]);
+      return { cutoff: new Date(rows[0].cutoff as Date), protectedPods };
+    })();
+    return rule;
+  };
+  const pastRetention = async (podId: string, createdAt: Date) => {
+    const { cutoff, protectedPods } = await expiryRule();
+    return Boolean(cutoff && new Date(createdAt) < cutoff && !protectedPods.has(podId));
+  };
   return {
     countPending: () => Message.countDocuments(unreconciled),
     newestPendingAt: async () => {
@@ -160,14 +346,75 @@ export const productionDeps = (pool: PgPool, { since }: BackfillScope = {}): Loc
     // An orphan's pod is in neither store: a pod already in PG copies without
     // a mirror, and a Mongo-only pod gets mirrored, so only the rest fail the FK.
     countOrphaned: async () => {
-      const podIds: Array<{ toString(): string }> = await Message.distinct('podId', unreconciled);
-      if (!podIds.length) return 0;
-      const ids = podIds.map(String);
-      const inMongo: Array<{ toString(): string }> = await MongoPod.find({ _id: { $in: podIds } }).distinct('_id');
-      const { rows } = await pool.query('SELECT id FROM pods WHERE id = ANY($1)', [ids]);
-      const live = new Set([...inMongo.map(String), ...rows.map((r) => String(r.id))]);
-      const gone = podIds.filter((id) => !live.has(String(id)));
+      const gone = await pendingGonePods();
       return gone.length ? Message.countDocuments({ ...unreconciled, podId: { $in: gone } }) : 0;
+    },
+    countExpired: async () => {
+      const { cutoff, protectedPods } = await expiryRule();
+      if (!cutoff) return 0;
+      const kept = [...protectedPods].filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+      const skipped = [...kept, ...await pendingGonePods()];
+      return Message.countDocuments({
+        $and: [unreconciled, { createdAt: { $lt: cutoff } }, { podId: { $nin: skipped } }],
+      });
+    },
+    // A row in a gone pod goes on to copy(), which counts it as orphaned.
+    isExpired: async (doc) => {
+      const podId = doc.podId.toString();
+      if ((await pendingGonePods()).some((id) => String(id) === podId)) return false;
+      return pastRetention(podId, doc.createdAt);
+    },
+    copiedInMongo: async () => {
+      const digests = podDigests();
+      const cursor = Message.find({ reconciledAt: { $exists: true } })
+        .select('podId userId content messageType createdAt authorKind payload').lean().cursor();
+      for await (const doc of cursor) {
+        const podId = String(doc.podId);
+        if (!await pastRetention(podId, doc.createdAt)) {
+          digests.add({
+            legacyId: String(doc._id),
+            podId,
+            userId: String(doc.userId),
+            content: doc.content || '',
+            messageType: doc.messageType || 'text',
+            createdAt: new Date(doc.createdAt),
+            authorKind: doc.authorKind === 'kernel' ? 'kernel' : null,
+            payload: doc.payload,
+          });
+        }
+      }
+      return digests.result();
+    },
+    // Paged by id, so a large history never sits in memory at once.
+    copiedInPg: async () => {
+      const digests = podDigests();
+      let afterPgId = 0;
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- keyset pages, one after another
+        const { rows } = await pool.query(`SELECT id, legacy_mongo_id, pod_id, user_id, content, message_type,
+          created_at, author_kind, payload FROM messages WHERE legacy_mongo_id IS NOT NULL AND id > $1
+          ORDER BY id LIMIT $2`, [afterPgId, VERIFY_PAGE]);
+        if (!rows.length) break;
+        afterPgId = Number(rows[rows.length - 1].id);
+        for (const row of rows) {
+          const podId = String(row.pod_id);
+          // eslint-disable-next-line no-await-in-loop
+          if (!await pastRetention(podId, row.created_at as Date)) {
+            digests.add({
+              legacyId: String(row.legacy_mongo_id),
+              podId,
+              userId: String(row.user_id),
+              content: String(row.content ?? ''),
+              messageType: String(row.message_type || 'text'),
+              createdAt: new Date(row.created_at as Date),
+              authorKind: row.author_kind == null ? null : String(row.author_kind),
+              payload: row.payload,
+            });
+          }
+        }
+      }
+      return digests.result();
     },
     nextBatch: (afterId, limit) => Message.find(afterId
       ? { ...unreconciled, _id: { $gt: new mongoose.Types.ObjectId(afterId) } }
@@ -195,7 +442,7 @@ export const exitCodeFor = (report: Pick<LocalBackfillReport, 'refused' | 'faile
   return 0;
 };
 
-export interface OpenedStores { deps: LocalBackfillDeps; close: () => Promise<void> }
+export interface OpenedStores { deps: LocalBackfillDeps & VerifyDeps; close: () => Promise<void> }
 
 /** Connects both stores for a real run. main() takes it as a parameter so a test can swap it. */
 export const openStores = async (scope: BackfillScope = {}): Promise<OpenedStores> => {
@@ -214,7 +461,7 @@ export const openStores = async (scope: BackfillScope = {}): Promise<OpenedStore
   return { deps: productionDeps(pool, scope), close };
 };
 
-export interface BackfillArgs { apply: boolean; force: boolean; since?: Date }
+export interface BackfillArgs { apply: boolean; force: boolean; verify: boolean; since?: Date }
 
 const toSince = (raw: string | undefined): Date => {
   const since = raw ? new Date(raw) : null;
@@ -231,7 +478,7 @@ const toSince = (raw: string | undefined): Date => {
  * the whole pre-PG history again.
  */
 export const parseArgs = (argv: string[]): BackfillArgs => {
-  const args: BackfillArgs = { apply: false, force: false };
+  const args: BackfillArgs = { apply: false, force: false, verify: false };
   let sinceSeen = false;
   const setSince = (raw: string | undefined) => {
     if (sinceSeen) throw new Error('--since given more than once');
@@ -243,12 +490,18 @@ export const parseArgs = (argv: string[]): BackfillArgs => {
     const arg = rest[i];
     if (arg === '--apply') args.apply = true;
     else if (arg === '--force') args.force = true;
+    else if (arg === '--verify') args.verify = true;
     else if (arg === '--since') {
       setSince(rest[i + 1]);
       i += 1;
     } else if (arg.startsWith('--since=')) setSince(arg.slice('--since='.length));
-    else throw new Error(`unknown argument ${JSON.stringify(arg)}; expected --apply, --force, --since <ISO date>`);
+    else {
+      const expected = '--apply, --force, --since <ISO date>, --verify';
+      throw new Error(`unknown argument ${JSON.stringify(arg)}; expected ${expected}`);
+    }
   }
+  // A verify reads every copied row in both stores and writes nothing.
+  if (args.verify && (args.apply || args.force || sinceSeen)) throw new Error('--verify runs alone');
   return args;
 };
 
@@ -257,9 +510,19 @@ export async function main(
   argv: string[] = process.argv,
   open: (scope: BackfillScope) => Promise<OpenedStores> = openStores,
 ): Promise<number> {
-  const { apply, force, since } = parseArgs(argv);
+  const { apply, force, verify, since } = parseArgs(argv);
   const { deps, close } = await open({ since });
   try {
+    if (verify) {
+      const result = await verifyCopied(deps);
+      const shown = { ...result, differing: result.differing.slice(0, 20) };
+      console.log(`[backfill-local-messages] verify ${JSON.stringify(shown)}`);
+      if (result.differing.length) {
+        console.log(`${result.differing.length} pod(s) differ between MongoDB and PostgreSQL in count or checksum.`);
+      }
+      process.exitCode = result.differing.length ? 1 : 0;
+      return process.exitCode;
+    }
     const report = await backfillLocalMessages(deps, { apply, force });
     console.log(`[backfill-local-messages] ${JSON.stringify({ ...report, since: since?.toISOString() ?? null })}`);
     if (report.refused) {
@@ -268,6 +531,10 @@ export async function main(
         + ' Re-run with --force only if you have checked.');
     } else if (!apply) {
       console.log('DRY RUN — nothing written. Re-run with --apply.');
+    }
+    if (report.expiredPending) {
+      console.log(`${report.expiredPending} pending message(s) are past the retention window in pods it applies to;`
+        + ' retention would delete them on arrival, so they are skipped and left in MongoDB.');
     }
     if (report.orphanedPending) {
       console.log(`${report.orphanedPending} pending message(s) belong to pods that exist in neither MongoDB nor PG;`

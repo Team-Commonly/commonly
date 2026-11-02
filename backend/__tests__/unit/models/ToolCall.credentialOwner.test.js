@@ -9,8 +9,9 @@
 //
 // The schema RETROFIT (an instance whose `tool_calls` predates the column) is not
 // representable here: pg-mem throws on `CREATE TABLE IF NOT EXISTS` against an
-// existing table, which is the statement that runs first in the same DDL. Its
-// own file witnesses the statement instead — ToolCall.credentialOwnerRetrofit.
+// existing table, which is the statement that runs first in the migrations.
+// ToolCall.credentialOwnerRetrofit witnesses migration 0003's ALTER instead, and
+// __tests__/service/pgMigrations.test.js runs it on real PostgreSQL.
 jest.mock('../../../config/db-pg', () => {
   // eslint-disable-next-line global-require
   const { newDb } = require('pg-mem');
@@ -21,6 +22,15 @@ jest.mock('../../../config/db-pg', () => {
 
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const ToolCall = require('../../../models/ToolCall');
+// eslint-disable-next-line import/no-unresolved, import/extensions
+const { pool } = require('../../../config/db-pg');
+const { applyTable } = require('../../utils/schemaTable');
+
+// The tables come from the shipped migration (0001), not from the model.
+beforeAll(async () => {
+  await applyTable(pool, 'tool_call_budgets');
+  await applyTable(pool, 'tool_calls');
+});
 
 let seq = 0;
 const row = (grantId, over) => {

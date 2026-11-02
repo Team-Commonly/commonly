@@ -9,7 +9,24 @@ const { waitFor } = require('../utils/testUtils');
 const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 // Every migration that ships, in order. A new migration adds its name here, so
 // two lanes claiming the same number conflict on this line.
-const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql'];
+const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql', '0003_self_created_tables.sql'];
+// The three tables 0003 took over from runtime DDL, and every column each must
+// end with. Shared by the fresh and the retrofit case: both must reach it.
+const SELF_CREATED = {
+  message_claims: ['message_id', 'pod_id', 'claimed_by', 'instance_id', 'expires_at', 'state',
+    'declined_by', 'created_at', 'refusal_reason', 'refusal_status'],
+  tool_call_budgets: ['grant_id', 'calls_used', 'window_started_at'],
+  tool_calls: ['call_id', 'grant_id', 'pod_id', 'installation_id', 'agent_user_id', 'tool',
+    'args_digest', 'occurred_at', 'outcome', 'reason', 'approval_id', 'duration_ms',
+    'credential_owner_id', 'vendor_status', 'vendor_error'],
+};
+const COLUMNS_SQL = `SELECT column_name FROM information_schema.columns
+  WHERE table_schema = current_schema() AND table_name = $1`;
+const INDEXES_SQL = 'SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = $1';
+const columnsOf = async (pool, table) => (await pool.query(COLUMNS_SQL, [table]))
+  .rows.map((row) => row.column_name).sort();
+const indexesOf = async (pool, table) => (await pool.query(INDEXES_SQL, [table]))
+  .rows.map((row) => row.indexname);
 real('Postgres migrations: real DDL, rollback and competing boots', () => {
   let database;
   let pool;
@@ -58,6 +75,61 @@ real('Postgres migrations: real DDL, rollback and competing boots', () => {
     expect((await pool.query('SELECT details FROM migration_records')).rows).toEqual([{ details: { cutoff: 'kept' } }]);
     const inserted = await pool.query("INSERT INTO messages (pod_id,user_id,content) VALUES ('pod','user','new') RETURNING freshness_revision");
     expect(inserted.rows[0].freshness_revision).toBe('1');
+  });
+
+  it('creates the formerly self-created tables on a fresh database (0003)', async () => {
+    expect(await runPgMigrations(pool)).toEqual(SHIPPED);
+    const tables = Object.keys(SELF_CREATED);
+    const actual = await Promise.all(tables.map((table) => columnsOf(pool, table)));
+    expect(actual).toEqual(tables.map((table) => [...SELF_CREATED[table]].sort()));
+    expect(await indexesOf(pool, 'message_claims')).toEqual(expect.arrayContaining([
+      'idx_message_claims_pod', 'idx_message_claims_terminal_expiry',
+    ]));
+    expect(await indexesOf(pool, 'tool_calls')).toContain('idx_tool_calls_grant_at');
+    // The defaults the CAS and the trail rely on, read back from a real row.
+    await pool.query(`INSERT INTO message_claims (message_id, pod_id, claimed_by, expires_at)
+      VALUES ('1', 'pod', 'seat', NOW())`);
+    expect((await pool.query('SELECT instance_id, state, declined_by FROM message_claims')).rows)
+      .toEqual([{ instance_id: 'default', state: 'claimed', declined_by: [] }]);
+    await expect(pool.query(`INSERT INTO tool_calls (call_id, grant_id, agent_user_id, tool, args_digest, outcome)
+      VALUES ('c', 'g', 'a', 't', '${'a'.repeat(64)}', 'bogus')`)).rejects.toThrow(/check/i);
+    expect(await runPgMigrations(pool)).toEqual([]);
+  });
+
+  it('retrofits populated pre-retrofit message_claims and tool_calls without losing rows (0003)', async () => {
+    // The ORIGINAL shapes, before decline handoff (state, declined_by), the
+    // refusal record (refusal_*) and the trail's owner and vendor columns.
+    // 0001's CREATE TABLE IF NOT EXISTS skips an existing tool_calls, so the
+    // columns can only arrive through 0003's ALTERs.
+    await pool.query(`
+      CREATE TABLE message_claims (message_id TEXT PRIMARY KEY, pod_id TEXT NOT NULL,
+        claimed_by TEXT NOT NULL, instance_id TEXT NOT NULL DEFAULT 'default',
+        expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());
+      CREATE TABLE tool_calls (call_id VARCHAR(255) PRIMARY KEY, grant_id VARCHAR(255) NOT NULL,
+        pod_id VARCHAR(255), installation_id VARCHAR(255), agent_user_id VARCHAR(255) NOT NULL,
+        tool VARCHAR(255) NOT NULL, args_digest CHAR(64) NOT NULL,
+        occurred_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        outcome VARCHAR(32) NOT NULL CHECK (outcome IN ('ok', 'refused', 'pending_approval', 'failed')),
+        reason VARCHAR(255), approval_id VARCHAR(255), duration_ms INTEGER);
+      INSERT INTO message_claims (message_id, pod_id, claimed_by, expires_at) VALUES ('7', 'pod', 'seat', NOW());
+      INSERT INTO tool_calls (call_id, grant_id, agent_user_id, tool, args_digest, outcome)
+        VALUES ('old-call', 'grant', 'agent', 'github.list_issues', '${'a'.repeat(64)}', 'ok');
+    `);
+    expect(await runPgMigrations(pool)).toEqual(SHIPPED);
+    expect(await columnsOf(pool, 'message_claims')).toEqual([...SELF_CREATED.message_claims].sort());
+    expect(await columnsOf(pool, 'tool_calls')).toEqual([...SELF_CREATED.tool_calls].sort());
+    expect(await indexesOf(pool, 'message_claims')).toEqual(expect.arrayContaining([
+      'idx_message_claims_pod', 'idx_message_claims_terminal_expiry',
+    ]));
+    expect((await pool.query(`SELECT message_id, state, declined_by, refusal_reason, refusal_status
+      FROM message_claims`)).rows).toEqual([{
+      message_id: '7', state: 'claimed', declined_by: [], refusal_reason: null, refusal_status: null,
+    }]);
+    expect((await pool.query(`SELECT call_id, credential_owner_id, vendor_status, vendor_error
+      FROM tool_calls`)).rows).toEqual([{
+      call_id: 'old-call', credential_owner_id: null, vendor_status: null, vendor_error: null,
+    }]);
+    expect(await runPgMigrations(pool)).toEqual([]);
   });
 
   it('rolls back both DDL and completion on failure, then retries only the failed migration', async () => {

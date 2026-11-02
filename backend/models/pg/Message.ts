@@ -585,6 +585,18 @@ class Message {
     return { reRooted, passes };
   }
 
+  /**
+   * Pods an operator exempts from the retention delete, from
+   * PG_RETENTION_EXEMPT_POD_IDS. The backfill reads the same list, so a row the
+   * delete would keep is never skipped as expired.
+   */
+  static retentionExemptPodIds(env: NodeJS.ProcessEnv = process.env): string[] {
+    return String(env.PG_RETENTION_EXEMPT_POD_IDS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
   static async deleteOlderThan(
     days: number,
     protectedPodIds: string[] = [],
@@ -592,10 +604,7 @@ class Message {
     if (!Number.isFinite(days) || days <= 0) {
       return { deleted: 0, reRooted: 0 };
     }
-    const fromEnv = String(process.env.PG_RETENTION_EXEMPT_POD_IDS || '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const fromEnv = Message.retentionExemptPodIds();
     const exempt = [...new Set([...fromEnv, ...protectedPodIds.map(String).filter(Boolean)])];
     const query = exempt.length > 0
       ? `DELETE FROM messages WHERE created_at < NOW() - $1::interval AND pod_id != ALL($2) RETURNING id`

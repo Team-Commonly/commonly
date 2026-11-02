@@ -32,6 +32,7 @@ const MongoMessage = require('../models/Message') as {
     filter: Record<string, unknown>,
     update: Record<string, unknown>,
   ) => Promise<{ matchedCount?: number; modifiedCount?: number }>;
+  countDocuments: (filter: Record<string, unknown>) => Promise<number>;
 };
 
 export interface LegacyMessageDoc {
@@ -121,4 +122,26 @@ export async function copyOne(doc: LegacyMessageDoc): Promise<'moved' | 'present
     { $set: { reconciledAt: new Date(), reconciledPgId: Number(pgId) } },
   );
   return inserted.rows[0] ? 'moved' : 'present';
+}
+
+/**
+ * Logs how many chat messages are still only in MongoDB, once, at boot
+ * (ADR-034 D6). Chat reads come from PostgreSQL alone, so these do not show in
+ * chat until the backfill copies them; an instance that skipped it says so
+ * here. Some may be past retention and are never copied; the backfill's report
+ * says how many. Returns the count, or null when it could not be read: this
+ * runs during boot and must never fail it.
+ */
+export async function logMongoOnlyMessages(): Promise<number | null> {
+  try {
+    const count = await MongoMessage.countDocuments({ reconciledAt: { $exists: false } });
+    if (count > 0) {
+      console.log(`[pg-boot] ${count} chat messages are only in MongoDB and do not show in chat.`
+        + ' `npm run backfill:local-messages` reports on them and copies them with --apply.');
+    }
+    return count;
+  } catch (error) {
+    console.warn('[pg-boot] could not count chat messages still in MongoDB:', (error as Error).message);
+    return null;
+  }
 }

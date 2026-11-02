@@ -43,7 +43,11 @@ real('record chains on real PostgreSQL', () => {
     await pool.query("INSERT INTO pods (id, name, type, created_by) VALUES ('p1', 'Checkout', 'team', 'u1')");
     await pool.query("INSERT INTO messages (pod_id, user_id, content) VALUES ('p1', 'u1', 'kept')");
 
-    expect(await runPgMigrations(pool)).toEqual(['0002_record_chains.sql']);
+    // Every later migration applies too, so only the first and the absence of a
+    // rerun of 0001 are this test's to pin.
+    const applied = await runPgMigrations(pool);
+    expect(applied[0]).toBe('0002_record_chains.sql');
+    expect(applied).not.toContain('0001_legacy_schema.sql');
     expect((await pool.query('SELECT content FROM messages')).rows).toEqual([{ content: 'kept' }]);
     expect((await pool.query('SELECT version FROM schema_migrations ORDER BY version')).rows.map((r) => r.version))
       .toEqual(expect.arrayContaining([expect.stringMatching(/^0001/), expect.stringMatching(/^0002/)]));
