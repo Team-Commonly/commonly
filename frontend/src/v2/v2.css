@@ -5767,9 +5767,14 @@ body.modern-ui.v2-canvas {
   }
   .v2-activity__header .v2-page-head__identity,
   .v2-artifacts__head .v2-page-head__identity { flex: 1; align-items: center; gap: 8px; }
+  /* Closed, the bar is one line: the meta truncates instead of wrapping under the title. An open
+     hint still takes its own row (flex-basis 100% above), so wrap stays on while one is open. */
+  .v2-activity__header .v2-page-head__identity:not(:has(.v2-hint--open)),
+  .v2-artifacts__head .v2-page-head__identity:not(:has(.v2-hint--open)) { flex-wrap: nowrap; }
   .v2-activity__header .v2-activity__title,
   .v2-artifacts__head .v2-artifacts__title {
     font: 800 22px/1 var(--v2-font-display); /* tracking stays the head's own, so :lang(zh) still resets it */
+    flex-shrink: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

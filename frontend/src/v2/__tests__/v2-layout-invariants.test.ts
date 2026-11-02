@@ -189,8 +189,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(bar).toContain('background: var(--v2-surface)');
     // The compact 22px title, not the desktop 32px display head.
     expect(selectorRuleBody(phone, '.v2-artifacts__head .v2-artifacts__title {')).toContain('font: 800 22px/1');
-    // The meta sits at the bar's right edge.
+    // Activity's title shares the rule, and keeps its width: the meta is what gives way.
+    const activityTitle = selectorRuleBody(phone, '.v2-activity__header .v2-activity__title,');
+    expect(activityTitle).toContain('font: 800 22px/1');
+    expect(activityTitle).toContain('flex-shrink: 0');
+    // The meta sits at the bar's right edge, on both pages, and truncates rather than wrapping.
     expect(selectorRuleBody(phone, '.v2-artifacts__head .v2-page-head__meta {')).toContain('margin-left: auto');
+    const meta = selectorRuleBody(phone, '.v2-activity__header .v2-page-head__meta,');
+    expect(meta).toContain('margin-left: auto');
+    expect(meta).toContain('text-overflow: ellipsis');
+    // Closed, the identity is one line (identity wraps by default, which would drop the meta to a
+    // second row and grow the bar); an open hint keeps its own row.
+    expect(selectorRuleBody(phone, '.v2-activity__header .v2-page-head__identity:not(:has(.v2-hint--open)),')).toContain('flex-wrap: nowrap');
+    // Artifacts pads its column 12px; the bar bleeds back out to the pane edges.
+    expect(phone).toContain('.v2-artifacts__head { margin: 0 -12px; }');
     // The block must come after the pages' own head rules, or their padding and baseline win by order.
     expect(v2.indexOf(phone)).toBeGreaterThan(v2.lastIndexOf('.v2-activity__header { min-height: 56px;'));
     expect(v2.indexOf(phone)).toBeGreaterThan(v2.indexOf('\n.v2-artifacts__head {'));
