@@ -1,14 +1,15 @@
 {
   "runTrace": {
-    "title": "运行轨迹",
+    "title": "这条回复是怎么来的",
     "back": "返回 Pod",
     "view": "这条回复是怎么来的",
     "retention": "卡片默认保留30天，Pod 策略和存储限制可能改变期限。卡片过期后，运行轨迹仍会保留。",
+    "runId": "运行 {{id}}",
     "loading": "正在加载运行轨迹…",
     "access": "此轨迹不可用，或你已无权访问对应的 Pod。",
     "error": "无法加载运行轨迹，请重试。",
     "retry": "重试",
-    "counts": "已记录{{turns}}轮 · {{tokens}}个 token",
+    "counts_other": "{{count}}轮 · {{tokens}}个 token",
     "stopped": "停止原因：{{kind}}",
     "running": "此运行尚未结束。",
     "refresh": "刷新轨迹",
@@ -31,14 +32,14 @@
       "failed": "失败",
       "interrupted": "已中断"
     },
-    "trigger": {
-      "mention": "提及",
-      "heartbeat": "心跳",
-      "task.assigned": "任务分配",
-      "chat.message": "聊天消息",
-      "pod.join": "加入 Pod",
-      "first_contact": "首次联系",
-      "manual": "手动"
+    "triggerPhrase": {
+      "mention": "回应了一次@提及",
+      "heartbeat": "按计划运行",
+      "task.assigned": "领取了一项任务",
+      "chat.message": "在聊天中回复",
+      "pod.join": "欢迎新成员加入 Pod",
+      "first_contact": "第一次打招呼",
+      "manual": "由人手动运行"
     },
     "outcomes": {
       "ok": "成功",

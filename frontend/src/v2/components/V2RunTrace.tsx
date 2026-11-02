@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
+import { agentKeyFor } from '../utils/agentKey';
 import './V2RunTrace.css';
 
 export interface RunTrace {
@@ -18,6 +19,9 @@ export interface RunTrace {
   }>;
 }
 
+interface RosterAgent { name?: string; agentName?: string; instanceId?: string; displayName?: string; profile?: { displayName?: string } }
+
+
 const V2RunTrace: React.FC = () => {
   const { t, i18n } = useTranslation();
   const { podId, runId } = useParams<{ podId: string; runId: string }>();
@@ -25,6 +29,7 @@ const V2RunTrace: React.FC = () => {
   const [trace, setTrace] = useState<RunTrace | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [roster, setRoster] = useState<RosterAgent[]>([]);
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
   useEffect(() => {
     let live = true;
@@ -37,23 +42,45 @@ const V2RunTrace: React.FC = () => {
       });
     return () => { live = false; };
   }, [api, podId, runId, attempt, t]);
+  // The pod roster only names the agent; the trace renders without it.
+  useEffect(() => {
+    let live = true;
+    setRoster([]);
+    api.get<{ agents?: RosterAgent[] }>(`/api/registry/pods/${encodeURIComponent(podId || '')}/agents`)
+      .then((data) => { if (live && Array.isArray(data?.agents)) setRoster(data.agents); })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [api, podId]);
 
-  const enumLabel = (group: 'status' | 'trigger' | 'outcomes', value: string) => t(`runTrace.${group}.${value}`, { defaultValue: value });
+  const enumLabel = (group: 'status' | 'outcomes', value: string) => t(`runTrace.${group}.${value}`, { defaultValue: value });
+  // Trigger values carry dots (task.assigned), so look them up in the object, not by key path.
+  const triggerPhrase = (value: string) => {
+    const phrases = t('runTrace.triggerPhrase', { returnObjects: true }) as unknown;
+    const phrase = phrases && typeof phrases === 'object' ? (phrases as Record<string, unknown>)[value] : undefined;
+    return typeof phrase === 'string' ? phrase : value;
+  };
+  const agentLabel = (run: RunTrace) => {
+    // The same composite key the chat byline and inspector use (utils/agentKey).
+    const key = agentKeyFor(run);
+    const match = roster.find((agent) => agentKeyFor(agent) === key);
+    return match?.displayName || match?.profile?.displayName || run.agentName;
+  };
   const limitedKey = trace?.omittedTurns && trace?.omittedToolCalls ? 'limitedBoth'
     : trace?.omittedTurns ? 'limitedTurns' : trace?.omittedToolCalls ? 'limitedCalls' : 'limitedContent';
 
   return <section className="v2-run-trace" aria-labelledby="run-trace-title">
     <Link className="v2-run-trace__back" to={`/v2/pods/${encodeURIComponent(podId || '')}`}>{t('runTrace.back')}</Link>
     <h1 id="run-trace-title">{t('runTrace.title')}</h1>
-    <p className="v2-run-trace__retention">{t('runTrace.retention')}</p>
     {!trace && !error && <p role="status">{t('runTrace.loading')}</p>}
     {error && <div role="alert"><p>{error}</p><button type="button" onClick={retry}>{t('runTrace.retry')}</button></div>}
     {trace && <>
       <div className="v2-run-trace__summary">
-        <strong>{trace.agentName}</strong><span>{enumLabel('status', trace.status)} · {enumLabel('trigger', trace.trigger)}</span>
-        <span>{t('runTrace.counts', { turns: trace.turns.length, tokens: trace.totalTokens })}</span>
+        <strong>{agentLabel(trace)}</strong><span>{enumLabel('status', trace.status)} · {triggerPhrase(trace.trigger)}</span>
+        <span>{t('runTrace.counts', {
+          count: trace.turns.length,
+          tokens: new Intl.NumberFormat(i18n.resolvedLanguage).format(trace.totalTokens),
+        })}</span>
         <time dateTime={trace.startedAt}>{new Date(trace.startedAt).toLocaleString(i18n.resolvedLanguage)}</time>
-        <code>{trace.id}</code>
         {trace.errorKind && <span>{t('runTrace.stopped', { kind: trace.errorKind })}</span>}
         {['queued', 'running'].includes(trace.status) && <p>{t('runTrace.running')} <button type="button" onClick={retry}>{t('runTrace.refresh')}</button></p>}
       </div>
@@ -77,6 +104,10 @@ const V2RunTrace: React.FC = () => {
           </div>)}
         </li>)}
       </ol>
+      <footer className="v2-run-trace__foot">
+        <p>{t('runTrace.retention')}</p>
+        <code>{t('runTrace.runId', { id: trace.id })}</code>
+      </footer>
     </>}
   </section>;
 };

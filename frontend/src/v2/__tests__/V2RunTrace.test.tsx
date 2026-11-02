@@ -18,10 +18,21 @@ const trace = {
     toolCalls: [{ name: 'vendor.read', elapsedMs: 5, callId: 'call-1', outcome: 'ok',
       trail: { grantId: 'grant-1', credentialOwnerId: 'owner-1', outcome: 'ok' } }] }],
 };
+const ROSTER_URL = `/api/registry/pods/${POD}/agents`;
+// The page makes two GETs; route the roster away from the trace mocks so each
+// test's mockResolvedValue / mockRejectedValueOnce sequence stays about the trace.
+const mockRoster = jest.fn();
+const routeGet = () => mockGet.mockImplementation((url: string) => (url === ROSTER_URL ? mockRoster(url) : mockTrace(url)));
+const mockTrace = jest.fn();
 const setup = () => render(<MemoryRouter initialEntries={[`/v2/pods/${POD}/runs/${RUN}`]}>
   <Routes><Route path="/v2/pods/:podId/runs/:runId" element={<V2RunTrace />} /></Routes>
 </MemoryRouter>);
-beforeEach(async () => { mockGet.mockReset(); await i18n.changeLanguage('en'); });
+beforeEach(async () => {
+  mockGet.mockReset(); mockTrace.mockReset(); mockRoster.mockReset();
+  mockRoster.mockResolvedValue({ agents: [] });
+  routeGet();
+  await i18n.changeLanguage('en');
+});
 afterEach(async () => { await i18n.changeLanguage('en'); });
 test('server-bound link derives its destination from IDs and refuses arbitrary URLs', () => {
   const { rerender } = render(<MemoryRouter><V2RunTraceLink podId={POD} runId={RUN} /></MemoryRouter>);
@@ -37,7 +48,7 @@ test('the link reads plainly in Chinese too', async () => {
   expect(screen.getByRole('link', { name: '这条回复是怎么来的' })).toHaveAttribute('href', `/v2/pods/${POD}/runs/${RUN}`);
 });
 test('reads recorded turns and PG attribution, with honest retention wording', async () => {
-  mockGet.mockResolvedValue({ run: trace });
+  mockTrace.mockResolvedValue({ run: trace });
   setup();
   await screen.findByText('vendor.read');
   expect(mockGet).toHaveBeenCalledWith(`/api/pods/${POD}/runs/${RUN}`);
@@ -46,9 +57,82 @@ test('reads recorded turns and PG attribution, with honest retention wording', a
   expect(screen.getByText(/30-day default retention/)).toBeInTheDocument();
   expect(screen.getByText(/This trace persists after the card expires/)).toBeInTheDocument();
 });
+test('the h1 repeats the link the person clicked', async () => {
+  mockTrace.mockResolvedValue({ run: trace });
+  setup();
+  await screen.findByText('vendor.read');
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/^How this reply was made$/);
+  expect(screen.getByRole('region', { name: 'How this reply was made' })).toBeInTheDocument();
+});
+const summaryName = () => document.querySelector('.v2-run-trace__summary strong')?.textContent;
+test('the summary names the agent by its roster display name', async () => {
+  mockRoster.mockResolvedValue({ agents: [
+    { name: 'scout', instanceId: 'other', displayName: 'Not this one' },
+    { name: 'scout', instanceId: 'default', displayName: 'Scout' },
+  ] });
+  mockTrace.mockResolvedValue({ run: { ...trace, agentName: 'scout', instanceId: 'default' } });
+  setup();
+  await waitFor(() => expect(summaryName()).toBe('Scout'));
+  expect(mockGet).toHaveBeenCalledWith(ROSTER_URL);
+});
+test('a named instance matches on name and instance, the way the pod chat keys it', async () => {
+  mockRoster.mockResolvedValue({ agents: [
+    { name: 'openclaw', instanceId: 'default', displayName: 'Wrong' },
+    { name: 'openclaw', instanceId: 'nova', displayName: 'Engineer (Nova)' },
+  ] });
+  mockTrace.mockResolvedValue({ run: { ...trace, agentName: 'openclaw', instanceId: 'nova' } });
+  setup();
+  await waitFor(() => expect(summaryName()).toBe('Engineer (Nova)'));
+});
+test.each([
+  ['the roster call fails', () => mockRoster.mockRejectedValue(new Error('boom'))],
+  ['no roster entry matches', () => mockRoster.mockResolvedValue({ agents: [{ name: 'ada', instanceId: 'default', displayName: 'Ada Lovelace' }] })],
+])('the raw agent name shows when %s', async (_label, arrange) => {
+  arrange();
+  mockTrace.mockResolvedValue({ run: { ...trace, agentName: 'scout' } });
+  setup();
+  await screen.findByText('vendor.read');
+  await waitFor(() => expect(mockRoster).toHaveBeenCalled());
+  await act(async () => { await Promise.resolve(); });
+  expect(summaryName()).toBe('scout');
+});
+test.each([
+  ['mention', 'Succeeded · answered a mention'],
+  ['task.assigned', 'Succeeded · picked up a task'],
+  ['future-trigger', 'Succeeded · future-trigger'],
+])('the status line says the trigger in plain words (%s)', async (trigger, expected) => {
+  mockTrace.mockResolvedValue({ run: { ...trace, trigger } });
+  setup();
+  expect(await screen.findByText(expected)).toBeInTheDocument();
+});
+test.each([
+  [2, 13951, '2 turns · 13,951 tokens'],
+  [1, 900, '1 turn · 900 tokens'],
+])('counts are plural with grouped tokens (%i turns)', async (turns, tokens, expected) => {
+  mockTrace.mockResolvedValue({ run: { ...trace, totalTokens: tokens,
+    turns: Array.from({ length: turns }, (_, turnIndex) => ({ ...trace.turns[0], turnIndex })) } });
+  setup();
+  expect(await screen.findByText(expected)).toBeInTheDocument();
+});
+test('the retention sentence and run id sit in a foot after the turns', async () => {
+  mockTrace.mockResolvedValue({ run: trace });
+  const { container } = setup();
+  await screen.findByText('vendor.read');
+  const turns = container.querySelector('.v2-run-trace__turns') as Element;
+  const retention = screen.getByText(/30-day default retention/);
+  const runId = screen.getByText(`Run ${RUN}`);
+  expect(runId.tagName).toBe('CODE');
+  for (const node of [retention, runId]) {
+    // eslint-disable-next-line no-bitwise
+    expect(turns.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(turns.contains(node)).toBe(false);
+  }
+  expect(container.querySelector('.v2-run-trace__summary')).not.toHaveTextContent(RUN);
+  expect(container.querySelector('.v2-run-trace__foot')).toContainElement(retention);
+});
 test.each(['en', 'zh-CN'])('withheld authorization identities have no labels or missing-record claims (%s)', async (language) => {
   await act(async () => { await i18n.changeLanguage(language); });
-  mockGet.mockResolvedValue({ run: { ...trace, turns: [{ ...trace.turns[0], toolCalls: [{
+  mockTrace.mockResolvedValue({ run: { ...trace, turns: [{ ...trace.turns[0], toolCalls: [{
     ...trace.turns[0].toolCalls[0], trail: { outcome: 'ok' },
   }] }] } });
   setup();
@@ -61,7 +145,7 @@ test.each(['en', 'zh-CN'])('withheld authorization identities have no labels or 
 test.each(['en', 'zh-CN'])('a turn another model answered names both; a normal turn names one (%s)', async (language) => {
   await act(async () => { await i18n.changeLanguage(language); });
   const nemotron = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
-  mockGet.mockResolvedValue({ run: { ...trace, turns: [
+  mockTrace.mockResolvedValue({ run: { ...trace, turns: [
     { ...trace.turns[0], model: nemotron, servedModel: 'deepseek-v4-flash', fallbacks: 1 },
     { ...trace.turns[0], turnIndex: 1, model: 'deepseek-v4-flash', servedModel: 'deepseek-v4-flash' },
     { ...trace.turns[0], turnIndex: 2, model: 'older-turn' },
@@ -76,7 +160,7 @@ test.each(['en', 'zh-CN'])('a turn another model answered names both; a normal t
   expect(meta[2]).toBe(`older-turn · 12 ms · 123 ${i18n.t('runTrace.tokens')}`);
 });
 test('refusal can retry and never presents an empty successful trace', async () => {
-  mockGet.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({ run: trace });
+  mockTrace.mockRejectedValueOnce({ response: { status: 404 } }).mockResolvedValueOnce({ run: trace });
   setup();
   await screen.findByRole('alert');
   expect(screen.queryByText('No turns recorded yet.')).not.toBeInTheDocument();
@@ -85,7 +169,7 @@ test('refusal can retry and never presents an empty successful trace', async () 
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
 });
 test('discloses truncation and missing broker rows without inventing attribution', async () => {
-  mockGet.mockResolvedValue({ run: { ...trace, traceTruncated: true, omittedTurns: 2, omittedToolCalls: 3,
+  mockTrace.mockResolvedValue({ run: { ...trace, traceTruncated: true, omittedTurns: 2, omittedToolCalls: 3,
     turns: [{ ...trace.turns[0], toolCalls: [{ name: 'vendor.read', callId: 'gone', outcome: 'unavailable', trail: null, elapsedMs: 1 }] }] } });
   setup();
   await screen.findByText('Broker trail unavailable.');
@@ -97,23 +181,25 @@ test.each([
   [2, 0, '2 turns are omitted', '0 tool calls'],
   [0, 0, 'Large content fields are capped', 'are omitted'],
 ])('size disclosure omits empty counts (%i turns, %i calls)', async (turns, calls, expected, absent) => {
-  mockGet.mockResolvedValue({ run: { ...trace, traceTruncated: true, omittedTurns: turns, omittedToolCalls: calls } });
+  mockTrace.mockResolvedValue({ run: { ...trace, traceTruncated: true, omittedTurns: turns, omittedToolCalls: calls } });
   setup();
   await screen.findByText(new RegExp(expected));
   expect(screen.queryByText(new RegExp(absent))).not.toBeInTheDocument();
 });
 test('Chinese status, trigger, region label and nonzero truncation clause are localized', async () => {
   await act(async () => { await i18n.changeLanguage('zh-CN'); });
-  mockGet.mockResolvedValue({ run: { ...trace, traceTruncated: true, omittedToolCalls: 2 } });
+  mockTrace.mockResolvedValue({ run: { ...trace, traceTruncated: true, omittedToolCalls: 2 } });
   setup();
-  await screen.findByText('已完成 · 提及');
+  await screen.findByText('已完成 · 回应了一次@提及');
+  expect(screen.getByText('1轮 · 123个 token')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('这条回复是怎么来的');
   expect(screen.getByText('成功 · 5 ms')).toBeInTheDocument();
-  expect(screen.getByRole('region', { name: '运行轨迹' })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: '这条回复是怎么来的' })).toBeInTheDocument();
   expect(screen.getByText(/省略了2次工具调用/)).toBeInTheDocument();
   expect(screen.queryByText(/0轮/)).not.toBeInTheDocument();
 });
 test('future enum values remain visible instead of showing translation keys', async () => {
-  mockGet.mockResolvedValue({ run: { ...trace, status: 'future-status', trigger: 'future-trigger' } });
+  mockTrace.mockResolvedValue({ run: { ...trace, status: 'future-status', trigger: 'future-trigger' } });
   setup();
   await screen.findByText('future-status · future-trigger');
 });
