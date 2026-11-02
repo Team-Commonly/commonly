@@ -1,316 +1,135 @@
-/* Public agent profile — token-aligned, single accent, borders not shadows.
- * Mirrors the showcase/landing surfaces (own scroll container over the app shell). */
-.v2-root.v2-aprofile {
-  display: block;
-  height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
-  background: var(--v2-page-bg, #f8f8fb);
-  color: var(--v2-text-primary);
-  font-family: var(--v2-font);
-  -webkit-font-smoothing: antialiased;
-}
-
-/* Top bar */
-.v2-aprofile__bar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 60px;
-  padding: 0 max(24px, calc((100% - 1040px) / 2));
-  background: color-mix(in srgb, var(--v2-bg) 86%, transparent);
-  backdrop-filter: saturate(180%) blur(12px);
-  border-bottom: 1px solid var(--v2-border-soft);
-}
-.v2-aprofile__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 700;
-  font-size: 16px;
-  color: var(--v2-text-primary);
-  text-decoration: none;
-}
-.v2-aprofile__nav { display: flex; align-items: center; gap: 18px; }
-.v2-aprofile__navlink { font-size: 14px; font-weight: 500; color: var(--v2-text-secondary); text-decoration: none; }
-.v2-aprofile__navlink:hover { color: var(--v2-text-primary); }
-
-.v2-aprofile__btn {
-  display: inline-flex;
-  align-items: center;
-  height: 38px;
-  padding: 0 18px;
-  border-radius: var(--v2-radius);
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-  cursor: pointer;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-.v2-aprofile__btn--primary { background: var(--v2-accent); border-color: var(--v2-accent); }
-.v2-aprofile__btn--primary:hover { background: var(--v2-accent-strong); border-color: var(--v2-accent-strong); }
-.v2-aprofile__btn--ghost { background: var(--v2-surface); border-color: var(--v2-border-strong, var(--v2-border)); }
-.v2-aprofile__btn--ghost:hover { background: var(--v2-surface-hover); }
-/* `.v2-root a { color: inherit }` (0,1,1) beats the single-class rules — re-assert. */
-.v2-root .v2-aprofile__btn--primary { color: var(--v2-on-ink); }
-.v2-root .v2-aprofile__btn--ghost { color: var(--v2-text-primary); }
-.v2-root a.v2-aprofile__btn--reconnect { background: var(--v2-ink); border-color: var(--v2-ink); color: var(--v2-on-ink); }
-.v2-root a.v2-aprofile__btn--reconnect:hover { background: var(--v2-ink-hover); border-color: var(--v2-ink-hover); }
-/* The authenticated Talk action is a filled app control, so keep it ink per
-   Signal rule 2. The public registration links retain the cobalt treatment
-   above because they are links, not app actions. */
-.v2-root button.v2-aprofile__btn--primary { background: var(--v2-ink); border-color: var(--v2-ink); }
-.v2-root button.v2-aprofile__btn--primary:hover { background: var(--v2-ink-hover); border-color: var(--v2-ink-hover); }
-.v2-root button.v2-aprofile__btn:disabled { cursor: wait; opacity: 0.72; }
-.v2-aprofile__room-error { margin: 12px 0 0; color: var(--v2-danger); font-size: 14px; }
-
-/* Main + centered states */
-.v2-aprofile__main { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
-.v2-aprofile__center {
-  max-width: 1040px; margin: 0 auto; padding: 120px 24px;
-  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px;
-}
-.v2-aprofile__empty-title { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
-.v2-aprofile__muted { color: var(--v2-text-tertiary); font-size: 14px; line-height: 1.5; }
-.v2-aprofile__cta-row { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; justify-content: center; }
-
-/* Identity hero */
-.v2-aprofile__hero {
-  display: flex;
-  align-items: flex-start;
-  gap: 20px;
-  padding: 24px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  margin-bottom: 20px;
-}
-.v2-aprofile__hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-.v2-aprofile__hero-text { flex: 1 1 auto; min-width: 0; }
-.v2-aprofile__name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-.v2-aprofile__name { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; color: var(--v2-text-primary); }
-.v2-aprofile__runtime {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
-  color: var(--v2-text-secondary); background: var(--v2-bg-subtle);
-  padding: 2px 8px; border-radius: 4px;
-}
-.v2-aprofile__badge {
-  font-size: 11px; font-weight: 600; color: var(--v2-accent-text);
-  background: var(--v2-accent-soft); padding: 2px 8px; border-radius: var(--v2-radius-pill);
-}
-.v2-aprofile__desc { margin: 8px 0 0; font-size: 15px; line-height: 1.5; color: var(--v2-text-secondary); }
-.v2-aprofile__meta { margin-top: 10px; font-size: var(--v2-fs-meta); line-height: var(--v2-lh-meta); color: var(--v2-text-tertiary); display: flex; gap: 6px; flex-wrap: wrap; }
-
-/* Cards grid */
-.v2-aprofile__grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
-.v2-aprofile__card {
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  padding: 20px;
-}
-.v2-aprofile__card-title {
-  margin: 0 0 14px; font-size: var(--v2-fs-label); line-height: var(--v2-lh-label); font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--v2-text-tertiary);
-  display: flex; align-items: center; gap: 8px;
-}
-.v2-aprofile__count {
-  font-size: 11px; color: var(--v2-text-secondary); background: var(--v2-bg-subtle);
-  padding: 1px 7px; border-radius: var(--v2-radius-pill); letter-spacing: 0;
-}
-.v2-aprofile__chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.v2-aprofile__chip {
-  font-size: 12px; font-weight: 500; color: var(--v2-text-secondary);
-  background: var(--v2-bg-subtle); border: 1px solid var(--v2-border-soft);
-  padding: 4px 10px; border-radius: var(--v2-radius-pill);
-}
-.v2-aprofile__chip--soft { background: var(--v2-surface); color: var(--v2-text-tertiary); }
-
-.v2-aprofile__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.v2-aprofile__skill { display: flex; flex-direction: column; gap: 2px; }
-.v2-aprofile__skill-name { font-size: 14px; font-weight: 600; color: var(--v2-text-primary); }
-.v2-aprofile__skill-desc { font-size: 12.5px; color: var(--v2-text-tertiary); line-height: 1.4; }
-
-.v2-aprofile__memory { display: flex; flex-direction: column; gap: 10px; }
-.v2-aprofile__stat { display: flex; align-items: baseline; gap: 8px; }
-.v2-aprofile__stat-num { font-size: 34px; font-weight: 700; letter-spacing: -0.03em; color: var(--v2-accent); }
-.v2-aprofile__stat-label { font-size: var(--v2-fs-meta); line-height: var(--v2-lh-meta); color: var(--v2-text-secondary); }
-
-/* Memory index (owner/admin private view) */
-.v2-aprofile__card--wide { grid-column: 1 / -1; }
-.v2-aprofile__owner-tag {
-  margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em;
-  text-transform: uppercase; color: var(--v2-accent-text);
-  background: var(--v2-accent-soft); padding: 2px 8px; border-radius: var(--v2-radius-pill);
-}
-.v2-aprofile__memidx { display: flex; flex-direction: column; gap: 14px; }
-.v2-aprofile__memcols {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px;
-}
-.v2-aprofile__memsec {
-  border: 1px solid var(--v2-border-soft); border-radius: var(--v2-radius);
-  padding: 14px; background: var(--v2-bg-subtle);
-}
-.v2-aprofile__memsec-title {
-  margin: 0 0 10px; font-size: 12px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.05em; color: var(--v2-text-secondary);
-  display: flex; align-items: center; gap: 6px;
-}
-.v2-aprofile__memnote { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-top: 1px solid var(--v2-border-soft); }
-.v2-aprofile__memnote:first-child { border-top: none; padding-top: 0; }
-.v2-aprofile__memnote-h { font-size: 13px; font-weight: 600; color: var(--v2-text-primary); }
-.v2-aprofile__memnote-s { font-size: 12px; color: var(--v2-text-tertiary); line-height: 1.45; }
-
-.v2-aprofile__more { font-size: 12px; color: var(--v2-text-tertiary); margin-top: 8px; display: inline-block; }
-
-/* Bounded, scrollable section bodies so a long pods/memory list keeps the card
-   compact and the sections below it visible at first glance. */
-.v2-aprofile__scroll { max-height: 300px; overflow-y: auto; padding-right: 6px; }
-.v2-aprofile__scroll::-webkit-scrollbar { width: 8px; }
-.v2-aprofile__scroll::-webkit-scrollbar-thumb { background: var(--v2-border-strong, var(--v2-border)); border-radius: 4px; }
-.v2-aprofile__scroll::-webkit-scrollbar-track { background: transparent; }
-
-/* Pods list */
-.v2-aprofile__pod { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--v2-border-soft); }
-.v2-aprofile__pod:first-child { border-top: none; padding-top: 0; }
-.v2-root .v2-aprofile__pod-name { font-size: 14px; font-weight: 600; color: var(--v2-accent); text-decoration: none; }
-.v2-root .v2-aprofile__pod-name:hover { text-decoration: underline; }
-.v2-aprofile__pod-msg { font-size: 12.5px; color: var(--v2-text-tertiary); line-height: 1.4; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.v2-aprofile__pod-when { font-size: 11.5px; color: var(--v2-text-muted, var(--v2-text-tertiary)); }
-
-.v2-aprofile__run { display: flex; align-items: center; gap: 8px; font-size: var(--v2-fs-body); line-height: var(--v2-lh-body); }
-.v2-aprofile__run-label { font-weight: 500; color: var(--v2-text-primary); }
-.v2-aprofile__run-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--v2-text-muted); }
-.v2-aprofile__run-dot--succeeded { background: var(--v2-success); }
-.v2-aprofile__run-dot--failed, .v2-aprofile__run-dot--err { background: var(--v2-danger); }
-
-.v2-aprofile__footer-cta {
-  margin-top: 24px; padding: 20px 24px;
-  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
-  background: var(--v2-accent-deep); border-radius: var(--v2-radius-lg);
-  color: rgba(255, 255, 255, 0.85); font-size: 15px;
-}
-.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary { background: var(--v2-on-accent, #fff); color: var(--v2-accent-fill, var(--v2-accent)); border-color: var(--v2-on-accent, #fff); }
-.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary:hover { background: rgba(255,255,255,0.9); }
-
+/* Agent profile (/v2/agent/:agentName/:instanceId), lifted from the d215 frame:
+   docs/design/artboards/d215/index.html, section s-agent-profile (visitor,
+   owner, signed out and not found, at 1440 and 390). Same selectors and values
+   as the frame's .v2-aprofile block; only the tokens are translated to --v2-*
+   (so light, dark and auto switch together) and the frame's `.app.m` phone
+   rules sit in the 760px phone query. Signed in, the page sits in the app
+   shell's feature pane; signed out (and not found) it is its own scroll root
+   with the public bar, `.v2-root.v2-aprofile--public`. Scoped to .v2-aprofile. */
+.v2-aprofile { display: flex; flex-direction: column; min-height: 0; }
+/* Any full-page `.v2-root.<surface>` sets its own scroll, or the base
+   `.v2-root { height: 100vh; overflow: hidden }` clips it. */
+.v2-root.v2-aprofile--public { height: 100vh; overflow-x: hidden; overflow-y: auto; background: var(--v2-page-bg); color: var(--v2-text-primary); font-family: var(--v2-font); }
+.v2-aprofile .v2-aprofile__main { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 760px; margin: 0 auto; }
+/* The frame's 760px column plus a 24px gutter, so the column never meets the
+   window edge between the phone query and 808px. */
+.v2-aprofile--public .v2-aprofile__main { box-sizing: border-box; max-width: 808px; padding: 32px 24px 40px; }
+.v2-aprofile .v2-aprofile__bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 60px; padding: 0 max(24px, calc((100% - 1040px) / 2)); background: var(--v2-surface); box-shadow: inset 0 -1px 0 var(--v2-border-soft); }
+.v2-aprofile .v2-aprofile__brand { display: inline-flex; align-items: center; gap: 9px; font: 800 17px/1 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); text-decoration: none; }
+.v2-aprofile .v2-aprofile__brand .v2-rail__brand-icon { width: 28px; height: 28px; border-radius: 8px; margin: 0; }
+.v2-aprofile .v2-aprofile__brand .v2-rail__brand-icon svg { width: 16px; height: 16px; }
+.v2-aprofile .v2-aprofile__nav { display: flex; align-items: center; gap: 18px; }
+.v2-aprofile .v2-aprofile__navlink { font-size: 13.5px; font-weight: 500; color: var(--v2-text-secondary); text-decoration: none; }
+.v2-aprofile .v2-aprofile__btn { box-sizing: border-box; cursor: pointer; flex: none; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 14px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; text-decoration: none; }
+.v2-aprofile .v2-aprofile__btn--primary { color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
+.v2-aprofile .v2-aprofile__btn--ghost { color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
+.v2-aprofile .v2-aprofile__hero { display: flex; align-items: flex-start; gap: 16px; }
+.v2-aprofile .v2-aprofile__avatar { flex: none; display: inline-flex; position: relative; }
+.v2-aprofile .v2-aprofile__avatar-button { all: unset; cursor: pointer; flex: none; display: inline-flex; position: relative; border-radius: 14px; }
+.v2-aprofile .v2-aprofile__avatar .v2-avatar,
+.v2-aprofile .v2-aprofile__avatar-button .v2-avatar { width: 56px; height: 56px; border-radius: 14px; font-size: 18px; }
+.v2-aprofile .v2-aprofile__avatar-hint { position: absolute; right: -4px; bottom: -4px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); font: 600 10.5px/18px var(--v2-font); color: var(--v2-text-secondary); }
+.v2-aprofile .v2-aprofile__hero-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.v2-aprofile .v2-aprofile__name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.v2-aprofile .v2-aprofile__name { margin: 0; font: 800 24px/1.15 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); overflow-wrap: anywhere; }
+.v2-aprofile .v2-aprofile__runtime { font: 600 10.5px/18px var(--v2-font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--v2-text-secondary); background: var(--v2-surface-tint); padding: 0 7px; border-radius: 5px; }
+.v2-aprofile .v2-aprofile__badge { font: 600 11px/18px var(--v2-font); color: var(--v2-accent-text); background: var(--v2-accent-soft); padding: 0 8px; border-radius: 9px; }
+.v2-aprofile .v2-aprofile__desc { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--v2-text-secondary); }
+.v2-aprofile .v2-aprofile__meta { margin: 2px 0 0; font: 500 12px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-aprofile .v2-aprofile__keys { flex: none; display: flex; gap: 8px; }
+.v2-aprofile .v2-agent-settings__tabs { display: flex; gap: 24px; margin: 0; border-bottom: 0; box-shadow: inset 0 -1px 0 var(--v2-border-soft); }
+.v2-aprofile .v2-agent-settings__tabs > * { padding: 10px 2px; font-size: 14px; color: var(--v2-text-secondary); text-decoration: none; }
+.v2-aprofile .v2-agent-settings__tabs [aria-current="page"] { color: var(--v2-text-primary); font-weight: 600; border-bottom: 0; box-shadow: inset 0 -2px 0 var(--v2-accent); }
+.v2-aprofile .v2-aprofile__card { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px; border-radius: 14px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-aprofile .v2-aprofile__card-title { display: flex; align-items: baseline; gap: 8px; margin: 0; font: 800 16px/1.25 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); }
+.v2-aprofile .v2-aprofile__count { font: 500 12px/16px var(--v2-font-mono); letter-spacing: 0; color: var(--v2-text-muted); }
+.v2-aprofile .v2-aprofile__owner-tag { margin-left: auto; font: 500 11.5px/16px var(--v2-font-mono); letter-spacing: 0; color: var(--v2-text-muted); }
+.v2-aprofile .v2-aprofile__list { list-style: none; margin: 0; padding: 0; }
+.v2-aprofile .v2-aprofile__list li + li { border-top: 1px solid var(--v2-border-soft); }
+.v2-aprofile .v2-aprofile__row { display: flex; align-items: center; gap: 14px; min-height: 44px; padding: 6px 0; }
+.v2-aprofile .v2-aprofile__pod-id { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.v2-aprofile .v2-aprofile__pod-name { font-size: 14px; font-weight: 600; color: var(--v2-text-primary); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-aprofile .v2-aprofile__pod-msg { font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-aprofile .v2-aprofile__pod-when { flex: none; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-aprofile .v2-aprofile__pod-remove { all: unset; box-sizing: border-box; cursor: pointer; flex: none; height: 28px; padding: 0 10px; border-radius: 8px; font: 500 12.5px/28px var(--v2-font); color: var(--v2-text-secondary); }
+.v2-aprofile .v2-aprofile__pod-remove:hover { background: var(--v2-surface-tint); color: var(--v2-text-primary); }
+.v2-aprofile .v2-aprofile__more { font-size: 13px; font-weight: 600; color: var(--v2-accent-text); text-decoration: none; }
+.v2-aprofile .v2-aprofile__chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 2px; }
+.v2-aprofile .v2-aprofile__chip { font: 500 12px/16px var(--v2-font-mono); color: var(--v2-text-secondary); background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); padding: 5px 9px; border-radius: 8px; }
+.v2-aprofile .v2-aprofile__note { margin: 0; font-size: 13.5px; line-height: 20px; color: var(--v2-text-secondary); }
+.v2-aprofile .v2-aprofile__note b { font-weight: 600; color: var(--v2-text-primary); }
+.v2-aprofile .v2-aprofile__note a { color: var(--v2-accent-text); font-weight: 600; text-decoration: none; }
+.v2-aprofile .v2-aprofile__run-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--v2-success); }
+.v2-aprofile .v2-aprofile__run-dot--err { background: var(--v2-danger); }
+.v2-aprofile .v2-aprofile__run-label { flex: 1; min-width: 0; font: 500 13px/18px var(--v2-font-mono); color: var(--v2-text-primary); }
+.v2-aprofile .v2-aprofile__center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; padding: 0 24px 80px; }
+.v2-aprofile .v2-aprofile__empty-title { margin: 0; font: 800 24px/1.15 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); }
+.v2-aprofile .v2-aprofile__muted { margin: 0; max-width: 440px; font-size: 14px; line-height: 20px; color: var(--v2-text-secondary); }
+.v2-aprofile .v2-aprofile__cta-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
 @media (max-width: 760px) {
-  .v2-aprofile__hero { flex-direction: column; align-items: flex-start; }
-  .v2-aprofile__grid { grid-template-columns: 1fr; }
-  .v2-aprofile__nav .v2-aprofile__navlink { display: none; }
+  .v2-aprofile .v2-aprofile__main { gap: 10px; }
+  .v2-aprofile--public .v2-aprofile__main { padding: 12px; }
+  .v2-aprofile .v2-aprofile__bar { height: 56px; padding: 0 16px; }
+  .v2-aprofile .v2-aprofile__nav { gap: 14px; }
+  .v2-aprofile .v2-aprofile__navlink--wide { display: none; }
+  .v2-aprofile .v2-aprofile__hero { flex-wrap: wrap; gap: 12px 14px; }
+  .v2-aprofile .v2-aprofile__keys { flex: 1 0 100%; }
+  .v2-aprofile .v2-aprofile__keys .v2-aprofile__btn { flex: 1; height: 44px; font-size: 14px; }
+  .v2-aprofile .v2-aprofile__card { padding: 14px 16px; }
+  .v2-aprofile .v2-aprofile__chip { padding: 7px 10px; }
 }
 
-/* Owner-only detach control on each pod row (V2AgentProfile). */
-.v2-aprofile__pod { position: relative; padding-right: 84px; }
-.v2-root button.v2-aprofile__pod-remove {
-  position: absolute;
-  top: 8px;
-  right: 0;
-  padding: 3px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--v2-text-secondary);
-  background: transparent;
-  border: 1px solid var(--v2-border-soft);
-  border-radius: var(--v2-radius-sm);
-  cursor: pointer;
-}
-.v2-root button.v2-aprofile__pod-remove:hover:not(:disabled) {
-  color: #c0392b;
-  border-color: #c0392b;
-}
-.v2-root button.v2-aprofile__pod-remove:disabled { opacity: 0.6; cursor: default; }
+/* Live behaviour the frame does not draw. */
+/* The whole pod row opens the pod; Remove sits above that hit area. */
+.v2-aprofile .v2-aprofile__pod { position: relative; }
+.v2-aprofile .v2-aprofile__pod-name::after { content: ''; position: absolute; inset: 0; }
+.v2-aprofile .v2-aprofile__pod-remove { position: relative; z-index: 1; }
+.v2-aprofile .v2-aprofile__pod:hover .v2-aprofile__pod-name { color: var(--v2-accent-text); }
+.v2-aprofile .v2-aprofile__pod-remove:disabled { cursor: default; opacity: 0.6; }
+.v2-aprofile button.v2-aprofile__more { all: unset; box-sizing: border-box; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--v2-accent-text); }
+.v2-aprofile .v2-aprofile__btn--primary:hover { background: var(--v2-ink-hover); border-color: var(--v2-ink-hover); }
+.v2-aprofile .v2-aprofile__btn--ghost:hover { background: var(--v2-surface-hover); border-color: var(--v2-border-strong); }
+.v2-aprofile button.v2-aprofile__btn:disabled { cursor: wait; opacity: 0.72; }
+.v2-aprofile .v2-aprofile__navlink:hover { color: var(--v2-text-primary); }
+.v2-aprofile .v2-agent-settings__tabs a:hover { color: var(--v2-text-primary); }
+.v2-aprofile .v2-aprofile__note a:hover { text-decoration: underline; }
+.v2-aprofile .v2-aprofile__btn:focus-visible,
+.v2-aprofile .v2-aprofile__avatar-button:focus-visible,
+.v2-aprofile .v2-aprofile__pod-remove:focus-visible,
+.v2-aprofile button.v2-aprofile__more:focus-visible,
+.v2-aprofile .v2-aprofile__pod-name:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
+.v2-aprofile .v2-aprofile__room-error { margin: 0; font-size: 14px; color: var(--v2-danger-text); }
 
-/* Owner-editable avatar: the avatar itself is the button (2026-09-01).
-   Keep the explicit root/button scope for this visual control; the global
-   button reset is a low-specificity default. */
-.v2-root button.v2-aprofile__avatar-button {
-  position: relative;
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  line-height: 0;
-}
-.v2-root button.v2-aprofile__avatar-button:focus-visible {
-  outline: none;
-  box-shadow: var(--v2-focus-ring);
-}
-.v2-aprofile__avatar-hint {
-  position: absolute;
-  inset: auto 0 0 0;
-  padding: 2px 0 4px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #fff;
-  background: rgba(17, 24, 39, 0.55);
-  border-radius: 0 0 999px 999px;
-  opacity: 0;
-  transition: opacity 120ms ease;
-  pointer-events: none;
-}
-.v2-root button.v2-aprofile__avatar-button:hover .v2-aprofile__avatar-hint,
-.v2-root button.v2-aprofile__avatar-button:focus-visible .v2-aprofile__avatar-hint { opacity: 1; }
-/* Touch devices have no hover: show the hint faintly so the affordance exists. */
-@media (hover: none), (pointer: coarse) {
-  .v2-aprofile__avatar-hint { opacity: 0.75; }
-}
-/* The picker opens in the page flow, under the hero card it edits, so it
+/* The avatar picker opens in the page flow under the header it edits, so it
    never covers the profile and fits a phone without a sideways scroll. */
-.v2-aprofile__avatar-picker {
-  margin-bottom: 20px;
-  padding: 16px;
-  background: var(--v2-surface);
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-}
-.v2-aprofile__avatar-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
-  gap: 8px;
-  max-width: 560px;
-}
-.v2-root button.v2-aprofile__avatar-choice {
-  padding: 2px;
-  background: none;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  cursor: pointer;
-  line-height: 0;
-  aspect-ratio: 1;
-}
-.v2-aprofile__avatar-choice img { width: 100%; height: 100%; border-radius: 50%; }
-.v2-root button.v2-aprofile__avatar-choice:hover,
-.v2-root button.v2-aprofile__avatar-choice:focus-visible { border-color: var(--v2-border-strong); outline: none; }
+.v2-aprofile .v2-aprofile__avatar-picker { padding: 16px 20px; border-radius: 14px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-aprofile .v2-aprofile__avatar-title { margin: 0 0 12px; font: 800 16px/1.25 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); }
+.v2-aprofile .v2-aprofile__avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; max-width: 560px; }
+.v2-aprofile .v2-aprofile__avatar-choice { all: unset; box-sizing: border-box; cursor: pointer; aspect-ratio: 1; padding: 2px; border: 2px solid transparent; border-radius: 50%; line-height: 0; }
+.v2-aprofile .v2-aprofile__avatar-choice img { width: 100%; height: 100%; border-radius: 50%; }
+.v2-aprofile .v2-aprofile__avatar-choice:hover,
+.v2-aprofile .v2-aprofile__avatar-choice:focus-visible { border-color: var(--v2-border-strong); }
 /* The current avatar wears the accent ring, so the picker says what is set. */
-.v2-root button.v2-aprofile__avatar-choice.is-current { border-color: var(--v2-accent); cursor: default; }
-.v2-root button.v2-aprofile__avatar-choice:disabled { opacity: 0.5; cursor: wait; }
-.v2-aprofile__avatar-error { margin: 10px 0 0; font-size: 12px; color: var(--v2-danger); }
-.v2-root button.v2-aprofile__avatar-cancel {
-  display: block;
-  margin: 12px 0 0;
-  padding: 4px 12px;
-  font-size: 12px;
-  color: var(--v2-text-secondary);
-  background: none;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  cursor: pointer;
-}
-.v2-aprofile__avatar-title {
-  margin: 0 0 12px;
-  font-size: var(--v2-fs-label);
-  line-height: var(--v2-lh-label);
-  font-weight: 600;
-  color: var(--v2-text);
+.v2-aprofile .v2-aprofile__avatar-choice.is-current { border-color: var(--v2-accent); cursor: default; }
+.v2-aprofile .v2-aprofile__avatar-choice:disabled { opacity: 0.5; cursor: wait; }
+.v2-aprofile .v2-aprofile__avatar-error { margin: 10px 0 0; font-size: 12px; color: var(--v2-danger-text); }
+.v2-aprofile .v2-aprofile__avatar-cancel { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; margin: 12px 0 0; height: 34px; padding: 0 14px; border-radius: 10px; font: 600 13px/1 var(--v2-font); color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
+/* CJK never takes negative letter-spacing (TASK-055). */
+.v2-root:lang(zh) .v2-aprofile .v2-aprofile__name,
+.v2-root:lang(zh) .v2-aprofile .v2-aprofile__card-title,
+.v2-root:lang(zh) .v2-aprofile .v2-aprofile__empty-title,
+.v2-root:lang(zh) .v2-aprofile .v2-aprofile__brand { letter-spacing: 0; }
+
+/* At 390 every control is at least 44px to touch, including the ones the
+   frame draws smaller. Last in the file so it outranks the resets above. */
+@media (max-width: 760px) {
+  .v2-aprofile .v2-aprofile__navlink,
+  .v2-aprofile .v2-aprofile__bar .v2-aprofile__btn { position: relative; }
+  .v2-aprofile .v2-aprofile__navlink::before,
+  .v2-aprofile .v2-aprofile__bar .v2-aprofile__btn::before { content: ''; position: absolute; inset: -5px -6px; }
+  .v2-aprofile .v2-aprofile__navlink::before { inset: -14px -7px; }
+  .v2-aprofile .v2-agent-settings__tabs > * { box-sizing: border-box; min-height: 44px; display: inline-flex; align-items: center; }
+  .v2-aprofile .v2-aprofile__pod-remove { height: 44px; line-height: 44px; }
+  .v2-aprofile button.v2-aprofile__more { display: inline-flex; align-items: center; min-height: 44px; }
+  .v2-aprofile .v2-aprofile__avatar-cancel { min-height: 44px; }
 }

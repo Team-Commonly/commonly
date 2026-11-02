@@ -1998,7 +1998,6 @@
   "agentProfile": {
     "loading": "Loading…",
     "nav": {
-      "backToCommonly": "Back to Commonly",
       "whatIsCommonly": "What is Commonly?",
       "signIn": "Sign in",
       "signUp": "Sign up"
@@ -2032,7 +2031,9 @@
     "pods": {
       "title": "Pods",
       "publicTitle": "Public pods",
-      "allPods": "all pods",
+      "everyPod": "you see every pod",
+      "showAll_one": "Show all {{count}} pod",
+      "showAll_other": "Show all {{count}} pods",
       "activeAgo": "active {{time}}",
       "remove": "Remove",
       "removing": "Removing…",
@@ -2041,25 +2042,24 @@
       "removeError": "Could not remove the agent from that pod."
     },
     "skills": {
-      "title": "Installed skills"
+      "title": "Skills"
     },
     "memory": {
-      "title": "Memory layer",
+      "title": "Memory",
       "roleOwner": "owner",
       "roleAdmin": "admin",
       "viewTag": "{{role}} view · private",
-      "indexSummary_one": "{{notes}} notes across {{count}} section{{updated}}. Visible to you; hidden from the public profile.",
-      "indexSummary_other": "{{notes}} notes across {{count}} sections{{updated}}. Visible to you; hidden from the public profile.",
+      "publicLine_one": "<b>{{count}} memory</b>, carried into every pod and runtime it joins.",
+      "publicLine_other": "<b>{{count}} memories</b>, carried into every pod and runtime it joins.",
+      "lastSavedAgo": "Last saved {{time}}.",
+      "ownerLine_one": "<b>{{notes}} notes</b> in {{count}} section.",
+      "ownerLine_other": "<b>{{notes}} notes</b> in {{count}} sections.",
+      "ownerLineSaved_one": "<b>{{notes}} notes</b> in {{count}} section, last saved to {{section}} {{time}}.",
+      "ownerLineSaved_other": "<b>{{notes}} notes</b> in {{count}} sections, last saved to {{section}} {{time}}.",
+      "privateOwner": "Only you and admins can read them.",
+      "privateAdmin": "Only its owner and admins can read them.",
+      "open": "Open memory",
       "sectionUpdated": "Section updated {{when}}",
-      "lastSavedClause": " · last saved to {{section}} {{time}}",
-      "more": "+{{count}} more",
-      "entriesRemembered": "entries remembered",
-      "persistent": "Persistent memory carried across every pod and runtime this agent joins.",
-      "lastSaved": "Last saved to {{section}} {{time}}.",
-      "kinds": {
-        "durable": "durable memory",
-        "bookkeeping": "internal bookkeeping"
-      },
       "sections": {
         "soul": "Identity",
         "long_term": "Long-term memory",
@@ -2089,9 +2089,6 @@
       "title": "Recent activity",
       "turnsAgo_one": "{{count}} turn · {{time}}",
       "turnsAgo_other": "{{count}} turns · {{time}}"
-    },
-    "footer": {
-      "tagline": "Every agent on Commonly keeps one identity and memory, hosted here or run on your own machine."
     }
   },
   "adminAnalytics": {

@@ -344,12 +344,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       .toContain('box-shadow: var(--v2-focus-ring)');
   });
 
-  test('agent profile Reconnect keeps ink chrome over the primary and link rules', () => {
+  test('agent profile Reconnect is the ink key: the same primary rule as Talk (d215 s-agent-profile)', () => {
     const profile = read('../agents/v2-agent-profile.css');
-    const reconnect = ruleBody(profile, '.v2-root a.v2-aprofile__btn--reconnect');
-    expect(reconnect).toContain('background: var(--v2-ink)');
-    expect(reconnect).toContain('color: var(--v2-on-ink)');
-    expect(ruleBody(profile, '.v2-root a.v2-aprofile__btn--reconnect:hover'))
+    const primary = ruleBody(profile, '.v2-aprofile .v2-aprofile__btn--primary');
+    expect(primary).toContain('linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
+    expect(primary).toContain('color: var(--v2-on-fill)');
+    expect(ruleBody(profile, '.v2-aprofile .v2-aprofile__btn--primary:hover'))
       .toContain('background: var(--v2-ink-hover)');
   });
 
@@ -1256,44 +1256,38 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(teamCss, '.v2-team .v2-team__grid', { within: teamPhoneBlock(teamCss) })).toContain('repeat(1, minmax(0, 1fr))');
   });
 
-  test('the agent profile page overrides the app-shell overflow too (sibling invariant)', () => {
+  test('the public agent profile overrides the app-shell overflow too (sibling invariant)', () => {
     // Any full-page `.v2-root.<surface>` must set its own scroll, or the base
-    // `.v2-root { height:100vh; overflow:hidden }` clips it. This is the general
-    // rule the showcase bug taught us; keep the known-good example pinned.
-    expect(ruleBody(aprofile, '.v2-root.v2-aprofile')).toContain('overflow-y: auto');
+    // `.v2-root { height:100vh; overflow:hidden }` clips it. Signed out, the
+    // agent profile is such a page; signed in, it scrolls in the shell's pane.
+    expect(ruleBody(aprofile, '.v2-root.v2-aprofile--public')).toContain('overflow-y: auto');
   });
 
-  test('the authenticated agent-profile Talk button is ink, while public links stay cobalt', () => {
-    const linkPrimary = ruleBody(aprofile, '.v2-aprofile__btn--primary');
-    const buttonPrimary = ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary');
-
-    expect(linkPrimary).toContain('background: var(--v2-accent)');
-    expect(buttonPrimary).toContain('background: var(--v2-ink)');
-    expect(buttonPrimary).toContain('border-color: var(--v2-ink)');
-    expect(aprofile).toContain('.v2-root button.v2-aprofile__btn--primary:hover');
-    expect(aprofile).toContain('background: var(--v2-ink-hover)');
+  test('the agent profile keys are the ink key and the plain key, every value a --v2-* token', () => {
+    // d215 s-agent-profile: ink Talk / Reconnect / Sign up, plain Settings.
+    expect(ruleBody(aprofile, '.v2-aprofile .v2-aprofile__btn--primary')).toContain('border: 1px solid var(--v2-fill-edge)');
+    const ghost = ruleBody(aprofile, '.v2-aprofile .v2-aprofile__btn--ghost');
+    expect(ghost).toContain('linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b))');
+    expect(ghost).toContain('box-shadow: var(--v2-key-inset)');
+    expect(aprofile).toMatch(/\.v2-aprofile \.v2-aprofile__btn:focus-visible,[^{]*\{[^}]*box-shadow: var\(--v2-focus-ring\)/);
+    // No literal colour and no var() fallback: dark mode follows the tokens.
+    expect(aprofile).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    expect(aprofile).not.toMatch(/rgba?\(/);
+    expect(aprofile).not.toMatch(/var\(--[a-z0-9-]+,/);
+    expect(aprofile).not.toMatch(/var\(--(?!v2-)/);
   });
 
-  test('agent profile Phase B uses ink actions, the halo, and the type ladder', () => {
-    const primary = ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary');
-    expect(primary).toContain('background: var(--v2-ink)');
-    expect(primary).not.toContain('var(--v2-accent)');
-    expect(ruleBody(aprofile, '.v2-root button.v2-aprofile__btn--primary:hover')).toContain('var(--v2-ink-hover)');
-    expect(ruleBody(aprofile, '.v2-root .v2-aprofile__btn--primary')).toContain('color: var(--v2-on-ink)');
-    // The footer CTA sits on the accent-deep band, so it keeps main's white fill.
-    // An ink fill there reads as a dark hole (review 5673841827).
-    const footerPrimary = ruleBody(aprofile, '.v2-root .v2-aprofile__footer-cta .v2-aprofile__btn--primary');
-    expect(footerPrimary).toContain('background: var(--v2-on-accent, #fff)');
-    expect(footerPrimary).toContain('color: var(--v2-accent-fill, var(--v2-accent))');
-
-    const avatarFocus = ruleBody(aprofile, '.v2-root button.v2-aprofile__avatar-button:focus-visible');
-    expect(avatarFocus).toContain('outline: none');
-    expect(avatarFocus).toContain('box-shadow: var(--v2-focus-ring)');
-
-    for (const selector of ['.v2-aprofile__empty-title', '.v2-aprofile__name', '.v2-aprofile__stat-num']) {
-      expect(ruleBody(aprofile, selector)).toContain('font-weight: 700');
-    }
-    expect(aprofile).not.toContain('font-weight: 850');
+  test('/v2/agent: on a phone the header wraps and its keys take the full row at 44px (d215 s-agent-profile 390)', () => {
+    const phone = aprofile.slice(aprofile.indexOf('@media (max-width: 760px)'));
+    expect(phone).toMatch(/\.v2-aprofile \.v2-aprofile__hero \{[^}]*flex-wrap: wrap/);
+    expect(phone).toMatch(/\.v2-aprofile \.v2-aprofile__keys \{[^}]*flex: 1 0 100%/);
+    expect(phone).toMatch(/\.v2-aprofile \.v2-aprofile__keys \.v2-aprofile__btn \{[^}]*height: 44px/);
+    // Controls the frame draws under 44px get a 44px target on a phone, in the
+    // last phone block so the resets above cannot out-rank it.
+    const touch = aprofile.slice(aprofile.lastIndexOf('@media (max-width: 760px)'));
+    expect(touch).toMatch(/\.v2-aprofile \.v2-aprofile__pod-remove \{[^}]*height: 44px/);
+    expect(touch).toMatch(/\.v2-aprofile \.v2-agent-settings__tabs > \* \{[^}]*min-height: 44px/);
+    expect(touch).toMatch(/\.v2-aprofile button\.v2-aprofile__more \{[^}]*min-height: 44px/);
   });
 
   test('the nav rail pane lets its language dropdown escape the pane clip', () => {
@@ -1430,6 +1424,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // A person's page is the native v2 profile, not the legacy MUI UserProfile.
     expect(v2App).toContain('<V2PersonProfile />');
     expect(v2App).not.toContain('<UserProfile />');
+    // The agent profile keeps its public URLs; signed in, it renders in the app
+    // shell (d215 s-agent-profile), signed out it keeps its own public bar.
+    expect(v2App).toContain('<Route path="agent/:agentName" element={<V2AgentProfileRoute />} />');
+    expect(v2App).toContain('<Route path="agent/:agentName/:instanceId" element={<V2AgentProfileRoute />} />');
+    expect(v2App).toMatch(/shell=\{isAuthenticated\s*\? \(page\) => <V2AuthenticatedShell>\{feature\(/);
     expect(app).toContain('<Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />');
   });
 

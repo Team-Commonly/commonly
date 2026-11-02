@@ -31,10 +31,13 @@ const profileClient = (jest.requireMock('axios') as {
   __profileClient: { get: jest.Mock; post: jest.Mock; put: jest.Mock };
 }).__profileClient;
 
+// V2App passes `shell` when the viewer is signed in; a stand-in marks where it wraps.
+const shell = (page: React.ReactNode) => <div data-testid="app-shell">{page}</div>;
+
 const renderProfile = () => render(
-  <MemoryRouter initialEntries={['/v2/agents/openclaw/aria']}>
+  <MemoryRouter initialEntries={['/v2/agent/openclaw/aria']}>
     <Routes>
-      <Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentProfile />} />
+      <Route path="/v2/agent/:agentName/:instanceId" element={<V2AgentProfile shell={shell} />} />
     </Routes>
   </MemoryRouter>,
 );

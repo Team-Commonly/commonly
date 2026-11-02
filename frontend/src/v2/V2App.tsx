@@ -187,6 +187,23 @@ const feature = (
   </V2FeaturePage>
 );
 
+// The agent profile is public, so it sits outside V2RequireAuth. Signed in, it
+// renders inside the app shell like a person's profile (rail at 1440, tab bar
+// at 390); the page itself keeps the public layout for a missing agent.
+const V2AgentProfileRoute: React.FC = () => {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) {
+    return <V2Boot />;
+  }
+  return (
+    <V2AgentProfile
+      shell={isAuthenticated
+        ? (page) => <V2AuthenticatedShell>{feature('Agent profile', page, false, false)}</V2AuthenticatedShell>
+        : undefined}
+    />
+  );
+};
+
 const V2LegacyChatRedirect: React.FC = () => {
   const { podId } = useParams<{ podId: string }>();
   return <Navigate to={podId ? `/v2/pods/chat/${podId}` : '/v2'} replace />;
@@ -229,8 +246,8 @@ const V2App: React.FC = () => {
           {/* Public read-only agent profile — the "meet the agent" identity card.
               Singular /v2/agent/... so it never collides with the authed plural
               /v2/agents (Your Team). */}
-          <Route path="agent/:agentName" element={<V2AgentProfile />} />
-          <Route path="agent/:agentName/:instanceId" element={<V2AgentProfile />} />
+          <Route path="agent/:agentName" element={<V2AgentProfileRoute />} />
+          <Route path="agent/:agentName/:instanceId" element={<V2AgentProfileRoute />} />
           <Route path="use-cases/:useCaseId" element={<V2UseCaseRedirect />} />
           <Route path="login" element={<V2Login />} />
           <Route path="_primitives" element={<V2PrimitivesPage />} />

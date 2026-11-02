@@ -22,17 +22,20 @@ jest.mock('../components/V2Avatar', () => ({
 
 const profileClient = (jest.requireMock('axios') as { __profileClient: { get: jest.Mock; post: jest.Mock } }).__profileClient;
 
-const renderProfile = () => render(
-  <MemoryRouter initialEntries={['/v2/agents/claude-code/observer']}>
+// V2App passes `shell` when the viewer is signed in; a stand-in marks where it wraps.
+const shell = (page: React.ReactNode) => <div data-testid="app-shell">{page}</div>;
+
+const renderProfile = (signedIn = false) => render(
+  <MemoryRouter initialEntries={['/v2/agent/claude-code/observer']}>
     <Routes>
-      <Route path="/v2/agents/:agentName/:instanceId" element={<V2AgentProfile />} />
+      <Route path="/v2/agent/:agentName/:instanceId" element={<V2AgentProfile shell={signedIn ? shell : undefined} />} />
     </Routes>
   </MemoryRouter>,
 );
 
-// The profile route is unauthenticated, so it reports the KIND of the latest
-// agent-authored write and never the section name. The owner/admin memory view
-// keeps the exact section; that surface is covered separately.
+// The profile route is unauthenticated, so its one Memory line says only when
+// the agent last saved (d215 s-agent-profile), never the kind or the section
+// name. The owner/admin memory view keeps the exact section.
 const profilePayload = (lastAgentWrite: unknown) => ({
   data: {
     agent: {
@@ -68,22 +71,24 @@ describe('V2AgentProfile memory-write visibility', () => {
     profileClient.post.mockResolvedValue({ data: { room: { _id: 'room-scout' } } });
   });
 
-  it('reports the kind of the latest agent-authored write', async () => {
+  it('says when the agent last saved, in one line', async () => {
     renderProfile();
 
-    expect(await screen.findByText(/Last saved to durable memory \d+h ago\./)).toBeInTheDocument();
+    expect(await screen.findByTestId('agent-profile-memory')).toHaveTextContent(
+      /^2 memories, carried into every pod and runtime it joins\. Last saved \d+h ago\.$/,
+    );
   });
 
-  it('reports a housekeeping write without naming the section', async () => {
+  it('reports a housekeeping write without naming the kind or the section', async () => {
     profileClient.get.mockImplementation((url: string) => {
       if (url.startsWith('/api/agent-memory/')) return Promise.reject(new Error('not owner'));
       return Promise.resolve(profilePayload({ kind: 'bookkeeping', updatedAt: twoHoursAgo() }));
     });
     renderProfile();
 
-    expect(await screen.findByText(/Last saved to internal bookkeeping \d+h ago\./)).toBeInTheDocument();
-    // No section name reaches this page for any kind.
-    expect(screen.queryByText(/Runtime metadata|Deduplication state|Long-term memory/)).toBeNull();
+    expect(await screen.findByTestId('agent-profile-memory')).toHaveTextContent(/Last saved \d+h ago\.$/);
+    // No kind or section name reaches this page.
+    expect(screen.queryByText(/bookkeeping|Runtime metadata|Deduplication state|Long-term memory/)).toBeNull();
   });
 
   it('shows an owner the revoked connection and a single Reconnect action', async () => {
@@ -101,7 +106,7 @@ describe('V2AgentProfile memory-write visibility', () => {
       }] } });
       return Promise.resolve(profilePayload(null));
     });
-    renderProfile();
+    renderProfile(true);
     expect(await screen.findByTestId('agent-profile-connection'))
       .toHaveTextContent('Disconnected: key revoked');
     expect(screen.getByRole('link', { name: 'Reconnect' }))
@@ -125,7 +130,7 @@ describe('V2AgentProfile memory-write visibility', () => {
       }] } });
       return Promise.resolve(profilePayload(null));
     });
-    renderProfile();
+    renderProfile(true);
     expect(await screen.findByRole('link', { name: 'Reconnect' }))
       .toHaveAttribute('href', '/v2/agents/byo?pod=own-pod&name=claude-code&instanceId=observer&reconnect=1&mode=machine');
     expect(profileClient.get.mock.calls.some(([url]) => url === '/api/registry/pods/other-pod/agents')).toBe(false);
@@ -133,7 +138,7 @@ describe('V2AgentProfile memory-write visibility', () => {
 
   it('does not offer Reconnect to a signed-in pod member without management access', async () => {
     window.localStorage.setItem('token', 'member-token');
-    renderProfile();
+    renderProfile(true);
     expect(await screen.findByRole('heading', { name: 'Observer' })).toBeInTheDocument();
     await waitFor(() => expect(profileClient.get).toHaveBeenCalledWith(
       '/api/agent-memory/claude-code/observer',
@@ -145,7 +150,7 @@ describe('V2AgentProfile memory-write visibility', () => {
 
   it('opens the same 1:1 room endpoint for a signed-in visitor', async () => {
     window.localStorage.setItem('token', 'viewer-token');
-    renderProfile();
+    renderProfile(true);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Talk to Observer' }));
 
@@ -161,7 +166,7 @@ describe('V2AgentProfile memory-write visibility', () => {
     profileClient.post.mockRejectedValue({
       response: { data: { message: 'Multiple installations found. Specify instanceId.' } },
     });
-    renderProfile();
+    renderProfile(true);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Talk to Observer' }));
 

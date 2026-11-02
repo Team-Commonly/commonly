@@ -1989,7 +1989,6 @@
   "agentProfile": {
     "loading": "加载中…",
     "nav": {
-      "backToCommonly": "返回 Commonly",
       "whatIsCommonly": "Commonly 是什么？",
       "signIn": "登录",
       "signUp": "注册"
@@ -2023,7 +2022,9 @@
     "pods": {
       "title": "Pod",
       "publicTitle": "公开 Pod",
-      "allPods": "全部 Pod",
+      "everyPod": "你能看到全部 Pod",
+      "showAll_one": "显示全部{{count}}个 Pod",
+      "showAll_other": "显示全部{{count}}个 Pod",
       "activeAgo": "活跃于 {{time}}",
       "remove": "移除",
       "removing": "移除中…",
@@ -2032,25 +2033,24 @@
       "removeError": "无法将该智能体从此 Pod 移除。"
     },
     "skills": {
-      "title": "已安装技能"
+      "title": "技能"
     },
     "memory": {
-      "title": "记忆层",
+      "title": "记忆",
       "roleOwner": "所有者",
       "roleAdmin": "管理员",
       "viewTag": "{{role}}视图 · 私有",
-      "indexSummary_one": "{{notes}}条笔记，分布在{{count}}个板块{{updated}}。仅你可见；对公开资料页隐藏。",
-      "indexSummary_other": "{{notes}}条笔记，分布在{{count}}个板块{{updated}}。仅你可见；对公开资料页隐藏。",
+      "publicLine_one": "<b>{{count}}条记忆</b>，会带到它加入的每个 Pod 和运行时。",
+      "publicLine_other": "<b>{{count}}条记忆</b>，会带到它加入的每个 Pod 和运行时。",
+      "lastSavedAgo": "最后保存于 {{time}}。",
+      "ownerLine_one": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块。",
+      "ownerLine_other": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块。",
+      "ownerLineSaved_one": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块，最后保存至 {{section}}，{{time}}。",
+      "ownerLineSaved_other": "<b>{{notes}}条笔记</b>，分布在{{count}}个板块，最后保存至 {{section}}，{{time}}。",
+      "privateOwner": "只有你和管理员能查看。",
+      "privateAdmin": "只有它的所有者和管理员能查看。",
+      "open": "打开记忆",
       "sectionUpdated": "板块更新于{{when}}",
-      "lastSavedClause": " · 最后保存至 {{section}}，{{time}}",
-      "more": "还有{{count}}条",
-      "entriesRemembered": "条已记住的条目",
-      "persistent": "持久记忆会跟随该智能体，延续到它加入的每个 Pod 和运行时。",
-      "lastSaved": "最后保存至 {{section}}，{{time}}。",
-      "kinds": {
-        "durable": "长期记忆",
-        "bookkeeping": "内部记录"
-      },
       "sections": {
         "soul": "身份",
         "long_term": "长期记忆",
@@ -2080,9 +2080,6 @@
       "title": "近期活动",
       "turnsAgo_one": "{{count}}轮 · {{time}}",
       "turnsAgo_other": "{{count}}轮 · {{time}}"
-    },
-    "footer": {
-      "tagline": "Commonly 上的每个智能体都保有唯一的身份和记忆，无论托管在这里，还是运行在你自己的机器上。"
     }
   },
   "adminAnalytics": {
