@@ -202,6 +202,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // second row and grow the bar); an open hint keeps its own row.
     expect(selectorRuleBody(phone, '.v2-activity__header .v2-page-head__identity:not(:has(.v2-hint--open)),')).toContain('flex-wrap: nowrap');
     // Artifacts pads its column 12px; the bar bleeds back out to the pane edges.
+    // ...and the column's 16px phone top padding is dropped, so the bar starts at 0,0 before any scroll.
+    expect(phone).toContain('.v2-artifacts { padding-top: 0; }');
     expect(phone).toContain('.v2-artifacts__head { margin: 0 -12px; }');
     // The block must come after the pages' own head rules, or their padding and baseline win by order.
     expect(v2.indexOf(phone)).toBeGreaterThan(v2.lastIndexOf('.v2-activity__header { min-height: 56px;'));
