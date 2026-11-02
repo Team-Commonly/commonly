@@ -531,6 +531,28 @@ describe('stalledConnectService.scan', () => {
     expect(mockEpCreate.mock.calls[0][0]).toEqual(expect.objectContaining({ tokenSource: 'user' }));
   });
 
+  it('asks once for a pair two installs share, and keeps the first bot row, as findOne did', async () => {
+    const installs = [
+      install({ _id: 'inst-1', runtimeTokens: [] }),
+      install({ _id: 'inst-2', podId: 'pod2', runtimeTokens: [] }),
+    ];
+    setup({ installs });
+    mockUserFind.mockImplementation((filter) => ({
+      select: () => ({
+        lean: () => Promise.resolve([
+          { botMetadata: { agentName: 'ai1-agent', instanceId: 'default' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN }] },
+          { botMetadata: { agentName: 'ai1-agent', instanceId: 'default' }, agentRuntimeTokens: [] },
+        ].slice(0, 2 * filter.$or.length)),
+      }),
+    }));
+
+    await scan({ now: NOW });
+
+    expect(mockUserFind.mock.calls[0][0].$or).toHaveLength(1);
+    // Both installs got the first row's token, so both are stalled episodes.
+    expect(mockEpCreate.mock.calls.map(([doc]) => doc.tokenSource)).toEqual(['user', 'user']);
+  });
+
   it('only considers BYO seats — nothing else can derive never-connected', async () => {
     setup();
     await scan({ now: NOW });

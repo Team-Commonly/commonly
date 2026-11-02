@@ -140,7 +140,9 @@ const SCHEDULER_INSTANCE_ID = `${process.pid}:${crypto.randomUUID()}`;
 // never start together. On 2026-11-02 SRE traced two readiness windows to the
 // :30 and :35 ticks, where all four started in the same second and stalled-
 // connect alone held the tick for about 7s. kernel-sweep keeps :04, :14, …
-// (below), so no pass here shares a minute with it.
+// (below), so no pass here shares a minute with it. decision-card reconcile,
+// the approval-call sweep and the spawn-credential reap stay on */5: each is a
+// small query, and none was in the stacked windows.
 //
 // Spell the minutes out. node-cron 3.0.3 accepts `2-59/5`, then fires it at
 // :05, :10, …, the same minutes as every other five-minute pass.

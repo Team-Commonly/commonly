@@ -363,16 +363,22 @@ class KernelWorkSweepService {
     // Every pod's active installs in one read. Read pod by pod, this was one
     // round trip per pod: 436 pods took 16.9s on production (2026-11-02),
     // where one $in over the same pods took 212ms.
-    const installsByPod = new Map<string, Array<Record<string, unknown>>>();
+    // If that read fails, each pod reads its own, as before: slower, not wrong.
+    let installsByPod: Map<string, Array<Record<string, unknown>>> | null = new Map();
     if (actionable.length) {
-      const installs = await AgentInstallation.find({
-        podId: { $in: actionable.map((pod) => pod._id) },
-        status: 'active',
-      }).lean() as Array<Record<string, unknown>>;
-      for (const install of installs) {
-        const key = String(install.podId);
-        const forPod = installsByPod.get(key);
-        if (forPod) forPod.push(install); else installsByPod.set(key, [install]);
+      try {
+        const installs = await AgentInstallation.find({
+          podId: { $in: actionable.map((pod) => pod._id) },
+          status: 'active',
+        }).lean() as Array<Record<string, unknown>>;
+        for (const install of installs) {
+          const key = String(install.podId);
+          const forPod = installsByPod.get(key);
+          if (forPod) forPod.push(install); else installsByPod.set(key, [install]);
+        }
+      } catch (error) {
+        console.warn('[kernel-sweep] batched install read failed; reading per pod:', (error as Error).message);
+        installsByPod = null;
       }
     }
 
@@ -381,7 +387,7 @@ class KernelWorkSweepService {
     for (const pod of actionable) {
       // eslint-disable-next-line no-await-in-loop
       const result = await notifyFoundWork(
-        pod._id, pod.tasks, pod.count, now, installsByPod.get(String(pod._id)) || [],
+        pod._id, pod.tasks, pod.count, now, installsByPod ? installsByPod.get(String(pod._id)) || [] : undefined,
       );
       if (result.woken > 0) woken += result.woken; else skippedNoWork += 1;
     }

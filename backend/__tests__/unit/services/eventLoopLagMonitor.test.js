@@ -67,11 +67,13 @@ describe('startEventLoopLagMonitor', () => {
   it('measures the real loop: a 1.2s synchronous block is seen by the default histogram', async () => {
     jest.useRealTimers();
     const log = jest.fn();
-    const stop = startEventLoopLagMonitor({ thresholdMs: 1000, windowMs: 1500, log });
+    // The block ends near 1.3s and the first window closes at 2s; stopping
+    // 1.5s after the block leaves over a second before the second window.
+    const stop = startEventLoopLagMonitor({ thresholdMs: 1000, windowMs: 2000, log });
     await new Promise((resolve) => setTimeout(resolve, 100));
     const until = Date.now() + 1200;
     while (Date.now() < until) { /* block the loop on purpose */ }
-    await new Promise((resolve) => setTimeout(resolve, 1600));
+    await new Promise((resolve) => setTimeout(resolve, 1500));
     stop();
 
     expect(log).toHaveBeenCalledTimes(1);

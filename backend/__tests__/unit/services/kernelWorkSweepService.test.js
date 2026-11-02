@@ -350,6 +350,18 @@ describe('wakeForFoundWork reads installs once per pass', () => {
       .map(([podId, , , , installs]) => [String(podId), installs.map((i) => i.agentName)]);
     expect(handed).toEqual([[POD_A, ['a1']], [POD_B, ['b1', 'b2']], [POD_C, []]]);
   });
+
+  it('lets each pod read its own installs when the batched read fails', async () => {
+    Task.aggregate.mockResolvedValue([{ _id: POD_A, tasks: [{ taskId: 'TASK-A' }], count: 1 }]);
+    AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('pool closed')) });
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = await KernelWorkSweepService.wakeForFoundWork(NOW);
+
+    expect(mockNotifyFoundWork.mock.calls[0][4]).toBeUndefined();
+    expect(result.woken).toBe(1);
+    console.warn.mockRestore();
+  });
 });
 
 describe('sweep', () => {
