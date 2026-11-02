@@ -649,6 +649,42 @@ describe('keeping the forward promise', () => {
     expect(resolvedIds).toEqual(['ep-used']);
   });
 
+  it('resolves the instance whose bot row connected, not its sibling on another instance', async () => {
+    // One agent, two instances. Only the non-default instance's bot row has
+    // listened. Reading every episode's row as `default`, or keying by name
+    // alone, resolves the wrong episode or both.
+    const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
+    const episodes = [
+      { ...openEpisode, _id: 'ep-home', installationId: 'inst-home', agentName: 'twin', instanceId: 'default' },
+      { ...openEpisode, _id: 'ep-east', installationId: 'inst-east', agentName: 'twin', instanceId: 'east' },
+    ];
+    setup({ installs: [], open: episodes });
+    mockInstallFindById.mockImplementation((id) => ({
+      lean: () => Promise.resolve(install({ _id: id, agentName: 'twin', runtimeTokens: [{ createdAt: OLD_TOKEN }] })),
+    }));
+    const rows = [
+      { botMetadata: { agentName: 'twin', instanceId: 'default' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN }] },
+      { botMetadata: { agentName: 'twin', instanceId: 'east' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] },
+    ];
+    mockUserFind.mockImplementation((filter) => ({
+      select: () => ({
+        lean: () => Promise.resolve(rows.filter((row) => filter.$or.some((clause) => (
+          clause['botMetadata.agentName'] === row.botMetadata.agentName
+          && clause['botMetadata.instanceId'] === row.botMetadata.instanceId
+        )))),
+      }),
+    }));
+
+    const r = await scan({ now: NOW });
+
+    expect(mockUserFind).toHaveBeenCalledTimes(1);
+    expect(r.resolved).toHaveLength(1);
+    const resolvedIds = mockEpUpdate.mock.calls
+      .filter(([, update]) => update?.$set?.status === 'resolved')
+      .map(([filter]) => filter._id);
+    expect(resolvedIds).toEqual(['ep-east']);
+  });
+
   it('reports the present honestly when it connected and has since gone quiet', async () => {
     // Connected 3 hours ago, stale now: the past is still a fact, the present
     // is not "listening". This is the connect-then-disconnect case.
