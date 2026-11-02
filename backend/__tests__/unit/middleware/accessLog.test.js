@@ -39,8 +39,16 @@ const buildApp = (lines, opts = {}) => {
   return app;
 };
 
-// The line is written on the response's `finish`, which supertest can resolve before.
-const settled = () => new Promise((resolve) => { setImmediate(resolve); });
+// The line is written on the response's `finish`, which supertest can resolve
+// before, and by more than one turn of the loop on a loaded host. `logged`
+// waits for the lines a test expects; `settled` gives a test that expects none
+// the same chance to be wrong.
+const logged = (lines, count = 1, tries = 200) => new Promise((resolve) => {
+  const check = (left) => (lines.length >= count || left === 0
+    ? resolve() : setTimeout(() => check(left - 1), 10));
+  check(tries);
+});
+const settled = () => new Promise((resolve) => { setTimeout(resolve, 50); });
 
 describe('access log', () => {
   it('writes the route template, status and latency, never the raw path or query', async () => {
@@ -49,7 +57,7 @@ describe('access log', () => {
       .get(`/api/users/${OTHER}/public-activity?limit=8&token=abc`)
       .set('x-test-user', USER)
       .expect(200);
-    await settled();
+    await logged(lines);
 
     expect(lines).toHaveLength(1);
     const [line] = lines;
@@ -67,7 +75,7 @@ describe('access log', () => {
   it('hashes the caller with a keyed hash, so a list of user ids cannot reverse it', async () => {
     const lines = [];
     await request(buildApp(lines)).get(`/api/users/${OTHER}/public-activity`).set('x-test-user', USER);
-    await settled();
+    await logged(lines);
 
     const expected = createHmac('sha256', SECRET).update(`access-log\u0000${USER}`).digest('hex').slice(0, 16);
     expect(lines[0].caller).toBe(expected);
@@ -80,14 +88,14 @@ describe('access log', () => {
   it('marks a request about the caller itself as self', async () => {
     const lines = [];
     await request(buildApp(lines)).get(`/api/users/${USER}/public-activity`).set('x-test-user', USER);
-    await settled();
+    await logged(lines);
     expect(lines[0]).toMatchObject({ route: '/api/users/:id/public-activity', self: true });
   });
 
   it('names a nested router by its full template and takes an agent as the caller', async () => {
     const lines = [];
     await request(buildApp(lines)).get('/api/agents/runtime/pods/abc123/context').set('x-test-agent', OTHER);
-    await settled();
+    await logged(lines);
     expect(lines[0]).toMatchObject({ route: '/api/agents/runtime/pods/:podId/context', status: 200 });
     expect(lines[0].caller).toBe(callerHash(OTHER, SECRET));
     expect(lines[0].ms).toBeGreaterThanOrEqual(10);
@@ -96,7 +104,7 @@ describe('access log', () => {
   it('logs an unrouted request without its path, and a signed-out one without a caller', async () => {
     const lines = [];
     await request(buildApp(lines)).get(`/api/nowhere/${OTHER}`).expect(404);
-    await settled();
+    await logged(lines);
     expect(lines).toEqual([expect.objectContaining({
       route: '<unmatched>', status: 404, caller: null, self: false, 
     })]);
@@ -106,7 +114,7 @@ describe('access log', () => {
   it('keeps the template for a handler that throws', async () => {
     const lines = [];
     await request(buildApp(lines)).get('/api/boom').expect(500);
-    await settled();
+    await logged(lines);
     expect(lines[0]).toMatchObject({ route: '/api/boom', status: 500 });
   });
 
@@ -115,14 +123,14 @@ describe('access log', () => {
     // read at `finish` would say `/:id/fail`.
     const lines = [];
     await request(buildApp(lines)).get(`/api/users/${OTHER}/fail`).expect(500);
-    await settled();
+    await logged(lines);
     expect(lines[0]).toMatchObject({ route: '/api/users/:id/fail', status: 500 });
   });
 
   it('names a mount typed in another case by its lowercase template', async () => {
     const lines = [];
     await request(buildApp(lines)).get(`/API/Users/${OTHER}/public-activity`).expect(200);
-    await settled();
+    await logged(lines);
     expect(lines[0].route).toBe('/api/users/:id/public-activity');
   });
 
