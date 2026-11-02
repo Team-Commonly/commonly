@@ -428,6 +428,44 @@ describe('Connectors page: tools', () => {
     ]);
   });
 
+  // The broker records any refusal it throws as the line's reason, and these were
+  // shown as raw codes: a hosted tool that drifted, an approved call whose PR or
+  // arguments moved, a task-bound grant used off its task (F18, 11-02 prod walk).
+  it.each([
+    ['en', [
+      ' · the provider changed this tool since Commonly checked it',
+      ' · the provider no longer offers this tool on this connection',
+      ' · the pull request changed after approval',
+      ' · the agent has to claim the bound task first',
+    ]],
+    ['zh-CN', [
+      ' · 服务商改动了此工具，等待重新核对',
+      ' · 服务商在此连接上不再提供此工具',
+      ' · PR 在审批后有新的提交',
+      ' · 智能体需要先认领绑定的任务',
+    ]],
+  ])('F18: a refusal from a hosted tool, an approval or a task binding reads as words, in %s', async (language, expected) => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage(language); });
+    try {
+      const refused = {
+        ...trail,
+        calls: ['tool_drift', 'tool_unavailable', 'merge_head_mismatch', 'task_claim_required'].map((reason, i) => (
+          { ...trail.calls[0], callId: `r${i}`, outcome: 'refused', reason, at: iso(-120000 * (i + 1)) }
+        )),
+      };
+      mockTools({ trails: { grant_live: refused } });
+      renderPage();
+      const drawer = await openTool('GitHub');
+      fireEvent.click(drawer.querySelector('.v2-connector-row__selection'));
+      const aside = await screen.findByRole('complementary');
+      await waitFor(() => expect(within(aside).getAllByRole('listitem')).toHaveLength(4));
+      expect(Array.from(aside.querySelectorAll('.v2-tools__trail-reason')).map((node) => node.textContent)).toEqual(expected);
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
   it('TASK-050: a human member in the audience is named, not called "an agent"', async () => {
     mockTools({ grants: [{ ...grantLive, effectiveAudience: ['u1', 'a1'] }], seats: { p1: [scout] } });
     renderPage();

@@ -251,6 +251,20 @@ export const useToolConnectors = (
       upstream_tool_error: t('tools.reasonUpstreamToolError', { defaultValue: 'the provider tool returned an error' }),
       broker_unavailable: t('tools.reasonBrokerUnavailable', { defaultValue: 'the broker was unavailable' }),
       broker_error: t('tools.reasonBrokerError', { defaultValue: 'the broker failed' }),
+      tool_drift: t('tools.reasonToolDrift', { defaultValue: 'the provider changed this tool since Commonly checked it' }),
+      tool_unavailable: t('tools.reasonToolUnavailable', { defaultValue: 'the provider no longer offers this tool on this connection' }),
+      tool_not_found: t('tools.reasonToolNotFound', { defaultValue: 'this tool no longer exists' }),
+      definition_digest_mismatch: t('tools.reasonToolChangedSinceApproval', { defaultValue: 'the tool changed after approval, so it needs asking again' }),
+      args_digest_mismatch: t('tools.reasonArgsChangedSinceApproval', { defaultValue: 'the arguments changed after approval' }),
+      repo_mismatch: t('tools.reasonRepoChangedSinceApproval', { defaultValue: 'the connected repository changed after approval' }),
+      merge_head_mismatch: t('tools.reasonPrChangedSinceApproval', { defaultValue: 'the pull request changed after approval' }),
+      merge_head_unavailable: t('tools.reasonPrHeadUnavailable', { defaultValue: 'the pull request\'s latest commit could not be read' }),
+      task_pod_mismatch: t('tools.reasonTaskPodMismatch', { defaultValue: 'this grant works only in its task\'s pod' }),
+      task_claim_required: t('tools.reasonTaskClaimRequired', { defaultValue: 'the agent has to claim the bound task first' }),
+      task_closed: t('tools.reasonTaskClosed', { defaultValue: 'the bound task is closed' }),
+      task_not_found: t('tools.reasonTaskNotFound', { defaultValue: 'the bound task no longer exists' }),
+      agent_identity_required: t('tools.reasonAgentIdentityRequired', { defaultValue: 'the call did not say which agent made it' }),
+      grant_not_found: t('tools.reasonGrantNotFound', { defaultValue: 'the grant no longer exists' }),
     };
     // Own keys only: a code such as `constructor` or `__proto__` must show as itself, not as an inherited member.
     return Object.prototype.hasOwnProperty.call(labels, reason) ? labels[reason] : reason;
