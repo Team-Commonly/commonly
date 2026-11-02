@@ -209,6 +209,29 @@ describe('one agent answers one pod a turn at a time', () => {
     first.resolve(success); await waitFor(() => runAgent.mock.calls.length >= 2);
     await waitFor(() => Service.inProcessWork.size === 0);
     expect(runAgent).toHaveBeenCalledTimes(2);
+    // The turn that ran was the replacement: its claim is the one that settled.
+    expect(await AgentEvent.findById(waiting._id).lean()).toMatchObject({ status: 'acked', attempts: 2 });
+  });
+  test('a sweep that found a waiting event stale cannot claim it once its turn has started', async () => {
+    const first = deferred(), second = deferred();
+    runAgent.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockResolvedValue(success);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input); await settle();
+    await AgentEvent.updateOne({ _id: waiting._id }, { $set: { deliveredAt: new Date(Date.now() - 60 * 60000) } });
+    // The sweep reads the event as stale, then stalls before its claim...
+    const found = deferred(), resume = deferred();
+    Service.resolveInProcessInstallation.mockImplementationOnce(async () => {
+      found.resolve(); await resume.promise; return install;
+    });
+    const sweep = Service.redispatchStuckInProcess(new Date(Date.now() - 10 * 60000), 5);
+    await found.promise;
+    // ...while the waiting turn starts and restarts its requeue clock.
+    first.resolve(success); await waitFor(() => runAgent.mock.calls.length >= 2);
+    resume.resolve();
+    const result = await sweep;
+    second.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+    expect(result).toEqual({ redispatched: 0, acked: 0 });
+    expect(runAgent).toHaveBeenCalledTimes(2);
   });
   test('a turn that waited starts its own requeue clock when it starts', async () => {
     const first = deferred(), second = deferred();

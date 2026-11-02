@@ -181,6 +181,7 @@ interface EventDoc {
   agentName?: string;
   instanceId?: string;
   createdAt?: Date;
+  deliveredAt?: Date | null;
   payload?: Record<string, unknown>;
   status?: string;
   deliveryMode?: 'wake' | 'digest';
@@ -1249,9 +1250,17 @@ class AgentEventService {
       const finished = await AgentRun.exists({ ...runKey, status: 'succeeded' });
       if (this.inProcessDraining) break;
       const deliveryNonce = mintDeliveryNonce();
+      // Fenced by deliveredAt as well as the nonce: a turn that waited for its
+      // pod lane restarts deliveredAt as it starts (dispatchInProcess), and a
+      // sweep that read it as stale before then must not claim it while it runs.
       // eslint-disable-next-line no-await-in-loop
       const claimed = await AgentEvent.findOneAndUpdate(
-        { _id: stale._id, status: 'delivered', deliveryNonce: stale.deliveryNonce ?? null },
+        {
+          _id: stale._id,
+          status: 'delivered',
+          deliveryNonce: stale.deliveryNonce ?? null,
+          deliveredAt: stale.deliveredAt,
+        },
         { $set: { deliveredAt: new Date(), deliveryNonce }, $inc: { attempts: 1 } },
         { new: true },
       ) as EventDoc | null;
@@ -1803,7 +1812,7 @@ class AgentEventService {
             console.warn(`[native-runtime] lane re-check failed for event ${String(event._id)}; running it:`, err.message);
             return { matchedCount: 1 };
           }) as { matchedCount?: number };
-          if (!stillOurs.matchedCount) return;
+          if (lane.hold.superseded || !stillOurs.matchedCount) return;
         }
         await this.runInProcess(event, nativeInstallation, agentName, instanceId, type, () => {
           this.inProcessRunning.delete(deliveryKey);
