@@ -5684,7 +5684,7 @@ body.modern-ui.v2-canvas {
 .v2-artifacts__loading { display: grid; place-items: center; padding: 24px; }
 /* Day zero (d215 s-artifacts): nothing shared and no filter set, so the page drops its controls and
    count for one bordered card — Get started's card grammar (14px 20px lines, ink key, 32px at desktop,
-   44 full width at ≤760). The key is a link to the pod Activity's Get started step opens. */
+   44 full width at ≤760). The key links to the account's oldest pod, the one signup creates. */
 .v2-artifacts__zero { width: min(100%, 760px); padding: 14px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); }
 .v2-artifacts__zero h2 { margin: 0; color: var(--v2-text-primary); font: 600 14px/20px var(--v2-font); }
 .v2-artifacts__zero p { margin: 2px 0 0; color: var(--v2-text-secondary); font: 400 14px/20px var(--v2-font); }

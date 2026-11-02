@@ -161,6 +161,25 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
     expect(axios.get.mock.calls.map(([url]) => url).sort()).toEqual(['/api/artifacts', '/api/pods']);
   });
 
+  test('clearing a filter on a busy account never shows day zero or drops the controls', async () => {
+    // YC S27 prep holds nothing, so ?podId=p3 is a filtered empty result on an account with files.
+    const { container } = renderPage('/v2/artifacts?podId=p3');
+    expect(await screen.findByText('Nothing matches. Clear a filter or the search.')).toBeInTheDocument();
+    const seen = [];
+    const observer = new MutationObserver((records) => records.forEach((record) => {
+      record.addedNodes.forEach((node) => { if (node.classList) seen.push(`add:${node.className}`); });
+      record.removedNodes.forEach((node) => { if (node.classList) seen.push(`rm:${node.className}`); });
+    }));
+    observer.observe(container, { childList: true, subtree: true });
+    const all = within(screen.getByRole('group', { name: 'Pod' })).getByRole('button', { name: 'All pods' });
+    all.focus();
+    fireEvent.click(all);
+    await screen.findByRole('button', { name: 'workspace-at-scale.html' });
+    observer.disconnect();
+    expect(seen.filter((entry) => /v2-artifacts__(zero|controls)/.test(entry))).toEqual([]);
+    expect(document.activeElement).toBe(within(screen.getByRole('group', { name: 'Pod' })).getByRole('button', { name: 'All pods' }));
+  });
+
   test('day zero with no pods keeps the card and omits the key', async () => {
     renderEmpty('/v2/artifacts');
     expect(await screen.findByRole('heading', { name: 'Nothing shared yet' })).toBeInTheDocument();

@@ -63,6 +63,9 @@ export const shortPodName = (name: string | null | undefined): string => (
   (name || '').trim().split(/\s*[·—–:|]\s*/)[0].trim() || (name || '').trim()
 );
 
+const artifactsQueryKey = (podId: string, kind: string, q: string): string => JSON.stringify([podId, kind, q]);
+const UNFILTERED = artifactsQueryKey('', '', '');
+
 const sharedByLabel = (item: ArtifactItem): string => item.sharedBy.displayName || item.sharedBy.username || '—';
 
 const V2ArtifactsPage: React.FC = () => {
@@ -78,6 +81,9 @@ const V2ArtifactsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The query the shown result answers. Until a new one lands, items and total still belong to
+  // the previous filter, so day zero must not read them as the unfiltered answer.
+  const [loadedQuery, setLoadedQuery] = useState<string | null>(null);
   const [podMenuOpen, setPodMenuOpen] = useState(false);
   // ux-lead 66462: an image row opens the chat lightbox; pages and docs open in a new tab.
   const [lightbox, setLightbox] = useState<ArtifactItem | null>(null);
@@ -113,6 +119,7 @@ const V2ArtifactsPage: React.FC = () => {
     let active = true;
     setLoading(true);
     setError(null);
+    const queryKey = artifactsQueryKey(podId, kind, urlQ);
     const params: Record<string, string | number> = { limit: 50 };
     if (podId) params.podId = podId;
     if (kind) params.kind = kind;
@@ -121,10 +128,11 @@ const V2ArtifactsPage: React.FC = () => {
       .then((res) => {
         if (!active) return;
         setItems(res.data.items || []);
+        setLoadedQuery(queryKey);
         setTotal(typeof res.data.total === 'number' ? res.data.total : (res.data.items || []).length);
         setNextCursor(res.data.nextCursor || null);
       })
-      .catch(() => { if (active) { setError(t('artifacts.loadFailed')); setItems([]); setTotal(0); setNextCursor(null); } })
+      .catch(() => { if (active) { setError(t('artifacts.loadFailed')); setItems([]); setTotal(0); setNextCursor(null); setLoadedQuery(queryKey); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [headers, podId, kind, urlQ, t]);
@@ -151,8 +159,11 @@ const V2ArtifactsPage: React.FC = () => {
   };
 
   // Day zero (d215 s-artifacts): nothing shared and nothing filtered, so there is nothing to
-  // filter — no controls, no count, one card. A filtered empty result keeps the controls.
-  const dayZero = !loading && !error && total === 0 && items.length === 0 && !urlQ && !kind && !podId;
+  // filter — no controls, no count, one card. A filtered empty result keeps the controls, and so
+  // does the render between clearing a filter and its answer landing (the result is still the
+  // filtered one), or the controls unmount under the person's focus.
+  const dayZero = !loading && !error && total === 0 && items.length === 0 && !urlQ && !kind && !podId
+    && loadedQuery === UNFILTERED;
   // The card's key opens the account's oldest pod: signup creates My Workspace first. /api/pods
   // lists by last update, so pick by createdAt rather than position.
   const workspacePod = useMemo(() => {
