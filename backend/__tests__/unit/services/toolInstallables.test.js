@@ -8,7 +8,7 @@ jest.mock('../../../models/ToolCall', () => ({ __esModule: true, default: {}, di
 jest.mock('../../../models/Installable', () => ({ findOne: jest.fn() }));
 
 const Installable = require('../../../models/Installable');
-const { TOOL_DEFINITIONS } = require('../../../services/toolBrokerService');
+const { TOOL_DEFINITIONS, getToolDefinitions } = require('../../../services/toolBrokerService');
 const {
   GRANT_BROKER_ID, buildGithubToolInstallable, projectTools, mcpComponentOf, resolveBrokerFor,
   builtinToolInstallables, buildHostedMcpToolInstallable, toolInstallableMetas,
@@ -16,10 +16,29 @@ const {
 const { LINEAR_ENTRY } = require('../../../integrations/hostedMcp/linear');
 const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 
-const brokerTools = Object.values(TOOL_DEFINITIONS).filter((d) => d.connectionType === 'github-app').map((d) => d.name);
+// The tools the broker offers right now: the seat push tool only while
+// SEAT_GITHUB_PUSH_ENABLED is 'true', and it is unset here.
+const githubTools = () => getToolDefinitions().filter((d) => d.connectionType === 'github-app').map((d) => d.name);
+const brokerTools = githubTools();
+const SEAT_PUSH_TOOL = 'github.push_branch';
 
 describe('the builtin GitHub tool Installable', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  test('the seat push tool is in the GitHub Installable only while the server enables it', () => {
+    const saved = process.env.SEAT_GITHUB_PUSH_ENABLED;
+    try {
+      delete process.env.SEAT_GITHUB_PUSH_ENABLED;
+      expect(mcpComponentOf(buildGithubToolInstallable()).enabledTools).not.toContain(SEAT_PUSH_TOOL);
+      process.env.SEAT_GITHUB_PUSH_ENABLED = 'true';
+      const enabled = mcpComponentOf(buildGithubToolInstallable()).enabledTools;
+      expect(enabled).toContain(SEAT_PUSH_TOOL);
+      expect(enabled).toEqual(githubTools());
+    } finally {
+      if (saved === undefined) delete process.env.SEAT_GITHUB_PUSH_ENABLED;
+      else process.env.SEAT_GITHUB_PUSH_ENABLED = saved;
+    }
+  });
 
   test('the builtin GitHub Installable enables exactly the broker\'s GitHub tools', () => {
     const installable = buildGithubToolInstallable();
