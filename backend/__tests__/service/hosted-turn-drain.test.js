@@ -16,7 +16,8 @@ beforeAll(setupMongoDb);
 beforeEach(async () => {
   // Simulate a fresh process for each rollout, without a production reset API.
   Service.inProcessRequeued = 0; Service.inProcessDraining = false; Service.inProcessDrain = undefined;
-  Service.inProcessWork.clear(); Service.inProcessRunning.clear();
+  Service.inProcessWork.clear(); Service.inProcessRunning.clear(); Service.inProcessLanes?.clear(); Service.inProcessLaneHolders?.clear();
+  Service.inProcessLaneWaitMs = 180000; Service.inProcessLaneRefreshMs = 30000;
   jest.clearAllMocks(); await clearMongoDb();
   jest.spyOn(Service, 'resolveInProcessInstallation').mockResolvedValue(install);
 });
@@ -69,7 +70,8 @@ test('a failed in-flight turn settles failure before drain completes', async () 
 test('deadline waits for sibling requeues before propagating a cleanup failure', async () => {
   const turn = deferred(), cleanup = deferred(), entered = deferred();
   runAgent.mockReturnValue(turn.promise);
-  await Service.enqueue(input); const second = await Service.enqueue(input);
+  // Two pods, so both turns are in flight at once: one agent's turns in one pod run in order.
+  await Service.enqueue(input); const second = await Service.enqueue({ ...input, podId: new mongoose.Types.ObjectId() });
   await waitFor(() => runAgent.mock.calls.length === 2);
   const original = AgentEvent.updateOne.bind(AgentEvent);
   jest.spyOn(AgentEvent, 'updateOne').mockImplementation((filter, update, ...rest) => {
@@ -135,4 +137,162 @@ test.each(['pending', 'delivered'])('SIGTERM during a %s recovery lookup prevent
   const drain = Service.drainInProcess(2000); release.resolve(); await sweep; await drain;
   expect(await AgentEvent.findById(event._id).lean()).toMatchObject({ status, deliveryNonce: 'old-nonce', attempts: 1 });
   expect(runAgent).not.toHaveBeenCalled();
+});
+
+describe('one agent answers one pod a turn at a time', () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+  test('a second event for the same agent and pod starts after the first turn ends', async () => {
+    const first = deferred(), second = deferred();
+    runAgent.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    await Service.enqueue(input); await settle();
+    expect(runAgent).toHaveBeenCalledTimes(1);
+    first.resolve(success); await waitFor(() => runAgent.mock.calls.length === 2);
+    second.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+    expect(Service.inProcessLanes.size).toBe(0);
+  });
+  test('the same agent in another pod, or another agent in this pod, runs at once', async () => {
+    const turn = deferred(); runAgent.mockReturnValue(turn.promise);
+    await Service.enqueue(input);
+    await Service.enqueue({ ...input, podId: new mongoose.Types.ObjectId() });
+    await Service.enqueue({ ...input, agentName: 'scribe' });
+    await waitFor(() => runAgent.mock.calls.length === 3);
+    turn.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+  });
+  test('a failed turn still hands the pod to the next one', async () => {
+    runAgent.mockRejectedValueOnce(new Error('provider down')).mockResolvedValueOnce(success);
+    await Service.enqueue(input); const next = await Service.enqueue(input);
+    await waitFor(() => runAgent.mock.calls.length === 2);
+    await waitFor(() => Service.inProcessWork.size === 0);
+    expect((await AgentEvent.findById(next._id)).status).toBe('acked');
+  });
+  test('a waiting event reclaimed by the stuck sweep is left to its new owner', async () => {
+    const first = deferred(); runAgent.mockReturnValueOnce(first.promise).mockResolvedValue(success);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input); await settle();
+    await AgentEvent.updateOne({ _id: waiting._id }, { $set: { deliveryNonce: 'sweep-nonce' } });
+    first.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+    expect(runAgent).toHaveBeenCalledTimes(1);
+    expect(await AgentEvent.findById(waiting._id).lean()).toMatchObject({ status: 'delivered', deliveryNonce: 'sweep-nonce' });
+  });
+  test('a re-check that cannot reach the database still runs the waiting turn', async () => {
+    const first = deferred(); runAgent.mockReturnValueOnce(first.promise).mockResolvedValue(success);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input); await settle();
+    const original = AgentEvent.updateOne.bind(AgentEvent);
+    let failed = false;
+    jest.spyOn(AgentEvent, 'updateOne').mockImplementation((filter, update, ...rest) => {
+      const recheck = update?.$set?.deliveredAt && !('status' in update.$set);
+      if (recheck && !failed && String(filter._id) === String(waiting._id)) {
+        failed = true; return Promise.reject(new Error('mongo unavailable'));
+      }
+      return original(filter, update, ...rest);
+    });
+    first.resolve(success); await waitFor(() => runAgent.mock.calls.length === 2);
+    expect(failed).toBe(true);
+    await waitFor(() => Service.inProcessWork.size === 0);
+    expect((await AgentEvent.findById(waiting._id)).status).toBe('acked');
+  });
+  test('a waiting delivery the sweep superseded does not run, even when its re-check fails', async () => {
+    const first = deferred(); runAgent.mockReturnValueOnce(first.promise).mockResolvedValue(success);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input); await settle();
+    await AgentEvent.updateOne({ _id: waiting._id }, { $set: { deliveredAt: new Date(Date.now() - 60 * 60000) } });
+    const original = AgentEvent.updateOne.bind(AgentEvent);
+    jest.spyOn(AgentEvent, 'updateOne').mockImplementation((filter, update, ...rest) => {
+      const recheck = update?.$set?.deliveredAt && !('status' in update.$set);
+      if (recheck && String(filter._id) === String(waiting._id)) return Promise.reject(new Error('mongo unavailable'));
+      return original(filter, update, ...rest);
+    });
+    expect(await Service.redispatchStuckInProcess(new Date(Date.now() - 10 * 60000), 5))
+      .toEqual({ redispatched: 1, acked: 0 });
+    first.resolve(success); await waitFor(() => runAgent.mock.calls.length >= 2);
+    await waitFor(() => Service.inProcessWork.size === 0);
+    expect(runAgent).toHaveBeenCalledTimes(2);
+    // The turn that ran was the replacement: its claim is the one that settled.
+    expect(await AgentEvent.findById(waiting._id).lean()).toMatchObject({ status: 'acked', attempts: 2 });
+  });
+  test('a sweep that found a waiting event stale cannot claim it once its turn has started', async () => {
+    const first = deferred(), second = deferred();
+    runAgent.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockResolvedValue(success);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input); await settle();
+    await AgentEvent.updateOne({ _id: waiting._id }, { $set: { deliveredAt: new Date(Date.now() - 60 * 60000) } });
+    // The sweep reads the event as stale, then stalls before its claim...
+    const found = deferred(), resume = deferred();
+    Service.resolveInProcessInstallation.mockImplementationOnce(async () => {
+      found.resolve(); await resume.promise; return install;
+    });
+    const sweep = Service.redispatchStuckInProcess(new Date(Date.now() - 10 * 60000), 5);
+    await found.promise;
+    // ...while the waiting turn starts and restarts its requeue clock.
+    first.resolve(success); await waitFor(() => runAgent.mock.calls.length >= 2);
+    resume.resolve();
+    const result = await sweep;
+    second.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+    expect(result).toEqual({ redispatched: 0, acked: 0 });
+    expect(runAgent).toHaveBeenCalledTimes(2);
+  });
+  test('a turn queued past the stuck threshold keeps its delivery: no re-run, no spent attempts', async () => {
+    Service.inProcessLaneRefreshMs = 20;
+    const first = deferred(); runAgent.mockReturnValueOnce(first.promise).mockResolvedValue(success);
+    const running = await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input);
+    // Three sweep passes, each with a threshold the waiter's original claim is
+    // past. The turn ahead stands for one that has only just started.
+    for (let pass = 0; pass < 3; pass += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await settle();
+      // eslint-disable-next-line no-await-in-loop
+      await AgentEvent.updateOne({ _id: running._id }, { $set: { deliveredAt: new Date() } });
+      // eslint-disable-next-line no-await-in-loop
+      const result = await Service.redispatchStuckInProcess(new Date(Date.now() - 40), 3);
+      expect(result).toEqual({ redispatched: 0, acked: 0 });
+    }
+    expect(await AgentEvent.findById(waiting._id).lean()).toMatchObject({ status: 'delivered', attempts: 1 });
+    first.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+    expect(runAgent).toHaveBeenCalledTimes(2);
+    expect((await AgentEvent.findById(waiting._id).lean()).status).toBe('acked');
+  });
+  test('a turn that waited starts its own requeue clock when it starts', async () => {
+    const first = deferred(), second = deferred();
+    runAgent.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input); await settle();
+    const startedAt = new Date();
+    first.resolve(success); await waitFor(() => runAgent.mock.calls.length === 2);
+    expect((await AgentEvent.findById(waiting._id).lean()).deliveredAt.getTime()).toBeGreaterThanOrEqual(startedAt.getTime());
+    expect(await Service.redispatchStuckInProcess(startedAt, 5)).toEqual({ redispatched: 0, acked: 0 });
+    second.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+  });
+  test('a turn that never ends holds the pod only for the wait cap', async () => {
+    Service.inProcessLaneWaitMs = 100;
+    const hung = deferred(); runAgent.mockReturnValueOnce(hung.promise).mockResolvedValue(success);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const next = await Service.enqueue(input); await settle();
+    expect(runAgent).toHaveBeenCalledTimes(1);
+    await waitFor(() => runAgent.mock.calls.length === 2);
+    await waitFor(async () => (await AgentEvent.findById(next._id)).status === 'acked');
+    hung.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+  });
+  test('with two turns that never end, the third still waits for the second', async () => {
+    Service.inProcessLaneWaitMs = 200;
+    const hungA = deferred(), hungB = deferred();
+    runAgent.mockReturnValueOnce(hungA.promise).mockReturnValueOnce(hungB.promise).mockResolvedValue(success);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    await Service.enqueue(input); await Service.enqueue(input);
+    await waitFor(() => runAgent.mock.calls.length === 2); await settle();
+    expect(runAgent).toHaveBeenCalledTimes(2);
+    await waitFor(() => runAgent.mock.calls.length === 3);
+    hungA.resolve(success); hungB.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+  });
+  test('a drain deadline requeues a turn still waiting for the pod, without starting it', async () => {
+    const first = deferred(); runAgent.mockReturnValueOnce(first.promise);
+    await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input); await settle();
+    await expect(Service.drainInProcess(20)).resolves.toEqual({ timedOut: true, requeued: 2 });
+    expect((await AgentEvent.findById(waiting._id)).status).toBe('pending');
+    first.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+    expect(runAgent).toHaveBeenCalledTimes(1);
+  });
 });
