@@ -47,7 +47,11 @@ const V2RunTrace: React.FC = () => {
     let live = true;
     setRoster([]);
     api.get<{ agents?: RosterAgent[] }>(`/api/registry/pods/${encodeURIComponent(podId || '')}/agents`)
-      .then((data) => { if (live && Array.isArray(data?.agents)) setRoster(data.agents); })
+      .then((data) => {
+        if (live && Array.isArray(data?.agents)) {
+          setRoster(data.agents.filter((agent): agent is RosterAgent => Boolean(agent) && typeof agent === 'object'));
+        }
+      })
       .catch(() => undefined);
     return () => { live = false; };
   }, [api, podId]);

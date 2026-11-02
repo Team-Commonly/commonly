@@ -87,6 +87,7 @@ test('a named instance matches on name and instance, the way the pod chat keys i
 test.each([
   ['the roster call fails', () => mockRoster.mockRejectedValue(new Error('boom'))],
   ['no roster entry matches', () => mockRoster.mockResolvedValue({ agents: [{ name: 'ada', instanceId: 'default', displayName: 'Ada Lovelace' }] })],
+  ['the roster carries a null entry', () => mockRoster.mockResolvedValue({ agents: [null, 'x', { name: 'ada', instanceId: 'default', displayName: 'Ada Lovelace' }] })],
 ])('the raw agent name shows when %s', async (_label, arrange) => {
   arrange();
   mockTrace.mockResolvedValue({ run: { ...trace, agentName: 'scout' } });
