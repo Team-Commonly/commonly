@@ -5780,7 +5780,7 @@ body.modern-ui.v2-canvas {
     text-overflow: ellipsis;
   }
   .v2-activity__header .v2-page-head__meta,
-  .v2-artifacts__head .v2-page-head__meta { margin-left: auto; min-width: 0; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .v2-artifacts__head .v2-page-head__meta { margin-left: auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* Artifacts pads its column 12px; the bar bleeds to the pane edge and the column starts under it. */
   .v2-artifacts { padding-top: 0; }
   .v2-artifacts__head { margin: 0 -12px; }
