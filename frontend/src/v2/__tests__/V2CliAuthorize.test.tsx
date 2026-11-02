@@ -58,6 +58,16 @@ const expectAuthCard = (container) => {
 
 afterEach(() => jest.clearAllMocks());
 
+test('claims the v2 page canvas while mounted, and gives it back on unmount', () => {
+  // Outside V2App, body.v2-canvas is what switches off App.css's legacy
+  // input, button and form rules (all gated on body.modern-ui:not(.v2-canvas)).
+  document.body.classList.remove('v2-canvas');
+  const { unmount } = renderPage();
+  expect(document.body).toHaveClass('v2-canvas');
+  unmount();
+  expect(document.body).not.toHaveClass('v2-canvas');
+});
+
 describe('V2CliAuthorize', () => {
   test('prefills a terminal code, confirms the device facts, then completes approval', async () => {
     axios.post

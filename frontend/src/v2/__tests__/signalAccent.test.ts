@@ -125,7 +125,7 @@ describe('Signal accent on standalone and bridged surfaces', () => {
     // restates none of them.
     expect(tsx).toMatch(/document\.body\.classList\.add\('v2-canvas'\)/);
     expect(tsx).toMatch(/document\.body\.classList\.remove\('v2-canvas'\)/);
-    expect(read('src/index.tsx')).toContain("bootPath === '/cli/authorize'");
+    expect(read('src/index.tsx')).toContain("/^\\/cli\\/authorize\\/?$/.test(bootPath)");
     expect(rules).not.toContain('button.v2-login__submit');
   });
 

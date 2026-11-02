@@ -20,7 +20,7 @@ if (process.env.REACT_APP_SENTRY_DSN) {
 // SPA navigation after boot. Legacy deep links that redirect into /v2 may
 // still flash once — the exception, not the entry path.
 const bootPath = window.location.pathname;
-if (bootPath === '/' || bootPath.startsWith('/v2') || bootPath === '/cli/authorize') {
+if (bootPath === '/' || bootPath.startsWith('/v2') || /^\/cli\/authorize\/?$/.test(bootPath)) {
   document.body.classList.add('v2-canvas');
 }
 if (bootPath === '/guides' || bootPath.startsWith('/guides/')) {
