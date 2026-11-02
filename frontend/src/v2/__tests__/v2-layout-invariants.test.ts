@@ -158,6 +158,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const css = read('../agents/v2-agent-profile.css');
     expect(css).toMatch(/\.v2-aprofile__avatar-cancel:focus-visible \{[^}]*box-shadow: var\(--v2-focus-ring\)/);
     expect(css).toMatch(/\.v2-aprofile__btn-label \{[^}]*text-overflow: ellipsis/);
+    // The ellipsis needs all of these: a label that clips on one line, in a key that may shrink.
+    expect(css).toMatch(/\.v2-aprofile__btn-label \{[^}]*overflow: hidden/);
+    expect(css).toMatch(/\.v2-aprofile__btn-label \{[^}]*white-space: nowrap/);
+    expect(css).toMatch(/\.v2-aprofile__btn-label \{[^}]*min-width: 0/);
+    expect(css).toMatch(/\.v2-aprofile__keys \.v2-aprofile__btn \{[^}]*min-width: 0/);
+    expect(css).toMatch(/\.v2-aprofile__keys \.v2-aprofile__btn \{[^}]*max-width: 100%/);
     const phone = css.slice(css.lastIndexOf('@media (max-width: 760px)'));
     expect(phone).toMatch(/\.v2-aprofile__cta-row \.v2-aprofile__btn \{[^}]*height: 44px/);
   });
