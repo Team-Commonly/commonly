@@ -112,7 +112,10 @@ const toSocialProfile = (userDoc: any, viewerId: any = null) => {
     displayName,
     followersCount: followers.length,
     followingCount: following.length,
-    followedThreadsCount: Array.isArray(userDoc.followedThreads) ? userDoc.followedThreads.length : 0,
+    // Which threads a person follows is theirs; so is how many.
+    ...(isSelf ? {
+      followedThreadsCount: Array.isArray(userDoc.followedThreads) ? userDoc.followedThreads.length : 0,
+    } : {}),
     isFollowing,
   };
 };

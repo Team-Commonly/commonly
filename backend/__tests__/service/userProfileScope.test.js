@@ -116,10 +116,32 @@ describe('profile reads are scoped to the viewer', () => {
         followingCount: 0,
         isFollowing: true,
       });
-      for (const field of ['email', 'billing', 'subscribedPods', 'followedThreads', 'followers',
-        'following', 'timezone', 'tokenVersion', 'onboarding', 'emailPreferences', 'digestPreferences']) {
+      for (const field of ['email', 'billing', 'subscribedPods', 'followedThreads', 'followedThreadsCount',
+        'followers', 'following', 'timezone', 'tokenVersion', 'onboarding', 'emailPreferences',
+        'digestPreferences']) {
         expect(res.body).not.toHaveProperty(field);
       }
+    });
+
+    it("gives another viewer an agent's identity, not its machine, runtime or owner", async () => {
+      const agent = await makeUser('helper-agent', {
+        isBot: true,
+        botType: 'agent',
+        botMetadata: {
+          displayName: 'Helper', description: 'Answers questions', agentName: 'helper', instanceId: 'default',
+          runtimeId: 'rt-1', ownerUserId: String(viewer._id), machineId: 'machine-1',
+        },
+      });
+      const res = await request(app)
+        .get(`/api/users/${agent._id}`)
+        .set('Authorization', `Bearer ${generateTestToken(viewer._id)}`)
+        .expect(200);
+
+      expect(res.body.botMetadata).toMatchObject({ displayName: 'Helper', agentName: 'helper', instanceId: 'default' });
+      for (const field of ['runtimeId', 'ownerUserId', 'machineId', 'requestedMachineId', 'reconnectRequestedAt']) {
+        expect(res.body.botMetadata).not.toHaveProperty(field);
+      }
+      expect(res.body).not.toHaveProperty('agentConfig');
     });
 
     it('still gives the account holder their own account fields', async () => {
@@ -129,6 +151,7 @@ describe('profile reads are scoped to the viewer', () => {
         .expect(200);
 
       expect(res.body.email).toBe('target@example.test');
+      expect(res.body.followedThreadsCount).toBe(1);
       expect(res.body.billing).toMatchObject({ subscriptionStatus: 'active' });
       expect(res.body).not.toHaveProperty('password');
     });
