@@ -1,14 +1,16 @@
 {
   "runTrace": {
-    "title": "Run trace",
+    "title": "How this reply was made",
     "back": "Back to pod",
     "view": "How this reply was made",
     "retention": "Cards have a 30-day default retention. Pod policy and storage limits can change it. This trace persists after the card expires.",
+    "runId": "Run {{id}}",
     "loading": "Loading run trace…",
     "access": "This trace is unavailable, or you no longer have access to its pod.",
     "error": "Could not load the run trace. Try again.",
     "retry": "Try again",
-    "counts": "Recorded turns: {{turns}} · {{tokens}} tokens",
+    "counts_one": "{{count}} turn · {{tokens}} tokens",
+    "counts_other": "{{count}} turns · {{tokens}} tokens",
     "stopped": "Stopped: {{kind}}",
     "running": "This run is still in progress.",
     "refresh": "Refresh trace",
@@ -31,14 +33,14 @@
       "failed": "Failed",
       "interrupted": "Interrupted"
     },
-    "trigger": {
-      "mention": "Mention",
-      "heartbeat": "Heartbeat",
-      "task.assigned": "Task assignment",
-      "chat.message": "Chat message",
-      "pod.join": "Pod join",
-      "first_contact": "First contact",
-      "manual": "Manual"
+    "triggerPhrase": {
+      "mention": "answered a mention",
+      "heartbeat": "ran on its schedule",
+      "task.assigned": "picked up a task",
+      "chat.message": "replied in chat",
+      "pod.join": "welcomed someone to the pod",
+      "first_contact": "said hello for the first time",
+      "manual": "was run by hand"
     },
     "outcomes": {
       "ok": "ok",

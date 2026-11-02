@@ -5693,6 +5693,16 @@ describe('run trace layout', () => {
     const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
     expect(phone).toMatch(/[,{]\s*\.v2-run-trace-link a[,\s][^{]*\{[^}]*min-height: 44px/);
   });
+  test('every run-trace class the task record page renders keeps a rule in the sheet it imports', () => {
+    // V2TaskRecord imports V2RunTrace.css; a class it still renders must not lose its rule when the run
+    // trace page stops using it (#3322 review: __retention dropped, the record intro went full size).
+    const record = read('../components/V2TaskRecord.tsx');
+    expect(record).toContain("import './V2RunTrace.css'");
+    const used = [...new Set([...record.matchAll(/v2-run-trace__[a-z-]+/g)].map((m) => m[0]))];
+    expect(used.length).toBeGreaterThan(0);
+    used.forEach((name) => expect(css).toContain(`.${name}`));
+    expect(ruleBody(css, '.v2-run-trace__retention')).toContain('color: var(--v2-text-muted)');
+  });
   test('task record downloads wrap at 390 rather than push the page sideways (TASK-562)', () => {
     expect(ruleBody(css, '.v2-task-record__downloads')).toContain('flex-wrap: wrap');
     expect(ruleBody(css, '.v2-task-record__entries')).toContain('list-style: none');
