@@ -114,21 +114,44 @@ export const resolveTokenEpisode = (
   return { issuedAt, source };
 };
 
+type BotTokens = Array<{ lastListenedAt?: Date; createdAt?: Date }>;
+
+const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${instanceId}`;
+
 /**
  * The bot User row holds the legacy half of the token store. Both halves feed
  * `deriveAgentState`, so both must feed the issue-time calculation too, or a
  * seat whose only token lives on the User row looks tokenless and is skipped.
+ *
+ * One query for the whole pass, never one per seat. `botMetadata.agentName` /
+ * `instanceId` carry no index, so each per-seat read was a scan of the users
+ * collection plus a round trip. Measured on production 2026-11-02: 169 seats
+ * read one at a time took 7.0s, and the same rows in one `$or` took 104ms.
+ * The match per pair is unchanged (exact name and instance, bots only), and a
+ * pair with several bot rows keeps the first, as `findOne` did.
  */
-const botTokensFor = async (agentName: string, instanceId: string) => {
+const botTokensForMany = async (
+  pairs: Array<{ agentName: string; instanceId: string }>,
+): Promise<Map<string, BotTokens>> => {
+  const byKey = new Map<string, BotTokens>();
+  if (!pairs.length) return byKey;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const User = require('../models/User');
-  const row = await User.findOne({
+  const unique = new Map(pairs.map((p) => [botKey(p.agentName, p.instanceId), p]));
+  const rows = await User.find({
     isBot: true,
-    'botMetadata.agentName': agentName,
-    'botMetadata.instanceId': instanceId,
-  }).select('agentRuntimeTokens.lastListenedAt agentRuntimeTokens.createdAt').lean() as
-    { agentRuntimeTokens?: Array<{ lastListenedAt?: Date; createdAt?: Date }> } | null;
-  return row?.agentRuntimeTokens || [];
+    $or: [...unique.values()].map((p) => ({
+      'botMetadata.agentName': p.agentName,
+      'botMetadata.instanceId': p.instanceId,
+    })),
+  }).select(
+    'botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt agentRuntimeTokens.createdAt',
+  ).lean() as Array<{ botMetadata?: { agentName?: string; instanceId?: string }; agentRuntimeTokens?: BotTokens }>;
+  for (const row of rows) {
+    const key = botKey(String(row.botMetadata?.agentName), String(row.botMetadata?.instanceId));
+    if (!byKey.has(key)) byKey.set(key, row.agentRuntimeTokens || []);
+  }
+  return byKey;
 };
 
 /**
@@ -195,10 +218,15 @@ export const scan = async ({
   }).limit(CANDIDATE_LIMIT).lean();
   result.candidates = candidates.length;
 
+  const seatOf = (install: Record<string, any>) => ({
+    agentName: String(install.agentName || '').toLowerCase(),
+    instanceId: String(install.instanceId || 'default'),
+  });
+  const tokensBySeat = await botTokensForMany((candidates as Array<Record<string, any>>).map(seatOf));
+
   for (const install of candidates as Array<Record<string, any>>) {
-    const agentName = String(install.agentName || '').toLowerCase();
-    const instanceId = String(install.instanceId || 'default');
-    const userTokens = await botTokensFor(agentName, instanceId);
+    const { agentName, instanceId } = seatOf(install);
+    const userTokens = tokensBySeat.get(botKey(agentName, instanceId)) || [];
 
     const { issuedAt, source } = resolveTokenEpisode(install.runtimeTokens, userTokens);
     if (!issuedAt) continue;
@@ -361,6 +389,9 @@ const resolveConnected = async ({
   const AttentionItemService = require('./attentionItemService');
 
   const open = await StalledConnectEpisode.find({ status: 'open' }).limit(200).lean();
+  const tokensBySeat = await botTokensForMany((open as Array<Record<string, any>>).map((ep) => ({
+    agentName: String(ep.agentName), instanceId: String(ep.instanceId),
+  })));
   for (const ep of open as Array<Record<string, any>>) {
     const install = await AgentInstallation.findById(ep.installationId).lean();
     if (!install) {
@@ -372,7 +403,7 @@ const resolveConnected = async ({
       );
       continue;
     }
-    const userTokens = await botTokensFor(String(ep.agentName), String(ep.instanceId));
+    const userTokens = tokensBySeat.get(botKey(String(ep.agentName), String(ep.instanceId))) || [];
     const derived = deriveAgentState(
       install as any, userTokens as any, String(install.installedBy || ''), now.getTime(),
     );

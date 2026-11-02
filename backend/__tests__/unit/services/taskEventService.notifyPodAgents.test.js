@@ -521,6 +521,15 @@ describe('notifyFoundWork', () => {
     expect(mockTaskUpdateOne).not.toHaveBeenCalled();
   });
 
+  it('uses the installs the sweep already read, and does not read them again', async () => {
+    mockInstalls([]);
+
+    await notifyFoundWork(POD_ID, offerRows(1), 1, new Date(), [install('sprint-impl', HUMAN_ID)]);
+
+    expect(AgentInstallation.find).not.toHaveBeenCalled();
+    expect(AgentEventService.enqueue.mock.calls.map(([arg]) => arg.agentName)).toEqual(['sprint-impl']);
+  });
+
   it('never nudges a reviewer or a seat without explicit implementer opt-in', async () => {
     mockInstalls([
       { ...install('sprint-review', HUMAN_ID), config: {
