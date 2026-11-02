@@ -124,7 +124,7 @@ serving litellm only after a redeploy/reprovision.
 
 The [guard-name canary](guard-name-canary.md) gives agents named after the
 guard's own persona keywords one real turn each, hosted and native, and exits 3
-if the guard stops one. Deploy Dev runs it after verify and rolls the release
+if the guard stops a turn on both attempts (one stop alone is inconclusive). Deploy Dev runs it after verify and rolls the release
 back on exit 3; #3296 adds that step.
 
 ## ⚠️ Validate before deploying — the 2026-06-29 crash-loop
