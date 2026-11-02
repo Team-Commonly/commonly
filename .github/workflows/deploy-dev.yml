@@ -449,6 +449,36 @@ jobs:
           echo "::error title=Chat unavailable on the new backend::$POD has pg/status=$STATUS and pg/messages=$ROUTE (401 means mounted, 404 unmounted). Chat history fails until the pod restarts: kubectl rollout restart deploy/backend -n $NAMESPACE"
           exit 1
 
+      # A real hosted-agent turn through the live injection guard, for an agent named after a
+      # guard keyword — the class that 400'd a design partner every turn until #3285. Exit 3 =
+      # the guard blocked the turn, so fail the job and let the rollback step below fire; exit 2
+      # = inconclusive and exit 1 = kubectl/node failed, both warn only and never roll back.
+      # ~30s and 4 model turns, sharing the hosted cap with any hand run, so the
+      # concurrency:deploy-dev group (no cancel-in-progress) keeps deploys serial — a hand run
+      # during a deploy is the case to avoid. The script comes from the dispatched checkout, so
+      # it matches this release even while ops-runner is still rolling to the new image. The
+      # deploy service account needs pods/exec on litellm and ops-runner (it already execs the
+      # backend pod above). See docs/runbooks/guard-name-canary.md.
+      - name: Guard-name canary
+        id: canary
+        run: |
+          set -uo pipefail
+          KW=$(kubectl exec -i -n "$NAMESPACE" deploy/litellm -c litellm -- \
+                 /app/.venv/bin/python3 -I - < scripts/guard-keywords-dump.py) || KW=''
+          # Actions runs this under `bash -e`; `|| CODE=$?` keeps a non-zero
+          # exit from ending the step before it is read.
+          CODE=0
+          kubectl exec -i -n "$NAMESPACE" deploy/ops-runner -c ops-runner -- \
+            env NODE_PATH=/app/node_modules CANARY_RUN=1 CANARY_GUARD_KEYWORDS="$KW" \
+            node - < scripts/guard-name-canary.js || CODE=$?
+          if [ "$CODE" = 3 ]; then
+            echo "::error title=Guard-name canary blocked::the injection guard stopped a turn for an agent named after a guard keyword; see the check lines above"
+            exit 1
+          fi
+          if [ "$CODE" != 0 ]; then
+            echo "::warning title=Guard-name canary inconclusive::exit $CODE; read the check lines above"
+          fi
+
       # Record THIS release as rollout-verified (and, for dev, chat-verified), so the rollback
       # step below returns to a revision that actually passed verification — never merely "last
       # deployed". With auto-deploy, a deploy cancelled mid-verify by a newer push leaves an
@@ -484,7 +514,7 @@ jobs:
       # upgrade or a verify step failing (not bare failure()), so a pre-deploy failure (checkout,
       # auth, build/push) never demotes a healthy release.
       - name: Roll back on a failed deploy
-        if: ${{ failure() && (steps.helm.outcome == 'failure' || steps.rollout.outcome == 'failure' || steps.chat.outcome == 'failure') }}
+        if: ${{ failure() && (steps.helm.outcome == 'failure' || steps.rollout.outcome == 'failure' || steps.chat.outcome == 'failure' || steps.canary.outcome == 'failure') }}
         env:
           PRE: ${{ steps.prerev.outputs.prerev }}
         run: |
