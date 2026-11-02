@@ -469,10 +469,70 @@ describe('the comparison is cached per row, and an outage is not cacheable', () 
           name: 'read_issue',
           namespacedName: 'linear.read_issue',
           verdict: 'tool_unavailable',
-          detail: 'upstream no longer lists get_issue',
+          detail: "this connection's tools/list does not include get_issue",
         }],
       });
       expect(line).not.toContain(VENDOR_TEXT);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('an absent tool is named against this connection, not as a vendor removal', async () => {
+    // A row's list depends on what its owner consented to (Sentry gates
+    // update_issue behind Triage), so absence on one row proves nothing about
+    // the vendor. "Upstream no longer lists" read as a removal on 11-01 (F48).
+    const [verdict] = assessEntryTools(linear(), upstreamOk().filter((tool) => tool.name !== 'get_issue'))
+      .filter((tool) => tool.verdict !== 'ok');
+    expect(verdict.verdict).toBe('tool_unavailable');
+    expect(verdict.detail).toBe("this connection's tools/list does not include get_issue");
+    expect(verdict.detail).not.toMatch(/no longer/);
+  });
+
+  test('a fresh assessment is handed to onAssessed once, and a cached one is not', async () => {
+    const onAssessed = jest.fn();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const drift = cache(async () => upstreamOk().filter((tool) => tool.name !== 'get_issue'), { onAssessed });
+      const first = await drift.assess(row, linear());
+      await drift.assess(row, linear());
+
+      expect(onAssessed).toHaveBeenCalledTimes(1);
+      const [seenRow, seenEntry, seenTools] = onAssessed.mock.calls[0];
+      expect(seenRow).toEqual(row);
+      expect(seenEntry.id).toBe('linear');
+      expect(seenTools).toBe(first.tools);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a clean assessment is handed to onAssessed too', async () => {
+    const onAssessed = jest.fn();
+    await cache(async () => upstreamOk(), { onAssessed }).assess(row, linear());
+    expect(onAssessed).toHaveBeenCalledTimes(1);
+    expect(onAssessed.mock.calls[0][2].every((tool) => tool.verdict === 'ok')).toBe(true);
+  });
+
+  test('an outage is not handed to onAssessed', async () => {
+    const onAssessed = jest.fn();
+    const outcome = await cache(async () => { throw new Error('ECONNRESET'); }, { onAssessed })
+      .assess(row, linear());
+    expect(outcome.state).toBe('provider_unavailable');
+    expect(onAssessed).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['throws', () => { throw new Error('alert store down'); }],
+    ['rejects', async () => { throw new Error('alert store down'); }],
+  ])('an onAssessed that %s cannot change the outcome', async (_label, onAssessed) => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const outcome = await cache(async () => upstreamOk(), { onAssessed }).assess(row, linear());
+      expect(outcome).toMatchObject({ state: 'assessed', cached: false });
+      // Let a rejected hook settle before asserting what it logged.
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(warn.mock.calls.map(([line]) => String(line)).join('\n')).toContain('alert store down');
     } finally {
       warn.mockRestore();
     }

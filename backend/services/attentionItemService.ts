@@ -23,7 +23,8 @@ const { humansAnsweredBy } = require('./agentAnswerService');
 // eslint-disable-next-line global-require
 const { isListedPodMember } = require('../utils/isPodMember');
 
-type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task' | 'initiative';
+type SourceType = 'message' | 'approval' | 'approval_action' | 'decision_request' | 'task' | 'initiative'
+  | 'hosted_mcp';
 type Kind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
 type MentionOptions = {
   isAlreadyAcknowledged?: (recipientUserId: unknown, legacyMentionId: string) => boolean;
@@ -661,6 +662,27 @@ export const recordInitiativeStall = async (stall: {
   }
 };
 
+// A hosted-MCP pin that drifted upstream (F48). It goes to one configured
+// operator, in a pod that operator is listed in, because the queue hides a row
+// whose recipient cannot open its pod. No email: the queue is the delivery, and
+// the operator account's mailbox may be someone else's. The source id carries
+// the pin set and the drifted tools, so each drift is one card; it stays until
+// the operator acknowledges it, since another row may still see the drift.
+export const recordHostedMcpDrift = async (drift: {
+  recipientUserId: unknown; podId: unknown; sourceId: string; title: string; detail: string;
+}): Promise<{ recorded: boolean; reason?: 'recipient_not_member' }> => {
+  const recipient = (await currentHumanMembers(drift.podId))
+    .find((member) => String(member._id) === String(drift.recipientUserId));
+  if (!recipient) return { recorded: false, reason: 'recipient_not_member' };
+  const pod = await Pod.findById(drift.podId).select('name').lean();
+  await recordForRecipients([recipient], {
+    podId: drift.podId, kind: 'blocked' as Kind, sourceType: 'hosted_mcp' as SourceType,
+    sourceId: drift.sourceId, title: compact(drift.title, 200), detail: compact(drift.detail, 600),
+    podName: pod?.name || 'Pod', suppressEmail: true,
+  });
+  return { recorded: true };
+};
+
 // Closes this initiative's open stall rows, except the current episode's. A
 // card for a stall that has ended would otherwise sit in the queue forever.
 export const resolveInitiativeStalls = async (initiativeId: unknown, keepSourceId?: string): Promise<void> => {
@@ -1015,6 +1037,6 @@ export const hasEverHadAttention = async (recipientUserId: unknown): Promise<boo
 // excluding true decisions and approvals.
 export const acknowledgeMention = acknowledgeAttention;
 
-export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
+export default { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, recordHostedMcpDrift, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention };
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };
+module.exports = { recordMentionedUsers, resolveMentionAttentionForReply, sweepResolvedMentionAttention, auditRepliedMentionAttention, sweepMissedAgentMentions, AGENT_MENTION_MISSED_DAYS, sweepDoneTaskHandoffs, recordApproval, recordActionApproval, recordDecision, recordTaskAttention, resolveTaskAttention, recordInitiativeStall, recordHostedMcpDrift, resolveInitiativeStalls, initiativeStallSourceId, resolve, resolveActioned, resolveMany, getOpenQueue, hasEverHadAttention, acknowledgeAttention, acknowledgeMention, TASK_HANDOFF_CANDIDATE_RE, isHandoffRequest, handoffRecipients };

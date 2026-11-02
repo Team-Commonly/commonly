@@ -23,10 +23,12 @@
  * - It caches that comparison per row behind a TTL, so the vendor is polled on
  *   a schedule rather than on every `tools/list` or `tools/call`.
  *
- * Drift is a named refusal, never a silent change: a pinned tool that is gone
- * upstream is `tool_unavailable`, and one whose schema or annotations moved
- * incompatibly is `tool_drift` until a PR re-pins it. A compatible read-schema
- * change keeps the pin and emits a fresh-assessment signal.
+ * Drift is a named refusal, never a silent change: a pinned tool absent from
+ * this row's list is `tool_unavailable`, and one whose schema or annotations
+ * moved incompatibly is `tool_drift` until a PR re-pins it. A compatible
+ * read-schema change keeps the pin and emits a fresh-assessment signal. Only
+ * `tool_drift` reaches an operator (hostedMcpDriftAlertService): absence can
+ * be the row's own consent, so it says nothing about the vendor.
  */
 import { createHash } from 'crypto';
 import type { HostedToolDefinition } from './toolBrokerService';
@@ -334,7 +336,10 @@ export const assessEntryTools = (
         name: tool.name,
         namespacedName,
         verdict: 'tool_unavailable' as const,
-        detail: `upstream no longer lists ${tool.upstreamName}`,
+        // Named against this row: a list depends on what its owner consented to
+        // (Sentry gates update_issue behind Triage), so absence here is not a
+        // vendor removal. "Upstream no longer lists" read as one on 11-01.
+        detail: `this connection's tools/list does not include ${tool.upstreamName}`,
       };
     }
     const schemaChange = tool.class === 'read'
@@ -395,6 +400,11 @@ export interface HostedMcpDriftCacheOptions {
    * not be reached; the caller must not read that as a clean comparison.
    */
   listUpstreamTools: (row: HostedMcpDriftRow) => Promise<HostedMcpUpstreamTool[]>;
+  /**
+   * Sees each fresh assessment, clean or not; never a cached one or an outage.
+   * It runs detached: what it throws is logged and cannot change the outcome.
+   */
+  onAssessed?: (row: HostedMcpDriftRow, entry: HostedMcpEntry, tools: HostedMcpToolAssessment[]) => unknown;
   ttlMs?: number;
   now?: () => number;
 }
@@ -482,6 +492,19 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
         }));
       }
       entries.set(key, { at, tools });
+      if (options.onAssessed) {
+        const { onAssessed } = options;
+        Promise.resolve()
+          .then(() => onAssessed(row, entry, tools))
+          .catch((error) => {
+            console.warn(JSON.stringify({
+              event: 'hosted_mcp_assessment_hook_failed',
+              entryId: entry.id,
+              connectionId: row.connectionId,
+              reason: error instanceof Error ? error.message : String(error),
+            }));
+          });
+      }
       return { state: 'assessed', entryId: entry.id, at, cached: false, tools };
     },
   };

@@ -1,7 +1,7 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 export type AttentionKind = 'mention' | 'approval' | 'decision' | 'handoff' | 'blocked';
-export type AttentionSourceType = 'message' | 'approval' | 'decision_request' | 'task' | 'initiative';
+export type AttentionSourceType = 'message' | 'approval' | 'decision_request' | 'task' | 'initiative' | 'hosted_mcp';
 
 export interface IAttentionItem extends Document {
   recipientUserId: Types.ObjectId;
@@ -52,7 +52,7 @@ const attentionItemSchema = new Schema<IAttentionItem>({
   podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
   kind: { type: String, enum: ['mention', 'approval', 'decision', 'handoff', 'blocked'], required: true },
   source: {
-    type: { type: String, enum: ['message', 'approval', 'approval_action', 'decision_request', 'task', 'initiative'], required: true },
+    type: { type: String, enum: ['message', 'approval', 'approval_action', 'decision_request', 'task', 'initiative', 'hosted_mcp'], required: true },
     id: { type: String, required: true },
   },
   title: { type: String, required: true },

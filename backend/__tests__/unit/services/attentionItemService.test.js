@@ -954,3 +954,41 @@ describe('an agent mention nobody answered for a week leaves the queue as missed
     expect(AttentionItemService.AGENT_MENTION_MISSED_DAYS).toBe(7);
   });
 });
+
+// F48: a hosted-MCP pin that drifted upstream used to reach only a log line.
+// The card goes to one configured operator, in a pod that operator can open.
+describe('a hosted-MCP drift card reaches its operator', () => {
+  const drift = {
+    recipientUserId: 'operator', podId: 'pod-ops', sourceId: 'drift:sentry:abc',
+    title: 'Sentry: 7 pinned tools changed upstream', detail: 'Paused until re-pinned: search_issues.',
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUpdateOne.mockResolvedValue({ upsertedId: 'item-1' });
+    mockPodFindById.mockReturnValue(chain({ _id: 'pod-ops', name: 'Connectors', members: ['operator', 'bot'] }));
+    mockUserFind.mockReturnValue(chain([{ _id: 'operator', username: 'connector-ops', isBot: false }]));
+  });
+
+  it('records one blocked card for a human member, with no email', async () => {
+    await expect(AttentionItemService.recordHostedMcpDrift(drift)).resolves.toEqual({ recorded: true });
+
+    expect(mockUpdateOne).toHaveBeenCalledTimes(1);
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { recipientUserId: 'operator', 'source.type': 'hosted_mcp', 'source.id': 'drift:sentry:abc' },
+      { $setOnInsert: expect.objectContaining({
+        kind: 'blocked', podId: 'pod-ops', podName: 'Connectors', status: 'open',
+        title: drift.title, detail: drift.detail,
+      }) },
+      { upsert: true },
+    );
+    expect(mockSendNeedsYouEmail).not.toHaveBeenCalled();
+  });
+
+  it('records nothing for a recipient the pod does not list, and says why', async () => {
+    mockUserFind.mockReturnValue(chain([]));
+    await expect(AttentionItemService.recordHostedMcpDrift(drift))
+      .resolves.toEqual({ recorded: false, reason: 'recipient_not_member' });
+    expect(mockUpdateOne).not.toHaveBeenCalled();
+  });
+});

@@ -480,6 +480,13 @@ export const createHostedMcpRuntimeDriftCache = (
   entries: HostedMcpEntry[] = HOSTED_MCP_ENTRIES,
 ): HostedMcpDriftCache => createHostedMcpDriftCache({
   listUpstreamTools: ({ connectionId }) => listUpstreamTools(connectionId, deps, entries),
+  // Loaded on first use: the alert reads SystemSetting, and the frontend
+  // glyph-catalogue test imports this module without mongoose.
+  onAssessed: (row, entry, tools) => {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const { alertOnHostedMcpDrift } = require('./hostedMcpDriftAlertService');
+    return alertOnHostedMcpDrift(row, entry, tools);
+  },
 });
 
 const productionDriftCache = createHostedMcpRuntimeDriftCache({
