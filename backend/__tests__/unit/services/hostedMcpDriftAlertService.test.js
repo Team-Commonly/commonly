@@ -79,6 +79,21 @@ describe('a drifted pin becomes one card for the operator', () => {
     expect(record.mock.calls[1][0].sourceId).toBe(record.mock.calls[0][0].sourceId);
   });
 
+  // Review on c7c4addfc: the card's unique key is recipient + source id and the
+  // write only inserts, so a source id without the pod matched the card in the
+  // old pod and left the new one empty.
+  test('a moved alert pod gets its own card, for the same operator', async () => {
+    const NEXT_POD = '6a8f6dc7a1dccf2e02f31fa1';
+    let current = config;
+    const { alert, record } = setup({ readConfig: jest.fn(async () => current) });
+    await alert(row, sentry, [drifted('search_issues')]);
+    current = { recipientUserId: OPERATOR, podId: NEXT_POD };
+    await alert(row, sentry, [drifted('search_issues')]);
+
+    expect(record.mock.calls.map(([card]) => card.podId)).toEqual([POD, NEXT_POD]);
+    expect(record.mock.calls[1][0].sourceId).not.toBe(record.mock.calls[0][0].sourceId);
+  });
+
   // Review on c7d2fa765: a key of the pin set alone lost a second tool's drift
   // under the same pins, and a drift only another row's consent can see.
   test('another tool drifting under the same pins files its own card', async () => {

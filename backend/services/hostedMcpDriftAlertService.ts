@@ -60,13 +60,15 @@ export interface HostedMcpDriftAlertDeps {
 export const DRIFT_ALERT_RELOG_MS = 60 * 60 * 1000;
 
 /**
- * The pin set AND the drifted tools. A re-pin is a new set, so its next drift
- * files afresh; another tool drifting under the same pins, or one only another
- * row's consent can see, is a new drift with its own card.
+ * The pin set, the drifted tools AND the pod the card goes to. A re-pin is a
+ * new set, so its next drift files afresh; another tool drifting under the
+ * same pins, or one only another row's consent can see, is a new drift with its
+ * own card. The card is unique per recipient and source id and is only ever
+ * inserted, so a moved alert pod needs its own id or the old pod keeps the card.
  */
-export const driftAlertSourceId = (entry: HostedMcpEntry, drifted: string[]): string => {
+export const driftAlertSourceId = (entry: HostedMcpEntry, drifted: string[], podId: string): string => {
   const pins = entry.tools.map((tool) => digestPinnedDefinition(entry.id, tool)).join('\n');
-  const key = `${pins}\n--\n${[...drifted].sort().join('\n')}`;
+  const key = `${podId}\n--\n${pins}\n--\n${[...drifted].sort().join('\n')}`;
   return `drift:${entry.id}:${createHash('sha256').update(key).digest('hex').slice(0, 16)}`;
 };
 
@@ -93,12 +95,13 @@ export const createHostedMcpDriftAlert = (deps: HostedMcpDriftAlertDeps) => {
   return async (row: HostedMcpDriftRow, entry: HostedMcpEntry, tools: HostedMcpToolAssessment[]): Promise<void> => {
     const drifted = tools.filter((tool) => tool.verdict === 'tool_drift').map((tool) => tool.name);
     if (drifted.length === 0) return;
-    const sourceId = driftAlertSourceId(entry, drifted);
+    // The log throttle's key: this drift, whoever it would go to.
+    const driftKey = driftAlertSourceId(entry, drifted, '');
 
     // Names come from the pins and the ids from our rows, never from the
     // vendor's descriptions or schemas.
     const report = (delivery: string, reason?: string) => {
-      const key = `${sourceId}|${delivery}`;
+      const key = `${driftKey}|${delivery}`;
       const last = reportedAt.get(key);
       if (last !== undefined && now() - last < DRIFT_ALERT_RELOG_MS) return;
       reportedAt.set(key, now());
@@ -126,7 +129,8 @@ export const createHostedMcpDriftAlert = (deps: HostedMcpDriftAlertDeps) => {
       report('unconfigured');
       return;
     }
-    const filedKey = `${sourceId}|${config.recipientUserId}|${config.podId}`;
+    const sourceId = driftAlertSourceId(entry, drifted, config.podId);
+    const filedKey = `${sourceId}|${config.recipientUserId}`;
     if (filed.has(filedKey)) return;
 
     try {
