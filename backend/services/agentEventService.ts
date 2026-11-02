@@ -596,11 +596,13 @@ class AgentEventService {
   // How long a turn may hold the lane once its own wait ends: longer than any
   // turn (MAX_WALL_CLOCK_MS plus one model call), well inside the 10-minute
   // requeue threshold. A turn that never ends then counts as over, and each
-  // turn behind it still waits for the one directly ahead. The wait itself
-  // does not refresh deliveredAt, so an event queued past that threshold in
-  // one pod is re-run by the sweep at the back of the lane, and one re-run
-  // past the attempt cap is retired.
+  // turn behind it still waits for the one directly ahead.
   private static inProcessLaneWaitMs = 180_000;
+  // While a delivery waits for its lane it refreshes deliveredAt this often,
+  // under the 1-minute floor of the requeue threshold. A queued turn is not a
+  // stuck one: without this the sweep would re-run it each pass, spending its
+  // attempts until the expiry pass retired it before it ever ran.
+  private static inProcessLaneRefreshMs = 30_000;
   private static inProcessDrain: Promise<{ timedOut: boolean; requeued: number }> | undefined;
 
   static isInProcessDraining(): boolean { return this.inProcessDraining; }
@@ -1795,7 +1797,8 @@ class AgentEventService {
       );
       try {
         if (lane.waitFor) {
-          await lane.waitFor;
+          const stopRefresh = this.refreshWhileQueued(event, lane.hold);
+          try { await lane.waitFor; } finally { stopRefresh(); }
           // A re-run in this process replaced this delivery: known without a read.
           if (lane.hold.superseded) return;
           // While it waited, the stuck sweep may have claimed this event with
@@ -1823,6 +1826,24 @@ class AgentEventService {
         lane.hold.release();
       }
     }).catch((error: Error) => console.warn('[native-runtime] dispatch error:', error.message));
+  }
+
+  /** Keep a queued delivery's deliveredAt fresh until the returned stop is called. */
+  private static refreshWhileQueued(event: EventDoc, hold: LaneHold): () => void {
+    const timer = setInterval(() => {
+      if (hold.superseded) { clearInterval(timer); return; }
+      AgentEvent.updateOne(
+        { _id: event._id, status: 'delivered', deliveryNonce: event.deliveryNonce ?? null },
+        { $set: { deliveredAt: new Date() } },
+      ).then((result: { matchedCount?: number }) => {
+        // Claimed by someone else, requeued or settled: nothing left to keep.
+        if (!result.matchedCount) clearInterval(timer);
+      }).catch((err: Error) => {
+        console.warn(`[native-runtime] queued-turn refresh failed for event ${String(event._id)}:`, err.message);
+      });
+    }, this.inProcessLaneRefreshMs);
+    timer.unref?.();
+    return () => clearInterval(timer);
   }
 
   /**

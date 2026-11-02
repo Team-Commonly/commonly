@@ -17,7 +17,7 @@ beforeEach(async () => {
   // Simulate a fresh process for each rollout, without a production reset API.
   Service.inProcessRequeued = 0; Service.inProcessDraining = false; Service.inProcessDrain = undefined;
   Service.inProcessWork.clear(); Service.inProcessRunning.clear(); Service.inProcessLanes?.clear(); Service.inProcessLaneHolders?.clear();
-  Service.inProcessLaneWaitMs = 180000;
+  Service.inProcessLaneWaitMs = 180000; Service.inProcessLaneRefreshMs = 30000;
   jest.clearAllMocks(); await clearMongoDb();
   jest.spyOn(Service, 'resolveInProcessInstallation').mockResolvedValue(install);
 });
@@ -232,6 +232,27 @@ describe('one agent answers one pod a turn at a time', () => {
     second.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
     expect(result).toEqual({ redispatched: 0, acked: 0 });
     expect(runAgent).toHaveBeenCalledTimes(2);
+  });
+  test('a turn queued past the stuck threshold keeps its delivery: no re-run, no spent attempts', async () => {
+    Service.inProcessLaneRefreshMs = 20;
+    const first = deferred(); runAgent.mockReturnValueOnce(first.promise).mockResolvedValue(success);
+    const running = await Service.enqueue(input); await waitFor(() => runAgent.mock.calls.length === 1);
+    const waiting = await Service.enqueue(input);
+    // Three sweep passes, each with a threshold the waiter's original claim is
+    // past. The turn ahead stands for one that has only just started.
+    for (let pass = 0; pass < 3; pass += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await settle();
+      // eslint-disable-next-line no-await-in-loop
+      await AgentEvent.updateOne({ _id: running._id }, { $set: { deliveredAt: new Date() } });
+      // eslint-disable-next-line no-await-in-loop
+      const result = await Service.redispatchStuckInProcess(new Date(Date.now() - 40), 3);
+      expect(result).toEqual({ redispatched: 0, acked: 0 });
+    }
+    expect(await AgentEvent.findById(waiting._id).lean()).toMatchObject({ status: 'delivered', attempts: 1 });
+    first.resolve(success); await waitFor(() => Service.inProcessWork.size === 0);
+    expect(runAgent).toHaveBeenCalledTimes(2);
+    expect((await AgentEvent.findById(waiting._id).lean()).status).toBe('acked');
   });
   test('a turn that waited starts its own requeue clock when it starts', async () => {
     const first = deferred(), second = deferred();
