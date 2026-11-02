@@ -1,0 +1,42 @@
+/* Invite link, the d215 invite frames: the auth card holding a pod. The pod's
+   seeded mark sits beside a mono eyebrow and the pod name as the 28px title. */
+.v2-invite__pod {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.v2-root .v2-avatar.v2-invite__mark {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  font-size: 15px;
+}
+.v2-invite__heading {
+  min-width: 0;
+}
+.v2-invite__eyebrow {
+  display: block;
+  font: 500 11.5px/1 var(--v2-font-mono);
+  color: var(--v2-text-muted);
+}
+/* Outranks .v2-login__card--stack .v2-login__title (4px) on specificity, not
+   on the order the lazy chunk's stylesheet lands. */
+.v2-login__card--stack .v2-invite__heading .v2-login__title {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+.v2-invite__description {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--v2-text-secondary);
+}
+.v2-invite__meta {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--v2-text-secondary);
+}

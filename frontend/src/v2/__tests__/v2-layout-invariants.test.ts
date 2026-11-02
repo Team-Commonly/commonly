@@ -161,6 +161,20 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone).toMatch(/\.v2-profile \.v2-profile__follow, \.v2-profile \.v2-profile__edit \{[^}]*flex: 1 0 100%/);
   });
 
+  test('/invite: a long pod name or description wraps inside the auth card (d215 s-invite)', () => {
+    const invite = read('../components/V2InviteRedeem.css');
+    expect(ruleBody(readV2Css(), '.v2-login__card--stack')).toContain('grid-template-columns: minmax(0, 1fr)');
+    expect(invite).toMatch(/\.v2-invite__heading \{[^}]*min-width: 0/);
+    expect(invite).toMatch(/\.v2-invite__heading \.v2-login__title \{[^}]*overflow-wrap: anywhere/);
+    expect(invite).toMatch(/\.v2-invite__description \{[^}]*overflow-wrap: anywhere/);
+    // The join key reads "Join <pod>": it grows instead of clipping a long name.
+    const key = ruleBody(readV2Css(), '.v2-root .v2-login__card--stack button.v2-login__submit');
+    expect(key).toContain('overflow-wrap: anywhere');
+    expect(key).toContain('height: auto');
+    // A min-height here outranks the phone rule's 44px on every auth page.
+    expect(key).not.toMatch(/^\s*min-height:/m);
+  });
+
   test('/cli/authorize scrolls inside the .v2-root shell on a short viewport (TASK-682)', () => {
     // .v2-root is height 100vh + overflow hidden; the page must sit in a
     // scroller or the lower controls (Deny / Authorize) are unreachable on a

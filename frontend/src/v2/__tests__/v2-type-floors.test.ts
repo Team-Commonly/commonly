@@ -27,8 +27,8 @@ import { readV2Css } from '../__testkit__/v2Css';
  */
 // v2.css plus the surface files lifted out of it (D223): the chat sheets V2App
 // loads, and the per-surface sheets their components import (R04 BYO, S4 board,
-// R05 Connect, R06 Your team).
-const CSS = [readV2Css(), ...['../components/V2AgentBYO.css', '../components/V2PodBoard.css', '../components/V2ConnectPage.css', '../components/V2YourTeamPage.css']
+// R05 Connect, R06 Your team, the invite page).
+const CSS = [readV2Css(), ...['../components/V2AgentBYO.css', '../components/V2PodBoard.css', '../components/V2ConnectPage.css', '../components/V2YourTeamPage.css', '../components/V2InviteRedeem.css']
   .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))]
   .join('\n');
 
@@ -141,7 +141,8 @@ const ALLOWLIST: string[] = [
   // with the Connect lift, so its entry left this list.
   '.v2-approval__badge', // 10.5px — mono-below-floor
   '.v2-approval__time', // 11.5px — no-mono-family
-  '.v2-invite-card__meta', // 11.0px — no-mono-family
+  // The invite link lift dropped `.v2-invite-card__meta` (11.0px, no family)
+  // with the old centred card, so its entry left this list.
   '.v2-invite-link', // 11.0px — no-mono-family
   '.v2-invite-manage__empty', // 11.0px — no-mono-family
   '.v2-invite-manage__meta', // 10.0px — no-mono-family
