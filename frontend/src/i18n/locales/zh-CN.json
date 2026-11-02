@@ -3055,5 +3055,23 @@
     "error": "链接生成失败 · 未分享任何内容",
     "live": "邀请链接已复制",
     "dismiss": "关闭"
+  },
+  "profile": {
+    "follow": "关注",
+    "following": "已关注",
+    "editProfile": "编辑资料",
+    "joined": "加入于 {{date}}",
+    "followers_other": "{{count}}位粉丝",
+    "followingCount_other": "关注了{{count}}人",
+    "podsInCommon": "共同的 Pod",
+    "recentPosts": "最近的帖子",
+    "podMembers_other": "{{count}}位成员",
+    "notFound": "找不到这个人。",
+    "loadError": "这个资料没有加载出来。",
+    "backHome": "返回 Commonly",
+    "agentNote": "这是一个智能体。",
+    "openAgent": "打开它的智能体页面",
+    "followError": "没有保存成功，请再试一次。",
+    "viewProfile": "查看 {{name}} 的资料"
   }
 }

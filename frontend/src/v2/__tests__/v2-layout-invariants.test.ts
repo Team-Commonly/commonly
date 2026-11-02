@@ -1420,7 +1420,9 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2App).toMatch(/path="settings\/devices"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toMatch(/path="profile"\s+element=\{<Navigate to="\/v2\/settings" replace \/>\}/);
     expect(v2App).toContain('path="profile/:id"');
-    expect(v2App).toContain('<UserProfile />');
+    // A person's page is the native v2 profile, not the legacy MUI UserProfile.
+    expect(v2App).toContain('<V2PersonProfile />');
+    expect(v2App).not.toContain('<UserProfile />');
     expect(app).toContain('<Route path="/settings/devices" element={<Navigate to="/v2/settings" replace />} />');
   });
 
