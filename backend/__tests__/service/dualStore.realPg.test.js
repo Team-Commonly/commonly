@@ -49,6 +49,20 @@ real('pgTableAdapter on real PostgreSQL', () => {
     await adapter.remove(ID, 6);
   });
 
+  it('round-trips arrays in a declared JSON column, which node-postgres would bind as a Postgres array', async () => {
+    const json = pgTableAdapter({
+      pool: database.pool, table: 'widgets', idColumn: 'id', columns: ['title', 'payload'], jsonColumns: ['payload'],
+    });
+    expect(await json.upsert({ id: ID, title: 'list', payload: [1, 2] }, 1)).toBe(true);
+    expect((await json.get(ID)).row.payload).toEqual([1, 2]);
+    expect(await json.replace({ id: ID, title: 'empty', payload: [] }, 1)).toBe(true);
+    expect((await json.get(ID)).row.payload).toEqual([]);
+    expect(await json.replace({ id: ID, title: 'object', payload: { a: [1] } }, 2)).toBe(true);
+    expect((await json.get(ID)).row.payload).toEqual({ a: [1] });
+    expect(await json.replace({ id: ID, title: 'none', payload: null }, 3)).toBe(true);
+    expect((await json.get(ID)).row.payload).toBeNull();
+  });
+
   it('pg mode replaces and deletes only the version it read', async () => {
     await adapter.upsert({ id: ID, title: 'v1', payload: { a: 1 } }, 1);
     expect(await adapter.replace({ id: ID, title: 'stale', payload: null }, 0)).toBe(false);

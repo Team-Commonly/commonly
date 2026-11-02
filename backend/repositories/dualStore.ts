@@ -78,13 +78,24 @@ const identifier = (value: string): string => {
 /**
  * A PgAdapter over one table with an `INTEGER NOT NULL pg_version` column.
  * Identifiers are interpolated, so they are validated; values are parameters.
+ * `jsonColumns` are bound as JSON text: node-postgres binds a JavaScript array
+ * as a Postgres array literal, which a json or jsonb column rejects (or, for an
+ * empty array, stores as `{}`).
  */
 export function pgTableAdapter(
-  { pool, table, idColumn, columns }: { pool: PgQueryable; table: string; idColumn: string; columns: string[] },
+  {
+    pool, table, idColumn, columns, jsonColumns = [],
+  }: { pool: PgQueryable; table: string; idColumn: string; columns: string[]; jsonColumns?: string[] },
 ): PgAdapter {
   const t = identifier(table);
   const id = identifier(idColumn);
   const cols = columns.map(identifier);
+  const json = new Set(jsonColumns.map(identifier));
+  if ([...json].some((c) => !cols.includes(c))) throw new Error('dual-store: jsonColumns must be listed in columns');
+  const bind = (row: Row, c: string): unknown => {
+    const value = row[c] ?? null;
+    return json.has(c) && value !== null ? JSON.stringify(value) : value;
+  };
   if (cols.includes(id) || cols.includes('pg_version')) {
     throw new Error('dual-store: columns must not repeat the id column or pg_version');
   }
@@ -97,14 +108,14 @@ export function pgTableAdapter(
     pg_version = $${cols.length + 2} + 1 WHERE ${id} = $1 AND pg_version = $${cols.length + 2}`;
   return {
     async upsert(row, version) {
-      const result = await pool.query(upsertSql, [...all.map((c) => row[c] ?? null), version]);
+      const result = await pool.query(upsertSql, [...all.map((c) => bind(row, c)), version]);
       return (result.rowCount ?? 0) > 0;
     },
     async remove(rowId, version) {
       await pool.query(`DELETE FROM ${t} WHERE ${id} = $1 AND pg_version < $2`, [rowId, version]);
     },
     async replace(row, version) {
-      const result = await pool.query(replaceSql, [row[id], ...cols.map((c) => row[c] ?? null), version]);
+      const result = await pool.query(replaceSql, [row[id], ...cols.map((c) => bind(row, c)), version]);
       return (result.rowCount ?? 0) > 0;
     },
     async removeAt(rowId, version) {

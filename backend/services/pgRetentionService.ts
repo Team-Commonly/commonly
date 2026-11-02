@@ -73,6 +73,15 @@ export function resolveRetentionDays(): number {
   return resolvePositiveNumber(process.env.PG_MESSAGE_RETENTION_DAYS, DEFAULT_RETENTION_DAYS);
 }
 
+/**
+ * The window the first delete of a run uses: whole days, never under the floor.
+ * The local backfill computes its expiry from this too, so it skips exactly
+ * the rows a run would delete.
+ */
+export function retentionWindowDays(days: number = resolveRetentionDays()): number {
+  return Math.max(FLOOR_DAYS, Math.trunc(days));
+}
+
 function resolveCapacityBytes(): number {
   return resolvePositiveNumber(process.env.PG_CAPACITY_BYTES, DEFAULT_CAPACITY_BYTES);
 }
@@ -264,7 +273,7 @@ export async function runMessageRetention(): Promise<void> {
       `retention=${startDays}d step=${stepDays}d protectedPods=${protectedPodIds.length}`,
     );
 
-    currentDays = Math.max(FLOOR_DAYS, Math.trunc(startDays));
+    currentDays = retentionWindowDays(startDays);
 
     const first = await Message.deleteOlderThan(currentDays, protectedPodIds);
     totalDeleted += first.deleted || 0;

@@ -223,6 +223,20 @@ d('TASK-503: local-upgrade backfill into PostgreSQL', () => {
     }
   });
 
+  test('a sub-day retention setting expires by the run\'s one-day floor, not by zero days', async () => {
+    process.env.PG_MESSAGE_RETENTION_DAYS = '0.5';
+    try {
+      const recent = await mongoMessage('twelve hours old', new Date(Date.now() - 12 * 60 * 60 * 1000));
+      await mongoMessage('two days old', new Date(Date.now() - 2 * DAY));
+      const dry = await backfillLocalMessages(productionDeps(pool), { force: true });
+      expect(dry).toMatchObject({ pending: 2, expiredPending: 1, toCopy: 1 });
+      await backfillLocalMessages(productionDeps(pool), { apply: true, force: true });
+      expect(await pgCopies()).toEqual([recent._id.toString()]);
+    } finally {
+      process.env.PG_MESSAGE_RETENTION_DAYS = '36500';
+    }
+  });
+
   test('a row past retention in a pod PG_RETENTION_EXEMPT_POD_IDS lists copies, as the delete keeps it', async () => {
     const exempt = new mongoose.Types.ObjectId().toHexString();
     await pool.query(

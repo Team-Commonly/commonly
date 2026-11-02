@@ -31,7 +31,7 @@ const { pool } = require('../../config/db-pg');
 const Message = require('../../models/pg/Message');
 const PgRetentionRun = require('../../models/pg/PgRetentionRun');
 const cron = require('node-cron');
-const { runMessageRetention, initPgRetention } = require('../../services/pgRetentionService');
+const { runMessageRetention, initPgRetention, retentionWindowDays } = require('../../services/pgRetentionService');
 
 const GIB = 1024 * 1024 * 1024;
 
@@ -399,5 +399,14 @@ describe('pgRetentionService.initPgRetention', () => {
       // Already scheduled in a previous test — no-op path is the expected branch.
       expect(cron.schedule).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('pgRetentionService.retentionWindowDays', () => {
+  // The backfill skips by this window, so a sub-day setting must not become 0 days there.
+  it('is whole days and never under the one-day floor', () => {
+    expect(retentionWindowDays(30)).toBe(30);
+    expect(retentionWindowDays(7.9)).toBe(7);
+    expect(retentionWindowDays(0.5)).toBe(1);
   });
 });

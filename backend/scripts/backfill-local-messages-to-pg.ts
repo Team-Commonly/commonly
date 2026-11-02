@@ -176,6 +176,9 @@ export interface CopiedRow {
 
 export interface PodDigest { count: number; hash: string }
 
+/** Rows per page when --verify reads Postgres. */
+const VERIFY_PAGE = 1000;
+
 export interface VerifyDeps {
   /** Per pod: the Mongo rows stamped as copied, past-retention rows left out. */
   copiedInMongo: () => Promise<Map<string, PodDigest>>;
@@ -218,15 +221,32 @@ export const foldDigests = (digests: string[]): string => {
   return acc.toString('hex');
 };
 
+/**
+ * Per-pod counts and checksums, folded one row at a time so a run holds one
+ * 32-byte accumulator per pod, never the rows.
+ */
+export const podDigests = () => {
+  const byPod = new Map<string, { count: number; acc: Buffer }>();
+  return {
+    add(row: CopiedRow): void {
+      const entry = byPod.get(row.podId) || { count: 0, acc: Buffer.alloc(32) };
+      const bytes = Buffer.from(rowDigest(row), 'hex');
+      // eslint-disable-next-line no-bitwise -- XOR is the fold, as in foldDigests
+      for (let i = 0; i < entry.acc.length; i += 1) entry.acc[i] ^= bytes[i];
+      entry.count += 1;
+      byPod.set(row.podId, entry);
+    },
+    result(): Map<string, PodDigest> {
+      return new Map([...byPod].map(([pod, { count, acc }]) => [pod, { count, hash: acc.toString('hex') }]));
+    },
+  };
+};
+
 /** Folds rows into per-pod counts and checksums. */
 export const digestByPod = (rows: Iterable<CopiedRow>): Map<string, PodDigest> => {
-  const byPod = new Map<string, string[]>();
-  for (const row of rows) {
-    const list = byPod.get(row.podId) || [];
-    list.push(rowDigest(row));
-    byPod.set(row.podId, list);
-  }
-  return new Map([...byPod].map(([pod, list]) => [pod, { count: list.length, hash: foldDigests(list) }]));
+  const digests = podDigests();
+  for (const row of rows) digests.add(row);
+  return digests.result();
 };
 
 export interface VerifyReport { pods: number; mongoRows: number; pgRows: number; differing: string[] }
@@ -285,7 +305,8 @@ export const productionDeps = (
     return gonePods;
   };
   // The retention delete's own rule (PGMessage.deleteOlderThan): older than
-  // PG_MESSAGE_RETENTION_DAYS in whole days by the Postgres clock, in a pod
+  // the run's window (retentionWindowDays: whole days, at least one) by the
+  // Postgres clock, in a pod
   // neither the Pro tier nor PG_RETENTION_EXEMPT_POD_IDS protects. No valid
   // window means nothing expires, as the run then skips. A protected-pod lookup
   // that fails throws, so the backfill stops rather than skipping rows a paying
@@ -299,7 +320,8 @@ export const productionDeps = (
         ...PGMessage.retentionExemptPodIds(),
         ...(await retention.resolveProtectedPodIds()).map(String),
       ]);
-      const { rows } = await pool.query('SELECT NOW() - $1::interval AS cutoff', [`${Math.trunc(days)} days`]);
+      const window = `${retention.retentionWindowDays(days)} days`;
+      const { rows } = await pool.query('SELECT NOW() - $1::interval AS cutoff', [window]);
       return { cutoff: new Date(rows[0].cutoff as Date), protectedPods };
     })();
     return rule;
@@ -344,13 +366,13 @@ export const productionDeps = (
       return pastRetention(podId, doc.createdAt);
     },
     copiedInMongo: async () => {
-      const rows: CopiedRow[] = [];
+      const digests = podDigests();
       const cursor = Message.find({ reconciledAt: { $exists: true } })
         .select('podId userId content messageType createdAt authorKind payload').lean().cursor();
       for await (const doc of cursor) {
         const podId = String(doc.podId);
         if (!await pastRetention(podId, doc.createdAt)) {
-          rows.push({
+          digests.add({
             legacyId: String(doc._id),
             podId,
             userId: String(doc.userId),
@@ -362,28 +384,37 @@ export const productionDeps = (
           });
         }
       }
-      return digestByPod(rows);
+      return digests.result();
     },
+    // Paged by id, so a large history never sits in memory at once.
     copiedInPg: async () => {
-      const { rows } = await pool.query(`SELECT legacy_mongo_id, pod_id, user_id, content, message_type, created_at,
-        author_kind, payload FROM messages WHERE legacy_mongo_id IS NOT NULL`);
-      const kept: CopiedRow[] = [];
-      for (const row of rows) {
-        const podId = String(row.pod_id);
-        if (!await pastRetention(podId, row.created_at as Date)) {
-          kept.push({
-            legacyId: String(row.legacy_mongo_id),
-            podId,
-            userId: String(row.user_id),
-            content: String(row.content ?? ''),
-            messageType: String(row.message_type || 'text'),
-            createdAt: new Date(row.created_at as Date),
-            authorKind: row.author_kind == null ? null : String(row.author_kind),
-            payload: row.payload,
-          });
+      const digests = podDigests();
+      let afterPgId = 0;
+      for (;;) {
+        // eslint-disable-next-line no-await-in-loop -- keyset pages, one after another
+        const { rows } = await pool.query(`SELECT id, legacy_mongo_id, pod_id, user_id, content, message_type,
+          created_at, author_kind, payload FROM messages WHERE legacy_mongo_id IS NOT NULL AND id > $1
+          ORDER BY id LIMIT $2`, [afterPgId, VERIFY_PAGE]);
+        if (!rows.length) break;
+        afterPgId = Number(rows[rows.length - 1].id);
+        for (const row of rows) {
+          const podId = String(row.pod_id);
+          // eslint-disable-next-line no-await-in-loop
+          if (!await pastRetention(podId, row.created_at as Date)) {
+            digests.add({
+              legacyId: String(row.legacy_mongo_id),
+              podId,
+              userId: String(row.user_id),
+              content: String(row.content ?? ''),
+              messageType: String(row.message_type || 'text'),
+              createdAt: new Date(row.created_at as Date),
+              authorKind: row.author_kind == null ? null : String(row.author_kind),
+              payload: row.payload,
+            });
+          }
         }
       }
-      return digestByPod(kept);
+      return digests.result();
     },
     nextBatch: (afterId, limit) => Message.find(afterId
       ? { ...unreconciled, _id: { $gt: new mongoose.Types.ObjectId(afterId) } }

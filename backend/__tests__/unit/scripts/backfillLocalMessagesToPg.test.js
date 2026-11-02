@@ -1,7 +1,7 @@
 jest.mock('../../../services/legacyMessageCopy', () => ({ copyOne: jest.fn(), ensureLegacyIdIndex: jest.fn() }));
 
 const {
-  backfillLocalMessages, main, parseArgs, verifyCopied, rowDigest, foldDigests,
+  backfillLocalMessages, main, parseArgs, verifyCopied, rowDigest, foldDigests, podDigests, digestByPod,
 } = require('../../../scripts/backfill-local-messages-to-pg');
 
 const doc = (id) => ({ _id: { toString: () => id }, podId: 'p', userId: 'u', content: id, createdAt: new Date('2026-01-01') });
@@ -157,6 +157,14 @@ describe('--verify', () => {
     const a = rowDigest(row()); const b = rowDigest(row({ legacyId: 'm2' }));
     expect(foldDigests([a, b])).toBe(foldDigests([b, a]));
     expect(foldDigests([a, b])).not.toBe(foldDigests([a]));
+  });
+
+  it('folds rows one at a time to the same digests as a whole batch', () => {
+    const rows = [row(), row({ legacyId: 'm2', content: 'b' }), row({ legacyId: 'm3', podId: 'p2' })];
+    const streamed = podDigests();
+    rows.forEach((r) => streamed.add(r));
+    expect(streamed.result()).toEqual(digestByPod(rows));
+    expect(streamed.result().get('p1')).toEqual({ count: 2, hash: foldDigests(rows.slice(0, 2).map(rowDigest)) });
   });
 
   it('reads a payload the same whichever store it came from', () => {
