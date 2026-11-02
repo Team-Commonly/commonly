@@ -3,8 +3,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import TestUtils from 'react-dom/test-utils';
 import { act } from 'react-dom/test-utils';
-import Register from './Register';
-import VerifyEmail from './VerifyEmail';
 import UserProfile from './UserProfile';
 import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
@@ -83,22 +81,6 @@ function render(comp) {
   act(() => { root.render(comp); });
   return container.textContent;
 }
-
-test('Register renders and submits', async () => {
-  axios.get.mockResolvedValueOnce({ data: { inviteOnly: false } });
-  axios.post.mockResolvedValue({ data: { message: 'ok' } });
-  await TestUtils.act(async () => { root.render(<Register />); });
-  const form = container.querySelector('form');
-  await TestUtils.act(async () => { TestUtils.Simulate.submit(form); });
-  expect(axios.post).toHaveBeenCalled();
-});
-
-test('VerifyEmail fetches token', async () => {
-  axios.get.mockResolvedValue({ data: { message: 'verified' } });
-  await TestUtils.act(async () => { root.render(<VerifyEmail />); });
-  await TestUtils.act(async () => Promise.resolve());
-  expect(container.textContent).toContain('verified');
-});
 
 test('UserProfile renders', async () => {
   axios.get.mockResolvedValueOnce({ data: { username: 'u' } });

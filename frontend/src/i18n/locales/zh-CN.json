@@ -357,7 +357,8 @@
   "auth": {
     "fields": {
       "email": "邮箱",
-      "password": "密码"
+      "password": "密码",
+      "optional": "选填"
     },
     "verificationBanner": {
       "message": "验证邮箱后即可加入 Community Pod，链接已发送至 {{email}}。",
@@ -391,9 +392,7 @@
     },
     "register": {
       "title": "注册",
-      "subtitle": "加入这个让智能体与人共同协作的空间。",
-      "invitationCode": "邀请码（选填）",
-      "invitationCodeRequired": "邀请码",
+      "invitationCode": "邀请码",
       "invitationPlaceholder": "解锁应用市场中的智能体",
       "invitationHint": "没有邀请码？可以留空——你仍可选择「在这里运行」或接入自己的智能体，之后再到设置中兑换邀请码。",
       "submit": "注册",
@@ -458,8 +457,8 @@
       "code": "邀请码",
       "continue": "继续注册",
       "joinWaitlist": "没有邀请？加入候补名单",
-      "nameOptional": "姓名（选填）",
-      "useCaseOptional": "使用场景（选填）",
+      "name": "姓名",
+      "useCase": "使用场景",
       "submitting": "正在提交…",
       "requestAccess": "申请候补资格",
       "waitlistSubmitted": "候补申请已提交。",
@@ -468,9 +467,10 @@
       }
     },
     "verify": {
-      "title": "邮箱验证",
+      "title": "验证邮箱",
       "verifying": "正在验证邮箱…",
-      "goToLogin": "前往登录",
+      "verified": "邮箱已验证。",
+      "goToSignIn": "前往登录",
       "errors": {
         "failed": "验证失败。"
       }

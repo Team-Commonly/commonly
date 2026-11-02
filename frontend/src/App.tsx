@@ -32,12 +32,9 @@ import { V2PrivacyPage, V2TermsPage } from './v2/legal/V2LegalPage';
 // covered by the single Suspense boundary in App() below. Canonical public
 // landing, comparison and use-case routes stay reachable by URL exactly as
 // before — only the moment their code arrives changed.
-const Register = React.lazy(() => import('./components/Register'));
-const RegistrationInviteRequired = React.lazy(() => import('./components/RegistrationInviteRequired'));
 const GuidePage = React.lazy(() => import('./components/landing/GuidePage'));
 const GuidesIndexPage = React.lazy(() => import('./components/landing/GuidesIndexPage'));
 const UseCasePage = React.lazy(() => import('./components/landing/UseCasePage'));
-const VerifyEmail = React.lazy(() => import('./components/VerifyEmail'));
 const DiscordCallback = React.lazy(() => import('./components/DiscordCallback'));
 const V2App = React.lazy(() => import('./v2/V2App'));
 const V2LandingPage = React.lazy(() => import('./v2/landing/V2LandingPage'));
@@ -304,11 +301,11 @@ function App(): React.ReactElement {
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/privacy" element={<V2PrivacyPage />} />
                     <Route path="/terms" element={<V2TermsPage />} />
-                    {/* /login has no page of its own: it goes to /v2/login with its query. */}
+                    {/* The old auth paths have no pages of their own: each goes to its v2 page with its query. */}
                     <Route path="/login" element={<LegacyAuthRedirect to="/v2/login" />} />
-                    <Route path="/register" element={<Register />} />
-                    <Route path="/register/invite-required" element={<RegistrationInviteRequired />} />
-                    <Route path="/verify-email" element={<VerifyEmail />} />
+                    <Route path="/register" element={<LegacyAuthRedirect to="/v2/register" />} />
+                    <Route path="/register/invite-required" element={<LegacyAuthRedirect to="/v2/register/invite-required" />} />
+                    <Route path="/verify-email" element={<LegacyAuthRedirect to="/v2/verify-email" />} />
                     {/* Device-code sign-in (#1405): the backend's /api/auth/device/start
                         answers with `verifyUrl: <origin>/cli/authorize`. Deleting this
                         route 404'd every `commonly login` (#1534, 2026-09-04 → 09-08). */}

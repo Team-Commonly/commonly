@@ -3,13 +3,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import axios from '../utils/axiosConfig';
 import { useTranslation } from 'react-i18next';
 import V2AuthBrand from '../v2/components/V2AuthBrand';
+import V2AuthNotice from '../v2/components/V2AuthNotice';
 import { registerPathWithInvite } from '../v2/utils/pendingInvite';
 
 // v2-native invite-required gate. Pairs with V2Login / V2Register (reuses the
 // .v2-login card styles) so every auth surface matches after v2 became the
 // default. Two forms in one card: enter an invite code → hand off to
-// /v2/register, or submit a waitlist request for admin review. Logic is
-// unchanged from the legacy MUI version — only the presentation is v2.
+// /v2/register, or submit a waitlist request for admin review. The layout is
+// the d215 invitation-required frame: the code first, the waitlist below the
+// "or" rule, its result in one row above its key.
 
 const RegistrationInviteRequired: React.FC = () => {
   const { t } = useTranslation();
@@ -53,7 +55,7 @@ const RegistrationInviteRequired: React.FC = () => {
 
   return (
     <div className="v2-login">
-      <div className="v2-login__card">
+      <div className="v2-login__card v2-login__card--stack">
         <V2AuthBrand />
         <h1 className="v2-login__title">{t('auth.inviteRequired.title')}</h1>
         <p className="v2-login__subtitle">
@@ -76,7 +78,7 @@ const RegistrationInviteRequired: React.FC = () => {
           </button>
         </form>
 
-        <div className="v2-login__divider">{t('auth.inviteRequired.joinWaitlist')}</div>
+        <div className="v2-login__or">{t('auth.inviteRequired.joinWaitlist')}</div>
 
         <form onSubmit={onWaitlistSubmit}>
           <label className="v2-login__field">
@@ -91,7 +93,10 @@ const RegistrationInviteRequired: React.FC = () => {
             />
           </label>
           <label className="v2-login__field">
-            <span className="v2-login__label">{t('auth.inviteRequired.nameOptional')}</span>
+            <span className="v2-login__label">
+              {t('auth.inviteRequired.name')}
+              <em>{t('auth.fields.optional')}</em>
+            </span>
             <input
               className="v2-login__input"
               type="text"
@@ -100,7 +105,10 @@ const RegistrationInviteRequired: React.FC = () => {
             />
           </label>
           <label className="v2-login__field">
-            <span className="v2-login__label">{t('auth.inviteRequired.useCaseOptional')}</span>
+            <span className="v2-login__label">
+              {t('auth.inviteRequired.useCase')}
+              <em>{t('auth.fields.optional')}</em>
+            </span>
             <input
               className="v2-login__input"
               type="text"
@@ -108,6 +116,8 @@ const RegistrationInviteRequired: React.FC = () => {
               onChange={(e) => setWaitlistNote(e.target.value)}
             />
           </label>
+          {waitlistError && <V2AuthNotice>{waitlistError}</V2AuthNotice>}
+          {waitlistSuccess && <V2AuthNotice kind="status">{waitlistSuccess}</V2AuthNotice>}
           <button
             type="submit"
             className="v2-login__submit v2-login__submit--ghost"
@@ -115,15 +125,13 @@ const RegistrationInviteRequired: React.FC = () => {
           >
             {waitlistLoading ? t('auth.inviteRequired.submitting') : t('auth.inviteRequired.requestAccess')}
           </button>
-          {waitlistError && <div className="v2-login__error">{waitlistError}</div>}
-          {waitlistSuccess && <div className="v2-login__success">{waitlistSuccess}</div>}
         </form>
 
-        <div className="v2-login__hint">
+        <p className="v2-login__alt">
           {t('auth.register.alreadyHaveAccount')}
           {' '}
           <Link to="/v2/login" className="v2-login__link">{t('auth.login.submit')}</Link>
-        </div>
+        </p>
       </div>
     </div>
   );

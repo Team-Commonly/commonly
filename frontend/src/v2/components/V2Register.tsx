@@ -5,6 +5,7 @@ import {
 import axios from '../../utils/axiosConfig';
 import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
+import V2AuthNotice from './V2AuthNotice';
 import { Trans, useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { safeNextPath } from '../utils/safeNextPath';
@@ -23,6 +24,8 @@ import {
 //
 // The .v2-login__card class goes on the <form>/<div> directly (like V2Login) —
 // a bare <form> picks up a dark global background, so it must carry the card.
+// The layout follows the d215 sign-up frames: providers first, then the form;
+// one alert row at the top that marks the fields it is about.
 
 interface RegistrationPolicy {
   loaded: boolean;
@@ -54,6 +57,9 @@ const V2Register: React.FC = () => {
   const loginHref = nextPath ? `/v2/login?next=${encodeURIComponent(nextPath)}` : '/v2/login';
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which fields the error is about: an invitation error is about the code,
+  // anything else about the email and password.
+  const [errorField, setErrorField] = useState<'credentials' | 'invite' | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [verifyPending, setVerifyPending] = useState(false);
   const [teamVerificationPending, setTeamVerificationPending] = useState(false);
@@ -84,6 +90,7 @@ const V2Register: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setErrorField(null);
     setTeamVerificationPending(false);
     setSubmitting(true);
     try {
@@ -129,16 +136,22 @@ const V2Register: React.FC = () => {
       setVerifyPending(/check your email|verify your email/i.test(message));
       setDone(message);
     } catch (err) {
-      const e1 = err as { response?: { data?: { error?: string; msg?: string; code?: string } } };
+      const e1 = err as { response?: { status?: number; data?: { error?: string; msg?: string; code?: string } } };
       const code = e1.response?.data?.code;
       if (code === 'INVITATION_INVALID') {
         // Forget the bad code so a reload doesn't carry it back into the form.
         forgetInvite();
         setError(t('auth.register.errors.invitationInvalid'));
+        setErrorField('invite');
       } else if (code === 'INVITATION_REQUIRED') {
         setError(t('auth.register.errors.invitationRequired'));
+        setErrorField('invite');
       } else {
         setError(e1.response?.data?.error || e1.response?.data?.msg || t('auth.register.errors.failed'));
+        // Only a 4xx is about what was typed; a network or server failure, or a
+        // rate limit (429), marks no field.
+        const status = e1.response?.status || 0;
+        setErrorField(status >= 400 && status < 500 && status !== 429 ? 'credentials' : null);
       }
     } finally {
       setSubmitting(false);
@@ -148,7 +161,7 @@ const V2Register: React.FC = () => {
   if (done) {
     return (
       <div className="v2-login">
-        <div className="v2-login__card">
+        <div className="v2-login__card v2-login__card--stack">
           <Brand />
           <h1 className="v2-login__title">
             {verifyPending ? t('auth.register.success.checkEmailTitle') : t('auth.register.success.createdTitle')}
@@ -158,7 +171,7 @@ const V2Register: React.FC = () => {
               ? t('auth.register.success.checkEmailMessage', { email: email.trim() })
               : t('auth.register.success.ready')}
           </p>
-          {verifyPending ? (
+          {verifyPending && (
             <p className="v2-login__hint">
               <Trans
                 i18nKey={teamVerificationPending
@@ -167,28 +180,30 @@ const V2Register: React.FC = () => {
                 components={{ signIn: <Link to={loginHref} className="v2-login__link" /> }}
               />
             </p>
-          ) : (
-            <button
-              type="button"
-              className="v2-login__submit"
-              onClick={() => navigate(loginHref)}
-            >
-              {t('auth.register.success.continue')}
-            </button>
           )}
+          <button
+            type="button"
+            className="v2-login__submit"
+            onClick={() => navigate(loginHref)}
+          >
+            {t('auth.register.success.continue')}
+          </button>
         </div>
       </div>
     );
   }
 
+  const credentialsBad = errorField === 'credentials' || undefined;
+
   return (
     <div className="v2-login">
-      <form className="v2-login__card" onSubmit={handleSubmit}>
+      <form className="v2-login__card v2-login__card--stack" onSubmit={handleSubmit}>
         <Brand />
         <h1 className="v2-login__title">{t('auth.register.title')}</h1>
-        <p className="v2-login__subtitle">
-          {t('auth.register.subtitle')}
-        </p>
+
+        {error && <V2AuthNotice>{error}</V2AuthNotice>}
+
+        <V2OAuthButtons invite={invitationCode || undefined} next={nextPath} separator="after" />
 
         <label className="v2-login__field">
           <span className="v2-login__label">{t('auth.fields.email')}</span>
@@ -198,6 +213,7 @@ const V2Register: React.FC = () => {
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={credentialsBad}
             required
           />
         </label>
@@ -210,6 +226,7 @@ const V2Register: React.FC = () => {
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            aria-invalid={credentialsBad}
             required
           />
         </label>
@@ -223,7 +240,8 @@ const V2Register: React.FC = () => {
         {policy.loaded && (
           <label className="v2-login__field">
             <span className="v2-login__label">
-              {policy.inviteOnly ? t('auth.register.invitationCodeRequired') : t('auth.register.invitationCode')}
+              {t('auth.register.invitationCode')}
+              {!policy.inviteOnly && <em>{t('auth.fields.optional')}</em>}
             </span>
             <input
               className="v2-login__input"
@@ -233,6 +251,7 @@ const V2Register: React.FC = () => {
               placeholder={policy.inviteOnly ? undefined : t('auth.register.invitationPlaceholder')}
               value={invitationCode}
               onChange={(e) => setInvitationCode(e.target.value)}
+              aria-invalid={errorField === 'invite' || undefined}
             />
             {/* The full explanation lives below the field, not in the
                 placeholder — placeholders clip at the input's width. */}
@@ -252,11 +271,7 @@ const V2Register: React.FC = () => {
           {submitting ? t('auth.register.creating') : t('auth.register.submit')}
         </button>
 
-        {error && <div className="v2-login__error">{error}</div>}
-
-        <V2OAuthButtons invite={invitationCode || undefined} next={nextPath} />
-
-        <div className="v2-login__hint">
+        <p className="v2-login__legal">
           <Trans
             i18nKey="auth.register.legal"
             components={{
@@ -264,13 +279,13 @@ const V2Register: React.FC = () => {
               privacy: <Link to="/privacy" className="v2-login__link" />,
             }}
           />
-        </div>
+        </p>
 
-        <div className="v2-login__hint">
+        <p className="v2-login__alt">
           {t('auth.register.alreadyHaveAccount')}
           {' '}
-          <Link to="/v2/login" className="v2-login__link">{t('auth.login.submit')}</Link>
-        </div>
+          <Link to={loginHref} className="v2-login__link">{t('auth.login.submit')}</Link>
+        </p>
       </form>
     </div>
   );
