@@ -288,8 +288,9 @@ const AGENT_TYPES: Record<string, AgentTypeConfig> = {
 // runtime in this set requires `user.entitlements.cloudAgents` (or admin) so
 // that open registration can be turned on later without handing every new
 // signup free hosted compute. BYO / self-hosted runtimes (webhook, claude-code,
-// or anything carrying `host: 'byo'`) are intentionally NOT gated — connecting
-// your own agent stays open to all authenticated users.
+// or a type with a BYO variant carrying `host: 'byo'`) are intentionally NOT
+// gated — connecting your own agent stays open to all authenticated users. A
+// type in this set is gated even when labelled `host: 'byo'`: Commonly runs it.
 //
 // `codex` is deliberately absent: a codex install is cloud-hosted by default
 // (LiteLLM-proxied) but flips to BYO when `host === 'byo'` (a local
@@ -307,15 +308,17 @@ export const CLOUD_RUNTIME_TYPES = new Set<string>([
  * `config.runtime`: `runtimeType` and `host`.
  *
  * Decision order is load-bearing:
- *   1. `host: 'byo'` ALWAYS wins → NON-cloud. When a user points Commonly at
- *      their own compute (laptop CLI wrapper, their own server polling CAP) the
- *      install record carries `host: 'byo'`. That path must stay open to every
- *      authenticated user regardless of `runtimeType`, so this is checked first.
- *   2. `webhook` / `claude-code` are pure BYO runtime types (no Commonly-hosted
+ *   1. Anything in CLOUD_RUNTIME_TYPES (moltbot/internal/native/managed-agents)
+ *      → cloud, whatever `host` says. Only Commonly runs these: dispatch runs
+ *      `native` in-process without reading `host`, and gateways are admin-only,
+ *      so a host label never changes where they run.
+ *   2. `host: 'byo'` → NON-cloud. When a user points Commonly at their own
+ *      compute (laptop CLI wrapper, their own server polling CAP) the install
+ *      record carries `host: 'byo'`, and that stays open to every
+ *      authenticated user for every runtime type with a BYO variant.
+ *   3. `webhook` / `claude-code` are pure BYO runtime types (no Commonly-hosted
  *      variant exists) → NON-cloud.
- *   3. Anything in CLOUD_RUNTIME_TYPES (moltbot/internal/native/managed-agents)
- *      → cloud.
- *   4. `codex` with no `host: 'byo'` (handled in step 1) → cloud (LiteLLM-proxied).
+ *   4. `codex` with no `host: 'byo'` (handled in step 2) → cloud (LiteLLM-proxied).
  *   5. Everything else (unknown / unspecified runtimeType, e.g. a generic
  *      standalone marketplace agent that brings its own compute) → NON-cloud.
  *      Callers that want a built-in cloud agent caught even when the install
@@ -327,9 +330,9 @@ export function isCloudRuntime(
 ): boolean {
   const runtimeType = String(runtime?.runtimeType || '').trim().toLowerCase();
   const host = String(runtime?.host || '').trim().toLowerCase();
+  if (CLOUD_RUNTIME_TYPES.has(runtimeType)) return true;
   if (host === 'byo') return false;
   if (runtimeType === 'webhook' || runtimeType === 'claude-code') return false;
-  if (CLOUD_RUNTIME_TYPES.has(runtimeType)) return true;
   if (runtimeType === 'codex') return true;
   return false;
 }
