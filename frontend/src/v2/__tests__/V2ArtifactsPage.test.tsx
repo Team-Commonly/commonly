@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Artifacts, direction C (ScaleArtifacts.dc.html) — PR 5.
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, cleanup, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import V2ArtifactsPage, { extOf, formatSize, whenLabel } from '../components/V2ArtifactsPage';
@@ -196,6 +196,24 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
     expect(container.querySelector('.v2-page-head__meta')).toHaveTextContent('0');
     expect(screen.queryByRole('heading', { name: 'Nothing shared yet' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /^Open / })).not.toBeInTheDocument();
+  });
+
+  test('typing a search before the first empty answer lands keeps the search box and focus', async () => {
+    let answer;
+    axios.get.mockImplementation((url) => {
+      if (url === '/api/pods') return Promise.resolve({ data: [workspace] });
+      if (url === '/api/artifacts') return new Promise((resolve) => { answer = resolve; });
+      return Promise.resolve({ data: {} });
+    });
+    render(<MemoryRouter initialEntries={['/v2/artifacts']}><V2ArtifactsPage /></MemoryRouter>);
+    const search = screen.getByRole('searchbox', { name: 'Search files' });
+    search.focus();
+    fireEvent.change(search, { target: { value: 'pl' } });
+    // The unfiltered answer lands inside the 250ms debounce, before ?q reaches the URL.
+    await act(async () => { answer({ data: { items: [], nextCursor: null, total: 0, limit: 50 } }); });
+    expect(screen.queryByRole('heading', { name: 'Nothing shared yet' })).not.toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search files' })).toBe(search);
+    expect(document.activeElement).toBe(search);
   });
 
   test.each([

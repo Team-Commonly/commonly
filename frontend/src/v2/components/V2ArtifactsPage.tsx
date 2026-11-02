@@ -162,7 +162,8 @@ const V2ArtifactsPage: React.FC = () => {
   // filter — no controls, no count, one card. A filtered empty result keeps the controls, and so
   // does the render between clearing a filter and its answer landing (the result is still the
   // filtered one), or the controls unmount under the person's focus.
-  const dayZero = !loading && !error && total === 0 && items.length === 0 && !urlQ && !kind && !podId
+  // A search typed before its debounce reaches the URL counts too, or the input unmounts mid-word.
+  const dayZero = !loading && !error && total === 0 && items.length === 0 && !q && !urlQ && !kind && !podId
     && loadedQuery === UNFILTERED;
   // The card's key opens the account's oldest pod: signup creates My Workspace first. /api/pods
   // lists by last update, so pick by createdAt rather than position.
