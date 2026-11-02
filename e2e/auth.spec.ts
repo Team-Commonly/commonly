@@ -38,8 +38,9 @@ test.describe('Authentication', () => {
     await page.getByLabel('Password').fill('wrongpassword');
     await page.getByRole('button', { name: 'Sign in' }).click();
 
-    // v2 login surfaces the failure in a .v2-login__error div
-    await expect(page.locator('.v2-login__error')).toBeVisible({ timeout: 8000 });
+    // v2 login surfaces the failure in the auth notice row as an alert
+    // (V2AuthNotice); a confirmation uses the same row with role="status"
+    await expect(page.locator('.v2-login__notice[role="alert"]')).toBeVisible({ timeout: 8000 });
     // URL must still be the login page — not redirected
     expect(page.url()).toContain('/v2/login');
   });
