@@ -2069,7 +2069,9 @@ body.modern-ui.v2-canvas {
   transition: box-shadow 80ms ease;
 }
 
-.v2-login__input:focus {
+/* Outranks the shared .v2-root input:focus-visible ring (0,2,1), which would
+   otherwise drop the accent edge. */
+.v2-root input.v2-login__input:focus-visible {
   box-shadow: inset 0 0 0 1px var(--v2-accent), var(--v2-focus-ring);
 }
 

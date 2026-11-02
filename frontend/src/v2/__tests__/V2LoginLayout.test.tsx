@@ -91,6 +91,7 @@ describe('V2Login follows the sign-in frame', () => {
     const alert = await screen.findByRole('alert');
     expect(before(alert, await screen.findByRole('link', { name: /continue with github/i }))).toBe(true);
     expect(screen.getByLabelText(/^email$/i)).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByLabelText(/^password$/i)).not.toHaveAttribute('aria-invalid');
   });
 
   test('the card ends on one line to sign up, and carries no subtitle', async () => {
@@ -144,6 +145,10 @@ describe('sign-in card styles', () => {
     expect(rule('.v2-login__input')).toMatch(/\n  height: 40px;/);
     expect(rule('.v2-login__input')).not.toMatch(/min-height/);
     expect(rule('.v2-root button.v2-login__submit')).not.toMatch(/min-height/);
+  });
+
+  test('a focused field keeps the accent edge over the shared focus ring', () => {
+    expect(rule('.v2-root input.v2-login__input:focus-visible')).toMatch(/inset 0 0 0 1px var\(--v2-accent\), var\(--v2-focus-ring\)/);
   });
 
   test('a marked field draws the ink ring', () => {

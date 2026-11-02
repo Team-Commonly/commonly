@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { getV2EquivalentPath } from './utils/legacyV2Path';
+import LegacyAuthRedirect from './components/LegacyAuthRedirect';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { createTheme } from '@mui/material/styles';
 import { AppProvider } from './context/AppContext';
@@ -303,8 +304,8 @@ function App(): React.ReactElement {
                     <Route path="/use-cases/:useCaseId" element={<UseCasePage />} />
                     <Route path="/privacy" element={<V2PrivacyPage />} />
                     <Route path="/terms" element={<V2TermsPage />} />
-                    {/* /login has no page of its own: NavigationHandler sends it to /v2/login with its query. */}
-                    <Route path="/login" element={null} />
+                    {/* /login has no page of its own: it goes to /v2/login with its query. */}
+                    <Route path="/login" element={<LegacyAuthRedirect to="/v2/login" />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/register/invite-required" element={<RegistrationInviteRequired />} />
                     <Route path="/verify-email" element={<VerifyEmail />} />
