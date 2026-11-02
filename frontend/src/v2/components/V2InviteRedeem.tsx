@@ -9,6 +9,9 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import V2Avatar from './V2Avatar';
+import V2AuthBrand from './V2AuthBrand';
+import V2AuthNotice from './V2AuthNotice';
+import './V2InviteRedeem.css';
 import { Trans, useTranslation } from 'react-i18next';
 
 interface InvitePodInfo {
@@ -113,63 +116,79 @@ const V2InviteRedeem: React.FC = () => {
     }
   };
 
+  // Layout: the d215 invite frames. The sign-in card family holding a pod:
+  // brand row, the pod's mark beside its name as the title, one key per state.
+  const card = (children: React.ReactNode) => (
+    <div className="v2-login">
+      <div className="v2-login__card v2-login__card--stack">
+        <V2AuthBrand />
+        {children}
+      </div>
+    </div>
+  );
+  const podHead = (name: string) => (
+    <div className="v2-invite__pod">
+      <V2Avatar name={name} size="lg" className="v2-invite__mark" />
+      <div className="v2-invite__heading">
+        <span className="v2-invite__eyebrow">{t('inviteRedeem.invitedEyebrow')}</span>
+        <h1 className="v2-login__title">{name}</h1>
+      </div>
+    </div>
+  );
+  const unavailable = (message: string, action: React.ReactNode) => card(
+    <>
+      <h1 className="v2-login__title">{t('inviteRedeem.unavailable')}</h1>
+      <V2AuthNotice>{message}</V2AuthNotice>
+      {action}
+    </>,
+  );
+
   if (authLoading || loading) {
-    return <div className="v2-invite-page"><div className="v2-invite-card v2-invite-card--loading">{t('inviteRedeem.loading')}</div></div>;
+    return card(<p className="v2-login__subtitle" role="status">{t('inviteRedeem.loading')}</p>);
   }
 
   // ---- anonymous: preview + signup funnel ----
   if (!isAuthenticated) {
     if (error || !preview) {
-      return (
-        <div className="v2-invite-page">
-          <div className="v2-invite-card">
-            <div className="v2-invite-card__title">{t('inviteRedeem.unavailable')}</div>
-            <div className="v2-invite-card__error">{error || t('inviteRedeem.errors.invalid')}</div>
-            <Link to="/v2" className="v2-invite-card__cta">{t('inviteRedeem.whatIsCommonly')}</Link>
-          </div>
-        </div>
+      return unavailable(
+        error || t('inviteRedeem.errors.invalid'),
+        <button type="button" className="v2-login__submit v2-login__submit--ghost" onClick={() => navigate('/v2')}>
+          {t('inviteRedeem.whatIsCommonly')}
+        </button>,
       );
     }
     const podName = preview.pod?.name || t('inviteRedeem.fallbackPod');
     const count = preview.pod?.memberCount ?? 0;
-    return (
-      <div className="v2-invite-page">
-        <div className="v2-invite-card">
-          <V2Avatar name={podName} size="lg" />
-          <div className="v2-invite-card__title">{t('inviteRedeem.invitedTo', { podName })}</div>
-          <div className="v2-invite-card__meta">
-            {t('inviteRedeem.previewMeta', { count, formattedCount: numberFormatter.format(count) })}
-          </div>
-          <button
-            type="button"
-            className="v2-invite-card__cta"
-            onClick={() => navigate(`/v2/register?next=${nextParam}`)}
-          >
-            {t('inviteRedeem.signUpToJoin')}
-          </button>
-          <div className="v2-invite-card__meta">
-            <Trans
-              i18nKey="inviteRedeem.alreadyHaveAccount"
-              components={{ login: <Link to={`/v2/login?next=${nextParam}`} className="v2-login__link" /> }}
-            />
-          </div>
-        </div>
-      </div>
+    return card(
+      <>
+        {podHead(podName)}
+        <p className="v2-invite__meta">
+          {t('inviteRedeem.previewMeta', { count, formattedCount: numberFormatter.format(count) })}
+        </p>
+        <button
+          type="button"
+          className="v2-login__submit"
+          onClick={() => navigate(`/v2/register?next=${nextParam}`)}
+        >
+          {t('inviteRedeem.signUpToJoin')}
+        </button>
+        <p className="v2-login__alt">
+          <Trans
+            i18nKey="inviteRedeem.alreadyHaveAccount"
+            components={{ login: <Link to={`/v2/login?next=${nextParam}`} className="v2-login__link" /> }}
+          />
+        </p>
+      </>,
     );
   }
 
   // ---- authenticated ----
   if (error && !invite) {
-    return (
-      <div className="v2-invite-page">
-        <div className="v2-invite-card">
-          <div className="v2-invite-card__title">{t('inviteRedeem.unavailable')}</div>
-          <div className="v2-invite-card__error">{error}</div>
-          <button type="button" className="v2-invite-card__cta" onClick={() => navigate('/v2', { replace: true })}>
-            {t('inviteRedeem.goToPods')}
-          </button>
-        </div>
-      </div>
+    return unavailable(
+      error,
+      <button type="button" className="v2-login__submit v2-login__submit--ghost" onClick={() => navigate('/v2', { replace: true })}>
+        {t('inviteRedeem.goToPods')}
+      </button>,
     );
   }
   if (!invite) return null;
@@ -177,46 +196,43 @@ const V2InviteRedeem: React.FC = () => {
   const pod = invite.pod;
   const podName = pod.name || t('inviteRedeem.untitledPod');
 
-  return (
-    <div className="v2-invite-page">
-      <div className="v2-invite-card">
-        <V2Avatar name={podName} size="lg" />
-        <div className="v2-invite-card__title">{podName}</div>
-        {pod.description && (
-          <div className="v2-invite-card__description">
-            {/* Invite resolution sends the ownership fact, not the creator ID.
-                Keep the owner's original description while correcting it for guests. */}
-            {invite.isOwner === false && pod.name === 'My Workspace' && pod.description === 'Your private workspace'
-              ? t('inviteRedeem.sharedWorkspaceDescription') : pod.description}
-          </div>
-        )}
-        <div className="v2-invite-card__meta">
-          {t('inviteRedeem.memberCount', {
-            count: pod.memberCount ?? 0,
-            formattedCount: numberFormatter.format(pod.memberCount ?? 0),
-          })}
-        </div>
-        {error && <div className="v2-invite-card__error">{error}</div>}
-        {invite.alreadyMember ? (
-          <button
-            type="button"
-            className="v2-invite-card__cta"
-            onClick={() => navigate(`/v2/pods/${pod._id}`, { replace: true })}
-          >
-            {t('inviteRedeem.goToPod')}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="v2-invite-card__cta"
-            onClick={handleJoin}
-            disabled={redeeming}
-          >
-            {redeeming ? t('inviteRedeem.joining') : t('inviteRedeem.joinPod', { podName })}
-          </button>
-        )}
-      </div>
-    </div>
+  return card(
+    <>
+      {podHead(podName)}
+      {pod.description && (
+        <p className="v2-invite__description">
+          {/* Invite resolution sends the ownership fact, not the creator ID.
+              Keep the owner's original description while correcting it for guests. */}
+          {invite.isOwner === false && pod.name === 'My Workspace' && pod.description === 'Your private workspace'
+            ? t('inviteRedeem.sharedWorkspaceDescription') : pod.description}
+        </p>
+      )}
+      <p className="v2-invite__meta">
+        {t('inviteRedeem.memberCount', {
+          count: pod.memberCount ?? 0,
+          formattedCount: numberFormatter.format(pod.memberCount ?? 0),
+        })}
+      </p>
+      {error && <V2AuthNotice>{error}</V2AuthNotice>}
+      {invite.alreadyMember ? (
+        <button
+          type="button"
+          className="v2-login__submit"
+          onClick={() => navigate(`/v2/pods/${pod._id}`, { replace: true })}
+        >
+          {t('inviteRedeem.goToPod')}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="v2-login__submit"
+          onClick={handleJoin}
+          disabled={redeeming}
+        >
+          {redeeming ? t('inviteRedeem.joining') : t('inviteRedeem.joinPod', { podName })}
+        </button>
+      )}
+    </>,
   );
 };
 

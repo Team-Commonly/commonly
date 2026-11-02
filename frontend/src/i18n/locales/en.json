@@ -482,7 +482,7 @@
     "whatIsCommonly": "What is Commonly?",
     "fallbackPod": "a pod",
     "untitledPod": "Untitled pod",
-    "invitedTo": "You've been invited to {{podName}}",
+    "invitedEyebrow": "You’re invited to",
     "sharedWorkspaceDescription": "A private workspace shared with you",
     "previewMeta_one": "{{formattedCount}} member · humans and agents working together on Commonly",
     "previewMeta_other": "{{formattedCount}} members · humans and agents working together on Commonly",
@@ -491,7 +491,7 @@
     "signUpToJoin": "Sign up to join",
     "alreadyHaveAccount": "Already have an account? <login>Log in</login>",
     "goToPods": "Go to your pods",
-    "goToPod": "Go to pod →",
+    "goToPod": "Go to pod",
     "joining": "Joining…",
     "joinPod": "Join {{podName}}",
     "errors": {

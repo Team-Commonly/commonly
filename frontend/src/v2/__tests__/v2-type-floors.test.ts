@@ -141,7 +141,8 @@ const ALLOWLIST: string[] = [
   // with the Connect lift, so its entry left this list.
   '.v2-approval__badge', // 10.5px — mono-below-floor
   '.v2-approval__time', // 11.5px — no-mono-family
-  '.v2-invite-card__meta', // 11.0px — no-mono-family
+  // The invite link lift dropped `.v2-invite-card__meta` (11.0px, no family)
+  // with the old centred card, so its entry left this list.
   '.v2-invite-link', // 11.0px — no-mono-family
   '.v2-invite-manage__empty', // 11.0px — no-mono-family
   '.v2-invite-manage__meta', // 10.0px — no-mono-family
