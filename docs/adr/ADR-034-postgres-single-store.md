@@ -82,11 +82,16 @@ boundary holds.
 
 **Mongo stays the system of record until step 4.** In `dual` and `pg-read`, a write commits to Mongo
 first and is acknowledged only once it has; the Postgres write follows. **The repair marker travels in
-the same Mongo write:** the document carries a `pgPending` flag set by that write (one document, so one
-atomic write), and the flag is cleared only after the Postgres write succeeds. A crash between the two
-leaves the flag set, so nothing depends on recording the failure after the fact. A sparse index on
-`pgPending` makes the repair a cheap scan: it re-copies each flagged document (idempotently) and clears
-the flag. A failed Postgres write counts as a mismatch, and a model in `pg-read` goes back to `dual` while
+the same Mongo write:** each write bumps a per-document version and sets `pgPending` to that version
+(one document, so one atomic write). After the Postgres write succeeds, the marker is cleared with a
+conditional update that matches that version, so an earlier write finishing late can never clear a later
+write's marker. A crash between the two leaves the marker set, so nothing depends on recording the
+failure after the fact. **A delete is two-phase:** it first marks the document deleted and pending in
+Mongo, then deletes the Postgres row, and only then removes the Mongo document. A delete that crashes
+halfway is therefore still a flagged document. A sparse index on `pgPending` makes the repair a cheap
+scan: it re-copies each flagged document, or deletes its Postgres row if it is marked deleted, then
+clears the marker the same conditional way. The dual-store helper's tests cover two writes interleaving,
+and a delete crashing at each step. A failed Postgres write counts as a mismatch, and a model in `pg-read` goes back to `dual` while
 any of its documents are flagged, including after a restart, until the repair finds none. So rolling back
 from `pg-read` to `dual` never loses an acknowledged write: Mongo has every one of them.
 
@@ -114,8 +119,10 @@ can move in an ordinary PR.
 **Wave 0, what is left.** Make Postgres required: remove the no-`PG_HOST` message mode, so an instance
 without Postgres refuses to boot instead of running degraded, and Mongo `Message` keeps only the history
 the backfill copies. Message reads come from Postgres alone once `PG_HOST` is set, so an instance moving
-off that mode would hide its history until it is copied. The step is done on an instance only when
-a report-only run of `scripts/backfill-local-messages-to-pg.ts`, without `--since` so no older history
+off that mode would hide its history until it is copied. The backfill runs with the backend stopped, after one boot with `PG_HOST` has applied
+the migrations (the script does not create tables), so no write or delete lands in Mongo mid-copy; a
+self-host upgrade can take that window. The step is done
+on an instance only when a report-only run of `scripts/backfill-local-messages-to-pg.ts`, without `--since` so no older history
 is out of scope, shows `pending` equal to `orphanedPending`. That means every pending row left belongs to a
 deleted pod and stays in Mongo by design. The release that removes the mode says so in its upgrade
 note, and boot logs the pending count, so an instance that skipped the backfill shows. Move the three self-creating tables into numbered migrations. Build the dual-store helper (D3's mode,
