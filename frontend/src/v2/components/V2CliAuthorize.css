@@ -1,82 +1,121 @@
-/* Mounted inside .v2-root (TASK-682), so every value below is a token and
-   follows the dark theme. Two sets of resets compete with these rules:
-   .v2-root's button/link/input resets at (0,1,0)-(0,1,1), and App.css's
-   legacy `body.modern-ui:not(.v2-canvas) input` (0,2,2) and
-   `...:not(.guide-canvas) button` (0,3,2) with :hover at (0,4,2). The
-   controls carry .v2-root and .v2-cli-authorize (plus __card on buttons and
-   the hover rules) so they win on specificity, not on stylesheet order.
-   No fallbacks inside var(): this file merges strictly after #3058, which
-   defines --v2-accent-fill and --v2-on-accent (UX Lead, msg 120679). */
-/* Warning ink (UX Lead, pod msg 120615): #7c4a03 vanishes on dark
-   warning-soft. Scoped here with the same dark selectors as v2.css until the
-   token has a second consumer. */
-.v2-cli-authorize { --v2-warning-ink: #7c4a03; }
-:root[data-v2-theme="dark"] .v2-cli-authorize { --v2-warning-ink: #f4c27a; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-v2-theme="light"]) .v2-cli-authorize { --v2-warning-ink: #f4c27a; }
-}
+/* CLI sign-in, the d215 s-cli-authorize frames: the shared auth card
+   (.v2-login, v2.css) plus the three things only this page draws, the code
+   field, the facts list and the two-key row. Every value is a --v2-* token,
+   so the dark theme follows.
+
+   The page mounts outside V2App, so <body> carries `modern-ui` without
+   `v2-canvas` and App.css's legacy V1 rules reach it:
+   `body.modern-ui:not(.v2-canvas) input` (0,2,2), its :focus (0,3,2),
+   `...:not(.guide-canvas) button` (0,3,2), its :hover/:active (0,4,2). The
+   family's own rules sit at (0,1,0)-(0,4,1), so the overrides below restate
+   exactly the properties those legacy rules set, scoped through
+   .v2-root.v2-cli-authorize .v2-login__card to win on specificity. The card is
+   a <div> and the code form inside it is display: contents (v2.css), so the
+   legacy `form` rule paints no box. */
 
 /* .v2-root is the app shell: height 100vh, overflow hidden, flex column.
-   This route is a page, not a shell, so it scrolls itself; the card centres
-   with margin:auto, which never pushes it past the top edge on a short
-   viewport the way place-items:center would. */
-.v2-root.v2-cli-authorize {
-  height: 100vh;
-  overflow-y: auto;
-  display: grid;
-  padding: 24px;
+   .v2-login (flex: 1, overflow-y: auto) is the scroller inside it, and the
+   card centres with margin: auto, so a short viewport scrolls instead of
+   clipping Deny / Authorize. Nothing to add here; the invariant test pins it. */
+
+/* The code reads against the terminal at a glance: mono, 18px, spaced. */
+.v2-root.v2-cli-authorize .v2-login__card input.v2-cli-authorize__code {
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--v2-r-10);
   background: var(--v2-bg-subtle);
   color: var(--v2-text-primary);
-  font-family: var(--v2-font);
+  font: 600 18px/1 var(--v2-font-mono);
+  letter-spacing: 0.08em;
+}
+.v2-root.v2-cli-authorize .v2-login__card input.v2-cli-authorize__code:focus {
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--v2-accent), var(--v2-focus-ring);
+}
+/* Signed out the field is read-only: full ink, not the browser's grey. */
+.v2-root.v2-cli-authorize .v2-login__card input.v2-cli-authorize__code:disabled {
+  opacity: 1;
+  -webkit-text-fill-color: var(--v2-text-primary);
+  cursor: default;
 }
 
-.v2-cli-authorize__card {
-  width: min(100%, 460px);
-  margin: auto;
-  padding: 32px;
-  border: 1px solid var(--v2-border);
-  border-radius: var(--v2-radius-lg);
-  background: var(--v2-surface);
+/* The keys: the family's ink fill and ghost key, restated over App.css. */
+.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit {
+  padding: 0 14px;
+  border: 1px solid var(--v2-fill-edge);
+  border-radius: var(--v2-r-10);
+  background-color: var(--v2-fill-b);
+  color: var(--v2-on-fill);
+  font-size: 14px;
+  font-weight: 600;
+  transform: none;
+}
+.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit--ghost {
+  border-color: var(--v2-key-edge);
+  background-color: var(--v2-key-b);
+  color: var(--v2-text-primary);
+}
+.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit:hover:not(:disabled) {
+  background-color: var(--v2-ink-hover);
+  transform: none;
+}
+.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit--ghost:hover:not(:disabled) {
+  background-color: var(--v2-key-b);
+}
+.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit:active {
+  transform: none;
 }
 
-/* Outranks App.css's legacy `body.modern-ui:not(.v2-canvas) form` (0,2,2). */
-.v2-root.v2-cli-authorize .v2-cli-authorize__card form { max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+/* The hostname never breaks at its hyphen. */
+.v2-cli-authorize__host {
+  white-space: nowrap;
+}
 
-.v2-cli-authorize__mark {
+/* What is asking: a bordered list, label left, value mono right. */
+.v2-cli-authorize__facts {
+  margin: 0;
+  border-radius: var(--v2-r-10);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+}
+.v2-cli-authorize__facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--v2-border-soft);
+  font-size: 13px;
+}
+.v2-cli-authorize__facts div:first-child {
+  border-top: 0;
+}
+.v2-cli-authorize__facts dt {
+  color: var(--v2-text-secondary);
+}
+.v2-cli-authorize__facts dd {
+  margin: 0;
+  font: 500 12.5px/1.4 var(--v2-font-mono);
+  color: var(--v2-text-primary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* Deny and Authorize share the row. */
+.v2-cli-authorize__keys {
   display: grid;
-  width: 36px;
-  height: 36px;
-  place-items: center;
-  border-radius: var(--v2-radius-lg);
-  background: var(--v2-accent-fill);
-  color: var(--v2-on-accent);
-  font-weight: 800;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
-.v2-cli-authorize__eyebrow { margin: 16px 0 0 !important; color: var(--v2-accent-text) !important; font-size: 11px; font-weight: 800; letter-spacing: .11em; }
-.v2-cli-authorize__card h1 { margin: 18px 0 8px; font-size: 24px; }
-.v2-cli-authorize__card p { margin: 0 0 20px; color: var(--v2-text-secondary); line-height: 1.5; }
-.v2-cli-authorize__field { display: grid; gap: 7px; margin-bottom: 18px; font-size: 13px; font-weight: 700; }
-.v2-root.v2-cli-authorize .v2-cli-authorize__field input { width: 100%; box-sizing: border-box; margin: 0; padding: 12px; border: 1px solid var(--v2-border-strong); border-radius: var(--v2-radius); background: var(--v2-surface); color: var(--v2-text-primary); font: 600 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
-.v2-root.v2-cli-authorize .v2-cli-authorize__field input:focus { outline: none; border-color: var(--v2-accent); box-shadow: var(--v2-focus-ring); }
-.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary, .v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary { display: inline-flex; justify-content: center; align-items: center; min-height: 42px; padding: 0 16px; border-radius: var(--v2-radius); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
-.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary { border: 1px solid var(--v2-accent-fill); background: var(--v2-accent-fill); color: var(--v2-on-accent); }
-.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:disabled { cursor: wait; opacity: .65; }
-.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary { border: 1px solid var(--v2-border-strong); background: var(--v2-surface); color: var(--v2-text-secondary); }
-.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:hover, .v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:active { background: var(--v2-accent-fill); transform: none; }
-.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary:hover, .v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary:active { background: var(--v2-surface-hover); transform: none; }
-.v2-cli-authorize__facts { margin: 0 0 18px; padding: 14px; border-radius: var(--v2-radius-lg); background: var(--v2-bg-subtle); }
-.v2-cli-authorize__facts div { display: flex; justify-content: space-between; gap: 18px; padding: 5px 0; }
-.v2-cli-authorize__facts dt { color: var(--v2-text-muted); }
-.v2-cli-authorize__facts dd { margin: 0; font-weight: 600; text-align: right; }
-.v2-cli-authorize__warning { padding: 10px 12px; border-radius: var(--v2-radius); background: var(--v2-warning-soft); color: var(--v2-warning-ink) !important; font-size: 13px; }
-.v2-cli-authorize__actions { display: flex; justify-content: flex-end; gap: 10px; }
+.v2-cli-authorize .v2-login__notice code {
+  font: 500 12.5px/1 var(--v2-font-mono);
+}
 
+/* The 44px touch floor and 16px type the family holds at phone width,
+   restated because the key rule above outranks v2.css's. */
 @media (max-width: 480px) {
-  .v2-root.v2-cli-authorize { padding: 16px; }
-  .v2-cli-authorize__card { margin: 0 auto auto; }
-  .v2-cli-authorize__card { padding: 24px 20px; }
-  .v2-cli-authorize__facts div { display: grid; gap: 2px; }
-  .v2-cli-authorize__facts dd { text-align: left; }
-  .v2-cli-authorize__actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit {
+    min-height: 44px;
+    font-size: 16px;
+  }
 }

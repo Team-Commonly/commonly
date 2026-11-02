@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../context/AuthContext';
+import { ShellGlyph } from '../icons/glyphs';
+import V2AuthBrand from './V2AuthBrand';
+import V2AuthNotice from './V2AuthNotice';
 import './V2CliAuthorize.css';
 
 interface AuthorizationRequest {
@@ -40,6 +43,7 @@ const currentInstance = () => {
 const V2CliAuthorize: React.FC = () => {
   const { isAuthenticated, loading, user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const queryCode = useMemo(() => normalizeCode(new URLSearchParams(location.search).get('code') || ''), [location.search]);
   const [code, setCode] = useState(queryCode);
   const [screen, setScreen] = useState<Screen>('code');
@@ -92,69 +96,114 @@ const V2CliAuthorize: React.FC = () => {
 
   const next = `/cli/authorize${code ? `?code=${encodeURIComponent(code)}` : ''}`;
 
-  return (
+  // Layout: the d215 s-cli-authorize frames. The sign-in card family: brand
+  // row, title, one prose line, the code as the field, one key per state.
+  // The page mounts outside V2App, so it carries its own .v2-root.
+  const card = (children: React.ReactNode) => (
     <main className="v2-root v2-cli-authorize">
-      <section className="v2-cli-authorize__card" aria-live="polite">
-        <div className="v2-cli-authorize__mark" aria-hidden="true">C</div>
-        <p className="v2-cli-authorize__eyebrow">CLI SIGN-IN</p>
-        {loading && <p>Checking your session…</p>}
-        {!loading && !isAuthenticated && (
-          <>
-            <h1>Authorize Commonly CLI</h1>
-            <p>Sign in to approve this device. The code stays tied to this browser tab.</p>
-            <label className="v2-cli-authorize__field">
-              <span>Device code</span>
-              <input value={code} disabled aria-label="Device code" />
-            </label>
-            <Link className="v2-cli-authorize__primary" to={`/v2/login?next=${encodeURIComponent(next)}`}>Sign in to continue</Link>
-          </>
-        )}
-        {!loading && isAuthenticated && screen === 'code' && (
-          <form onSubmit={lookup}>
-            <h1>Authorize Commonly CLI</h1>
-            <p>Enter the code shown in your terminal.</p>
-            <label className="v2-cli-authorize__field">
-              <span>Device code</span>
-              <input
-                value={code}
-                onChange={(event) => setCode(normalizeCode(event.target.value))}
-                placeholder="ABCD-EFGH"
-                autoComplete="one-time-code"
-                aria-label="Device code"
-                required
-              />
-            </label>
-            <button className="v2-cli-authorize__primary" type="submit" disabled={submitting || code.replace('-', '').length !== 8}>
-              {submitting ? 'Checking…' : 'Continue'}
-            </button>
-          </form>
-        )}
-        {!loading && isAuthenticated && screen === 'confirm' && request && (
-          <>
-            <h1>Authorize {request.hostname} as @{user?.username || 'you'}?</h1>
-            <p>This device is asking to use your Commonly account.</p>
-            <dl className="v2-cli-authorize__facts">
-              <div><dt>Client</dt><dd>{request.clientName}{request.clientVersion ? ` ${request.clientVersion}` : ''}</dd></div>
-              <div><dt>Instance</dt><dd>{currentInstance()}</dd></div>
-              <div><dt>Requested</dt><dd>{requestAge(request.createdAt)}</dd></div>
-            </dl>
-            <p className="v2-cli-authorize__warning">Only approve a code you requested from your own terminal.</p>
-            <div className="v2-cli-authorize__actions">
-              <button className="v2-cli-authorize__secondary" type="button" onClick={() => decide('deny')} disabled={submitting}>Deny</button>
-              <button className="v2-cli-authorize__primary" type="button" onClick={() => decide('authorize')} disabled={submitting}>
-                {submitting ? 'Authorizing…' : 'Authorize'}
-              </button>
-            </div>
-          </>
-        )}
-        {!loading && isAuthenticated && screen === 'done' && <><h1>Device authorized</h1><p>You can return to your terminal.</p></>}
-        {!loading && isAuthenticated && screen === 'denied' && <><h1>Authorization denied</h1><p>No token was issued for this device.</p></>}
-        {!loading && isAuthenticated && screen === 'expired' && <><h1>Code expired</h1><p>Return to your terminal and run <code>commonly login</code> again.</p></>}
-        {!loading && isAuthenticated && screen === 'used' && <><h1>Code already used</h1><p>This code was already approved or completed. Return to your terminal.</p></>}
-        {!loading && isAuthenticated && screen === 'error' && <><h1>Couldn’t authorize this device</h1><p>Check the code and try again from your terminal.</p></>}
-      </section>
+      <div className="v2-login">
+        <div className="v2-login__card v2-login__card--stack" aria-live="polite">
+          <V2AuthBrand />
+          {children}
+        </div>
+      </div>
     </main>
   );
+  const outcome = (title: string, message: React.ReactNode, kind: 'alert' | 'status' = 'status') => card(
+    <>
+      <h1 className="v2-login__title">{title}</h1>
+      <V2AuthNotice kind={kind}>{message}</V2AuthNotice>
+    </>,
+  );
+
+  if (loading) {
+    return card(<p className="v2-login__subtitle" role="status">Checking your session…</p>);
+  }
+
+  if (!isAuthenticated) {
+    return card(
+      <>
+        <h1 className="v2-login__title">Authorize Commonly CLI</h1>
+        <p className="v2-login__subtitle">Sign in to approve this device. The code stays tied to this browser tab.</p>
+        <label className="v2-login__field">
+          <span className="v2-login__label">Device code</span>
+          <input className="v2-login__input v2-cli-authorize__code" value={code} disabled aria-label="Device code" />
+        </label>
+        <button
+          className="v2-login__submit"
+          type="button"
+          onClick={() => navigate(`/v2/login?next=${encodeURIComponent(next)}`)}
+        >
+          Sign in to continue
+        </button>
+      </>,
+    );
+  }
+
+  if (screen === 'code') {
+    return card(
+      <form onSubmit={lookup}>
+        <h1 className="v2-login__title">Authorize Commonly CLI</h1>
+        <p className="v2-login__subtitle">Enter the code shown in your terminal.</p>
+        <label className="v2-login__field">
+          <span className="v2-login__label">Device code</span>
+          <input
+            className="v2-login__input v2-cli-authorize__code"
+            value={code}
+            onChange={(event) => setCode(normalizeCode(event.target.value))}
+            placeholder="ABCD-EFGH"
+            autoComplete="one-time-code"
+            aria-label="Device code"
+            required
+          />
+        </label>
+        <button className="v2-login__submit" type="submit" disabled={submitting || code.replace('-', '').length !== 8}>
+          {submitting ? 'Checking…' : 'Continue'}
+        </button>
+      </form>,
+    );
+  }
+
+  if (screen === 'confirm' && request) {
+    return card(
+      <>
+        <h1 className="v2-login__title">
+          Authorize <span className="v2-cli-authorize__host">{request.hostname}</span> as @{user?.username || 'you'}?
+        </h1>
+        <p className="v2-login__subtitle">This device is asking to use your Commonly account.</p>
+        <dl className="v2-cli-authorize__facts">
+          <div><dt>Client</dt><dd>{request.clientName}{request.clientVersion ? ` ${request.clientVersion}` : ''}</dd></div>
+          <div><dt>Instance</dt><dd>{currentInstance()}</dd></div>
+          <div><dt>Requested</dt><dd>{requestAge(request.createdAt)}</dd></div>
+        </dl>
+        <div className="v2-login__notice" role="note">
+          <ShellGlyph name="info" />
+          <span>Only approve a code you requested from your own terminal.</span>
+        </div>
+        <div className="v2-cli-authorize__keys">
+          <button className="v2-login__submit v2-login__submit--ghost" type="button" onClick={() => decide('deny')} disabled={submitting}>
+            Deny
+          </button>
+          <button className="v2-login__submit" type="button" onClick={() => decide('authorize')} disabled={submitting}>
+            {submitting ? 'Authorizing…' : 'Authorize'}
+          </button>
+        </div>
+      </>,
+    );
+  }
+
+  if (screen === 'done') return outcome('Device authorized', 'You can return to your terminal.');
+  if (screen === 'denied') return outcome('Authorization denied', 'No token was issued for this device.');
+  if (screen === 'expired') {
+    return outcome('Code expired', <>Return to your terminal and run <code>commonly login</code> again.</>);
+  }
+  if (screen === 'used') {
+    return outcome('Code already used', 'This code was already approved or completed. Return to your terminal.');
+  }
+  if (screen === 'error') {
+    return outcome('Couldn’t authorize this device', 'Check the code and try again from your terminal.', 'alert');
+  }
+  return card(null);
 };
 
 export default V2CliAuthorize;
