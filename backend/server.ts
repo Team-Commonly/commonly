@@ -46,6 +46,7 @@ const activityRoutes = require('./routes/activity');
 const marketplaceRoutes = require('./routes/marketplace');
 const marketplaceApiRoutes = require('./routes/marketplace-api');
 const { refuseDollarKeys } = require('./middleware/refuseDollarKeys');
+const { accessLog } = require('./middleware/accessLog');
 const gatewayRoutes = require('./routes/gateways');
 const skillsRoutes = require('./routes/skills');
 const devRoutes = require('./routes/dev');
@@ -159,6 +160,10 @@ if (startServices) (async () => {
   }
 })();
 
+
+// One line per answered request, route template and hashed caller only
+// (middleware/accessLog). First, so a request CORS refuses is logged too.
+app.use(accessLog);
 
 // Middleware. A disallowed origin is refused with 403 (middleware/corsPolicy).
 app.use(cors(corsOptions(allowedOrigins)));
