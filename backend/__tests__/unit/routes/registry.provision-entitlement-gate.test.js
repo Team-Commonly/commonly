@@ -21,15 +21,8 @@ jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn((name) => (
     String(name).toLowerCase() === 'openclaw' ? { runtime: 'moltbot' } : null
   )),
-  isCloudRuntime: jest.fn(({ runtimeType, host } = {}) => {
-    const rt = String(runtimeType || '').toLowerCase();
-    const h = String(host || '').toLowerCase();
-    if (h === 'byo') return false;
-    if (rt === 'webhook' || rt === 'claude-code') return false;
-    if (['moltbot', 'internal', 'native', 'managed-agents'].includes(rt)) return true;
-    if (rt === 'codex') return true;
-    return false;
-  }),
+  // The real classifier, not a copy, so this file tests the rule the route runs.
+  isCloudRuntime: jest.requireActual('../../../services/agentIdentityService').isCloudRuntime,
   getOrCreateAgentUser: jest.fn(),
   ensureAgentInPod: jest.fn(),
 }));
@@ -58,7 +51,7 @@ jest.mock('../../../routes/registry/helpers', () => ({
 
 const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
-const { isGlobalAdminUser } = require('../../../routes/registry/helpers');
+const { isGlobalAdminUser, resolveInstallation } = require('../../../routes/registry/helpers');
 const provisionRouter = require('../../../routes/registry/provision');
 
 const buildLeanChain = (result) => ({ lean: jest.fn().mockResolvedValue(result) });
@@ -80,6 +73,23 @@ describe('registry provision — cloud-agent entitlement gate', () => {
   });
 
   it('403s a non-admin, non-entitled user provisioning a cloud (moltbot) agent', async () => {
+    User.findById.mockReturnValue(buildSelectLeanChain({
+      entitlements: { cloudAgents: false },
+    }));
+
+    const res = await request(app)
+      .post('/api/registry/pods/pod-1/agents/openclaw/provision')
+      .send({});
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('cloud_agents_not_entitled');
+  });
+
+  it('gates a Commonly-run runtime whatever host its stored install names', async () => {
+    resolveInstallation.mockResolvedValueOnce({
+      installation: { status: 'active', config: { runtime: { host: 'byo' } }, runtimeTokens: [] },
+      instanceId: 'default',
+    });
     User.findById.mockReturnValue(buildSelectLeanChain({
       entitlements: { cloudAgents: false },
     }));

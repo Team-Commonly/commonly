@@ -588,8 +588,10 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     // Hosted-agent entitlement gate (open-registration prerequisite). A cloud
     // (Commonly-hosted) runtime requires the installer to be an admin OR to
     // carry the `cloudAgents` entitlement. BYO / self-serve installs (webhook,
-    // claude-code, or host:'byo') are intentionally NOT gated — connecting your
-    // own local agent stays open to all authenticated users. Resolve the
+    // claude-code, or host:'byo' on a type with a BYO variant) are intentionally
+    // NOT gated — connecting your own local agent stays open to all
+    // authenticated users. A runtime only Commonly runs is gated whatever host
+    // the caller writes (isCloudRuntime). Resolve the
     // effective runtimeType from the same place we just stored it
     // (config.runtime), falling back to the agent's AGENT_TYPES runtime so a
     // built-in cloud agent (openclaw→moltbot, commonly-bot→internal) is caught

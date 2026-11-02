@@ -44,10 +44,21 @@ describe('agentIdentityService cloud-runtime taxonomy', () => {
       expect(isCloudRuntime({ runtimeType })).toBe(false);
     });
 
-    it("host:'byo' always wins, even for an otherwise-cloud runtimeType", () => {
-      expect(isCloudRuntime({ runtimeType: 'moltbot', host: 'byo' })).toBe(false);
+    it("host:'byo' makes codex BYO: a codex seat can be a laptop wrapper", () => {
       expect(isCloudRuntime({ runtimeType: 'codex', host: 'byo' })).toBe(false);
-      expect(isCloudRuntime({ runtimeType: 'native', host: 'byo' })).toBe(false);
+      expect(isCloudRuntime({ runtimeType: 'webhook', host: 'byo' })).toBe(false);
+      expect(isCloudRuntime({ runtimeType: '', host: 'byo' })).toBe(false);
+    });
+  });
+
+  // Only Commonly runs these (dispatch runs native in-process; gateways are
+  // admin-only), so the classification follows the runtime type.
+  describe('a runtime Commonly runs is cloud whatever its host label', () => {
+    it.each([
+      ['native'], ['moltbot'], ['internal'], ['managed-agents'], ['NATIVE'],
+    ])('%s with host byo is cloud', (runtimeType) => {
+      expect(isCloudRuntime({ runtimeType, host: 'byo' })).toBe(true);
+      expect(isCloudRuntime({ runtimeType, host: 'BYO' })).toBe(true);
     });
 
     it('unknown / unspecified runtimeType defaults to NON-cloud (open)', () => {

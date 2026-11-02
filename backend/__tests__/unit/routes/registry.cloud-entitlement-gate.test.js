@@ -45,15 +45,8 @@ jest.mock('../../../services/agentIdentityService', () => ({
   getAgentTypeConfig: jest.fn((name) => (
     String(name).toLowerCase() === 'openclaw' ? { runtime: 'moltbot' } : null
   )),
-  isCloudRuntime: jest.fn(({ runtimeType, host } = {}) => {
-    const rt = String(runtimeType || '').toLowerCase();
-    const h = String(host || '').toLowerCase();
-    if (h === 'byo') return false;
-    if (rt === 'webhook' || rt === 'claude-code') return false;
-    if (['moltbot', 'internal', 'native', 'managed-agents'].includes(rt)) return true;
-    if (rt === 'codex') return true;
-    return false;
-  }),
+  // The real classifier, not a copy, so this file tests the rule the route runs.
+  isCloudRuntime: jest.requireActual('../../../services/agentIdentityService').isCloudRuntime,
 }));
 
 jest.mock('../../../services/agentMessageService', () => ({
@@ -278,6 +271,44 @@ describe('registry install — cloud-agent entitlement gate', () => {
       code: 'cloud_agents_not_entitled',
     }));
     expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
+
+  // The gate follows who runs a runtime, not the host label an install carries.
+  const unentitledInstall = async (config, manifest = { context: { required: [] }, runtime: { type: 'standalone' } }) => {
+    AgentRegistry.getByName.mockResolvedValue({
+      agentName: 'my-bot', displayName: 'My Bot', description: 'x', latestVersion: '1.0.0', manifest,
+    });
+    User.findById.mockReturnValue(buildSelectLeanChain({
+      username: 'installer', role: 'user', entitlements: { cloudAgents: false },
+    }));
+    const res = makeRes();
+    await installHandler({
+      body: { agentName: 'my-bot', podId: 'pod-1', version: '1.0.0', config, scopes: [] },
+      user: { id: 'user-1', username: 'installer' },
+      userId: 'user-1',
+    }, res);
+    return res;
+  };
+
+  it.each([
+    ['native'], ['moltbot'], ['internal'], ['managed-agents'],
+  ])('gates a %s runtime whatever host the install names', async (runtimeType) => {
+    const res = await unentitledInstall({ runtime: { runtimeType, host: 'byo' } });
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'cloud_agents_not_entitled' }));
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
+
+  it('gates a manifest-declared native runtime whatever host the install names', async () => {
+    const res = await unentitledInstall({ runtime: { host: 'byo' } }, manifestWithRuntimeType('native'));
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(AgentInstallation.install).not.toHaveBeenCalled();
+  });
+
+  it('keeps a codex seat on its own host open', async () => {
+    const res = await unentitledInstall({ runtime: { runtimeType: 'codex', host: 'byo' } });
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(AgentInstallation.install).toHaveBeenCalled();
   });
 
   it('lets an explicit caller runtimeType win over the manifest, so a manifest edit cannot re-shape a live install', async () => {

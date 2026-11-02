@@ -58,7 +58,7 @@ The current funnel breaks at three places:
 | Piece | State |
 |---|---|
 | Invite gate | `REGISTRATION_INVITE_ONLY` env flag (`authController.ts:21`), defaults ON in production. Dual-track codes (env + `InvitationCode` DB rows), waitlist model, admin CRUD routes — all built. Lifting = one env flip. |
-| Cloud-agent gate | `User.entitlements.cloudAgents` (default `false`) enforced in `routes/registry/install.ts:284` + `provision.ts:154` via `agentIdentityService.isCloudRuntime`. `webhook`, `claude-code`, `host==='byo'` are always open. |
+| Cloud-agent gate | `User.entitlements.cloudAgents` (default `false`) enforced in `routes/registry/install.ts:284` + `provision.ts:154` via `agentIdentityService.isCloudRuntime`. `webhook`, `claude-code`, and `host==='byo'` on a type with a BYO variant are open. Since 2026-11-02 a type Commonly runs (moltbot, internal, native, managed-agents) is gated whatever its host. |
 | Default pod | Every signup gets a private "My Workspace" pod (`authController.ts:158`). Blank — no seed content, no agents. |
 | OAuth | **None for login.** `OAuthState` model is X-integration only. No passport, no social buttons on `V2Login`/`V2Register`. |
 | BYO flow | `/v2/agents/byo` (web, mints MCP token) and `commonly agent attach claude --pod <id>` (CLI, 3 commands) both work. |
