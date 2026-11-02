@@ -27,6 +27,13 @@ const path = require('path');
 // schema text can re-export it at that point, with a consumer to justify it —
 // the standard applied to `createTableFor`, applied to its siblings.
 const SCHEMA_PATH = path.join(__dirname, '../../config/schema.sql');
+// schema.sql is the frozen 0001 baseline. A column a later migration adds is
+// part of the table every instance boots with, so a fixture needs it too.
+const MIGRATIONS_DIR = path.join(__dirname, '../../config/migrations');
+const laterMigrations = () => fs.readdirSync(MIGRATIONS_DIR)
+  .filter((name) => /^\d{4}_.*\.sql$/.test(name) && !name.startsWith('0001_'))
+  .sort()
+  .map((name) => fs.readFileSync(path.join(MIGRATIONS_DIR, name), 'utf8'));
 
 /**
  * Returns the `CREATE TABLE IF NOT EXISTS <name> ( ... );` statement verbatim.
@@ -91,9 +98,9 @@ function createTableFor(name) {
  * "column does not exist" a long way from the cause.
  */
 function retrofitsFor(name) {
-  const sql = fs.readFileSync(SCHEMA_PATH, 'utf8');
   const re = new RegExp(`ALTER TABLE ${name}\\s+ADD COLUMN IF NOT EXISTS[^;]*;`, 'gi');
-  return sql.match(re) || [];
+  return [fs.readFileSync(SCHEMA_PATH, 'utf8'), ...laterMigrations()]
+    .flatMap((sql) => sql.match(re) || []);
 }
 
 /**

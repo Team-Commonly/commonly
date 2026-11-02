@@ -582,6 +582,9 @@ spec:
           value: /app/docs/skills/awesome-agent-skills-index.json
         - name: AGENT_COMPUTER_ENABLED
           value: {{ .Values.backend.env.agentComputerEnabled | default "false" | quote }}
+        # TASK-284: the seat push tool (github.push_branch). Off unless exactly "true".
+        - name: SEAT_GITHUB_PUSH_ENABLED
+          value: {{ .Values.backend.env.seatGithubPushEnabled | default "false" | quote }}
         - name: AGENT_COMPUTER_STEEL_API_URL_TEMPLATE
           value: {{ .Values.backend.env.agentComputerSteelApiUrlTemplate | default "" | quote }}
         - name: AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE

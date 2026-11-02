@@ -18,6 +18,15 @@ const { pool } = require('../../../config/db-pg');
 const ToolCall = require('../../../models/ToolCall');
 
 const SCHEMA = fs.readFileSync(path.join(__dirname, '../../../config/schema.sql'), 'utf8');
+// schema.sql is the frozen 0001 baseline; a fresh database also runs every
+// later migration, so a column a migration adds is part of the shipped table.
+const MIGRATIONS = path.join(__dirname, '../../../config/migrations');
+const migratedColumns = (table) => fs.readdirSync(MIGRATIONS)
+  .filter((name) => /^\d{4}_.*\.sql$/.test(name) && !name.startsWith('0001_'))
+  .sort()
+  .flatMap((name) => [...fs.readFileSync(path.join(MIGRATIONS, name), 'utf8')
+    .matchAll(new RegExp(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ([A-Za-z_][A-Za-z0-9_]*)`, 'g'))]
+    .map(([, column]) => column));
 
 const CONSTRAINT_WORDS = ['PRIMARY', 'UNIQUE', 'FOREIGN', 'CHECK', 'CONSTRAINT', 'CREATE', 'INDEX'];
 
@@ -77,7 +86,8 @@ describe('the trail schema has one source: the migrations', () => {
       .map((name) => name.trim())
       .filter(Boolean);
     expect(listed.length).toBeGreaterThan(5);
-    expect(listed.filter((name) => !columnsOf(shipped).includes(name))).toEqual([]);
+    const shippedColumns = [...columnsOf(shipped), ...migratedColumns('tool_calls')];
+    expect(listed.filter((name) => !shippedColumns.includes(name))).toEqual([]);
     expect(listed).toContain('credential_owner_id');
     // The value is bound, not interpolated: an owner id is data.
     const insertCall = pool.query.mock.calls.find(([sql]) => /INSERT INTO tool_calls/.test(String(sql)));

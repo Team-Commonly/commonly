@@ -101,6 +101,20 @@ interface PullReviewOptions {
   pullNumber: number;
   event: PullReviewEvent;
   body?: string;
+  installationId?: string;
+  forceApp?: boolean;
+}
+
+interface CreatePullRequestOptions {
+  owner?: string;
+  repo?: string;
+  title: string;
+  head: string;
+  base: string;
+  body?: string;
+  draft?: boolean;
+  installationId?: string;
+  forceApp?: boolean;
 }
 
 /**
@@ -323,6 +337,20 @@ class GitHubAppService {
     return res.data;
   }
 
+  /** Create a pull request without returning the App credential to the seat. */
+  static async createPullRequest({
+    owner = 'Team-Commonly', repo = 'commonly', title, head, base, body, draft,
+    installationId, forceApp,
+  }: CreatePullRequestOptions): Promise<unknown> {
+    const headers = await this._apiHeaders(installationId, forceApp);
+    const res = await axios.post(
+      `https://api.github.com/repos/${owner}/${repo}/pulls`,
+      { title, head, base, ...(body !== undefined ? { body } : {}), ...(draft !== undefined ? { draft } : {}) },
+      { headers },
+    );
+    return res.data;
+  }
+
   /** List files changed by one pull request. */
   static async listPullRequestFiles({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId, forceApp }: PullRequestOptions): Promise<unknown[]> {
     const headers = await this._apiHeaders(installationId, forceApp);
@@ -374,8 +402,10 @@ class GitHubAppService {
    * `event` is one of APPROVE | REQUEST_CHANGES | COMMENT. GitHub requires a
    * non-empty `body` for REQUEST_CHANGES and COMMENT (the route enforces this).
    */
-  static async createPullReview({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, event, body }: PullReviewOptions): Promise<unknown> {
-    const headers = await this._apiHeaders();
+  static async createPullReview({
+    owner = 'Team-Commonly', repo = 'commonly', pullNumber, event, body, installationId, forceApp,
+  }: PullReviewOptions): Promise<unknown> {
+    const headers = await this._apiHeaders(installationId, forceApp);
     const payload: Record<string, unknown> = { event };
     if (body) payload.body = body;
     const res = await axios.post(

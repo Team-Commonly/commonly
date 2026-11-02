@@ -163,6 +163,9 @@ backend:
     # Agent computer is an opt-in staging experiment. Empty endpoints keep it
     # unavailable even when the flag is enabled.
     agentComputerEnabled: "false"
+    # TASK-284: brokered GitHub pushes for confined host seats. Off until an
+    # instance has walked it (docs: PR #2546 supervised staging walk).
+    seatGithubPushEnabled: "false"
     agentComputerSteelApiUrlTemplate: ""
     agentComputerSteelCdpUrlTemplate: ""
     agentComputerAllowedHosts: ""

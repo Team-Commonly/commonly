@@ -95,7 +95,9 @@ add('/api/v1/tasks', 'pod_write', [
   'POST /:podId/:taskId/updates', 'PATCH /:podId/:taskId', 'POST /:podId/:taskId/watch',
 ], podParam);
 add('/api/grants', 'grant', ['POST /:grantId/attenuate', 'GET /:grantId/calls', 'GET /:grantId']);
-add('/api/mcp/grants', 'grant', ['POST /:grantId']);
+// /push and /cli run through the broker against the named grant, as the MCP
+// endpoint does (TASK-284), so the broker's own grant checks decide them.
+add('/api/mcp/grants', 'grant', ['POST /:grantId', 'POST /:grantId/push', 'POST /:grantId/cli']);
 
 export const runtimeOutsiderGrantRouteKeys = Object.keys(rules);
 
