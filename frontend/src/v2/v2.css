@@ -1937,6 +1937,9 @@ body.modern-ui.v2-canvas {
    the card (invite-required has two) lends its rows to that grid. */
 .v2-login__card--stack {
   display: grid;
+  /* minmax(0, 1fr): one long unbroken word (a pod description, a URL) wraps
+     inside the card instead of widening the grid column past it. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 .v2-login__card--stack > form {

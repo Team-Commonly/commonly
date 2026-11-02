@@ -29,6 +29,7 @@
 }
 .v2-invite__description {
   margin: 0;
+  overflow-wrap: anywhere;
   font-size: 14px;
   line-height: 21px;
   color: var(--v2-text-secondary);
