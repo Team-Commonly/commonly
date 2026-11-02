@@ -154,9 +154,9 @@ const V2PersonProfile: React.FC = () => {
       if (typeof count === 'number') forTarget((p) => ({ ...p, followersCount: count }));
     } catch {
       forTarget((p) => ({ ...p, ...before }));
-      if (shownId.current === targetId) setFollowError(true);
+      if (shownId.current.toLowerCase() === targetId.toLowerCase()) setFollowError(true);
     } finally {
-      if (shownId.current === targetId) setFollowBusy(false);
+      if (shownId.current.toLowerCase() === targetId.toLowerCase()) setFollowBusy(false);
     }
   };
 

@@ -154,6 +154,13 @@ const bareElementSelectors = (css: string): string[] => {
 };
 
 describe('v2 layout invariants (CSS rule presence)', () => {
+  test('/v2/profile: on a phone the header wraps and its one key takes the full row (d215 s-profile 390)', () => {
+    const profile = read('../components/V2PersonProfile.css');
+    const phone = profile.slice(profile.indexOf('@media (max-width: 760px)'));
+    expect(phone).toMatch(/\.v2-profile \.v2-profile__head \{[^}]*flex-wrap: wrap/);
+    expect(phone).toMatch(/\.v2-profile \.v2-profile__follow, \.v2-profile \.v2-profile__edit \{[^}]*flex: 1 0 100%/);
+  });
+
   test('/cli/authorize scrolls inside the .v2-root shell on a short viewport (TASK-682)', () => {
     // .v2-root is height 100vh + overflow hidden; the page must override it or
     // the lower controls (Deny / Authorize) are unreachable on a short screen.

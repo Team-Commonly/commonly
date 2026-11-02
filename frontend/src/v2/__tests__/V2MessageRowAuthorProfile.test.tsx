@@ -39,6 +39,13 @@ describe('V2MessageRow author click', () => {
     expect(onAuthorClick).not.toHaveBeenCalled();
   });
 
+  it.each([0, 1])('opens the profile from control %i on its own', (index) => {
+    const onAuthorClick = renderRow({ id: 'h1', user_id: HUMAN_ID, content: 'hi', user: { username: 'juno', isBot: false } });
+    fireEvent.click(screen.getAllByRole('button', { name: "View juno's profile" })[index]);
+    expect(screen.getByTestId('current-path')).toHaveTextContent(`/v2/profile/${HUMAN_ID}`);
+    expect(onAuthorClick).not.toHaveBeenCalled();
+  });
+
   it('keeps an agent author on the inspector handler', () => {
     const onAuthorClick = renderRow({ id: 'a1', user_id: '64b7f0c2a1b2c3d4e5f60799', content: 'done', user: { username: 'vale', isBot: true } });
     expect(screen.queryByRole('button', { name: /profile/ })).not.toBeInTheDocument();
