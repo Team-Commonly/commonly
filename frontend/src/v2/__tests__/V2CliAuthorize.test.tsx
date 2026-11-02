@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { AuthContext } from '../../context/AuthContext';
 import V2CliAuthorize from '../components/V2CliAuthorize';
@@ -28,35 +28,114 @@ const renderPage = (path = '/cli/authorize?code=ABCD-EFGH', value = auth) => ren
   </AuthContext.Provider>,
 );
 
+const LoginProbe = () => {
+  const location = useLocation();
+  return <p data-testid="login-probe">{location.pathname + location.search}</p>;
+};
+
+const renderWithLogin = (path, value) => render(
+  <AuthContext.Provider value={value}>
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/cli/authorize" element={<V2CliAuthorize />} />
+        <Route path="/v2/login" element={<LoginProbe />} />
+      </Routes>
+    </MemoryRouter>
+  </AuthContext.Provider>,
+);
+
+const signedOut = { ...auth, currentUser: null, user: null, token: null, isAuthenticated: false };
+
+// The d215 auth card: the product mark's brand row, never the old lettered
+// tile or the all-caps eyebrow.
+const expectAuthCard = (container) => {
+  expect(container.querySelector('main.v2-root.v2-cli-authorize .v2-login .v2-login__card.v2-login__card--stack')).not.toBeNull();
+  expect(container.querySelector('.v2-login__brand')).not.toBeNull();
+  expect(container.querySelector('.v2-cli-authorize__mark')).toBeNull();
+  expect(screen.queryByText('CLI SIGN-IN')).toBeNull();
+  expect(screen.queryByText('C', { exact: true })).toBeNull();
+};
+
 afterEach(() => jest.clearAllMocks());
+
+test('claims the v2 page canvas while mounted, and gives it back on unmount', () => {
+  // Outside V2App, body.v2-canvas is what switches off App.css's legacy
+  // input, button and form rules (all gated on body.modern-ui:not(.v2-canvas)).
+  document.body.classList.remove('v2-canvas');
+  const { unmount } = renderPage();
+  expect(document.body).toHaveClass('v2-canvas');
+  unmount();
+  expect(document.body).not.toHaveClass('v2-canvas');
+});
 
 describe('V2CliAuthorize', () => {
   test('prefills a terminal code, confirms the device facts, then completes approval', async () => {
     axios.post
       .mockResolvedValueOnce({ data: { status: 'pending', request: { hostname: 'sam-laptop', clientName: 'commonly-cli', clientVersion: '0.1.26', createdAt: '2026-08-31T00:00:00.000Z' } } })
       .mockResolvedValueOnce({ data: { status: 'authorized' } });
-    renderPage();
+    const { container } = renderPage();
 
-    expect(screen.getByLabelText('Device code')).toHaveValue('ABCD-EFGH');
+    expectAuthCard(container);
+    expect(screen.getByRole('heading', { level: 1, name: 'Authorize Commonly CLI' })).toHaveClass('v2-login__title');
+    expect(screen.getByText('Enter the code shown in your terminal.')).toHaveClass('v2-login__subtitle');
+    const input = screen.getByLabelText('Device code');
+    expect(input).toHaveValue('ABCD-EFGH');
+    expect(input).toHaveClass('v2-login__input', 'v2-cli-authorize__code');
+    expect(input.closest('label')).toHaveClass('v2-login__field');
+    expect(screen.getByRole('button', { name: 'Continue' })).toHaveClass('v2-login__submit');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/auth/device/authorize', { userCode: 'ABCD-EFGH' }));
-    expect(await screen.findByText('Authorize sam-laptop as @lily?')).toBeInTheDocument();
-    expect(screen.getByText('CLI SIGN-IN')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Authorize' }));
+    const title = await screen.findByRole('heading', { level: 1, name: 'Authorize sam-laptop as @lily?' });
+    expectAuthCard(container);
+    expect(title.querySelector('.v2-cli-authorize__host')).toHaveTextContent('sam-laptop');
+    const facts = container.querySelector('dl.v2-cli-authorize__facts');
+    expect(facts).not.toBeNull();
+    expect(Array.from(facts.querySelectorAll('dt')).map((dt) => dt.textContent)).toEqual(['Client', 'Instance', 'Requested']);
+    expect(screen.getByText('commonly-cli 0.1.26').tagName).toBe('DD');
+    const caution = screen.getByRole('note');
+    expect(caution).toHaveClass('v2-login__notice');
+    expect(caution).toHaveTextContent('Only approve a code you requested from your own terminal.');
+    expect(caution.querySelector('svg')).not.toBeNull();
+    const deny = screen.getByRole('button', { name: 'Deny' });
+    const authorize = screen.getByRole('button', { name: 'Authorize' });
+    expect(deny).toHaveClass('v2-login__submit', 'v2-login__submit--ghost');
+    expect(authorize).toHaveClass('v2-login__submit');
+    expect(authorize).not.toHaveClass('v2-login__submit--ghost');
+    expect(deny.parentElement).toHaveClass('v2-cli-authorize__keys');
+    expect(authorize.parentElement).toBe(deny.parentElement);
+
+    fireEvent.click(authorize);
     await waitFor(() => expect(axios.post).toHaveBeenLastCalledWith('/api/auth/device/authorize', {
       userCode: 'ABCD-EFGH', decision: 'authorize',
     }));
-    expect(await screen.findByText('Device authorized')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Device authorized' })).toBeInTheDocument();
+    const status = screen.getByRole('status');
+    expect(status).toHaveClass('v2-login__notice');
+    await waitFor(() => expect(status).toHaveTextContent('You can return to your terminal.'));
   });
 
   test('signed-out users get an explicit return path after sign-in', () => {
-    renderPage('/cli/authorize?code=ABCD-EFGH', { ...auth, currentUser: null, user: null, token: null, isAuthenticated: false });
-    expect(screen.getByRole('link', { name: 'Sign in to continue' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('next=%2Fcli%2Fauthorize%3Fcode%3DABCD-EFGH'),
-    );
+    const { container } = renderWithLogin('/cli/authorize?code=ABCD-EFGH', signedOut);
+    expectAuthCard(container);
+    expect(screen.getByRole('heading', { level: 1, name: 'Authorize Commonly CLI' })).toBeInTheDocument();
     expect(screen.getByLabelText('Device code')).toBeDisabled();
+    expect(screen.getByLabelText('Device code')).toHaveValue('ABCD-EFGH');
+    expect(screen.queryByRole('link', { name: 'Sign in to continue' })).toBeNull();
+    const key = screen.getByRole('button', { name: 'Sign in to continue' });
+    expect(key).toHaveClass('v2-login__submit');
+
+    fireEvent.click(key);
+    expect(screen.getByTestId('login-probe')).toHaveTextContent(
+      '/v2/login?next=%2Fcli%2Fauthorize%3Fcode%3DABCD-EFGH',
+    );
+  });
+
+  test('the session check is the card with one status line', () => {
+    const { container } = renderPage('/cli/authorize?code=ABCD-EFGH', { ...signedOut, loading: true });
+    expectAuthCard(container);
+    expect(screen.getByRole('status')).toHaveTextContent('Checking your session…');
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
   });
 
   test('shows the request instance and the expired state for signed-in users', async () => {
@@ -69,7 +148,10 @@ describe('V2CliAuthorize', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('self-hosted.example')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Authorize' }));
-    expect(await screen.findByText('Code expired')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Code expired' })).toBeInTheDocument();
+    const status = screen.getByRole('status');
+    await waitFor(() => expect(status).toHaveTextContent('Return to your terminal and run commonly login again.'));
+    expect(status.querySelector('code')).toHaveTextContent('commonly login');
     axios.defaults.baseURL = '';
   });
 
@@ -78,6 +160,25 @@ describe('V2CliAuthorize', () => {
     renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByText('Code already used')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Code already used' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('This code was already approved or completed.'));
+  });
+
+  test('a denied request says no token was issued', async () => {
+    axios.post.mockResolvedValue({ data: { status: 'denied' } });
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Authorization denied' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('No token was issued for this device.'));
+  });
+
+  test('a failed lookup is an alert row', async () => {
+    axios.post.mockRejectedValue({ response: { status: 500 } });
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Couldn’t authorize this device' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Check the code and try again from your terminal.');
   });
 });

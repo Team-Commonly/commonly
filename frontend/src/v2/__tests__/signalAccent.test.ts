@@ -108,27 +108,25 @@ describe('Signal accent on standalone and bridged surfaces', () => {
 
   test('the CLI authorize surface mounts in .v2-root and reads tokens only', () => {
     // TASK-682: wrapped in .v2-root so the tokens resolve and the dark theme reaches it.
+    // d215: it sits on the shared auth card, so the page CSS keeps only its own pieces.
     const tsx = read('src/v2/components/V2CliAuthorize.tsx');
     expect(tsx).toContain('<main className="v2-root v2-cli-authorize">');
+    expect(tsx).toContain('<div className="v2-login__card v2-login__card--stack"');
     const css = read('src/v2/components/V2CliAuthorize.css');
-    expect(css).toContain('background: var(--v2-accent-fill)');
-    expect(css).toContain('box-shadow: var(--v2-focus-ring)');
-    // No fallbacks inside var() (it merges after #3058), and no card shadow.
-    expect(css).not.toMatch(/var\(--v2-[a-z-]+,/);
-    expect(css).not.toContain('0 12px 32px');
-    // The only hexes are the warning-ink token's light and dark values.
-    expect(css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/var\(--v2-[a-z-]+, #[0-9a-f]+\)/gi, '').match(/#[0-9a-f]{3,8}\b/gi)).toEqual(['#7c4a03', '#f4c27a', '#f4c27a']);
-    // The input must outrank `body.modern-ui:not(.v2-canvas) input` (0,2,2).
-    expect(css).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__field input {');
-    expect(css).toContain('color: var(--v2-warning-ink) !important');
-    expect(css).toContain(':root[data-v2-theme="dark"] .v2-cli-authorize { --v2-warning-ink: #f4c27a; }');
-    expect(css).toContain(':root:not([data-v2-theme="light"]) .v2-cli-authorize { --v2-warning-ink: #f4c27a; }');
-    // App.css's legacy button rule is (0,3,2), its :hover (0,4,2): the controls must out-specify both.
-    expect(css).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary {');
-    expect(css).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__primary:hover');
-    expect(css).toContain('.v2-root.v2-cli-authorize .v2-cli-authorize__card .v2-cli-authorize__secondary {');
-    // Inputs set their own ground, or dark leaves them browser white.
-    expect(css).toMatch(/\.v2-cli-authorize__field input \{[^}]*background: var\(--v2-surface\)/);
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, '');
+    // Tokens only: no hexes, no fallbacks inside var(), no card of its own.
+    expect(rules.match(/#[0-9a-f]{3,8}\b/gi)).toBeNull();
+    expect(rules).not.toMatch(/var\(--v2-[a-z0-9-]+,/);
+    expect(rules).not.toContain('.v2-cli-authorize__card');
+    expect(rules).not.toContain('--v2-warning-ink');
+    // The page mounts outside V2App, so it claims body.v2-canvas itself (at boot
+    // and while mounted). That gate is what turns off App.css's legacy
+    // `body.modern-ui:not(.v2-canvas)` input, button and form rules, so the page
+    // restates none of them.
+    expect(tsx).toMatch(/document\.body\.classList\.add\('v2-canvas'\)/);
+    expect(tsx).toMatch(/document\.body\.classList\.remove\('v2-canvas'\)/);
+    expect(read('src/index.tsx')).toContain("/^\\/cli\\/authorize\\/?$/.test(bootPath)");
+    expect(rules).not.toContain('button.v2-login__submit');
   });
 
   test.each([

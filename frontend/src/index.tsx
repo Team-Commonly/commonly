@@ -15,11 +15,12 @@ if (process.env.REACT_APP_SENTRY_DSN) {
 // CssBaseline's palette.background.default #0b1220 — injected at render),
 // and a class added in V2App's useEffect wins only AFTER first paint, so
 // every v2 load still flashed dark for a frame (Sam, 2026-08-24). '/' and
-// '/v2*' are the v2 front door; V2App's effect keeps the class in sync for
+// '/v2*' are the v2 front door (and /cli/authorize, a v2 page mounted outside
+// V2App that keeps the class itself); V2App's effect keeps the class in sync for
 // SPA navigation after boot. Legacy deep links that redirect into /v2 may
 // still flash once — the exception, not the entry path.
 const bootPath = window.location.pathname;
-if (bootPath === '/' || bootPath.startsWith('/v2')) {
+if (bootPath === '/' || bootPath.startsWith('/v2') || /^\/cli\/authorize\/?$/.test(bootPath)) {
   document.body.classList.add('v2-canvas');
 }
 if (bootPath === '/guides' || bootPath.startsWith('/guides/')) {
