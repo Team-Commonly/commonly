@@ -3018,10 +3018,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       const footer44 = '.v2-root .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button.v2-activity__queue-action--icon { flex: none; width: 44px; min-width: 44px; }';
       expect(enclosingMedia(icon44)).toBe('@media (max-width: 760px)');
       expect(enclosingMedia(footer44)).toBe('@media (max-width: 760px)');
-      // And the footer override follows the full-width rule it beats, inside that same block.
-      const fullWidth = '.v2-activity__decision-footer > button { flex: 1 1 100%;';
-      expect(v2.indexOf(footer44)).toBeGreaterThan(v2.indexOf(fullWidth));
-      expect(enclosingMedia(fullWidth)).toBe('@media (max-width: 760px)');
+      // And the footer override follows the text-button rule it beats, inside that same block.
+      const footerText = '.v2-activity__decision-footer > button { flex: 1 1 auto;';
+      expect(v2.indexOf(footer44)).toBeGreaterThan(v2.indexOf(footerText));
+      expect(enclosingMedia(footerText)).toBe('@media (max-width: 760px)');
       // Other… is cobalt text; the handoff act is ink (no bordered modifier).
       expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--other')).toContain('color: var(--v2-accent-text)');
       expect(activityPage).toContain('<button type="button" onClick={() => markHandoffHandled(item)}');

@@ -5590,7 +5590,8 @@ body.modern-ui.v2-canvas {
   .v2-root .v2-activity__reply > button { min-height: 44px; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }
   .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button { width: 100%; min-height: 44px; }
-  .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button { flex: 1 1 100%; min-height: 44px; }
+  /* Other… grows and the ↗ handoff square sits beside it: one footer row, as d215 s-activity draws it. */
+  .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button { flex: 1 1 auto; min-height: 44px; }
   /* Icon acts stay 44px squares under 760 — the full-width `> button` rule above would stretch them. */
   .v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon { width: 44px; min-width: 44px; flex: none; }
   .v2-root .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button.v2-activity__queue-action--icon { flex: none; width: 44px; min-width: 44px; }
