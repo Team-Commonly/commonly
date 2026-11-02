@@ -41,8 +41,8 @@ export default async function auth(req: Request, res: Response, next: NextFuncti
   }
 
   // Machine and runtime bearers live in AgentCredential, never on User. Make
-  // that boundary explicit instead of relying on their value never colliding
-  // with User.apiToken; those credentials must use daemonAuth/agentRuntimeAuth.
+  // that boundary explicit instead of relying on their digest never colliding
+  // with User.apiTokenHash; those credentials must use daemonAuth/agentRuntimeAuth.
   if (token.startsWith('cm_daemon_') || token.startsWith('cm_agent_')) {
     return res.status(401).json({ msg: 'Daemon and agent tokens cannot authenticate user routes' });
   }

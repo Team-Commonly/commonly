@@ -15,6 +15,7 @@ require('dotenv').config();
 
 const mongoose = require('mongoose');
 const AgentIdentityService = require('../services/agentIdentityService');
+const { holdsStoredApiToken } = require('../services/apiTokenService');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/commonly';
 
@@ -60,8 +61,9 @@ async function bootstrapOpenClawBot() {
       console.log('\n🔐 API token scopes already configured');
     }
 
-    // Generate API token if not exists
-    if (!(cuzBot.apiTokenHash || cuzBot.apiToken)) {
+    // Generate API token if not exists. The stored row decides, and a retired
+    // plaintext token counts as existing so the backfill can still restore it.
+    if (!cuzBot.apiTokenHash && !(await holdsStoredApiToken(cuzBot._id))) {
       const token = cuzBot.generateApiToken();
       await cuzBot.save();
       console.log('\n🔑 Generated new API token:');

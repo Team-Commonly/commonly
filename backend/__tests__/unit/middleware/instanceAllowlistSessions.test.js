@@ -11,6 +11,7 @@ jest.mock('../../../models/User', () => ({
 }));
 
 const User = require('../../../models/User');
+const { hash } = require('../../../utils/secret');
 const authMiddleware = require('../../../middleware/auth');
 const { socketAuthMiddleware } = require('../../../middleware/socketAuth');
 const { sessionRefusal } = require('../../../services/sessionAccountService');
@@ -135,7 +136,7 @@ describe('instance allowlist on session verifiers', () => {
 
       User.findOne.mockReturnValueOnce(selectable({
         _id: { toString: () => 'u10' }, username: 'u10', email: 'ok@team.com', verified: false, role: 'user',
-        apiToken: 'cm_unverified',
+        apiTokenHash: hash('cm_unverified'),
       }));
       const cmRun = await runAuth('cm_unverified');
       expect(cmRun.next).not.toHaveBeenCalled();
@@ -151,7 +152,7 @@ describe('instance allowlist on session verifiers', () => {
         role: 'user',
         isBot: true,
         verified: false,
-        apiToken: 'cm_agent-user-token',
+        apiTokenHash: hash('cm_agent-user-token'),
       }));
 
       const { next, res } = await runAuth('cm_agent-user-token');
@@ -173,10 +174,10 @@ describe('instance allowlist on session verifiers', () => {
       process.env.AUTH_ALLOWED_EMAILS = 'ok@team.com';
       User.findOne.mockReturnValueOnce(selectable({
         _id: { toString: () => 'u4' }, username: 'u4', email: 'old@elsewhere.com', role: 'user',
-        apiToken: 'cm_plaintext-api-token',
+        apiTokenHash: hash('cm_digest-api-token'),
       }));
 
-      const { res, next } = await runAuth('cm_plaintext-api-token');
+      const { res, next } = await runAuth('cm_digest-api-token');
 
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(403);
@@ -185,9 +186,8 @@ describe('instance allowlist on session verifiers', () => {
 
     it('refuses a cm_ device token owned by a non-allowlisted email', async () => {
       process.env.AUTH_ALLOWED_EMAILS = 'ok@team.com';
-      // No API token by hash, none stored in plaintext, then the device row.
+      // No API token by digest, then the device row.
       User.findOne
-        .mockReturnValueOnce(selectable(null))
         .mockReturnValueOnce(selectable(null))
         .mockReturnValueOnce(selectable({
           _id: { toString: () => 'u5' }, username: 'u5', email: 'old@elsewhere.com', role: 'user',
@@ -204,11 +204,11 @@ describe('instance allowlist on session verifiers', () => {
         _id: { toString: () => 'u6' }, username: 'u6', email: 'ok@team.com', verified: true, role: 'user', 
       };
       process.env.AUTH_ALLOWED_EMAILS = 'ok@team.com';
-      User.findOne.mockReturnValueOnce(selectable({ ...owner, apiToken: 'cm_ok' }));
+      User.findOne.mockReturnValueOnce(selectable({ ...owner, apiTokenHash: hash('cm_ok') }));
       expect((await runAuth('cm_ok')).next).toHaveBeenCalled();
 
       delete process.env.AUTH_ALLOWED_EMAILS;
-      User.findOne.mockReturnValueOnce(selectable({ ...owner, email: 'old@elsewhere.com', apiToken: 'cm_any' }));
+      User.findOne.mockReturnValueOnce(selectable({ ...owner, email: 'old@elsewhere.com', apiTokenHash: hash('cm_any') }));
       expect((await runAuth('cm_any')).next).toHaveBeenCalled();
     });
   });

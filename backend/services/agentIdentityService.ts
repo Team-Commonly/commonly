@@ -518,9 +518,8 @@ class AgentIdentityService {
 
     const instanceId = options.instanceId || 'default';
     const username = buildAgentUsername(resolvedType, instanceId);
-    // Explicitly load both credential representations so issuance recognizes
-    // existing tokens throughout the storage migration.
-    let agentUser = await User.findOne({ username }).select('+apiToken +apiTokenHash');
+    // The digest is select:false; issuance reads it to recognize an existing token.
+    let agentUser = await User.findOne({ username }).select('+apiTokenHash');
 
     // buildAgentUsername is not injective: ("foo-bar", "default") and
     // ("foo", "bar") both address "foo-bar". Check even pre-isBot legacy
@@ -589,8 +588,8 @@ class AgentIdentityService {
       // carry credentials no agent ever issued: a person mints an apiToken from
       // their own session (`routes/auth.ts` POST /api-token/generate) and a CLI
       // device bearer (`deviceAuthorizationService`), and adoption keeps both —
-      // `routes/registry/tokens.ts` then hands the apiToken back as the agent's
-      // user token, with nothing in the response to say it was a stranger's.
+      // `routes/registry/tokens.ts` then keeps the stranger's token as the
+      // agent's user token, with nothing in the response to say so.
       // Two writes, because the token is not the only bearer the row can hold.
       // No runtime token is affected: `agentRuntimeAuth` only authenticates one
       // on a bot row, and every writer flips before it issues.
@@ -774,7 +773,7 @@ class AgentIdentityService {
   static async removeAgentFromPod(agentType: string, podId: unknown, instanceId = 'default'): Promise<InstanceType<typeof Pod> | null> {
     if (!agentType || !podId) return null;
     const username = buildAgentUsername(agentType, instanceId);
-    const agentUser = await User.findOne({ username }).select('+apiToken');
+    const agentUser = await User.findOne({ username });
     if (!agentUser) return null;
 
     const pod = await Pod.findById(podId);

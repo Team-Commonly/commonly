@@ -51,28 +51,30 @@ app.use('/api/auth', router);
 describe('GET /api/auth/api-token', () => {
   beforeEach(() => { jest.clearAllMocks(); mockCurrentUserId = 'user-1'; });
 
-  it('returns status metadata and never re-serves the raw bearer', async () => {
+  it('reports a leftover plaintext field as no token, and never reads or re-serves it', async () => {
+    // The retired field no longer authenticates (runbook step 6), so a row that
+    // still carries one has no working token to report.
     const rawToken = 'cm_user_secret_should_not_leave_the_store';
-    User.findById.mockReturnValue({
-      select: jest.fn().mockResolvedValue({
-        apiToken: rawToken,
-        apiTokenCreatedAt: new Date('2026-09-04T19:00:00.000Z'),
-        apiTokenScopes: ['agent:context:read'],
-      }),
+    const select = jest.fn().mockResolvedValue({
+      apiToken: rawToken,
+      apiTokenCreatedAt: new Date('2026-09-04T19:00:00.000Z'),
+      apiTokenScopes: ['agent:context:read'],
     });
+    User.findById.mockReturnValue({ select });
 
     const response = await request(app)
       .get('/api/auth/api-token');
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
-      hasToken: true,
+      hasToken: false,
       createdAt: '2026-09-04T19:00:00.000Z',
       scopes: ['agent:context:read'],
-      last4: rawToken.slice(-4),
+      last4: null,
     });
     expect(response.body.token).toBeUndefined();
     expect(JSON.stringify(response.body)).not.toContain(rawToken);
+    expect(select.mock.calls[0][0]).not.toMatch(/\+apiToken\b/);
     expect(User.findById).toHaveBeenCalledWith('user-1');
   });
   it('reports digest-only metadata without returning the digest', async () => {

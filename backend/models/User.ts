@@ -328,7 +328,9 @@ const userSchema = new Schema<IUser>({
     proEndedAt: { type: Date, index: true, sparse: true },
   },
   // All credential material is hidden from incidental profile reads. apiToken
-  // is read only during the TASK-558 migration window; new writes use SHA-256.
+  // is the retired plaintext form (TASK-558) and never authenticates. It stays
+  // declared so a leftover on an install that skipped the backfill remains
+  // hidden and is still cleared by rotate, revoke and account deletion.
   apiToken: {
     type: String, unique: true, sparse: true, select: false,
   },
@@ -546,15 +548,23 @@ userSchema.methods.generateApiToken = function (): string {
   const token = `cm_${crypto.randomBytes(32).toString('hex')}`;
   this.apiTokenHash = crypto.createHash('sha256').update(token).digest('hex');
   this.apiTokenLast4 = token.slice(-4);
+  // The retired plaintext field is no longer selected, and assigning undefined
+  // to an unselected path is not saved once the document has been saved before.
+  // Marking it forces the $unset, so a leftover never survives a rotation.
   this.apiToken = undefined;
+  this.markModified('apiToken');
   this.apiTokenCreatedAt = new Date();
   return token;
 };
 
 userSchema.methods.revokeApiToken = function (): void {
-  this.apiToken = undefined;
-  this.apiTokenHash = undefined;
-  this.apiTokenLast4 = undefined;
+  // Each credential field is select:false, so mark every one (see above): a
+  // document loaded without the digest and saved once would otherwise keep it,
+  // and the revoked token would still authenticate.
+  for (const path of ['apiToken', 'apiTokenHash', 'apiTokenLast4']) {
+    this.set(path, undefined);
+    this.markModified(path);
+  }
   this.apiTokenCreatedAt = undefined;
 };
 

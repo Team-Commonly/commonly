@@ -3,7 +3,7 @@
  * stranger / admin (not a member):
  *   GET /api/registry/pods/:podId/agents/:name                 (persisted installation config)
  *   GET /api/registry/pods/:podId/agents/:name/runtime-tokens  (selects agentRuntimeTokens)
- *   GET /api/registry/pods/:podId/agents/:name/user-token      (selects +apiToken)
+ *   GET /api/registry/pods/:podId/agents/:name/user-token      (selects +apiTokenHash)
  * The agent User carries apiToken / agentRuntimeTokens[].tokenHash sentinels;
  * the AgentInstallation carries runtimeTokens[].tokenHash and a config with
  * runtime.webhookSecret, authProfiles[].key and skillEnv values as sentinels;

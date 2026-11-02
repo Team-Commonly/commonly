@@ -6,15 +6,23 @@ const { hash, safeEqual } = require('../utils/secret');
 export const findApiTokenUser = async (token: string) => {
   const digest: string = hash(token);
   const projection = '_id username email role isBot verified apiTokenScopes apiTokenCreatedAt '
-    + 'banned accountDeletionRequestedAt +apiTokenHash +apiToken';
-  const hashed = await User.findOne({ apiTokenHash: digest }).select(projection);
-  // TASK-558: remove after verified staging and production backfill.
-  // See docs/runbooks/api-token-storage.md for the compatibility removal gate.
-  const legacy = hashed ? null : await User.findOne({
-    apiToken: token, apiTokenHash: { $exists: false },
-  }).select(projection);
-  const user = hashed || legacy;
-  const expected = user?.apiTokenHash || (user?.apiToken ? hash(user.apiToken) : '0'.repeat(64));
+    + 'banned accountDeletionRequestedAt +apiTokenHash';
+  // Digest only. The plaintext reader was removed once staging and production
+  // both measured zero legacy rows (docs/runbooks/api-token-storage.md).
+  const user = await User.findOne({ apiTokenHash: digest }).select(projection);
+  const expected = user?.apiTokenHash || '0'.repeat(64);
   const valid = safeEqual(digest, expected);
   return user && valid ? user : null;
 };
+
+// Whether the stored row holds a token, read at decision time rather than from
+// a document loaded earlier. A retired plaintext form counts: minting over it
+// would erase a bearer the backfill can still restore. Reading the digest here
+// too means a backfill that finished after the caller loaded the row is seen.
+// Only an explicit rotation replaces either. Presence only; nothing is loaded.
+export const holdsStoredApiToken = async (userId: unknown): Promise<boolean> => (
+  Boolean(await User.exists({
+    _id: userId,
+    $or: [{ apiTokenHash: { $type: 'string' } }, { apiToken: { $type: 'string' } }],
+  }))
+);

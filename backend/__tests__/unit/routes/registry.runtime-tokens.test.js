@@ -34,6 +34,8 @@ jest.mock('../../../models/AgentCredential', () => ({
 }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(),
+  // Issuance asks whether a row still holds a retired plaintext token; none do here.
+  exists: jest.fn(() => Promise.resolve(null)),
   // isGlobalAdminUser reads the caller's role; these tests are about issuance.
   findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ role: 'user' }) }) })),
 }));
@@ -483,11 +485,11 @@ describe('agent runtime tokens', () => {
     });
 
     User.findOne.mockReturnValue({
-      // apiToken is select:false, so the route asks for it explicitly.
+      // apiTokenHash is select:false, so the route asks for it explicitly.
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue({
         username: 'clawd-bot',
-        apiToken: 'cm_token_123',
+        apiTokenHash: 'a'.repeat(64),
         apiTokenCreatedAt: new Date('2026-01-01T00:00:00Z'),
         apiTokenScopes: ['agent:context:read'],
       }),
@@ -518,11 +520,11 @@ describe('agent runtime tokens', () => {
     });
 
     User.findOne.mockReturnValue({
-      // apiToken is select:false, so the route asks for it explicitly.
+      // apiTokenHash is select:false, so the route asks for it explicitly.
       select: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue({
         username: 'clawd-bot',
-        apiToken: 'cm_token_123',
+        apiTokenHash: 'a'.repeat(64),
         apiTokenCreatedAt: new Date('2026-01-01T00:00:00Z'),
         apiTokenScopes: [],
       }),
@@ -561,6 +563,28 @@ describe('agent runtime tokens', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ hasToken: true, scopes: ['agent:context:read'], scopeMode: 'scoped' });
     expect(JSON.stringify(res.body)).not.toContain('digest');
+  });
+
+  it('reports no user token for a row carrying only the retired plaintext field', async () => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] }),
+    });
+    AgentInstallation.findOne.mockResolvedValue({ agentName: 'clawd-bot', podId: 'pod-1', status: 'active' });
+    const select = jest.fn().mockReturnThis();
+    User.findOne.mockReturnValue({
+      select,
+      lean: jest.fn().mockResolvedValue({
+        username: 'clawd-bot',
+        apiToken: 'cm_leftover_plaintext',
+        apiTokenScopes: ['agent:context:read'],
+      }),
+    });
+
+    const res = await request(app).get('/api/registry/pods/pod-1/agents/clawd-bot/user-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ hasToken: false, scopes: [], scopeMode: 'none' });
+    expect(select.mock.calls[0][0]).not.toMatch(/\+apiToken\b/);
   });
 
   it('revokes user token for an installed agent', async () => {

@@ -3,9 +3,9 @@
 TASK-558 uses the existing SHA-256 credential digest convention (`utils/secret`;
 agent runtime and device credentials). New API token issuance returns the bearer
 once and stores only its digest and last four characters. Revocation removes
-both representations. The auth compatibility reader prefers a digest and only
-accepts a legacy row when it has no digest. Metadata, scopes, identities and
-existing bearer values survive the backfill.
+both representations. Auth reads the digest only: the compatibility reader that
+accepted a legacy plaintext row was removed in step 6. Metadata, scopes,
+identities and existing bearer values survive the backfill.
 
 An existing agent token cannot be retrieved after migration. The user-token
 issuance endpoint returns `existing: true`, `token: null`, `requiresRotation:
@@ -54,8 +54,34 @@ Two consumers depend on getting the bearer back:
 5. Rhea and Sable review the exact head. SRE repeats steps 1–4 on production only
    after staging proof is recorded and production deployment is authorized.
 6. After both environments have zero legacy fields, remove the compatibility
-   reader and retired field in a linked follow-up. This rollout is incomplete
-   until that follow-up and production verification are observed.
+   reader. **Done.** On 2026-11-02 (UTC) the dry run read `candidates: 0,
+   remaining: 0` on staging and on production (the counts are in the PR that
+   removed it), and that PR removed the reader and every fallback that read the
+   plaintext field. The `apiToken`
+   field itself stays declared, `select: false`: with the declaration removed,
+   a leftover on an instance that skipped the backfill rides along on
+   `GET /api/auth/user` and `GET`/`PUT /api/auth/profile` (the leak matrix
+   fails on all three). An explicit rotation, revoke or account deletion
+   still clears a leftover. The rollout is complete once production runs that
+   release.
+
+## Upgrading a self-hosted instance
+
+From the release that removed the reader, an API token authenticates by its
+digest only. An instance that still holds plaintext tokens, because it never
+ran the backfill, must run it. Before the upgrade is best. Right after works
+too: the script reads the raw collection and still ships, and running it
+restores every legacy bearer. Until it runs, those bearers get 401.
+
+Nothing but an explicit rotation erases a legacy bearer before the backfill
+runs. A provision or reprovision treats a row that still holds one as already
+having a token (`existing: true`, `token: null`) and leaves it for the
+backfill; only `force: true`, a user's own rotate or revoke, or account
+deletion replaces or clears it.
+
+With `MONGO_URI` set to the instance's database, run
+`node dist/scripts/backfill-api-token-storage.js` for the dry run, then add
+`--apply`. `remaining: 0` means the instance is done.
 
 ## Refusals and rollback
 
@@ -66,7 +92,8 @@ increment conflicts. Any remaining legacy field, conflict or skip after apply
 needs investigation; never overwrite a newer digest. Exit 2 means counts require
 attention, exit 1 means execution failed; rerun dry-run after investigating.
 
-Rollback must retain the digest-capable reader. Once any digest-only row exists,
+Rollback must retain the digest-capable reader. Rolling back to the
+compatibility release is safe, since it reads digests too. Once any digest-only row exists,
 rolling back to an older binary invalidates those bearers. A hash cannot recover
 a token. Do not restore an old credential database snapshot (it can resurrect
 revoked tokens); roll forward the reader instead. No instance changes are made

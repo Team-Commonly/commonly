@@ -342,9 +342,9 @@ agentTokensRouter.get('/pods/:podId/agents/:name/user-token', tokenRouteLimit, a
 
     const resolvedType = AgentIdentityService.resolveAgentType(name);
     const agentUsername = AgentIdentityService.buildAgentUsername(resolvedType, instanceId);
-    // Needs +apiToken (select:false on the field) to report hasToken correctly.
-    const agentUser = await User.findOne({ username: agentUsername, isBot: true }).select('+apiToken +apiTokenHash').lean();
-    if (!agentUser || !(agentUser.apiTokenHash || agentUser.apiToken)) {
+    // Needs +apiTokenHash (select:false on the field) to report hasToken correctly.
+    const agentUser = await User.findOne({ username: agentUsername, isBot: true }).select('+apiTokenHash').lean();
+    if (!agentUser || !agentUser.apiTokenHash) {
       return res.json({ hasToken: false, scopes: [], scopeMode: 'none' });
     }
     const normalizedScopesArr = normalizeScopes(agentUser.apiTokenScopes || []);
@@ -410,8 +410,8 @@ agentTokensRouter.post('/pods/:podId/agents/:name/user-token', tokenRouteLimit, 
     // The user token signs in as the agent's User in every pod and room that
     // User belongs to. Every call takes the same sole-installer rule as the
     // runtime-token routes: one without `force` still mints when no token
-    // exists, rewrites the scopes of one that does, and returns a legacy
-    // token that was never hashed.
+    // exists and rewrites the scopes of one that does. A stored token is a
+    // digest, so it is never returned.
     const refusal = await credentialRefusal(userId, installation.agentName || name, normalizedInstanceId);
     if (refusal) return res.status(403).json(refusal);
 
