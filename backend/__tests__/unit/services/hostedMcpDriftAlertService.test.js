@@ -56,12 +56,27 @@ describe('a drifted pin becomes one card for the operator', () => {
   });
 
   test('the same drift files once per process, however often and on however many rows', async () => {
-    const { alert, record, readConfig } = setup();
+    const { alert, record } = setup();
     await alert(row, sentry, [drifted('search_issues')]);
     await alert(row, sentry, [drifted('search_issues')]);
     await alert({ connectionId: 'row-2' }, sentry, [drifted('search_issues')]);
     expect(record).toHaveBeenCalledTimes(1);
-    expect(readConfig).toHaveBeenCalledTimes(1);
+  });
+
+  // Review on e1918d515: a memo keyed by the drift alone sent nothing to an
+  // operator configured after the first card.
+  test('a changed operator gets their own card, and the first is not filed twice', async () => {
+    const NEXT = '6a1b2c3d4e5f60718293a4c6';
+    let current = config;
+    const { alert, record } = setup({ readConfig: jest.fn(async () => current) });
+    await alert(row, sentry, [drifted('search_issues')]);
+    current = { recipientUserId: NEXT, podId: POD };
+    await alert(row, sentry, [drifted('search_issues')]);
+    current = config;
+    await alert(row, sentry, [drifted('search_issues')]);
+
+    expect(record.mock.calls.map(([card]) => card.recipientUserId)).toEqual([OPERATOR, NEXT]);
+    expect(record.mock.calls[1][0].sourceId).toBe(record.mock.calls[0][0].sourceId);
   });
 
   // Review on c7d2fa765: a key of the pin set alone lost a second tool's drift
@@ -106,7 +121,7 @@ describe('a drifted pin becomes one card for the operator', () => {
 });
 
 describe('a drift that cannot be delivered says so, loudly', () => {
-  test('no configured operator: an error line, once per pin set, and no card', async () => {
+  test('no configured operator: an error line, and no card', async () => {
     const { alert, record } = setup({ readConfig: jest.fn(async () => null) });
     await alert(row, sentry, [drifted('search_issues')]);
     await alert(row, sentry, [drifted('search_issues')]);
@@ -135,21 +150,40 @@ describe('a drift that cannot be delivered says so, loudly', () => {
     expect(logged()).toEqual([expect.objectContaining({ delivery: 'unconfigured' })]);
   });
 
-  // Review on c7d2fa765: memoized until restart, so an operator who set the
-  // config after the first error never got the card.
-  test('an undeliverable drift checks the config again an hour later', async () => {
-    let clock = 1000;
+  // Reviews on c7d2fa765 and e1918d515: memoizing an undelivered drift, until
+  // restart and then for an hour, held back the card from an operator who set
+  // the config, or joined the pod, after the first error.
+  test('a config set after an unconfigured drift files on the next assessment', async () => {
     const readConfig = jest.fn()
       .mockResolvedValueOnce(null)
       .mockResolvedValue(config);
-    const { alert, record } = setup({ readConfig, now: () => clock });
+    const { alert, record } = setup({ readConfig });
+    await alert(row, sentry, [drifted('search_issues')]);
+    await alert(row, sentry, [drifted('search_issues')]);
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  test('an operator who joins the pod after the first error gets the card next time', async () => {
+    const record = jest.fn()
+      .mockResolvedValueOnce({ recorded: false, reason: 'recipient_not_member' })
+      .mockResolvedValue({ recorded: true });
+    const { alert } = setup({ record });
+    await alert(row, sentry, [drifted('search_issues')]);
+    await alert(row, sentry, [drifted('search_issues')]);
+    await alert(row, sentry, [drifted('search_issues')]);
+    expect(record).toHaveBeenCalledTimes(2);
+  });
+
+  test('an undeliverable drift logs once an hour while it lasts, not on every assessment', async () => {
+    let clock = 1000;
+    const { alert } = setup({ readConfig: jest.fn(async () => null), now: () => clock });
     await alert(row, sentry, [drifted('search_issues')]);
     clock += 59 * 60 * 1000;
     await alert(row, sentry, [drifted('search_issues')]);
-    expect(record).not.toHaveBeenCalled();
+    expect(logged()).toHaveLength(1);
     clock += 2 * 60 * 1000;
     await alert(row, sentry, [drifted('search_issues')]);
-    expect(record).toHaveBeenCalledTimes(1);
+    expect(logged()).toHaveLength(2);
   });
 
   // Review on c7d2fa765: two replicas inserting at once make one upsert lose
