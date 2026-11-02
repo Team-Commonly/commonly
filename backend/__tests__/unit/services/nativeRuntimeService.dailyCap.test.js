@@ -143,6 +143,12 @@ describe('nativeRuntimeService daily run cap (D4)', () => {
   // F64: once a native post wakes the agents it @mentions (F62), two native
   // agents can answer each other. An install with no cap of its own (the
   // first-party apps, a Scout added from the hub) still stops at the default.
+  test('the default cap is 60 runs a day', () => {
+    // Pinned as a literal: the tests below use the constant, so they would
+    // pass unchanged if the default moved.
+    expect(DEFAULT_NATIVE_DAILY_RUN_CAP).toBe(60);
+  });
+
   test('no cap configured: the default cap applies', async () => {
     AgentRun.countDocuments.mockResolvedValue(DEFAULT_NATIVE_DAILY_RUN_CAP);
     const result = await runAgent(installation({ dailyRunCap: undefined }), mentionTrigger);
@@ -164,6 +170,13 @@ describe('nativeRuntimeService daily run cap (D4)', () => {
     const result = await runAgent(installation({ dailyRunCap: value }), mentionTrigger);
     expect(result.totalTurns).toBe(0);
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test.each([null, '', '  ', 'abc', false, -1])('a malformed cap (%p) runs under the default', async (value) => {
+    AgentRun.countDocuments.mockResolvedValue(DEFAULT_NATIVE_DAILY_RUN_CAP - 1);
+    const result = await runAgent(installation({ dailyRunCap: value }), mentionTrigger);
+    expect(result.status).toBe('succeeded');
+    expect(AgentRun.create).toHaveBeenCalledTimes(1);
   });
 
   test('a cap written as a numeric string is still the install\'s own', async () => {
