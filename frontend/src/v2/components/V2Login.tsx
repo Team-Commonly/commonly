@@ -6,7 +6,7 @@ import V2OAuthButtons from './V2OAuthButtons';
 import V2AuthBrand from './V2AuthBrand';
 import { pathOfLocation, safeNextPath } from '../utils/safeNextPath';
 import { forgetInviteOAuthStart } from '../utils/pendingInvite';
-import { ShellGlyph } from '../icons/glyphs';
+import V2AuthNotice from './V2AuthNotice';
 
 interface LocationState {
   from?: { pathname?: string; search?: string; hash?: string };
@@ -88,10 +88,7 @@ const V2Login: React.FC = () => {
         <h1 className="v2-login__title">{t('auth.login.title')}</h1>
 
         {errorMessage && (
-          <div className="v2-login__error" role="alert">
-            <ShellGlyph name="alert" />
-            <span>{errorMessage}</span>
-          </div>
+          <V2AuthNotice>{errorMessage}</V2AuthNotice>
         )}
 
         <V2OAuthButtons next={destination || undefined} separator="after" />

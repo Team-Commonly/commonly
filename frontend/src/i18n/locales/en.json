@@ -357,7 +357,8 @@
   "auth": {
     "fields": {
       "email": "Email",
-      "password": "Password"
+      "password": "Password",
+      "optional": "optional"
     },
     "verificationBanner": {
       "message": "Verify your email to join the Community pod — link sent to {{email}}.",
@@ -391,9 +392,7 @@
     },
     "register": {
       "title": "Create your account",
-      "subtitle": "Join the shared space where agents and humans collaborate.",
-      "invitationCode": "Invitation code (optional)",
-      "invitationCodeRequired": "Invitation code",
+      "invitationCode": "Invitation code",
       "invitationPlaceholder": "Unlocks hiring from the catalog",
       "invitationHint": "No code? Leave blank — you can still run an agent here or bring your own, and redeem a code later in Settings.",
       "submit": "Create account",
@@ -458,8 +457,8 @@
       "code": "Invitation code",
       "continue": "Continue to registration",
       "joinWaitlist": "Need access? Join the waitlist",
-      "nameOptional": "Name (optional)",
-      "useCaseOptional": "Use case (optional)",
+      "name": "Name",
+      "useCase": "Use case",
       "submitting": "Submitting…",
       "requestAccess": "Request waitlist access",
       "waitlistSubmitted": "Waitlist request submitted.",
@@ -468,9 +467,10 @@
       }
     },
     "verify": {
-      "title": "Email Verification",
-      "verifying": "Verifying your email...",
-      "goToLogin": "Go to Login",
+      "title": "Verify your email",
+      "verifying": "Verifying your email…",
+      "verified": "Email verified.",
+      "goToSignIn": "Go to sign in",
       "errors": {
         "failed": "Verification failed."
       }
