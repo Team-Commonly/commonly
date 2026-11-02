@@ -385,7 +385,82 @@ describe('V2ActivityPage', () => {
     mockGet.mockImplementation(mockFor([silentSeat], [{ status: 'active' }], true));
     renderPage();
     expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
+    // The card holds its place while the roster is in flight (d215), then drops when no step is left.
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument());
+  });
+
+  test('day zero: Get started holds its place while the roster and connectors are in flight, then becomes the card (d215 s-activity)', async () => {
+    const empty = { ...recap, hasEverHadAttention: false, needsYou: [], agents: [], board: [] };
+    const seat = { name: 'scout', displayName: 'Scout' };
+    const deferred = () => {
+      let release: (value: unknown) => void = () => {};
+      const promise = new Promise((resolve) => { release = resolve; });
+      return { promise, release };
+    };
+    const mockWith = (registry: Promise<unknown>, connectors: Promise<unknown>, recapData = empty) => (url: string) => {
+      if (url === '/api/activity/decision-queue') return Promise.resolve({ data: { items: [], count: 0, countsByPod: {} } });
+      if (url === '/api/integrations/user/all') return connectors;
+      if (url.startsWith('/api/registry/pods/')) return registry;
+      return Promise.resolve({ data: recapData });
+    };
+
+    // In flight: the real head with "checking…", two rows of bars, aria-busy, no step act yet.
+    const roster = deferred();
+    const connectors = deferred();
+    mockGet.mockImplementation(mockWith(roster.promise, connectors.promise));
+    const first = renderPage();
+    const pending = await screen.findByTestId('activity-start-pending');
+    expect(pending).toHaveAttribute('aria-busy', 'true');
+    expect(within(pending).getByRole('heading', { name: 'Get started' })).toBeInTheDocument();
+    expect(within(pending).getByText('checking…')).toBeInTheDocument();
+    expect(pending.querySelectorAll('.v2-activity__start-row')).toHaveLength(2);
+    expect(within(pending).queryByRole('button')).not.toBeInTheDocument();
+    // It sits where the card will sit: above Needs you.
+    expect(pending.compareDocumentPosition(screen.getByRole('heading', { name: 'Needs you' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The roster alone is not enough — the connector count still decides whether step 3 is a row.
+    await act(async () => { roster.release({ data: { agents: [seat], callerSpoke: false } }); });
+    expect(screen.getByTestId('activity-start-pending')).toBeInTheDocument();
+    await act(async () => { connectors.release({ data: [] }); });
+    await waitFor(() => expect(screen.queryByTestId('activity-start-pending')).not.toBeInTheDocument());
+    const card = screen.getByRole('heading', { name: 'Get started' }).closest('section') as HTMLElement;
+    expect(card).not.toHaveAttribute('aria-busy');
+    expect(within(card).getByText('2 steps · until your first ask arrives')).toBeInTheDocument();
+    expect(within(card).getByText("Say hello in the pod where it lives. If it doesn't answer, @mention it.")).toBeInTheDocument();
+    first.unmount();
+
+    // Steps come back empty: the placeholder drops and no card replaces it.
+    const roster2 = deferred();
+    mockGet.mockImplementation(mockWith(roster2.promise, Promise.resolve({ data: [{ status: 'active' }] })));
+    const second = renderPage();
+    expect(await screen.findByTestId('activity-start-pending')).toBeInTheDocument();
+    await act(async () => { roster2.release({ data: { agents: [seat], callerSpoke: true } }); });
+    await waitFor(() => expect(screen.queryByTestId('activity-start-pending')).not.toBeInTheDocument());
     expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
+    second.unmount();
+
+    // Fail-closed: an account that has had an ask, or whose history is unknown, never reserves the slot.
+    for (const hasEverHadAttention of [true, null]) {
+      const never = deferred();
+      mockGet.mockImplementation(mockWith(never.promise, never.promise, { ...empty, hasEverHadAttention }));
+      const view = renderPage();
+      expect(await screen.findByText('Nothing needs you.')).toBeInTheDocument();
+      expect(screen.queryByTestId('activity-start-pending')).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Get started' })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  test('Moved forward names its window when empty (d215 s-activity)', async () => {
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue'
+      ? { items: [], count: 0, countsByPod: {} } : { ...recap, needsYou: [], agents: [], board: [] } }));
+    renderPage();
+    expect(await screen.findByText('Nothing yet today.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '7 days' }));
+    expect(await screen.findByText('Nothing moved in the last 7 days.')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing yet today.')).not.toBeInTheDocument();
+
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    expect(await screen.findByText('最近7天没有新进展。')).toBeInTheDocument();
   });
 
   test('day zero: a roster without the field, or a roster that fails, never reads as spoken (#1648)', async () => {

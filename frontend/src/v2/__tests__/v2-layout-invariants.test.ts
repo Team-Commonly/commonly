@@ -3018,10 +3018,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       const footer44 = '.v2-root .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button.v2-activity__queue-action--icon { flex: none; width: 44px; min-width: 44px; }';
       expect(enclosingMedia(icon44)).toBe('@media (max-width: 760px)');
       expect(enclosingMedia(footer44)).toBe('@media (max-width: 760px)');
-      // And the footer override follows the full-width rule it beats, inside that same block.
-      const fullWidth = '.v2-activity__decision-footer > button { flex: 1 1 100%;';
-      expect(v2.indexOf(footer44)).toBeGreaterThan(v2.indexOf(fullWidth));
-      expect(enclosingMedia(fullWidth)).toBe('@media (max-width: 760px)');
+      // And the footer override follows the text-button rule it beats, inside that same block.
+      const footerText = '.v2-activity__decision-footer > button { flex: 1 1 auto;';
+      expect(v2.indexOf(footer44)).toBeGreaterThan(v2.indexOf(footerText));
+      expect(enclosingMedia(footerText)).toBe('@media (max-width: 760px)');
       // Other… is cobalt text; the handoff act is ink (no bordered modifier).
       expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--other')).toContain('color: var(--v2-accent-text)');
       expect(activityPage).toContain('<button type="button" onClick={() => markHandoffHandled(item)}');
@@ -3034,8 +3034,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(badge).toContain('box-shadow: 0 0 0 2px var(--v2-shell-bg)');
       // Moved forward: no section count; N more in <pod>.
       expect(activityPage).toContain("pod: shortPodName(group.name)");
-      // ≤760: toggles stack, actions drop to 44px full width.
-      expect(v2).toContain('.v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }');
+      // ≤760: toggles stack, actions drop under the copy at 44px — on ONE row (d215 s-activity, see below).
+      expect(v2).toContain('.v2-root .v2-activity__queue-actions > button { flex: 1 1 auto; min-height: 44px; }');
       // The reply editor's nested Send takes only height at ≤760 — never a descendant width rule (66493/66498).
       expect(v2).toContain('.v2-root .v2-activity__reply > button { min-height: 44px; }');
       expect(v2).not.toContain('.v2-root .v2-activity__queue-actions button { flex: 1 1 100%;');
@@ -3045,6 +3045,46 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       const stackedActionsAt = v2.indexOf('.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none;');
       expect(desktopActionsAt).toBeGreaterThan(-1);
       expect(stackedActionsAt).toBeGreaterThan(desktopActionsAt);
+    });
+
+    test('Activity: at ≤760 a card\'s acts are one row — the text act fills it, the 44px squares sit beside it (walk 11-02, d215 s-activity)', () => {
+      // The walk measured each Needs-you card at 390 stacking Reply / ✓ / ↗ on separate lines (~60px
+      // a card) because the ≤760 rule gave every direct-child button `flex: 1 1 100%`. The drawn
+      // row: Reply (or Approve, or Mark handled) grows into the line, the icon keys stay `flex: none`.
+      const enclosing = (rule: string): string | null => {
+        const at = v2.indexOf(rule);
+        expect(at).toBeGreaterThan(-1);
+        const open = v2.lastIndexOf('@media', at);
+        if (open === -1) return null;
+        const close = v2.indexOf('\n}', open);
+        return close > at ? v2.slice(open, v2.indexOf('{', open)).trim() : null;
+      };
+      const textAct = '.v2-root .v2-activity__queue-actions > button { flex: 1 1 auto; min-height: 44px; }';
+      const iconAct = '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon { width: 44px; min-width: 44px; flex: none; }';
+      expect(enclosing(textAct)).toBe('@media (max-width: 760px)');
+      expect(enclosing(iconAct)).toBe('@media (max-width: 760px)');
+      // The squares' `flex: none` must follow the grow rule it overrides (equal specificity + 1 class wins
+      // anyway, but order keeps the intent legible), and no full-width basis may come back for direct acts.
+      expect(v2.indexOf(iconAct)).toBeGreaterThan(v2.indexOf(textAct));
+      expect(v2).not.toMatch(/\.v2-activity__queue-actions > button \{ flex: 1 1 100%/);
+      // Decision options and their footer may still stack full width at ≤760 — unchanged by the walk.
+      expect(v2).toContain('.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }');
+      // An open reply editor still takes the whole row at ≤640, pushing the squares to the next line.
+      expect(v2).toMatch(/@media \(max-width: 640px\) \{\n  \.v2-activity__reply \{ flex-basis: 100%; \}/);
+      // The older ≤640 rules (`grid-column: 2`, `flex-wrap: wrap`, the descendant 44px floor) are kept,
+      // not deleted: the descendant floor still lifts nested acts the ≤760 block never names (the
+      // reply's and Other…'s Send), so the block is not dead.
+      expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
+    });
+
+    test('Activity: Get started holds its place while its steps are in flight (d215 s-activity)', () => {
+      // Same line boxes as the loaded rows: 20px bars, a 32px key that turns 44px full width at ≤760.
+      expect(activityPage).toContain('className="v2-activity__start v2-activity__start--pending" aria-busy="true"');
+      expect(ruleBody(v2, '.v2-activity__start-bar')).toContain('height: 20px');
+      const key = ruleBody(v2, '.v2-activity__start-bar--key');
+      expect(key).toContain('height: 32px');
+      expect(ruleBody(v2, '.v2-activity__start-bar--key', { within: mediaBlockContaining(v2, '.v2-activity__start-bar--key') }))
+        .toContain('height: 44px');
     });
 
     test('Activity keeps the Direction C bar, inbox measure, and moved-forward grouping', () => {

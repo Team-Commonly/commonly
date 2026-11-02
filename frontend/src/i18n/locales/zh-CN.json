@@ -325,6 +325,7 @@
       "title": "推进的工作",
       "description": "按 Pod 分组 · 最新在前",
       "empty": "今天还没有更新。",
+      "emptyWeek": "最近7天没有新进展。",
       "more": "{{pod}} 还有{{count}}项",
       "omitted": "{{pod}} 还有{{count}}项未显示",
       "showLess": "收起",
@@ -335,6 +336,7 @@
       "title": "开始使用",
       "kicker_one": "还有1步 · 直到你的第一个请求到来",
       "kicker_other": "还有{{count}}步 · 直到你的第一个请求到来",
+      "checking": "正在检查…",
       "hire": {
         "title": "雇用你的第一个智能体",
         "description": "选一个角色。它会在这个工作空间有一个席位，你 @提及它就会回复。",
@@ -342,7 +344,7 @@
       },
       "speak": {
         "title": "对它说点什么",
-        "description": "在它所在的 Pod 中 @ 它。你在那里发出的第一条消息，就是它真正属于你的时刻。",
+        "description": "在它所在的 Pod 里打个招呼。如果它没回应，就 @提及它。",
         "cta": "打开 {{pod}}",
         "anyPod": "Pod"
       },
