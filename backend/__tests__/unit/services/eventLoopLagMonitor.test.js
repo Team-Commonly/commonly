@@ -50,6 +50,28 @@ describe('startEventLoopLagMonitor', () => {
     stop();
   });
 
+  it('reads EVENT_LOOP_LAG_WARN_MS when no threshold is passed, and logs a window exactly at it', () => {
+    const previous = process.env.EVENT_LOOP_LAG_WARN_MS;
+    process.env.EVENT_LOOP_LAG_WARN_MS = '750';
+    try {
+      const histogram = fakeHistogram();
+      const log = jest.fn();
+      const stop = startEventLoopLagMonitor({ windowMs: 10000, histogram, log });
+
+      histogram.max = 749 * MS;
+      jest.advanceTimersByTime(10000);
+      expect(log).not.toHaveBeenCalled();
+
+      histogram.max = 750 * MS;
+      jest.advanceTimersByTime(10000);
+      expect(log).toHaveBeenCalledTimes(1);
+      stop();
+    } finally {
+      if (previous === undefined) delete process.env.EVENT_LOOP_LAG_WARN_MS;
+      else process.env.EVENT_LOOP_LAG_WARN_MS = previous;
+    }
+  });
+
   it('stops measuring and logging when stopped', () => {
     const histogram = fakeHistogram();
     const log = jest.fn();

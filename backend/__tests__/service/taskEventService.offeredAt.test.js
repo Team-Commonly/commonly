@@ -121,6 +121,24 @@ afterAll(async () => {
 });
 
 describe('kernel sweep offeredAt filter', () => {
+  it('still wakes the seat when the batched install read fails: the pod reads its own', async () => {
+    const row = await createTask({ taskId: 'TASK-FALLBACK', updatedAt: new Date(NOW.getTime() - 30000) });
+    // First read is the sweep's one $in for every pod; it fails. The next is
+    // notifyFoundWork's own per-pod read, which the fallback relies on.
+    AgentInstallation.find.mockReturnValueOnce({ lean: jest.fn().mockRejectedValue(new Error('pool closed')) });
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const sweep = await KernelWorkSweepService.wakeForFoundWork(NOW);
+
+    expect(AgentInstallation.find.mock.calls[0][0]).toEqual(expect.objectContaining({ podId: { $in: [expect.anything()] } }));
+    expect(AgentInstallation.find).toHaveBeenCalledTimes(2);
+    expect(sweep.woken).toBe(1);
+    expect(AgentEventService.enqueue.mock.calls[0][0].payload.content).toContain('TASK-FALLBACK');
+    const after = await Task.findById(row._id).lean();
+    expect(after.offeredAt).toEqual(after.updatedAt);
+    console.warn.mockRestore();
+  });
+
   it('names a late P0 before lower priorities when the discovery wake is truncated', async () => {
     for (let i = 0; i < 6; i += 1) {
       await createTask({ taskId: `TASK-PRIORITY-${i}`, priority: i === 5 ? 'P0' : 'P2', updatedAt: new Date(NOW.getTime() - 30000) });

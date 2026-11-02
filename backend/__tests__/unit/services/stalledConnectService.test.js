@@ -606,6 +606,41 @@ describe('keeping the forward promise', () => {
     );
   });
 
+  it('resolves only the episode whose own bot row shows it connected, from the one batched read', async () => {
+    // Neither installation token has been used; the User-row token of seat
+    // "used" has. If the pass stopped reading the batched bot rows, or handed
+    // one seat another seat's row, the wrong set would resolve.
+    const usedAt = new Date(NOW.getTime() - 10 * MINUTE);
+    const episodes = [
+      { ...openEpisode, _id: 'ep-used', installationId: 'inst-used', agentName: 'used' },
+      { ...openEpisode, _id: 'ep-quiet', installationId: 'inst-quiet', agentName: 'quiet' },
+    ];
+    setup({ installs: [], open: episodes });
+    mockInstallFindById.mockImplementation((id) => ({
+      lean: () => Promise.resolve(install({
+        _id: id, agentName: id.replace('inst-', ''), runtimeTokens: [{ createdAt: OLD_TOKEN }],
+      })),
+    }));
+    mockUserFind.mockImplementation(() => ({
+      select: () => ({
+        lean: () => Promise.resolve([
+          { botMetadata: { agentName: 'used', instanceId: 'default' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] },
+          { botMetadata: { agentName: 'quiet', instanceId: 'default' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN }] },
+        ]),
+      }),
+    }));
+
+    const r = await scan({ now: NOW });
+
+    expect(mockUserFind).toHaveBeenCalledTimes(1);
+    expect(mockUserFindOne).not.toHaveBeenCalled();
+    expect(r.resolved).toHaveLength(1);
+    const resolvedIds = mockEpUpdate.mock.calls
+      .filter(([, update]) => update?.$set?.status === 'resolved')
+      .map(([filter]) => filter._id);
+    expect(resolvedIds).toEqual(['ep-used']);
+  });
+
   it('reports the present honestly when it connected and has since gone quiet', async () => {
     // Connected 3 hours ago, stale now: the past is still a fact, the present
     // is not "listening". This is the connect-then-disconnect case.

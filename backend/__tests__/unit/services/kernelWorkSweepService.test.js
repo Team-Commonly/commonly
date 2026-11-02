@@ -358,6 +358,8 @@ describe('wakeForFoundWork reads installs once per pass', () => {
 
     const result = await KernelWorkSweepService.wakeForFoundWork(NOW);
 
+    // The batched read was tried, and only its failure hands over undefined.
+    expect(AgentInstallation.find.mock.calls[0][0]).toEqual({ podId: { $in: [POD_A] }, status: 'active' });
     expect(mockNotifyFoundWork.mock.calls[0][4]).toBeUndefined();
     expect(result.woken).toBe(1);
     console.warn.mockRestore();
