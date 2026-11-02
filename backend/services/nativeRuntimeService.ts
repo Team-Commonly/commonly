@@ -1903,11 +1903,13 @@ export async function runAgent(
   // workspace — bounded by construction, not by hope. Count failure fails
   // OPEN (#887's shape: an infrastructure fault must not silence an agent);
   // only an actual at-cap count declines, loudly.
-  // An install with no cap of its own gets the default (F64); an explicit 0
-  // lifts it, which only an admin can write (configWriteGuard).
-  const dailyRunCap = cfg.dailyRunCap === undefined || cfg.dailyRunCap === null || cfg.dailyRunCap === ''
-    ? DEFAULT_NATIVE_DAILY_RUN_CAP
-    : Number(cfg.dailyRunCap);
+  // A cap of 0 or more is the install's own; 0 lifts it (configWriteGuard
+  // keeps PATCH to admins). Anything else, absent included, gets the default
+  // (F64), so a malformed value cannot lift the cap by reading as 0 or NaN.
+  const ownCap = typeof cfg.dailyRunCap === 'number'
+    || (typeof cfg.dailyRunCap === 'string' && cfg.dailyRunCap.trim() !== '')
+    ? Number(cfg.dailyRunCap) : NaN;
+  const dailyRunCap = Number.isFinite(ownCap) && ownCap >= 0 ? ownCap : DEFAULT_NATIVE_DAILY_RUN_CAP;
   if (Number.isFinite(dailyRunCap) && dailyRunCap > 0) {
     try {
       const AgentRunModel = require('../models/AgentRun');

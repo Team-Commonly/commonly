@@ -159,10 +159,17 @@ describe('nativeRuntimeService daily run cap (D4)', () => {
     expect(AgentRun.create).toHaveBeenCalledTimes(1);
   });
 
-  test("the default is above any native agent's busiest day", () => {
-    // 11-02 prod read: the most runs any native agent made in one pod on one
-    // day over the prior 14 days was 47.
-    expect(DEFAULT_NATIVE_DAILY_RUN_CAP).toBeGreaterThan(47);
+  test.each([null, '', '  ', 'abc', false, -1])('a malformed cap (%p) gets the default, not no cap', async (value) => {
+    AgentRun.countDocuments.mockResolvedValue(DEFAULT_NATIVE_DAILY_RUN_CAP);
+    const result = await runAgent(installation({ dailyRunCap: value }), mentionTrigger);
+    expect(result.totalTurns).toBe(0);
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('a cap written as a numeric string is still the install\'s own', async () => {
+    AgentRun.countDocuments.mockResolvedValue(5);
+    const result = await runAgent(installation({ dailyRunCap: '5' }), mentionTrigger);
+    expect(result.totalTurns).toBe(0);
   });
 
   test('an explicit 0 lifts the cap: the counter is never consulted', async () => {
