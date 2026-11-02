@@ -232,6 +232,25 @@ describe('API token storage rollout', () => {
     expect((await get(forced.token)).status).toBe(200);
   });
 
+  it('bootstrap leaves a retired token for the backfill instead of minting over it', async () => {
+    const { spawnSync } = require('child_process');
+    const path = require('path');
+    const identity = require('../../services/agentIdentityService');
+    const bot = await identity.getOrCreateAgentUser('openclaw');
+    await users().updateOne({ _id: bot._id }, { $set: { apiToken: 'cm_bootstrap-leftover' } });
+    const uri = `mongodb://${mongoose.connection.host}:${mongoose.connection.port}/${mongoose.connection.name}`;
+    // No Postgres mirror for the child: some CI jobs set PG_HOST.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('PG_')));
+    const result = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register'),
+      path.resolve(__dirname, '../../scripts/bootstrap-clawd-bot.js'),
+    ], { cwd: path.resolve(__dirname, '../..'), env: { ...env, MONGO_URI: uri, NODE_NO_WARNINGS: '1' }, encoding: 'utf8', timeout: 30000 });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('API token already exists');
+    const stored = await users().findOne({ _id: bot._id });
+    expect(stored.apiToken).toBe('cm_bootstrap-leftover');
+    expect(stored).not.toHaveProperty('apiTokenHash');
+  }, 40000);
+
   it.each(['hashed', 'device'])('preserves pending-deletion refusal for %s credentials', async (kind) => {
     const user = await create(`deleting-${kind}`);
     const token = `cm_deleting-${kind}`;
