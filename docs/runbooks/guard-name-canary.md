@@ -45,11 +45,13 @@ runs real turns on production, and it picks names from the guard's own list.
 3. **Sets up.** It ensures the account `eng-guard-canary` (on
    `ops.commonly.invalid`, `cloudAgents` entitled, verified, with no usable
    password) and its pod, "Guard-name canary". It signs a 20-minute session for
-   that account from `JWT_SECRET` inside the pod. No token is stored. The pod is
-   invite-only, and the canary refuses to judge (exit 2) if the pod is open or
-   any other person is a member. Anyone who could post there could @-mention a
-   canary agent with a keyword and fail the release. It uninstalls any canary
-   agent a crashed run left behind, because the hosted cap is one per account.
+   that account from `JWT_SECRET` for each request, with a 5-minute expiry. No
+   token is stored. The pod is new on every run and is deleted at the end with
+   its messages. A hosted turn reads the last pod messages as user text, which
+   the guard scans, so a reused pod would carry one run's words into the next.
+   The pod is invite-only: anyone who could post there could @-mention a canary
+   agent with a keyword and fail the release. Pods and agents left by a crashed
+   run are removed first, because the hosted cap is one per account.
    At most eight names are tried, so the keyword list can't decide how many
    turns a release pays for. Names past the cap are logged, and the run reads
    as inconclusive.
@@ -61,10 +63,13 @@ runs real turns on production, and it picks names from the guard's own list.
    plain question by its canonical handle (`@guard-canary-dan-canary`). A check
    passes on a mention turn that succeeded, a reply from the agent's user after
    the question, and no `guardrail_blocked` run in the canary's pod since
-   install. That last
-   condition covers the first-contact greeting too. An inconclusive check runs
-   once more after LiteLLM reports ready again. Every agent is uninstalled
-   afterwards, pass or fail.
+   install. That last condition covers the first-contact greeting too. A check
+   that didn't pass runs once more after LiteLLM reports ready again. Blocked
+   needs both attempts blocked. The guard's keyword match repeats, but an
+   upstream moderation error, which the runtime also files as
+   `guardrail_blocked`, doesn't. Every agent is uninstalled afterwards, pass or
+   fail. A question that would itself contain a keyword is never posted, and
+   that check reads as inconclusive.
 
 Each step prints one JSON line. The last line is `{canary, result, exit}`.
 
@@ -73,8 +78,11 @@ Each step prints one JSON line. The last line is `{canary, result, exit}`.
 | Exit | Result | Meaning for the release |
 |---|---|---|
 | 0 | `pass` | Every name got a real turn. |
-| 1 | `blocked` | The guard stopped a turn for a canary name. Something we send now completes a keyword with an agent's name, so every agent with such a name is mute. The release must not stand. |
-| 2 | `inconclusive` | No verdict: an install failed, nothing replied in time, a run failed for another reason, or the keyword list was unreadable. Worth a look; not a reason to roll back. |
+| 3 | `blocked` | The guard stopped a turn for a canary name, on both attempts. Something we send now completes a keyword with an agent's name, so every agent with such a name is mute. The release must not stand. |
+| 2 | `inconclusive` | No verdict: an install failed, nothing replied in time, a run failed for another reason, a block didn't repeat, the keyword list was unreadable, or names past the cap went untried. Worth a look; not a reason to roll back. |
+| 1 | — | Not the canary's verdict: `kubectl` failed (ops-runner rolling, RBAC, connection), or node crashed. Treat it like 2. |
+
+Blocked is 3, not 1, because kubectl and an uncaught node error both exit 1.
 
 ## Running it by hand
 
@@ -105,11 +113,13 @@ rollback step runs. That step's condition then needs
           set -uo pipefail
           KW=$(kubectl exec -i -n "$NAMESPACE" deploy/litellm -c litellm -- \
                  /app/.venv/bin/python3 -I - < scripts/guard-keywords-dump.py) || KW=''
+          # Actions runs this under `bash -e`; `|| CODE=$?` keeps a non-zero
+          # exit from ending the step before it is read.
+          CODE=0
           kubectl exec -i -n "$NAMESPACE" deploy/ops-runner -c ops-runner -- \
             env NODE_PATH=/app/node_modules CANARY_RUN=1 CANARY_GUARD_KEYWORDS="$KW" \
-            node - < scripts/guard-name-canary.js
-          CODE=$?
-          if [ "$CODE" = 1 ]; then
+            node - < scripts/guard-name-canary.js || CODE=$?
+          if [ "$CODE" = 3 ]; then
             echo "::error title=Guard-name canary blocked::the injection guard stopped a turn for an agent named after a guard keyword; see the check lines above"
             exit 1
           fi
@@ -119,7 +129,10 @@ rollback step runs. That step's condition then needs
 ```
 
 The script comes from the dispatched checkout, so it matches the release even
-while ops-runner is still rolling to the new image. The deploy's service account
+while ops-runner is still rolling to the new image. Two runs at once would share
+the account and the hosted cap, and each would sweep the other's pod. The
+workflow's `concurrency: deploy-dev` group, without cancel-in-progress, keeps
+deploys serial; a hand run during a deploy is the case to avoid. The deploy's service account
 needs `pods/exec` on litellm and ops-runner. It already execs into the backend
 pod for the chat check.
 
@@ -139,13 +152,13 @@ pod for the chat check.
 
 ## Verified
 
-2026-11-02, on production, the run in this PR:
+2026-11-02, on production, the runs in this PR:
 
-- **Pass.** `Dan Canary` and `Now Canary`, hosted and native: four passes in
-  25.5s, exit 0, no canary install left in the pod.
+- **Pass.** `Dan Canary` and `Now Canary`, hosted and native: four passes,
+  exit 0, no canary install left behind.
 - **Reverse check.** A copy whose question carried "you are Dan Canary"
-  produced four `blocked` verdicts and exit 1. That proves a guard stop reaches
-  the exit code.
+  produced `blocked` verdicts and exit 3. That proves a guard stop reaches the
+  exit code.
 - **First run.** It asked the agents to repeat a code verbatim, and every model
   declined it as a relay request. It also matched replies by a username the
   list route doesn't always join. The turns themselves had all succeeded.

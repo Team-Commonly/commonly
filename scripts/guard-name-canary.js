@@ -20,8 +20,12 @@
  *                Canary". "Dan Canary" is always tried, list or no list.
  *   3. setup     ensures the canary account (eng-guard-canary, on
  *                ops.commonly.invalid, cloudAgents entitled, no usable
- *                password) and its pod. It signs a 20-minute session for it
- *                here, from JWT_SECRET; no token is stored anywhere.
+ *                password) and creates a fresh invite-only pod for this run,
+ *                deleted at the end with its messages. A hosted turn reads the
+ *                last pod messages as user text, which the guard scans, so a
+ *                reused pod would carry one run's words into the next. Each
+ *                request is signed here from JWT_SECRET with a short expiry;
+ *                no token is stored anywhere.
  *   4. checks    for each name, a hosted agent and a native one (task-clerk)
  *                are installed under that name through the same routes the
  *                product uses, asked a plain question, and judged: a mention
@@ -29,13 +33,17 @@
  *                question, and no guard-blocked run since install. Each is
  *                uninstalled afterwards, pass or fail.
  *
- * It waits for LiteLLM to report ready before the first check, and runs an
- * inconclusive check once more: a restart window must not read as a red.
+ * It waits for LiteLLM to report ready before the first check, and runs any
+ * check that did not pass once more: a restart window, or an upstream error the
+ * runtime files as a guard stop, must not read as a red. The guard's keyword
+ * match is deterministic, so a real block repeats.
  *
- * Exit: 0 every check passed · 1 a run was stopped by the guard (the release
- * must not stand) · 2 inconclusive (no verdict: an install failed, nothing
- * replied in time, or the keyword list was unreadable). Every step prints one
- * JSON line; the last is {canary, result, exit}.
+ * Exit: 0 every check passed · 3 a run was stopped by the guard, twice (the
+ * release must not stand) · 2 inconclusive (no verdict: an install failed,
+ * nothing replied in time, the keyword list was unreadable, or names went
+ * untried). Blocked is 3, not 1, because kubectl and an uncaught node error
+ * both exit 1 and neither may roll a release back. Every step prints one JSON
+ * line; the last is {canary, result, exit}.
  *
  * Run it in ops-runner, never in the serving backend:
  *   KW=$(kubectl exec -i -n NS deploy/litellm -c litellm -- /app/.venv/bin/python3 -I - < scripts/guard-keywords-dump.py)
@@ -47,7 +55,9 @@
 const CANARY = 'guard-name';
 const CANARY_USERNAME = 'eng-guard-canary';
 const CANARY_EMAIL_DOMAIN = 'ops.commonly.invalid';
-const CANARY_POD_NAME = 'Guard-name canary';
+const CANARY_POD_PREFIX = 'Guard-name canary';
+// Not 1 (kubectl, a node crash) and not 2 (inconclusive).
+const BLOCKED_EXIT = 3;
 const HOSTED_AGENT = 'guard-canary';
 // A seeded first-party native app that answers mentions (config/native-agents).
 const NATIVE_AGENT = 'task-clerk';
@@ -175,17 +185,58 @@ function classifyCheck({ installError, runs, replied }) {
 }
 
 /**
- * 1 if any check was blocked; 2 if no checks ran, any was inconclusive, the
- * list was unread, or names past the cap went untried; else 0.
+ * BLOCKED_EXIT if any check was blocked; 2 if no checks ran, any was
+ * inconclusive, the list was unread, or names past the cap went untried; else 0.
  */
 function exitCodeFor(results, keywordsRead, capped = false) {
-  if (results.some((r) => r.verdict === 'blocked')) return 1;
+  if (results.some((r) => r.verdict === 'blocked')) return BLOCKED_EXIT;
   if (!results.length || results.some((r) => r.verdict !== 'pass') || !keywordsRead || capped) return 2;
   return 0;
 }
 
+/**
+ * The checks a run makes: a hosted and a native agent per name, addressed by
+ * the canonical handle install gives them. A question that itself contains a
+ * keyword is never posted: the guard would stop it for our words, not the name.
+ */
+function planChecks(names, keywords) {
+  const plan = [];
+  for (const name of names) {
+    for (const [runtime, agentName] of [['hosted', HOSTED_AGENT], ['native', NATIVE_AGENT]]) {
+      const handle = `${agentName}-${name.instanceId}`;
+      const skip = findKeyword(mentionText(handle), keywords) ? 'question_contains_keyword' : null;
+      plan.push({ runtime, agentName, handle, name, skip });
+    }
+  }
+  return plan;
+}
+
+/**
+ * One verdict from a check and its retry. Blocked needs both attempts blocked:
+ * the guard's keyword match is deterministic and repeats, while an upstream
+ * moderation error, which the runtime also files as guardrail_blocked, does not.
+ */
+function combineAttempts(first, second) {
+  if (first.verdict === 'blocked' && second.verdict === 'blocked') return second;
+  if (second.verdict === 'blocked') {
+    return { ...second, verdict: 'inconclusive', reason: `${first.reason || first.verdict}, then blocked once` };
+  }
+  if (first.verdict === 'blocked') {
+    return { ...second, verdict: 'inconclusive', reason: `blocked once, then ${second.reason || second.verdict}` };
+  }
+  return second;
+}
+
 module.exports = {
-  parseKeywordPayload, findKeyword, deriveCanaryNames, mentionText, classifyCheck, exitCodeFor,
+  combineAttempts,
+  parseKeywordPayload,
+  findKeyword,
+  deriveCanaryNames,
+  mentionText,
+  classifyCheck,
+  exitCodeFor,
+  planChecks,
+  BLOCKED_EXIT,
 };
 
 // ── the run (only with CANARY_RUN=1, in ops-runner) ─────────────────────────
@@ -205,7 +256,7 @@ async function waitForLitellm(deadlineMs) {
       if (res.ok) return { ok: true, ms: Date.now() - t0 };
       last = `HTTP ${res.status}`;
     } catch (err) {
-      last = String(err.message || err).slice(0, 80);
+      last = String(err.name || 'Error');
     }
     await sleep(3000);
   }
@@ -231,7 +282,7 @@ async function main() {
   const db = mongoose.connection.db;
 
   // The canary account. It has no usable password (a hash of a random secret
-  // that is dropped here) and is reached only through the session signed below.
+  // that is dropped here) and is reached only through sessions signed below.
   const users = db.collection('users');
   const now = new Date();
   await users.updateOne({ username: CANARY_USERNAME }, {
@@ -258,18 +309,19 @@ async function main() {
     await mongoose.disconnect();
     return 2;
   }
-  const token = jwt.sign(
-    { id: String(account._id), tokenVersion: account.tokenVersion || 0 },
-    process.env.JWT_SECRET,
-    { expiresIn: '20m' },
-  );
   log({ step: 'account', ok: true });
 
+  // Signed per request, so no run outlives its session however many names it has.
+  const session = () => jwt.sign(
+    { id: String(account._id), tokenVersion: account.tokenVersion || 0 },
+    process.env.JWT_SECRET,
+    { expiresIn: '5m' },
+  );
   const api = async (method, path, body) => {
     const res = await fetch(`${API}${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${session()}`,
         'Content-Type': 'application/json',
         'User-Agent': 'commonly-guard-canary/1.0',
       },
@@ -286,41 +338,7 @@ async function main() {
     return data;
   };
 
-  // The canary's pod, reused across runs.
-  const podsRes = await api('GET', '/api/pods');
-  const pods = Array.isArray(podsRes) ? podsRes : (podsRes && podsRes.pods) || [];
-  let pod = pods.find((p) => p && p.name === CANARY_POD_NAME);
-  if (!pod) {
-    pod = await api('POST', '/api/pods', {
-      name: CANARY_POD_NAME,
-      type: 'chat',
-      // Invite-only: a stranger in this pod could @-mention a canary agent
-      // with a keyword and fail the release (security review, this PR).
-      joinPolicy: 'invite-only',
-      description: 'Release check: agents named after guard keywords each get one real turn.',
-    });
-  }
-  const podId = String(pod._id || pod.id);
-  // Only the canary account may be a human in this pod. A pod someone else can
-  // reach, or did reach, yields no verdict: their message could be what the
-  // guard stops.
-  const podRow = await db.collection('pods').findOne(
-    { _id: new mongoose.Types.ObjectId(podId) },
-    { projection: { joinPolicy: 1, members: 1 } },
-  );
-  const otherHumans = podRow ? await users.countDocuments({
-    _id: { $in: (podRow.members || []).filter((m) => String(m) !== String(account._id)) },
-    isBot: { $ne: true },
-  }) : -1;
-  if (!podRow || podRow.joinPolicy !== 'invite-only' || otherHumans !== 0) {
-    log({ step: 'pod', ok: false, podId, joinPolicy: podRow ? podRow.joinPolicy || null : null, otherHumans });
-    log({ result: 'inconclusive', exit: 2 });
-    await mongoose.disconnect();
-    return 2;
-  }
-  log({ step: 'pod', ok: true, podId });
-
-  const uninstall = async (agentName, instanceId) => {
+  const uninstall = async (podId, agentName, instanceId) => {
     try {
       await api('DELETE', `/api/registry/agents/${encodeURIComponent(agentName)}/pods/${podId}?instanceId=${encodeURIComponent(instanceId)}`);
       return true;
@@ -329,27 +347,55 @@ async function main() {
       return false;
     }
   };
+  // Uninstall the canary's agents in a pod, then delete the pod with its messages.
+  const retirePod = async (podId) => {
+    try {
+      const roster = await api('GET', `/api/registry/pods/${podId}/agents`);
+      for (const a of (roster && roster.agents) || []) {
+        if (a && (a.name === HOSTED_AGENT || a.name === NATIVE_AGENT)) await uninstall(podId, a.name, a.instanceId || 'default');
+      }
+    } catch (err) {
+      log({ step: 'retire', ok: false, podId, error: err.message });
+    }
+    try {
+      await api('DELETE', `/api/pods/${podId}`);
+      return true;
+    } catch (err) {
+      log({ step: 'retire', ok: false, podId, error: err.message });
+      return false;
+    }
+  };
 
-  // A run that died before its cleanup leaves an install behind, and the
-  // hosted cap is one per account. Only the canary's own two agents are touched.
+  // A run that died before its cleanup leaves a pod and installs behind, and
+  // the hosted cap is one per account.
   try {
-    const roster = await api('GET', `/api/registry/pods/${podId}/agents`);
-    for (const a of (roster && roster.agents) || []) {
-      if (a && (a.name === HOSTED_AGENT || a.name === NATIVE_AGENT)) {
-        const removed = await uninstall(a.name, a.instanceId || 'default');
-        log({ step: 'sweep', agentName: a.name, instanceId: a.instanceId || 'default', removed });
+    const podsRes = await api('GET', '/api/pods');
+    const pods = Array.isArray(podsRes) ? podsRes : (podsRes && podsRes.pods) || [];
+    for (const p of pods) {
+      if (p && String(p.name || '').startsWith(CANARY_POD_PREFIX)) {
+        log({ step: 'sweep', podId: String(p._id), retired: await retirePod(String(p._id)) });
       }
     }
   } catch (err) {
     log({ step: 'sweep', ok: false, error: err.message });
   }
 
+  // Invite-only: a stranger in this pod could @-mention a canary agent with a
+  // keyword and fail the release.
+  const pod = await api('POST', '/api/pods', {
+    name: `${CANARY_POD_PREFIX} ${new Date().toISOString().slice(0, 16)}`,
+    type: 'chat',
+    joinPolicy: 'invite-only',
+    description: 'Release check: agents named after guard keywords each get one real turn.',
+  });
+  const podId = String(pod._id || pod.id);
+  const podOid = new mongoose.Types.ObjectId(podId);
+  log({ step: 'pod', ok: true, podId });
+
   const ready = await waitForLitellm(120_000);
   log({ step: 'litellm-ready', ...ready });
 
-  const checkOnce = async (runtimeType, name) => {
-    const agentName = runtimeType === 'hosted' ? HOSTED_AGENT : NATIVE_AGENT;
-    const handle = `${agentName}-${name.instanceId}`;
+  const checkOnce = async ({ runtime, agentName, handle, name }) => {
     const since = new Date(Date.now() - 5000);
     const t0 = Date.now();
     let installError = null;
@@ -363,9 +409,9 @@ async function main() {
           displayName: name.displayName,
           instanceId: name.instanceId,
           scopes: [],
-          config: { runtime: { runtimeType } },
+          config: { runtime: { runtimeType: runtime } },
         });
-        if (runtimeType === 'hosted') {
+        if (runtime === 'hosted') {
           await api('POST', '/api/hosted/provision', { agentName, instanceId: name.instanceId });
         }
       } catch (err) {
@@ -385,7 +431,7 @@ async function main() {
           await sleep(3000);
           runs = await db.collection('agentruns').find(
             {
-              podId: new mongoose.Types.ObjectId(podId), agentName, instanceId: name.instanceId, startedAt: { $gte: since },
+              podId: podOid, agentName, instanceId: name.instanceId, startedAt: { $gte: since },
             },
             { projection: { _id: 0, status: 1, errorKind: 1, trigger: 1 } },
           ).toArray();
@@ -402,34 +448,50 @@ async function main() {
     } catch (err) {
       installError = installError || `check: ${err.message}`;
     } finally {
-      await uninstall(agentName, name.instanceId);
+      await uninstall(podId, agentName, name.instanceId);
     }
     return { ...classifyCheck({ installError, runs, replied }), ms: Date.now() - t0 };
   };
 
   const results = [];
-  for (const name of names) {
-    // The hosted cap is one per account, so names run one after another; the
-    // native check for the same name runs beside the hosted one.
-    const pair = await Promise.all(['hosted', 'native'].map(async (runtimeType) => {
-      let outcome = await checkOnce(runtimeType, name);
-      let attempts = 1;
-      if (outcome.verdict === 'inconclusive') {
-        // One retry, after LiteLLM reports ready again: a restart window or a
-        // slow model must not stall a release.
-        await waitForLitellm(60_000);
-        outcome = await checkOnce(runtimeType, name);
-        attempts = 2;
-      }
-      const result = { step: 'check', runtime: runtimeType, name: name.displayName, keywords: name.keywords, attempts, ...outcome };
-      log(result);
-      return result;
-    }));
-    results.push(...pair);
+  try {
+    const plan = planChecks(names, kw.keywords);
+    for (const name of names) {
+      // The hosted cap is one per account, so names run one after another; the
+      // native check for the same name runs beside the hosted one.
+      const pair = await Promise.all(plan.filter((c) => c.name === name).map(async (check) => {
+        if (check.skip) {
+          const result = { step: 'check', runtime: check.runtime, name: name.displayName, verdict: 'inconclusive', reason: check.skip };
+          log(result);
+          return result;
+        }
+        let outcome = await checkOnce(check);
+        let attempts = 1;
+        if (outcome.verdict !== 'pass') {
+          // Once more, after LiteLLM reports ready again. A restart window or a
+          // slow model must not stall a release, and an upstream moderation
+          // error is filed as guardrail_blocked too; a keyword match repeats.
+          await waitForLitellm(60_000);
+          await sleep(5000);
+          outcome = combineAttempts(outcome, await checkOnce(check));
+          attempts = 2;
+        }
+        const result = {
+          step: 'check', runtime: check.runtime, name: name.displayName, keywords: name.keywords, attempts, ...outcome,
+        };
+        log(result);
+        return result;
+      }));
+      results.push(...pair);
+    }
+  } finally {
+    log({ step: 'retire', podId, retired: await retirePod(podId) });
   }
 
   const code = exitCodeFor(results, kw.ok, skipped.some((x) => x.reason === 'over_cap'));
-  log({ result: code === 0 ? 'pass' : code === 1 ? 'blocked' : 'inconclusive', exit: code, checks: results.length, ms: Date.now() - started });
+  log({
+    result: code === 0 ? 'pass' : code === BLOCKED_EXIT ? 'blocked' : 'inconclusive', exit: code, checks: results.length, ms: Date.now() - started,
+  });
   await mongoose.disconnect();
   return code;
 }

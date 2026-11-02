@@ -17,6 +17,9 @@ const {
   mentionText,
   classifyCheck,
   exitCodeFor,
+  planChecks,
+  combineAttempts,
+  BLOCKED_EXIT,
 } = require('../../../../scripts/guard-name-canary');
 
 // The guard's lists as measured on the litellm image (v1.106.2), trimmed.
@@ -143,15 +146,53 @@ describe('classifyCheck', () => {
   });
 });
 
+describe('planChecks', () => {
+  it('plans a hosted and a native check per name under the canonical handles', () => {
+    const { names } = deriveCanaryNames(['you are dan']);
+    expect(planChecks(names, ['you are dan'])).toEqual([
+      expect.objectContaining({ runtime: 'hosted', agentName: 'guard-canary', handle: 'guard-canary-dan-canary', skip: null }),
+      expect.objectContaining({ runtime: 'native', agentName: 'task-clerk', handle: 'task-clerk-dan-canary', skip: null }),
+    ]);
+  });
+
+  it('never posts a question the guard would stop on its own text', () => {
+    const { names } = deriveCanaryNames(['you are dan']);
+    // A future keyword that the question itself contains.
+    const plan = planChecks(names, ['you are dan', 'quick check from the release canary']);
+    expect(plan.every((c) => c.skip === 'question_contains_keyword')).toBe(true);
+  });
+});
+
+describe('combineAttempts', () => {
+  const pass = { verdict: 'pass' };
+  const blocked = { verdict: 'blocked', reason: 'guardrail_blocked on mention' };
+  const quiet = { verdict: 'inconclusive', reason: 'no_reply' };
+
+  it('is blocked only when both attempts were blocked: a keyword match repeats, an upstream error does not', () => {
+    expect(combineAttempts(blocked, blocked).verdict).toBe('blocked');
+    expect(combineAttempts(blocked, pass)).toMatchObject({ verdict: 'inconclusive', reason: 'blocked once, then pass' });
+    expect(combineAttempts(quiet, blocked)).toMatchObject({ verdict: 'inconclusive', reason: 'no_reply, then blocked once' });
+  });
+
+  it('takes the second attempt otherwise', () => {
+    expect(combineAttempts(quiet, pass)).toEqual(pass);
+    expect(combineAttempts(quiet, quiet)).toEqual(quiet);
+  });
+});
+
 describe('exitCodeFor', () => {
-  it('1 when any check was blocked, 2 when any was inconclusive, the list unread or names were capped, else 0', () => {
+  it(`${BLOCKED_EXIT} when any check was blocked; 2 when any was inconclusive, the list unread or names were capped; else 0`, () => {
+    // Blocked has its own code: kubectl and an uncaught node error both exit 1,
+    // and neither may read as a guard block that rolls a release back.
+    expect(BLOCKED_EXIT).not.toBe(1);
+    expect(BLOCKED_EXIT).not.toBe(2);
     expect(exitCodeFor([{ verdict: 'pass' }], true, true)).toBe(2);
-    expect(exitCodeFor([{ verdict: 'blocked' }], true, true)).toBe(1);
+    expect(exitCodeFor([{ verdict: 'blocked' }], true, true)).toBe(BLOCKED_EXIT);
     expect(exitCodeFor([{ verdict: 'pass' }, { verdict: 'pass' }], true)).toBe(0);
     expect(exitCodeFor([{ verdict: 'pass' }, { verdict: 'inconclusive' }], true)).toBe(2);
-    expect(exitCodeFor([{ verdict: 'inconclusive' }, { verdict: 'blocked' }], true)).toBe(1);
+    expect(exitCodeFor([{ verdict: 'inconclusive' }, { verdict: 'blocked' }], true)).toBe(BLOCKED_EXIT);
     expect(exitCodeFor([{ verdict: 'pass' }], false)).toBe(2);
-    expect(exitCodeFor([{ verdict: 'blocked' }], false)).toBe(1);
+    expect(exitCodeFor([{ verdict: 'blocked' }], false)).toBe(BLOCKED_EXIT);
     expect(exitCodeFor([], true)).toBe(2);
   });
 });
