@@ -2720,6 +2720,7 @@ export async function runAgent(
           displayName,
           installationConfig: cfg,
           metadata: { source: 'native-runtime', runFailed: true },
+          failureNotice: true,
           noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
           threadRootId: dispatchCtx.answeringThreadRootId ?? null,
