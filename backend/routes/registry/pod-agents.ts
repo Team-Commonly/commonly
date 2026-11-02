@@ -178,35 +178,42 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     }
 
     const installations = await AgentInstallation.getInstalledAgents(podId);
-    let grantPodCounts = new Map<string, { pods: number; grantPods: number }>();
-    let runtimeNarrowingUnavailable = false;
-    try {
-      grantPodCounts = await outsiderGrantPodCounts(installations);
-    } catch (narrowingErr) {
-      // The roster is advisory. The runtime middleware independently fails
-      // closed; the Connectors page must not claim the seat can post on a bad read.
-      console.warn('[pod-agents] runtime narrowing lookup failed:', (narrowingErr as Error).message);
-      runtimeNarrowingUnavailable = true;
-    }
+    const agentNames = installations.map((i: any) => i.agentName);
+
+    // Everything below needs only the pod and its installs, so it runs
+    // together: one request costs a handful of round trips, not one per
+    // query (F65: 21 in a row at ~42ms each, and pages that fetch this once
+    // per pod drew 504s). Only the connection and last-message reads wait,
+    // for the bot User rows.
+
+    // The roster is advisory. The runtime middleware independently fails
+    // closed; the Connectors page must not claim the seat can post on a bad read.
+    const narrowingRead = outsiderGrantPodCounts(installations)
+      .then((counts: Map<string, { pods: number; grantPods: number }>) => ({ counts, unavailable: false }))
+      .catch((narrowingErr: Error) => {
+        console.warn('[pod-agents] runtime narrowing lookup failed:', narrowingErr.message);
+        return { counts: new Map<string, { pods: number; grantPods: number }>(), unavailable: true };
+      });
 
     // One derivation for proof-of-life (heartbeats ∪ runs ∪ token use) —
     // shared with the native runtime's commonly_agent_status tool via
     // agentStateService. Advisory: never fail the roster over it.
-    let activityMap = new Map<string, Date | null>();
-    try {
+    const activityRead = (async () => {
       const { collectPodAgentActivity } = require('../../services/agentStateService');
-      activityMap = await collectPodAgentActivity(String(podId), installations);
-    } catch (activityErr) {
-      console.warn('[pod-agents] activity lookup failed:', (activityErr as Error).message);
-    }
+      return collectPodAgentActivity(String(podId), installations) as Promise<Map<string, Date | null>>;
+    })().catch((activityErr: Error) => {
+      console.warn('[pod-agents] activity lookup failed:', activityErr.message);
+      return new Map<string, Date | null>();
+    });
+
     // Heartbeat-only timestamps still ride the payload (lastHeartbeatAt is
     // its own field); fetch them cheaply from the same event source.
-    const heartbeatRows = await AgentEvent.aggregate([
+    const heartbeatRead = AgentEvent.aggregate([
       {
         $match: {
           type: 'heartbeat',
           status: 'delivered',
-          agentName: { $in: installations.map((i: any) => i.agentName) },
+          agentName: { $in: agentNames },
           instanceId: { $in: installations.map((i: any) => i.instanceId || 'default') },
         },
       },
@@ -218,19 +225,15 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         },
       },
     ]);
-    const heartbeatMap = new Map(
-      heartbeatRows.map((r: any) => [`${r._id.agentName}:${r._id.instanceId}`, r.lastHeartbeatAt]),
-    );
 
-    const registryEntries = await AgentRegistry.find({
-      agentName: { $in: installations.map((i: any) => i.agentName) },
+    const registryRead = AgentRegistry.find({
+      agentName: { $in: agentNames },
     }).select('agentName iconUrl').lean();
-    const iconMap = new Map(registryEntries.map((entry: any) => [entry.agentName, entry.iconUrl || '']));
     const installationDisplayNames = Array.from(new Set(
       installations.map((i: any) => i.displayName).filter(Boolean),
     ));
-    const templateCandidates = await AgentTemplate.find({
-      agentName: { $in: installations.map((i: any) => i.agentName) },
+    const templateRead = AgentTemplate.find({
+      agentName: { $in: agentNames },
       displayName: { $in: installationDisplayNames },
       $or: [
         { visibility: 'public' },
@@ -238,6 +241,148 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
         { createdBy: { $in: installations.map((i: any) => i.installedBy).filter(Boolean) } },
       ],
     }).select('agentName displayName iconUrl createdBy visibility').lean();
+
+    const profileRead = AgentProfile.find({
+      podId,
+      agentName: { $in: agentNames },
+    }).lean();
+
+    // Batch-fetch the bot User rows so the payload builder can resolve
+    // displayName via the curated `botMetadata.displayName` rather than
+    // the (possibly stale) `installation.displayName`. ADR-001 §3.10:
+    // identity is separate from package — the User row is the source of
+    // truth for identity labels. Map by (agentName, instanceId).
+    const usernameSet = new Set<string>();
+    for (const i of installations as any[]) {
+      const username = AgentIdentityService.buildAgentUsername(i.agentName, i.instanceId || 'default');
+      if (username) usernameSet.add(username);
+    }
+    // Promise.resolve runs the Query once: three readers wait on it, and a
+    // Query runs again for every then().
+    const userRead: Promise<any[]> = usernameSet.size > 0
+      ? Promise.resolve(User.find({ username: { $in: Array.from(usernameSet) } })
+        .select([
+          'username isBot profilePicture botMetadata',
+          'agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt',
+        ].join(' '))
+        .lean())
+      : Promise.resolve([]);
+
+    // Connection health is advisory, like activity. Read credentials in one
+    // batch; a revoked row survives removal of the embedded bearer.
+    const connectionRead = userRead.then(async (userRows: any[]) => {
+      const credentialByAgent = new Map<string, any[]>();
+      const credentialByMachine = new Map<string, any[]>();
+      let machineById = new Map<string, any>();
+      if (userRows.length > 0) {
+        const agentIds = userRows.map((u: any) => u._id);
+        const machineIds = Array.from(new Set(userRows
+          .map((u: any) => u.botMetadata?.machineId).filter(Boolean)));
+        const [credentials, machines] = await Promise.all([
+          AgentCredential.find({ $or: [
+            { kind: 'runtime', agentUserId: { $in: agentIds } },
+            { kind: 'daemon', machineId: { $in: machineIds } },
+          ] }).select('kind agentUserId machineId tokenHash status lastUsedAt expiresAt').lean(),
+          Machine.find({ machineId: { $in: machineIds } }).select('machineId lastSeenAt').lean(),
+        ]);
+        for (const credential of credentials as any[]) {
+          const key = credential.kind === 'daemon' ? String(credential.machineId) : String(credential.agentUserId);
+          const target = credential.kind === 'daemon' ? credentialByMachine : credentialByAgent;
+          target.set(key, [...(target.get(key) || []), credential]);
+        }
+        machineById = new Map((machines as any[]).map((machine: any) => [machine.machineId, machine]));
+      }
+      return {
+        credentialByAgent, credentialByMachine, machineById, connectionAvailable: true,
+      };
+    }).catch((connectionErr: Error) => {
+      console.warn('[pod-agents] connection lookup failed:', connectionErr.message);
+      return {
+        credentialByAgent: new Map<string, any[]>(),
+        credentialByMachine: new Map<string, any[]>(),
+        machineById: new Map<string, any>(),
+        connectionAvailable: false,
+      };
+    });
+
+    // Last thing each agent said in THIS pod (spec §1.1 line 2).
+    // Advisory like the activity map: a PG hiccup must never fail the roster.
+    const lastMessageRead = userRead.then(async (userRows: any[]) => {
+      // eslint-disable-next-line global-require
+      const PgMessage = require('../../models/pg/Message');
+      const rows = await PgMessage.findLastMessagePerUserInPod(
+        String(podId),
+        userRows.map((u: any) => u._id),
+      );
+      return new Map(
+        (rows as Array<{ userId: string; content: string; createdAt: unknown }>)
+          .map((r) => [r.userId, { content: r.content, createdAt: r.createdAt }]),
+      );
+    }).catch((snippetErr: Error) => {
+      console.warn('[pod-agents] last-message lookup failed:', snippetErr.message);
+      return new Map<string, { content: string; createdAt: unknown }>();
+    });
+
+    // The handle a person types to reach each agent here, from the map mention
+    // routing reads (F44). Advisory: without it a row simply carries no handle.
+    // Lazy, as podContextService loads it: the mention service pulls in the event
+    // and message services.
+    // eslint-disable-next-line global-require
+    const mentions = require('../../services/agentMentionService');
+    const mentionRead = (mentions.loadPodMentionMap(podId) as Promise<Map<string, { agentName: string; instanceId?: string }>>)
+      .catch((mentionErr: Error) => {
+        console.warn('[pod-agents] mention map unavailable:', mentionErr.message);
+        return new Map<string, { agentName: string; instanceId?: string }>();
+      });
+
+    // Day-zero step 2 (#1648): "Say something to it" closes
+    // on the caller's own message in this pod, reply or not. A seat's install intro, a heartbeat
+    // or a teammate's post is not the caller speaking, so no per-agent field can carry this.
+    // Advisory like the snippet: a PG hiccup reads as "not yet", never as a failed roster.
+    const callerSpokeRead = (async () => {
+      // eslint-disable-next-line global-require
+      const PgMessage = require('../../models/pg/Message');
+      return Boolean(await PgMessage.hasMessageByUserInPod(String(podId), String(userId)));
+    })().catch((spokeErr: Error) => {
+      console.warn('[pod-agents] caller-spoke lookup failed:', spokeErr.message);
+      return false;
+    });
+
+    // A seat's runtime identity comes from its newest install in any pod
+    // (TASK-569). Advisory: on a failed read each install shows its own.
+    const seatIdentityRead = (resolveSeatRuntimeIdentities(installations) as Promise<Map<string, Record<string, unknown>>>)
+      .catch((identityErr: Error) => {
+        console.warn('[pod-agents] runtime identity lookup failed:', identityErr.message);
+        return new Map<string, Record<string, unknown>>();
+      });
+
+    // A push webhook's URL can carry a credential in its query string, so only
+    // its installer and instance admins see it (hardening ruling,
+    // 2026-10-21). The admin lookup runs only when the roster holds a URL the
+    // viewer did not install.
+    const viewerId = String(userId);
+    const installedByViewer = (i: any) => String(i.installedBy || '') === viewerId;
+    const needsAdminCheck = (installations as any[]).some((i: any) => (
+      !installedByViewer(i) && Boolean(normalizeConfigMap(i.config)?.runtime?.webhookUrl)
+    ));
+    const adminRead: Promise<boolean> = needsAdminCheck ? isGlobalAdminUser(userId) : Promise.resolve(false);
+
+    const [
+      narrowing, activityMap, heartbeatRows, registryEntries, templateCandidates, profiles, userRows,
+      connection, lastMessageByUserId, mentionMap, callerSpoke, seatRuntimeIdentities, viewerIsAdmin,
+    ] = await Promise.all([
+      narrowingRead, activityRead, heartbeatRead, registryRead, templateRead, profileRead, userRead,
+      connectionRead, lastMessageRead, mentionRead, callerSpokeRead, seatIdentityRead, adminRead,
+    ]);
+    const { counts: grantPodCounts, unavailable: runtimeNarrowingUnavailable } = narrowing;
+    const {
+      credentialByAgent, credentialByMachine, machineById, connectionAvailable,
+    } = connection;
+
+    const heartbeatMap = new Map(
+      heartbeatRows.map((r: any) => [`${r._id.agentName}:${r._id.instanceId}`, r.lastHeartbeatAt]),
+    );
+    const iconMap = new Map(registryEntries.map((entry: any) => [entry.agentName, entry.iconUrl || '']));
     const getTemplateIcon = (installation: any) => {
       const displayName = normalizeDisplayName(installation.displayName);
       if (!displayName) return '';
@@ -255,127 +400,9 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       const publicTemplate = matches.find((template: any) => template.visibility === 'public');
       return (publicTemplate || matches[0]).iconUrl || '';
     };
-
-    const profiles = await AgentProfile.find({
-      podId,
-      agentName: { $in: installations.map((i: any) => i.agentName) },
-    }).lean();
-
-    // Batch-fetch the bot User rows so the payload builder can resolve
-    // displayName via the curated `botMetadata.displayName` rather than
-    // the (possibly stale) `installation.displayName`. ADR-001 §3.10:
-    // identity is separate from package — the User row is the source of
-    // truth for identity labels. Map by (agentName, instanceId).
-    const User = require('../../models/User');
-    const usernameSet = new Set<string>();
-    for (const i of installations as any[]) {
-      const username = AgentIdentityService.buildAgentUsername(i.agentName, i.instanceId || 'default');
-      if (username) usernameSet.add(username);
-    }
-    const userRows = usernameSet.size > 0
-      ? await User.find({ username: { $in: Array.from(usernameSet) } })
-        .select([
-          'username isBot profilePicture botMetadata',
-          'agentRuntimeTokens.tokenHash agentRuntimeTokens.lastUsedAt agentRuntimeTokens.expiresAt',
-        ].join(' '))
-        .lean()
-      : [];
     const userByUsername = new Map<string, any>(
       (userRows as any[]).map((u: any) => [u.username, u]),
     );
-    // The handle a person types to reach each agent here, from the map mention
-    // routing reads (F44). Advisory: without it a row simply carries no handle.
-    // Lazy, as podContextService loads it: the mention service pulls in the event
-    // and message services.
-    // eslint-disable-next-line global-require
-    const mentions = require('../../services/agentMentionService');
-    let mentionMap = new Map<string, { agentName: string; instanceId?: string }>();
-    try {
-      mentionMap = await mentions.loadPodMentionMap(podId);
-    } catch (mentionErr) {
-      console.warn('[pod-agents] mention map unavailable:', (mentionErr as Error).message);
-    }
-
-    // Connection health is advisory, like activity. Read credentials in one
-    // batch; a revoked row survives removal of the embedded bearer.
-    let credentialByAgent = new Map<string, any[]>();
-    let credentialByMachine = new Map<string, any[]>();
-    let machineById = new Map<string, any>();
-    let connectionAvailable = true;
-    try {
-      if ((userRows as any[]).length > 0) {
-        const agentIds = (userRows as any[]).map((u: any) => u._id);
-        const machineIds = Array.from(new Set((userRows as any[])
-          .map((u: any) => u.botMetadata?.machineId).filter(Boolean)));
-        const [credentials, machines] = await Promise.all([
-          AgentCredential.find({ $or: [
-            { kind: 'runtime', agentUserId: { $in: agentIds } },
-            { kind: 'daemon', machineId: { $in: machineIds } },
-          ] }).select('kind agentUserId machineId tokenHash status lastUsedAt expiresAt').lean(),
-          Machine.find({ machineId: { $in: machineIds } }).select('machineId lastSeenAt').lean(),
-        ]);
-        for (const credential of credentials as any[]) {
-          const key = credential.kind === 'daemon' ? String(credential.machineId) : String(credential.agentUserId);
-          const target = credential.kind === 'daemon' ? credentialByMachine : credentialByAgent;
-          target.set(key, [...(target.get(key) || []), credential]);
-        }
-        machineById = new Map((machines as any[]).map((machine: any) => [machine.machineId, machine]));
-      }
-    } catch (connectionErr) {
-      connectionAvailable = false;
-      console.warn('[pod-agents] connection lookup failed:', (connectionErr as Error).message);
-    }
-
-    // Last thing each agent said in THIS pod (spec §1.1 line 2).
-    // Advisory like the activity map: a PG hiccup must never fail the roster.
-    let lastMessageByUserId = new Map<string, { content: string; createdAt: unknown }>();
-    try {
-      // eslint-disable-next-line global-require
-      const PgMessage = require('../../models/pg/Message');
-      const rows = await PgMessage.findLastMessagePerUserInPod(
-        String(podId),
-        (userRows as any[]).map((u: any) => u._id),
-      );
-      lastMessageByUserId = new Map(
-        (rows as Array<{ userId: string; content: string; createdAt: unknown }>)
-          .map((r) => [r.userId, { content: r.content, createdAt: r.createdAt }]),
-      );
-    } catch (snippetErr) {
-      console.warn('[pod-agents] last-message lookup failed:', (snippetErr as Error).message);
-    }
-
-    // Day-zero step 2 (#1648): "Say something to it" closes
-    // on the caller's own message in this pod, reply or not. A seat's install intro, a heartbeat
-    // or a teammate's post is not the caller speaking, so no per-agent field can carry this.
-    // Advisory like the snippet: a PG hiccup reads as "not yet", never as a failed roster.
-    let callerSpoke = false;
-    try {
-      // eslint-disable-next-line global-require
-      const PgMessage = require('../../models/pg/Message');
-      callerSpoke = Boolean(await PgMessage.hasMessageByUserInPod(String(podId), String(userId)));
-    } catch (spokeErr) {
-      console.warn('[pod-agents] caller-spoke lookup failed:', (spokeErr as Error).message);
-    }
-
-    // A seat's runtime identity comes from its newest install in any pod
-    // (TASK-569). Advisory: on a failed read each install shows its own.
-    let seatRuntimeIdentities = new Map<string, Record<string, unknown>>();
-    try {
-      seatRuntimeIdentities = await resolveSeatRuntimeIdentities(installations);
-    } catch (identityErr) {
-      console.warn('[pod-agents] runtime identity lookup failed:', (identityErr as Error).message);
-    }
-
-    // A push webhook's URL can carry a credential in its query string, so only
-    // its installer and instance admins see it (hardening ruling,
-    // 2026-10-21). The admin lookup runs only when the roster holds a URL the
-    // viewer did not install.
-    const viewerId = String(userId);
-    const installedByViewer = (i: any) => String(i.installedBy || '') === viewerId;
-    const needsAdminCheck = (installations as any[]).some((i: any) => (
-      !installedByViewer(i) && Boolean(normalizeConfigMap(i.config)?.runtime?.webhookUrl)
-    ));
-    const viewerIsAdmin = needsAdminCheck ? await isGlobalAdminUser(userId) : false;
 
     res.json({
       callerSpoke,
