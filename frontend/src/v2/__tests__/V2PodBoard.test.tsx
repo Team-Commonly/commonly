@@ -203,7 +203,7 @@ describe('V2PodBoard', () => {
     expect(screen.getByRole('button', { name: 'New task' })).toBeInTheDocument();
 
     const pending = await screen.findByRole('region', { name: 'Pending' });
-    const inProgress = screen.getByRole('region', { name: 'In Progress' });
+    const inProgress = screen.getByRole('region', { name: 'In progress' });
     const done = screen.getByRole('region', { name: 'Done' });
     screen.getByRole('region', { name: 'Blocked' });
 
@@ -243,7 +243,7 @@ describe('V2PodBoard', () => {
       { status: 'claimed' },
       expect.any(Object),
     );
-    const inProgress = screen.getByRole('region', { name: 'In Progress' });
+    const inProgress = screen.getByRole('region', { name: 'In progress' });
     await waitFor(() => {
       expect(within(inProgress).getByText('Give your agent its first task')).toBeInTheDocument();
     });
@@ -563,7 +563,7 @@ test('priority orders cards, separates assignment from claim, and edits the stor
   axios.patch.mockResolvedValue({ data: { task: { ...task, priority: 'P1' } } });
   renderBoard();
   await screen.findByText('Urgent work');
-  const cards = within(screen.getByRole('region', { name: 'In Progress' })).getAllByRole('article');
+  const cards = within(screen.getByRole('region', { name: 'In progress' })).getAllByRole('article');
   expect(cards[0]).toHaveTextContent('TASK-9');
   fireEvent.click(screen.getByTitle('TASK-9'));
   const dialog = screen.getByRole('dialog', { name: /Urgent work/ });

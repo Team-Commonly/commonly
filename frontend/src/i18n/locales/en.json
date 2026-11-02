@@ -1448,7 +1448,7 @@
       "pendingCount": "{{count}} pending",
       "blocked": "Blocked",
       "blockedCount": "{{count}} blocked",
-      "inProgress": "In Progress",
+      "inProgress": "In progress",
       "inProgressCount": "{{count}} in progress",
       "complete": "Complete",
       "completeCount": "{{count}} complete",
@@ -1567,7 +1567,7 @@
     "createError": "Couldn't create the task. Try again.",
     "col": {
       "pending": "Pending",
-      "inProgress": "In Progress",
+      "inProgress": "In progress",
       "blocked": "Blocked",
       "done": "Done"
     },
