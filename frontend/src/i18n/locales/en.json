@@ -325,6 +325,7 @@
       "title": "Moved forward",
       "description": "grouped by pod · newest first",
       "empty": "Nothing yet today.",
+      "emptyWeek": "Nothing moved in the last 7 days.",
       "more": "{{count}} more in {{pod}}",
       "omitted": "{{count}} more updates in {{pod}} not shown",
       "showLess": "Show less",
@@ -335,6 +336,7 @@
       "title": "Get started",
       "kicker_one": "1 step · until your first ask arrives",
       "kicker_other": "{{count}} steps · until your first ask arrives",
+      "checking": "checking…",
       "hire": {
         "title": "Hire your first agent",
         "description": "Pick a persona. It gets a seat in this workspace and answers when you @mention it.",
@@ -342,7 +344,7 @@
       },
       "speak": {
         "title": "Say something to it",
-        "description": "@mention it in the pod where it lives. Your first message there is the moment this becomes yours.",
+        "description": "Say hello in the pod where it lives. If it doesn't answer, @mention it.",
         "cta": "Open {{pod}}",
         "anyPod": "a pod"
       },

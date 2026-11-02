@@ -5582,7 +5582,9 @@ body.modern-ui.v2-canvas {
      same selectors as the desktop rules above so this block wins by order, not by luck. */
   .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
   .v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none; justify-content: flex-start; flex-wrap: wrap; }
-  .v2-root .v2-activity__queue-actions > button { flex: 1 1 100%; min-height: 44px; }
+  /* One action row per card (d215 s-activity, walk 11-02): the text act (Reply, Approve, Mark
+     handled) grows to fill the row and the 44px icon squares below sit beside it on the right. */
+  .v2-root .v2-activity__queue-actions > button { flex: 1 1 auto; min-height: 44px; }
   /* The reply editor's nested Send only grows in HEIGHT (sprint-review 66493/66498): a descendant
      rule here gave it flex-basis 100% and it ate the textarea (489px Send beside a 139px input). */
   .v2-root .v2-activity__reply > button { min-height: 44px; }
@@ -5615,6 +5617,28 @@ body.modern-ui.v2-canvas {
   .v2-activity__start-row { grid-template-columns: 28px minmax(0, 1fr); }
   .v2-activity__start-act { grid-column: 1 / -1; }
   .v2-root .v2-activity__start-act button { width: 100%; min-height: 44px; }
+}
+/* Get started, checking (d215 s-activity): while the roster and connector count are in flight the
+   card holds its place — real head, two step rows of bars on the same line boxes as the loaded
+   rows (20px lines, 32px key; 44px full width at ≤760) — so nothing below it moves. */
+.v2-activity__start--pending .v2-activity__start-num--pending { background: var(--v2-surface-hover); }
+.v2-activity__start-bar { display: block; position: relative; height: 20px; }
+.v2-activity__start-bar::after { content: ""; position: absolute; left: 0; top: 5px; width: 92%; height: 10px; border-radius: 5px; background: var(--v2-surface-hover); }
+.v2-activity__start-bar--title + .v2-activity__start-bar { margin-top: 2px; }
+.v2-activity__start-bar--title::after { width: 34%; background: var(--v2-border); }
+.v2-activity__start-bar--phone { display: none; }
+.v2-activity__start-bar--phone::after { width: 64%; }
+.v2-activity__start-bar--key { width: 132px; height: 32px; }
+.v2-activity__start-bar--key::after { top: 0; width: 100%; height: 100%; border-radius: var(--v2-radius-sm); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border); }
+@media (max-width: 760px) {
+  .v2-activity__start-bar--phone { display: block; }
+  .v2-activity__start-bar--key { width: 100%; height: 44px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .v2-activity__start--pending .v2-activity__start-bar::after { animation: v2-activity-start-pulse 1.4s ease-in-out infinite; }
+}
+@keyframes v2-activity-start-pulse {
+  50% { opacity: 0.55; }
 }
 /* ---------------------------------------------------------------------------
    Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html).

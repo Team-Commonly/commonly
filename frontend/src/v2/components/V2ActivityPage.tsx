@@ -601,6 +601,12 @@ const V2ActivityPage: React.FC = () => {
     const target = seatedPods[0]?.podId ?? recap?.pods[0]?.id;
     return target ? { id: target, name: recap?.pods.find((pod) => pod.id === target)?.name ?? '' } : null;
   }, [seatedPods, recap]);
+  // Get started never pops in (d215 s-activity, walk 11-02): on an account the card can show for,
+  // its steps wait on the roster and the connector count. While either is in flight the card
+  // holds its place as a same-height placeholder, so Needs you does not move when they land.
+  // Eligibility is the card's own gate, so a failed or unknown history still shows nothing.
+  const startEligible = queueCount === 0 && recap?.hasEverHadAttention === false && podId === 'all';
+  const startPending = startEligible && (seatPods === null || connectorCount === null);
   const startStepTarget = (step: 'hire' | 'speak' | 'connect') => {
     if (step === 'hire') return '/v2/agents';
     if (step === 'speak') return speakPod ? `/v2/pods/${speakPod.id}` : '/v2';
@@ -1218,7 +1224,27 @@ const V2ActivityPage: React.FC = () => {
             {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
           </section>
           )}
-          {queueCount === 0 && recap.hasEverHadAttention === false && startSteps.length > 0 && (
+          {startPending && (
+            <section className="v2-activity__start v2-activity__start--pending" aria-busy="true" aria-labelledby="activity-get-started" data-testid="activity-start-pending">
+              <div className="v2-activity__start-head">
+                <h2 id="activity-get-started">{t('activity.getStarted.title')}</h2>
+                <span className="v2-activity__start-kicker">{t('activity.getStarted.checking')}</span>
+              </div>
+              {/* A step's description is one line at desktop and two on a phone; the second bar shows only ≤760. */}
+              {['first', 'second'].map((row) => (
+                <div key={row} className="v2-activity__start-row" aria-hidden="true">
+                  <span className="v2-activity__start-num v2-activity__start-num--pending" />
+                  <div className="v2-activity__start-copy">
+                    <i className="v2-activity__start-bar v2-activity__start-bar--title" />
+                    <i className="v2-activity__start-bar" />
+                    <i className="v2-activity__start-bar v2-activity__start-bar--phone" />
+                  </div>
+                  <div className="v2-activity__start-act"><i className="v2-activity__start-bar v2-activity__start-bar--key" /></div>
+                </div>
+              ))}
+            </section>
+          )}
+          {!startPending && startEligible && startSteps.length > 0 && (
             <section className="v2-activity__start" aria-labelledby="activity-get-started">
               <div className="v2-activity__start-head">
                 <h2 id="activity-get-started">{t('activity.getStarted.title')}</h2>
@@ -1469,7 +1495,7 @@ const V2ActivityPage: React.FC = () => {
               <h2 id="activity-moved-forward">{t('activity.movedForward.title')}</h2>
               <V2Hint label={t('activity.movedForward.about')}>{t('activity.movedForward.description')}</V2Hint>
             </div>
-            {movedGroups.length === 0 ? <div className="v2-activity__empty v2-activity__empty--plain"><strong>{t('activity.movedForward.empty')}</strong></div> : <div className="v2-activity__moved-list">
+            {movedGroups.length === 0 ? <div className="v2-activity__empty v2-activity__empty--plain"><strong>{t(window === '7d' ? 'activity.movedForward.emptyWeek' : 'activity.movedForward.empty')}</strong></div> : <div className="v2-activity__moved-list">
               {movedGroups.map((group) => {
                 const visibleCount = movedVisibleCounts[group.id] || 3;
                 const visible = group.lines.slice(0, Math.min(visibleCount, group.lines.length));
