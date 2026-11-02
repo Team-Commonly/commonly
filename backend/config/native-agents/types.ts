@@ -56,9 +56,9 @@ export interface NativeAgentDefinition {
   displayName: string;
   description: string;
   // Copied into AgentInstallation.config at install, and the runtime reads the
-  // copy. A deploy refreshes only the demo-pod install (seed-native-agents);
-  // every other install gets an edit here only after
-  // scripts/refresh-native-agent-configs.ts runs (dry run first, then --apply).
+  // copy. A deploy refreshes only a non-perUser app's demo-pod install
+  // (seed-native-agents). Other active installs get an edit here only when
+  // scripts/refresh-native-agent-configs.ts runs with --apply (dry run first).
   systemPrompt: string;
   model: string;
   triggers: NativeAgentTrigger[];
