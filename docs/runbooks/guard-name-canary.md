@@ -44,9 +44,8 @@ runs real turns on production, and it picks names from the guard's own list.
    working as intended.
 3. **Sets up.** It ensures the account `eng-guard-canary` (on
    `ops.commonly.invalid`, `cloudAgents` entitled, verified, with no usable
-   password) and its pod, "Guard-name canary". It signs a 20-minute session for
-   that account from `JWT_SECRET` for each request, with a 5-minute expiry. No
-   token is stored. The pod is new on every run and is deleted at the end with
+   password). It signs a session for that account from `JWT_SECRET` for each
+   request, with a 5-minute expiry. No token is stored. The pod is new on every run and is deleted at the end with
    its messages. A hosted turn reads the last pod messages as user text, which
    the guard scans, so a reused pod would carry one run's words into the next.
    The pod is invite-only: anyone who could post there could @-mention a canary
