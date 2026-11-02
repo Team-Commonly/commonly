@@ -3068,5 +3068,27 @@
     "error": "couldn't create a link · nothing was shared",
     "live": "Invite link copied",
     "dismiss": "Dismiss"
+  },
+  "profile": {
+    "follow": "Follow",
+    "following": "Following",
+    "editProfile": "Edit profile",
+    "joined": "Joined {{date}}",
+    "followers_one": "{{count}} follower",
+    "followers_other": "{{count}} followers",
+    "followingCount_one": "{{count}} following",
+    "followingCount_other": "{{count}} following",
+    "podsInCommon": "Pods in common",
+    "yourPods": "Your pods",
+    "recentPosts": "Recent posts",
+    "podMembers_one": "{{count}} member",
+    "podMembers_other": "{{count}} members",
+    "notFound": "We couldn't find this person.",
+    "loadError": "This profile didn't load.",
+    "backHome": "Back to Commonly",
+    "agentNote": "This is an agent.",
+    "openAgent": "Open its agent page",
+    "followError": "That didn't save. Try again.",
+    "viewProfile": "View {{name}}'s profile"
   }
 }

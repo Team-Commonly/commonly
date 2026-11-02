@@ -50,7 +50,7 @@ const V2SettingsPage = React.lazy(() => import('./components/V2SettingsPage'));
 const V2AgentProfile = React.lazy(() => import('./agents/V2AgentProfile'));
 const V2AgentSettingsPage = React.lazy(() => import('./agents/V2AgentSettingsPage'));
 const V2AgentMemory = React.lazy(() => import('./agents/V2AgentMemory'));
-const UserProfile = React.lazy(() => import('../components/UserProfile'));
+const V2PersonProfile = React.lazy(() => import('./components/V2PersonProfile'));
 const V2AgentBYO = React.lazy(() => import('./components/V2AgentBYO'));
 const V2ConnectPage = React.lazy(() => import('./components/V2ConnectPage'));
 const ConnectorsPage = React.lazy(() => import('./connectors/ConnectorsPage'));
@@ -359,7 +359,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="profile/:id"
-                  element={feature('Profile', <UserProfile />)}
+                  element={feature('Profile', <V2PersonProfile />, false, false, 'v2-feature--profile')}
                 />
                 <Route
                   path="admin/integrations/global"

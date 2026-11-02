@@ -529,6 +529,21 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
   const isClickable = !!onAuthorClick && !!agentAuthorKeys?.has(rawUsername.toLowerCase());
   const runtimeTag = agentTags?.get(rawUsername.toLowerCase()) || agentTags?.get(author.toLowerCase());
   const handleAuthorClick = isClickable ? () => onAuthorClick?.(rawUsername) : undefined;
+  // A human author opens their profile page. Agents keep the inspector path
+  // above; only a row that is positively a human (isBot === false) with a real
+  // user id qualifies, so synthetic rows (a decision ruling, kernel lines) stay
+  // plain text.
+  const humanProfileId = !isClickable
+    && message.user?.isBot === false
+    && message.author_kind !== 'kernel'
+    && typeof message.user_id === 'string'
+    && /^[a-f0-9]{24}$/i.test(message.user_id)
+    ? message.user_id
+    : null;
+  const openHumanProfile = humanProfileId
+    ? (event: React.MouseEvent) => { event.stopPropagation(); navigate(`/v2/profile/${humanProfileId}`); }
+    : undefined;
+  const humanProfileLabel = humanProfileId ? t('profile.viewProfile', { name: author }) : undefined;
   const time = formatRelativeTime(message.created_at);
 
   // Kernel system actions have a structured payload and no message actions,
@@ -743,6 +758,22 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
             seed={message.user_id || undefined}
           />
         </button>
+      ) : humanProfileId ? (
+        <button
+          type="button"
+          className="v2-msg__avatar-btn"
+          onClick={openHumanProfile}
+          aria-label={humanProfileLabel}
+        >
+          <V2Avatar
+            name={author}
+            src={message.user?.profile_picture || undefined}
+            size={insideThreadRoot ? 'sm' : 'md'}
+            tone="flat"
+            kind="human"
+            seed={message.user_id || undefined}
+          />
+        </button>
       ) : (
         <V2Avatar
           name={author}
@@ -769,6 +800,10 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
         <div className="v2-msg__head">
           {isClickable ? (
             <button type="button" className="v2-msg__author-btn" onClick={handleAuthorClick}>
+              {author}
+            </button>
+          ) : humanProfileId ? (
+            <button type="button" className="v2-msg__author-btn" onClick={openHumanProfile} aria-label={humanProfileLabel}>
               {author}
             </button>
           ) : (
