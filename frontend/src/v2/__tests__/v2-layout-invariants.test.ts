@@ -194,6 +194,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The block must come after the pages' own head rules, or their padding and baseline win by order.
     expect(v2.indexOf(phone)).toBeGreaterThan(v2.lastIndexOf('.v2-activity__header { min-height: 56px;'));
     expect(v2.indexOf(phone)).toBeGreaterThan(v2.indexOf('\n.v2-artifacts__head {'));
+    // ...and after the Artifacts phone rule, whose 16px top padding would push the bar down until scrolled.
+    const artifactsPhonePad = v2.indexOf('.v2-artifacts { padding: 16px 12px 0;');
+    expect(artifactsPhonePad).toBeGreaterThan(-1);
+    expect(v2.indexOf(phone)).toBeGreaterThan(artifactsPhonePad);
   });
 
   test('/invite: a long pod name or description wraps inside the auth card (d215 s-invite)', () => {
@@ -1073,7 +1077,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(artifactsPage).toContain('extOf(item.name)');
     expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__controls \{ flex-direction: column; align-items: stretch; \}/);
     // ux-lead 66462: mono floor 11 on the chip; the table spans the content area (no centred cap);
-    // ≤760 hides pod / shared-by / size and folds the pod under the name; the head stays 32.
+    // ≤760 hides pod / shared-by / size and folds the pod under the name; the head is the pinned bar.
     expect(ext).toContain('11px/14px var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-workspace-inspector__ext')).toContain('11px/14px var(--v2-font-mono)');
     expect(ruleBody(v2, '.v2-artifacts')).not.toContain('1040px');

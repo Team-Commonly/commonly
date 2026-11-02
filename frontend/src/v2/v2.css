@@ -5691,7 +5691,7 @@ body.modern-ui.v2-canvas {
 .v2-root a.v2-artifacts__open { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; margin-top: 12px; padding: 0 12px; border: 1px solid var(--v2-ink); border-radius: var(--v2-radius-sm); background: var(--v2-ink); color: var(--v2-on-ink); font: 600 13px/18px var(--v2-font); text-align: center; overflow-wrap: anywhere; }
 .v2-root a.v2-artifacts__open:hover { background: var(--v2-ink-hover); }
 /* ≤760 (ux-lead 66462): no sideways scroll — keep file / kind / when, fold the pod under
-   the name as a mono line, hide pod / shared-by / size; the head stays display 32. */
+   the name as a mono line, hide pod / shared-by / size. The head is the pinned 52px bar (the d215 .mtop block below). */
 @media (max-width: 760px) {
   .v2-artifacts { padding: 16px 12px 0; gap: 16px; }
   .v2-artifacts__controls { flex-direction: column; align-items: stretch; }
