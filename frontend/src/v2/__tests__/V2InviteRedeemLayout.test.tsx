@@ -1,7 +1,7 @@
 // @ts-nocheck
 // The d215 invite frames: the auth card holding a pod, one key per state.
 import React from 'react';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import axios from 'axios';
 import V2InviteRedeem from '../components/V2InviteRedeem';
@@ -63,5 +63,24 @@ describe('V2InviteRedeem layout', () => {
     mockApi.get.mockResolvedValue({ pod: { _id: 'p1', name: 'Design review', memberCount: 4 }, alreadyMember: true });
     renderPage();
     expect(await screen.findByRole('button', { name: 'Go to pod' })).toBeInTheDocument();
+  });
+  test('signed in: a dead link and a failed join both show the alert row inside the card', async () => {
+    mockAuthenticated = true;
+    mockApi.get.mockRejectedValue({ response: { data: { msg: 'Invite expired' } } });
+    const { container, unmount } = renderPage();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Invite unavailable' })).toBeInTheDocument();
+    const card = container.querySelector('.v2-login__card');
+    expect(within(card).getByRole('alert')).toHaveTextContent('Invite expired');
+    expect(within(card).getByRole('button', { name: 'Go to your pods' })).toHaveClass('v2-login__submit--ghost');
+    unmount();
+
+    mockApi.get.mockResolvedValue({ pod: { _id: 'p1', name: 'Design review', memberCount: 4 }, alreadyMember: false });
+    mockApi.post.mockRejectedValue({ response: { data: { msg: 'Pod is full' } } });
+    const second = renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Join Design review' }));
+    const alert = await screen.findByRole('alert');
+    expect(second.container.querySelector('.v2-login__card')).toContainElement(alert);
+    expect(alert).toHaveTextContent('Pod is full');
+    expect(screen.getByRole('button', { name: 'Join Design review' })).toBeInTheDocument();
   });
 });

@@ -21,7 +21,9 @@
   font: 500 11.5px/1 var(--v2-font-mono);
   color: var(--v2-text-muted);
 }
-.v2-invite__heading .v2-login__title {
+/* Outranks .v2-login__card--stack .v2-login__title (4px) on specificity, not
+   on the order the lazy chunk's stylesheet lands. */
+.v2-login__card--stack .v2-invite__heading .v2-login__title {
   margin: 6px 0 0;
   overflow-wrap: anywhere;
 }
