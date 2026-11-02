@@ -8,6 +8,7 @@ const {
   isValidUsername,
   isFreeUsername,
 } = require('../services/derivedUsername');
+const { PERSONAL_POD_TYPES } = require('../services/podTypePolicyService');
 
 // Credentials. These must never reach a response body under any circumstance,
 // not even the account's own profile: `apiToken` is a live `cm_` bearer that
@@ -24,23 +25,36 @@ const SECRET_USER_FIELDS = [
   'digestUnsubscribeToken',
 ];
 
-// Account-private, but legitimately visible to the account holder (and to an
-// admin). Leaking these to any logged-in stranger is what turned a profile
-// lookup into an enumeration tool: `GET /api/users/:id` used to return another
-// user's email and their plaintext apiToken to any authenticated caller.
-const PRIVATE_USER_FIELDS = [
-  'email',
-  'emailPreferences',
-  'digestPreferences',
-  'entitlements',
-  'apiTokenScopes',
-  'apiTokenCreatedAt',
-  'authProviders',
-  'contacts',
-  'activityFeed',
-  'banned',
-  'banReason',
+// What another person sees of an account. Anything not named here stays with
+// the account holder: a list of private fields to drop was how this surface
+// leaked before (apiToken and email first, then billing ids, followed threads
+// and subscribed pods, all of which a denylist missed because they were added
+// after it). A new User field is private until it is added here on purpose.
+const PUBLIC_PROFILE_FIELDS = [
+  '_id',
+  'username',
+  'profilePicture',
+  'role',
+  'verified',
+  'isBot',
+  'botType',
+  'createdAt',
 ];
+
+// The parts of an agent's bot metadata that describe who it is. Its machine,
+// runtime and owner bindings are operational and stay out.
+const PUBLIC_BOT_METADATA_FIELDS = [
+  'displayName',
+  'description',
+  'agentName',
+  'instanceId',
+  'officialAgent',
+  'capabilities',
+];
+
+const pick = (source: any, fields: string[]) => Object.fromEntries(
+  fields.filter((field) => source?.[field] !== undefined).map((field) => [field, source[field]]),
+);
 
 // Reservation metadata is used only by username availability checks. It is
 // not part of a profile response: historical message text remains the only
@@ -60,10 +74,10 @@ const ACCOUNT_LABEL_COLLATION = { locale: 'en', strength: 2 };
 /**
  * Serialize a user for a response.
  *
- * `viewerId` is the caller. When it does not match the profile's owner, the
- * account-private block is dropped as well as the secrets. Secrets are dropped
- * unconditionally — a spread of `toObject()` is how they escaped before, so
- * the deletion happens here rather than relying on every call site to project
+ * `viewerId` is the caller. When it does not match the profile's owner, only
+ * PUBLIC_PROFILE_FIELDS are returned. Secrets are dropped unconditionally, the
+ * owner included — a spread of `toObject()` is how they escaped before, so the
+ * projection happens here rather than relying on every call site to project
  * correctly.
  */
 const toSocialProfile = (userDoc: any, viewerId: any = null) => {
@@ -74,14 +88,15 @@ const toSocialProfile = (userDoc: any, viewerId: any = null) => {
     viewerIdStr && followers.some((id: any) => String(id) === viewerIdStr),
   );
 
-  const plain = typeof userDoc.toObject === 'function' ? userDoc.toObject() : { ...userDoc };
-  for (const field of SECRET_USER_FIELDS) delete plain[field];
-  for (const field of INTERNAL_USER_FIELDS) delete plain[field];
+  const all = typeof userDoc.toObject === 'function' ? userDoc.toObject() : { ...userDoc };
+  for (const field of SECRET_USER_FIELDS) delete all[field];
+  for (const field of INTERNAL_USER_FIELDS) delete all[field];
 
   const isSelf = Boolean(viewerIdStr && String(userDoc._id) === viewerIdStr);
-  if (!isSelf) {
-    for (const field of PRIVATE_USER_FIELDS) delete plain[field];
-  }
+  const plain = isSelf ? all : {
+    ...pick(all, PUBLIC_PROFILE_FIELDS),
+    ...(all.botMetadata ? { botMetadata: pick(all.botMetadata, PUBLIC_BOT_METADATA_FIELDS) } : {}),
+  };
 
   // Agent User rows keep their durable seat username for authentication and
   // routing (for example, `vale`). The social surface must use the same
@@ -276,6 +291,7 @@ exports.getUserById = async (req: any, res: any) => {
 exports.getUserPublicActivity = async (req: any, res: any) => {
   try {
     const targetUserId = String(req.params.id || '').trim();
+    const viewerId = String(req.userId || req.user?.id || '');
     if (!targetUserId) {
       return res.status(400).json({ error: 'User id is required' });
     }
@@ -287,7 +303,13 @@ exports.getUserPublicActivity = async (req: any, res: any) => {
         .sort({ createdAt: -1 })
         .limit(8)
         .lean(),
-      Pod.find({ members: targetUserId })
+      // Only pods the viewer is in too, and never a personal pod (an agent room,
+      // agent DM or agent admin pod), even one the viewer shares: a profile
+      // must not tell one person where else another person is.
+      Pod.find({
+        members: { $all: [targetUserId, viewerId] },
+        type: { $nin: [...PERSONAL_POD_TYPES] },
+      })
         .select('_id name type createdAt members createdBy')
         .populate('createdBy', 'username profilePicture')
         .sort({ updatedAt: -1 })
