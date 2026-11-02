@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import axios from 'axios';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
 import V2Avatar from '../components/V2Avatar';
@@ -9,11 +9,13 @@ import { characterAvatarFor } from '../utils/avatars';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import '../v2.css';
 import './v2-agent-profile.css';
-import './v2-agent-settings.css';
 
-// Public, logged-out, read-only agent PROFILE — the "meet the agent" identity
-// card, distinct from the owner-only Configuration control panel. Sits OUTSIDE
-// the auth gate (see V2App), so every fetch MUST be token-less.
+// The agent PROFILE — the "meet the agent" page, distinct from the owner-only
+// Settings panel — drawn as d215 section s-agent-profile
+// (docs/design/artboards/d215/index.html). It sits OUTSIDE the auth gate (see
+// V2App): signed in, V2App passes `shell` and the page renders inside the app
+// shell; signed out, and for a missing agent, it renders its own public bar.
+// The public fetch MUST stay token-less.
 //
 // Contract (shared with backend routes/agentProfile.ts):
 //   GET /api/agent-profile/:agentName/:instanceId → { agent, skills, pods, memory, activity }
@@ -22,7 +24,6 @@ import './v2-agent-settings.css';
 // The default axios instance injects the viewer's bearer token; a dedicated
 // instance keeps this public endpoint anonymous regardless of auth state.
 let _client: ReturnType<typeof axios.create> | null = null;
-const BRAND_ICON = 'c';
 const getClient = () => {
   if (!_client) _client = axios.create({ baseURL: getApiBaseUrl() });
   return _client;
@@ -40,7 +41,6 @@ interface AgentProfile {
     officialAgent: boolean;
     description?: string;
     capabilities: string[];
-    personality?: { tone?: string; interests?: string[] };
     createdAt?: string;
   };
   skills: Array<{ name: string; description?: string }>;
@@ -86,36 +86,48 @@ const timeAgo = (iso?: string | null): string => {
   return `${d}d ago`;
 };
 
-// Auth-aware chrome: anonymous visitors get the conversion nav (What is Commonly? /
-// Sign in / Sign up); a signed-in viewer gets a link back into the app instead —
-// the sign-up CTAs don't belong once you're logged in.
-const TopBar: React.FC<{ authed?: boolean }> = ({ authed }) => {
+// V2Avatar's agent face (a prop value, not copy).
+const AVATAR_KIND = 'agent' as const;
+
+// Owner pod rows shown before "Show all N pods".
+const OWNER_POD_CUT = 5;
+
+// The standalone bar for signed-out visitors and the not-found state (d215:
+// brand, What is Commonly?, Sign in, ink Sign up). Signed in, the app shell is
+// the chrome instead.
+const PublicBar: React.FC<{ signedIn: boolean }> = ({ signedIn }) => {
   const { t } = useTranslation();
   return (
     <header className="v2-aprofile__bar">
-      <Link className="v2-aprofile__brand" to={authed ? '/v2' : '/v2/landing'}>
-        <span className="v2-rail__brand-icon">{BRAND_ICON}</span>
+      <Link className="v2-aprofile__brand" to={signedIn ? '/v2' : '/v2/landing'}>
+        <span className="v2-rail__brand-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <path d="M 50 17.7 A 22 22 0 1 0 50 46.3" stroke="currentColor" strokeWidth="9" strokeLinecap="round" />
+            <circle cx="25" cy="32" r="2.4" fill="currentColor" />
+            <circle cx="32" cy="32" r="2.4" fill="currentColor" />
+            <circle cx="39" cy="32" r="2.4" fill="currentColor" />
+          </svg>
+        </span>
         {t('common.brandName')}
       </Link>
       <nav className="v2-aprofile__nav">
-        {authed ? (
-          <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to="/v2/agents">{t('agentProfile.nav.backToCommonly')}</Link>
-        ) : (
-          <>
-            <Link className="v2-aprofile__navlink" to="/v2/landing">{t('agentProfile.nav.whatIsCommonly')}</Link>
-            <Link className="v2-aprofile__navlink" to="/v2/login">{t('agentProfile.nav.signIn')}</Link>
-            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.nav.signUp')}</Link>
-          </>
-        )}
+        <Link className="v2-aprofile__navlink v2-aprofile__navlink--wide" to="/v2/landing">{t('agentProfile.nav.whatIsCommonly')}</Link>
+        <Link className="v2-aprofile__navlink" to="/v2/login">{t('agentProfile.nav.signIn')}</Link>
+        <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.nav.signUp')}</Link>
       </nav>
     </header>
   );
 };
 
-const isAuthed = (): boolean =>
-  typeof window !== 'undefined' && !!window.localStorage.getItem('token');
+interface V2AgentProfileProps {
+  /**
+   * Present when the viewer is signed in: wraps the page in the app shell
+   * (rail at 1440, tab bar at 390). Absent, the page is public.
+   */
+  shell?: (page: React.ReactNode) => React.ReactNode;
+}
 
-const V2AgentProfile: React.FC = () => {
+const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
   const { t } = useTranslation();
   const { agentName, instanceId } = useParams<{ agentName: string; instanceId?: string }>();
   const navigate = useNavigate();
@@ -128,6 +140,15 @@ const V2AgentProfile: React.FC = () => {
   } | null>(null);
   const [openingRoom, setOpeningRoom] = useState(false);
   const [roomError, setRoomError] = useState<string | null>(null);
+  const [showAllPods, setShowAllPods] = useState(false);
+  const podListRef = useRef<HTMLUListElement | null>(null);
+  // "Show all" removes itself, so focus moves to the first pod it revealed
+  // instead of falling back to the page.
+  useEffect(() => {
+    if (!showAllPods) return;
+    podListRef.current?.querySelectorAll<HTMLElement>('.v2-aprofile__pod-name')[OWNER_POD_CUT]?.focus();
+  }, [showAllPods]);
+  const signedIn = Boolean(shell);
 
   const fetchProfile = useCallback(async () => {
     setState('loading');
@@ -187,7 +208,11 @@ const V2AgentProfile: React.FC = () => {
     }
   }, [t, agentName, fetchProfile, fetchMemoryIndex]);
 
-  useEffect(() => { fetchProfile(); fetchMemoryIndex(); }, [fetchProfile, fetchMemoryIndex]);
+  useEffect(() => {
+    setShowAllPods(false);
+    fetchProfile();
+    fetchMemoryIndex();
+  }, [fetchProfile, fetchMemoryIndex]);
 
   // The public profile is deliberately tokenless. Connection details come
   // only from the owner's authenticated roster, never from the public API.
@@ -286,33 +311,36 @@ const V2AgentProfile: React.FC = () => {
     }
   }, [data, navigate, t]);
 
+  const publicPage = (content: React.ReactNode) => (
+    <div className="v2-root v2-aprofile v2-aprofile--public">
+      <PublicBar signedIn={signedIn} />
+      {content}
+    </div>
+  );
 
   if (state === 'loading') {
-    return (
-      <div className="v2-root v2-aprofile">
-        <TopBar authed={isAuthed()} />
-        <div className="v2-aprofile__center"><div className="v2-aprofile__muted">{t('agentProfile.loading')}</div></div>
-      </div>
-    );
+    // Signed in: the shell with an empty pane. Signed out: the bar and one line.
+    return shell
+      ? <>{shell(<div className="v2-aprofile" aria-busy="true" />)}</>
+      : publicPage(<div className="v2-aprofile__center"><p className="v2-aprofile__muted">{t('agentProfile.loading')}</p></div>);
   }
   if (state === 'error' || !data) {
-    return (
-      <div className="v2-root v2-aprofile">
-        <TopBar authed={isAuthed()} />
-        <div className="v2-aprofile__center">
-          <h1 className="v2-aprofile__empty-title">{t('agentProfile.notFound.title')}</h1>
-          <p className="v2-aprofile__muted">{t('agentProfile.notFound.body')}</p>
-          <div className="v2-aprofile__cta-row">
-            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.actions.startYourOwnTeam')}</Link>
-            <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to="/v2/landing">{t('agentProfile.nav.whatIsCommonly')}</Link>
-          </div>
+    // Not found keeps the public layout, signed in or not.
+    return publicPage(
+      <div className="v2-aprofile__center">
+        <h1 className="v2-aprofile__empty-title">{t('agentProfile.notFound.title')}</h1>
+        <p className="v2-aprofile__muted">{t('agentProfile.notFound.body')}</p>
+        <div className="v2-aprofile__cta-row">
+          <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.actions.startYourOwnTeam')}</Link>
+          <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to="/v2/landing">{t('agentProfile.nav.whatIsCommonly')}</Link>
         </div>
-      </div>
+      </div>,
     );
   }
 
   const { agent, skills, pods, memory, activity } = data;
   const identity = `${agent.agentName}:${agent.instanceId || 'default'}`;
+  const agentPath = `/v2/agents/${encodeURIComponent(agent.agentName)}/${encodeURIComponent(agent.instanceId || 'default')}`;
   // The same seed chat and Your Team use, so the unpicked face matches them.
   const faceSeed = agent.userId || identity;
   const currentAvatar = agent.profilePicture && agent.profilePicture !== 'default' ? agent.profilePicture : 'default';
@@ -323,286 +351,271 @@ const V2AgentProfile: React.FC = () => {
     ...presetCharacterOptions(identity, 'agent'),
   ];
   const runtimeLabel = (agent.runtime || '').toUpperCase();
-  const authed = isAuthed();
-  const firstName = agent.displayName.split(' ')[0];
+  const isOwner = Boolean(memIndex?.viewerRole);
   const memorySectionLabel = (section: string) => t(
     `agentProfile.memory.sections.${section}`,
     { defaultValue: section },
   );
-  const memoryKindLabel = (kind: string) => t(
-    `agentProfile.memory.kinds.${kind}`,
-    { defaultValue: kind },
+
+  // Owner/admin see every pod with the agent's last message; a visitor sees
+  // only the publicRead pods the public response lists.
+  const ownerPods = memIndex?.pods && memIndex.pods.length > 0 ? memIndex.pods : null;
+  const podList: PodEntry[] = ownerPods || pods.public || [];
+  const shownPods = ownerPods && !showAllPods ? podList.slice(0, OWNER_POD_CUT) : podList;
+  // Installed skills; an agent with none shows its declared capabilities.
+  const skillChips = skills.length > 0
+    ? skills.map((s) => ({ name: s.name, title: s.description }))
+    : (agent.capabilities || []).map((c) => ({ name: c, title: undefined }));
+
+  const reconnecting = ownedConnection && ['revoked', 'stale'].includes(ownedConnection.connection.state);
+  const talkLabel = t('agentProfile.hero.talkTo', { name: agent.displayName });
+  let primaryKey: React.ReactNode;
+  if (reconnecting && ownedConnection) {
+    primaryKey = (
+      <Link className="v2-aprofile__btn v2-aprofile__btn--primary"
+        to={`/v2/agents/byo?pod=${encodeURIComponent(ownedConnection.podId)}&name=${encodeURIComponent(agent.agentName)}&instanceId=${encodeURIComponent(instanceId || 'default')}&reconnect=1${ownedConnection.runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
+        {t('agentConnection.reconnect')}
+      </Link>
+    );
+  } else if (signedIn) {
+    primaryKey = (
+      <button
+        type="button"
+        className="v2-aprofile__btn v2-aprofile__btn--primary"
+        title={talkLabel}
+        onClick={() => { void handleTalkTo(); }}
+        disabled={openingRoom}
+      >
+        <span className="v2-aprofile__btn-label">{openingRoom ? t('agentProfile.hero.opening') : talkLabel}</span>
+      </button>
+    );
+  } else {
+    primaryKey = <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register" title={talkLabel}><span className="v2-aprofile__btn-label">{talkLabel}</span></Link>;
+  }
+
+  const avatar = (
+    <V2Avatar
+      name={agent.displayName}
+      src={agent.profilePicture}
+      size="lg"
+      kind={AVATAR_KIND}
+      seed={faceSeed}
+    />
   );
 
-  return (
-    <div className="v2-root v2-aprofile">
-      <TopBar authed={authed} />
-      <main className="v2-aprofile__main">
-        {/* Identity header */}
-        <section className="v2-aprofile__hero">
-          {/* The avatar IS the edit control (2026-09-01: "a button called
-              change avatar … should be enough just clicking the avatar").
-              Non-owners get the plain avatar; owners get the same avatar as a
-              button with a hover hint, no separate text button. */}
-          {canEditAvatar ? (
-            <button
-              type="button"
-              className="v2-aprofile__avatar-button"
-              onClick={() => setAvatarDialogOpen((open) => !open)}
-              aria-label={t('agentProfile.avatar.change')}
-              aria-expanded={avatarDialogOpen}
-              aria-controls="agent-avatar-picker"
-              title={t('agentProfile.avatar.change')}
-            >
-              <V2Avatar
-                name={agent.displayName}
-                src={agent.profilePicture}
-                size="lg"
-                kind="agent"
-                seed={faceSeed}
-              />
-              <span className="v2-aprofile__avatar-hint" aria-hidden="true">{t('agentProfile.avatar.edit')}</span>
-            </button>
-          ) : (
-            <V2Avatar
-              name={agent.displayName}
-              src={agent.profilePicture}
-              size="lg"
-              kind="agent"
-              seed={faceSeed}
-            />
-          )}
-          <div className="v2-aprofile__hero-text">
-            <div className="v2-aprofile__name-row">
-              <h1 className="v2-aprofile__name">{agent.displayName}</h1>
-              {runtimeLabel && <span className="v2-aprofile__runtime">{runtimeLabel}</span>}
-              {agent.officialAgent && <span className="v2-aprofile__badge">{t('agentProfile.hero.official')}</span>}
-            </div>
-            {agent.description && <p className="v2-aprofile__desc">{agent.description}</p>}
-            {ownedConnection && <p className="v2-aprofile__meta" data-testid="agent-profile-connection">
-              {connectionLabel(ownedConnection.connection, t)}
-            </p>}
-            <div className="v2-aprofile__meta">
-              <span>{t('agentProfile.hero.activeInPods', { count: pods.count })}</span>
-              {memory.has && <span>· {t('agentProfile.hero.memories', { count: memory.entryCount })}</span>}
-              {agent.personality?.tone && <span>· {agent.personality.tone}</span>}
-            </div>
-            {(agent.capabilities.length > 0 || (agent.personality?.interests?.length || 0) > 0) && (
-              <div className="v2-aprofile__hero-chips">
-                {agent.capabilities.map((c) => <span key={c} className="v2-aprofile__chip">{c}</span>)}
-                {(agent.personality?.interests || []).map((i) => <span key={i} className="v2-aprofile__chip v2-aprofile__chip--soft">{i}</span>)}
-              </div>
-            )}
+  const main = (
+    <main className="v2-aprofile__main">
+      <header className="v2-aprofile__hero">
+        {/* The avatar IS the edit control (2026-09-01). Non-owners get the
+            plain avatar; owners get the same avatar as a button. */}
+        {canEditAvatar ? (
+          <button
+            type="button"
+            className="v2-aprofile__avatar-button"
+            onClick={() => setAvatarDialogOpen((open) => !open)}
+            aria-label={t('agentProfile.avatar.change')}
+            aria-expanded={avatarDialogOpen}
+            aria-controls="agent-avatar-picker"
+            title={t('agentProfile.avatar.change')}
+          >
+            {avatar}
+            <span className="v2-aprofile__avatar-hint" aria-hidden="true">{t('agentProfile.avatar.edit')}</span>
+          </button>
+        ) : (
+          <span className="v2-aprofile__avatar">{avatar}</span>
+        )}
+        <div className="v2-aprofile__hero-text">
+          <div className="v2-aprofile__name-row">
+            <h1 className="v2-aprofile__name">{agent.displayName}</h1>
+            {runtimeLabel && <span className="v2-aprofile__runtime">{runtimeLabel}</span>}
+            {agent.officialAgent && <span className="v2-aprofile__badge">{t('agentProfile.hero.official')}</span>}
           </div>
-          {ownedConnection && ['revoked', 'stale'].includes(ownedConnection.connection.state) ? (
-            <Link className="v2-aprofile__btn v2-aprofile__btn--primary v2-aprofile__btn--reconnect"
-              to={`/v2/agents/byo?pod=${encodeURIComponent(ownedConnection.podId)}&name=${encodeURIComponent(agent.agentName)}&instanceId=${encodeURIComponent(instanceId || 'default')}&reconnect=1${ownedConnection.runtimeType === 'wrapper' ? '&mode=machine' : ''}`}>
-              {t('agentConnection.reconnect')}
-            </Link>
-          ) : authed ? (
-            <button
-              type="button"
-              className="v2-aprofile__btn v2-aprofile__btn--primary"
-              onClick={() => { void handleTalkTo(); }}
-              disabled={openingRoom}
-            >
-              {openingRoom
-                ? t('agentProfile.hero.opening')
-                : t('agentProfile.hero.talkTo', { name: firstName })}
-            </button>
-          ) : (
-            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.hero.talkTo', { name: firstName })}</Link>
-          )}
-        </section>
-        {avatarDialogOpen && (
-          <section id="agent-avatar-picker" className="v2-aprofile__avatar-picker" aria-labelledby="agent-avatar-picker-title">
-            <h2 id="agent-avatar-picker-title" className="v2-aprofile__avatar-title">{t('agentProfile.avatar.title')}</h2>
-            <div className="v2-aprofile__avatar-grid" role="group" aria-labelledby="agent-avatar-picker-title">
-              {avatarOptions.map((option, index) => {
-                const current = option.id === currentAvatar;
-                const label = option.id === 'default'
-                  ? t('agentProfile.avatar.defaultOption')
-                  : t('agentProfile.avatar.option', { number: index });
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className={`v2-aprofile__avatar-choice${current ? ' is-current' : ''}`}
-                    // aria-pressed already announces the current avatar.
-                    aria-pressed={current}
-                    aria-label={label}
-                    title={label}
-                    disabled={savingAvatar}
-                    onClick={() => { if (!current) void saveAvatar(option.id); }}
-                  >
-                    <img src={option.src || ''} alt="" />
-                  </button>
-                );
-              })}
-            </div>
-            {avatarError && <p className="v2-aprofile__avatar-error" role="alert">{t('agentProfile.avatar.saveFailed')}</p>}
-            <button type="button" className="v2-aprofile__avatar-cancel" onClick={() => setAvatarDialogOpen(false)}>
-              {t('agentProfile.avatar.cancel')}
-            </button>
-          </section>
-        )}
-        {roomError && <div className="v2-aprofile__room-error" role="alert">{roomError}</div>}
-
-        {memIndex?.viewerRole && (
-          <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
-            <span aria-current="page">{t('agentSettings.profile')}</span>
-            <Link to={`/v2/agents/${encodeURIComponent(agent.agentName)}/${encodeURIComponent(agent.instanceId || 'default')}`}>{t('agentSettings.settings')}</Link>
-            <Link to={`/v2/agents/${encodeURIComponent(agent.agentName)}/${encodeURIComponent(agent.instanceId || 'default')}/memory`}>{t('agentSettings.memory', { defaultValue: 'Memory' })}</Link>
-          </nav>
-        )}
-
-        <div className="v2-aprofile__grid">
-
-          {/* Pods — owner/admin see ALL pods + the agent's last message there;
-              the public sees only publicRead pods. Sorted by last active. */}
-          {(() => {
-            const ownerPods = memIndex?.pods && memIndex.pods.length > 0 ? memIndex.pods : null;
-            const publicPods: PodEntry[] = pods.public || [];
-            const list: PodEntry[] = ownerPods || publicPods;
-            if (list.length === 0) return null;
-            return (
-              <section className="v2-aprofile__card">
-                <h2 className="v2-aprofile__card-title">
-                  {ownerPods ? t('agentProfile.pods.title') : t('agentProfile.pods.publicTitle')} <span className="v2-aprofile__count">{ownerPods ? pods.count : list.length}</span>
-                  {ownerPods && pods.count > list.length && <span className="v2-aprofile__owner-tag">{t('agentProfile.pods.allPods')}</span>}
-                </h2>
-                <ul className="v2-aprofile__list v2-aprofile__scroll">
-                  {list.map((p) => (
-                    <li key={p.id} className="v2-aprofile__pod">
-                      <Link className="v2-aprofile__pod-name" to={`/v2/pods/${p.id}`}>{p.name}</Link>
-                      {p.lastMessage?.snippet && <span className="v2-aprofile__pod-msg">“{p.lastMessage.snippet}”</span>}
-                      {p.lastActive && <span className="v2-aprofile__pod-when">{t('agentProfile.pods.activeAgo', { time: timeAgo(p.lastActive) })}</span>}
-                      {ownerPods && (
-                        <button
-                          type="button"
-                          className="v2-aprofile__pod-remove"
-                          onClick={() => handleRemoveFromPod(p.id, p.name)}
-                          disabled={removing === p.id}
-                          aria-label={t('agentProfile.pods.removeAria', { agentName, podName: p.name })}
-                        >
-                          {removing === p.id ? t('agentProfile.pods.removing') : t('agentProfile.pods.remove')}
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            );
-          })()}
-
-          {/* Installed skills — only when the agent genuinely has agent-scoped
-              skills (rare today; skills are mostly pod-scoped). Capabilities above
-              carry the "what it does" story otherwise. */}
-          {skills.length > 0 && (
-            <section className="v2-aprofile__card">
-              <h2 className="v2-aprofile__card-title">{t('agentProfile.skills.title')} <span className="v2-aprofile__count">{skills.length}</span></h2>
-              <ul className="v2-aprofile__list">
-                {skills.slice(0, 12).map((s) => (
-                  <li key={s.name} className="v2-aprofile__skill">
-                    <span className="v2-aprofile__skill-name">{s.name}</span>
-                    {s.description && <span className="v2-aprofile__skill-desc">{s.description}</span>}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {/* Memory layer — public sees a count; owner/admin see the private
-              index (section headers + snippets), fetched with their token. */}
-          <section className={`v2-aprofile__card${memIndex && memIndex.sections.length > 0 ? ' v2-aprofile__card--wide' : ''}`}>
-            <h2 className="v2-aprofile__card-title">
-              {t('agentProfile.memory.title')}
-              {memIndex && (
-                <span className="v2-aprofile__owner-tag">
-                  {t('agentProfile.memory.viewTag', {
-                    role: memIndex.viewerRole === 'admin'
-                      ? t('agentProfile.memory.roleAdmin')
-                      : t('agentProfile.memory.roleOwner'),
-                  })}
-                </span>
-              )}
-            </h2>
-            {memIndex && memIndex.sections.length > 0 ? (
-              <div className="v2-aprofile__memidx">
-                <p className="v2-aprofile__muted">
-                  {t('agentProfile.memory.indexSummary', {
-                    notes: memIndex.totalEntries,
-                    count: memIndex.sections.length,
-                    updated: memIndex.lastAgentWrite
-                      ? t('agentProfile.memory.lastSavedClause', {
-                        section: memorySectionLabel(memIndex.lastAgentWrite.section),
-                        time: timeAgo(memIndex.lastAgentWrite.updatedAt),
-                      })
-                      : '',
-                  })}
-                </p>
-                <div className="v2-aprofile__memcols v2-aprofile__scroll">
-                  {memIndex.sections.map((sec) => (
-                    <div key={sec.key} className="v2-aprofile__memsec">
-                      <h3 className="v2-aprofile__memsec-title">{sec.label} <span className="v2-aprofile__count">{sec.notes.length}</span></h3>
-                      <ul className="v2-aprofile__list">
-                        {sec.notes.slice(0, 5).map((n, i) => (
-                          <li key={i} className="v2-aprofile__memnote">
-                            <span className="v2-aprofile__memnote-h">{n.header}</span>
-                            {n.snippet && <span className="v2-aprofile__memnote-s">{n.snippet}</span>}
-                          </li>
-                        ))}
-                      </ul>
-                      {sec.notes.length > 5 && <span className="v2-aprofile__more">{t('agentProfile.memory.more', { count: sec.notes.length - 5 })}</span>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : memory.has ? (
-              <div className="v2-aprofile__memory">
-                <div className="v2-aprofile__stat">
-                  <span className="v2-aprofile__stat-num">{memory.entryCount}</span>
-                  <span className="v2-aprofile__stat-label">{t('agentProfile.memory.entriesRemembered')}</span>
-                </div>
-                <p className="v2-aprofile__muted">
-                  {t('agentProfile.memory.persistent')}
-                  {memory.lastAgentWrite && ` ${t('agentProfile.memory.lastSaved', {
-                    section: memoryKindLabel(memory.lastAgentWrite.kind),
-                    time: timeAgo(memory.lastAgentWrite.updatedAt),
-                  })}`}
-                </p>
-              </div>
-            ) : (
-              <p className="v2-aprofile__muted">{t('agentProfile.memory.none')}</p>
+          {agent.description && <p className="v2-aprofile__desc">{agent.description}</p>}
+          <p className="v2-aprofile__meta">
+            {t('agentProfile.hero.activeInPods', { count: pods.count })}
+            {memory.has && ` · ${t('agentProfile.hero.memories', { count: memory.entryCount })}`}
+            {ownedConnection && (
+              <span data-testid="agent-profile-connection">
+                {` · ${connectionLabel(ownedConnection.connection, t)}`}
+              </span>
             )}
-          </section>
-
-          {/* Recent activity */}
-          {activity.length > 0 && (
-            <section className="v2-aprofile__card">
-              <h2 className="v2-aprofile__card-title">{t('agentProfile.activity.title')}</h2>
-              <ul className="v2-aprofile__list">
-                {activity.map((a, i) => (
-                  <li key={i} className="v2-aprofile__run">
-                    <span className={`v2-aprofile__run-dot v2-aprofile__run-dot--${a.errorKind ? 'err' : a.status}`} />
-                    <span className="v2-aprofile__run-label">{a.trigger || a.status}</span>
-                    <span className="v2-aprofile__muted">{t('agentProfile.activity.turnsAgo', { count: a.turns, time: timeAgo(a.startedAt) })}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          </p>
         </div>
-
-        {!authed && (
-          <div className="v2-aprofile__footer-cta">
-            <span>{t('agentProfile.footer.tagline')}</span>
-            <Link className="v2-aprofile__btn v2-aprofile__btn--primary" to="/v2/register">{t('agentProfile.actions.startYourOwnTeam')}</Link>
+        <div className="v2-aprofile__keys">
+          {isOwner && signedIn && (
+            <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to={agentPath}>{t('agentSettings.settings')}</Link>
+          )}
+          {primaryKey}
+        </div>
+      </header>
+      {avatarDialogOpen && (
+        <section id="agent-avatar-picker" className="v2-aprofile__avatar-picker" aria-labelledby="agent-avatar-picker-title">
+          <h2 id="agent-avatar-picker-title" className="v2-aprofile__avatar-title">{t('agentProfile.avatar.title')}</h2>
+          <div className="v2-aprofile__avatar-grid" role="group" aria-labelledby="agent-avatar-picker-title">
+            {avatarOptions.map((option, index) => {
+              const current = option.id === currentAvatar;
+              const label = option.id === 'default'
+                ? t('agentProfile.avatar.defaultOption')
+                : t('agentProfile.avatar.option', { number: index });
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`v2-aprofile__avatar-choice${current ? ' is-current' : ''}`}
+                  // aria-pressed already announces the current avatar.
+                  aria-pressed={current}
+                  aria-label={label}
+                  title={label}
+                  disabled={savingAvatar}
+                  onClick={() => { if (!current) void saveAvatar(option.id); }}
+                >
+                  <img src={option.src || ''} alt="" />
+                </button>
+              );
+            })}
           </div>
+          {avatarError && <p className="v2-aprofile__avatar-error" role="alert">{t('agentProfile.avatar.saveFailed')}</p>}
+          <button type="button" className="v2-aprofile__avatar-cancel" onClick={() => setAvatarDialogOpen(false)}>
+            {t('agentProfile.avatar.cancel')}
+          </button>
+        </section>
+      )}
+      {roomError && <p className="v2-aprofile__room-error" role="alert">{roomError}</p>}
+
+      {isOwner && (
+        <nav className="v2-agent-settings__tabs" aria-label={t('agentSettings.tabs')}>
+          <span aria-current="page">{t('agentSettings.profile')}</span>
+          <Link to={agentPath}>{t('agentSettings.settings')}</Link>
+          <Link to={`${agentPath}/memory`}>{t('agentSettings.memory', { defaultValue: 'Memory' })}</Link>
+        </nav>
+      )}
+
+      {podList.length > 0 && (
+        <section className="v2-aprofile__card" aria-labelledby="aprof-pods">
+          <h2 className="v2-aprofile__card-title" id="aprof-pods">
+            {ownerPods ? t('agentProfile.pods.title') : t('agentProfile.pods.publicTitle')}
+            {' '}
+            <span className="v2-aprofile__count">{podList.length}</span>
+            {ownerPods && <span className="v2-aprofile__owner-tag">{t('agentProfile.pods.everyPod')}</span>}
+          </h2>
+          <ul className="v2-aprofile__list" ref={podListRef}>
+            {shownPods.map((p) => (
+              <li key={p.id} className="v2-aprofile__row v2-aprofile__pod">
+                <span className="v2-aprofile__pod-id">
+                  <Link className="v2-aprofile__pod-name" to={`/v2/pods/${p.id}`}>{p.name}</Link>
+                  {ownerPods && p.lastMessage?.snippet && <span className="v2-aprofile__pod-msg">“{p.lastMessage.snippet}”</span>}
+                </span>
+                {p.lastActive && (
+                  <span className="v2-aprofile__pod-when">
+                    {ownerPods ? timeAgo(p.lastActive) : t('agentProfile.pods.activeAgo', { time: timeAgo(p.lastActive) })}
+                  </span>
+                )}
+                {ownerPods && (
+                  <button
+                    type="button"
+                    className="v2-aprofile__pod-remove"
+                    onClick={() => handleRemoveFromPod(p.id, p.name)}
+                    disabled={removing === p.id}
+                    aria-label={t('agentProfile.pods.removeAria', { agentName, podName: p.name })}
+                  >
+                    {removing === p.id ? t('agentProfile.pods.removing') : t('agentProfile.pods.remove')}
+                  </button>
+                )}
+              </li>
+            ))}
+            {shownPods.length < podList.length && (
+              <li className="v2-aprofile__row">
+                <button type="button" className="v2-aprofile__more" onClick={() => setShowAllPods(true)}>
+                  {t('agentProfile.pods.showAll', { count: podList.length })}
+                </button>
+              </li>
+            )}
+          </ul>
+        </section>
+      )}
+
+      {skillChips.length > 0 && (
+        <section className="v2-aprofile__card" aria-labelledby="aprof-skills">
+          <h2 className="v2-aprofile__card-title" id="aprof-skills">
+            {t('agentProfile.skills.title')}
+            {' '}
+            <span className="v2-aprofile__count">{skillChips.length}</span>
+          </h2>
+          <div className="v2-aprofile__chips">
+            {skillChips.map((chip) => (
+              <span key={chip.name} className="v2-aprofile__chip" title={chip.title}>{chip.name}</span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* One line. A visitor sees the public count; the owner/admin line
+          comes from the private index fetched with their token. */}
+      <section className="v2-aprofile__card" aria-labelledby="aprof-memory">
+        <h2 className="v2-aprofile__card-title" id="aprof-memory">
+          {t('agentProfile.memory.title')}
+          {memIndex && (
+            <span className="v2-aprofile__owner-tag">
+              {t('agentProfile.memory.viewTag', {
+                role: memIndex.viewerRole === 'admin'
+                  ? t('agentProfile.memory.roleAdmin')
+                  : t('agentProfile.memory.roleOwner'),
+              })}
+            </span>
+          )}
+        </h2>
+        {memIndex && memIndex.totalEntries > 0 ? (
+          <p className="v2-aprofile__note" data-testid="agent-profile-memory">
+            <Trans
+              i18nKey={memIndex.lastAgentWrite ? 'agentProfile.memory.ownerLineSaved' : 'agentProfile.memory.ownerLine'}
+              values={{
+                notes: memIndex.totalEntries,
+                count: memIndex.sections.length,
+                section: memIndex.lastAgentWrite ? memorySectionLabel(memIndex.lastAgentWrite.section) : '',
+                time: memIndex.lastAgentWrite ? timeAgo(memIndex.lastAgentWrite.updatedAt) : '',
+              }}
+              components={{ b: <b /> }}
+            />
+            {' '}
+            {memIndex.viewerRole === 'admin' ? t('agentProfile.memory.privateAdmin') : t('agentProfile.memory.privateOwner')}
+            {' '}
+            <Link to={`${agentPath}/memory`}>{t('agentProfile.memory.open')}</Link>
+          </p>
+        ) : !memIndex && memory.has ? (
+          <p className="v2-aprofile__note" data-testid="agent-profile-memory">
+            <Trans
+              i18nKey="agentProfile.memory.publicLine"
+              values={{ count: memory.entryCount }}
+              components={{ b: <b /> }}
+            />
+            {memory.lastAgentWrite && ` ${t('agentProfile.memory.lastSavedAgo', { time: timeAgo(memory.lastAgentWrite.updatedAt) })}`}
+          </p>
+        ) : (
+          <p className="v2-aprofile__note">{t('agentProfile.memory.none')}</p>
         )}
-      </main>
-    </div>
+      </section>
+
+      {activity.length > 0 && (
+        <section className="v2-aprofile__card" aria-labelledby="aprof-activity">
+          <h2 className="v2-aprofile__card-title" id="aprof-activity">{t('agentProfile.activity.title')}</h2>
+          <ul className="v2-aprofile__list">
+            {activity.map((a, i) => (
+              <li key={i} className="v2-aprofile__row v2-aprofile__run">
+                <span
+                  className={`v2-aprofile__run-dot${a.errorKind || a.status === 'failed' ? ' v2-aprofile__run-dot--err' : ''}`}
+                  aria-hidden="true"
+                />
+                <span className="v2-aprofile__run-label">{a.trigger || a.status}</span>
+                <span className="v2-aprofile__pod-when">{t('agentProfile.activity.turnsAgo', { count: a.turns, time: timeAgo(a.startedAt) })}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </main>
   );
+
+  return shell ? <>{shell(<div className="v2-aprofile">{main}</div>)}</> : publicPage(main);
 };
 
 export default V2AgentProfile;

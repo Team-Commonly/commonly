@@ -132,12 +132,13 @@ describe('D223 Signal tokens in v2.css', () => {
 describe('dark-safe surfaces (TASK-681)', () => {
   const rd = (rel: string): string =>
     fs.readFileSync(path.join(__dirname, rel), 'utf8');
-  test('the sticky landing and agent-profile bars follow --v2-bg, not white', () => {
+  test('the sticky landing bar follows --v2-bg and the agent-profile bar --v2-surface, not white', () => {
     [rd('../landing/v2-landing.css'), rd('../agents/v2-agent-profile.css')].forEach((css) => {
       expect(css).not.toMatch(/background:\s*rgba\(255,\s*255,\s*255,\s*0\.86\)/);
     });
     expect(rd('../landing/v2-landing.css')).toMatch(/\.v2-landing__bar\s*\{[^}]*color-mix\(in srgb, var\(--v2-bg\) 86%/);
-    expect(rd('../agents/v2-agent-profile.css')).toMatch(/\.v2-aprofile__bar\s*\{[^}]*color-mix\(in srgb, var\(--v2-bg\) 86%/);
+    // d215 s-agent-profile draws the public bar on the surface token.
+    expect(rd('../agents/v2-agent-profile.css')).toMatch(/\.v2-aprofile__bar\s*\{[^}]*background: var\(--v2-surface\)/);
   });
   test('ink primary buttons take theme tokens, never a literal colour', () => {
     // R06 lifted Your team onto the d215 frame: Hire and Answer are its ink
