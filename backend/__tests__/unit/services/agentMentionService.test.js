@@ -752,30 +752,31 @@ describe('AgentMentionService', () => {
       }));
     });
 
-    test('routes an @mention in a team pod to the agent it names', async () => {
+    test("routes another agent's @mention in a team pod to the agent it names", async () => {
       AgentInstallation.find.mockReturnValue({
-        lean: jest.fn().mockResolvedValue([{ agentName: 'commonly-bot', instanceId: 'default', displayName: 'Commonly Bot' }]),
+        lean: jest.fn().mockResolvedValue([{ agentName: 'scout', instanceId: 'default', displayName: 'Scout' }]),
       });
       AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
-      Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One', type: 'chat' }) });
-      chatSummarizerService.constructor.getLatestPodSummary.mockResolvedValue({
-        title: 'Pod Summary',
-        content: 'Summary content',
-        metadata: { podName: 'Pod One', totalItems: 2 },
-        timeRange: { start: new Date(), end: new Date() },
-        type: 'chats',
+      Pod.findById.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One', type: 'team', members: ['user-1'] }),
       });
       User.findById.mockReturnValue({
         select: jest.fn().mockReturnThis(),
-        lean: jest.fn().mockResolvedValue({ _id: 'scout-user', isBot: true, botMetadata: { agentName: 'scout', instanceId: 'default' } }),
+        lean: jest.fn().mockResolvedValue({ _id: 'codex-user', isBot: true, botMetadata: { agentName: 'codex', instanceId: 'default' } }),
       });
 
       await AgentMentionService.enqueueAgentPost({
-        podId: 'pod-1', message: { content: 'Hi @commonly-bot', id: 'msg-1' }, userId: 'scout-user', username: 'scout',
+        podId: 'pod-1', message: { content: 'Over to you @scout', id: 'msg-2' }, userId: 'codex-user', username: 'codex',
       });
 
+      expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
       expect(AgentEventService.enqueue).toHaveBeenCalledWith(expect.objectContaining({
-        agentName: 'commonly-bot', podId: 'pod-1',
+        agentName: 'scout',
+        instanceId: 'default',
+        podId: 'pod-1',
+        type: 'chat.mention',
+        payload: expect.objectContaining({ messageId: 'msg-2' }),
       }));
     });
   });
