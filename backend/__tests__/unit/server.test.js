@@ -394,3 +394,28 @@ describe('server websocket authorization helpers', () => {
     expect(socket.emit).not.toHaveBeenCalled();
   });
 });
+
+describe('server mounts', () => {
+  afterEach(() => {
+    jest.resetModules();
+    jest.clearAllMocks();
+  });
+
+  // The access log names a request by `req.baseUrl` + the route's pattern
+  // (middleware/accessLog). `baseUrl` is the URL text a mount matched, so a
+  // router mounted on a parameter path would put a raw id in every line.
+  it('mounts no router on a parameter path', () => {
+    const { app } = require('../../server');
+    const paramMounts = [];
+    const walk = (stack) => {
+      for (const layer of stack || []) {
+        const isRouter = Boolean(layer.handle && Array.isArray(layer.handle.stack) && !layer.route);
+        if (!isRouter) continue;
+        if ((layer.keys || []).length) paramMounts.push(String(layer.regexp));
+        walk(layer.handle.stack);
+      }
+    };
+    walk(app._router.stack);
+    expect(paramMounts).toEqual([]);
+  });
+});

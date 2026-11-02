@@ -47,8 +47,11 @@ export const callerHash = (callerId: string | null, secret: string | undefined):
   return createHmac('sha256', secret).update(`access-log\u0000${callerId}`).digest('hex').slice(0, CALLER_HASH_LENGTH);
 };
 
+// `baseUrl` is the URL text the mount matched, not its pattern, so it is only
+// safe because no router is mounted on a parameter path (server.test.js guards
+// that); it is lowercased because Express matches mounts case-insensitively.
 const templateOf = (baseUrl: string, route: { path?: unknown }): string => (
-  `${baseUrl || ''}${typeof route.path === 'string' ? route.path : '<pattern>'}`
+  `${(baseUrl || '').toLowerCase()}${typeof route.path === 'string' ? route.path : '<pattern>'}`
 );
 
 const callerIdOf = (req: any): string | null => {

@@ -119,6 +119,13 @@ describe('access log', () => {
     expect(lines[0]).toMatchObject({ route: '/api/users/:id/fail', status: 500 });
   });
 
+  it('names a mount typed in another case by its lowercase template', async () => {
+    const lines = [];
+    await request(buildApp(lines)).get(`/API/Users/${OTHER}/public-activity`).expect(200);
+    await settled();
+    expect(lines[0].route).toBe('/api/users/:id/public-activity');
+  });
+
   it('skips the health probes', async () => {
     const lines = [];
     const app = buildApp(lines);
