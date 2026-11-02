@@ -174,6 +174,28 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone).toMatch(/\.v2-profile \.v2-profile__follow, \.v2-profile \.v2-profile__edit \{[^}]*flex: 1 0 100%/);
   });
 
+  test('/v2/activity and /v2/artifacts: on a phone the page head is the pinned 52px bar (d215 .mtop 390)', () => {
+    const v2 = readV2Css();
+    const barSelector = '.v2-activity__header,\n  .v2-artifacts__head {';
+    const phone = mediaBlockContaining(v2, barSelector);
+    // Both heads render inside the scrolling .v2-feature__body; sticky is what keeps them on screen.
+    const bar = selectorRuleBody(phone, barSelector);
+    expect(bar).toContain('position: sticky');
+    expect(bar).toContain('top: 0');
+    expect(bar).toContain('min-height: 52px');
+    expect(bar).toContain('align-items: center');
+    expect(bar).toContain('border-bottom: 1px solid var(--v2-border-soft)');
+    // Opaque, or rows scroll visibly under the bar.
+    expect(bar).toContain('background: var(--v2-surface)');
+    // The compact 22px title, not the desktop 32px display head.
+    expect(selectorRuleBody(phone, '.v2-artifacts__head .v2-artifacts__title {')).toContain('font: 800 22px/1');
+    // The meta sits at the bar's right edge.
+    expect(selectorRuleBody(phone, '.v2-artifacts__head .v2-page-head__meta {')).toContain('margin-left: auto');
+    // The block must come after the pages' own head rules, or their padding and baseline win by order.
+    expect(v2.indexOf(phone)).toBeGreaterThan(v2.lastIndexOf('.v2-activity__header { min-height: 56px;'));
+    expect(v2.indexOf(phone)).toBeGreaterThan(v2.indexOf('\n.v2-artifacts__head {'));
+  });
+
   test('/invite: a long pod name or description wraps inside the auth card (d215 s-invite)', () => {
     const invite = read('../components/V2InviteRedeem.css');
     expect(ruleBody(readV2Css(), '.v2-login__card--stack')).toContain('grid-template-columns: minmax(0, 1fr)');
