@@ -52,6 +52,16 @@ const V2CliAuthorize: React.FC = () => {
 
   useEffect(() => setCode(queryCode), [queryCode]);
 
+  // The page mounts outside V2App, so it claims the v2 page canvas itself
+  // while mounted (index.tsx stamps it at boot for this path, too). Without
+  // it App.css's legacy V1 input, button and form rules reach the card.
+  useEffect(() => {
+    document.body.classList.add('v2-canvas');
+    return () => {
+      document.body.classList.remove('v2-canvas');
+    };
+  }, []);
+
   const lookup = async (event?: React.FormEvent) => {
     event?.preventDefault();
     if (code.replace('-', '').length !== 8) return;

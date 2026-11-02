@@ -1,70 +1,26 @@
 /* CLI sign-in, the d215 s-cli-authorize frames: the shared auth card
    (.v2-login, v2.css) plus the three things only this page draws, the code
    field, the facts list and the two-key row. Every value is a --v2-* token,
-   so the dark theme follows.
+   so the dark theme follows. The page mounts outside V2App, so it claims
+   body.v2-canvas itself while mounted, which turns off App.css's legacy
+   input, button and form rules exactly as it does for every /v2 page.
 
-   The page mounts outside V2App, so <body> carries `modern-ui` without
-   `v2-canvas` and App.css's legacy V1 rules reach it:
-   `body.modern-ui:not(.v2-canvas) input` (0,2,2), its :focus (0,3,2),
-   `...:not(.guide-canvas) button` (0,3,2), its :hover/:active (0,4,2). The
-   family's own rules sit at (0,1,0)-(0,4,1), so the overrides below restate
-   exactly the properties those legacy rules set, scoped through
-   .v2-root.v2-cli-authorize .v2-login__card to win on specificity. The card is
-   a <div> and the code form inside it is display: contents (v2.css), so the
-   legacy `form` rule paints no box. */
-
-/* .v2-root is the app shell: height 100vh, overflow hidden, flex column.
+   .v2-root is the app shell: height 100vh, overflow hidden, flex column.
    .v2-login (flex: 1, overflow-y: auto) is the scroller inside it, and the
    card centres with margin: auto, so a short viewport scrolls instead of
    clipping Deny / Authorize. Nothing to add here; the invariant test pins it. */
 
-/* The code reads against the terminal at a glance: mono, 18px, spaced. */
-.v2-root.v2-cli-authorize .v2-login__card input.v2-cli-authorize__code {
-  margin: 0;
-  padding: 0 12px;
-  border: 0;
-  border-radius: var(--v2-r-10);
-  background: var(--v2-bg-subtle);
-  color: var(--v2-text-primary);
+/* The code reads against the terminal at a glance: mono, 18px, spaced, at
+   every width (it outranks the phone rule's 16px). */
+.v2-cli-authorize .v2-login__input.v2-cli-authorize__code {
   font: 600 18px/1 var(--v2-font-mono);
   letter-spacing: 0.08em;
 }
-.v2-root.v2-cli-authorize .v2-login__card input.v2-cli-authorize__code:focus {
-  border: 0;
-  box-shadow: inset 0 0 0 1px var(--v2-accent), var(--v2-focus-ring);
-}
 /* Signed out the field is read-only: full ink, not the browser's grey. */
-.v2-root.v2-cli-authorize .v2-login__card input.v2-cli-authorize__code:disabled {
+.v2-cli-authorize .v2-login__input.v2-cli-authorize__code:disabled {
   opacity: 1;
   -webkit-text-fill-color: var(--v2-text-primary);
   cursor: default;
-}
-
-/* The keys: the family's ink fill and ghost key, restated over App.css. */
-.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit {
-  padding: 0 14px;
-  border: 1px solid var(--v2-fill-edge);
-  border-radius: var(--v2-r-10);
-  background-color: var(--v2-fill-b);
-  color: var(--v2-on-fill);
-  font-size: 14px;
-  font-weight: 600;
-  transform: none;
-}
-.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit--ghost {
-  border-color: var(--v2-key-edge);
-  background-color: var(--v2-key-b);
-  color: var(--v2-text-primary);
-}
-.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit:hover:not(:disabled) {
-  background-color: var(--v2-ink-hover);
-  transform: none;
-}
-.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit--ghost:hover:not(:disabled) {
-  background-color: var(--v2-key-b);
-}
-.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit:active {
-  transform: none;
 }
 
 /* The hostname never breaks at its hyphen. */
@@ -109,13 +65,4 @@
 
 .v2-cli-authorize .v2-login__notice code {
   font: 500 12.5px/1 var(--v2-font-mono);
-}
-
-/* The 44px touch floor and 16px type the family holds at phone width,
-   restated because the key rule above outranks v2.css's. */
-@media (max-width: 480px) {
-  .v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit {
-    min-height: 44px;
-    font-size: 16px;
-  }
 }

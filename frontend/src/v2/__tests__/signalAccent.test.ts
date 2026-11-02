@@ -119,13 +119,14 @@ describe('Signal accent on standalone and bridged surfaces', () => {
     expect(rules).not.toMatch(/var\(--v2-[a-z0-9-]+,/);
     expect(rules).not.toContain('.v2-cli-authorize__card');
     expect(rules).not.toContain('--v2-warning-ink');
-    // The page mounts without body.v2-canvas, so App.css's legacy input (0,2,2)
-    // and button (0,3,2) / :hover (0,4,2) rules reach it: the overrides must
-    // out-specify both, and the input must set its own ground for dark mode.
-    expect(rules).toMatch(/\.v2-root\.v2-cli-authorize \.v2-login__card input\.v2-cli-authorize__code \{[^}]*background: var\(--v2-bg-subtle\)/);
-    expect(rules).toContain('.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit {');
-    expect(rules).toContain('.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit:hover:not(:disabled) {');
-    expect(rules).toContain('.v2-root.v2-cli-authorize .v2-login__card button.v2-login__submit:active {');
+    // The page mounts outside V2App, so it claims body.v2-canvas itself (at boot
+    // and while mounted). That gate is what turns off App.css's legacy
+    // `body.modern-ui:not(.v2-canvas)` input, button and form rules, so the page
+    // restates none of them.
+    expect(tsx).toMatch(/document\.body\.classList\.add\('v2-canvas'\)/);
+    expect(tsx).toMatch(/document\.body\.classList\.remove\('v2-canvas'\)/);
+    expect(read('src/index.tsx')).toContain("bootPath === '/cli/authorize'");
+    expect(rules).not.toContain('button.v2-login__submit');
   });
 
   test.each([
