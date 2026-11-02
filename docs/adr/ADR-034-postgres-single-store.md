@@ -81,10 +81,14 @@ boundary holds.
 | 4. Drop | Mongo writes stop, and the Mongo code is deleted one release later. | Before deletion: mode to `dual` plus a reverse backfill. After: restore from backup. |
 
 **Mongo stays the system of record until step 4.** In `dual` and `pg-read`, a write commits to Mongo
-first and is acknowledged only once it has; the Postgres write follows. A Postgres write that fails is
-recorded for repair, re-copied by the backfill, and counted as a mismatch, and in `pg-read` it sends
-that model back to `dual` until the repair has run. So rolling back from `pg-read` to `dual` never loses
-an acknowledged write: Mongo has every one of them.
+first and is acknowledged only once it has; the Postgres write follows. **The repair marker travels in
+the same Mongo write:** the document carries a `pgPending` flag set by that write (one document, so one
+atomic write), and the flag is cleared only after the Postgres write succeeds. A crash between the two
+leaves the flag set, so nothing depends on recording the failure after the fact. A sparse index on
+`pgPending` makes the repair a cheap scan: it re-copies each flagged document (idempotently) and clears
+the flag. A failed Postgres write counts as a mismatch, and a model in `pg-read` goes back to `dual` while
+any of its documents are flagged, including after a restart, until the repair finds none. So rolling back
+from `pg-read` to `dual` never loses an acknowledged write: Mongo has every one of them.
 
 Step 4 is the only one-way door, and it is taken per model. **A model reaches step 3 when the
 `commonly verify` scenarios pass against both stores and the compare log shows zero unexplained
@@ -111,8 +115,9 @@ can move in an ordinary PR.
 without Postgres refuses to boot instead of running degraded, and Mongo `Message` keeps only the history
 the backfill copies. Message reads come from Postgres alone once `PG_HOST` is set, so an instance moving
 off that mode would hide its history until it is copied. The step is done on an instance only when
-`scripts/backfill-local-messages-to-pg.ts` reports zero pending rows (rows whose pod is gone are
-reported as orphaned and stay in Mongo). The release that removes the mode says so in its upgrade
+a report-only run of `scripts/backfill-local-messages-to-pg.ts`, without `--since` so no older history
+is out of scope, shows `pending` equal to `orphanedPending`. That means every pending row left belongs to a
+deleted pod and stays in Mongo by design. The release that removes the mode says so in its upgrade
 note, and boot logs the pending count, so an instance that skipped the backfill shows. Move the three self-creating tables into numbered migrations. Build the dual-store helper (D3's mode,
 write-both, sampled compare), a shared expiry sweeper for TTL models, and a jest helper on real
 Postgres for anything with claims or SQL aggregates (`ToolCall.ts` already records that `pg-mem`

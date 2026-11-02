@@ -35,7 +35,8 @@ const MONGO_MODELS = [
 // `connection.model(`, `model<IName>(\n  …`. Each must name its model with a
 // string literal, or the test cannot know what it registers.
 const MODEL_CALL = /\bmodel\s*(?:<[^>]*>)?\(/g;
-const LITERAL_NAME = /^\s*['"`](\w+)['"`]/;
+// The whole first argument must be the literal: `'User' + suffix` is not `User`.
+const LITERAL_NAME = /^\s*(['"`])(\w+)\1\s*[,)]/;
 // Outside models/ any of these is a model defined where the freeze cannot read
 // it. No space before `(`, so prose like "the model (fallback)" never matches.
 const DEFINITION = /\bmodel(?:<[^>]*>)?\(|new\s+(?:mongoose\.)?Schema\s*(?:<[^>]*>)?\(/;
@@ -43,7 +44,7 @@ const DEFINITION = /\bmodel(?:<[^>]*>)?\(|new\s+(?:mongoose\.)?Schema\s*(?:<[^>]
 // One entry per model call: the name it registers, or null when it is not a literal.
 const registrationsIn = (source) => [...source.matchAll(MODEL_CALL)].map((call) => {
   const name = LITERAL_NAME.exec(source.slice(call.index + call[0].length));
-  return name ? name[1] : null;
+  return name ? name[2] : null;
 });
 
 const isSource = (file) => /\.(ts|js)$/.test(file) && !file.endsWith('.d.ts');
@@ -71,6 +72,10 @@ describe('Mongo model freeze (ADR-034 D4)', () => {
     expect(registrationsIn("conn.model('D', s)")).toEqual(['D']);
     expect(registrationsIn("(mongoose.models.E as Model<IE>) || model<IE>('E', s)")).toEqual(['E']);
     expect(registrationsIn('mongoose.model(NAME, s)')).toEqual([null]);
+    expect(registrationsIn("mongoose.model('User' + suffix, s)")).toEqual([null]);
+    // eslint-disable-next-line no-template-curly-in-string -- the fixture is source text
+    expect(registrationsIn('mongoose.model(`User${suffix}`, s)')).toEqual([null]);
+    expect(registrationsIn("mongoose.model('G')")).toEqual(['G']);
     ['mongoose.model(NAME, s)', 'model<IF>(`F`, s)', 'new Schema<IG>({})', 'new mongoose.Schema({})']
       .forEach((source) => expect(DEFINITION.test(source)).toBe(true));
     expect(DEFINITION.test('// fall back to the default model (no override).')).toBe(false);
