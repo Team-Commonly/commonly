@@ -59,6 +59,7 @@ const V2InviteRedeem: React.FC = () => {
     (async () => {
       try {
         setLoading(true);
+        setError(null);
         const res = await axios.get<InvitePreviewResponse>(
           `/api/invites/${encodeURIComponent(token)}/preview`,
         );
@@ -81,6 +82,7 @@ const V2InviteRedeem: React.FC = () => {
     (async () => {
       try {
         setLoading(true);
+        setError(null);
         const data = await api.get<InviteResolveResponse>(`/api/invites/${encodeURIComponent(token)}`);
         if (!cancelled) setInvite(data);
       } catch (err) {

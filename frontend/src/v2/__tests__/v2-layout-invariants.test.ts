@@ -167,6 +167,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(invite).toMatch(/\.v2-invite__heading \{[^}]*min-width: 0/);
     expect(invite).toMatch(/\.v2-invite__heading \.v2-login__title \{[^}]*overflow-wrap: anywhere/);
     expect(invite).toMatch(/\.v2-invite__description \{[^}]*overflow-wrap: anywhere/);
+    // The join key reads "Join <pod>": it grows instead of clipping a long name.
+    const key = ruleBody(readV2Css(), '.v2-root .v2-login__card--stack button.v2-login__submit');
+    expect(key).toContain('overflow-wrap: anywhere');
+    expect(key).toContain('height: auto');
   });
 
   test('/cli/authorize scrolls inside the .v2-root shell on a short viewport (TASK-682)', () => {
