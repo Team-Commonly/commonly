@@ -40,15 +40,8 @@ jest.mock('../../../services/agentIdentityService', () => ({
   // Unknown agentName in these tests → no AGENT_TYPES runtime fallback.
   getAgentTypeConfig: jest.fn(() => null),
   // Faithful mirror of the real taxonomy so the entitlement gate behaves.
-  isCloudRuntime: jest.fn(({ runtimeType, host } = {}) => {
-    const rt = String(runtimeType || '').toLowerCase();
-    const h = String(host || '').toLowerCase();
-    if (h === 'byo') return false;
-    if (rt === 'webhook' || rt === 'claude-code') return false;
-    if (['moltbot', 'internal', 'native', 'managed-agents'].includes(rt)) return true;
-    if (rt === 'codex') return true;
-    return false;
-  }),
+  // The real classifier, not a copy, so this file tests the rule the route runs.
+  isCloudRuntime: jest.requireActual('../../../services/agentIdentityService').isCloudRuntime,
 }));
 
 jest.mock('../../../services/agentMessageService', () => ({

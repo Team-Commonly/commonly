@@ -166,8 +166,9 @@ provisionRouter.post('/pods/:podId/agents/:name/provision', provisionRateLimit, 
 
     // Hosted-agent entitlement gate (mirrors routes/registry/install.ts). A
     // cloud (Commonly-hosted) runtime requires admin OR the cloudAgents
-    // entitlement. BYO provisions (host:'byo') and external runtimes
-    // (webhook / claude-code) stay open to all pod members. runtimeType comes
+    // entitlement. BYO provisions (host:'byo' on a type with a BYO variant) and
+    // external runtimes (webhook / claude-code) stay open to all pod members; a
+    // runtime only Commonly runs is gated whatever host is stored. runtimeType comes
     // from AGENT_TYPES (typeConfig.runtime); host from the stored install
     // config. Placed after the membership check above so non-members still 403
     // first. commonly-bot is additionally admin-gated above — this is additive.
