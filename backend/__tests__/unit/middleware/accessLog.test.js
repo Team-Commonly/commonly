@@ -144,7 +144,8 @@ describe('access log', () => {
     await request(buildApp(lines, { log: late })).get(`/api/users/${OTHER}/public-activity`).expect(200);
     let done = false;
     const waiting = logged(lines).then(() => { done = true; });
-    await new Promise((resolve) => { setImmediate(resolve); });
+    // Several 10ms polls: a wait that gives up after one would have resolved.
+    await new Promise((resolve) => { setTimeout(resolve, 50); });
     expect(done).toBe(false);
     release();
     await waiting;
