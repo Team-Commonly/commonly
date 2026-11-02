@@ -232,6 +232,26 @@ describe('API token storage rollout', () => {
     expect((await get(forced.token)).status).toBe(200);
   });
 
+  it('keeps a token the backfill stored after issuance loaded the row', async () => {
+    // Backfill runs while pods serve. If it finishes between issuance loading the
+    // agent and deciding, the stored digest must win over a fresh mint.
+    const identity = require('../../services/agentIdentityService');
+    const { issueUserTokenForInstallation } = require('../../routes/registry/tokens');
+    const bot = await identity.getOrCreateAgentUser('race-probe', { instanceId: 'test' });
+    await users().updateOne({ _id: bot._id }, { $set: { apiToken: 'cm_race-plaintext' } });
+    const load = identity.getOrCreateAgentUser;
+    const spy = jest.spyOn(identity, 'getOrCreateAgentUser').mockImplementationOnce(async (...args) => {
+      const loaded = await load.apply(identity, args);
+      expect(await backfillApiTokenStorage({ apply: true })).toMatchObject({ migrated: 1 });
+      return loaded;
+    });
+    const result = await issueUserTokenForInstallation({ agentName: 'race-probe', instanceId: 'test', scopes: ['agent:context:read'] });
+    spy.mockRestore();
+    expect(result).toMatchObject({ existing: true, token: null, requiresRotation: true });
+    expect((await users().findOne({ _id: bot._id })).apiTokenHash).toBe(hash('cm_race-plaintext'));
+    expect((await get('cm_race-plaintext')).status).toBe(200);
+  });
+
   it('bootstrap leaves a retired token for the backfill instead of minting over it', async () => {
     const { spawnSync } = require('child_process');
     const path = require('path');
@@ -239,8 +259,9 @@ describe('API token storage rollout', () => {
     const bot = await identity.getOrCreateAgentUser('openclaw');
     await users().updateOne({ _id: bot._id }, { $set: { apiToken: 'cm_bootstrap-leftover' } });
     const uri = `mongodb://${mongoose.connection.host}:${mongoose.connection.port}/${mongoose.connection.name}`;
-    // No Postgres mirror for the child: some CI jobs set PG_HOST.
-    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('PG_')));
+    // No Postgres mirror for the child: some CI jobs set PG_HOST, and dotenv
+    // would restore it from backend/.env unless the key is already present.
+    const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('PG_'))), PG_HOST: '' };
     const result = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register'),
       path.resolve(__dirname, '../../scripts/bootstrap-clawd-bot.js'),
     ], { cwd: path.resolve(__dirname, '../..'), env: { ...env, MONGO_URI: uri, NODE_NO_WARNINGS: '1' }, encoding: 'utf8', timeout: 30000 });

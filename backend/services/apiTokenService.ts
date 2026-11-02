@@ -15,9 +15,14 @@ export const findApiTokenUser = async (token: string) => {
   return user && valid ? user : null;
 };
 
-// A row that still holds the retired plaintext form counts as having a token:
-// minting over it would erase a bearer the backfill can still restore. Only an
-// explicit rotation replaces it. Presence only; the plaintext is never loaded.
-export const holdsRetiredApiToken = async (userId: unknown): Promise<boolean> => (
-  Boolean(await User.exists({ _id: userId, apiToken: { $type: 'string' } }))
+// Whether the stored row holds a token, read at decision time rather than from
+// a document loaded earlier. A retired plaintext form counts: minting over it
+// would erase a bearer the backfill can still restore. Reading the digest here
+// too means a backfill that finished after the caller loaded the row is seen.
+// Only an explicit rotation replaces either. Presence only; nothing is loaded.
+export const holdsStoredApiToken = async (userId: unknown): Promise<boolean> => (
+  Boolean(await User.exists({
+    _id: userId,
+    $or: [{ apiTokenHash: { $type: 'string' } }, { apiToken: { $type: 'string' } }],
+  }))
 );

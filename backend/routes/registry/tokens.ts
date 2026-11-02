@@ -1,5 +1,5 @@
 import { isAccountDeleting } from '../../services/accountDeletionState';
-import { holdsRetiredApiToken } from '../../services/apiTokenService';
+import { holdsStoredApiToken } from '../../services/apiTokenService';
 // Token issuance + scope helpers — extracted from registry.js (GH#112)
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { hash, randomSecret } = require('../../utils/secret');
@@ -453,10 +453,9 @@ const issueUserTokenForInstallation = async ({
   const normalizedScopes = normalizeScopes(scopes);
 
   // Preserve existing token unless force-rotation is requested. Only the digest
-  // is stored, so an existing token can be kept but never handed back; a
-  // retired plaintext token counts as existing (holdsRetiredApiToken).
-  const hasRetiredToken = !agentUser.apiTokenHash && !force && await holdsRetiredApiToken(agentUser._id);
-  if ((agentUser.apiTokenHash || hasRetiredToken) && !force) {
+  // is stored, so an existing token can be kept but never handed back. The
+  // stored row decides, including a retired plaintext token (holdsStoredApiToken).
+  if (!force && (agentUser.apiTokenHash || await holdsStoredApiToken(agentUser._id))) {
     agentUser.apiTokenScopes = normalizedScopes;
     await agentUser.save();
     return {
