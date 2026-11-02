@@ -524,6 +524,8 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'llm_error' }));
     expect(savedRun.metered).toBe(false);
     expect(posted()).toEqual([`Model deepseek-v4-flash could not answer (HTTP 502). ${HOSTED_RUN_FAILED_LINE}`]);
+    // The model-failure variant is a failed-turn notice too, so it repeats per ask.
+    expect(AgentMessageService.postMessage.mock.calls[0][0].failureNotice).toBe(true);
     expect(chatBodies[0].disable_fallbacks).toBe(true);
   });
 
