@@ -99,10 +99,11 @@ plus the two greetings.
 
 ## Wiring into Deploy Dev
 
-Proposed step for `.github/workflows/deploy-dev.yml`. SRE owns the workflow.
-It goes after "Verify the new backend serves chat" and before "Record this
-release as rollout-verified", so a blocked verdict fails the job and the
-rollback step runs. That step's condition then needs
+#3296 adds this step to `.github/workflows/deploy-dev.yml`. SRE owns the
+workflow, and once that lands the workflow file is the source of truth for the
+step; the copy here explains it. It sits after "Verify the new backend serves
+chat" and before "Record this release as rollout-verified", so a blocked
+verdict fails the job and the rollback step runs, whose condition includes
 `|| steps.canary.outcome == 'failure'`.
 
 ```yaml
@@ -143,9 +144,10 @@ pod for the chat check.
 - **Names a person types.** A mention of an agent named after a whole keyword is
   user text, and the guard is right to stop it. Those names are skipped, not
   tested.
-- **Other guardrails.** Only `injection-guard` is on for native turns
-  (`NATIVE_RUNTIME_GUARDRAILS`). If another guardrail is enabled, give it its own
-  dump.
+- **Other guardrails.** Production sets `NATIVE_RUNTIME_GUARDRAILS` to
+  `injection-guard` (`backend.env.nativeRuntimeGuardrails`). The service's own
+  default also includes `openai-moderation-enforce`, so a deployment without
+  that override runs both. Give every other enabled guardrail its own dump.
 - **Group-pod silence.** Each question is a direct @-mention, so a turn that
   chooses not to answer in a busy pod isn't exercised.
 

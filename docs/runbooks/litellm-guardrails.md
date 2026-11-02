@@ -122,9 +122,10 @@ verdict by role alone — the scoping (not any property of the text) is what let
 own system prompt through. A config change to a configmap takes effect on the
 serving litellm only after a redeploy/reprovision.
 
-After each deploy, the [guard-name canary](guard-name-canary.md) gives agents
-named after the guard's own persona keywords one real turn each, hosted and
-native, and fails the release if the guard stops one.
+The [guard-name canary](guard-name-canary.md) gives agents named after the
+guard's own persona keywords one real turn each, hosted and native, and exits 3
+if the guard stops one. Deploy Dev runs it after verify and rolls the release
+back on exit 3; #3296 adds that step.
 
 ## ⚠️ Validate before deploying — the 2026-06-29 crash-loop
 
