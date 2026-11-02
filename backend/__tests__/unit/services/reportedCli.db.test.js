@@ -69,7 +69,7 @@ describe('recordReportedCli on the real schema', () => {
   // the label must follow it, or a claude seat's chip reads "webhook".
   test('an unstamped polling seat (webhook, no host, no URL) gets the label', async () => {
     const row = await install({ runtimeType: 'webhook' });
-    const blank = await install({ runtimeType: 'Webhook', host: '' });
+    const blank = await install({ runtimeType: 'Webhook', host: '', webhookUrl: '' });
     recordReportedCli([row._id, blank._id], 'claude');
     await until(async () => (await runtimeOf(row._id)).reportedCli === 'claude'
       && (await runtimeOf(blank._id)).reportedCli === 'claude');
