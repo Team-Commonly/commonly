@@ -5620,6 +5620,14 @@ describe('run trace layout', () => {
     expect(css).toMatch(/@media \(max-width: 760px\)/);
     expect(css).toMatch(/grid-template-columns: minmax\(0, 1fr\)/);
   });
+  test('an agent reply\'s trace link is a quiet 32px row, 44px on a phone (d215 s-chat, walk 11-02)', () => {
+    const link = /^\.v2-run-trace-link a \{([^}]*)\}/m.exec(css)?.[1] ?? '';
+    expect(link).toContain('min-height: 32px');
+    expect(link).toContain('display: inline-flex');
+    expect(link).toContain('color: var(--v2-text-secondary)');
+    const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
+    expect(phone).toMatch(/[,{]\s*\.v2-run-trace-link a[,\s][^{]*\{[^}]*min-height: 44px/);
+  });
   test('task record downloads wrap at 390 rather than push the page sideways (TASK-562)', () => {
     expect(ruleBody(css, '.v2-task-record__downloads')).toContain('flex-wrap: wrap');
     expect(ruleBody(css, '.v2-task-record__entries')).toContain('list-style: none');

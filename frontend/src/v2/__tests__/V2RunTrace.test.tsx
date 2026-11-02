@@ -25,9 +25,16 @@ beforeEach(async () => { mockGet.mockReset(); await i18n.changeLanguage('en'); }
 afterEach(async () => { await i18n.changeLanguage('en'); });
 test('server-bound link derives its destination from IDs and refuses arbitrary URLs', () => {
   const { rerender } = render(<MemoryRouter><V2RunTraceLink podId={POD} runId={RUN} /></MemoryRouter>);
-  expect(screen.getByRole('link', { name: 'View run trace' })).toHaveAttribute('href', `/v2/pods/${POD}/runs/${RUN}`);
+  expect(screen.getByRole('link', { name: 'How this reply was made' })).toHaveAttribute('href', `/v2/pods/${POD}/runs/${RUN}`);
+  // Walk 11-02: retention is stated on the trace page, not under every reply.
+  expect(document.querySelector('.v2-run-trace-link')).toHaveTextContent(/^How this reply was made$/);
   rerender(<MemoryRouter><V2RunTraceLink podId={POD} runId="https://evil.example" /></MemoryRouter>);
   expect(screen.queryByRole('link')).toBeNull();
+});
+test('the link reads plainly in Chinese too', async () => {
+  await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  render(<MemoryRouter><V2RunTraceLink podId={POD} runId={RUN} /></MemoryRouter>);
+  expect(screen.getByRole('link', { name: '这条回复是怎么来的' })).toHaveAttribute('href', `/v2/pods/${POD}/runs/${RUN}`);
 });
 test('reads recorded turns and PG attribution, with honest retention wording', async () => {
   mockGet.mockResolvedValue({ run: trace });

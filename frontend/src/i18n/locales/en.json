@@ -2,8 +2,7 @@
   "runTrace": {
     "title": "Run trace",
     "back": "Back to pod",
-    "view": "View run trace",
-    "linkRetention": "Cards: 30-day default. Trace persists.",
+    "view": "How this reply was made",
     "retention": "Cards have a 30-day default retention. Pod policy and storage limits can change it. This trace persists after the card expires.",
     "loading": "Loading run trace…",
     "access": "This trace is unavailable, or you no longer have access to its pod.",
