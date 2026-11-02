@@ -10,7 +10,7 @@ import V2Hint from './V2Hint';
 import V2CatchUpStrip from './V2CatchUpStrip';
 import V2Composer from './V2Composer';
 import { type V2DecisionCardData, type V2DecisionRuling } from './V2DecisionCard';
-import V2ThreadMessages, { V2ThreadHistoryStatus } from './V2ThreadMessages';
+import V2ThreadMessages, { ASK_START_ID, V2ThreadHistoryStatus } from './V2ThreadMessages';
 import { landOnMessage } from './V2MessageRow';
 import V2ThreadStarter from './V2ThreadStarter';
 import V2BringTeammate from './V2BringTeammate';
@@ -43,7 +43,7 @@ import {
   slugifyAgentHandle,
 } from '../utils/threadAgentIdentity';
 
-// The connect start's label, as SCOUT_STARTS[0] sends it
+// The connect start's label, as SCOUT_STARTS sends it (id connect-agent)
 // (backend/config/native-agents/scout.ts). A click posts exactly this text.
 const CONNECT_START_LABEL = 'Connect an agent I already use';
 // How long a smooth follow may run before its scroll events count as the reader's.
@@ -1328,6 +1328,18 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
     }
     return map;
   }, [agents]);
+  // Staging walk 2026-11-02: until the pod's creator sends anything after
+  // Scout's welcome, the composer names the agent who just spoke, with an
+  // example, instead of the pod. Older welcomes carry no ask start, so the
+  // connect start identifies them too.
+  const welcomeAgentName = useMemo(() => {
+    if (!viewerOwnsPod || !viewerId) return null;
+    const index = messages.findIndex((message) => message.payload?.kind === 'starts'
+      && message.payload.starts?.some((start) => start.id === ASK_START_ID || start.id === 'connect-agent'));
+    if (index < 0 || messages.slice(index + 1).some((later) => later.user_id === viewerId)) return null;
+    const raw = messages[index].user?.username || '';
+    return agentDisplayNames.get(raw) || agentDisplayNames.get(raw.toLowerCase()) || raw || null;
+  }, [agentDisplayNames, messages, viewerId, viewerOwnsPod]);
 
   // username/displayName → agent key (instanceId or agentName) so a click on
   // a chat author byline can drive the inspector to the right member sub-page.
@@ -1900,7 +1912,8 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
       title={boardLabel}
     >
       <ShellGlyph name="board" size={13} />
-      <span>{headerMeta.boardOpen}</span>
+      {/* The count carries its noun: a bare "3" read as an unread count (walk 11-02). */}
+      <span>{headerMeta.boardOpen !== null ? t('podChat.header.boardTasks', { count: headerMeta.boardOpen }) : null}</span>
     </button>
   );
   // A 1:1 room is a pod without the pod furniture (d215 frame): no board
@@ -2332,6 +2345,7 @@ const V2Thread: React.FC<V2ThreadProps> = ({ detail, firstRunVisible = false, in
               )}
               <V2Composer
                 podName={pod.name}
+                placeholder={welcomeAgentName ? t('podChat.composer.placeholderAgent', { agent: welcomeAgentName }) : undefined}
                 authorName={currentUser?.username || t('common.you')}
                 draft={draft}
                 sending={sending}

@@ -13,6 +13,10 @@ import { formatRelativeTime } from '../utils/grouping';
 import { V2DecisionCardData, V2DecisionRuling } from './V2DecisionCard';
 import V2Fold from './V2Fold';
 
+// Scout's start that asks nothing of the person (id in SCOUT_STARTS,
+// backend/config/native-agents/scout.ts). It sends itself as their first message.
+export const ASK_START_ID = 'ask-scout';
+
 // Expanded threads show the newest eight; a `N more replies` line reveals the rest.
 const MAX_EXPANDED_REPLIES = 8;
 // A transcript load shorter than this never shows a spinner.
@@ -341,7 +345,11 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
               />
               {onStart && (startsByMessageId?.get(String(message.id))?.length ?? 0) > 0 && (
                 <div className="v2-chat__starts" role="group" aria-label={t('podChat.starts.label')}>
-                  {startsByMessageId?.get(String(message.id))?.map((start) => {
+                  {startsByMessageId?.get(String(message.id))?.map((start, _index, starts) => {
+                    // One ink key per welcome: the hosted start where it is
+                    // offered, otherwise the start that asks nothing of you.
+                    const primary = start.action === WELCOME_HOSTED_ACTION
+                      || (start.id === ASK_START_ID && !starts.some((other) => other.action === WELCOME_HOSTED_ACTION));
                     const hostedHere = start.action === WELCOME_HOSTED_ACTION
                       && hostedStart?.messageId === String(message.id) ? hostedStart : null;
                     const starting = hostedHere?.status === 'starting';
@@ -349,7 +357,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                       <React.Fragment key={start.id}>
                         <button
                           type="button"
-                          className={`v2-chat__start${start.action === WELCOME_HOSTED_ACTION ? ' v2-chat__start--primary' : ''}`}
+                          className={`v2-chat__start${primary ? ' v2-chat__start--primary' : ''}`}
                           disabled={startsDisabled || starting}
                           aria-busy={starting || undefined}
                           onClick={() => onStart(start, String(message.id))}

@@ -36,8 +36,20 @@ describe('Scout welcome locale', () => {
 
   it('keeps the start labels in English, since Scout reads them', () => {
     expect(SCOUT_STARTS.map((s) => s.label)).toEqual([
+      'Show me what you can do',
       'Connect an agent I already use',
       'Start a pod for a project',
     ]);
+  });
+
+  // Staging walk 2026-11-02: a start that asks for nothing leads the sent
+  // starts, and Scout's prompt says how to answer it.
+  it('leads the sent starts with the one that asks nothing, and tells Scout how to answer it', () => {
+    expect(SCOUT_STARTS[0]).toEqual({ id: 'ask-scout', label: 'Show me what you can do' });
+    // eslint-disable-next-line global-require
+    const { scoutApp } = require('../../../config/native-agents/scout');
+    expect(scoutApp.systemPrompt).toContain('For "Show me what you can do", answer in two or three short sentences');
+    expect(scoutApp.systemPrompt).toContain('For "Connect an agent I already use", find out which tool they run');
+    expect(scoutApp.systemPrompt).toContain('For "Start a pod for a project", ask what the project is');
   });
 });

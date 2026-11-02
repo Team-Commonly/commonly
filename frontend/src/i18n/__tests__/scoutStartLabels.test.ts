@@ -4,7 +4,7 @@ import i18n, { i18nReady, LANGUAGE_STORAGE_KEY } from '..';
 // TASK-550: Scout's welcome starts are sent to Scout by their English labels
 // (backend/config/native-agents/scout.ts), so only the displayed text is
 // translated, by id. Every id the welcome can offer needs a zh-CN label.
-const START_IDS = ['connect-agent', 'start-pod', 'run-hosted'];
+const START_IDS = ['ask-scout', 'connect-agent', 'start-pod', 'run-hosted'];
 
 describe('Scout welcome start labels', () => {
   beforeAll(async () => {

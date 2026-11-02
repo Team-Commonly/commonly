@@ -22,6 +22,8 @@ export interface V2ComposerWarning {
 
 interface V2ComposerProps {
   podName: string;
+  /** Replaces "Message <pod>" when nothing is being replied to. */
+  placeholder?: string;
   authorName: string;
   draft: string;
   sending: boolean;
@@ -61,6 +63,7 @@ const FILE_ACCEPT = 'image/*,.pdf,.md,.txt,.csv,.json,.doc,.docx,.xls,.xlsx,.ppt
 /** The one bounded input surface for a workspace thread (direction C). */
 const V2Composer: React.FC<V2ComposerProps> = ({
   podName,
+  placeholder,
   authorName,
   draft,
   sending,
@@ -171,7 +174,7 @@ const V2Composer: React.FC<V2ComposerProps> = ({
         <div className="v2-composer__field">
           <textarea
             ref={inputRef}
-            placeholder={threadTarget ? t('podChat.thread.replyInThread') : replyTarget ? t('podChat.composer.replyPlaceholder', { author: replyTarget.user?.username || t('podChat.messageFallback') }) : t('podChat.composer.placeholder', { podName })}
+            placeholder={threadTarget ? t('podChat.thread.replyInThread') : replyTarget ? t('podChat.composer.replyPlaceholder', { author: replyTarget.user?.username || t('podChat.messageFallback') }) : placeholder || t('podChat.composer.placeholder', { podName })}
             value={draft}
             rows={1}
             onChange={(event) => onDraftChange(event.target.value, event.target.selectionStart)}
