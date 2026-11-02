@@ -14,8 +14,12 @@
  * report "claude". It may only label the chat chip. Anything that grants,
  * refuses or routes reads `runtime.adapter` / `runtimeType`, never this.
  *
- * Written only on a BYO seat (`runtime.host: 'byo'`, which install stamps on
- * every self-serve polling seat) and only while no `runtime.adapter` is set.
+ * Written only on a BYO seat and only while no `runtime.adapter` is set. A BYO
+ * seat is `runtime.host: 'byo'` (install stamps it on every self-serve polling
+ * seat), or the unstamped shape older self-serve and approval-created seats
+ * carry: `runtimeType: 'webhook'` with no host and no `webhookUrl`.
+ * `classifyRuntime` (agentStateService) already calls that shape BYO; without
+ * it here, a claude seat born unstamped kept a chip reading "webhook" (F39).
  * An adapter-shaped `runtimeType` does not block the write (TASK-704): a stale
  * declaration such as `runtimeType: 'codex'` on a seat that polls claude is
  * exactly the case the chip must correct, and the chip ranks the report above
@@ -62,7 +66,15 @@ export function recordReportedCli(installationIds: unknown[], value: unknown): v
     AgentInstallation.updateMany(
       {
         _id: { $in: ids },
-        'config.runtime.host': 'byo',
+        $or: [
+          { 'config.runtime.host': 'byo' },
+          {
+            'config.runtime.runtimeType': { $regex: /^webhook$/i },
+            // Each matches a missing field, an explicit null and '': all unset.
+            'config.runtime.host': { $in: [null, ''] },
+            'config.runtime.webhookUrl': { $in: [null, ''] },
+          },
+        ],
         // Matches a missing adapter and an explicit null, both meaning unset.
         'config.runtime.adapter': null,
         'config.runtime.reportedCli': { $ne: cli },

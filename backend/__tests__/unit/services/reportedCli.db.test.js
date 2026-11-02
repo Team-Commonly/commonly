@@ -64,6 +64,40 @@ describe('recordReportedCli on the real schema', () => {
     expect(await runtimeOf(row._id)).toEqual({ host: 'byo', reportedCli: 'goose' });
   });
 
+  // F39: older self-serve and approval-created polling seats were stored as
+  // webhook with no host stamp. classifyRuntime already calls that shape BYO;
+  // the label must follow it, or a claude seat's chip reads "webhook".
+  test('an unstamped polling seat (webhook, no host, no URL) gets the label', async () => {
+    const row = await install({ runtimeType: 'webhook' });
+    const blank = await install({ runtimeType: 'Webhook', host: '' });
+    recordReportedCli([row._id, blank._id], 'claude');
+    await until(async () => (await runtimeOf(row._id)).reportedCli === 'claude'
+      && (await runtimeOf(blank._id)).reportedCli === 'claude');
+    expect(await runtimeOf(row._id)).toEqual({ runtimeType: 'webhook', reportedCli: 'claude' });
+    expect((await runtimeOf(blank._id)).reportedCli).toBe('claude');
+  });
+
+  test('a push webhook, an untyped row and a declared adapter stay unlabelled when unstamped', async () => {
+    const push = await install({ runtimeType: 'webhook', webhookUrl: 'https://example.test/hook' });
+    const untyped = await install({});
+    const declared = await install({ runtimeType: 'webhook', adapter: 'pi' });
+    const original = AgentInstallation.updateMany.bind(AgentInstallation);
+    let issued;
+    const write = jest.spyOn(AgentInstallation, 'updateMany').mockImplementation((...args) => {
+      issued = original(...args).exec();
+      return issued;
+    });
+    try {
+      recordReportedCli([push._id, untyped._id, declared._id], 'claude');
+      expect((await issued).matchedCount).toBe(0);
+    } finally {
+      write.mockRestore();
+    }
+    expect((await runtimeOf(push._id)).reportedCli).toBeUndefined();
+    expect((await runtimeOf(untyped._id)).reportedCli).toBeUndefined();
+    expect((await runtimeOf(declared._id)).reportedCli).toBeUndefined();
+  });
+
   test('an explicit null adapter counts as unset', async () => {
     const row = await install({ runtimeType: 'webhook', host: 'byo', adapter: null });
     recordReportedCli([row._id], 'claude');

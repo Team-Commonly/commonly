@@ -30,6 +30,9 @@ describe('runtimeChipLabel (TASK-471)', () => {
     expect(runtimeChipLabel({ runtimeType: 'webhook', host: 'byo', adapter: 'codex', reportedCli: 'claude' })).toBe('codex');
     expect(runtimeChipLabel({ runtimeType: 'local-cli', wrappedCli: 'codex', reportedCli: 'claude' })).toBe('codex');
     expect(runtimeChipLabel({ runtimeType: 'hosted', reportedCli: 'claude' })).toBe('hosted');
+    // F39: an unstamped polling seat (webhook, no host) gets its report recorded
+    // too (services/reportedCli.ts), and the report names the chip.
+    expect(runtimeChipLabel({ runtimeType: 'webhook', reportedCli: 'claude' })).toBe('claude');
   });
 
   it('TASK-317: a BYO seat on an older CLI that reports nothing reads CLI, never webhook', () => {
