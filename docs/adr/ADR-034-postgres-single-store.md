@@ -80,6 +80,12 @@ boundary holds.
 | 3. Read cut | Reads come from Postgres; writes still go to both. | Mode to `dual`. Mongo is still complete. |
 | 4. Drop | Mongo writes stop, and the Mongo code is deleted one release later. | Before deletion: mode to `dual` plus a reverse backfill. After: restore from backup. |
 
+**Mongo stays the system of record until step 4.** In `dual` and `pg-read`, a write commits to Mongo
+first and is acknowledged only once it has; the Postgres write follows. A Postgres write that fails is
+recorded for repair, re-copied by the backfill, and counted as a mismatch, and in `pg-read` it sends
+that model back to `dual` until the repair has run. So rolling back from `pg-read` to `dual` never loses
+an acknowledged write: Mongo has every one of them.
+
 Step 4 is the only one-way door, and it is taken per model. **A model reaches step 3 when the
 `commonly verify` scenarios pass against both stores and the compare log shows zero unexplained
 mismatches**, not after a fixed number of days.
@@ -103,7 +109,11 @@ can move in an ordinary PR.
 ### D6. Order
 **Wave 0, what is left.** Make Postgres required: remove the no-`PG_HOST` message mode, so an instance
 without Postgres refuses to boot instead of running degraded, and Mongo `Message` keeps only the history
-the backfill copies. Move the three self-creating tables into numbered migrations. Build the dual-store helper (D3's mode,
+the backfill copies. Message reads come from Postgres alone once `PG_HOST` is set, so an instance moving
+off that mode would hide its history until it is copied. The step is done on an instance only when
+`scripts/backfill-local-messages-to-pg.ts` reports zero pending rows (rows whose pod is gone are
+reported as orphaned and stay in Mongo). The release that removes the mode says so in its upgrade
+note, and boot logs the pending count, so an instance that skipped the backfill shows. Move the three self-creating tables into numbered migrations. Build the dual-store helper (D3's mode,
 write-both, sampled compare), a shared expiry sweeper for TTL models, and a jest helper on real
 Postgres for anything with claims or SQL aggregates (`ToolCall.ts` already records that `pg-mem`
 cannot run a correlated `EXISTS`).
