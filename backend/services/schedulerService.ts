@@ -136,6 +136,25 @@ const DIGEST_WAKE_DEFAULT_MINUTES = 60;
 const HEARTBEAT_DISPATCH_LEASE_MS = 55 * 1000;
 const SCHEDULER_INSTANCE_ID = `${process.pid}:${crypto.randomUUID()}`;
 
+// The four heavier five-minute passes each get their own minute, so they
+// never start together. On 2026-11-02 SRE traced two readiness windows to the
+// :30 and :35 ticks, where all four started in the same second and stalled-
+// connect alone held the tick for about 7s. kernel-sweep keeps :04, :14, …
+// (below), so no pass here shares a minute with it.
+//
+// Spell the minutes out. node-cron 3.0.3 accepts `2-59/5`, then fires it at
+// :05, :10, …, the same minutes as every other five-minute pass.
+const everyFiveMinutesFrom = (offset: number): string => (
+  `${Array.from({ length: 12 }, (_, i) => offset + 5 * i).join(',')} * * * *`
+);
+
+export const FIVE_MINUTE_PASS_SCHEDULES = {
+  ensemble: everyFiveMinutesFrom(0),
+  onboardingSilence: everyFiveMinutesFrom(1),
+  stalledConnect: everyFiveMinutesFrom(2),
+  installableReconcile: everyFiveMinutesFrom(3),
+} as const;
+
 // Cron jobs are process-local. Keep one module-private owner so a second
 // SchedulerService instance cannot start a duplicate job set in this process.
 let activeScheduler: SchedulerService | null = null;
@@ -241,7 +260,7 @@ class SchedulerService {
     );
 
     const ensembleJob: CronJob = cron.schedule(
-      '*/5 * * * *',
+      FIVE_MINUTE_PASS_SCHEDULES.ensemble,
       async () => {
         console.log('Running ensemble scheduler...');
         try {
@@ -394,7 +413,7 @@ class SchedulerService {
     // last before it counts, and the period is how long we then wait to say
     // so. Matching them would double the worst-case time-to-alert.
     const onboardingSilenceJob: CronJob = cron.schedule(
-      '*/5 * * * *',
+      FIVE_MINUTE_PASS_SCHEDULES.onboardingSilence,
       async () => {
         try {
           // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -440,7 +459,7 @@ class SchedulerService {
     );
 
     const stalledConnectJob: CronJob = cron.schedule(
-      '*/5 * * * *',
+      FIVE_MINUTE_PASS_SCHEDULES.stalledConnect,
       async () => {
         try {
           // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -504,7 +523,7 @@ class SchedulerService {
     // duplicate side effect. Heartbeat dispatch differs: it enqueues events,
     // so that job retains its cross-replica lease.
     const installableReconcileJob: CronJob = cron.schedule(
-      '*/5 * * * *',
+      FIVE_MINUTE_PASS_SCHEDULES.installableReconcile,
       async () => {
         try {
           // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports

@@ -88,6 +88,7 @@ beforeEach(() => {
     select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) }),
   });
   Task.aggregate.mockResolvedValue([]);
+  AgentInstallation.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
   mockNotifyFoundWork.mockResolvedValue({ woken: 1 });
   mockNotifyLeaseWarning.mockResolvedValue({ warned: true });
   // Default: the holder cannot be resolved at all, which is the pre-#1080
@@ -313,6 +314,41 @@ describe('#1080 part 3 — provenance survives the clearing', () => {
     // field, or the wake renders "unclaimed" about work that has an owner.
     const pipeline = Task.aggregate.mock.calls[0][0];
     expect(JSON.stringify(pipeline)).toContain('lapsedFrom');
+  });
+});
+
+describe('wakeForFoundWork reads installs once per pass', () => {
+  it('reads every pod\'s installs in one query and hands each pod its own', async () => {
+    // Measured on production 2026-11-02: 436 pods with due work, read one pod
+    // at a time, took 16.9s of round trips; one $in over the same pods took
+    // 212ms and returned the same 171 installs.
+    const POD_B = new mongoose.Types.ObjectId().toString();
+    const POD_C = new mongoose.Types.ObjectId().toString();
+    const row = (taskId) => ({ tasks: [{ taskId, title: taskId }], count: 1 });
+    Task.aggregate.mockResolvedValue([
+      { _id: POD_A, ...row('TASK-A') },
+      { _id: POD_B, ...row('TASK-B') },
+      { _id: POD_C, ...row('TASK-C') },
+    ]);
+    AgentInstallation.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        { agentName: 'a1', podId: new mongoose.Types.ObjectId(POD_A) },
+        { agentName: 'b1', podId: POD_B },
+        { agentName: 'b2', podId: POD_B },
+      ]),
+    });
+
+    await KernelWorkSweepService.wakeForFoundWork(NOW);
+
+    expect(AgentInstallation.find).toHaveBeenCalledTimes(1);
+    expect(AgentInstallation.find.mock.calls[0][0]).toEqual({
+      podId: { $in: [POD_A, POD_B, POD_C] }, status: 'active',
+    });
+    // A pod with no install still gets its call, with none, so it is counted
+    // as skipped exactly as before.
+    const handed = mockNotifyFoundWork.mock.calls
+      .map(([podId, , , , installs]) => [String(podId), installs.map((i) => i.agentName)]);
+    expect(handed).toEqual([[POD_A, ['a1']], [POD_B, ['b1', 'b2']], [POD_C, []]]);
   });
 });
 

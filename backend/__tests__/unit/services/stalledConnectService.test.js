@@ -23,9 +23,11 @@ jest.mock('../../../models/AgentRegistry', () => ({
   },
 }));
 
+const mockUserFind = jest.fn();
 const mockUserFindOne = jest.fn();
 const mockUserFindById = jest.fn();
 jest.mock('../../../models/User', () => ({
+  find: (...a) => mockUserFind(...a),
   findOne: (...a) => mockUserFindOne(...a),
   findById: (...a) => mockUserFindById(...a),
 }));
@@ -72,14 +74,25 @@ const setup = ({ installs = [install()], userTokens = [], open = [] } = {}) => {
   mockInstallFind.mockReturnValue({
     limit: () => ({ lean: () => Promise.resolve(installs) }),
   });
-  mockUserFindOne.mockReturnValue({
+  // One bot row per (agentName, instanceId) pair the query asks for, echoing
+  // the pair back the way Mongo returns the matched row's own fields.
+  mockUserFind.mockImplementation((filter) => ({
     // A mock that ignores its projection hides a dropped field: assert it.
     select: (fields) => {
+      expect(fields).toContain('botMetadata.agentName');
+      expect(fields).toContain('botMetadata.instanceId');
       expect(fields).toContain('agentRuntimeTokens.lastListenedAt');
       expect(fields).toContain('agentRuntimeTokens.createdAt');
-      return { lean: () => Promise.resolve({ agentRuntimeTokens: userTokens }) };
+      const rows = (filter.$or || []).map((pair) => ({
+        botMetadata: {
+          agentName: pair['botMetadata.agentName'],
+          instanceId: pair['botMetadata.instanceId'],
+        },
+        agentRuntimeTokens: userTokens,
+      }));
+      return { lean: () => Promise.resolve(rows) };
     },
-  });
+  }));
   mockUserFindById.mockReturnValue({
     select: () => ({ lean: () => Promise.resolve({ username: 'alice' }) }),
   });
@@ -468,6 +481,54 @@ describe('stalledConnectService.scan', () => {
       tokenIssuedAt: OLD_TOKEN,
       tokenSource: 'user',
     }));
+  });
+
+  it('reads every candidate\'s bot tokens in one query, not one round trip per candidate', async () => {
+    // Measured on production 2026-11-02: 169 candidates read one by one took
+    // 7.0s, and the same rows in one query took 104ms. The pass held the
+    // */5 tick for the whole 7s.
+    const installs = ['a', 'b', 'c'].map((n) => install({
+      _id: `inst-${n}`, agentName: `Seat-${n}`, instanceId: n === 'c' ? undefined : n,
+    }));
+    setup({ installs });
+
+    const r = await scan({ now: NOW });
+
+    expect(mockUserFindOne).not.toHaveBeenCalled();
+    expect(mockUserFind).toHaveBeenCalledTimes(1);
+    const [filter] = mockUserFind.mock.calls[0];
+    expect(filter.isBot).toBe(true);
+    // Same match as the per-seat read it replaces: lowercased name, and
+    // 'default' for a missing instance.
+    expect(filter.$or).toEqual([
+      { 'botMetadata.agentName': 'seat-a', 'botMetadata.instanceId': 'a' },
+      { 'botMetadata.agentName': 'seat-b', 'botMetadata.instanceId': 'b' },
+      { 'botMetadata.agentName': 'seat-c', 'botMetadata.instanceId': 'default' },
+    ]);
+    expect(r.candidates).toBe(3);
+  });
+
+  it('gives each seat its own bot row\'s tokens, and none to a seat with no bot row', async () => {
+    const installs = [
+      install({ _id: 'inst-used', agentName: 'used', runtimeTokens: [] }),
+      install({ _id: 'inst-orphan', agentName: 'orphan', runtimeTokens: [] }),
+    ];
+    setup({ installs });
+    mockUserFind.mockImplementation(() => ({
+      select: () => ({
+        lean: () => Promise.resolve([{
+          botMetadata: { agentName: 'used', instanceId: 'default' },
+          agentRuntimeTokens: [{ createdAt: OLD_TOKEN }],
+        }]),
+      }),
+    }));
+
+    const r = await scan({ now: NOW });
+
+    // The seat with a User-row token is a candidate episode; the orphan has
+    // no token in either store, so nothing was ever promised to connect.
+    expect(r.nudged).toHaveLength(1);
+    expect(mockEpCreate.mock.calls[0][0]).toEqual(expect.objectContaining({ tokenSource: 'user' }));
   });
 
   it('only considers BYO seats — nothing else can derive never-connected', async () => {

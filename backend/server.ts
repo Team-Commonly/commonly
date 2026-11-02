@@ -825,5 +825,7 @@ if (require.main === module) {
   const app = getDefaultApp();
   const port = process.env.PORT || 5000;
   require('./services/hostedShutdownService').installHostedShutdown(app.locals.httpServer);
+  // Logs any 10s window in which the loop stalled for 1s or more.
+  require('./services/eventLoopLagMonitor').startEventLoopLagMonitor();
   app.locals.httpServer.listen(port, () => console.log(`Server running on port ${port}`));
 }

@@ -561,6 +561,9 @@ export async function notifyFoundWork(
   items: Array<OfferRevision & { title?: string; priority?: string; taskNum?: number; lapsedFrom?: string | null }>,
   totalCount: number,
   now: Date = new Date(),
+  // The pod's active installs, when the caller already read them for a whole
+  // pass (the kernel sweep does, in one query). Omitted, they are read here.
+  activeInstalls?: Array<Record<string, unknown>>,
 ): Promise<{ woken: number }> {
   if (!podId || !items?.length) return { woken: 0 };
   try {
@@ -574,7 +577,8 @@ export async function notifyFoundWork(
     /* eslint-enable global-require, @typescript-eslint/no-require-imports */
 
     const normalizedPodId = String(podId);
-    const active = await AgentInstallation.find({ podId: normalizedPodId, status: 'active' }).lean();
+    const active = activeInstalls
+      ?? await AgentInstallation.find({ podId: normalizedPodId, status: 'active' }).lean();
     // Board subscriptions include reviewers. Discovery is an implementer-only
     // opt-in, independent of whether a seat receives addressed row changes.
     const installs = (active || []).filter((install: Record<string, unknown>) => {
