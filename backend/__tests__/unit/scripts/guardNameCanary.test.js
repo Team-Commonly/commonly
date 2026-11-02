@@ -77,6 +77,20 @@ describe('deriveCanaryNames', () => {
     expect(skipped).toEqual([{ stem: 'jailbreak', keyword: 'act as jailbreak', reason: 'name_contains_keyword' }]);
   });
 
+  it('tries at most eight names, so the keyword list cannot set how many turns a release pays for', () => {
+    const many = Array.from({ length: 12 }, (_, i) => `you are agent${String.fromCharCode(97 + i)}`);
+    const { names, skipped } = deriveCanaryNames(many);
+    expect(names).toHaveLength(8);
+    expect(names[0].displayName).toBe('Dan Canary');
+    expect(skipped.filter((x) => x.reason === 'over_cap')).toHaveLength(5);
+  });
+
+  it('skips a stem whose name would run past 60 characters', () => {
+    const { names, skipped } = deriveCanaryNames([`you are ${'x'.repeat(60)}`]);
+    expect(names.map((n) => n.displayName)).toEqual(['Dan Canary']);
+    expect(skipped).toEqual([expect.objectContaining({ reason: 'name_too_long' })]);
+  });
+
   it('every derived name completes its keyword after "You are" and "act as"', () => {
     const { names } = deriveCanaryNames(KEYWORDS.map((k) => k.toLowerCase()));
     for (const n of names) {
@@ -130,7 +144,9 @@ describe('classifyCheck', () => {
 });
 
 describe('exitCodeFor', () => {
-  it('1 when any check was blocked, 2 when any was inconclusive or the list unread, else 0', () => {
+  it('1 when any check was blocked, 2 when any was inconclusive, the list unread or names were capped, else 0', () => {
+    expect(exitCodeFor([{ verdict: 'pass' }], true, true)).toBe(2);
+    expect(exitCodeFor([{ verdict: 'blocked' }], true, true)).toBe(1);
     expect(exitCodeFor([{ verdict: 'pass' }, { verdict: 'pass' }], true)).toBe(0);
     expect(exitCodeFor([{ verdict: 'pass' }, { verdict: 'inconclusive' }], true)).toBe(2);
     expect(exitCodeFor([{ verdict: 'inconclusive' }, { verdict: 'blocked' }], true)).toBe(1);

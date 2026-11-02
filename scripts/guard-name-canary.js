@@ -61,6 +61,10 @@ const PERSONA_LEADS = [
   'your name is', 'you will be', 'you will now be',
 ];
 const MAX_STEM_WORDS = 3;
+const MAX_NAME_CHARS = 60;
+// The keyword list must not decide how many turns a release pays for. A name
+// past the cap is reported, and the run reads as inconclusive.
+const MAX_NAMES = 8;
 
 // ── pure parts (tested in backend/__tests__/unit/scripts/guardNameCanary.test.js) ──
 
@@ -124,8 +128,16 @@ function deriveCanaryNames(keywords) {
       continue;
     }
     const displayName = `${titleCase(stem)} Canary`;
+    if (displayName.length > MAX_NAME_CHARS) {
+      skipped.push({ stem: stem.slice(0, 40), keyword: keyword.slice(0, 80), reason: 'name_too_long' });
+      continue;
+    }
     if (findKeyword(displayName, keywords)) {
       skipped.push({ stem, keyword, reason: 'name_contains_keyword' });
+      continue;
+    }
+    if (!byStem.has(stem) && byStem.size >= MAX_NAMES) {
+      skipped.push({ stem, keyword, reason: 'over_cap' });
       continue;
     }
     add(stem, keyword);
@@ -162,10 +174,13 @@ function classifyCheck({ installError, runs, replied }) {
   return { verdict: 'pass' };
 }
 
-/** 1 if any check was blocked; 2 if no checks ran, any was inconclusive, or the list was unread; else 0. */
-function exitCodeFor(results, keywordsRead) {
+/**
+ * 1 if any check was blocked; 2 if no checks ran, any was inconclusive, the
+ * list was unread, or names past the cap went untried; else 0.
+ */
+function exitCodeFor(results, keywordsRead, capped = false) {
   if (results.some((r) => r.verdict === 'blocked')) return 1;
-  if (!results.length || results.some((r) => r.verdict !== 'pass') || !keywordsRead) return 2;
+  if (!results.length || results.some((r) => r.verdict !== 'pass') || !keywordsRead || capped) return 2;
   return 0;
 }
 
@@ -279,10 +294,30 @@ async function main() {
     pod = await api('POST', '/api/pods', {
       name: CANARY_POD_NAME,
       type: 'chat',
+      // Invite-only: a stranger in this pod could @-mention a canary agent
+      // with a keyword and fail the release (security review, this PR).
+      joinPolicy: 'invite-only',
       description: 'Release check: agents named after guard keywords each get one real turn.',
     });
   }
   const podId = String(pod._id || pod.id);
+  // Only the canary account may be a human in this pod. A pod someone else can
+  // reach, or did reach, yields no verdict: their message could be what the
+  // guard stops.
+  const podRow = await db.collection('pods').findOne(
+    { _id: new mongoose.Types.ObjectId(podId) },
+    { projection: { joinPolicy: 1, members: 1 } },
+  );
+  const otherHumans = podRow ? await users.countDocuments({
+    _id: { $in: (podRow.members || []).filter((m) => String(m) !== String(account._id)) },
+    isBot: { $ne: true },
+  }) : -1;
+  if (!podRow || podRow.joinPolicy !== 'invite-only' || otherHumans !== 0) {
+    log({ step: 'pod', ok: false, podId, joinPolicy: podRow ? podRow.joinPolicy || null : null, otherHumans });
+    log({ result: 'inconclusive', exit: 2 });
+    await mongoose.disconnect();
+    return 2;
+  }
   log({ step: 'pod', ok: true, podId });
 
   const uninstall = async (agentName, instanceId) => {
@@ -349,7 +384,9 @@ async function main() {
         while (Date.now() - t0 < CHECK_BUDGET_MS) {
           await sleep(3000);
           runs = await db.collection('agentruns').find(
-            { agentName, instanceId: name.instanceId, startedAt: { $gte: since } },
+            {
+              podId: new mongoose.Types.ObjectId(podId), agentName, instanceId: name.instanceId, startedAt: { $gte: since },
+            },
             { projection: { _id: 0, status: 1, errorKind: 1, trigger: 1 } },
           ).toArray();
           if (runs.some((r) => r.errorKind === 'guardrail_blocked')) break;
@@ -391,7 +428,7 @@ async function main() {
     results.push(...pair);
   }
 
-  const code = exitCodeFor(results, kw.ok);
+  const code = exitCodeFor(results, kw.ok, skipped.some((x) => x.reason === 'over_cap'));
   log({ result: code === 0 ? 'pass' : code === 1 ? 'blocked' : 'inconclusive', exit: code, checks: results.length, ms: Date.now() - started });
   await mongoose.disconnect();
   return code;
@@ -399,7 +436,8 @@ async function main() {
 
 if (process.env.CANARY_RUN === '1') {
   main().then((code) => process.exit(code)).catch((err) => {
-    log({ result: 'inconclusive', exit: 2, error: String((err && err.message) || err).slice(0, 300) });
+    // Name and code only: a driver error can quote its connection string.
+    log({ result: 'inconclusive', exit: 2, error: String((err && err.name) || 'Error'), code: (err && err.code) || null });
     process.exit(2);
   });
 }

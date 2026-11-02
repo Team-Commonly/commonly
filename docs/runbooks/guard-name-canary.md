@@ -45,9 +45,14 @@ runs real turns on production, and it picks names from the guard's own list.
 3. **Sets up.** It ensures the account `eng-guard-canary` (on
    `ops.commonly.invalid`, `cloudAgents` entitled, verified, with no usable
    password) and its pod, "Guard-name canary". It signs a 20-minute session for
-   that account from `JWT_SECRET` inside the pod. No token is stored. It
-   uninstalls any canary agent a crashed run left behind, because the hosted cap
-   is one per account.
+   that account from `JWT_SECRET` inside the pod. No token is stored. The pod is
+   invite-only, and the canary refuses to judge (exit 2) if the pod is open or
+   any other person is a member. Anyone who could post there could @-mention a
+   canary agent with a keyword and fail the release. It uninstalls any canary
+   agent a crashed run left behind, because the hosted cap is one per account.
+   At most eight names are tried, so the keyword list can't decide how many
+   turns a release pays for. Names past the cap are logged, and the run reads
+   as inconclusive.
 4. **Waits for LiteLLM.** It polls `/health/readiness` for up to 2 minutes, so a
    litellm restart window doesn't read as a failure.
 5. **Checks each name twice.** It installs a hosted agent (`guard-canary`) and a
@@ -55,7 +60,8 @@ runs real turns on production, and it picks names from the guard's own list.
    and `/api/hosted/provision`, the routes the product uses. It asks each a
    plain question by its canonical handle (`@guard-canary-dan-canary`). A check
    passes on a mention turn that succeeded, a reply from the agent's user after
-   the question, and no `guardrail_blocked` run since install. That last
+   the question, and no `guardrail_blocked` run in the canary's pod since
+   install. That last
    condition covers the first-contact greeting too. An inconclusive check runs
    once more after LiteLLM reports ready again. Every agent is uninstalled
    afterwards, pass or fail.
