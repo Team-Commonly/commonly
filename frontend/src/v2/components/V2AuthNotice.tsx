@@ -11,7 +11,7 @@ const V2AuthNotice: React.FC<{ kind?: 'alert' | 'status'; children: React.ReactN
 }) => {
   const [filled, setFilled] = useState(kind === 'alert');
   useEffect(() => {
-    if (kind !== 'status') return undefined;
+    if (kind !== 'status') { setFilled(true); return undefined; }
     const frame = window.requestAnimationFrame(() => setFilled(true));
     return () => window.cancelAnimationFrame(frame);
   }, [kind]);

@@ -114,6 +114,7 @@ describe('sign up', () => {
   test.each([
     ['a network failure', {}],
     ['a server failure', { response: { status: 503, data: { error: 'Try again shortly.' } } }],
+    ['a rate limit', { response: { status: 429, data: { error: 'Too many attempts.' } } }],
   ])('%s is an alert that marks no field', async (_, rejection) => {
     routeGets();
     axios.post.mockRejectedValue(rejection);
@@ -233,6 +234,12 @@ describe('V2AuthNotice', () => {
     render(<V2AuthNotice kind="status">Sent.</V2AuthNotice>);
     expect(screen.getByRole('status')).toHaveTextContent(/^$/);
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Sent.'));
+  });
+
+  test('a status row that turns into an alert before its frame still shows its text', async () => {
+    const { rerender } = render(<V2AuthNotice kind="status">Sent.</V2AuthNotice>);
+    rerender(<V2AuthNotice kind="alert">Failed.</V2AuthNotice>);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Failed.'));
   });
 
   test('an alert carries its text from the start', () => {

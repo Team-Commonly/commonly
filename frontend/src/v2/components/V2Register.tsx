@@ -148,9 +148,10 @@ const V2Register: React.FC = () => {
         setErrorField('invite');
       } else {
         setError(e1.response?.data?.error || e1.response?.data?.msg || t('auth.register.errors.failed'));
-        // Only a 4xx is about what was typed; a network or server failure marks no field.
+        // Only a 4xx is about what was typed; a network or server failure, or a
+        // rate limit (429), marks no field.
         const status = e1.response?.status || 0;
-        setErrorField(status >= 400 && status < 500 ? 'credentials' : null);
+        setErrorField(status >= 400 && status < 500 && status !== 429 ? 'credentials' : null);
       }
     } finally {
       setSubmitting(false);
