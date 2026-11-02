@@ -173,6 +173,8 @@ backend:
     # lands in the staging api-keys secret. Guard test: litellmStagingEnabled.test.js.
     nativeRuntimeGuardrails: "injection-guard"
     agentComputerEnabled: "true"
+    # TASK-284: on here only, for the supervised seat-push walk (PR #2546/#3244).
+    seatGithubPushEnabled: "true"
     agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:3000"
     agentComputerSteelCdpUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:9223"
     agentComputerAllowedHosts: "linkedin.com,www.linkedin.com"

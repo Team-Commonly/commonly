@@ -84,7 +84,9 @@ jest.mock('../../../services/roomGrantService', () => {
 });
 
 // eslint-disable-next-line import/no-unresolved, import/extensions
-const { callTool, executeApprovedToolCall, executionErrorOutcome } = require('../../../services/toolBrokerService');
+const {
+  callTool, executeApprovedToolCall, executionErrorOutcome, getToolDefinitions,
+} = require('../../../services/toolBrokerService');
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const { assertGrantUsable, getGrantLineage, RoomGrantError } = require('../../../services/roomGrantService');
 
@@ -647,11 +649,38 @@ describe('host GitHub command tools', () => {
   });
 });
 
+describe('the seat push tool stays off until the server enables it', () => {
+  const args = {
+    ref: 'refs/heads/seat/agent-a/work', baseOid: 'a'.repeat(40),
+    newOid: 'b'.repeat(40), bundle: 'YWJj',
+  };
+  afterEach(() => { delete process.env.SEAT_GITHUB_PUSH_ENABLED; });
+
+  it('is neither offered nor grantable while the flag is unset', () => {
+    delete process.env.SEAT_GITHUB_PUSH_ENABLED;
+    expect(getToolDefinitions().map((d) => d.name)).not.toContain('github.push_branch');
+    process.env.SEAT_GITHUB_PUSH_ENABLED = 'true';
+    expect(getToolDefinitions().map((d) => d.name)).toContain('github.push_branch');
+  });
+
+  it.each([undefined, '1', 'TRUE'])('refuses a pinned push on an autonomous write grant when the flag is %s', async (value) => {
+    if (value === undefined) delete process.env.SEAT_GITHUB_PUSH_ENABLED;
+    else process.env.SEAT_GITHUB_PUSH_ENABLED = value;
+    mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode: 'write' }));
+    await expect(callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', tool: 'github.push_branch', args,
+    })).rejects.toMatchObject({ code: 'tool_not_found' });
+    expect(mockPushSeatBranch).not.toHaveBeenCalled();
+  });
+});
+
 describe('host GitHub push authority', () => {
   const args = {
     ref: 'refs/heads/seat/agent-a/work', baseOid: 'a'.repeat(40),
     newOid: 'b'.repeat(40), bundle: 'YWJj',
   };
+  beforeEach(() => { process.env.SEAT_GITHUB_PUSH_ENABLED = 'true'; });
+  afterEach(() => { delete process.env.SEAT_GITHUB_PUSH_ENABLED; });
 
   it.each(['read', 'write-with-confirm'])('refuses %s mode before an App push', async (writeMode) => {
     mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.push_branch'], writeMode }));

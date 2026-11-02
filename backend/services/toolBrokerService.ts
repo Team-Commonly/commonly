@@ -706,11 +706,22 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
 };
 
 /**
+ * The seat push tool lands dark. Until the server sets
+ * SEAT_GITHUB_PUSH_ENABLED=true it is not offered, cannot be granted and cannot
+ * be called: the supervised staging walk (#2546) runs before any instance
+ * turns it on. Exactly 'true'; any other value leaves it off.
+ */
+const SEAT_PUSH_TOOL = pushSeatBranchDefinition.name;
+export const seatGithubPushEnabled = (): boolean => process.env.SEAT_GITHUB_PUSH_ENABLED === 'true';
+const toolEnabled = (name: string): boolean => name !== SEAT_PUSH_TOOL || seatGithubPushEnabled();
+
+/**
  * The tools that ship with the broker, and only those. Named for what it is
  * rather than what it returns: `toolInstallables` validates a GitHub grant's
  * tools against this list, and a hosted name must not make that gate pass.
  */
-export const getToolDefinitions = (): ToolDefinition[] => Object.values(TOOL_DEFINITIONS);
+export const getToolDefinitions = (): ToolDefinition[] => Object.values(TOOL_DEFINITIONS)
+  .filter((definition) => toolEnabled(definition.name));
 
 /**
  * Every definition a seat can be offered or call: the seeded GitHub record plus
@@ -1208,7 +1219,7 @@ const prepareApprovalFor = (
 
 /** The definition a tool name resolves to: the seeded GitHub record, or a hosted catalogue entry. */
 const lookupToolDefinition = (name: string): ToolDefinition | undefined => (
-  TOOL_DEFINITIONS[name] || findHostedToolDefinition(name)
+  (toolEnabled(name) ? TOOL_DEFINITIONS[name] : undefined) || findHostedToolDefinition(name)
 );
 
 const safeReason = (error: unknown): string => {
