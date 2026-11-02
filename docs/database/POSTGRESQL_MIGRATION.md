@@ -1,5 +1,8 @@
 # PostgreSQL Message Storage Migration
 
+> **Where this is heading:** [ADR-034](../adr/ADR-034-postgres-single-store.md) makes Postgres the single
+> data store and records the measured split as of 2026-11-02. The table below describes chat only.
+
 For schema upgrades and the repository extraction template, see
 [Versioned PostgreSQL changes](schema-migrations.md).
 
