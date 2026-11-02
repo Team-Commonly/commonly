@@ -195,6 +195,10 @@ interface PostMessageOptions {
   // nudges speak beside an agent seat as Commonly. Ordinary agent posts stay
   // unmarked even if their metadata happens to contain a similar label.
   authorKind?: 'kernel' | null;
+  // Server-set, never model-set and never read from metadata: the fixed line a
+  // hosted turn posts when it failed with nothing posted. Each one answers its
+  // own ask, so the shared-pod duplicate guard does not apply to it.
+  failureNotice?: boolean;
 }
 
 interface PostTargetOptions {
@@ -1021,6 +1025,7 @@ class AgentMessageService {
       noOutboundRelay = false,
       answeringMessageId,
       authorKind = null,
+      failureNotice = false,
     } = options;
 
     // Typing indicator cleanup — once postMessage is entered, the runtime has
@@ -1494,8 +1499,14 @@ class AgentMessageService {
       // test file now pins the measured behaviour instead. Whether agent-admin
       // SHOULD be exempt is an open board decision, not settled here.
       // One predicate, read once, so the two guards cannot drift apart.
+      //
+      // A failed-turn notice is exempt in every pod for the same reason: it is
+      // fixed text, so every repeat matches, and each repeat answers a new ask.
+      // On 2026-11-01 five asks failed in five minutes in a shared pod and four
+      // got silence. Only the native runtime sets `failureNotice`; the HTTP
+      // routes never forward it.
       const isOneToOne = AgentMessageService.isOneToOnePod(dedupePod?.type);
-      const duplicate = isOneToOne
+      const duplicate = (isOneToOne || failureNotice === true)
         ? null
         : await AgentMessageService.findRecentDuplicate({
           podId,

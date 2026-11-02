@@ -169,7 +169,7 @@ describe('AgentMessageService summary persistence', () => {
       createdAt: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
       userId: { _id: userId },
     }];
-    const repost = (podType) => {
+    const repost = (podType, extra = {}) => {
       Pod.findById.mockReturnValue(podLookup(podType));
       jest.spyOn(AgentMessageService, 'getRecentMessages').mockResolvedValue(identicalRecentPostBy('agent-user-1'));
       return AgentMessageService.postMessage({
@@ -178,6 +178,7 @@ describe('AgentMessageService summary persistence', () => {
         podId: 'pod-dm-1',
         content: 'I can read and search this repo, answer questions, and help you set things up.',
         metadata: { sourceEventType: 'chat.mention' },
+        ...extra,
       });
     };
     afterEach(() => { AgentMessageService.getRecentMessages.mockRestore(); });
@@ -204,6 +205,24 @@ describe('AgentMessageService summary persistence', () => {
     it('still skips the same repeat in a shared pod within the window', async () => {
       const result = await repost('chat');
       expect(result.skipped).toBe(true);
+      expect(result.reason).toBe('duplicate_recent');
+      expect(Message).not.toHaveBeenCalled();
+    });
+
+    // 2026-11-01: five asks in a shared pod failed in five minutes, and only
+    // the first drew the fixed "couldn't finish" line. The other four repeats
+    // were skipped as duplicates, so four asks got silence. Each line answers
+    // its own ask.
+    it('posts a failed-turn notice in a shared pod even when the same line went out minutes ago', async () => {
+      const result = await repost('chat', { failureNotice: true });
+      expect(result.skipped).toBeUndefined();
+      expect(Message).toHaveBeenCalled();
+    });
+
+    it('does not let a caller claim the exemption through metadata it wrote', async () => {
+      const result = await repost('chat', {
+        metadata: { sourceEventType: 'chat.mention', runFailed: true, failureNotice: true },
+      });
       expect(result.reason).toBe('duplicate_recent');
       expect(Message).not.toHaveBeenCalled();
     });

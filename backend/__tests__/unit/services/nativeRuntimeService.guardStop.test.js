@@ -260,6 +260,9 @@ describe('a hosted turn the guard stops, or that fails', () => {
       expect(chatBodies).toHaveLength(4);
       expect(mockGetPage.mock.calls).toEqual([[STOPPED_URL]]);
       expect(posted()).toEqual([HOSTED_RUN_FAILED_LINE]);
+      // Marked as a failed-turn notice, so a shared pod's duplicate guard
+      // cannot swallow the line for a second failed ask.
+      expect(AgentMessageService.postMessage.mock.calls[0][0].failureNotice).toBe(true);
       expect(savedRun.metered).toBe(false);
     });
 
@@ -548,6 +551,9 @@ describe('a hosted turn the guard stops, or that fails', () => {
     expect(result).toEqual(expect.objectContaining({ status: 'failed', errorKind: 'tool_error' }));
     expect(savedRun.metered).toBe(false);
     expect(posted()).toEqual(['Draft answer', HOSTED_RUN_FAILED_LINE]);
+    // Only the fixed line carries the exemption; the agent's own reply does not.
+    expect(AgentMessageService.postMessage.mock.calls.map(([args]) => args.failureNotice === true))
+      .toEqual([false, true]);
   });
 
   test('neither the fixed line nor the set-aside notice repeats the guard or the page', async () => {
