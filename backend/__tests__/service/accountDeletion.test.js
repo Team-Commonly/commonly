@@ -198,9 +198,9 @@ describe('Self-serve account deletion', () => {
     await deletion(app, token, { confirmation: 'DELETE' }).expect(401);
     await deletion(app, token, { confirmation: 'DELETE', password: 'wrong' }).expect(401);
     await deletion(app, apiToken).expect(403);
-    const after = await User.findById(user._id).select('+apiTokenHash');
+    const after = await User.findById(user._id);
     expect(after).not.toBeNull();
-    expect(after.apiTokenHash).toBe(createHash('sha256').update(apiToken).digest('hex'));
+    await request(app).get('/api/users/profile').set('Authorization', `Bearer ${apiToken}`).expect(200);
     expect(after.accountDeletionRequestedAt).toBeUndefined();
     await request(app).get('/session-probe').set('Authorization', `Bearer ${issueSessionToken(user)}`).expect(204);
   });
@@ -310,8 +310,8 @@ describe('Self-serve account deletion', () => {
     await addFile(user, 'billing.png');
     mockStripe.subscriptions.cancel.mockRejectedValueOnce(new Error('Provider unavailable'));
     await deletion(app, issueSessionToken(user)).expect(503);
-    const after = await User.findById(user._id).select('+apiTokenHash');
-    expect(after.apiTokenHash).toBe(createHash('sha256').update(apiToken).digest('hex'));
+    const after = await User.findById(user._id);
+    await request(app).get('/api/users/profile').set('Authorization', `Bearer ${apiToken}`).expect(200);
     expect(after.accountDeletionRequestedAt).toBeUndefined();
     await request(app).get('/session-probe').set('Authorization', `Bearer ${issueSessionToken(user)}`).expect(204);
     expect(await MediaObject.findOne({ key: 'billing.png' })).not.toBeNull();
