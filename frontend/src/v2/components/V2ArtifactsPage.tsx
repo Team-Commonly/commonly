@@ -3,7 +3,7 @@
 // GET /api/artifacts. The inspector's Files pane is the same query with
 // podId fixed; this page is the query with podId as a filter.
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
@@ -24,7 +24,7 @@ export interface ArtifactItem {
   createdAt: string | null;
 }
 interface ArtifactsResponse { items: ArtifactItem[]; nextCursor: string | null; total: number; limit: number }
-interface PodRef { _id: string; name: string }
+interface PodRef { _id: string; name: string; createdAt?: string }
 
 const KINDS: Array<{ key: '' | ArtifactKind; label: string }> = [
   { key: '', label: 'all' }, { key: 'image', label: 'images' }, { key: 'doc', label: 'docs' }, { key: 'page', label: 'pages' },
@@ -63,6 +63,9 @@ export const shortPodName = (name: string | null | undefined): string => (
   (name || '').trim().split(/\s*[·—–:|]\s*/)[0].trim() || (name || '').trim()
 );
 
+const artifactsQueryKey = (podId: string, kind: string, q: string): string => JSON.stringify([podId, kind, q]);
+const UNFILTERED = artifactsQueryKey('', '', '');
+
 const sharedByLabel = (item: ArtifactItem): string => item.sharedBy.displayName || item.sharedBy.username || '—';
 
 const V2ArtifactsPage: React.FC = () => {
@@ -78,6 +81,9 @@ const V2ArtifactsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The query the shown result answers. Until a new one lands, items and total still belong to
+  // the previous filter, so day zero must not read them as the unfiltered answer.
+  const [loadedQuery, setLoadedQuery] = useState<string | null>(null);
   const [podMenuOpen, setPodMenuOpen] = useState(false);
   // ux-lead 66462: an image row opens the chat lightbox; pages and docs open in a new tab.
   const [lightbox, setLightbox] = useState<ArtifactItem | null>(null);
@@ -113,6 +119,7 @@ const V2ArtifactsPage: React.FC = () => {
     let active = true;
     setLoading(true);
     setError(null);
+    const queryKey = artifactsQueryKey(podId, kind, urlQ);
     const params: Record<string, string | number> = { limit: 50 };
     if (podId) params.podId = podId;
     if (kind) params.kind = kind;
@@ -121,10 +128,11 @@ const V2ArtifactsPage: React.FC = () => {
       .then((res) => {
         if (!active) return;
         setItems(res.data.items || []);
+        setLoadedQuery(queryKey);
         setTotal(typeof res.data.total === 'number' ? res.data.total : (res.data.items || []).length);
         setNextCursor(res.data.nextCursor || null);
       })
-      .catch(() => { if (active) { setError(t('artifacts.loadFailed')); setItems([]); setTotal(0); setNextCursor(null); } })
+      .catch(() => { if (active) { setError(t('artifacts.loadFailed')); setItems([]); setTotal(0); setNextCursor(null); setLoadedQuery(queryKey); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [headers, podId, kind, urlQ, t]);
@@ -150,6 +158,20 @@ const V2ArtifactsPage: React.FC = () => {
     }
   };
 
+  // Day zero (d215 s-artifacts): nothing shared and nothing filtered, so there is nothing to
+  // filter — no controls, no count, one card. A filtered empty result keeps the controls, and so
+  // does the render between clearing a filter and its answer landing (the result is still the
+  // filtered one), or the controls unmount under the person's focus.
+  // A search typed before its debounce reaches the URL counts too, or the input unmounts mid-word.
+  const dayZero = !loading && !error && total === 0 && items.length === 0 && !q && !urlQ && !kind && !podId
+    && loadedQuery === UNFILTERED;
+  // The card's key opens the account's oldest pod: signup creates My Workspace first. /api/pods
+  // lists by last update, so pick by createdAt rather than position.
+  const workspacePod = useMemo(() => {
+    const createdMs = (pod: PodRef) => (pod.createdAt ? Date.parse(pod.createdAt) : Number.POSITIVE_INFINITY);
+    return pods.reduce<PodRef | null>((oldest, pod) => (!oldest || createdMs(pod) < createdMs(oldest) ? pod : oldest), null);
+  }, [pods]);
+
   const openItem = async (item: ArtifactItem) => {
     if (item.kind === 'image') { setLightbox(item); return; }
     const url = await getSignedAttachmentUrl(`/api/uploads/${item.fileName}`);
@@ -165,46 +187,55 @@ const V2ArtifactsPage: React.FC = () => {
         className="v2-artifacts__head"
         titleClassName="v2-artifacts__title"
         title={t('artifacts.title')}
-        meta={!loading ? total : undefined}
+        meta={!loading && !dayZero ? total : undefined}
         hint={t('artifacts.meta')}
         hintLabel={t('artifacts.about')}
       />
-      <div className="v2-artifacts__controls">
-        <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.kindLabel')}>
-          {KINDS.map((option) => (
-            <button key={option.key || 'all'} type="button" className={`v2-artifacts__seg-button${kind === option.key ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={kind === option.key} onClick={() => setParam('kind', option.key)}>
-              {t(`artifacts.kinds.${option.label}`)}
-            </button>
-          ))}
+      {!dayZero && (
+        <div className="v2-artifacts__controls">
+          <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.kindLabel')}>
+            {KINDS.map((option) => (
+              <button key={option.key || 'all'} type="button" className={`v2-artifacts__seg-button${kind === option.key ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={kind === option.key} onClick={() => setParam('kind', option.key)}>
+                {t(`artifacts.kinds.${option.label}`)}
+              </button>
+            ))}
+          </div>
+          <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.podLabel')} onKeyDown={(event) => { if (event.key === 'Escape') setPodMenuOpen(false); }}>
+            <button type="button" className={`v2-artifacts__seg-button${!podId ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={!podId} onClick={() => { setParam('podId', ''); setPodMenuOpen(false); }}>{t('artifacts.allPods')}</button>
+            {scopedPods.slice(0, 2).map((pod) => (
+              <button key={pod._id} type="button" className={`v2-artifacts__seg-button${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={podId === pod._id} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
+            ))}
+            {scopedPods.length > 2 && (
+              <button type="button" className={`v2-artifacts__seg-button${scopedPods.slice(2).some((pod) => pod._id === podId) ? ' v2-artifacts__seg-button--active' : ''}`} aria-expanded={podMenuOpen} onClick={() => setPodMenuOpen((open) => !open)}>
+                {selectedPod && scopedPods.slice(2).some((pod) => pod._id === podId) ? shortPodName(selectedPod.name) : t('artifacts.morePods')}
+              </button>
+            )}
+            {podMenuOpen && (
+              <div className="v2-artifacts__seg-menu" role="listbox" aria-label={t('artifacts.podLabel')}>
+                {scopedPods.slice(2).map((pod) => (
+                  <button key={pod._id} type="button" role="option" aria-selected={podId === pod._id} className={`v2-artifacts__seg-button v2-artifacts__seg-button--menu${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
+                ))}
+              </div>
+            )}
+          </div>
+          <label className="v2-artifacts__search">
+            <input type="search" value={q} placeholder={t('artifacts.searchPlaceholder')} aria-label={t('artifacts.searchPlaceholder')} onChange={(event) => setQ(event.target.value)} />
+            <span className="v2-artifacts__search-key" aria-hidden="true">⌘K</span>
+          </label>
         </div>
-        <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.podLabel')} onKeyDown={(event) => { if (event.key === 'Escape') setPodMenuOpen(false); }}>
-          <button type="button" className={`v2-artifacts__seg-button${!podId ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={!podId} onClick={() => { setParam('podId', ''); setPodMenuOpen(false); }}>{t('artifacts.allPods')}</button>
-          {scopedPods.slice(0, 2).map((pod) => (
-            <button key={pod._id} type="button" className={`v2-artifacts__seg-button${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={podId === pod._id} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
-          ))}
-          {scopedPods.length > 2 && (
-            <button type="button" className={`v2-artifacts__seg-button${scopedPods.slice(2).some((pod) => pod._id === podId) ? ' v2-artifacts__seg-button--active' : ''}`} aria-expanded={podMenuOpen} onClick={() => setPodMenuOpen((open) => !open)}>
-              {selectedPod && scopedPods.slice(2).some((pod) => pod._id === podId) ? shortPodName(selectedPod.name) : t('artifacts.morePods')}
-            </button>
-          )}
-          {podMenuOpen && (
-            <div className="v2-artifacts__seg-menu" role="listbox" aria-label={t('artifacts.podLabel')}>
-              {scopedPods.slice(2).map((pod) => (
-                <button key={pod._id} type="button" role="option" aria-selected={podId === pod._id} className={`v2-artifacts__seg-button v2-artifacts__seg-button--menu${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
-              ))}
-            </div>
-          )}
-        </div>
-        <label className="v2-artifacts__search">
-          <input type="search" value={q} placeholder={t('artifacts.searchPlaceholder')} aria-label={t('artifacts.searchPlaceholder')} onChange={(event) => setQ(event.target.value)} />
-          <span className="v2-artifacts__search-key" aria-hidden="true">⌘K</span>
-        </label>
-      </div>
+      )}
 
       {error && <div className="v2-artifacts__error" role="alert">{error}</div>}
       {loading && !error && <div className="v2-artifacts__loading"><span className="v2-spinner" /></div>}
-      {!loading && !error && items.length === 0 && (
-        <div className="v2-artifacts__empty">{urlQ || kind || podId ? t('artifacts.emptyFiltered') : t('artifacts.empty')}</div>
+      {dayZero && (
+        <section className="v2-artifacts__zero" aria-labelledby="v2-artifacts-zero-title">
+          <h2 id="v2-artifacts-zero-title">{t('artifacts.dayZero.title')}</h2>
+          <p>{t('artifacts.dayZero.body')}</p>
+          {workspacePod && <Link className="v2-artifacts__open" to={`/v2/pods/${workspacePod._id}`}>{t('artifacts.dayZero.open', { pod: workspacePod.name })}</Link>}
+        </section>
+      )}
+      {!loading && !error && items.length === 0 && (urlQ || kind || podId) && (
+        <div className="v2-artifacts__empty">{t('artifacts.emptyFiltered')}</div>
       )}
       {!loading && items.length > 0 && (
         <div className="v2-artifacts__table-wrap">

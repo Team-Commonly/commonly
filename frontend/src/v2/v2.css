@@ -5621,7 +5621,8 @@ body.modern-ui.v2-canvas {
 }
 /* Get started, checking (d215 s-activity): while the roster and connector count are in flight the
    card holds its place — real head, two step rows of bars on the same line boxes as the loaded
-   rows (20px lines, 32px key; 44px full width at ≤760) — so nothing below it moves. */
+   rows (20px lines, 32px key; 44px full width at ≤760) — so for the two-step day-zero card nothing
+   below it moves; one or three steps shift it by a row. */
 .v2-activity__start--pending .v2-activity__start-num--pending { background: var(--v2-surface-hover); }
 .v2-activity__start-bar { display: block; position: relative; height: 20px; }
 .v2-activity__start-bar::after { content: ""; position: absolute; left: 0; top: 5px; width: 92%; height: 10px; border-radius: 5px; background: var(--v2-surface-hover); }
@@ -5681,6 +5682,14 @@ body.modern-ui.v2-canvas {
 .v2-artifacts__empty { padding: 18px 20px; border: 1px dashed var(--v2-border); border-radius: var(--v2-radius); color: var(--v2-text-secondary); font: 400 13px/18px var(--v2-font); }
 .v2-artifacts__error { padding: 12px 14px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); color: var(--v2-text-primary); font: 400 13px/18px var(--v2-font); }
 .v2-artifacts__loading { display: grid; place-items: center; padding: 24px; }
+/* Day zero (d215 s-artifacts): nothing shared and no filter set, so the page drops its controls and
+   count for one bordered card — Get started's card grammar (14px 20px lines, ink key, 32px at desktop,
+   44 full width at ≤760). The key links to the account's oldest pod, the one signup creates. */
+.v2-artifacts__zero { width: min(100%, 760px); padding: 14px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius); background: var(--v2-surface); }
+.v2-artifacts__zero h2 { margin: 0; color: var(--v2-text-primary); font: 600 14px/20px var(--v2-font); }
+.v2-artifacts__zero p { margin: 2px 0 0; color: var(--v2-text-secondary); font: 400 14px/20px var(--v2-font); }
+.v2-root a.v2-artifacts__open { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; margin-top: 12px; padding: 0 12px; border: 1px solid var(--v2-ink); border-radius: var(--v2-radius-sm); background: var(--v2-ink); color: var(--v2-on-ink); font: 600 13px/18px var(--v2-font); text-align: center; overflow-wrap: anywhere; }
+.v2-root a.v2-artifacts__open:hover { background: var(--v2-ink-hover); }
 /* ≤760 (ux-lead 66462): no sideways scroll — keep file / kind / when, fold the pod under
    the name as a mono line, hide pod / shared-by / size; the head stays display 32. */
 @media (max-width: 760px) {
@@ -5696,6 +5705,7 @@ body.modern-ui.v2-canvas {
   .v2-artifacts__file { flex-wrap: wrap; row-gap: 2px; }
   .v2-artifacts__pod-line { display: block; flex: 1 1 100%; }
   .v2-root button.v2-artifacts__name { white-space: normal; overflow-wrap: anywhere; }
+  .v2-root a.v2-artifacts__open { display: flex; width: 100%; min-height: 44px; }
 }
 
 /* Public Privacy and Terms pages (TASK-530). Outside .v2-root, so no root-scoped selectors. */

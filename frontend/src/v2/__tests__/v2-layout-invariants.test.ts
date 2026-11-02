@@ -1066,6 +1066,31 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-workspace-inspector__all-files')).toContain('color: var(--v2-accent-text)');
   });
 
+  test('Artifacts day zero (d215 s-artifacts): one bordered card, an ink key, 44px full width at ≤760', () => {
+    const zero = ruleBody(v2, '.v2-artifacts__zero');
+    // Bordered, not dashed: the dashed line is the filtered-empty state.
+    expect(zero).toContain('border: 1px solid var(--v2-border)');
+    expect(zero).toContain('border-radius: var(--v2-radius)');
+    const key = ruleBody(v2, '.v2-root a.v2-artifacts__open');
+    expect(key).toContain('background: var(--v2-ink)');
+    expect(key).toContain('color: var(--v2-on-ink)');
+    expect(key).toContain('min-height: 32px');
+    // Pod names have no length limit: the label wraps inside the card instead of running past it.
+    expect(key).toContain('overflow-wrap: anywhere');
+    expect(key).not.toContain('nowrap');
+    // The 44px rule must sit INSIDE a ≤760 block, not at top level or in a narrower query:
+    // resolve the media block that actually encloses it (the enclosingMedia pattern above).
+    const enclosingMedia = (rule: string): string | null => {
+      const at = v2.indexOf(rule);
+      expect(at).toBeGreaterThan(-1);
+      const open = v2.lastIndexOf('@media', at);
+      if (open === -1) return null;
+      const close = v2.indexOf('\n}', open);
+      return close > at ? v2.slice(open, v2.indexOf('{', open)).trim() : null;
+    };
+    expect(enclosingMedia('.v2-root a.v2-artifacts__open { display: flex; width: 100%; min-height: 44px; }')).toBe('@media (max-width: 760px)');
+  });
+
   test('workspace inspector is the small three-card replacement, with a phone sheet rather than legacy tabs', () => {
     // TASK-129 replaces the 86KB tabbed inspector in the same cutover as the
     // artboard cards. Keeping the old component anywhere in the route would

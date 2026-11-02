@@ -603,7 +603,9 @@ const V2ActivityPage: React.FC = () => {
   }, [seatedPods, recap]);
   // Get started never pops in (d215 s-activity, walk 11-02): on an account the card can show for,
   // its steps wait on the roster and the connector count. While either is in flight the card
-  // holds its place as a same-height placeholder, so Needs you does not move when they land.
+  // holds its place as a placeholder the height of the two-step day-zero card, so in that case
+  // Needs you does not move when they land. A one- or three-step result shifts it by one row,
+  // and an empty result removes the card.
   // Eligibility is the card's own gate, so a failed or unknown history still shows nothing.
   const startEligible = queueCount === 0 && recap?.hasEverHadAttention === false && podId === 'all';
   const startPending = startEligible && (seatPods === null || connectorCount === null);
