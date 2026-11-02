@@ -120,6 +120,11 @@ jobs:
           node-version: 20
       - name: Filter regex regression test
         run: node --test scripts/changes-filter.test.mjs
+      # Guard the deploy-dev canary exit-code routing: the test reads the canary step
+      # and the rollback condition out of deploy-dev.yml, so a silent edit that turned a
+      # guard block (exit 3) into a green deploy, or dropped the rollback clause, fails CI.
+      - name: Deploy-dev canary wiring regression test
+        run: node --test scripts/guard-canary-wiring.test.mjs
 
   # Heavy jobs (backend, frontend, service tests) route to Latchkey runners on
   # a push to main when vars.LATCHKEY_HEAVY is 'on' AND the push touched a heavy
