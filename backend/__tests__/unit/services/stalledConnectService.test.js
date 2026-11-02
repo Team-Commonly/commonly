@@ -621,12 +621,20 @@ describe('keeping the forward promise', () => {
         _id: id, agentName: id.replace('inst-', ''), runtimeTokens: [{ createdAt: OLD_TOKEN }],
       })),
     }));
-    mockUserFind.mockImplementation(() => ({
+    // The store answers the query it is given, as Mongo would: a row comes back
+    // only when one `$or` clause matches both its name and its instance. A
+    // connected "quiet" seat on another instance must not resolve ep-quiet, and a
+    // query that left out ep-used's pair would leave ep-used open.
+    const rows = [
+      { botMetadata: { agentName: 'used', instanceId: 'default' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] },
+      { botMetadata: { agentName: 'quiet', instanceId: 'default' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN }] },
+      { botMetadata: { agentName: 'quiet', instanceId: 'other' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] },
+    ];
+    const matches = (row, clause) => Object.entries(clause)
+      .every(([path, value]) => path.split('.').reduce((v, k) => v?.[k], row) === value);
+    mockUserFind.mockImplementation((filter) => ({
       select: () => ({
-        lean: () => Promise.resolve([
-          { botMetadata: { agentName: 'used', instanceId: 'default' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] },
-          { botMetadata: { agentName: 'quiet', instanceId: 'default' }, agentRuntimeTokens: [{ createdAt: OLD_TOKEN }] },
-        ]),
+        lean: () => Promise.resolve(rows.filter((row) => filter.$or.some((clause) => matches(row, clause)))),
       }),
     }));
 
