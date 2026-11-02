@@ -765,7 +765,8 @@ describe('V2 routing', () => {
     try {
       renderAt('/v2/community');
 
-      expect(await screen.findByText(/invited to Commonly HQ/)).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { level: 1, name: 'Commonly HQ' })).toBeInTheDocument();
+      expect(screen.getByText('You’re invited to')).toBeInTheDocument();
       expect(axios.get).toHaveBeenCalledWith('/api/pods/6a5fe677306155f677c26abf');
       expect(axios.get).toHaveBeenCalledWith('/api/invites/7b91255f18ae3c0ae3721707a6613731/preview');
     } finally {
