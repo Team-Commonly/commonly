@@ -2515,7 +2515,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const phoneFoot = blockContaining(v2, '@media (max-width: 640px)', '.v2-root .v2-thread-replies__foot button.v2-thread-replies__follow::after');
     expect(phoneFoot).toMatch(/\.v2-thread-replies__foot \.v2-thread-replies__count \{[^}]*clip-path: inset\(50%\)/);
     expect(phoneFoot).toMatch(/button\.v2-thread-replies__follow \{[^}]*height: 32px;[^}]*margin-left: auto;/);
-    expect(phoneFoot).toMatch(/button\.v2-thread-replies__follow::after \{[^}]*inset: -6px -8px;/);
+    expect(phoneFoot).toMatch(/button\.v2-thread-replies__follow::after \{[^}]*inset: -6px;/);
     expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-thread-card\s*\{[\s\S]*?flex-wrap: wrap/);
   });
 
