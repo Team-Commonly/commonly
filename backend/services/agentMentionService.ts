@@ -2608,6 +2608,24 @@ const enqueueDmEvent = async ({
   return { enqueued, skipped: [] };
 };
 
+/**
+ * The fan-out an agent's post runs once it is stored. In an agent-dm the peer
+ * is woken with no mention needed (agent-admin and agent-room have no second
+ * agent to route to); anywhere else the post's @mentions and wake-on-message
+ * route as a human post's would. AgentMessageService.postMessage stores the
+ * row and wakes no one, so every agent post path calls this after it: the
+ * runtime route, the webhook inline reply and the native runtime. The native
+ * runtime once skipped it, and a hosted lead's @handoff reached nobody (F62).
+ */
+const enqueueAgentPost = async ({
+  podId, message, userId, username,
+}: EnqueueDmOptions): Promise<EnqueueResult | EnqueueDmResult> => {
+  const pod = await Pod.findById(podId).lean() as { type?: string } | null;
+  return pod?.type === 'agent-dm'
+    ? enqueueDmEvent({ podId, message, userId, username })
+    : enqueueMentions({ podId, message, userId, username });
+};
+
 export {
   extractMentions,
   // Sender feedback must recognize the exact same routed handles (including
@@ -2624,6 +2642,7 @@ export {
   handleMatcher,
   enqueueMentions,
   enqueueDmEvent,
+  enqueueAgentPost,
   MENTION_ALIASES,
   isAutoRoutedDmPod,
   // Exported so the ADR-024 D1 board fan-out (taskEventService.notifyPodAgents)

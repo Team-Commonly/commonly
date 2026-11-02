@@ -21,8 +21,7 @@ jest.mock('../../../services/agentMessageService', () => ({
 }));
 
 jest.mock('../../../services/agentMentionService', () => ({
-  enqueueMentions: jest.fn().mockResolvedValue(undefined),
-  enqueueDmEvent: jest.fn().mockResolvedValue(undefined),
+  enqueueAgentPost: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../../services/agentSendFreshness', () => ({
@@ -127,7 +126,7 @@ describe('webhook inline reply (TASK-015)', () => {
     await AgentEventService.deliverEventViaWebhook(installation, event);
     await new Promise((resolve) => { setImmediate(resolve); });
 
-    expect(AgentMentionService.enqueueMentions).toHaveBeenCalledWith(expect.objectContaining({
+    expect(AgentMentionService.enqueueAgentPost).toHaveBeenCalledWith(expect.objectContaining({
       podId: 'pod_inline',
       userId: 'user_echo',
     }));

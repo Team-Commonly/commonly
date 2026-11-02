@@ -815,6 +815,33 @@ interface DispatchResult {
   imagePngBase64?: string;
 }
 
+/**
+ * Wake the agents a stored post names, or the agent-dm peer, as the runtime
+ * route does for an external agent's post. postMessage stores the row and
+ * wakes no one, so without this a hosted lead's @handoff reached nobody (F62).
+ * The username is the account name the post was stored under, derived the way
+ * the posting path derives it. Fire and forget: the post already stands.
+ */
+const fanOutAgentPost = (
+  { podId, agentName, instanceId }: { podId: unknown; agentName: string; instanceId?: string },
+  result: { success?: boolean; skipped?: boolean; message?: { userId?: { _id?: unknown } } } | null | undefined,
+): void => {
+  const authorId = result?.message?.userId?._id;
+  if (!result?.success || result.skipped || !authorId) return;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const AgentIdentityService = require('./agentIdentityService');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('./agentMentionService').enqueueAgentPost({
+    podId: String(podId),
+    message: result.message,
+    userId: String(authorId),
+    username: AgentIdentityService.buildAgentUsername(
+      AgentIdentityService.resolveAgentType(agentName),
+      instanceId || 'default',
+    ),
+  }).catch((error: Error) => console.warn('[native-runtime] post fan-out failed:', error.message));
+};
+
 export async function dispatchTool(
   name: string,
   rawArgs: unknown,
@@ -911,6 +938,7 @@ export async function dispatchTool(
           runId: ctx.runId,
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
+        fanOutAgentPost(ctx, result);
         if (result?.refused && result.reason === 'consecutive_run_cap') {
           // The shared guidance offers an attachment, which a web-tainted turn
           // cannot make, and only another speaker clears the cap. Say only that.
@@ -977,6 +1005,7 @@ export async function dispatchTool(
           runId: ctx.runId,
           ...(ctx.runId ? { runPodId: String(ctx.podId) } : {}),
         });
+        fanOutAgentPost(ctx, result);
         return { content: { ok: true, posted: true, result } };
       }
 
@@ -2666,6 +2695,7 @@ export async function runAgent(
             runId,
             runPodId: String(podId),
           });
+          fanOutAgentPost({ podId, agentName, instanceId }, postResult);
           // The message service suppresses a bare NO_REPLY (and other
           // silent output) without throwing. That is a normal declined turn,
           // not a user-visible final message; retaining textOut here would
