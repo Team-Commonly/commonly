@@ -2609,7 +2609,11 @@
     "foot": "{{shown}} of {{total}} · newest first",
     "more": "{{count}} more",
     "loadingMore": "Loading…",
-    "empty": "Nothing shared yet. Attach a file in any pod and it lands here.",
+    "dayZero": {
+      "title": "Nothing shared yet",
+      "body": "Files you and your agents share in a pod land here: docs, images and pages.",
+      "open": "Open {{pod}}"
+    },
     "emptyFiltered": "Nothing matches. Clear a filter or the search.",
     "loadFailed": "Could not load artifacts."
   },

@@ -1,7 +1,7 @@
 // @ts-nocheck
 // Artifacts, direction C (ScaleArtifacts.dc.html) — PR 5.
 import React from 'react';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import V2ArtifactsPage, { extOf, formatSize, whenLabel } from '../components/V2ArtifactsPage';
@@ -75,6 +75,10 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
     expect(within(rows[3]).getAllByText('Connectors v2').length).toBeGreaterThan(0);
     expect(screen.getByText('3 of 3 · newest first')).toBeInTheDocument();
     expect(axios.get).toHaveBeenCalledWith('/api/artifacts', expect.objectContaining({ params: { limit: 50 } }));
+    // Busy is unchanged: the controls and the count stay; no day-zero card.
+    expect(screen.getByRole('group', { name: 'Kind' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search files' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Nothing shared yet' })).not.toBeInTheDocument();
   });
 
   test('kind, pod and search filters travel through the URL to the one query', async () => {
@@ -121,11 +125,62 @@ describe('V2ArtifactsPage (direction C, PR 5)', () => {
     open.mockRestore();
   });
 
-  test('empty states are honest: nothing shared vs nothing matching', async () => {
-    axios.get.mockImplementation((url) => Promise.resolve({ data: url === '/api/pods' ? [] : { items: [], nextCursor: null, total: 0 } }));
-    render(<MemoryRouter initialEntries={['/v2/artifacts']}><V2ArtifactsPage /></MemoryRouter>);
-    expect(await screen.findByText(/Nothing shared yet/)).toBeInTheDocument();
-    render(<MemoryRouter initialEntries={['/v2/artifacts?kind=page']}><V2ArtifactsPage /></MemoryRouter>);
-    expect(await screen.findByText(/Nothing matches/)).toBeInTheDocument();
+  // Day zero (d215 s-artifacts): nothing shared and no filter set → no controls, no count, one card.
+  const renderEmpty = (initial, { pods = [], agents = {} } = {}) => {
+    axios.get.mockImplementation((url, config) => {
+      if (url === '/api/pods') return Promise.resolve({ data: pods });
+      if (url === '/api/artifacts') return Promise.resolve({ data: { items: [], nextCursor: null, total: 0, limit: 50 } });
+      const seat = /^\/api\/registry\/pods\/([^/]+)\/agents$/.exec(url);
+      if (seat) return Promise.resolve({ data: { agents: agents[seat[1]] || [] } });
+      return Promise.resolve({ data: {} });
+    });
+    return render(<MemoryRouter initialEntries={[initial]}><V2ArtifactsPage /></MemoryRouter>);
+  };
+  const workspace = { _id: 'w1', name: 'My Workspace', createdAt: '2026-10-01T00:00:00.000Z' };
+
+  test('day zero: no kind, pod or search controls and no count; one card whose key opens My Workspace', async () => {
+    const { container } = renderEmpty('/v2/artifacts', { pods: [workspace] });
+    expect(await screen.findByRole('heading', { name: 'Nothing shared yet' })).toBeInTheDocument();
+    expect(screen.getByText('Files you and your agents share in a pod land here: docs, images and pages.')).toBeInTheDocument();
+    const open = await screen.findByRole('link', { name: 'Open My Workspace' });
+    expect(open).toHaveAttribute('href', '/v2/pods/w1');
+    expect(open).toHaveClass('v2-artifacts__open');
+    expect(screen.queryByRole('group', { name: 'Kind' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Pod' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+    expect(container.querySelector('.v2-artifacts__controls')).toBeNull();
+    expect(container.querySelector('.v2-page-head__meta')).toBeNull();
+    expect(screen.queryByText(/Nothing matches/)).not.toBeInTheDocument();
+    // One pod is the answer either way, so no seat lookup is spent on it.
+    expect(axios.get).not.toHaveBeenCalledWith(expect.stringMatching(/^\/api\/registry\//), expect.anything());
+  });
+
+  test('day zero picks the pod Activity’s Get started opens: the oldest pod with a seat, else the oldest pod', async () => {
+    const team = { _id: 'p2', name: 'Launch room', createdAt: '2026-10-05T00:00:00.000Z' };
+    const later = { _id: 'p3', name: 'Field notes', createdAt: '2026-10-09T00:00:00.000Z' };
+    // /api/pods lists by last update, newest first; the choice reads them oldest first.
+    renderEmpty('/v2/artifacts', { pods: [later, team, workspace], agents: { w1: [{ name: 'helper', internal: true }], p2: [{ name: 'scout' }], p3: [{ name: 'fern' }] } });
+    expect(await screen.findByRole('link', { name: 'Open Launch room' })).toHaveAttribute('href', '/v2/pods/p2');
+    cleanup();
+    renderEmpty('/v2/artifacts', { pods: [later, workspace], agents: {} });
+    expect(await screen.findByRole('link', { name: 'Open My Workspace' })).toHaveAttribute('href', '/v2/pods/w1');
+  });
+
+  test('day zero with no pods keeps the card and omits the key', async () => {
+    renderEmpty('/v2/artifacts');
+    expect(await screen.findByRole('heading', { name: 'Nothing shared yet' })).toBeInTheDocument();
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/pods', expect.anything()));
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  test('a filtered empty result keeps the controls, the count and the dashed line, not the card', async () => {
+    const { container } = renderEmpty('/v2/artifacts?kind=image', { pods: [workspace] });
+    expect(await screen.findByText('Nothing matches. Clear a filter or the search.')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Kind' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Images' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('searchbox', { name: 'Search files' })).toBeInTheDocument();
+    expect(container.querySelector('.v2-page-head__meta')).toHaveTextContent('0');
+    expect(screen.queryByRole('heading', { name: 'Nothing shared yet' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /^Open / })).not.toBeInTheDocument();
   });
 });

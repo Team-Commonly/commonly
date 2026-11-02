@@ -3,7 +3,7 @@
 // GET /api/artifacts. The inspector's Files pane is the same query with
 // podId fixed; this page is the query with podId as a filter.
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
@@ -24,7 +24,7 @@ export interface ArtifactItem {
   createdAt: string | null;
 }
 interface ArtifactsResponse { items: ArtifactItem[]; nextCursor: string | null; total: number; limit: number }
-interface PodRef { _id: string; name: string }
+interface PodRef { _id: string; name: string; createdAt?: string }
 
 const KINDS: Array<{ key: '' | ArtifactKind; label: string }> = [
   { key: '', label: 'all' }, { key: 'image', label: 'images' }, { key: 'doc', label: 'docs' }, { key: 'page', label: 'pages' },
@@ -81,6 +81,7 @@ const V2ArtifactsPage: React.FC = () => {
   const [podMenuOpen, setPodMenuOpen] = useState(false);
   // ux-lead 66462: an image row opens the chat lightbox; pages and docs open in a new tab.
   const [lightbox, setLightbox] = useState<ArtifactItem | null>(null);
+  const [workspacePod, setWorkspacePod] = useState<PodRef | null>(null);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -150,6 +151,29 @@ const V2ArtifactsPage: React.FC = () => {
     }
   };
 
+  // Day zero (d215 s-artifacts): nothing shared and nothing filtered, so there is nothing to
+  // filter — no controls, no count, one card. A filtered empty result keeps the controls.
+  const dayZero = !loading && !error && total === 0 && items.length === 0 && !urlQ && !kind && !podId;
+  // The card's key opens the pod Activity's Get started step opens (V2ActivityPage speakPod):
+  // the first pod holding a seat, else the account's first pod. Activity reads the account's
+  // pods oldest first and checks at most 20; /api/pods lists by last update, so re-sort.
+  useEffect(() => {
+    if (!dayZero || pods.length === 0) return undefined;
+    let active = true;
+    const createdMs = (pod: PodRef) => (pod.createdAt ? Date.parse(pod.createdAt) : Number.POSITIVE_INFINITY);
+    const ordered = [...pods].sort((a, b) => createdMs(a) - createdMs(b));
+    if (ordered.length === 1) {
+      setWorkspacePod(ordered[0]);
+      return undefined;
+    }
+    Promise.all(ordered.slice(0, 20).map((pod) => axios
+      .get<{ agents?: Array<{ internal?: boolean }> }>(`/api/registry/pods/${pod._id}/agents`, { headers })
+      .then((res) => (Array.isArray(res.data?.agents) ? res.data.agents : []).some((agent) => !agent.internal))
+      .catch(() => false)))
+      .then((seated) => { if (active) setWorkspacePod(ordered[seated.indexOf(true)] ?? ordered[0]); });
+    return () => { active = false; };
+  }, [dayZero, pods, headers]);
+
   const openItem = async (item: ArtifactItem) => {
     if (item.kind === 'image') { setLightbox(item); return; }
     const url = await getSignedAttachmentUrl(`/api/uploads/${item.fileName}`);
@@ -165,46 +189,55 @@ const V2ArtifactsPage: React.FC = () => {
         className="v2-artifacts__head"
         titleClassName="v2-artifacts__title"
         title={t('artifacts.title')}
-        meta={!loading ? total : undefined}
+        meta={!loading && !dayZero ? total : undefined}
         hint={t('artifacts.meta')}
         hintLabel={t('artifacts.about')}
       />
-      <div className="v2-artifacts__controls">
-        <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.kindLabel')}>
-          {KINDS.map((option) => (
-            <button key={option.key || 'all'} type="button" className={`v2-artifacts__seg-button${kind === option.key ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={kind === option.key} onClick={() => setParam('kind', option.key)}>
-              {t(`artifacts.kinds.${option.label}`)}
-            </button>
-          ))}
+      {!dayZero && (
+        <div className="v2-artifacts__controls">
+          <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.kindLabel')}>
+            {KINDS.map((option) => (
+              <button key={option.key || 'all'} type="button" className={`v2-artifacts__seg-button${kind === option.key ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={kind === option.key} onClick={() => setParam('kind', option.key)}>
+                {t(`artifacts.kinds.${option.label}`)}
+              </button>
+            ))}
+          </div>
+          <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.podLabel')} onKeyDown={(event) => { if (event.key === 'Escape') setPodMenuOpen(false); }}>
+            <button type="button" className={`v2-artifacts__seg-button${!podId ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={!podId} onClick={() => { setParam('podId', ''); setPodMenuOpen(false); }}>{t('artifacts.allPods')}</button>
+            {scopedPods.slice(0, 2).map((pod) => (
+              <button key={pod._id} type="button" className={`v2-artifacts__seg-button${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={podId === pod._id} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
+            ))}
+            {scopedPods.length > 2 && (
+              <button type="button" className={`v2-artifacts__seg-button${scopedPods.slice(2).some((pod) => pod._id === podId) ? ' v2-artifacts__seg-button--active' : ''}`} aria-expanded={podMenuOpen} onClick={() => setPodMenuOpen((open) => !open)}>
+                {selectedPod && scopedPods.slice(2).some((pod) => pod._id === podId) ? shortPodName(selectedPod.name) : t('artifacts.morePods')}
+              </button>
+            )}
+            {podMenuOpen && (
+              <div className="v2-artifacts__seg-menu" role="listbox" aria-label={t('artifacts.podLabel')}>
+                {scopedPods.slice(2).map((pod) => (
+                  <button key={pod._id} type="button" role="option" aria-selected={podId === pod._id} className={`v2-artifacts__seg-button v2-artifacts__seg-button--menu${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
+                ))}
+              </div>
+            )}
+          </div>
+          <label className="v2-artifacts__search">
+            <input type="search" value={q} placeholder={t('artifacts.searchPlaceholder')} aria-label={t('artifacts.searchPlaceholder')} onChange={(event) => setQ(event.target.value)} />
+            <span className="v2-artifacts__search-key" aria-hidden="true">⌘K</span>
+          </label>
         </div>
-        <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.podLabel')} onKeyDown={(event) => { if (event.key === 'Escape') setPodMenuOpen(false); }}>
-          <button type="button" className={`v2-artifacts__seg-button${!podId ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={!podId} onClick={() => { setParam('podId', ''); setPodMenuOpen(false); }}>{t('artifacts.allPods')}</button>
-          {scopedPods.slice(0, 2).map((pod) => (
-            <button key={pod._id} type="button" className={`v2-artifacts__seg-button${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={podId === pod._id} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
-          ))}
-          {scopedPods.length > 2 && (
-            <button type="button" className={`v2-artifacts__seg-button${scopedPods.slice(2).some((pod) => pod._id === podId) ? ' v2-artifacts__seg-button--active' : ''}`} aria-expanded={podMenuOpen} onClick={() => setPodMenuOpen((open) => !open)}>
-              {selectedPod && scopedPods.slice(2).some((pod) => pod._id === podId) ? shortPodName(selectedPod.name) : t('artifacts.morePods')}
-            </button>
-          )}
-          {podMenuOpen && (
-            <div className="v2-artifacts__seg-menu" role="listbox" aria-label={t('artifacts.podLabel')}>
-              {scopedPods.slice(2).map((pod) => (
-                <button key={pod._id} type="button" role="option" aria-selected={podId === pod._id} className={`v2-artifacts__seg-button v2-artifacts__seg-button--menu${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
-              ))}
-            </div>
-          )}
-        </div>
-        <label className="v2-artifacts__search">
-          <input type="search" value={q} placeholder={t('artifacts.searchPlaceholder')} aria-label={t('artifacts.searchPlaceholder')} onChange={(event) => setQ(event.target.value)} />
-          <span className="v2-artifacts__search-key" aria-hidden="true">⌘K</span>
-        </label>
-      </div>
+      )}
 
       {error && <div className="v2-artifacts__error" role="alert">{error}</div>}
       {loading && !error && <div className="v2-artifacts__loading"><span className="v2-spinner" /></div>}
-      {!loading && !error && items.length === 0 && (
-        <div className="v2-artifacts__empty">{urlQ || kind || podId ? t('artifacts.emptyFiltered') : t('artifacts.empty')}</div>
+      {dayZero && (
+        <section className="v2-artifacts__zero" aria-labelledby="v2-artifacts-zero-title">
+          <h2 id="v2-artifacts-zero-title">{t('artifacts.dayZero.title')}</h2>
+          <p>{t('artifacts.dayZero.body')}</p>
+          {workspacePod && <Link className="v2-artifacts__open" to={`/v2/pods/${workspacePod._id}`}>{t('artifacts.dayZero.open', { pod: workspacePod.name })}</Link>}
+        </section>
+      )}
+      {!loading && !error && items.length === 0 && (urlQ || kind || podId) && (
+        <div className="v2-artifacts__empty">{t('artifacts.emptyFiltered')}</div>
       )}
       {!loading && items.length > 0 && (
         <div className="v2-artifacts__table-wrap">
