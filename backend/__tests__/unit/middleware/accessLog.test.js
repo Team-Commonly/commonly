@@ -135,10 +135,19 @@ describe('access log', () => {
   });
 
   it('waits for a line written after the response, as on a loaded host', async () => {
+    // The line is held until the test releases it, so the wait is checked at a
+    // moment the test chooses rather than one a timer races the request to.
     const lines = [];
-    const late = (line) => { setTimeout(() => lines.push(JSON.parse(line)), 40); };
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    const late = (line) => { held.then(() => lines.push(JSON.parse(line))); };
     await request(buildApp(lines, { log: late })).get(`/api/users/${OTHER}/public-activity`).expect(200);
-    await logged(lines);
+    let done = false;
+    const waiting = logged(lines).then(() => { done = true; });
+    await new Promise((resolve) => { setImmediate(resolve); });
+    expect(done).toBe(false);
+    release();
+    await waiting;
     expect(lines).toEqual([expect.objectContaining({ route: '/api/users/:id/public-activity', status: 200 })]);
   });
 
