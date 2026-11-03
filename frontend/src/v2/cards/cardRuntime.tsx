@@ -29,6 +29,24 @@ const views: Record<string, (p: Record<string, any>, render: (v: unknown) => Rea
   Source: p => <SourceView connector={p.connector} fetchedAt={p.fetchedAt} />,
   Step: () => null, File: () => null, Pair: () => null, Col: () => null,
 };
+// OpenUI's own per-element boundary re-presents the last good children when a
+// view throws, and it reports render errors only when the source changes. A view
+// that throws after mount (on data it fetched) then remounts, refetches and
+// throws again, forever, and the card never falls back. So each view gets this
+// boundary first: it renders nothing and fails the whole card.
+const CardFailed = React.createContext<() => void>(() => {});
+class ViewBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
+  static contextType = CardFailed;
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch() { (this.context as React.ContextType<typeof CardFailed>)(); }
+  render() { return this.state.failed ? null : this.props.children; }
+}
+// A component, not an inline call: the view function must run below ViewBoundary,
+// or its throw lands in OpenUI's boundary again.
+function View({ name, props, render }: { name: string; props: Record<string, any>; render: (v: unknown) => React.ReactNode }) {
+  return <>{views[name](props, render)}</>;
+}
 // One library per stored revision, built from that revision's own grammar.
 const libraries = new Map<number, ReturnType<typeof createLibrary> & { toJSONSchema: () => LibraryJSONSchema }>();
 function libraryFor(rev: CardRevision) {
@@ -38,13 +56,13 @@ function libraryFor(rev: CardRevision) {
       // The canonical JSON supplies the parser grammar, including bounds and refs.
       // These prop slots preserve its wire order; no independently authored schema.
       props: z.object(Object.fromEntries(Object.keys(definition.properties).map(key => [key, z.any()]))),
-      component: ({ props, renderNode }) => views[name](props, renderNode),
+      component: ({ props, renderNode }) => <ViewBoundary><View name={name} props={props} render={renderNode} /></ViewBoundary>,
     }));
     libraries.set(rev.catalogRev, { ...createLibrary({ components }), toJSONSchema: () => rev.grammar });
   }
   return libraries.get(rev.catalogRev)!;
 }
 export default function CardRuntime({ source, rev, onError }: { source: string; rev: CardRevision; onError: () => void }) {
-  return <Renderer response={source} library={libraryFor(rev)} publishObservability={false}
-    onError={errors => { if (errors.some(e => e.severity !== 'warning')) onError(); }} />;
+  return <CardFailed.Provider value={onError}><Renderer response={source} library={libraryFor(rev)} publishObservability={false}
+    onError={errors => { if (errors.some(e => e.severity !== 'warning')) onError(); }} /></CardFailed.Provider>;
 }
