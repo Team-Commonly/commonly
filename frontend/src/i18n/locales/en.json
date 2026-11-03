@@ -2794,7 +2794,29 @@
     "connectionSeparator": " · ",
     "connectionSignedIn": "Signed in",
     "connectionKey": "Key",
-    "disconnectConnectionLabel": "Disconnect {{label}}: {{connection}}"
+    "disconnectConnectionLabel": "Disconnect {{label}}: {{connection}}",
+    "operatorKey": {
+      "note": "add a key for one of your agents",
+      "noAgents": "no agent of yours to add a key for yet",
+      "agent": "agent",
+      "key": "key",
+      "submit": "Add key",
+      "checking": "Checking…",
+      "createKey": "Create a key at {{label}}",
+      "errors": {
+        "invalidAgent": "Pick one of your agents.",
+        "agentNotOwned": "You can add a key only for an agent you alone installed.",
+        "unknownEntry": "This connector does not take a key here.",
+        "keyMissing": "Paste a key first.",
+        "scopeRefused": "This key has scopes Commonly does not allow. Create one without them.",
+        "vendorRejected": "{{label}} did not accept this key.",
+        "vendorUnreachable": "Could not reach {{label}} to check the key. Try again.",
+        "connectionChanged": "The connection changed while saving. Paste the key again.",
+        "keyStoreFailed": "Could not save the key. Try again.",
+        "generic": "Could not add the key. Try again."
+      },
+      "agentsUnavailable": "couldn't read your agents just now · reload to try again"
+    }
   },
   "agentManage": {
     "runtime": {

@@ -465,6 +465,10 @@ const ConnectorsPage: React.FC = () => {
       <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
         {/* Ungranted, the offer below carries the note through renderEntryNote. */}
         {toolGranted(toolEntry) && tp.renderLinearWriteNote(toolEntry)}
+        {/* A granted operator-key entry still takes a key for an agent that has none. */}
+        {toolGranted(toolEntry) && tp.renderKeyForm(toolEntry) && (
+          <div className="v2-cx-pop__acts">{tp.renderKeyForm(toolEntry)}</div>
+        )}
         {!toolGranted(toolEntry) && (
           <div className="v2-cx-drawer__offer">
             <p>{catalogDescription(i18n, toolEntry.installableId, toolEntry.description)}</p>

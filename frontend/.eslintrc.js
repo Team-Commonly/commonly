@@ -76,6 +76,7 @@ module.exports = {
         'src/v2/connectors/ConnectorPopover.tsx',
         'src/v2/connectors/ConnectorTile.tsx',
         'src/v2/connectors/ConnectorsPage.tsx',
+        'src/v2/connectors/OperatorKeyForm.tsx',
         'src/v2/connectors/ToolPanels.tsx',
         'src/v2/utils/localizeRelativeTime.ts',
       ],

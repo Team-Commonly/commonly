@@ -2795,7 +2795,29 @@
     "connectionSeparator": " · ",
     "connectionSignedIn": "已登录",
     "connectionKey": "密钥",
-    "disconnectConnectionLabel": "断开 {{label}}：{{connection}}"
+    "disconnectConnectionLabel": "断开 {{label}}：{{connection}}",
+    "operatorKey": {
+      "note": "为你的智能体添加密钥",
+      "noAgents": "你还没有可以添加密钥的智能体",
+      "agent": "智能体",
+      "key": "密钥",
+      "submit": "添加密钥",
+      "checking": "验证中…",
+      "createKey": "去 {{label}} 创建密钥",
+      "errors": {
+        "invalidAgent": "请先选择一个智能体。",
+        "agentNotOwned": "只能为仅由你安装的智能体添加密钥。",
+        "unknownEntry": "此连接器不支持在这里添加密钥。",
+        "keyMissing": "请先粘贴密钥。",
+        "scopeRefused": "这个密钥包含 Commonly 不允许的权限范围，请新建一个不含这些权限的密钥。",
+        "vendorRejected": "{{label}} 拒绝了这个密钥。",
+        "vendorUnreachable": "无法连接 {{label}} 来验证密钥，请稍后重试。",
+        "connectionChanged": "保存时连接发生了变化，请重新粘贴密钥。",
+        "keyStoreFailed": "无法保存密钥，请重试。",
+        "generic": "无法添加密钥，请重试。"
+      },
+      "agentsUnavailable": "暂时无法读取你的智能体，请刷新后重试"
+    }
   },
   "agentManage": {
     "runtime": {

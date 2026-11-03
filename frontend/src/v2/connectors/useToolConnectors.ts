@@ -29,6 +29,7 @@ import type {
   GithubAppIntegrationResponse,
   HostedMcpManualRevokeNotice,
 } from './toolModel';
+import type { KeyAgent, OperatorKeyResult } from './OperatorKeyForm';
 
 // Seats matching `narrowed` across every pod roster, named by display name,
 // once each, never by the pods their grants reach.
@@ -101,6 +102,24 @@ export const useToolConnectors = (
   // anywhere, or limited to one pod.
   const blockedSeatNames = useMemo(() => seatNamesWhere(seats, (seat) => seat.runtimeNarrowedByMultipleGrantPods), [seats]);
   const onePodSeatNames = useMemo(() => seatNamesWhere(seats, (seat) => seat.runtimeNarrowedToOnePod), [seats]);
+  // The agents this person can bind a pasted key to: the ones they installed,
+  // read from the pod rosters this page already loads. The route refuses an
+  // agent someone else installed too (the sole-installer rule), so an agent
+  // another person installed in any roster the viewer can read is left out.
+  // Rosters the viewer can't read stay invisible, and the route's 403 has the
+  // last word for those.
+  const keyAgents = useMemo<KeyAgent[]>(() => {
+    const all = Object.values(seats).flat();
+    const sharedInstall = new Set(all
+      .filter((seat) => seat.userId && seat.installedBy && seat.installedBy !== viewerId)
+      .map((seat) => seat.userId as string));
+    return [...new Map(all
+      .filter((seat) => seat.userId && viewerId && seat.installedBy === viewerId && !sharedInstall.has(seat.userId))
+      .map((seat) => [seat.userId as string, { userId: seat.userId as string, label: seat.displayName || seat.name }])).values()]
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [seats, viewerId]);
+  // The agent list is unknown when a pod list or roster couldn't be read.
+  const keyAgentsUnavailable = podListFailed || seatLookupFailed;
   // An unreadable pod list or roster, or a roster whose census failed, leaves
   // posting status unknown. The page says so rather than implying posting works.
   const narrowingStatusUnavailable = podListFailed || seatLookupFailed || Object.values(seats).flat()
@@ -453,6 +472,33 @@ export const useToolConnectors = (
     }
   };
 
+  /**
+   * One agent's pasted key for an operator-key entry (TASK-330). The key goes
+   * only into the request body: it is never logged, kept or returned, and only
+   * the route's code comes back, for the form to put in words. A success
+   * re-reads the catalogue so the new connection shows, as the OAuth return does.
+   */
+  const submitOperatorKey = async (entry: ToolCatalogEntry, agentId: string, key: string): Promise<OperatorKeyResult> => {
+    if (!entry.entryId) return { ok: false, code: 'unknown_entry' };
+    let receipt: { integrationId?: unknown; status?: unknown } | null | undefined;
+    try {
+      receipt = await api.post<{ integrationId?: unknown; status?: unknown }>(
+        `/api/integrations/connect/hosted-mcp/${encodeURIComponent(entry.entryId)}/operator-key`,
+        { agentId, key },
+      );
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
+      return { ok: false, code: typeof code === 'string' ? code : '' };
+    }
+    // Success is the route's own receipt. An empty body or an HTML fallback
+    // from a proxy is not a connection, so it reads as a generic failure.
+    if (!receipt || typeof receipt.integrationId !== 'string' || receipt.status !== 'connected') {
+      return { ok: false, code: '' };
+    }
+    await load();
+    return { ok: true };
+  };
+
   const submitGithubAppSetup = async () => {
     if (!githubAppSetup || !isAdmin) return;
     const installationId = githubAppSetup.installationId.trim();
@@ -675,6 +721,9 @@ export const useToolConnectors = (
     submitDraft,
     fixJoinPolicy,
     connectHostedMcp,
+    keyAgents,
+    keyAgentsUnavailable,
+    submitOperatorKey,
     submitGithubAppSetup,
     markRevoked,
     retryStaleRevoke,
