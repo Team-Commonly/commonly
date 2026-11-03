@@ -72,6 +72,12 @@ export interface ToolCatalogEntry {
    */
   connectionType?: 'github-app' | 'hosted-mcp';
   entryId?: string;
+  /**
+   * How a hosted entry is connected. Absent means OAuth (the start route); an
+   * operator-key entry takes one pasted key per agent at its own route, and its
+   * start route answers 404.
+   */
+  credentialMode?: 'operator_key';
   available: boolean;
   unavailableReason?: string;
   broker?: { id: string };
@@ -111,6 +117,8 @@ export interface PodSeat {
   name: string;
   instanceId?: string;
   internal?: boolean;
+  /** Who installed the seat in this pod: the roster's own field. */
+  installedBy?: string | null;
   // Set by the pod roster: connector grants reach more than one of this seat's pods.
   runtimeNarrowedByMultipleGrantPods?: boolean;
   // Set by the pod roster: exactly one of this seat's several pods has a grant,

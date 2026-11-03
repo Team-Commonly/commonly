@@ -2958,6 +2958,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(drawer).toMatch(/inset: 0 0 calc\(72px/);
       expect(baseBody('.v2-cx-drawer')).toContain('position: absolute');
     });
+
+    it('the operator-key form takes the full width of the action row', () => {
+      expect(cx).toMatch(/\.v2-cx-pop__acts > \.v2-cx-keyform \{[^}]*flex: 1 1 100%/);
+    });
   });
 
   it('connector refusal links keep the in-text link treatment in the parsed stylesheet', () => {

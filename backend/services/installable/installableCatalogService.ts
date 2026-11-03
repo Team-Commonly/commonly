@@ -136,7 +136,8 @@ const publicConnection = (integration: any) => ({
  * is per ENTRY (`/api/integrations/connect/hosted-mcp/:entryId/start`, §4), and
  * the page has no other way to learn an entry id — an Installable id is the
  * entry id by construction, but reading that as a URL would be a second,
- * unwitnessed spelling of the same fact.
+ * unwitnessed spelling of the same fact. `credentialMode` rides beside them
+ * for the same reason: which connect route the page calls is the entry's fact.
  */
 const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hiddenConnections: unknown[] }> => {
   const metas = toolInstallableMetas();
@@ -187,6 +188,10 @@ const toolEntriesFor = async (userId: string): Promise<{ entries: unknown[]; hid
       ...(hostedEntry?.connectNotice ? { connectNotice: hostedEntry.connectNotice } : {}),
       ...(hostedEntry?.accessPage ? { accessPage: hostedEntry.accessPage } : {}),
       ...(hostedEntry?.revoke?.page ? { revokePage: hostedEntry.revoke.page } : {}),
+      // How a person connects: absent means the OAuth start route; an
+      // operator-key entry takes a pasted key per agent at its own route, and
+      // its start route answers 404, so the page must know before it offers.
+      ...(hostedEntry?.credentialMode === 'operator_key' ? { credentialMode: 'operator_key' } : {}),
       connectionType: meta.connectionType,
       ...(meta.entryId ? { entryId: meta.entryId } : {}),
       available: readiness.available,

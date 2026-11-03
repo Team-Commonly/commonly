@@ -22,6 +22,7 @@ import type {
   ToolConnection,
 } from './toolModel';
 import type { ToolConnectorsModel } from './useToolConnectors';
+import OperatorKeyForm from './OperatorKeyForm';
 
 const G: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{children}</svg>
@@ -102,6 +103,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     submitDraft,
     fixJoinPolicy,
     connectHostedMcp,
+    keyAgents,
+    keyAgentsUnavailable,
+    submitOperatorKey,
     submitGithubAppSetup,
     retryStaleRevoke,
     revoke,
@@ -150,7 +154,8 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
   const renderDisconnect = (entry: ToolCatalogEntry | null, variant: 'row' | 'aside') => {
     const hosted = entry && entry.connectionType === 'hosted-mcp' ? entry.connections : [];
     if (!entry || hosted.length === 0) return null;
-    if (hosted.length === 1) {
+    // A lone key row still names its agent, so the person can see whose key it is.
+    if (hosted.length === 1 && !(hosted[0].agentId && connectionLabel(hosted[0]))) {
       const button = renderDisconnectOne(entry, hosted[0], variant, null);
       return variant === 'aside' ? <div className="v2-connector-aside__actions">{button}</div> : button;
     }
@@ -340,23 +345,48 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
   // Where the person who connected a hosted entry picks what it reaches (for
   // GitHub, the App's install page). Shown on the offer and on the details of
   // their live grant, since a grant takes the entry off the offer list.
+  // For an operator-key entry the same page is where the key is made, and the
+  // key's scopes are what bound its reach.
   const renderAccessLink = (entry: ToolCatalogEntry) => (
     <a href={entry.accessPage} target="_blank" rel="noopener noreferrer">
-      {t('tools.chooseAccess', { defaultValue: 'Choose what {{label}} can reach', label: entry.label })}
+      {entry.credentialMode === 'operator_key'
+        ? t('tools.operatorKey.createKey', { label: entry.label })
+        : t('tools.chooseAccess', { defaultValue: 'Choose what {{label}} can reach', label: entry.label })}
     </a>
   );
 
+  // An operator-key entry holds one connection per agent (TASK-330), so it
+  // stays open to a key for each of the person's agents that has none yet. An
+  // OAuth entry is connected once, by `connections.length`.
+  const keylessAgents = (entry: ToolCatalogEntry) => {
+    const keyed = new Set(entry.connections.map((connection) => connection.agentId).filter(Boolean));
+    return keyAgents.filter((agent) => !keyed.has(agent.userId));
+  };
+
   // What a person can do with an entry that has no live grant: the verbs of the
   // old "Not yet" row, shared by the tile's popover.
+  // The paste-a-key form while any of the person's agents has no key on this
+  // operator-key entry. It is offered on a granted entry too: one agent's key
+  // being granted says nothing about the next agent's.
+  const renderKeyForm = (entry: ToolCatalogEntry) => {
+    const takesKey = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId) && entry.credentialMode === 'operator_key';
+    const keyable = takesKey && entry.available ? keylessAgents(entry) : [];
+    return keyable.length > 0
+      ? <OperatorKeyForm key={entry.installableId} entry={entry} agents={keyable} submit={submitOperatorKey} />
+      : null;
+  };
+
   const renderEntryActions = (entry: ToolCatalogEntry) => {
     const canAdd = entry.available && entry.connections.length > 0 && podIds.length > 0;
     const canInstallGithubApp = isAdmin && entry.installableId === 'github' && entry.available && entry.connections.length === 0;
     // A hosted entry is connected by the person who will grant it (§1: member
     // mode), so the action belongs on the tile and needs no admin.
     const isHosted = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId);
-    const canConnectHosted = Boolean(isHosted) && entry.available && entry.connections.length === 0;
+    const takesKey = isHosted && entry.credentialMode === 'operator_key';
+    const canConnectHosted = isHosted && !takesKey && entry.available && entry.connections.length === 0;
     return (
       <>
+        {renderKeyForm(entry)}
         {!entry.available && (
           <a className="v2-connector-row__action v2-connector-row__action--secondary" href="https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request">
             {t('tools.ask', { defaultValue: 'Ask' })}
@@ -395,20 +425,29 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
   // works: connect your own account, ask an admin, or the modes it grants.
   const renderEntryNote = (entry: ToolCatalogEntry) => {
     const isHosted = entry.connectionType === 'hosted-mcp' && Boolean(entry.entryId);
-    const canConnectHosted = Boolean(isHosted) && entry.available && entry.connections.length === 0;
+    const takesKey = isHosted && entry.credentialMode === 'operator_key';
+    const canConnectHosted = isHosted && !takesKey && entry.available && entry.connections.length === 0;
+    const keyable = takesKey && entry.available ? keylessAgents(entry) : [];
+    const unconnectedNote = () => {
+      if (takesKey) {
+        if (keyAgents.length === 0 && keyAgentsUnavailable) return t('tools.operatorKey.agentsUnavailable');
+        return keyAgents.length === 0
+          ? t('tools.operatorKey.noAgents')
+          : t('tools.operatorKey.note');
+      }
+      return isHosted
+        ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
+        : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' });
+    };
     return (
       <>
         {entry.available && (
           <p className="v2-cx-note">
-            {entry.connections.length === 0
-              ? (isHosted
-                ? t('tools.connectOwn', { defaultValue: 'connect your own {{label}} account', label: entry.label })
-                : t('tools.noConnection', { defaultValue: 'install the GitHub App first · an admin does this once' }))
-              : entryModeCopy(entry)}
+            {entry.connections.length === 0 ? unconnectedNote() : entryModeCopy(entry)}
           </p>
         )}
         {renderLinearWriteNote(entry)}
-        {canConnectHosted && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
+        {(canConnectHosted || keyable.length > 0) && entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
         {isHosted && entry.available && entry.accessPage && <p className="v2-cx-note">{renderAccessLink(entry)}</p>}
         {renderManualRevokeNotice(entry)}
       </>
@@ -671,5 +710,5 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  return { renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
+  return { renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
 };

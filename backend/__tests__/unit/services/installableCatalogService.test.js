@@ -433,3 +433,56 @@ it('offers a hidden hosted entry only to its configured walk user', async () => 
     else process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = allowBefore;
   }
 });
+
+// Which connect route the page calls is the entry's fact. An operator-key entry's
+// OAuth start route answers 404 `unknown_entry`, so the row has to say so; an
+// OAuth entry's row stays exactly as it was, with no field.
+it("a hosted entry's row says when it takes a pasted key, and only then", async () => {
+  const keyed = {
+    id: 'keyed',
+    title: 'Keyed',
+    description: 'A vendor that takes a pasted key.',
+    connectNotice: 'Create a key with read scopes only.',
+    accessPage: 'https://keyed.example/keys',
+    resource: 'https://mcp.keyed.example/mcp',
+    credentialMode: 'operator_key',
+    revoke: { page: 'https://keyed.example/keys' },
+    tools: [{
+      name: 'list_things', upstreamName: 'list_things', description: 'List things',
+      class: 'read', inputSchema: { type: 'object' }, annotations: { readOnlyHint: true },
+    }],
+  };
+  const shipped = [...HOSTED_MCP_ENTRIES];
+  HOSTED_MCP_ENTRIES.push(keyed);
+  try {
+    const linearEntry = HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'linear');
+    mockInstallables([], [buildHostedMcpToolInstallable(linearEntry), buildHostedMcpToolInstallable(keyed)]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([{
+      _id: 'conn-keyed', type: 'hosted-mcp', status: 'connected', createdBy: userId,
+      createdAt: new Date('2026-11-01T09:00:00Z'),
+      config: { entryId: 'keyed', intake: 'operator_key', agentId: '6a0000000000000000000009', credentialRef: 'ref-keyed-secret' },
+    }]));
+
+    const rows = (await catalogFor(userId)).installables.filter((entry) => entry.list === 'tools');
+    const keyedRow = rows.find((entry) => entry.installableId === 'keyed');
+    const linear = rows.find((entry) => entry.installableId === 'linear');
+
+    expect(keyedRow).toMatchObject({
+      connectionType: 'hosted-mcp',
+      entryId: 'keyed',
+      credentialMode: 'operator_key',
+      connectNotice: keyed.connectNotice,
+      accessPage: keyed.accessPage,
+      available: true,
+    });
+    expect(keyedRow.connections).toEqual([{
+      connectionId: 'conn-keyed', owner: '', repo: '', connectedAt: '2026-11-01T09:00:00.000Z',
+      agentId: '6a0000000000000000000009',
+    }]);
+    expect(Object.prototype.hasOwnProperty.call(linear, 'credentialMode')).toBe(false);
+    expect(JSON.stringify(rows)).not.toContain('ref-keyed-secret');
+  } finally {
+    HOSTED_MCP_ENTRIES.splice(0, HOSTED_MCP_ENTRIES.length, ...shipped);
+  }
+});
