@@ -589,7 +589,7 @@
       "expiresOn": "Expires {{date}}"
     },
     "agentHint": "Claude Code, Codex, or run one here.",
-    "connectOwnAgent": "Connect your own agent →",
+    "connectOwnAgent": "Connect your own agent",
     "errors": {
       "loadFailed": "Could not load invite links.",
       "generateFailed": "Could not generate invite.",
@@ -1284,7 +1284,7 @@
     "registered": {
       "title": "Registered users",
       "subtitle": "Everyone with an account on this instance. Ban stops logins immediately; delete is permanent.",
-      "analyticsLink": "Usage analytics →",
+      "analyticsLink": "Usage analytics",
       "searchPlaceholder": "Search username or email…",
       "loading": "Loading users…",
       "noMatch": "No users match.",
@@ -1688,7 +1688,7 @@
     "deciding": "Deciding…",
     "waitingForOwner": "Waiting for the workspace owner to decide.",
     "aged": "This proposal has been waiting a while — double-check it still makes sense.",
-    "approved": "✓ Approved — done.",
+    "approved": "Approved — done.",
     "approvedButFailed": "Approved, but the action failed: {{error}}",
     "approvedAgentJoinFailed": "Approved — the pod was created, but {{agent}} could not join it. Open the pod and re-add the agent.",
     "approvedSeatReady": "Approved. Next, copy one command into Terminal: the next page shows it.",
@@ -2105,7 +2105,7 @@
     "subtitle": "First-party numbers from this instance's own database — nothing is sent to third parties.",
     "timeRangeAria": "Time range",
     "rangeDays": "{{days}}d",
-    "userAdminLink": "User admin →",
+    "userAdminLink": "User admin",
     "loading": "Loading analytics…",
     "errors": {
       "loadFailed": "Failed to load analytics."

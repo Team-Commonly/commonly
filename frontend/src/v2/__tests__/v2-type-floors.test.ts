@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { readV2Css } from '../__testkit__/v2Css';
+import { V2_CSS_FILES, readV2Css } from '../__testkit__/v2Css';
 
 /**
  * Signal's type floors (ruling h, 2026-09-06), enforced over the whole
@@ -28,8 +28,20 @@ import { readV2Css } from '../__testkit__/v2Css';
 // v2.css plus the surface files lifted out of it (D223): the chat sheets V2App
 // loads, and the per-surface sheets their components import (R04 BYO, S4 board,
 // R05 Connect, R06 Your team, the invite page).
-const CSS = [readV2Css(), ...['../components/V2AgentBYO.css', '../components/V2PodBoard.css', '../components/V2ConnectPage.css', '../components/V2YourTeamPage.css', '../components/V2InviteRedeem.css']
-  .map((rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8'))]
+// D225 sweep (2026-11-03): every v2 stylesheet, found by walking the tree, so
+// a sheet lifted out of v2.css cannot leave the floor by moving. readV2Css()
+// keeps its load order first; the rest follow in path order.
+const V2_ROOT = path.join(__dirname, '..');
+const allSheets = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true })
+  .flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === '__tests__' ? [] : allSheets(full);
+    return entry.name.endsWith('.css') ? [full] : [];
+  })
+  .sort();
+const LOADED = new Set(V2_CSS_FILES.map((rel) => path.join(V2_ROOT, rel)));
+const CSS = [readV2Css(), ...allSheets(V2_ROOT).filter((file) => !LOADED.has(file))
+  .map((file) => fs.readFileSync(file, 'utf8'))]
   .join('\n');
 
 const MONO_FLOOR = 11;
@@ -139,7 +151,6 @@ const ALLOWLIST: string[] = [
   // unassigned
   // R05 took `.v2-connect__number` (11.0px, no family) to mono 500 11.5px
   // with the Connect lift, so its entry left this list.
-  '.v2-approval__badge', // 10.5px — mono-below-floor
   '.v2-approval__time', // 11.5px — no-mono-family
   // The invite link lift dropped `.v2-invite-card__meta` (11.0px, no family)
   // with the old centred card, so its entry left this list.
@@ -149,7 +160,6 @@ const ALLOWLIST: string[] = [
   '.v2-invite-manage__summary', // 11.0px — no-mono-family
   '.v2-invite-manage__url', // 10.0px — mono-below-floor
   '.v2-invite-options__field', // 11.0px — no-mono-family
-  '.v2-lang-switch__check', // 11.0px — no-mono-family
   '.v2-mention-item__sub', // 11.0px — no-mono-family
   '.v2-modal__error', // 11.0px — no-mono-family
   '.v2-pods__create-error', // 11.0px — no-mono-family
@@ -157,6 +167,45 @@ const ALLOWLIST: string[] = [
   '.v2-root button.v2-admin-users__inline-copy', // 11.0px — no-mono-family
   '.v2-root button.v2-invite-manage__action, .v2-invite-manage__action', // 11.0px — no-mono-family
   '.v2-syscard__time', // 11.5px — no-mono-family
+  // Glob widening (2026-11-03): the scan widened from 11 hand-listed sheets to
+  // every v2 stylesheet. These are what the 18 newly scanned sheets carried on
+  // the day; same burn-down rule — removed, never added.
+  '.v2m-mnav .mo', // 11.0px — no-mono-family
+  '.v2-aprofile .v2-aprofile__avatar-hint', // 10.5px — no-mono-family
+  '.v2-aprofile .v2-aprofile__badge', // 11.0px — no-mono-family
+  '.v2-agent-settings-page .ahead .st', // 11.5px — no-mono-family
+  '.v2-agent-settings-page .gtitle', // 11.5px — no-mono-family
+  '.v2-agent-settings-page .wt th', // 11.0px — no-mono-family
+  '.v2-agent-settings-page .v2-agent-wake-pods__hint', // 11.5px — no-mono-family
+  '.v2-agent-settings-page .v2-agent-wake-pods__cap', // 11.5px — no-mono-family
+  '.v2-agent-settings-page .v2-agent-wake-pods__mode', // 11.5px — no-mono-family
+  '.v2-agent-settings-page .wt td[data-label]::before', // 11.0px — no-mono-family
+  '.v2-agent-settings-page__grantname .mo', // 11.5px — no-mono-family
+  '.v2-agent-settings-page__phonestatus .st', // 11.5px — no-mono-family
+  '.v2-ui-card .ui-meta', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-src', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-steps .st', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-diff .n', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-task .id', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-kv dt', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-tb th', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-tb th.num', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-more', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-rec .c', // 11.0px — no-mono-family
+  '.v2-ui-card .bd', // 11.0px — no-mono-family
+  '.v2-ui-card .lk-h', // 11.0px — no-mono-family
+  '.v2-ui-card .ub .h', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-rt .rh b', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-rt .rh .lk', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-rt .t', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-rt .s', // 11.0px — no-mono-family
+  '.v2-ui-card .ui-rt .d', // 11.0px — no-mono-family
+  '.v2-ui-card ol.ui-ls li::before', // 11.0px — no-mono-family
+  '.v2-cx-tile__beta', // 9.5px — mono-below-floor
+  '.v2-cx-pop__beta', // 10.5px — mono-below-floor
+  '.v2-demo__card .v2-decision-card__agent', // 11.0px — no-mono-family
+  '.v2p-seg button .mo', // 11.0px — no-mono-family
+  '.v2p-badge', // 9.5px — mono-below-floor
 ];
 
 describe('v2 type floors (ruling h)', () => {
@@ -188,6 +237,23 @@ describe('v2 type floors (ruling h)', () => {
     // `.v2-verification-banner` is the first child of a `@media (max-width: 480px)`
     // block, which is exactly the position that was mis-keyed.
     expect(selectors).toContain('.v2-verification-banner');
+  });
+
+  test('the walk reaches every v2 stylesheet, not a hand list', () => {
+    // A changed root or a broken walk would quietly shrink the scan back to
+    // the hand-listed sheets and pass. Pin the count and a few sheets that only
+    // the walk can reach.
+    const walked = allSheets(V2_ROOT).map((file) => path.relative(V2_ROOT, file).split(path.sep).join('/'));
+    expect(walked.length).toBeGreaterThanOrEqual(29);
+    expect(walked).toEqual(expect.arrayContaining([
+      'v2.css',
+      'agents/v2-agent-settings-surface.css',
+      'cards/uiCard.css',
+      'connectors/connectors.css',
+      'landing/v2-landing.css',
+      'primitives/primitives.css',
+    ]));
+    expect(walked.some((file) => file.startsWith('__tests__/'))).toBe(false);
   });
 
   test('the scan is measuring something — the sheet parses into many rules', () => {

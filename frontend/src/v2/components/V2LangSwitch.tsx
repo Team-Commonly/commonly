@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LANGUAGE_REGISTRY, LanguageCode } from '../../i18n';
+import { ShellGlyph } from '../icons/glyphs';
 
-const CHECK_ICON = '✓';
 
 // Dropdown language menu (2026-07-22: reads like the other nav
 // options, not a two-button pill). Trigger shows the active language; the
@@ -58,7 +58,7 @@ const V2LangSwitch: React.FC = () => {
               >
                 <span>{lang.label}</span>
                 {lang.code === active.code && (
-                  <span className="v2-lang-switch__check" aria-hidden="true">{CHECK_ICON}</span>
+                  <span className="v2-lang-switch__check" aria-hidden="true"><ShellGlyph name="check" size={14} /></span>
                 )}
               </button>
             </li>

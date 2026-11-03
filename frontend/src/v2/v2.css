@@ -527,7 +527,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-lang-switch__check {
-  font-size: 11px;
+  display: inline-flex;
 }
 
 /* ---------- Shared filter grammar ---------- */
@@ -1480,6 +1480,8 @@ body.modern-ui.v2-canvas {
 
 .v2-root button.v2-modal__close,
 .v2-modal__close {
+  display: inline-grid;
+  place-items: center;
   width: 28px;
   height: 28px;
   border-radius: 6px;

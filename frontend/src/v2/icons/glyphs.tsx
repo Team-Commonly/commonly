@@ -61,7 +61,7 @@ export const MarkGlyph: React.FC<{ name: MarkName; size?: number }> = ({ name, s
   }
 };
 
-export type ShellGlyphName = 'pencil' | 'people' | 'gear' | 'board' | 'pin' | 'inbox' | 'agents' | 'file' | 'lock' | 'search' | 'plus' | 'reply' | 'send' | 'chevron' | 'copy' | 'check' | 'info' | 'alert';
+export type ShellGlyphName = 'pencil' | 'people' | 'gear' | 'board' | 'pin' | 'inbox' | 'agents' | 'file' | 'lock' | 'search' | 'plus' | 'reply' | 'send' | 'chevron' | 'copy' | 'check' | 'info' | 'alert' | 'chevron-left' | 'chevron-right' | 'close';
 
 /** D215 sidebar controls (TASK-691): the icon carries the act, aria-label and title carry the word. */
 export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number }> = ({ name, size }) => {
@@ -98,6 +98,12 @@ export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number }> = ({ 
       return <G size={size}><path d="M20 6 9 17l-5-5" /></G>;
     case 'info':
       return <G size={size}><circle cx="12" cy="12" r="9" /><path d="M12 16v-4M12 8h.01" /></G>;
+    case 'chevron-left':
+      return <G size={size}><path d="m15 18-6-6 6-6" /></G>;
+    case 'chevron-right':
+      return <G size={size}><path d="m9 18 6-6-6-6" /></G>;
+    case 'close':
+      return <G size={size}><path d="M18 6 6 18M6 6l12 12" /></G>;
     case 'alert':
       return <G size={size}><path d="M12 3 2 20h20z" /><path d="M12 10v4M12 17h.01" /></G>;
     default:

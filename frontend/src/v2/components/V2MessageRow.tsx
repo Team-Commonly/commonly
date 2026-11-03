@@ -17,6 +17,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import { messageImageUrl } from '../utils/messageImageUrl';
+import { ShellGlyph } from '../icons/glyphs';
 
 import CardRenderBoundary from '../cards/CardRenderBoundary';
 
@@ -422,6 +423,21 @@ export const CollapsibleProse: React.FC<{ collapsible: boolean; children: React.
   );
 };
 
+// A quoted upload renders as a file glyph and its name. The glyph is
+// aria-hidden; the name carries the meaning.
+const QUOTE_FILE_OPEN = '\u0001';
+const QUOTE_FILE_CLOSE = '\u0002';
+function renderQuoteText(text: string): React.ReactNode {
+  if (!text.includes(QUOTE_FILE_OPEN)) return text;
+  // User text is stripped of both markers before they are inserted, so every marker here is ours.
+  // A cut that lands right after an opening marker leaves an empty name: render nothing for it.
+  return text.split(/\u0001([^\u0002]*)\u0002?/).map((part, index) => {
+    if (index % 2 === 0) return part;
+    if (!part) return null;
+    return <span key={index} className="v2-msg__quote-file"><ShellGlyph name="file" size={12} />{part}</span>;
+  });
+}
+
 // Match the §3.8 agent-dm-created announcement posted by commonly-bot:
 //   "🤝 Pixel and codex started a DM — [view](/v2/pods/<id>)"
 // The full message body is the line above; capture the headline text and the
@@ -823,10 +839,11 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           // Quoted context for replies. POST responses carry a normalized
           // `replyTo` object; list rows may carry raw reply_* columns instead.
           const rawQuote = message.replyTo?.content ?? message.reply_content;
-          // Collapse upload directives to a paperclip+name — same treatment as
-          // the sidebar preview and the composer reply chip.
+          // Collapse each upload directive to its file name, fenced by two
+          // control characters so the render below can put a file glyph (an
+          // SVG, never an emoji) in front of it after the 240-char cut.
           const quoteContent = rawQuote
-            ? String(rawQuote).replace(/\[\[upload:[^\]|]+\|([^\]|]+)\|[^\]]+\]\]/g, '📎 $1')
+            ? String(rawQuote).replace(/[\u0001\u0002]/g, '').replace(/\[\[upload:[^\]|]+\|([^\]|]+)\|[^\]]+\]\]/g, `${QUOTE_FILE_OPEN}$1${QUOTE_FILE_CLOSE}`)
             : rawQuote;
           const quoteAuthor = message.replyTo?.username ?? message.reply_username;
           if (!quoteContent) return null;
@@ -869,7 +886,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
               onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); jump(); } }}
             >
               <span className="v2-msg__quote-author">{quoteAuthor || t('podChat.quote.earlier')}</span>
-              <span className="v2-msg__quote-text">{String(quoteContent).slice(0, 240)}</span>
+              <span className="v2-msg__quote-text">{renderQuoteText(String(quoteContent).slice(0, 240))}</span>
             </div>
           );
         })()}
