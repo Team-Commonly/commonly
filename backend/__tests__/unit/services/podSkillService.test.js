@@ -132,6 +132,19 @@ describe('PodSkillService', () => {
       expect(PodSkillService.isAvailable()).toBe(false);
     });
 
+    // F78: the model is the instance's configured chat model (DeepSeek through
+    // LiteLLM on prod), never a hardcoded Gemini name that sends the pod's
+    // content to Google first.
+    it('asks the configured model, not a hardcoded Gemini one', async () => {
+      llmService.generateText.mockResolvedValue('{"skills": []}');
+
+      await PodSkillService.generateSkillsWithLLM(baseArgs);
+
+      const [, options] = llmService.generateText.mock.calls[0];
+      expect(options).not.toHaveProperty('model');
+      expect(JSON.stringify(options)).not.toMatch(/gemini/i);
+    });
+
     it('stays available after a transient (non-auth) failure', async () => {
       llmService.generateText.mockRejectedValue(
         new Error('timeout of 30000ms exceeded'),

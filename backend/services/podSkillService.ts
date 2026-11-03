@@ -3,7 +3,6 @@ const PodAssetService = require('./podAssetService');
 // eslint-disable-next-line global-require
 const { generateText } = require('./llmService');
 
-const MODEL_NAME = 'gemini-2.5-flash';
 const MAX_REFERENCES = 14;
 
 interface ReferenceEntry {
@@ -320,7 +319,9 @@ class PodSkillService {
     });
 
     try {
-      const text: string = await generateText(prompt, { model: MODEL_NAME, temperature: 0.2 });
+      // The instance's configured chat model (F78). A hardcoded Gemini name sent
+      // the pod's content to Google first even where Google rejects the key.
+      const text: string = await generateText(prompt, { temperature: 0.2 });
       const parsed = extractJson(text);
       if (!parsed || !Array.isArray(parsed.skills)) {
         return { skills: [], warnings: ['LLM response was not valid JSON.'] };

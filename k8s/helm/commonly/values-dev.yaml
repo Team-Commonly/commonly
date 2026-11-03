@@ -32,6 +32,12 @@ agentProvisioning:
   enabled: true
   createWorkspacePvc: false
 
+# F78 (11-03): Google rejects the Gemini key ("API key not valid"), so backend,
+# ops-runner and commonly-bot stop getting it. A working key turns this back on.
+aiProviders:
+  gemini:
+    enabled: false
+
 backend:
   replicaCount: 1
   worker:
@@ -67,6 +73,10 @@ backend:
     # hosted-agent entitlement (redeemed at signup or later), not signup
     # itself. BYO/local agents are open to every account.
     registrationInviteOnly: "0"
+    # F78 (11-03): no working image or embedding key. The Gemini key is rejected
+    # and the OpenAI key is a placeholder, so both only sent content out and failed.
+    avatarProvider: design
+    embeddingProvider: none
     # TASK-265: new "Run it here" installs run in-process on the native engine
     # (AgentRun per turn, per-user ceiling, tool gate, connectors). Existing
     # installs move with dist/scripts/migrate-hosted-to-native.js (dry run,
