@@ -1,3 +1,4 @@
+const { EventEmitter } = require('events');
 const request = require('supertest');
 const express = require('express');
 
@@ -6,8 +7,20 @@ const mockMongoose = {
     readyState: 1,
   },
 };
+// The probe checks out its own client so it can destroy one that stalls.
+// `query` stands for that client's query; each checkout gets a fresh release.
+// The client is an emitter, as pg's is, so an unheard 'error' throws.
 const mockPool = {
   query: jest.fn().mockResolvedValue({ rows: [{ ok: 1 }] }),
+  releases: [],
+  clients: [],
+  connect: jest.fn(async () => {
+    const release = jest.fn();
+    const client = Object.assign(new EventEmitter(), { query: (q) => mockPool.query(q), release });
+    mockPool.releases.push(release);
+    mockPool.clients.push(client);
+    return client;
+  }),
 };
 const mockCreateClient = jest.fn();
 const mockIsDraining = jest.fn().mockReturnValue(false);
@@ -46,6 +59,8 @@ describe('GET /api/health/ready', () => {
     mockIsDraining.mockReturnValue(false);
     mockMongoose.connection.readyState = 1;
     mockPool.query.mockResolvedValue({ rows: [{ ok: 1 }] });
+    mockPool.releases = [];
+    mockPool.clients = [];
     mockPgRoutesAreMounted.mockReturnValue(true);
   });
 
@@ -96,6 +111,108 @@ describe('GET /api/health/ready', () => {
       'connection refused',
     );
     expect(mockCreateClient).not.toHaveBeenCalled();
+  });
+
+  it('answers degraded-ready before the probe timeout when PostgreSQL does not answer', async () => {
+    // 11-02/11-03 readiness flaps: under a burst of agent long-polls the probe's
+    // SELECT 1 waited on the pool past the probe's 3s timeout, and the kubelet
+    // logged "context deadline exceeded" with no warning from this handler.
+    // A slow answer is treated like a failed one: ready, degraded, and said.
+    let settle;
+    mockPool.query.mockReturnValue(new Promise((resolve) => { settle = resolve; }));
+
+    const started = Date.now();
+    const res = await request(buildApp()).get('/api/health/ready').timeout(2500).expect(200);
+
+    expect(Date.now() - started).toBeLessThan(2500);
+    expect(res.body).toEqual(expect.objectContaining({
+      status: 'ready',
+      degraded: ['postgresql'],
+    }));
+    expect(console.warn).toHaveBeenCalledWith(
+      'health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:',
+      expect.stringMatching(/did not answer within \d+ms/),
+    );
+    // The handler keeps one probe in flight per pod; let it settle so the
+    // next case starts a fresh one.
+    settle({ rows: [{ ok: 1 }] });
+    await new Promise((resolve) => { setImmediate(resolve); });
+  });
+
+  it('keeps one PostgreSQL probe in flight while it is still pending', async () => {
+    // The losing SELECT 1 is not cancelled, so a probe every 5s against a
+    // stalled database would otherwise add one waiting query per probe.
+    let settle;
+    mockPool.query.mockReturnValue(new Promise((resolve) => { settle = resolve; }));
+    const app = buildApp();
+
+    await request(app).get('/api/health/ready').timeout(2500).expect(200);
+    await request(app).get('/api/health/ready').timeout(2500).expect(200);
+    expect(mockPool.query).toHaveBeenCalledTimes(1);
+
+    // Once it settles, the next probe asks again.
+    settle({ rows: [{ ok: 1 }] });
+    await new Promise((resolve) => { setImmediate(resolve); });
+    mockPool.query.mockResolvedValue({ rows: [{ ok: 1 }] });
+    const res = await request(app).get('/api/health/ready').expect(200);
+    expect(res.body.degraded).toBeUndefined();
+    expect(mockPool.query).toHaveBeenCalledTimes(2);
+  });
+
+  it('destroys a stalled probe client at its deadline, so the next probe asks afresh', async () => {
+    // Reuse alone would let one query that never settles keep every later
+    // probe degraded and hold its client for good.
+    const saved = process.env.READY_PG_PROBE_DEADLINE_MS;
+    process.env.READY_PG_PROBE_DEADLINE_MS = '200';
+    try {
+      mockPool.query.mockReturnValueOnce(new Promise(() => {}));
+      const app = buildApp();
+      await request(app).get('/api/health/ready').timeout(2500).expect(200);
+      await new Promise((resolve) => { setTimeout(resolve, 250); });
+
+      expect(mockPool.releases[0]).toHaveBeenCalledWith(expect.any(Error));
+      const res = await request(app).get('/api/health/ready').timeout(2500).expect(200);
+      expect(res.body.degraded).toBeUndefined();
+      expect(mockPool.connect).toHaveBeenCalledTimes(2);
+      expect(mockPool.releases[1]).toHaveBeenCalledWith(undefined);
+    } finally {
+      if (saved === undefined) delete process.env.READY_PG_PROBE_DEADLINE_MS;
+      else process.env.READY_PG_PROBE_DEADLINE_MS = saved;
+    }
+  });
+
+  it('hears a socket error on the probe client while its query is pending', async () => {
+    // pg emits 'error' on a checked-out client whose socket fails and rejects
+    // the query too. Unheard, the emit would throw and take the process down.
+    let fail;
+    mockPool.query.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+    const pending = request(buildApp()).get('/api/health/ready').timeout(2500);
+    const reply = pending.then((res) => res);
+    while (!mockPool.clients[0]) await new Promise((resolve) => { setImmediate(resolve); });
+    const client = mockPool.clients[0];
+    const socketError = new Error('Connection terminated unexpectedly');
+    expect(() => client.emit('error', socketError)).not.toThrow();
+    fail(socketError);
+    const res = await reply;
+    expect(res.status).toBe(200);
+    expect(res.body.degraded).toEqual(['postgresql']);
+    expect(mockPool.releases[0]).toHaveBeenCalledWith(socketError);
+    expect(client.listenerCount('error')).toBe(0);
+  });
+
+  it.each(['-1', '0', 'soon', '2147483648'])('ignores an unusable probe deadline (%s) and stays healthy', async (value) => {
+    const saved = process.env.READY_PG_PROBE_DEADLINE_MS;
+    process.env.READY_PG_PROBE_DEADLINE_MS = value;
+    try {
+      // Settles 20ms after the probe asks, so an immediate deadline would win.
+      mockPool.query.mockImplementationOnce(() => new Promise((resolve) => { setTimeout(() => resolve({ rows: [] }), 20); }));
+      const res = await request(buildApp()).get('/api/health/ready').timeout(2500).expect(200);
+      expect(res.body.degraded).toBeUndefined();
+      expect(mockPool.releases[0]).toHaveBeenCalledWith(undefined);
+    } finally {
+      if (saved === undefined) delete process.env.READY_PG_PROBE_DEADLINE_MS;
+      else process.env.READY_PG_PROBE_DEADLINE_MS = saved;
+    }
   });
 
   it('returns not ready while the PostgreSQL routes are not mounted (TASK-168)', async () => {

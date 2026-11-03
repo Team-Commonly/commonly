@@ -167,6 +167,56 @@ router.get('/db', (_req: unknown, res: Res) => {
   return res.status(saturated ? 503 : 200).json(stats);
 });
 
+const READY_PG_TIMEOUT_MS = 1500;
+// One probe in flight per pod: a request that finds one still pending waits
+// on it instead of starting another, so probes cannot pile up on the pool.
+// The probe checks out its own client and gives its query a deadline of its
+// own; past it the client is released with an error, which makes the pool
+// destroy it, and the next request starts afresh. Without the deadline a query
+// that never settled would hold its client and keep every later probe degraded.
+type ProbeClient = {
+  query: (q: string) => Promise<unknown>;
+  release: (err?: Error) => void;
+  on: (event: 'error', listener: (err: Error) => void) => unknown;
+  removeListener: (event: 'error', listener: (err: Error) => void) => unknown;
+};
+type ProbePool = { connect: () => Promise<ProbeClient> };
+let readyPgProbe: Promise<unknown> | null = null;
+const probePg = (pool: ProbePool): Promise<unknown> => {
+  if (!readyPgProbe) {
+    const configured = Number(process.env.READY_PG_PROBE_DEADLINE_MS);
+    // Node fires any delay above 2^31-1 ms at once, so such a value is unusable too.
+    const deadlineMs = Number.isFinite(configured) && configured > 0 && configured <= 2147483647 ? configured : 10000;
+    readyPgProbe = (async () => {
+      const client = await pool.connect();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let failure: Error | undefined;
+      // The pool drops its own error listener at checkout, and a socket that
+      // fails mid-query emits 'error' on the client; unheard, that ends the process.
+      const onClientError = (err: Error) => { failure = err; };
+      client.on('error', onClientError);
+      try {
+        return await Promise.race([
+          client.query('SELECT 1'),
+          new Promise((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(`probe exceeded ${deadlineMs}ms`)), deadlineMs);
+          }),
+        ]);
+      } catch (error) {
+        failure = error instanceof Error ? error : new Error(String(error));
+        throw failure;
+      } finally {
+        clearTimeout(timer);
+        client.removeListener('error', onClientError);
+        client.release(failure);
+      }
+    })().finally(() => { readyPgProbe = null; });
+    // A request that stopped waiting has already answered; nothing else reads this.
+    readyPgProbe.catch(() => {});
+  }
+  return readyPgProbe;
+};
+
 router.get('/ready', async (_req: unknown, res: Res) => {
   // Draining is not a liveness failure; only readiness stops new traffic.
   const AgentEventService = require('../services/agentEventService');
@@ -200,8 +250,22 @@ router.get('/ready', async (_req: unknown, res: Res) => {
     }
 
     if (process.env.PG_HOST && pgPool) {
+      // Bounded below the probe's 3s timeout (values.yaml readinessProbe). The
+      // query shares the pool with the agent long-polls; when it waits on that
+      // pool past the probe, the kubelet records a failed probe and this
+      // handler says nothing (11-02/11-03 flaps). A slow answer is treated like
+      // a failed one: the pod stays ready, degraded, and the warning is logged.
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await (pgPool as { query: (q: string) => Promise<unknown> }).query('SELECT 1');
+        await Promise.race([
+          probePg(pgPool as ProbePool),
+          new Promise((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`did not answer within ${READY_PG_TIMEOUT_MS}ms`)),
+              READY_PG_TIMEOUT_MS,
+            );
+          }),
+        ]);
       } catch (error) {
         const e = error as { message?: string };
         console.warn('health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:', e.message);
@@ -210,6 +274,8 @@ router.get('/ready', async (_req: unknown, res: Res) => {
           degraded: ['postgresql'],
           timestamp: new Date().toISOString(),
         });
+      } finally {
+        clearTimeout(timer);
       }
     }
 
