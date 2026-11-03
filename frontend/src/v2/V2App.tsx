@@ -355,7 +355,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="pods/:podId/runs/:runId"
-                  element={feature(t('common.pageTitle.runTrace'), <V2RunTrace />, false, false, 'v2-feature--run-trace')}
+                  element={feature(t('runTrace.title'), <V2RunTrace />, false, false, 'v2-feature--run-trace')}
                 />
                 <Route
                   path="pods/:podId/tasks/:taskId/record"

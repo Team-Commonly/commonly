@@ -33,7 +33,7 @@ const ROUTES: Array<[string, string, string]> = [
   ['/v2/agents/openclaw/aria', 'Agent settings', '智能体设置'],
   ['/v2/agents/openclaw/aria/memory', 'Agent memory', '智能体记忆'],
   ['/v2/artifacts', 'Artifacts', '产物'],
-  ['/v2/pods/p1/runs/r1', 'Run trace', '运行轨迹'],
+  ['/v2/pods/p1/runs/r1', 'How this reply was made', '这条回复是怎么来的'],
   ['/v2/pods/p1/tasks/t1/record', 'Task record', '任务记录'],
   ['/v2/activity', 'Activity', '动态'],
   ['/v2/profile/u2', 'Profile', '资料页'],

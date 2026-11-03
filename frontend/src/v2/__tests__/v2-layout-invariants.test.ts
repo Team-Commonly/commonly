@@ -6186,7 +6186,7 @@ describe('run trace keeps the frame phone gutters and clears the tab bar', () =>
   const phone = mediaBlockContaining(rt, '.v2-feature--run-trace > .v2-feature__body');
 
   test('the run trace route tags its feature pane', () => {
-    expect(app).toContain("feature(t('common.pageTitle.runTrace'), <V2RunTrace />, false, false, 'v2-feature--run-trace')");
+    expect(app).toContain("feature(t('runTrace.title'), <V2RunTrace />, false, false, 'v2-feature--run-trace')");
   });
 
   test('at 760 and below the body has 16px side gutters and no top padding', () => {

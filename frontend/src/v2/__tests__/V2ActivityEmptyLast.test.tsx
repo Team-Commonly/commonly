@@ -54,6 +54,6 @@ describe('Needs you: when the last ask was answered', () => {
   test('under a minute in zh-CN', async () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     renderWithHistory(10_000);
-    expect(await screen.findByText('上一个请求刚刚得到回复。')).toBeInTheDocument();
+    expect(await screen.findByText('上一个请求刚刚有了回复。')).toBeInTheDocument();
   });
 });

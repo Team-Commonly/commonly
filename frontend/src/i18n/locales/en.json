@@ -119,7 +119,6 @@
     "pageTitle": {
       "agentSettings": "Agent settings",
       "agentMemory": "Agent memory",
-      "runTrace": "Run trace",
       "profile": "Profile",
       "agentProfile": "Agent profile"
     },
