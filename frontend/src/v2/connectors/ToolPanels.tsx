@@ -530,6 +530,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     const offeredSeats = draftBoundAgent ? podSeats.filter((seat) => seat.userId === draftBoundAgent) : podSeats;
     const boundAbsent = Boolean(draftBoundAgent) && offeredSeats.length === 0;
     const boundName = draftBoundAgent ? (agentNameById(draftBoundAgent) || memberName(draftBoundAgent)) : null;
+    // A key grant whose key was removed opens with no key chosen (openDraft):
+    // the picker shows even for one remaining key, and the seats wait for a key.
+    const keyPending = draftEntry.credentialMode === 'operator_key' && !draft.connectionId;
     const tools = draftTools(draftEntry, draft.writeMode);
     const irreversible = irreversibleTools(draftEntry, tools);
     const asks = draft.writeMode === 'read'
@@ -552,7 +555,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                 </select>
               </label>
             )}
-            {draftEntry.connections.length > 1 && (
+            {(draftEntry.connections.length > 1 || (keyPending && draftEntry.connections.length > 0)) && (
               <label className="v2-tools__field">
                 <span>{t('tools.connection', { defaultValue: 'connection' })}</span>
                 <select
@@ -566,6 +569,9 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                       : { ...draft, connectionId });
                   }}
                 >
+                  {keyPending && (
+                    <option value="" disabled>{t('tools.chooseKey', { defaultValue: 'Choose a key' })}</option>
+                  )}
                   {draftEntry.connections.map((connection) => {
                     // A key connection has no owner or repo, so it is named by its agent.
                     const keyAgent = boundAgentOf(draftEntry, connection.connectionId);
@@ -592,6 +598,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               <span className="v2-tools__hint">{tools.length ? tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</span>
               <span className="v2-tools__hint">{asks}</span>
             </div>
+            {!keyPending && (
             <fieldset className="v2-tools__field v2-tools__agents">
               <legend>{t('tools.agents', { defaultValue: 'agents' })}</legend>
               {!draftBoundAgent && podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
@@ -612,7 +619,8 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                 <span className="v2-tools__hint">{t('tools.keyOnlyAgent', { defaultValue: 'Only {{agent}} can use this key.', agent: boundName || t('tools.aSeat', { defaultValue: 'an agent' }) })}</span>
               )}
             </fieldset>
-            {selectedAgentIds.length === 0 && !boundAbsent && (
+            )}
+            {selectedAgentIds.length === 0 && !boundAbsent && !keyPending && (
               <p className="v2-connector-aside__note" role="status">{t('tools.emptyAudienceNotice', {
                 defaultValue: 'Select at least one agent to grant access.',
               })}</p>

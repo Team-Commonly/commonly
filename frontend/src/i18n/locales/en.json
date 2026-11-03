@@ -2819,7 +2819,8 @@
         "generic": "Could not add the key. Try again."
       },
       "agentsUnavailable": "couldn't read your agents just now · reload to try again"
-    }
+    },
+    "chooseKey": "Choose a key"
   },
   "agentManage": {
     "runtime": {
