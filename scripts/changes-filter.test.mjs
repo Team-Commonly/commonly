@@ -96,7 +96,7 @@ test('backend filter: backend/, cli/, packages/, root manifest', () => {
 });
 
 test('chart filter: k8s/, helm/, the three chart-lint script/doc inputs', () => {
-  for (const f of ['k8s/helm/commonly/values.yaml', 'helm/x.yaml', 'scripts/verify-backend-worker-chart.sh', 'scripts/monitoring/apply-alerting.py', p('docs', 'runbooks', 'alerting.md')]) {
+  for (const f of ['k8s/helm/commonly/values.yaml', 'helm/x.yaml', 'scripts/verify-backend-worker-chart.sh', 'scripts/verify-dev-provider-env.js', 'scripts/monitoring/apply-alerting.py', p('docs', 'runbooks', 'alerting.md')]) {
     assert.equal(classify([f]).chart, true, `${f} should trigger chart-lint`);
   }
   assert.equal(classify(['backend/x.ts']).chart, false);
