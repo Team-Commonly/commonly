@@ -99,7 +99,7 @@ describe('zh-CN', () => {
   test('count, stamp and accessible name render in Chinese, with none of the English', () => {
     const { container } = setup({ replyCount: 1, lastActivityAt: new Date(NOW.getTime() - 25 * 60 * 60000).toISOString() });
     expect(screen.getByText('1条回复')).toBeInTheDocument();
-    expect(screen.getByText('· 最近活动 昨天')).toBeInTheDocument();
+    expect(screen.getByText('· 昨天')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '展开话题，1条回复' })).toBeInTheDocument();
     const text = `${container.textContent} ${screen.getByRole('button').getAttribute('aria-label')}`;
     expect(text).not.toMatch(/\b(reply|replies|last|Yesterday|Expand|Collapse|thread)\b/i);
@@ -108,7 +108,7 @@ describe('zh-CN', () => {
   test('plural counts and minute stamps, expanded', () => {
     setup({ replyCount: 3, collapsed: false });
     expect(screen.getByText('3条回复')).toBeInTheDocument();
-    expect(screen.getByText('· 最近活动 2分钟')).toBeInTheDocument();
+    expect(screen.getByText('· 2分钟前')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '收起话题，3条回复' })).toBeInTheDocument();
   });
 });

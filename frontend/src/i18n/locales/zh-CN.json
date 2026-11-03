@@ -270,7 +270,7 @@
         "press": "待你合并"
       },
       "countLabel": "{{count}}项等你处理",
-      "emptyLast": "上一个请求的回复时间：{{age}}。"
+      "emptyLast": "上一个请求{{age}}已得到回复。"
     },
     "approval": {
       "approve": "批准",
@@ -788,7 +788,7 @@
       "muted": "已静音",
       "replyCount_one": "{{count}}条回复",
       "replyCount_other": "{{count}}条回复",
-      "lastActivity": "· 最近活动 {{age}}",
+      "lastActivity": "· {{age}}",
       "expandAria": "展开话题，{{replies}}",
       "collapseAria": "收起话题，{{replies}}"
     },
@@ -3067,13 +3067,13 @@
     },
     "compact": {
       "now": "刚刚",
-      "minutes": "{{n}}分钟",
-      "hours": "{{n}}小时",
+      "minutes": "{{n}}分钟前",
+      "hours": "{{n}}小时前",
       "yesterday": "昨天",
-      "days": "{{n}}天",
-      "weeks": "{{n}}周",
-      "months": "{{n}}个月",
-      "years": "{{n}}年"
+      "days": "{{n}}天前",
+      "weeks": "{{n}}周前",
+      "months": "{{n}}个月前",
+      "years": "{{n}}年前"
     }
   },
   "teammate": {

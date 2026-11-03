@@ -62,13 +62,13 @@ describe('shortTimeSince in zh-CN', () => {
 
   test.each([
     ['under a minute', ago(30000), '刚刚'],
-    ['two minutes', ago(2 * MIN), '2分钟'],
-    ['59 minutes', ago(59 * MIN), '59分钟'],
-    ['the minute/hour boundary', ago(60 * MIN), '1小时'],
-    ['23 hours', ago(23 * HOUR), '23小时'],
+    ['two minutes', ago(2 * MIN), '2分钟前'],
+    ['59 minutes', ago(59 * MIN), '59分钟前'],
+    ['the minute/hour boundary', ago(60 * MIN), '1小时前'],
+    ['23 hours', ago(23 * HOUR), '23小时前'],
     ['the previous calendar date', ago(25 * HOUR), '昨天'],
-    ['two days back', ago(49 * HOUR), '2天'],
-    ['a week or more', ago(8 * 24 * HOUR), '1周'],
+    ['two days back', ago(49 * HOUR), '2天前'],
+    ['a week or more', ago(8 * 24 * HOUR), '1周前'],
     ['a future timestamp', new Date(NOW.getTime() + 5 * MIN), '刚刚'],
   ])('%s', (_label, when, expected) => {
     expect(shortTimeSince(when, NOW)).toBe(expected);
