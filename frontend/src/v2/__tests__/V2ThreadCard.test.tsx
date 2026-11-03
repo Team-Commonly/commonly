@@ -6,7 +6,8 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import i18n, { i18nReady } from '../../i18n';
 import V2ThreadCard from '../components/V2ThreadCard';
 
-const NOW = new Date('2026-08-22T12:00:00Z');
+// Local noon, so "yesterday" (25h back) is the previous calendar day in every timezone.
+const NOW = new Date(2026, 7, 22, 12, 0, 0);
 
 const people = [
   { userId: 'u1', name: 'Ada', isBot: false },
