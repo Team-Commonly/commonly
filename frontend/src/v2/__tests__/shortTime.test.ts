@@ -1,7 +1,8 @@
 import i18n, { i18nReady } from '../../i18n';
 import { shortTimeSince } from '../utils/shortTime';
 
-const NOW = new Date('2026-08-22T12:00:00Z');
+// Local noon, so 25h back is the previous calendar day in every timezone.
+const NOW = new Date(2026, 7, 22, 12, 0, 0);
 const ago = (ms: number) => new Date(NOW.getTime() - ms);
 const MIN = 60000;
 const HOUR = 60 * MIN;
