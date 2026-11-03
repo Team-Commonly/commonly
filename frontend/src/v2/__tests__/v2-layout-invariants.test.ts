@@ -236,12 +236,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(windowButton).toContain('min-height: 44px');
     const scopeButton = selectorRuleBody(phone, '.v2-root button.v2-activity__scope-button {');
     expect(scopeButton).toContain('min-height: 44px');
-    // The scope stays one row: pod buttons shrink into their ellipsis rather than wrap, "All pods" keeps its width.
-    expect(scopeButton).toContain('min-width: 0');
-    expect(scopeButton).toContain('flex: 0 1 auto');
+    // The scope stays one row: pod buttons shrink into their ellipsis rather than wrap, never below 44px wide.
+    expect(scopeButton).toContain('min-width: 44px');
     // Its own rule: `.v2-activity__scope {` alone would match the shared window/scope rule above it.
     expect(phone).toContain('\n  .v2-activity__scope { flex-wrap: nowrap; }');
-    expect(selectorRuleBody(phone, '.v2-root button.v2-activity__scope-button:first-child {')).toContain('flex-shrink: 0');
+    // "All pods" and the "more" trigger never shrink, so the trigger keeps its label and caret.
+    expect(phone).toContain('.v2-root .v2-activity__scope > button.v2-activity__scope-button:first-child,\n  .v2-root button.v2-activity__scope-button--more { flex-shrink: 0; }');
+    expect(fs.readFileSync(path.join(__dirname, '../components/V2ActivityPage.tsx'), 'utf8')).toContain("' v2-activity__scope-button--active' : ' v2-activity__scope-button--more'");
     expect(selectorRuleBody(phone, '.v2-activity__controls + .v2-activity__compose {')).toContain('margin-top: 12px');
     // Same selectors as the ≤1100 filter row (a row with a rule under it), so this block must come after it.
     const filterRow = v2.indexOf('.v2-activity__controls { position: relative; top: auto; right: auto;');
