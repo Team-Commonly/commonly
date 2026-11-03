@@ -826,7 +826,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           // Collapse upload directives to a paperclip+name — same treatment as
           // the sidebar preview and the composer reply chip.
           const quoteContent = rawQuote
-            ? String(rawQuote).replace(/\[\[upload:[^\]|]+\|([^\]|]+)\|[^\]]+\]\]/g, '📎 $1')
+            ? String(rawQuote).replace(/\[\[upload:[^\]|]+\|([^\]|]+)\|[^\]]+\]\]/g, '$1')
             : rawQuote;
           const quoteAuthor = message.replyTo?.username ?? message.reply_username;
           if (!quoteContent) return null;

@@ -634,7 +634,7 @@
 .v2-board__watchers-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .v2-board__watchers-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
 .v2-board__watchers-count { font: 500 11px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
-.v2-root button.v2-board__follow { margin-left: auto; min-height: 32px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-bg); color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; }
+.v2-root button.v2-board__follow { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; min-height: 32px; padding: 0 10px; border: 1px solid var(--v2-border); border-radius: 4px; background: var(--v2-bg); color: var(--v2-text-secondary); font-size: 13px; font-weight: 600; }
 .v2-root button.v2-board__follow[aria-pressed="true"] { color: var(--v2-text-primary); }
 .v2-board__watcher-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .v2-board__watcher { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; max-width: 100%; padding: 0 8px 0 4px; border: 1px solid var(--v2-border-soft); border-radius: 4px; font-size: 12px; overflow-wrap: anywhere; }

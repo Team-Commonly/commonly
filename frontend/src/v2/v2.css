@@ -527,7 +527,7 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-lang-switch__check {
-  font-size: 11px;
+  display: inline-flex;
 }
 
 /* ---------- Shared filter grammar ---------- */

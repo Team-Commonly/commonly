@@ -173,6 +173,7 @@ entrance and scroll-reveal animation is allowed within these limits:
   1. **Inspector cards** (`.v2-inspector__card`) — borderless, separated by top hairline. No background fill.
   2. **Tab cards** (`.v2-tab-card`) — `1px solid #e5e7eb` border, white fill, `10px` radius, `12px` padding.
 - **No left-border accent** — never the colored stripe. If a card needs status color, it goes on a small dot or chip inside.
+- The stripe is one of eleven AI-slop tells; the list, its checks and the guard are in [`docs/design/ai-slop-tells.md`](../../docs/design/ai-slop-tells.md).
 
 ### Imagery vibe
 

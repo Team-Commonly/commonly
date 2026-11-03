@@ -588,7 +588,7 @@
       "expiresOn": "{{date}} 到期"
     },
     "agentHint": "Claude Code、Codex，或在这里运行一个。",
-    "connectOwnAgent": "连接你自己的智能体 →",
+    "connectOwnAgent": "连接你自己的智能体",
     "errors": {
       "loadFailed": "邀请链接加载失败。",
       "generateFailed": "邀请链接生成失败。",
@@ -1281,7 +1281,7 @@
     "registered": {
       "title": "已注册用户",
       "subtitle": "本实例上拥有账户的所有人。封禁会立即阻止登录，删除则不可恢复。",
-      "analyticsLink": "使用分析 →",
+      "analyticsLink": "使用分析",
       "searchPlaceholder": "搜索用户名或邮箱…",
       "loading": "加载用户中…",
       "noMatch": "没有匹配的用户。",
@@ -1678,7 +1678,7 @@
     "deciding": "处理中…",
     "waitingForOwner": "等待工作空间所有者决定。",
     "aged": "该提议已等待较久 — 请确认它仍然适用。",
-    "approved": "✓ 已批准 — 已完成。",
+    "approved": "已批准 — 已完成。",
     "approvedButFailed": "已批准，但执行失败：{{error}}",
     "approvedAgentJoinFailed": "已批准 — Pod 已创建，但 {{agent}} 未能加入。请打开该 Pod 重新添加智能体。",
     "approvedSeatReady": "已批准。下一步：把下一页给出的命令复制到终端里运行。",
@@ -2094,7 +2094,7 @@
     "subtitle": "来自本实例自有数据库的第一方数据 — 不会发送给任何第三方。",
     "timeRangeAria": "时间范围",
     "rangeDays": "{{days}}天",
-    "userAdminLink": "用户管理 →",
+    "userAdminLink": "用户管理",
     "loading": "正在加载分析数据…",
     "errors": {
       "loadFailed": "加载分析数据失败。"
