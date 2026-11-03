@@ -1805,6 +1805,8 @@
       "loadingPods": "正在加载 Pod…",
       "machineLabel": "电脑",
       "adapterLabel": "适配器",
+      "wontAnswerBeforeInstall": "{{tool}} 暂时无法在 {{os}} 上回复 @提及。从这里连接的智能体只能在你自己的会话中使用，有人 @提及它时不会回复。想让它回复，请选择「{{hosted}}」，或在 Mac 上连接。",
+      "wontAnswerBeforeInstallNoHosted": "{{tool}} 暂时无法在 {{os}} 上回复 @提及。从这里连接的智能体只能在你自己的会话中使用，有人 @提及它时不会回复。想让它回复，请在 Mac 上连接。",
       "adapterDefault": "在这台电脑上自动检测",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",

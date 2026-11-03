@@ -377,3 +377,7 @@
   background: var(--v2-bg-subtle);
   border-radius: 4px;
 }
+/* The connect-command button when "Run it here" leads (Windows, before install):
+   the submit's placement and disabled state, without its fill. */
+.v2-feature--byo .v2-byo__submit--quiet { color: var(--v2-text-primary); background: transparent; border-color: var(--v2-border-soft); }
+.v2-feature--byo .v2-byo__submit--quiet:hover:not(:disabled) { background: var(--v2-surface); border-color: var(--v2-border-soft); }
