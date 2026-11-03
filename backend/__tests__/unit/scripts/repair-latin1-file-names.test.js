@@ -67,4 +67,26 @@ describe('repairFileNames', () => {
     expect(await names()).toEqual(['2025年报告.doc', 'café.png', 'plain.png', '已经正确.png']);
     expect(await repairFileNames(File, { apply: true, log: () => {} })).toEqual({ scanned: 1, repairable: 0, repaired: 0 });
   });
+  it('skips a row renamed between the scan and the write, and counts only real writes', async () => {
+    await seed();
+    // A person renames the file after the scan has read it.
+    const scanning = {
+      find: (...args) => {
+        const q = File.find(...args);
+        return {
+          select: (...s) => ({
+            lean: async () => {
+              const rows = await q.select(...s).lean();
+              await File.updateOne({ fileName: 'a' }, { $set: { originalName: 'renamed.doc' } });
+              return rows;
+            },
+          }),
+        };
+      },
+      updateOne: (...args) => File.updateOne(...args),
+    };
+    const report = await repairFileNames(scanning, { apply: true, log: () => {} });
+    expect(report).toEqual({ scanned: 2, repairable: 1, repaired: 0 });
+    expect((await File.findOne({ fileName: 'a' }).lean()).originalName).toBe('renamed.doc');
+  });
 });

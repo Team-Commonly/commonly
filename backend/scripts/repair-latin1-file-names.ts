@@ -16,6 +16,12 @@
  *   - the repaired name encodes back to exactly the stored bytes.
  * A genuine latin1 name such as "café.png" stored correctly fails the second
  * test (a lone 0xE9 is not valid UTF-8) and is left alone.
+ * The one case no byte-level repair can tell apart: a name typed with only
+ * U+0080–U+00FF characters whose bytes also happen to be valid UTF-8 (a
+ * literal "Ã©.png"). That is not a realistic file name.
+ *
+ * Chat messages carry the name in their text too, and are not touched; Postgres
+ * chat expires after 30 days, so those copies age out.
  *
  * Usage:
  *   cd backend && node dist/scripts/repair-latin1-file-names.js          # dry run
@@ -62,8 +68,10 @@ const repairFileNames = async (
   { apply, log = console.log }: { apply: boolean; log?: (line: string) => void },
 ): Promise<RepairReport> => {
   // Only names with a code point in U+0080–U+00FF can be candidates. Written
-  // as \x80-\xff because MongoDB's PCRE2 rejects a JavaScript \u escape
-  // ("PCRE2 does not support \u"); in its UTF mode \xhh is the code point.
+  // as \x80-\xff, which both of MongoDB's regex engines read as code points;
+  // a JavaScript \u escape is rejected by the PCRE2 engine MongoDB uses from
+  // 6.1. The dry run is the check on production: a scan of 0 there means the
+  // query matched nothing, so do not run --apply on that result.
   const rows = await FileModel.find({ originalName: /[\x80-\xff]/ })
     .select('_id originalName')
     .lean();
