@@ -5496,17 +5496,19 @@ body.modern-ui.v2-canvas {
   .v2-activity__window { width: auto; flex: 0 0 auto; }
   .v2-activity__scope { min-width: 0; max-width: 100%; flex-wrap: wrap; }
 }
-/* ≤760 (d215 activity 390): window and scope are two full-width 42px rows under the top bar —
-   12px gutters, 8px apart, 36px buttons, 12px above the composer, no rule under them. Same
-   selectors as the ≤1100 row above, so this block wins by order. The gutter is margin, not
-   padding, so the block is the frame's 366px box; 2px inside the 1px border is the frame's 3px
-   inset. The window's two buttons split the row, the scope's keep their own width from the left. */
+/* ≤760 (d215 activity 390): window and scope are two full-width rows under the top bar —
+   12px gutters, 8px apart, 12px above the composer, no rule under them. Same selectors as the
+   ≤1100 row above, so this block wins by order. The gutter is margin, not padding, so the block
+   is the frame's 366px box; 2px inside the 1px border is the frame's 3px inset. The window's two
+   buttons split the row, the scope's keep their own width from the left. The artboard draws 36px
+   buttons; they hold at 44px, like every other Activity control at this width (TASK-735: a
+   deliberate touch floor, flagged for UX Lead). */
 @media (max-width: 760px) {
   .v2-activity__controls { flex-direction: column; flex-wrap: nowrap; align-items: stretch; width: auto; margin: 12px 12px 0; padding: 0; border-bottom: 0; }
   .v2-activity__window,
   .v2-activity__scope { width: auto; padding: 2px; }
-  .v2-root button.v2-activity__window-button { flex: 1 1 0; justify-content: center; min-height: 36px; }
-  .v2-root button.v2-activity__scope-button { min-height: 36px; }
+  .v2-root button.v2-activity__window-button { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .v2-root button.v2-activity__scope-button { min-height: 44px; }
   .v2-activity__controls + .v2-activity__compose { margin-top: 12px; }
 }
 @media (max-width: 640px) {

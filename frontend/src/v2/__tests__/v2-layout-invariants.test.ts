@@ -227,12 +227,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(controls).toContain('margin: 12px 12px 0');
     expect(controls).toContain('padding: 0');
     expect(controls).toContain('border-bottom: 0');
-    // 1px border + 2px padding is the frame's 3px inset around 36px buttons: 42px rows.
+    // 1px border + 2px padding is the frame's 3px inset. The frame's 36px buttons hold at the 44px touch floor.
     expect(selectorRuleBody(phone, '.v2-activity__window,\n  .v2-activity__scope {')).toContain('padding: 2px');
+    expect(selectorRuleBody(phone, '.v2-activity__window,\n  .v2-activity__scope {')).toContain('width: auto');
     const windowButton = selectorRuleBody(phone, '.v2-root button.v2-activity__window-button {');
     expect(windowButton).toContain('flex: 1 1 0');
-    expect(windowButton).toContain('min-height: 36px');
-    expect(selectorRuleBody(phone, '.v2-root button.v2-activity__scope-button {')).toContain('min-height: 36px');
+    expect(windowButton).toContain('justify-content: center');
+    expect(windowButton).toContain('min-height: 44px');
+    expect(selectorRuleBody(phone, '.v2-root button.v2-activity__scope-button {')).toContain('min-height: 44px');
     expect(selectorRuleBody(phone, '.v2-activity__controls + .v2-activity__compose {')).toContain('margin-top: 12px');
     // Same selectors as the ≤1100 filter row (a row with a rule under it), so this block must come after it.
     const filterRow = v2.indexOf('.v2-activity__controls { position: relative; top: auto; right: auto;');
