@@ -12,6 +12,17 @@ The spec for D215 (artboard v2). Open `index.html` in a browser. The toggle at t
 - `cap/` holds the measuring scripts. See the header of `measure_after.js` for its env.
 - Every frame without `data-state` must be listed in `measure_after.js`, either in `SURFACES` (scored) or in `SKIPPED` (not scored, with a reason). Activity, Artifacts and the two trace "before" frames are skipped. `node --test cap/measure_after.test.js` fails on any frame that is in neither list.
 
+## Where each frame came from
+
+Passing the prod check means a page matches its frame. It means the page matches the style Sam picked only when the frame came from his pick. Every frame is in one of four groups, and prod scores are reported per group, never as one total.
+
+| Group | Frames | Source |
+|---|---|---|
+| **From Sam's pick** | sidebar, chat, board, agent-memory, agent-settings, settings, connectors | The seven surfaces picked on 10-31 (#3059). Later edits: the theme switch (#3175) and the open thread (#3178). #3288 (the 390 agent-settings and settings frames, brought up to the shipped pages) and #3289 (memory notes drawn as the API holds them) moved those frames toward the live page, so read them with that in mind. |
+| **Drawn after the pick** | dm, byo, byo-handoff, connect, team, firstrun-\*, signin, signup, signup-sent, verify-email, forgot-password, reset-password, cli-authorize, invite, invite-required, profile, agent-profile, run-trace-\*, chat-trace-\*, chat-agents-away, and the agent-settings and settings state blocks | New drawings in the picked language, from 11-01 on. Sam has not reviewed them as a set. |
+| **Drawn from live** | activity-\*, artifacts-\* without `data-state` | Traced from the live pages with small fixes (#3316, #3318). A page scored against these only shows it has not drifted from itself. It does not show the page is in the picked style. |
+| **Redraw, for Sam's choice** | activity-\*, artifacts-\* with `data-state="signal"` | The same two pages, built only from the picked surfaces' blocks. The scorer skips them. Nothing is built from them until Sam picks. |
+
 ## Rules for D215 PRs
 
 1. Every PR attaches screenshots of the built page at 1440 and 390, in light and dark, beside the matching artboard frame.
