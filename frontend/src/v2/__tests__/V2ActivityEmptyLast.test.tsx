@@ -51,6 +51,26 @@ describe('Needs you: when the last ask was answered', () => {
     expect(screen.queryByText('The last ask was just answered.')).not.toBeInTheDocument();
   });
 
+  describe('the 60-second cutoff', () => {
+    // Pin the clock, so the ruling sits exactly 59,999 or 60,000 ms back
+    // when the component compares it.
+    const now = Date.UTC(2026, 10, 3, 12, 0, 0);
+    let clock: jest.SpyInstance;
+    beforeEach(() => { clock = jest.spyOn(Date, 'now').mockReturnValue(now); });
+    afterEach(() => clock.mockRestore());
+
+    test('59,999 ms is still "just answered"', async () => {
+      renderWithHistory(59_999);
+      expect(await screen.findByText('The last ask was just answered.')).toBeInTheDocument();
+    });
+
+    test('60,000 ms is the first "1m ago"', async () => {
+      renderWithHistory(60_000);
+      expect(await screen.findByText('The last ask was answered 1m ago.')).toBeInTheDocument();
+      expect(screen.queryByText('The last ask was just answered.')).not.toBeInTheDocument();
+    });
+  });
+
   test('under a minute in zh-CN', async () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     renderWithHistory(10_000);
