@@ -1748,6 +1748,8 @@
       "loadingPods": "Loading pods…",
       "machineLabel": "Computer",
       "adapterLabel": "Adapter",
+      "wontAnswerBeforeInstall": "On {{os}}, {{tool}} can’t answer @mentions yet. An agent you connect from here works only inside your own sessions, and it won’t reply when someone @mentions it. For replies, choose “{{hosted}}”, or connect from a Mac.",
+      "wontAnswerBeforeInstallNoHosted": "On {{os}}, {{tool}} can’t answer @mentions yet. An agent you connect from here works only inside your own sessions, and it won’t reply when someone @mentions it. For replies, connect from a Mac.",
       "adapterDefault": "Auto-detect on that computer",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",

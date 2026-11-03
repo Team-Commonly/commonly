@@ -339,6 +339,7 @@ const V2AgentBYO: React.FC = () => {
   // Compact only where the command exists (#2289): "One command in Terminal"
   // must not open onto a page that shows no command. Elsewhere the full page
   // says why and what works instead.
+  const wontAnswerBeforeInstall = mode === 'byo' && !issued && !listenerAvailable && setupOs === 'windows';
   const showCompactByo = compactByo && listenerAvailable && !showCompactHosted && !personaCard && mode === 'byo';
   const selectedMachine = machines.find((m) => m.machineId === machineId);
   const selectedMachineName = selectedMachine
@@ -1476,6 +1477,32 @@ const V2AgentBYO: React.FC = () => {
             </div>
           )}
           {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
+          {/* Said before the agent exists, not after (11-02: four agents made on
+              Windows, none ever answered, because the only warning came after
+              install). Mac always runs the listener; Linux is the pod's call. */}
+          {wontAnswerBeforeInstall && (
+            <div className="v2-byo__needs" role="status" data-testid="byo-wont-answer-before-install">
+              {t(hosting?.configured ? 'agentByo.form.wontAnswerBeforeInstall' : 'agentByo.form.wontAnswerBeforeInstallNoHosted', {
+                os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osWindows'),
+                tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
+                hosted: t('agentByo.mode.hosted'),
+              })}
+              {hosting?.configured && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="v2-byo__submit"
+                    data-testid="byo-wont-answer-run-here"
+                    disabled={submitting}
+                    onClick={() => chooseMode('hosted')}
+                  >
+                    {t('agentByo.mode.hosted')}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           {mode === null ? (
             // Signal §3 not yet: a muted line where the act will be, until a
             // place to run it is chosen. Plain text, not a box, so it can't
@@ -1499,7 +1526,7 @@ const V2AgentBYO: React.FC = () => {
               onMouseDown={(event) => event.preventDefault()}
               onClick={submit}
               disabled={submitting || (mode === 'byo' && !namesReady) || !podId}
-              className="v2-byo__submit"
+              className={wontAnswerBeforeInstall && hosting?.configured ? 'v2-byo__submit v2-byo__submit--quiet' : 'v2-byo__submit'}
             >
               {(() => {
                 if (mode === 'hosted') return submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere');
