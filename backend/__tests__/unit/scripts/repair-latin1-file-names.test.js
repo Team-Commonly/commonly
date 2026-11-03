@@ -1,3 +1,6 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const mongoose = require('mongoose');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 const File = require('../../../models/File');
@@ -39,6 +42,11 @@ describe('repairFileNames', () => {
   afterAll(closeMongoDb);
   beforeEach(clearMongoDb);
 
+  // Every apply writes its undo record here; each test gets a fresh path.
+  let undoPath;
+  beforeEach(() => { undoPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'repair-undo-')), 'undo.json'); });
+  afterEach(() => fs.rmSync(path.dirname(undoPath), { recursive: true, force: true }));
+
   const uploadedBy = new mongoose.Types.ObjectId();
   const seed = () => File.create([
     { fileName: 'a', originalName: garble('2025年报告.doc'), contentType: 'application/msword', size: 1, uploadedBy },
@@ -53,19 +61,20 @@ describe('repairFileNames', () => {
     await seed();
     const before = await names();
     const lines = [];
-    const report = await repairFileNames(File, { apply: false, log: (l) => lines.push(l) });
+    const report = await repairFileNames(File, { apply: false, log: (l) => lines.push(l), undoPath });
     expect(report).toEqual({ scanned: 2, repairable: 1, repaired: 0 });
     expect(await names()).toEqual(before);
     expect(lines.join('\n')).toContain('20•••••.doc');
     expect(lines.join('\n')).not.toContain('报告');
+    expect(fs.existsSync(undoPath)).toBe(false);
   });
 
   it('repairs only the garbled row on --apply, and a second run finds nothing', async () => {
     await seed();
-    const report = await repairFileNames(File, { apply: true, log: () => {} });
+    const report = await repairFileNames(File, { apply: true, log: () => {}, undoPath });
     expect(report).toEqual({ scanned: 2, repairable: 1, repaired: 1 });
     expect(await names()).toEqual(['2025年报告.doc', 'café.png', 'plain.png', '已经正确.png']);
-    expect(await repairFileNames(File, { apply: true, log: () => {} })).toEqual({ scanned: 1, repairable: 0, repaired: 0 });
+    expect(await repairFileNames(File, { apply: true, log: () => {}, undoPath: `${undoPath}.2` })).toEqual({ scanned: 1, repairable: 0, repaired: 0 });
   });
   it('skips a row renamed between the scan and the write, and counts only real writes', async () => {
     await seed();
@@ -85,8 +94,21 @@ describe('repairFileNames', () => {
       },
       updateOne: (...args) => File.updateOne(...args),
     };
-    const report = await repairFileNames(scanning, { apply: true, log: () => {} });
+    const report = await repairFileNames(scanning, { apply: true, log: () => {}, undoPath });
     expect(report).toEqual({ scanned: 2, repairable: 1, repaired: 0 });
     expect((await File.findOne({ fileName: 'a' }).lean()).originalName).toBe('renamed.doc');
+  });
+  it('writes every original name to the undo record before changing a row, and never overwrites a record', async () => {
+    await seed();
+    await repairFileNames(File, { apply: true, log: () => {}, undoPath });
+    const undo = JSON.parse(fs.readFileSync(undoPath, 'utf8'));
+    const a = await File.findOne({ fileName: 'a' }).lean();
+    expect(undo).toEqual([{ id: String(a._id), stored: garble('2025年报告.doc'), repaired: '2025年报告.doc' }]);
+    expect(fs.statSync(undoPath).mode & 0o777).toBe(0o600);
+
+    // A second apply onto the same record path refuses before writing anything.
+    await File.updateOne({ fileName: 'a' }, { $set: { originalName: garble('第二次.doc') } });
+    await expect(repairFileNames(File, { apply: true, log: () => {}, undoPath })).rejects.toThrow(/EEXIST/);
+    expect((await File.findOne({ fileName: 'a' }).lean()).originalName).toBe(garble('第二次.doc'));
   });
 });

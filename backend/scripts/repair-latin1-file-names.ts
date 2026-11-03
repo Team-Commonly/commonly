@@ -26,6 +26,11 @@
  * Usage:
  *   cd backend && node dist/scripts/repair-latin1-file-names.js          # dry run
  *   cd backend && node dist/scripts/repair-latin1-file-names.js --apply
+ *
+ * --apply first writes every row it will change (id, stored name, new name) to
+ * repair-latin1-file-names.undo.json in the working directory, and refuses to
+ * run if that file already exists. Because one rare case can't be told apart
+ * (below), every write stays reversible from that record.
  */
 
 /* eslint-disable no-console */
@@ -65,7 +70,8 @@ type RepairReport = { scanned: number; repairable: number; repaired: number };
 // against an in-memory database. Writes only when `apply` is true.
 const repairFileNames = async (
   FileModel: any,
-  { apply, log = console.log }: { apply: boolean; log?: (line: string) => void },
+  { apply, log = console.log, undoPath = 'repair-latin1-file-names.undo.json' }:
+    { apply: boolean; log?: (line: string) => void; undoPath?: string },
 ): Promise<RepairReport> => {
   // Only names with a code point in U+0080–U+00FF can be candidates. Written
   // as \x80-\xff, which both of MongoDB's regex engines read as code points;
@@ -92,6 +98,18 @@ const repairFileNames = async (
     log('DRY RUN: re-run with --apply to write.');
     return { scanned: rows.length, repairable: candidates.length, repaired: 0 };
   }
+
+  // The undo record goes to disk before any write, and 'wx' refuses to
+  // overwrite one from an earlier run, so no original name is ever lost.
+  // eslint-disable-next-line global-require
+  const fs = require('fs');
+  fs.writeFileSync(
+    undoPath,
+    JSON.stringify(candidates.map((c: { id: unknown; stored: string; repaired: string }) => (
+      { id: String(c.id), stored: c.stored, repaired: c.repaired })), null, 1),
+    { flag: 'wx', mode: 0o600 },
+  );
+  log(`undo record: ${undoPath}`);
 
   let repaired = 0;
   for (const c of candidates) {
