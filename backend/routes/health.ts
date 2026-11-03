@@ -179,7 +179,8 @@ let readyPgProbe: Promise<unknown> | null = null;
 const probePg = (pool: ProbePool): Promise<unknown> => {
   if (!readyPgProbe) {
     const configured = Number(process.env.READY_PG_PROBE_DEADLINE_MS);
-    const deadlineMs = Number.isFinite(configured) && configured > 0 ? configured : 10000;
+    // Node fires any delay above 2^31-1 ms at once, so such a value is unusable too.
+    const deadlineMs = Number.isFinite(configured) && configured > 0 && configured <= 2147483647 ? configured : 10000;
     readyPgProbe = (async () => {
       const client = await pool.connect();
       let timer: ReturnType<typeof setTimeout> | undefined;

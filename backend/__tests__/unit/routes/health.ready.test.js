@@ -175,11 +175,12 @@ describe('GET /api/health/ready', () => {
     }
   });
 
-  it.each(['-1', '0', 'soon'])('ignores an unusable probe deadline (%s) and stays healthy', async (value) => {
+  it.each(['-1', '0', 'soon', '2147483648'])('ignores an unusable probe deadline (%s) and stays healthy', async (value) => {
     const saved = process.env.READY_PG_PROBE_DEADLINE_MS;
     process.env.READY_PG_PROBE_DEADLINE_MS = value;
     try {
-      mockPool.query.mockReturnValueOnce(new Promise((resolve) => { setTimeout(() => resolve({ rows: [] }), 20); }));
+      // Settles 20ms after the probe asks, so an immediate deadline would win.
+      mockPool.query.mockImplementationOnce(() => new Promise((resolve) => { setTimeout(() => resolve({ rows: [] }), 20); }));
       const res = await request(buildApp()).get('/api/health/ready').timeout(2500).expect(200);
       expect(res.body.degraded).toBeUndefined();
       expect(mockPool.releases[0]).toHaveBeenCalledWith(undefined);
