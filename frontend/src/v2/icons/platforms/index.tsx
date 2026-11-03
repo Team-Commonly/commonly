@@ -102,6 +102,15 @@ const GoogleCalendar = () => (
   </S>
 );
 
+// Original Commonly drawing; no third-party glyph or licensed asset. A plain
+// key outline for Latchkey, not the vendor's brand mark.
+const Latchkey = () => (
+  <S>
+    <circle cx="7.5" cy="12" r="4.5" fill="none" stroke="currentColor" strokeWidth="2" />
+    <path d="M12 12h9.5M18 12v3.5M21 12v2.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+  </S>
+);
+
 export const PLATFORM_GLYPHS: Record<string, React.FC> = {
   github: GitHub,
   'github-mcp': GitHub,
@@ -113,6 +122,7 @@ export const PLATFORM_GLYPHS: Record<string, React.FC> = {
   notion: Notion,
   gitlab: GitLab,
   supabase: Supabase,
+  latchkey: Latchkey,
   telegram: Telegram,
   slack: Slack,
   discord: Discord,
