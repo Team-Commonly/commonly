@@ -119,21 +119,43 @@ export const resolveTokenEpisode = (
 type BotTokens = Array<{ lastListenedAt?: Date; lastUsedAt?: Date; createdAt?: Date }>;
 
 /**
- * The latest use of any token in either store. A token used but never
- * listened on belongs to an MCP client: `deriveAgentState` counts listening
- * only, so such a seat stays never-connected for good although it did connect.
+ * The latest use, at or after `since`, of any token in either store. Only uses
+ * inside the current token episode count: a superseded token's old use says
+ * nothing about the token the nudge was about.
  */
-const latestUse = (tokenLists: BotTokens[]): Date | null => {
+const latestUseSince = (tokenLists: BotTokens[], since: Date): Date | null => {
   let latest: Date | null = null;
   for (const list of tokenLists) {
     for (const row of list || []) {
       if (!row?.lastUsedAt) continue;
       const used = new Date(row.lastUsedAt);
-      if (Number.isNaN(used.getTime())) continue;
+      if (Number.isNaN(used.getTime()) || used < since) continue;
       if (!latest || used > latest) latest = used;
     }
   }
   return latest;
+};
+
+type InstallerCopyMarks = {
+  byoCommandCopiedAt?: Date;
+  byoCommandType?: 'mcp' | 'cli';
+  byoMcpCopiedAt?: Date;
+  byoCliCopiedAt?: Date;
+  byoOpenedOs?: StalledConnectCopyEvidence['openedOs'];
+};
+
+/**
+ * A used token alone does not mean an MCP client: `commonly agent attach` calls
+ * the runtime API with the token too, before any listener runs. So the MCP
+ * resolution needs a positive sign as well: the installer copied the MCP
+ * command and never the listener command (per-kind marks first, the first-copy
+ * pair for older signups, as the nudge reads them).
+ */
+const copiedMcpOnly = (o: InstallerCopyMarks | undefined): boolean => {
+  if (!o) return false;
+  const mcp = Boolean(o.byoMcpCopiedAt || (o.byoCommandType === 'mcp' && o.byoCommandCopiedAt));
+  const cli = Boolean(o.byoCliCopiedAt || (o.byoCommandType === 'cli' && o.byoCommandCopiedAt));
+  return mcp && !cli;
 };
 
 const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${instanceId}`;
@@ -432,11 +454,21 @@ const resolveConnected = async ({
     );
     // An MCP client uses its token without ever listening (TASK-345). It did
     // connect, and the nudge promised a post when it did, so it resolves too,
-    // with copy that does not promise an answer to @mentions.
+    // with copy that does not promise an answer to @mentions. Anything short of
+    // a use in this episode by someone who copied only the MCP command keeps
+    // waiting, so an attach whose listener never started is not called MCP.
     let mcpSeenAt: Date | null = null;
+    let openedOs: StalledConnectCopyEvidence['openedOs'] = null;
     if (derived.state === 'never-connected') {
-      mcpSeenAt = latestUse([(install as { runtimeTokens?: BotTokens }).runtimeTokens || [], userTokens]);
+      const since = ep.tokenIssuedAt ? new Date(ep.tokenIssuedAt) : new Date(0);
+      mcpSeenAt = latestUseSince([(install as { runtimeTokens?: BotTokens }).runtimeTokens || [], userTokens], since);
       if (!mcpSeenAt) continue;
+      const installer = await User.findById(ep.installedBy).select(
+        'onboarding.byoCommandCopiedAt onboarding.byoCommandType onboarding.byoMcpCopiedAt '
+          + 'onboarding.byoCliCopiedAt onboarding.byoOpenedOs',
+      ).lean() as { onboarding?: InstallerCopyMarks } | null;
+      if (!copiedMcpOnly(installer?.onboarding)) continue;
+      openedOs = installer?.onboarding?.byoOpenedOs || null;
     }
 
     const handle = buildAgentUsername
@@ -447,12 +479,6 @@ const resolveConnected = async ({
     // which is why the confirmation needs no time bound (ux-lead, 53307).
     const firstSeenAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : now;
     const fixCommand = derived.fixCommand || `commonly agent run ${ep.agentName}`;
-    let openedOs: StalledConnectCopyEvidence['openedOs'] = null;
-    if (mcpSeenAt) {
-      const installer = await User.findById(ep.installedBy).select('onboarding.byoOpenedOs').lean() as
-        { onboarding?: { byoOpenedOs?: StalledConnectCopyEvidence['openedOs'] } } | null;
-      openedOs = installer?.onboarding?.byoOpenedOs || null;
-    }
     let resolutionMessageId = '';
     try {
       const posted = await AgentMessageService.postMessage({

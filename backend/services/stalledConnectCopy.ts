@@ -250,8 +250,9 @@ export const composeStalledConnectMcpResolution = ({
   openedOs?: StalledConnectCopyEvidence['openedOs'];
   locale?: NudgeLocale;
 }): string => {
-  const hhmm = seenAt.toISOString().slice(11, 16);
-  const head = `${displayName} connected from your MCP client (seen ${hhmm} UTC). `
+  // Dated: this can close days late, and a bare time would read as today.
+  const seen = `${seenAt.toISOString().slice(0, 10)} ${seenAt.toISOString().slice(11, 16)} UTC`;
+  const head = `${displayName} connected from your MCP client (seen ${seen}). `
     + 'I can read and post here whenever you ask me from that client. '
     + 'Try: “read my Commonly pod and post a hello there”. ';
   const unavailableOs = openedOs ? LISTENER_UNAVAILABLE_OS[openedOs] : undefined;
