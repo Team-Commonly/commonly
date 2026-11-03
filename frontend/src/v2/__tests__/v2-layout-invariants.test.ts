@@ -6186,7 +6186,7 @@ describe('run trace keeps the frame phone gutters and clears the tab bar', () =>
   const phone = mediaBlockContaining(rt, '.v2-feature--run-trace > .v2-feature__body');
 
   test('the run trace route tags its feature pane', () => {
-    expect(app).toContain("feature('Run trace', <V2RunTrace />, false, false, 'v2-feature--run-trace')");
+    expect(app).toContain("feature(t('common.pageTitle.runTrace'), <V2RunTrace />, false, false, 'v2-feature--run-trace')");
   });
 
   test('at 760 and below the body has 16px side gutters and no top padding', () => {
@@ -6207,5 +6207,62 @@ describe('run trace keeps the frame phone gutters and clears the tab bar', () =>
 
   test('the feature pane reserves the 58px tab bar, so the foot scrolls clear of it', () => {
     expect(ruleBody(v2, '.v2-feature', { within: mediaBlockContaining(v2, '.v2-feature {') })).toContain('padding-bottom: 58px');
+  });
+});
+
+// zh-CN batch 3 (2026-11-03). A 390px zh-CN audit reported four controls as
+// overflowing: the pod-head to-do chip ("163项待办" 94 > 88, "3项待办" 80 > 74),
+// the phone Invite key ("邀请" 37 > 30), Connect's Copy ("复制" 59 > 50) and the
+// agent avatar's Edit hint ("编辑" 60 > 56). Re-measured in headless Chromium
+// on prod, English reports the SAME excess on every one (99 > 93, 37 > 30,
+// 62 > 53, 60 > 56), and with ::before/::after disabled scrollWidth equals
+// clientWidth on all of them while each label's own box fits its text. The
+// excess is the 44px tap areas (pseudo-elements with negative insets) and the
+// hint's designed 4px overhang, not clipped Chinese. So no CSS changed. These
+// guards pin the two facts the "fits" verdict rests on: the controls stay
+// content-sized (no fixed width sized to English), and the overhang an
+// overflow scan sees is the hit area.
+describe('zh-CN labels fit their keys at 390 (content-sized, hit areas overhang by design)', () => {
+  const pane = read('../chat/chat-pane.css');
+  const connect = read('../components/V2ConnectPage.css');
+  const aprofile = read('../agents/v2-agent-profile.css');
+  const fixedWidth = /(^|[\s;{])(max-)?width\s*:/;
+
+  test('the pod-head board chip sizes to its label, so "163项待办" keeps its number', () => {
+    const chip = ruleBody(pane, '.v2-root button.v2-pod-header__board');
+    expect(chip).toContain('display: inline-flex');
+    expect(chip).toContain('padding: 0 8px');
+    expect(chip).not.toMatch(fixedWidth);
+    const phone = mediaBlockContaining(pane, '.v2-pod-header__meta.v2-pod-header__meta--compact { display: flex');
+    expect(phone).toContain('.v2-pod-header__meta.v2-pod-header__meta--compact { display: flex; min-height: 28px; flex: 0 0 auto; white-space: nowrap; }');
+  });
+
+  test("the board chip's phone tap area reaches 6px past each side: that is the 6px an overflow scan reports", () => {
+    const phone = mediaBlockContaining(pane, 'button.v2-pod-header__board--compact::before');
+    expect(ruleBody(pane, '.v2-root button.v2-pod-header__board--compact::before', { within: phone })).toContain('inset: -14px -6px');
+  });
+
+  test('the phone Invite key is a 32px glyph; its label is visually hidden, so "邀请" never has to fit 30px', () => {
+    const phone = mediaBlockContaining(pane, '.v2-root button.v2-pod-header__invite span');
+    expect(ruleBody(pane, '.v2-root button.v2-pod-header__invite span', { within: phone })).toContain('clip-path: inset(50%)');
+    expect(ruleBody(pane, '.v2-root button.v2-thread__inspector-toggle::after', { within: mediaBlockContaining(pane, 'inset: -7px') })).toContain('inset: -7px');
+    expect(ruleBody(pane, '.v2-root button.v2-pod-header__invite')).toContain('flex: 0 0 auto');
+  });
+
+  test("Connect's Copy key is content-sized with 12px padding; its phone tap area is the 9px overhang", () => {
+    const copy = ruleBody(connect, '.v2-connect .v2-connect__copy');
+    expect(copy).toContain('padding: 0 12px');
+    expect(copy).toContain('flex: none');
+    expect(copy).not.toMatch(fixedWidth);
+    const phone = mediaBlockContaining(connect, '.v2-connect__copy::after');
+    expect(ruleBody(connect, '.v2-connect .v2-connect__copy::after', { within: phone })).toContain('inset: -9px');
+  });
+
+  test("the avatar's Edit hint is content-sized and overhangs the 56px avatar by 4px by design", () => {
+    const hint = ruleBody(aprofile, '.v2-aprofile .v2-aprofile__avatar-hint');
+    expect(hint).toContain('position: absolute');
+    expect(hint).toContain('right: -4px');
+    expect(hint).toContain('padding: 0 6px');
+    expect(hint).not.toMatch(fixedWidth);
   });
 });

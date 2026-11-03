@@ -9,6 +9,7 @@ import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import { usePhone } from '../connectors/usePhone';
 import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import { localizeRelativeTime } from '../utils/localizeRelativeTime';
+import { appDateLocale } from '../utils/appLocale';
 import { useAgentSettings } from './useAgentSettings';
 import { useTalkToAgent } from './useTalkToAgent';
 import V2AgentNameRow from './V2AgentNameRow';
@@ -34,7 +35,7 @@ interface RuntimeKey {
 const dateLabel = (value: string | null | undefined, t: (key: string) => string): string => {
   if (!value) return t('agentSettings.never');
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? t('agentSettings.unknown') : date.toLocaleString();
+  return Number.isNaN(date.getTime()) ? t('agentSettings.unknown') : date.toLocaleString(appDateLocale());
 };
 
 // The owner memory index the Memory tab reads; only its counts are used here.

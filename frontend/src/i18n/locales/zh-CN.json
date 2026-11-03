@@ -115,6 +115,13 @@
       "team": "团队",
       "artifacts": "产物"
     },
+    "pageTitle": {
+      "agentSettings": "智能体设置",
+      "agentMemory": "智能体记忆",
+      "runTrace": "运行轨迹",
+      "profile": "资料页",
+      "agentProfile": "智能体资料页"
+    },
     "closePodsList": "关闭 Pod 列表",
     "communityRedirect": {
       "title": "正在打开社区",
@@ -269,6 +276,7 @@
         "blocked": "受阻",
         "press": "待你合并"
       },
+      "emptyLastNow": "上一个请求刚刚得到回复。",
       "countLabel": "{{count}}项等你处理",
       "emptyLast": "上一个请求已在 {{age}} 前回复。"
     },

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Routes, Route, Navigate, useLocation, useMatch, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import V2Layout from './components/V2Layout';
 import V2FeaturePage from './components/V2FeaturePage';
 import { useAuth } from '../context/AuthContext';
@@ -191,6 +192,7 @@ const feature = (
 // renders inside the app shell like a person's profile (rail at 1440, tab bar
 // at 390); the page itself keeps the public layout for a missing agent.
 const V2AgentProfileRoute: React.FC = () => {
+  const { t } = useTranslation();
   const { isAuthenticated, loading } = useAuth();
   if (loading) {
     return <V2Boot />;
@@ -198,7 +200,7 @@ const V2AgentProfileRoute: React.FC = () => {
   return (
     <V2AgentProfile
       shell={isAuthenticated
-        ? (page) => <V2AuthenticatedShell>{feature('Agent profile', page, false, false)}</V2AuthenticatedShell>
+        ? (page) => <V2AuthenticatedShell>{feature(t('common.pageTitle.agentProfile'), page, false, false)}</V2AuthenticatedShell>
         : undefined}
     />
   );
@@ -210,6 +212,7 @@ const V2LegacyChatRedirect: React.FC = () => {
 };
 
 const V2App: React.FC = () => {
+  const { t } = useTranslation();
   // The daily digest's 08:00 is the person's own (TASK-257 Phase 2b).
   useTimeZoneCapture();
   React.useEffect(() => {
@@ -325,11 +328,11 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="agents/:agentName/:instanceId"
-                  element={feature('Agent settings', <V2AgentSettingsPage />, false, false, 'v2-feature--agent-settings')}
+                  element={feature(t('common.pageTitle.agentSettings'), <V2AgentSettingsPage />, false, false, 'v2-feature--agent-settings')}
                 />
                 <Route
                   path="agents/:agentName/:instanceId/memory"
-                  element={feature('Agent memory', <V2AgentMemory />, false, false, 'v2-feature--memory')}
+                  element={feature(t('common.pageTitle.agentMemory'), <V2AgentMemory />, false, false, 'v2-feature--memory')}
                 />
                 <Route
                   path="connect"
@@ -348,19 +351,19 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="artifacts"
-                  element={feature('Artifacts', <V2ArtifactsPage />, false, false, 'v2-feature--artifacts')}
+                  element={feature(t('artifacts.title'), <V2ArtifactsPage />, false, false, 'v2-feature--artifacts')}
                 />
                 <Route
                   path="pods/:podId/runs/:runId"
-                  element={feature('Run trace', <V2RunTrace />, false, false, 'v2-feature--run-trace')}
+                  element={feature(t('common.pageTitle.runTrace'), <V2RunTrace />, false, false, 'v2-feature--run-trace')}
                 />
                 <Route
                   path="pods/:podId/tasks/:taskId/record"
-                  element={feature('Task record', <V2TaskRecord />, false, false)}
+                  element={feature(t('taskRecord.title'), <V2TaskRecord />, false, false)}
                 />
                 <Route
                   path="activity"
-                  element={feature('Activity', <V2ActivityPage />, false, false, 'v2-feature--activity')}
+                  element={feature(t('activity.title'), <V2ActivityPage />, false, false, 'v2-feature--activity')}
                 />
                 <Route
                   path="settings"
@@ -376,7 +379,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="profile/:id"
-                  element={feature('Profile', <V2PersonProfile />, false, false, 'v2-feature--profile')}
+                  element={feature(t('common.pageTitle.profile'), <V2PersonProfile />, false, false, 'v2-feature--profile')}
                 />
                 <Route
                   path="admin/integrations/global"

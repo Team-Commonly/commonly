@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import V2AgentSettingsIcon from '../agents/V2AgentSettingsIcon';
+import { appDateLocale } from '../utils/appLocale';
 
 export interface RuntimeReceipt { harness: string; version: string | null; model: string | null; effort: string | null; at: string }
 export interface RuntimeObservation {
@@ -108,9 +109,9 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
       <span className="vl mo">
         <span>{editable ? k('nextSpawn')
           : runtime.host === 'cloud' || ['hosted', 'internal', 'native'].includes(runtime.runtimeType || '') ? k('readOnlyHosted') : k('readOnlyCli')}</span>
-        <span><span>{k('process')}</span> {status}{runtime.processConnected && runtime.observation?.connectedAt ? ` · ${new Date(runtime.observation.connectedAt).toLocaleString()}` : ''}</span>
-        <span><span>{k('turn')}</span> {runtime.processConnected == null ? k('notReported') : runtime.processConnected && runtime.observation?.turnRunning ? k('running') : runtime.observation?.lastTurnAt ? new Date(runtime.observation.lastTurnAt).toLocaleString() : k('noTurn')}</span>
-        {last && <span>{k('lastSpawn')} · {new Date(last.at).toLocaleString()}</span>}
+        <span><span>{k('process')}</span> {status}{runtime.processConnected && runtime.observation?.connectedAt ? ` · ${new Date(runtime.observation.connectedAt).toLocaleString(appDateLocale())}` : ''}</span>
+        <span><span>{k('turn')}</span> {runtime.processConnected == null ? k('notReported') : runtime.processConnected && runtime.observation?.turnRunning ? k('running') : runtime.observation?.lastTurnAt ? new Date(runtime.observation.lastTurnAt).toLocaleString(appDateLocale()) : k('noTurn')}</span>
+        {last && <span>{k('lastSpawn')} · {new Date(last.at).toLocaleString(appDateLocale())}</span>}
       </span>
       <span className="ac">
         {editable && <button type="button" className="b b-p b-sm" aria-label={k('saveRuntime')} disabled={busy || !changed || unsupportedHarness || !model.trim() || unsupportedModel || Boolean(levels.length && unsupportedEffort)} onClick={() => { void save(); }}>{k('save')}</button>}

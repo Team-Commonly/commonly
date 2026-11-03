@@ -116,6 +116,13 @@
       "team": "Team",
       "artifacts": "Artifacts"
     },
+    "pageTitle": {
+      "agentSettings": "Agent settings",
+      "agentMemory": "Agent memory",
+      "runTrace": "Run trace",
+      "profile": "Profile",
+      "agentProfile": "Agent profile"
+    },
     "closePodsList": "Close pods list",
     "communityRedirect": {
       "title": "Opening Community",
@@ -270,6 +277,7 @@
         "blocked": "blocked",
         "press": "ready for your press"
       },
+      "emptyLastNow": "The last ask was just answered.",
       "countLabel": "{{count}} waiting on you",
       "emptyLast": "The last ask was answered {{age}} ago."
     },
