@@ -18,12 +18,6 @@ const {
   waitFor,
 } = require('../utils/testUtils');
 
-// Mock SendGrid to prevent actual emails from being sent
-jest.mock('@sendgrid/mail', () => ({
-  setApiKey: jest.fn(),
-  send: jest.fn().mockResolvedValue(true),
-}));
-
 describe('Auth Routes Integration Tests', () => {
   let app;
 

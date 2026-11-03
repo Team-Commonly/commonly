@@ -15,7 +15,6 @@
 // (buffer-equal-constant-time) — same guard the sibling authController test uses.
 jest.mock('jsonwebtoken', () => ({ sign: jest.fn(() => 'tok'), verify: jest.fn(), decode: jest.fn() }));
 jest.mock('bcryptjs', () => ({ hash: jest.fn(), compare: jest.fn(), genSalt: jest.fn(() => 'salt') }));
-jest.mock('@sendgrid/mail', () => ({ setApiKey: jest.fn(), send: jest.fn().mockResolvedValue({}) }));
 jest.mock('../../../services/communityPodService', () => ({
   ensureUserInCommunityPod: jest.fn().mockResolvedValue(undefined),
 }));

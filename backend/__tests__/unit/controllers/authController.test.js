@@ -32,12 +32,6 @@ const {
   clearMongoDb,
 } = require('../../utils/testUtils');
 
-// Mock SendGrid to prevent actual emails from being sent
-jest.mock('@sendgrid/mail', () => ({
-  setApiKey: jest.fn(),
-  send: jest.fn().mockResolvedValue(true),
-}));
-
 // Mock Bcrypt
 jest.mock('bcryptjs', () => ({
   genSalt: jest.fn().mockResolvedValue('mocksalt'),
