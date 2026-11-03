@@ -448,9 +448,14 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       const exchange = buildTokenExchangeRequest(GITLAB_ENTRY, GITLAB.metadata, client, {
         code: 'code-1', codeVerifier: 'verifier-1', redirectUri: gitlabCallback,
       });
-      expect(exchange.headers.Authorization).toBeUndefined();
-      expect(exchange.body.get('client_secret')).toBeNull();
+      const refresh = buildRefreshRequest(GITLAB_ENTRY, GITLAB.metadata, client, { refreshToken: 'rt-1' });
+      const revoke = buildRevocationRequest(GITLAB_ENTRY, GITLAB.metadata, client, { token: 'rt-1', tokenTypeHint: 'refresh_token' });
       expect(exchange.body.get('code_verifier')).toBe('verifier-1');
+      for (const request of [exchange, refresh, revoke]) {
+        expect(request.headers.Authorization).toBeUndefined();
+        expect(request.body.get('client_id')).toBe('gitlab-public-1');
+        expect(request.body.get('client_secret')).toBeNull();
+      }
     });
 
     test('is refused without S256 at the authorization server, and stores nothing', async () => {
