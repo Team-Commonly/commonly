@@ -28,3 +28,13 @@
   .v2-run-trace dd { margin-bottom: 8px; }
   .v2-run-trace-link { display: grid; gap: 0; }
 }
+/* d215 run-trace-after 390 (.mbody2--trace): 16px side gutters and no top
+   padding, so "Back to pod" is the first 44px row; replaces the shared 12px
+   feature body for this route only. The frame's tighter rhythm (paragraphs
+   flush, a turn's parts 8px apart) keeps the foot clear of the tab bar,
+   whose 58px .v2-feature already reserves. Desktop is unchanged. */
+@media (max-width: 760px) {
+  .v2-feature--run-trace > .v2-feature__body { padding: 0 16px 16px; }
+  .v2-feature--run-trace .v2-run-trace p { margin: 0; }
+  .v2-feature--run-trace .v2-run-trace__turns > li { display: grid; gap: 8px; }
+}
