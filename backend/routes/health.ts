@@ -174,7 +174,13 @@ const READY_PG_TIMEOUT_MS = 1500;
 // own; past it the client is released with an error, which makes the pool
 // destroy it, and the next request starts afresh. Without the deadline a query
 // that never settled would hold its client and keep every later probe degraded.
-type ProbePool = { connect: () => Promise<{ query: (q: string) => Promise<unknown>; release: (err?: Error) => void }> };
+type ProbeClient = {
+  query: (q: string) => Promise<unknown>;
+  release: (err?: Error) => void;
+  on: (event: 'error', listener: (err: Error) => void) => unknown;
+  removeListener: (event: 'error', listener: (err: Error) => void) => unknown;
+};
+type ProbePool = { connect: () => Promise<ProbeClient> };
 let readyPgProbe: Promise<unknown> | null = null;
 const probePg = (pool: ProbePool): Promise<unknown> => {
   if (!readyPgProbe) {
@@ -185,6 +191,10 @@ const probePg = (pool: ProbePool): Promise<unknown> => {
       const client = await pool.connect();
       let timer: ReturnType<typeof setTimeout> | undefined;
       let failure: Error | undefined;
+      // The pool drops its own error listener at checkout, and a socket that
+      // fails mid-query emits 'error' on the client; unheard, that ends the process.
+      const onClientError = (err: Error) => { failure = err; };
+      client.on('error', onClientError);
       try {
         return await Promise.race([
           client.query('SELECT 1'),
@@ -197,6 +207,7 @@ const probePg = (pool: ProbePool): Promise<unknown> => {
         throw failure;
       } finally {
         clearTimeout(timer);
+        client.removeListener('error', onClientError);
         client.release(failure);
       }
     })().finally(() => { readyPgProbe = null; });

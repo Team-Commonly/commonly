@@ -1,3 +1,4 @@
+const { EventEmitter } = require('events');
 const request = require('supertest');
 const express = require('express');
 
@@ -8,13 +9,17 @@ const mockMongoose = {
 };
 // The probe checks out its own client so it can destroy one that stalls.
 // `query` stands for that client's query; each checkout gets a fresh release.
+// The client is an emitter, as pg's is, so an unheard 'error' throws.
 const mockPool = {
   query: jest.fn().mockResolvedValue({ rows: [{ ok: 1 }] }),
   releases: [],
+  clients: [],
   connect: jest.fn(async () => {
     const release = jest.fn();
+    const client = Object.assign(new EventEmitter(), { query: (q) => mockPool.query(q), release });
     mockPool.releases.push(release);
-    return { query: (q) => mockPool.query(q), release };
+    mockPool.clients.push(client);
+    return client;
   }),
 };
 const mockCreateClient = jest.fn();
@@ -55,6 +60,7 @@ describe('GET /api/health/ready', () => {
     mockMongoose.connection.readyState = 1;
     mockPool.query.mockResolvedValue({ rows: [{ ok: 1 }] });
     mockPool.releases = [];
+    mockPool.clients = [];
     mockPgRoutesAreMounted.mockReturnValue(true);
   });
 
@@ -173,6 +179,25 @@ describe('GET /api/health/ready', () => {
       if (saved === undefined) delete process.env.READY_PG_PROBE_DEADLINE_MS;
       else process.env.READY_PG_PROBE_DEADLINE_MS = saved;
     }
+  });
+
+  it('hears a socket error on the probe client while its query is pending', async () => {
+    // pg emits 'error' on a checked-out client whose socket fails and rejects
+    // the query too. Unheard, the emit would throw and take the process down.
+    let fail;
+    mockPool.query.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject; }));
+    const pending = request(buildApp()).get('/api/health/ready').timeout(2500);
+    const reply = pending.then((res) => res);
+    while (!mockPool.clients[0]) await new Promise((resolve) => { setImmediate(resolve); });
+    const client = mockPool.clients[0];
+    const socketError = new Error('Connection terminated unexpectedly');
+    expect(() => client.emit('error', socketError)).not.toThrow();
+    fail(socketError);
+    const res = await reply;
+    expect(res.status).toBe(200);
+    expect(res.body.degraded).toEqual(['postgresql']);
+    expect(mockPool.releases[0]).toHaveBeenCalledWith(socketError);
+    expect(client.listenerCount('error')).toBe(0);
   });
 
   it.each(['-1', '0', 'soon', '2147483648'])('ignores an unusable probe deadline (%s) and stays healthy', async (value) => {
