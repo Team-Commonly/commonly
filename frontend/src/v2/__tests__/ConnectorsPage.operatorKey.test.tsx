@@ -424,9 +424,9 @@ describe('Connectors page: granting an operator-key connection', () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     try {
       const form = await openKeyDraft([scoutKey, reedKey], { add: '添加', form: '添加 Latchkey' });
-      expect(within(form).getByText('只有 Scout 能用这个密钥。')).toBeInTheDocument();
+      expect(within(form).getByText('只有 Scout 可以使用这个密钥。')).toBeInTheDocument();
       fireEvent.change(form.querySelectorAll('select')[1], { target: { value: 'conn-reed' } });
-      expect(within(form).getByText('Reed 不在这个 Pod 里。')).toBeInTheDocument();
+      expect(within(form).getByText('Reed 不在这个 Pod 中。')).toBeInTheDocument();
     } finally {
       await act(async () => { await i18n.changeLanguage('en'); });
     }
