@@ -375,6 +375,42 @@ describe('Connectors page: granting an operator-key connection', () => {
     return screen.findByRole('complementary', { name: form });
   };
   const optionTexts = (select) => within(select).getAllByRole('option').map((option) => option.textContent);
+  const keyGrant = (over) => ({
+    grantId: 'grant_k', installationId: 'conn-scout', target: { kind: 'pod', id: 'p1' }, tools: ['latchkey.list_secrets'],
+    writeMode: 'read', budget: { calls: 50, windowMs: 3600000 }, effectiveAudience: [SCOUT],
+    expiresAt: new Date(Date.now() + 6 * 86400000).toISOString(), revokedAt: null, revokedBy: null,
+    parentGrantId: null, rootGrantId: null, createdAt: new Date(Date.now() - 3600000).toISOString(), grantedBy: 'u1',
+    ...over,
+  });
+  // A live grant on Scout's key keeps the tile granted, so it opens the drawer;
+  // `dead` is the revoked grant whose Grant again is under test.
+  const openGrantAgain = async (connections, dead) => {
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    mockApi({ pods, seats, grants: [keyGrant({}), dead], installables: [{ ...keyedEntry, connections }] });
+    renderPage();
+    const drawer = await openDrawer('Latchkey');
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Grant again' }));
+    return screen.findByRole('complementary', { name: 'Add Latchkey' });
+  };
+  const revoked = { revokedAt: new Date(Date.now() - 600000).toISOString(), revokedBy: 'u1' };
+
+  it('Grant again on a key grant keeps the key it was minted on, even when it is not the first key', async () => {
+    const dead = keyGrant({ grantId: 'grant_reed', installationId: 'conn-reed', target: { kind: 'pod', id: 'p2' }, effectiveAudience: [REED], ...revoked });
+    const form = await openGrantAgain([scoutKey, reedKey], dead);
+    expect(within(form).getByRole('heading', { name: 'Latchkey · Ops' })).toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(grantPost()).toBeDefined());
+    expect(grantPost()[1]).toEqual(expect.objectContaining({ connectionId: 'conn-reed', target: { kind: 'pod', id: 'p2' }, audience: [REED] }));
+  });
+
+  it('Grant again on a key grant whose key is gone starts with nobody, never another agent\'s key', async () => {
+    const dead = keyGrant({ grantId: 'grant_gone', installationId: 'conn-deleted', target: { kind: 'pod', id: 'p2' }, effectiveAudience: [REED], ...revoked });
+    const form = await openGrantAgain([scoutKey, reedKey], dead);
+    expect(within(form).queryAllByRole('checkbox', { checked: true })).toHaveLength(0);
+    expect(within(form).getByRole('button', { name: 'Grant' })).toBeDisabled();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    expect(grantPost()).toBeUndefined();
+  });
 
   it('in a pod with several agents, the first Grant reaches only the key\'s agent', async () => {
     const form = await openKeyDraft([scoutKey, reedKey]);

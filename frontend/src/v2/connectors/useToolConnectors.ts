@@ -344,9 +344,17 @@ export const useToolConnectors = (
     // list order, holding any keyed agent. Grant again keeps its grant's pod and
     // the key it was minted on (a hosted grant's installationId is the
     // connection's id). Other connections take neither branch.
+    // A key grant whose key is gone starts with no connection and nobody, never
+    // with another agent's key: that would mint for that agent and, for a live
+    // grant, revoke this one.
+    let keyGone = false;
     if (from) {
       const minted = entry.connections.find((connection) => connection.connectionId === from.installationId);
       if (minted && boundAgentOf(entry, minted.connectionId)) connectionId = minted.connectionId;
+      else if (!minted && entry.credentialMode === 'operator_key') {
+        connectionId = '';
+        keyGone = true;
+      }
     } else {
       const seated = podIds.flatMap((pod) => entry.connections.map((connection) => ({ pod, connectionId: connection.connectionId })))
         .find((pair) => {
@@ -365,9 +373,9 @@ export const useToolConnectors = (
       podId,
       connectionId,
       writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
-      audience: from && !boundAgentOf(entry, connectionId)
+      audience: keyGone ? [] : (from && !boundAgentOf(entry, connectionId)
         ? agentIds.filter((id) => from.effectiveAudience.includes(id))
-        : startingAudience(entry, connectionId, podId),
+        : startingAudience(entry, connectionId, podId)),
       expiryDays: 7,
       replaces: from && !isDead(from) ? from.grantId : null,
     });
@@ -394,9 +402,12 @@ export const useToolConnectors = (
     .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
 
   const draftBoundAgent = draft && draftEntry ? boundAgentOf(draftEntry, draft.connectionId) : null;
+  // On a key connection only its own agent can be submitted, whatever the
+  // audience holds; the server refuses anyone else (operatorKeyAudienceRefusal).
   const selectedAgentIds = (draft ? seats[draft.podId] || [] : [])
     .map((seat) => seat.userId)
-    .filter((id): id is string => typeof id === 'string' && Boolean(id) && draft?.audience.includes(id) === true);
+    .filter((id): id is string => typeof id === 'string' && Boolean(id) && draft?.audience.includes(id) === true)
+    .filter((id) => !draftBoundAgent || id === draftBoundAgent);
 
   const submitDraft = async () => {
     if (!draft || !draftEntry || selectedAgentIds.length === 0) return;

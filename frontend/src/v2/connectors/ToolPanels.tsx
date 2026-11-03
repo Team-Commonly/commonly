@@ -609,7 +609,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                 </label>
               ))}
               {draftBoundAgent && !boundAbsent && (
-                <span className="v2-tools__hint">{t('tools.keyOnlyAgent', { defaultValue: 'Only {{agent}} can use this key.', agent: boundName || '' })}</span>
+                <span className="v2-tools__hint">{t('tools.keyOnlyAgent', { defaultValue: 'Only {{agent}} can use this key.', agent: boundName || t('tools.aSeat', { defaultValue: 'an agent' }) })}</span>
               )}
             </fieldset>
             {selectedAgentIds.length === 0 && !boundAbsent && (
