@@ -332,3 +332,103 @@ describe('Connectors page: operator-key entries', () => {
     }
   });
 });
+
+// The grant draft on a key connection (#3353 review). The grant route refuses any
+// audience on a key connection except exactly its agent, so the draft starts
+// there, offers no one else, and names each key by its agent.
+describe('Connectors page: granting an operator-key connection', () => {
+  const reedKey = { ...scoutKey, connectionId: 'conn-reed', agentId: REED };
+  const grantPost = () => axios.post.mock.calls.find(([url]) => url === '/api/grants');
+  const openKeyDraft = async (connections, { add = 'Add', form = 'Add Latchkey' } = {}) => {
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    mockApi({ pods, seats, grants: [], installables: [{ ...keyedEntry, connections }] });
+    renderPage();
+    const popover = await openToolPopover('Latchkey');
+    fireEvent.click(within(popover).getByRole('button', { name: add }));
+    return screen.findByRole('complementary', { name: form });
+  };
+  const optionTexts = (select) => within(select).getAllByRole('option').map((option) => option.textContent);
+
+  it('in a pod with several agents, the first Grant reaches only the key\'s agent', async () => {
+    const form = await openKeyDraft([scoutKey, reedKey]);
+    // Launch pod holds Scout and Nova; only Scout's checkbox is offered.
+    expect(within(form).getByRole('heading', { name: 'Latchkey · Launch pod' })).toBeInTheDocument();
+    expect(within(form).getByRole('checkbox', { name: 'Scout' })).toBeChecked();
+    expect(within(form).queryByRole('checkbox', { name: 'Nova' })).toBeNull();
+    expect(within(form).getByText('Only Scout can use this key.')).toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(grantPost()).toBeDefined());
+    expect(grantPost()[1]).toEqual(expect.objectContaining({ connectionId: 'conn-scout', target: { kind: 'pod', id: 'p1' }, audience: [SCOUT] }));
+  });
+
+  it('the connection picker names each key by its agent, not "/"', async () => {
+    const form = await openKeyDraft([scoutKey, reedKey]);
+    const picker = within(form).getByLabelText('connection');
+    expect(optionTexts(picker)).toEqual(['Scout', 'Reed']);
+    expect(optionTexts(picker)).not.toContain('/');
+  });
+
+  it('a key whose agent is unknown on this page reads "Key"', async () => {
+    const form = await openKeyDraft([scoutKey, { ...reedKey, agentId: '6a00000000000000000000ff' }]);
+    expect(optionTexts(within(form).getByLabelText('connection'))).toEqual(['Scout', 'Key']);
+  });
+
+  it('switching to Reed\'s key in a pod Reed is not in says so and keeps Grant off; in Reed\'s pod it grants [Reed]', async () => {
+    const form = await openKeyDraft([scoutKey, reedKey]);
+    fireEvent.change(within(form).getByLabelText('connection'), { target: { value: 'conn-reed' } });
+    expect(within(form).getByText("Reed isn't in this pod.")).toBeInTheDocument();
+    expect(within(form).queryByRole('checkbox')).toBeNull();
+    expect(within(form).queryByText('Select at least one agent to grant access.')).toBeNull();
+    expect(within(form).getByRole('button', { name: 'Grant' })).toBeDisabled();
+
+    fireEvent.change(within(form).getByLabelText('pod'), { target: { value: 'p2' } });
+    expect(within(form).queryByText("Reed isn't in this pod.")).toBeNull();
+    // Ops holds Reed and Scout; Reed's key offers Reed alone.
+    expect(within(form).getByRole('checkbox', { name: 'Reed' })).toBeChecked();
+    expect(within(form).queryByRole('checkbox', { name: 'Scout' })).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(grantPost()).toBeDefined());
+    expect(grantPost()[1]).toEqual(expect.objectContaining({ connectionId: 'conn-reed', target: { kind: 'pod', id: 'p2' }, audience: [REED] }));
+  });
+
+  it('a lone key starts in a pod where its agent sits', async () => {
+    const form = await openKeyDraft([reedKey]);
+    expect(within(form).getByRole('heading', { name: 'Latchkey · Ops' })).toBeInTheDocument();
+    expect(within(form).getByRole('checkbox', { name: 'Reed' })).toBeChecked();
+  });
+
+  it('a key whose agent sits in no pod starts with nobody and Grant off', async () => {
+    const form = await openKeyDraft([{ ...reedKey, agentId: '6a00000000000000000000ff' }]);
+    expect(within(form).getByText("This key's agent isn't in this pod.")).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: 'Grant' })).toBeDisabled();
+  });
+
+  it('an OAuth draft still starts with every agent in the pod', async () => {
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    const signIn = { connectionId: 'conn-linear', owner: '', repo: '', connectedAt: '2026-11-01T09:00:00.000Z' };
+    mockApi({ pods, seats, grants: [], installables: [{ ...linearEntry, connections: [signIn] }] });
+    renderPage();
+    const popover = await openToolPopover('Linear');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
+    const form = await screen.findByRole('complementary', { name: 'Add Linear' });
+    expect(within(form).getByRole('checkbox', { name: 'Scout' })).toBeChecked();
+    expect(within(form).getByRole('checkbox', { name: 'Nova' })).toBeChecked();
+    expect(within(form).queryByText(/can use this key/)).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(grantPost()).toBeDefined());
+    expect(grantPost()[1].audience).toEqual([SCOUT, NOVA]);
+  });
+
+  it('reads in zh-CN', async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      const form = await openKeyDraft([scoutKey, reedKey], { add: '添加', form: '添加 Latchkey' });
+      expect(within(form).getByText('只有 Scout 能用这个密钥。')).toBeInTheDocument();
+      fireEvent.change(form.querySelectorAll('select')[1], { target: { value: 'conn-reed' } });
+      expect(within(form).getByText('Reed 不在这个 Pod 里。')).toBeInTheDocument();
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+});

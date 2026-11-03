@@ -11,6 +11,7 @@ import {
   shortAge,
   isExpired,
   isDead,
+  boundAgentOf,
   PER_ENTRY_REVOKE_COPY,
 } from './toolModel';
 import type {
@@ -99,6 +100,8 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     openGithubAppSetup,
     draftEntry,
     draftTools,
+    draftBoundAgent,
+    startingAudience,
     selectedAgentIds,
     submitDraft,
     fixJoinPolicy,
@@ -513,6 +516,10 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
   const renderDraft = () => {
     if (!draft || !draftEntry) return null;
     const podSeats = seats[draft.podId] || [];
+    // A key connection offers only its own agent: the route refuses any other.
+    const offeredSeats = draftBoundAgent ? podSeats.filter((seat) => seat.userId === draftBoundAgent) : podSeats;
+    const boundAbsent = Boolean(draftBoundAgent) && offeredSeats.length === 0;
+    const boundName = draftBoundAgent ? (agentNameById(draftBoundAgent) || memberName(draftBoundAgent)) : null;
     const tools = draftTools(draftEntry, draft.writeMode);
     const irreversible = irreversibleTools(draftEntry, tools);
     const asks = draft.writeMode === 'read'
@@ -530,7 +537,7 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             {!draft.replaces && podIds.length > 1 && (
               <label className="v2-tools__field">
                 <span>{t('tools.toRoom', { defaultValue: 'pod' })}</span>
-                <select className="v2-connectors__select" value={draft.podId} onChange={(event) => { const podId = event.target.value; setDraft({ ...draft, podId, audience: (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id)) }); }}>
+                <select className="v2-connectors__select" value={draft.podId} onChange={(event) => { const podId = event.target.value; setDraft({ ...draft, podId, audience: startingAudience(draftEntry, draft.connectionId, podId) }); }}>
                   {podIds.map((podId) => <option key={podId} value={podId}>{podName(podId)}</option>)}
                 </select>
               </label>
@@ -538,8 +545,28 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             {draftEntry.connections.length > 1 && (
               <label className="v2-tools__field">
                 <span>{t('tools.connection', { defaultValue: 'connection' })}</span>
-                <select className="v2-connectors__select" value={draft.connectionId} onChange={(event) => setDraft({ ...draft, connectionId: event.target.value })}>
-                  {draftEntry.connections.map((connection) => <option key={connection.connectionId} value={connection.connectionId}>{connection.owner}/{connection.repo}</option>)}
+                <select
+                  className="v2-connectors__select"
+                  value={draft.connectionId}
+                  onChange={(event) => {
+                    const connectionId = event.target.value;
+                    // A key connection's audience follows its agent; any other keeps the picked seats.
+                    setDraft(boundAgentOf(draftEntry, connectionId)
+                      ? { ...draft, connectionId, audience: startingAudience(draftEntry, connectionId, draft.podId) }
+                      : { ...draft, connectionId });
+                  }}
+                >
+                  {draftEntry.connections.map((connection) => {
+                    // A key connection has no owner or repo, so it is named by its agent.
+                    const keyAgent = boundAgentOf(draftEntry, connection.connectionId);
+                    return (
+                      <option key={connection.connectionId} value={connection.connectionId}>
+                        {keyAgent
+                          ? (agentNameById(keyAgent) || memberName(keyAgent) || t('tools.connectionKey', { defaultValue: 'Key' }))
+                          : <>{connection.owner}/{connection.repo}</>}
+                      </option>
+                    );
+                  })}
                 </select>
               </label>
             )}
@@ -557,15 +584,25 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             </div>
             <fieldset className="v2-tools__field v2-tools__agents">
               <legend>{t('tools.agents', { defaultValue: 'agents' })}</legend>
-              {podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
-              {podSeats.map((seat) => seat.userId && (
+              {!draftBoundAgent && podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
+              {boundAbsent && (
+                <span className="v2-tools__hint" role="status">
+                  {boundName
+                    ? t('tools.keyAgentNotInPod', { defaultValue: "{{agent}} isn't in this pod.", agent: boundName })
+                    : t('tools.keyAgentNotInPodUnnamed', { defaultValue: "This key's agent isn't in this pod." })}
+                </span>
+              )}
+              {offeredSeats.map((seat) => seat.userId && (
                 <label key={seat.userId} className="v2-connector-aside__relay">
                   <input type="checkbox" checked={draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
                   {seat.displayName || seat.name}
                 </label>
               ))}
+              {draftBoundAgent && !boundAbsent && (
+                <span className="v2-tools__hint">{t('tools.keyOnlyAgent', { defaultValue: 'Only {{agent}} can use this key.', agent: boundName || '' })}</span>
+              )}
             </fieldset>
-            {selectedAgentIds.length === 0 && (
+            {selectedAgentIds.length === 0 && !boundAbsent && (
               <p className="v2-connector-aside__note" role="status">{t('tools.emptyAudienceNotice', {
                 defaultValue: 'Select at least one agent to grant access.',
               })}</p>
