@@ -16,8 +16,10 @@ describe('Google Calendar on dev: credentials on, tile hidden', () => {
   });
 
   test('that flag is what projects both prefixed secret refs into api-keys', () => {
-    const gated = apiKeys.slice(apiKeys.indexOf('.Values.hostedMcp.googleCalendar.enabled'));
-    expect(gated.length).toBeLessThan(apiKeys.length);
+    // The exact positive gate: an inverted `if not` would leave dev without credentials.
+    const gate = '{{- if .Values.hostedMcp.googleCalendar.enabled }}';
+    expect(apiKeys.split(gate)).toHaveLength(2);
+    const gated = apiKeys.slice(apiKeys.indexOf(gate));
     const block = gated.slice(0, gated.indexOf('{{- end }}'));
     expect(block).toContain('key: {{ $keyPrefix }}google-calendar-client-id');
     expect(block).toContain('key: {{ $keyPrefix }}google-calendar-client-secret');
