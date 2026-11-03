@@ -270,7 +270,7 @@
         "press": "待你合并"
       },
       "countLabel": "{{count}}项等你处理",
-      "emptyLast": "上一个请求已在 {{age}} 前回复。"
+      "emptyLast": "上一个请求的回复时间：{{age}}。"
     },
     "approval": {
       "approve": "批准",
@@ -776,7 +776,7 @@
       "startThread": "话题",
       "replyInThread": "在话题中回复",
       "replyFromExpandedThread": "在已展开的话题中回复",
-      "groupLabel": "话题，{{count}} {{unit}}",
+      "groupLabel": "话题，{{count}}{{unit}}",
       "replyingInThread": "正在话题中回复：",
       "last": "最近",
       "collapse": "收起",
@@ -785,7 +785,12 @@
       "moreReplies": "还有{{count}}条回复",
       "follow": "关注",
       "following": "已关注",
-      "muted": "已静音"
+      "muted": "已静音",
+      "replyCount_one": "{{count}}条回复",
+      "replyCount_other": "{{count}}条回复",
+      "lastActivity": "· 最近活动 {{age}}",
+      "expandAria": "展开话题，{{replies}}",
+      "collapseAria": "收起话题，{{replies}}"
     },
     "leadBadge": "负责人",
     "catchup": {
@@ -3059,6 +3064,16 @@
       "minutes": "{{n}}分钟",
       "hours": "{{n}}小时",
       "days": "{{n}}天"
+    },
+    "compact": {
+      "now": "刚刚",
+      "minutes": "{{n}}分钟",
+      "hours": "{{n}}小时",
+      "yesterday": "昨天",
+      "days": "{{n}}天",
+      "weeks": "{{n}}周",
+      "months": "{{n}}个月",
+      "years": "{{n}}年"
     }
   },
   "teammate": {

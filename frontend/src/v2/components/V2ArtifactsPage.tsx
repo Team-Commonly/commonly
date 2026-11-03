@@ -9,6 +9,7 @@ import axios from 'axios';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import V2Lightbox from './V2Lightbox';
 import V2PageHead from './V2PageHead';
+import { compactAge, compactNow } from '../utils/compactTime';
 
 export type ArtifactKind = 'image' | 'page' | 'doc';
 export interface ArtifactItem {
@@ -49,13 +50,13 @@ export const whenLabel = (value: string | null | undefined): string => {
   if (!value) return '';
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
   const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return compactNow();
+  if (minutes < 60) return compactAge('minute', minutes);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return compactAge('hour', hours);
   const days = Math.floor(hours / 24);
-  if (days < 30) return `${days}d`;
-  return `${Math.floor(days / 30)}mo`;
+  if (days < 30) return compactAge('day', days);
+  return compactAge('month', Math.floor(days / 30));
 };
 
 // Pods carry a long descriptive title; the table names them by the short leading name.

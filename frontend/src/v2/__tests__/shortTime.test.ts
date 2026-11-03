@@ -1,3 +1,4 @@
+import i18n, { i18nReady } from '../../i18n';
 import { shortTimeSince } from '../utils/shortTime';
 
 const NOW = new Date('2026-08-22T12:00:00Z');
@@ -45,5 +46,35 @@ describe('shortTimeSince', () => {
     expect(shortTimeSince(undefined, NOW)).toBe('');
     expect(shortTimeSince(null, NOW)).toBe('');
     expect(shortTimeSince('not a date', NOW)).toBe('');
+  });
+});
+
+describe('shortTimeSince in zh-CN', () => {
+  // Same boundaries, Chinese words: the unit sits against its number with no
+  // space, the catalog's TASK-179 convention (zhNumberUnitSpacing.test).
+  beforeAll(async () => {
+    await i18nReady;
+    await i18n.changeLanguage('zh-CN');
+  });
+  afterAll(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  test.each([
+    ['under a minute', ago(30000), '刚刚'],
+    ['two minutes', ago(2 * MIN), '2分钟'],
+    ['59 minutes', ago(59 * MIN), '59分钟'],
+    ['the minute/hour boundary', ago(60 * MIN), '1小时'],
+    ['23 hours', ago(23 * HOUR), '23小时'],
+    ['the previous calendar date', ago(25 * HOUR), '昨天'],
+    ['two days back', ago(49 * HOUR), '2天'],
+    ['a week or more', ago(8 * 24 * HOUR), '1周'],
+    ['a future timestamp', new Date(NOW.getTime() + 5 * MIN), '刚刚'],
+  ])('%s', (_label, when, expected) => {
+    expect(shortTimeSince(when, NOW)).toBe(expected);
+  });
+
+  test('missing input still renders nothing', () => {
+    expect(shortTimeSince(undefined, NOW)).toBe('');
   });
 });

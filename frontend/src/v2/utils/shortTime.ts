@@ -1,3 +1,5 @@
+import { compactAge, compactNow, compactYesterday } from './compactTime';
+
 /**
  * Short-form "last activity" for the thread card (W-T 4/4).
  *
@@ -9,6 +11,10 @@
  * the boundaries instead of about timing. A helper that reads Date.now()
  * internally can only be tested loosely, and the boundaries are the part that
  * has an off-by-one in it.
+ *
+ * The words come from `time.compact.*` in the active app language (zh-CN:
+ * 刚刚 / 5分钟 / 3小时 / 昨天 / 2天 / 1周); the boundaries are the same in every
+ * language.
  */
 export const shortTimeSince = (
   raw: string | Date | undefined | null,
@@ -22,14 +28,14 @@ export const shortTimeSince = (
   const diffMs = now.getTime() - ms;
   // A clock skew between server and browser can put "last activity" slightly
   // in the future. Render that as "now" rather than a negative age.
-  if (diffMs < 0) return 'now';
+  if (diffMs < 0) return compactNow();
 
   const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return compactNow();
+  if (minutes < 60) return compactAge('minute', minutes);
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  if (hours < 24) return compactAge('hour', hours);
 
   // Calendar-day comparison, not a 48h window: "Yesterday" means the previous
   // date, so 23:00 yesterday read at 01:00 today is Yesterday and not "2h".
@@ -38,11 +44,11 @@ export const shortTimeSince = (
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const startOfYesterday = new Date(startOfToday);
   startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-  if (ms >= startOfYesterday.getTime()) return 'Yesterday';
+  if (ms >= startOfYesterday.getTime()) return compactYesterday();
 
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return `${Math.floor(days / 7)}w`;
+  if (days < 7) return compactAge('day', days);
+  return compactAge('week', Math.floor(days / 7));
 };
 
 export default shortTimeSince;

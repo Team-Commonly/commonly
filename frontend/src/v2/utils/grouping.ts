@@ -1,3 +1,5 @@
+import { calendarLocale, compactYesterday } from './compactTime';
+
 export type PodGroup = 'Pinned' | 'Today' | 'Yesterday' | 'This week' | 'Earlier';
 
 export interface GroupableItem {
@@ -78,13 +80,13 @@ export const formatRelativeTime = (raw: string | Date | undefined): string => {
   const today = startOfDay(now);
   const ts = date.getTime();
   if (ts >= today) {
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return date.toLocaleTimeString(calendarLocale(), { hour: 'numeric', minute: '2-digit' });
   }
   if (ts >= today - 24 * 60 * 60 * 1000) {
-    return 'Yesterday';
+    return compactYesterday();
   }
   if (ts >= today - 6 * 24 * 60 * 60 * 1000) {
-    return date.toLocaleDateString([], { weekday: 'short' });
+    return date.toLocaleDateString(calendarLocale(), { weekday: 'short' });
   }
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  return date.toLocaleDateString(calendarLocale(), { month: 'short', day: 'numeric' });
 };

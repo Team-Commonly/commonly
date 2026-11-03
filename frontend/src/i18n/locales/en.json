@@ -788,7 +788,12 @@
       "moreReplies": "{{count}} more replies",
       "follow": "Follow",
       "following": "Following",
-      "muted": "Muted"
+      "muted": "Muted",
+      "replyCount_one": "{{count}} reply",
+      "replyCount_other": "{{count}} replies",
+      "lastActivity": "· last {{age}}",
+      "expandAria": "Expand thread, {{replies}}",
+      "collapseAria": "Collapse thread, {{replies}}"
     },
     "leadBadge": "Lead",
     "catchup": {
@@ -3060,6 +3065,16 @@
       "minutes": "{{n}}m",
       "hours": "{{n}}h",
       "days": "{{n}}d"
+    },
+    "compact": {
+      "now": "now",
+      "minutes": "{{n}}m",
+      "hours": "{{n}}h",
+      "yesterday": "Yesterday",
+      "days": "{{n}}d",
+      "weeks": "{{n}}w",
+      "months": "{{n}}mo",
+      "years": "{{n}}y"
     }
   },
   "teammate": {

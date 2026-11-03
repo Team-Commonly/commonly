@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import V2Avatar from './V2Avatar';
 import { shortTimeSince } from '../utils/shortTime';
 
@@ -44,9 +45,10 @@ const V2ThreadCard: React.FC<V2ThreadCardProps> = ({
   onToggleCollapsed,
   now,
 }) => {
+  const { t } = useTranslation();
   const shown = participants.slice(0, MAX_AVATARS);
   const stamp = shortTimeSince(lastActivityAt, now);
-  const countLabel = `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`;
+  const countLabel = t('podChat.thread.replyCount', { count: replyCount });
 
   return (
     <div
@@ -59,7 +61,9 @@ const V2ThreadCard: React.FC<V2ThreadCardProps> = ({
         onClick={onToggleCollapsed}
         aria-expanded={!collapsed}
         // The accessible name carries the state — there is no visual cue for it.
-        aria-label={`${collapsed ? 'Expand' : 'Collapse'} thread, ${countLabel}`}
+        aria-label={collapsed
+          ? t('podChat.thread.expandAria', { replies: countLabel })
+          : t('podChat.thread.collapseAria', { replies: countLabel })}
       >
         {shown.length > 0 && (
           <span className="v2-thread-card__faces" aria-hidden="true">
@@ -80,7 +84,7 @@ const V2ThreadCard: React.FC<V2ThreadCardProps> = ({
           {addressed && <span className="v2-thread-card__dot" aria-hidden="true" />}
           {countLabel}
         </span>
-        {stamp && <span className="v2-thread-card__time">· last {stamp}</span>}
+        {stamp && <span className="v2-thread-card__time">{t('podChat.thread.lastActivity', { age: stamp })}</span>}
       </button>
     </div>
   );

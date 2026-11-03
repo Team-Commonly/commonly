@@ -7,6 +7,7 @@ import { AuthContext } from '../../context/AuthContext';
 import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
 import V2PageHead from './V2PageHead';
 import V2Hint from './V2Hint';
+import { compactAge, compactNow } from '../utils/compactTime';
 
 type ActivityWindow = 'today' | '7d';
 
@@ -154,11 +155,11 @@ const relativeTime = (value: string | null | undefined): string => {
   if (!value) return '';
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
   const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return 'now';
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return compactNow();
+  if (minutes < 60) return compactAge('minute', minutes);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
+  if (hours < 24) return compactAge('hour', hours);
+  return compactAge('day', Math.floor(hours / 24));
 };
 
 const V2ActivityPage: React.FC = () => {
