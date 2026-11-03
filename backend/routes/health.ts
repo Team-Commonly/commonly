@@ -168,6 +168,17 @@ router.get('/db', (_req: unknown, res: Res) => {
 });
 
 const READY_PG_TIMEOUT_MS = 1500;
+// The probe's SELECT 1 is not cancelled when it loses the race, and it may
+// hold a pool client while it waits. One query in flight per pod: a probe
+// that finds one still pending waits on it instead of starting another, so
+// stalled probes cannot pile up on the pool while the pod stays ready.
+let readyPgProbe: Promise<unknown> | null = null;
+const probePg = (pool: { query: (q: string) => Promise<unknown> }): Promise<unknown> => {
+  if (!readyPgProbe) {
+    readyPgProbe = pool.query('SELECT 1').finally(() => { readyPgProbe = null; });
+  }
+  return readyPgProbe;
+};
 
 router.get('/ready', async (_req: unknown, res: Res) => {
   // Draining is not a liveness failure; only readiness stops new traffic.
@@ -210,7 +221,7 @@ router.get('/ready', async (_req: unknown, res: Res) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
-          (pgPool as { query: (q: string) => Promise<unknown> }).query('SELECT 1'),
+          probePg(pgPool as { query: (q: string) => Promise<unknown> }),
           new Promise((_resolve, reject) => {
             timer = setTimeout(
               () => reject(new Error(`did not answer within ${READY_PG_TIMEOUT_MS}ms`)),

@@ -103,10 +103,11 @@ describe('GET /api/health/ready', () => {
     // SELECT 1 waited on the pool past the probe's 3s timeout, and the kubelet
     // logged "context deadline exceeded" with no warning from this handler.
     // A slow answer is treated like a failed one: ready, degraded, and said.
-    mockPool.query.mockReturnValue(new Promise(() => {}));
+    let settle;
+    mockPool.query.mockReturnValue(new Promise((resolve) => { settle = resolve; }));
 
     const started = Date.now();
-    const res = await request(buildApp()).get('/api/health/ready').expect(200);
+    const res = await request(buildApp()).get('/api/health/ready').timeout(2500).expect(200);
 
     expect(Date.now() - started).toBeLessThan(2500);
     expect(res.body).toEqual(expect.objectContaining({
@@ -117,6 +118,30 @@ describe('GET /api/health/ready', () => {
       'health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:',
       expect.stringMatching(/did not answer within \d+ms/),
     );
+    // The handler keeps one probe in flight per pod; let it settle so the
+    // next case starts a fresh one.
+    settle({ rows: [{ ok: 1 }] });
+    await new Promise((resolve) => { setImmediate(resolve); });
+  });
+
+  it('keeps one PostgreSQL probe in flight while it is still pending', async () => {
+    // The losing SELECT 1 is not cancelled, so a probe every 5s against a
+    // stalled database would otherwise add one waiting query per probe.
+    let settle;
+    mockPool.query.mockReturnValue(new Promise((resolve) => { settle = resolve; }));
+    const app = buildApp();
+
+    await request(app).get('/api/health/ready').timeout(2500).expect(200);
+    await request(app).get('/api/health/ready').timeout(2500).expect(200);
+    expect(mockPool.query).toHaveBeenCalledTimes(1);
+
+    // Once it settles, the next probe asks again.
+    settle({ rows: [{ ok: 1 }] });
+    await new Promise((resolve) => { setImmediate(resolve); });
+    mockPool.query.mockResolvedValue({ rows: [{ ok: 1 }] });
+    const res = await request(app).get('/api/health/ready').expect(200);
+    expect(res.body.degraded).toBeUndefined();
+    expect(mockPool.query).toHaveBeenCalledTimes(2);
   });
 
   it('returns not ready while the PostgreSQL routes are not mounted (TASK-168)', async () => {
