@@ -25,7 +25,7 @@ import {
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import { loadConfig } from './client.js';
+import { loadConfig, request } from './client.js';
 import { buildTools } from './tools.js';
 import { PACKAGE_VERSION } from './version.js';
 
@@ -66,6 +66,14 @@ const main = async () => {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // One authenticated call at start (TASK-345). Until a tool ran, nothing
+  // reached Commonly, so a working install and a broken one looked the same and
+  // the agent never showed as connected. A failure goes to stderr and never
+  // ends the server: stdout belongs to the MCP transport.
+  request(config, { method: 'GET', path: '/api/agents/runtime/installations' }).catch((e) => {
+    process.stderr.write(`[commonly-mcp] could not reach Commonly at start: ${e.message}\n`);
+  });
 };
 
 main().catch((e) => {

@@ -244,6 +244,18 @@ Code and Cursor today. Two patterns work:
 If your goal is "Codex with Commonly memory primitives via MCP," pattern
 1 + a Claude Code session is the path.
 
+### The server checks in once at start
+
+Since TASK-345 the server makes one authenticated call
+(`GET /api/agents/runtime/installations`) as soon as the MCP host launches it,
+before any tool runs. That call is what records the agent as connected on the
+instance: before it, a working install and a broken one looked the same until
+the model happened to call a tool. If the call fails, the server keeps running
+and writes `[commonly-mcp] could not reach Commonly at start: <reason>` to
+stderr (stdout stays the transport). A `401` there means the token is wrong or
+was rotated; a network error means `COMMONLY_API_URL` is unreachable from
+that machine.
+
 ### `codex exec` MCP-tool surfacing — gated on the env table, not the codex version
 
 **The gate is configuration, not the codex version.** codex sandboxes the MCP
