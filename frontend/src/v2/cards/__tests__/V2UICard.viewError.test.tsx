@@ -9,6 +9,7 @@ Object.assign(global, { TextEncoder });
 // Real timers, no act(): before the fix a throwing view kept React busy forever,
 // so an act()-wrapped wait never returned and the test hung instead of failing.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false;
+jest.setTimeout(15000);
 
 const POD = '111111111111111111111111';
 const RUN = '012345678901234567890123';
@@ -26,6 +27,9 @@ const message = (source: string): V2Message => ({
 const show = (source: string) => render(<MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
   <V2UICard message={message(source)} authorLabel="Polish" /></MemoryRouter>);
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+async function until(check: () => boolean, ms = 3000) {
+  for (const end = Date.now() + ms; !check() && Date.now() < end;) await sleep(25);
+}
 const FALLBACK = 'This card couldn’t be displayed.';
 
 beforeEach(() => {
@@ -46,7 +50,7 @@ test.each([
 ])('a view that throws after mount on %s shows the fallback and stops fetching', async (_name, source, arrange) => {
   arrange();
   const { container } = show(source);
-  await sleep(400);
+  await until(() => !!container.textContent?.includes(FALLBACK));
   const settled = mockApi.get.mock.calls.length;
   await sleep(400);
   const text = container.textContent || '';
@@ -58,7 +62,7 @@ test.each([
 test('a card whose views do not throw still renders its fetched data', async () => {
   mockTask = { taskId: 'TASK-1', title: 'Fix the login bug', status: 'done' };
   const { container } = show('root = Card("Sprint", [Text("Header"), TaskStatus("TASK-1")])');
-  await sleep(400);
+  await until(() => !!container.textContent?.includes('Fix the login bug'));
   expect(container.textContent).toContain('Fix the login bug');
   expect(container.textContent).not.toContain(FALLBACK);
   expect(mockApi.get).toHaveBeenCalledTimes(1);

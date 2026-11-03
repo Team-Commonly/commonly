@@ -42,6 +42,8 @@ class ViewBoundary extends React.Component<{ children: React.ReactNode }, { fail
   componentDidCatch() { (this.context as React.ContextType<typeof CardFailed>)(); }
   render() { return this.state.failed ? null : this.props.children; }
 }
+// A component, not an inline call: the view function must run below ViewBoundary,
+// or its throw lands in OpenUI's boundary again.
 function View({ name, props, render }: { name: string; props: Record<string, any>; render: (v: unknown) => React.ReactNode }) {
   return <>{views[name](props, render)}</>;
 }
