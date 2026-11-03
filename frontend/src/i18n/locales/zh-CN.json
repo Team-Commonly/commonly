@@ -154,16 +154,16 @@
   },
   "settings": {
     "deleteAccount": {
-      "title": "删除账户",
-      "effects": "这将永久删除你的账户和上传的文件，并取消所有有效的 Stripe 订阅。共享消息会保留。你安装的智能体运行时会暂停。它们的身份和记忆会保留。此操作无法撤销。",
-      "password": "密码（如果账户设有密码）",
+      "title": "删除账号",
+      "effects": "这将永久删除你的账号和上传的文件，并取消所有有效的 Stripe 订阅。共享消息会保留。你安装的智能体运行时会暂停。它们的身份和记忆会保留。此操作无法撤销。",
+      "password": "密码（如果账号设有密码）",
       "confirmation": "输入 DELETE 以确认",
-      "oauthHint": "如果你使用 Google 或 GitHub 登录，删除前可能需要使用同一账户重新登录。",
+      "oauthHint": "如果你使用 Google 或 GitHub 登录，删除前可能需要使用同一账号重新登录。",
       "signInAgain": "使用 Google 或 GitHub 重新登录，然后返回此处确认",
-      "confirm": "永久删除账户",
+      "confirm": "永久删除账号",
       "deleting": "正在删除…",
       "cancel": "取消",
-      "failed": "无法删除你的账户。请重试。"
+      "failed": "无法删除你的账号。请重试。"
     },
     "sessions": {
       "signOutEverywhere": "退出所有浏览器会话",
@@ -173,7 +173,10 @@
     "username": {
       "save": "保存用户名",
       "saving": "保存中…",
-      "help": "2–40个小写字母、数字或连字符。你的旧用户名会继续保留，但旧提及不会通知你。"
+      "help": "2–40个小写字母、数字或连字符。你的旧用户名会继续保留，但旧提及不会通知你。",
+      "noChanges": "用户名未更改。",
+      "saved": "用户名已保存。",
+      "saveFailed": "用户名保存失败，请重试。"
     },
     "avatar": {
       "regenerate": "换一个",
@@ -198,6 +201,66 @@
       "uploadFailed": "无法上传照片，请重试。",
       "profileSaveFailed": "无法保存头像，请重试。",
       "regenerateFailed": "无法更换头像，请重试。"
+    },
+    "groups": {
+      "account": "账号",
+      "access": "访问权限",
+      "look": "界面"
+    },
+    "account": {
+      "fallbackName": "你的账号",
+      "changePhoto": "更换头像",
+      "avatarAlt": "{{name}} 的头像",
+      "roleAdmin": "管理员",
+      "roleMember": "成员",
+      "editNameTitle": "编辑名称和用户名",
+      "editProfile": "编辑资料",
+      "email": "邮箱",
+      "changeEmailTitle": "更改邮箱",
+      "editEmail": "编辑邮箱",
+      "name": "名称",
+      "username": "用户名",
+      "change": "更改",
+      "save": "保存",
+      "saving": "保存中…",
+      "noChanges": "没有需要保存的更改。",
+      "saved": "账号信息已保存。",
+      "saveFailed": "账号信息保存失败，请重试。"
+    },
+    "actions": {
+      "title": "账号操作"
+    },
+    "apiToken": {
+      "label": "API 令牌",
+      "none": "无",
+      "active": "有效",
+      "activeEndsIn": "有效 · 尾号 {{last4}}",
+      "generate": "生成",
+      "generating": "生成中…",
+      "regenerate": "重新生成",
+      "regenerating": "重新生成中…",
+      "revoke": "撤销",
+      "revoking": "撤销中…",
+      "show": "显示",
+      "hide": "隐藏",
+      "created": "创建于 {{date}}",
+      "generated": "已生成新的 API 令牌。请立即复制，并像密码一样妥善保管。",
+      "generateFailed": "API 令牌生成失败，请重试。",
+      "revoked": "API 令牌已撤销。",
+      "revokeFailed": "API 令牌撤销失败，请重试。",
+      "copied": "API 令牌已复制。",
+      "copyFailed": "API 令牌复制失败，请手动选中并复制。"
+    },
+    "connectors": {
+      "detail": "管理已连接的服务"
+    },
+    "developerApps": "开发者应用",
+    "admin": {
+      "title": "管理",
+      "users": "用户",
+      "usersDetail": "注册用户、封禁、邀请码",
+      "analytics": "使用分析",
+      "analyticsDetail": "注册、消息、活跃用户、激活漏斗"
     }
   },
   "activity": {
@@ -865,7 +928,7 @@
       "copy": "复制",
       "copied": "已复制",
       "copyInstallAria": "复制安装命令",
-      "demoAria": "交互演示：一个示例工作区，有四个 Pod、正在工作的智能体，还有一张你可以直接裁决的决策卡",
+      "demoAria": "交互演示：一个示例工作空间，有四个 Pod、正在工作的智能体，还有一张你可以直接裁决的决策卡",
       "demoCaption": "这就是产品本身，不是视频。在卡片上选一项，或者直接问智能体。",
       "terms": {
         "yourClaudeCode": "你的 Claude Code",
@@ -1280,7 +1343,7 @@
     },
     "registered": {
       "title": "已注册用户",
-      "subtitle": "本实例上拥有账户的所有人。封禁会立即阻止登录，删除则不可恢复。",
+      "subtitle": "本实例上拥有账号的所有人。封禁会立即阻止登录，删除则不可恢复。",
       "analyticsLink": "使用分析 →",
       "searchPlaceholder": "搜索用户名或邮箱…",
       "loading": "加载用户中…",
@@ -1745,7 +1808,7 @@
       },
       "raft": {
         "name": "Raft",
-        "what": "我们最接近的产品竞争对手。运行时、工作区和记忆都留在你自己的机器上，也支持外部智能体。",
+        "what": "我们最接近的产品竞争对手。运行时、工作空间和记忆都留在你自己的机器上，也支持外部智能体。",
         "accept": "它的源码已经公开，采用禁止竞争性使用的许可证（FSL-1.1-ALv2）：你可以自己运行，但每个版本发布满两年之前，都不能拿去对外提供与之竞争的商业产品或服务，代码仓库也不接受 PR。私有化部署标注为“即将推出”，而且 Pro 将每个智能体计作0.1个人头席位 —— 包括跑在你自己硬件、用你自己 API 密钥的智能体。"
       },
       "workspaces": {
@@ -2110,7 +2173,7 @@
       },
       "signups": {
         "label": "注册数（{{days}}天）",
-        "hint": "该时间范围内新增的人类账户"
+        "hint": "该时间范围内新增的人类账号"
       },
       "messages": {
         "label": "消息数（{{days}}天）",
@@ -2118,7 +2181,7 @@
       },
       "total": {
         "label": "总用户数",
-        "hint": "人类账户，全部时间"
+        "hint": "人类账号，全部时间"
       }
     },
     "charts": {
@@ -2387,7 +2450,9 @@
     "setUpAgent": "接入智能体",
     "manageAgents": "管理已安装的智能体",
     "keysHeading": "实例密钥",
-    "openGlobal": "打开全局集成"
+    "openGlobal": "打开全局集成",
+    "pageTitle": "连接",
+    "pageHint": "MCP 会使用设置过程中创建的智能体令牌。"
   },
   "connectors": {
     "search": "搜索",
@@ -2578,7 +2643,7 @@
       "atlassian": "你的 Atlassian 站点中的 Jira 工单和 Confluence 内容。",
       "gitlab": "GitLab.com 上的项目、议题和合并请求。",
       "airtable": "你的 Airtable 工作空间中的 Base、数据表和记录。",
-      "google-calendar": "读取你 Google 账户中的日历、事件和空闲时间。",
+      "google-calendar": "读取你 Google 账号中的日历、事件和空闲时间。",
       "sentry": "你的 Sentry 组织中的错误、项目和问题分诊。",
       "linear": "你自己的 Linear 工作空间中的议题、项目、周期和发布。",
       "supabase": "项目、数据库结构、Edge Functions 和分支。断开连接会删除 Commonly 的令牌，但在有人到 OAuth Apps 里移除之前，Commonly 在该组织里的授权仍然有效。",
@@ -3098,5 +3163,82 @@
     "openAgent": "打开它的智能体页面",
     "followError": "没有保存成功，请再试一次。",
     "viewProfile": "查看 {{name}} 的资料"
+  },
+  "devices": {
+    "title": "设备",
+    "longLived": "CLI 设备令牌长期有效，撤销后才会失效。",
+    "refresh": "刷新",
+    "revoke": "撤销",
+    "loading": "正在加载设备…",
+    "empty": "还没有连接 CLI 设备。",
+    "dates": "创建于 {{date}} · 上次使用：{{time}}",
+    "revokedAt": "撤销于 {{date}}",
+    "never": "从未",
+    "loadFailed": "设备列表加载失败。",
+    "revokeFailed": "设备撤销失败，请重试。",
+    "revokeConfirm": "要撤销 {{label}} 吗？撤销后，这个 CLI 需要重新登录。",
+    "summary": {
+      "loading": "加载中…",
+      "loadFailed": "加载失败",
+      "none": "无",
+      "count_one": "{{count}}台 CLI 设备",
+      "count_other": "{{count}}台 CLI 设备",
+      "lastUsed": "{{devices}} · 上次使用 {{time}}"
+    }
+  },
+  "accountMenu": {
+    "open": "打开账号菜单",
+    "title": "账号",
+    "you": "你",
+    "connect": "连接",
+    "signOut": "退出登录"
+  },
+  "cliAuthorize": {
+    "checkingSession": "正在检查登录状态…",
+    "title": "授权 Commonly CLI",
+    "signInPrompt": "登录后即可批准这台设备。此验证码仅在当前浏览器标签页内有效。",
+    "deviceCode": "设备验证码",
+    "signInToContinue": "登录后继续",
+    "enterCode": "输入终端中显示的验证码。",
+    "checking": "检查中…",
+    "continue": "继续",
+    "confirmTitle": "要以 @{{username}} 的身份授权 <host/> 吗？",
+    "confirmSubtitle": "这台设备请求使用你的 Commonly 账号。",
+    "client": "客户端",
+    "instance": "实例",
+    "requested": "请求时间",
+    "age": {
+      "justNow": "刚刚",
+      "minutes": "{{minutes}}分钟前",
+      "hours": "{{hours}}小时前"
+    },
+    "caution": "只批准你在自己终端里请求的验证码。",
+    "deny": "拒绝",
+    "authorize": "授权",
+    "authorizing": "授权中…",
+    "done": {
+      "title": "设备已授权",
+      "message": "现在可以回到终端了。"
+    },
+    "denied": {
+      "title": "已拒绝授权",
+      "message": "没有向这台设备发放令牌。"
+    },
+    "expired": {
+      "title": "验证码已过期",
+      "message": "回到终端，重新运行 <code>commonly login</code>。"
+    },
+    "used": {
+      "title": "验证码已被使用",
+      "message": "此验证码已批准或已使用，请回到终端。"
+    },
+    "error": {
+      "title": "无法授权这台设备",
+      "message": "检查验证码后，在终端重试。"
+    }
+  },
+  "app": {
+    "errorTitle": "出错了",
+    "loading": "正在加载 Commonly"
   }
 }

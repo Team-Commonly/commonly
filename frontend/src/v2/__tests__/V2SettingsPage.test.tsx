@@ -129,8 +129,8 @@ describe('V2SettingsPage', () => {
 
     await act(async () => { fireEvent.click(within(language).getByRole('radio', { name: '中文' })); });
     expect(i18n.resolvedLanguage).toBe('zh-CN');
-    // The labels follow the new language, and the segment shows the choice.
-    const zhLanguage = within(screen.getByRole('region', { name: 'Look' })).getByRole('radiogroup', { name: '语言' });
+    // The labels follow the new language, the group title included, and the segment shows the choice.
+    const zhLanguage = within(screen.getByRole('region', { name: '界面' })).getByRole('radiogroup', { name: '语言' });
     expect(within(zhLanguage).getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'true');
 
     await act(async () => { fireEvent.click(within(zhLanguage).getByRole('radio', { name: 'English' })); });
@@ -352,7 +352,7 @@ describe('V2SettingsPage', () => {
 
     expect(screen.getByRole('button', { name: '保存用户名' })).toBeInTheDocument();
     expect(screen.getByText(/你的旧用户名会继续保留/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'team-member' } });
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'team-member' } });
     fireEvent.click(screen.getByRole('button', { name: '保存用户名' }));
     expect(screen.getByRole('button', { name: '保存中…' })).toBeDisabled();
 

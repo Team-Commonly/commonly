@@ -174,7 +174,10 @@
     "username": {
       "save": "Save username",
       "saving": "Saving…",
-      "help": "2–40 lowercase letters, numbers, or hyphens. Your previous username stays reserved, but old mentions do not notify you."
+      "help": "2–40 lowercase letters, numbers, or hyphens. Your previous username stays reserved, but old mentions do not notify you.",
+      "noChanges": "No username changes to save.",
+      "saved": "Username saved.",
+      "saveFailed": "Couldn’t save your username. Try again."
     },
     "avatar": {
       "regenerate": "Regenerate",
@@ -199,6 +202,66 @@
       "uploadFailed": "Could not upload your photo. Try again.",
       "profileSaveFailed": "Could not save your avatar. Try again.",
       "regenerateFailed": "Could not change your avatar. Try again."
+    },
+    "groups": {
+      "account": "Account",
+      "access": "Access",
+      "look": "Look"
+    },
+    "account": {
+      "fallbackName": "Your account",
+      "changePhoto": "Change photo",
+      "avatarAlt": "{{name}} avatar",
+      "roleAdmin": "administrator",
+      "roleMember": "member",
+      "editNameTitle": "Edit name and username",
+      "editProfile": "Edit profile",
+      "email": "Email",
+      "changeEmailTitle": "Change email",
+      "editEmail": "Edit email",
+      "name": "Name",
+      "username": "Username",
+      "change": "Change",
+      "save": "Save",
+      "saving": "Saving…",
+      "noChanges": "No account changes to save.",
+      "saved": "Account saved.",
+      "saveFailed": "Couldn’t save your account. Try again."
+    },
+    "actions": {
+      "title": "Account actions"
+    },
+    "apiToken": {
+      "label": "API token",
+      "none": "None",
+      "active": "Active",
+      "activeEndsIn": "Active · ends in {{last4}}",
+      "generate": "Generate",
+      "generating": "Generating…",
+      "regenerate": "Regenerate",
+      "regenerating": "Regenerating…",
+      "revoke": "Revoke",
+      "revoking": "Revoking…",
+      "show": "Show",
+      "hide": "Hide",
+      "created": "Created {{date}}",
+      "generated": "New API token generated. Copy it now; treat it like a password.",
+      "generateFailed": "Couldn’t generate an API token. Try again.",
+      "revoked": "API token revoked.",
+      "revokeFailed": "Couldn’t revoke the API token. Try again.",
+      "copied": "API token copied.",
+      "copyFailed": "Couldn’t copy the API token. Select and copy it manually."
+    },
+    "connectors": {
+      "detail": "Manage connected services"
+    },
+    "developerApps": "Developer apps",
+    "admin": {
+      "title": "Administration",
+      "users": "Users",
+      "usersDetail": "Registered users, bans, invitation codes",
+      "analytics": "Usage analytics",
+      "analyticsDetail": "Signups, messages, active users, activation funnel"
     }
   },
   "activity": {
@@ -2399,7 +2462,9 @@
     "setUpAgent": "Set up an agent",
     "manageAgents": "Manage installed agents",
     "keysHeading": "Instance keys",
-    "openGlobal": "Open global integrations"
+    "openGlobal": "Open global integrations",
+    "pageTitle": "Connect",
+    "pageHint": "MCP uses an agent token created during setup."
   },
   "connectors": {
     "search": "Search",
@@ -3102,5 +3167,82 @@
     "openAgent": "Open its agent page",
     "followError": "That didn't save. Try again.",
     "viewProfile": "View {{name}}'s profile"
+  },
+  "devices": {
+    "title": "Devices",
+    "longLived": "CLI device tokens are long-lived until you revoke them.",
+    "refresh": "Refresh",
+    "revoke": "Revoke",
+    "loading": "Loading devices…",
+    "empty": "No CLI devices are connected.",
+    "dates": "Created {{date}} · Last used {{time}}",
+    "revokedAt": "Revoked {{date}}",
+    "never": "Never",
+    "loadFailed": "Couldn’t load your devices.",
+    "revokeFailed": "Couldn’t revoke that device.",
+    "revokeConfirm": "Revoke {{label}}? This CLI will need to sign in again.",
+    "summary": {
+      "loading": "Loading…",
+      "loadFailed": "Couldn’t load",
+      "none": "None",
+      "count_one": "{{count}} CLI device",
+      "count_other": "{{count}} CLI devices",
+      "lastUsed": "{{devices}} · used {{time}}"
+    }
+  },
+  "accountMenu": {
+    "open": "Open account menu",
+    "title": "Account",
+    "you": "You",
+    "connect": "Connect",
+    "signOut": "Sign out"
+  },
+  "cliAuthorize": {
+    "checkingSession": "Checking your session…",
+    "title": "Authorize Commonly CLI",
+    "signInPrompt": "Sign in to approve this device. The code stays tied to this browser tab.",
+    "deviceCode": "Device code",
+    "signInToContinue": "Sign in to continue",
+    "enterCode": "Enter the code shown in your terminal.",
+    "checking": "Checking…",
+    "continue": "Continue",
+    "confirmTitle": "Authorize <host/> as @{{username}}?",
+    "confirmSubtitle": "This device is asking to use your Commonly account.",
+    "client": "Client",
+    "instance": "Instance",
+    "requested": "Requested",
+    "age": {
+      "justNow": "just now",
+      "minutes": "{{minutes}}m ago",
+      "hours": "{{hours}}h ago"
+    },
+    "caution": "Only approve a code you requested from your own terminal.",
+    "deny": "Deny",
+    "authorize": "Authorize",
+    "authorizing": "Authorizing…",
+    "done": {
+      "title": "Device authorized",
+      "message": "You can return to your terminal."
+    },
+    "denied": {
+      "title": "Authorization denied",
+      "message": "No token was issued for this device."
+    },
+    "expired": {
+      "title": "Code expired",
+      "message": "Return to your terminal and run <code>commonly login</code> again."
+    },
+    "used": {
+      "title": "Code already used",
+      "message": "This code was already approved or completed. Return to your terminal."
+    },
+    "error": {
+      "title": "Couldn’t authorize this device",
+      "message": "Check the code and try again from your terminal."
+    }
+  },
+  "app": {
+    "errorTitle": "Something went wrong",
+    "loading": "Loading Commonly"
   }
 }
