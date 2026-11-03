@@ -556,7 +556,7 @@ const V2ThreadMessages: React.FC<V2ThreadMessagesProps> = ({
                     <ShellGlyph name="chevron" size={16} />
                     {t('podChat.thread.collapse')}
                   </button>
-                  <span className="v2-thread-replies__count">{item.replyCount} {item.replyCount === 1 ? t('podChat.thread.replyOne') : t('podChat.thread.replyOther')}</span>
+                  <span className="v2-thread-replies__count">{t('podChat.thread.replyCount', { count: item.replyCount })}</span>
                   <button
                     type="button"
                     className={`v2-thread-replies__follow${following === true ? ' v2-thread-replies__follow--on' : ''}${following === false ? ' v2-thread-replies__follow--muted' : ''}`}

@@ -2,10 +2,12 @@
 // and nothing else. Reply in thread and Follow live in the expanded band's
 // foot (V2ThreadRestyle.test), the chevron is gone.
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import i18n, { i18nReady } from '../../i18n';
 import V2ThreadCard from '../components/V2ThreadCard';
 
-const NOW = new Date('2026-08-22T12:00:00Z');
+// Local noon, so "yesterday" (25h back) is the previous calendar day in every timezone.
+const NOW = new Date(2026, 7, 22, 12, 0, 0);
 
 const people = [
   { userId: 'u1', name: 'Ada', isBot: false },
@@ -83,5 +85,31 @@ describe('the chip is a door', () => {
     expect(chip).toHaveClass('v2-msg__thread-chip');
     fireEvent.click(chip);
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('zh-CN', () => {
+  beforeAll(async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+  });
+  afterAll(async () => {
+    await act(async () => { await i18n.changeLanguage('en'); });
+  });
+
+  test('count, stamp and accessible name render in Chinese, with none of the English', () => {
+    const { container } = setup({ replyCount: 1, lastActivityAt: new Date(NOW.getTime() - 25 * 60 * 60000).toISOString() });
+    expect(screen.getByText('1条回复')).toBeInTheDocument();
+    expect(screen.getByText('· 昨天')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '展开话题，1条回复' })).toBeInTheDocument();
+    const text = `${container.textContent} ${screen.getByRole('button').getAttribute('aria-label')}`;
+    expect(text).not.toMatch(/\b(reply|replies|last|Yesterday|Expand|Collapse|thread)\b/i);
+  });
+
+  test('plural counts and minute stamps, expanded', () => {
+    setup({ replyCount: 3, collapsed: false });
+    expect(screen.getByText('3条回复')).toBeInTheDocument();
+    expect(screen.getByText('· 2分钟前')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '收起话题，3条回复' })).toBeInTheDocument();
   });
 });

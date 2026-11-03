@@ -1,3 +1,5 @@
+import { compactAge, compactNow } from '../utils/compactTime';
+
 // Keep the local visit log separate from sidebar recency and the last-pod
 // selection key. Sidebar order and row times use the pod's last message (or
 // creation if empty), so they are the same on every device.
@@ -47,13 +49,13 @@ export const relativeTime = (value: string | number | Date | null | undefined, n
   const at = value instanceof Date ? value.getTime() : new Date(value).getTime();
   if (Number.isNaN(at)) return '';
   const delta = Math.max(0, now - at);
-  if (delta < MINUTE) return 'now';
-  if (delta < HOUR) return `${Math.floor(delta / MINUTE)}m`;
-  if (delta < DAY) return `${Math.floor(delta / HOUR)}h`;
-  if (delta < WEEK) return `${Math.floor(delta / DAY)}d`;
-  if (delta < MONTH) return `${Math.floor(delta / WEEK)}w`;
-  if (delta < YEAR) return `${Math.floor(delta / MONTH)}mo`;
-  return `${Math.floor(delta / YEAR)}y`;
+  if (delta < MINUTE) return compactNow();
+  if (delta < HOUR) return compactAge('minute', Math.floor(delta / MINUTE));
+  if (delta < DAY) return compactAge('hour', Math.floor(delta / HOUR));
+  if (delta < WEEK) return compactAge('day', Math.floor(delta / DAY));
+  if (delta < MONTH) return compactAge('week', Math.floor(delta / WEEK));
+  if (delta < YEAR) return compactAge('month', Math.floor(delta / MONTH));
+  return compactAge('year', Math.floor(delta / YEAR));
 };
 
 // The mark is 22px with 11px mono characters, so two Han characters wrap to a
