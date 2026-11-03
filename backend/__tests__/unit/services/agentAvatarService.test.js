@@ -171,9 +171,11 @@ describe('AgentAvatarService', () => {
   // F78: `design` mode calls no image engine. Prod has no working image key, so
   // the Gemini and OpenAI calls only sent the prompt out and failed.
   describe('AVATAR_PROVIDER=design', () => {
-    const saved = process.env.AVATAR_PROVIDER;
+    const saved = { AVATAR_PROVIDER: process.env.AVATAR_PROVIDER, GEMINI_API_KEY: process.env.GEMINI_API_KEY };
     afterEach(() => {
-      if (saved === undefined) delete process.env.AVATAR_PROVIDER; else process.env.AVATAR_PROVIDER = saved;
+      Object.entries(saved).forEach(([k, v]) => {
+        if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      });
       jest.restoreAllMocks();
     });
 
