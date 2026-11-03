@@ -2490,6 +2490,8 @@
     "hostedMcpAuthenticationRequired": "Sign in to Commonly, then try connecting again.",
     "hostedMcpClientSetup": "This connector’s sign-in setup needs attention. Ask an administrator to check it.",
     "hostedMcpConsentDenied": "You didn’t approve this connection. Nothing was saved.",
+    "hostedMcpVendorAppUnavailable": "The service refused Commonly’s app for your account, so nothing was saved. This is a setting on our side, not something you did.",
+    "hostedMcpVendorAppUnavailableNamed": "{{provider}} refused Commonly’s app for your account, so nothing was saved. This is a setting on our side with {{provider}}, not something you did.",
     "hostedMcpExchangeIncomplete": "The provider returned an incomplete authorization. Nothing was saved.",
     "hostedMcpExchangeRefused": "The provider refused this connection. Try again or check its permissions.",
     "hostedMcpExchangeUnreachable": "Couldn’t reach the provider to finish connecting. Try again.",

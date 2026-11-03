@@ -10,6 +10,8 @@ const noticeKeyByCode: Record<string, string> = {
   browser_mismatch: 'hostedMcpInvalidState',
   issuer_mismatch: 'hostedMcpInvalidState',
   consent_denied: 'hostedMcpConsentDenied',
+  // The vendor refused the app for this account, whatever the member clicked.
+  vendor_app_unavailable: 'hostedMcpVendorAppUnavailable',
   vendor_error: 'hostedMcpVendorError',
   rate_limited: 'hostedMcpRateLimited',
   issuer_unreachable: 'hostedMcpIssuerUnavailable',
@@ -31,6 +33,16 @@ const noticeKeyByCode: Record<string, string> = {
   authentication_required: 'hostedMcpAuthenticationRequired',
 };
 
-export const hostedMcpErrorNotice = (t: TFunction, code: string | null | undefined): string => (
-  t(`connectors.${noticeKeyByCode[code || ''] || 'hostedMcpUnknownError'}`)
-);
+// Notices that can name the provider. The name comes from this instance's own
+// catalogue entry, never from the callback URL.
+const namedNoticeKeys = new Set(['hostedMcpVendorAppUnavailable']);
+
+export const hostedMcpErrorNotice = (
+  t: TFunction,
+  code: string | null | undefined,
+  provider?: string,
+): string => {
+  const key = noticeKeyByCode[code || ''] || 'hostedMcpUnknownError';
+  if (provider && namedNoticeKeys.has(key)) return t(`connectors.${key}Named`, { provider });
+  return t(`connectors.${key}`);
+};
