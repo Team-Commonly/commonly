@@ -3206,7 +3206,7 @@
     "enterCode": "Enter the code shown in your terminal.",
     "checking": "Checking…",
     "continue": "Continue",
-    "confirmTitle": "Authorize <host>{{hostname}}</host> as @{{username}}?",
+    "confirmTitle": "Authorize <host/> as @{{username}}?",
     "confirmSubtitle": "This device is asking to use your Commonly account.",
     "client": "Client",
     "instance": "Instance",

@@ -65,7 +65,7 @@ describe('Settings under zh-CN', () => {
     withAuth(<V2SettingsPage />);
 
     expect(screen.getByRole('heading', { level: 1, name: '设置' })).toBeInTheDocument();
-    for (const title of ['账号', '访问权限', '外观']) {
+    for (const title of ['账号', '访问权限', '界面']) {
       expect(screen.getByRole('heading', { level: 2, name: title })).toBeInTheDocument();
     }
     expect(screen.getByText('订阅方案')).toBeInTheDocument();
@@ -137,6 +137,9 @@ describe('CLI authorize under zh-CN', () => {
     'evil</host> as @admin? Trusted <host>x',
     '<1>z</1>',
     '<b>bold</b>',
+    '{{username}}-laptop',
+    '$t(common.you)',
+    '&lt;0&gt; &amp; "q"',
   ])('a hostname with markup stays literal text inside the host span: %s', async (hostname) => {
     axios.post.mockResolvedValue({
       data: { status: 'pending', request: { hostname, clientName: 'commonly-cli', createdAt: new Date().toISOString() } },

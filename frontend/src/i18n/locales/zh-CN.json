@@ -205,7 +205,7 @@
     "groups": {
       "account": "账号",
       "access": "访问权限",
-      "look": "外观"
+      "look": "界面"
     },
     "account": {
       "fallbackName": "你的账号",
@@ -3202,7 +3202,7 @@
     "enterCode": "输入终端中显示的验证码。",
     "checking": "检查中…",
     "continue": "继续",
-    "confirmTitle": "要以 @{{username}} 的身份授权 <host>{{hostname}}</host> 吗？",
+    "confirmTitle": "要以 @{{username}} 的身份授权 <host/> 吗？",
     "confirmSubtitle": "这台设备请求使用你的 Commonly 账号。",
     "client": "客户端",
     "instance": "实例",

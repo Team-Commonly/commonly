@@ -130,7 +130,7 @@ describe('V2SettingsPage', () => {
     await act(async () => { fireEvent.click(within(language).getByRole('radio', { name: '中文' })); });
     expect(i18n.resolvedLanguage).toBe('zh-CN');
     // The labels follow the new language, the group title included, and the segment shows the choice.
-    const zhLanguage = within(screen.getByRole('region', { name: '外观' })).getByRole('radiogroup', { name: '语言' });
+    const zhLanguage = within(screen.getByRole('region', { name: '界面' })).getByRole('radiogroup', { name: '语言' });
     expect(within(zhLanguage).getByRole('radio', { name: '中文' })).toHaveAttribute('aria-checked', 'true');
 
     await act(async () => { fireEvent.click(within(zhLanguage).getByRole('radio', { name: 'English' })); });

@@ -9,6 +9,12 @@ import V2AuthBrand from './V2AuthBrand';
 import V2AuthNotice from './V2AuthNotice';
 import './V2CliAuthorize.css';
 
+// Renders the device's hostname as text. Trans hands a component the children it parsed from
+// the translation; this one ignores them, so the value can't be rewritten by the string.
+const CliHost = ({ value }: { value: string; children?: React.ReactNode }) => (
+  <span className="v2-cli-authorize__host">{value}</span>
+);
+
 interface AuthorizationRequest {
   hostname: string;
   clientName: string;
@@ -186,13 +192,12 @@ const V2CliAuthorize: React.FC = () => {
         <h1 className="v2-login__title">
           <Trans
             i18nKey="cliAuthorize.confirmTitle"
-            values={{ hostname: request.hostname, username: user?.username || t('common.you') }}
-            components={{ host: <span className="v2-cli-authorize__host" /> }}
-            // The hostname comes from the device asking for access. Escaping it before Trans
-            // parses the markup keeps a name like "x</host> as @admin" literal text inside
-            // the host span, so the approval screen can't be made to say something else.
-            tOptions={{ interpolation: { escapeValue: true } }}
-            shouldUnescape
+            values={{ username: user?.username || t('common.you') }}
+            // The hostname comes from the device asking for access, so it never goes through
+            // interpolation: Trans would parse markup in it and fill in {{…}} placeholders
+            // ("{{username}}-laptop" would read as the approver's own laptop). It is the
+            // host component's own child instead, rendered as plain text.
+            components={{ host: <CliHost value={request.hostname} /> }}
           />
         </h1>
         <p className="v2-login__subtitle">{t('cliAuthorize.confirmSubtitle')}</p>
