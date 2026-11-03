@@ -1,0 +1,48 @@
+{
+  "measuredAt": "2026-11-03T17:40:00Z",
+  "url": "https://gitlab.com/.well-known/oauth-authorization-server",
+  "metadata": {
+    "issuer": "https://gitlab.com",
+    "authorization_endpoint": "https://gitlab.com/oauth/authorize",
+    "token_endpoint": "https://gitlab.com/oauth/token",
+    "registration_endpoint": "https://gitlab.com/oauth/register",
+    "revocation_endpoint": "https://gitlab.com/oauth/revoke",
+    "token_endpoint_auth_methods_supported": [
+      "client_secret_basic",
+      "client_secret_post"
+    ],
+    "code_challenge_methods_supported": [
+      "plain",
+      "S256"
+    ],
+    "response_types_supported": [
+      "code"
+    ],
+    "grant_types_supported": [
+      "authorization_code",
+      "client_credentials",
+      "device_code",
+      "refresh_token"
+    ]
+  },
+  "registrationAnswer": {
+    "note": "POST /oauth/register asking client_secret_basic, 2026-11-03; client_id replaced",
+    "status": 201,
+    "body": {
+      "client_id": "<redacted>",
+      "client_id_issued_at": 0,
+      "client_name": "Commonly (GitLab) probe",
+      "dynamic": true,
+      "grant_types": [
+        "authorization_code",
+        "refresh_token"
+      ],
+      "redirect_uris": [
+        "https://example.invalid/cb"
+      ],
+      "require_pkce": true,
+      "scope": "mcp",
+      "token_endpoint_auth_method": "none"
+    }
+  }
+}

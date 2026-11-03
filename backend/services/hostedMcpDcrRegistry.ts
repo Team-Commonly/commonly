@@ -128,7 +128,8 @@ export const ensureDcrClient = async (
       `authorization server advertises no registration endpoint for ${entry.id}`,
     );
   }
-  const method = registrationMethod(entry, metadata);
+  const requested = registrationMethod(entry, metadata);
+  let method: RegistrationMethod = requested;
   let registrationUrl: URL;
   try {
     registrationUrl = new URL(metadata.registration_endpoint);
@@ -147,7 +148,7 @@ export const ensureDcrClient = async (
       redirect_uris: [redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
-      token_endpoint_auth_method: method,
+      token_endpoint_auth_method: requested,
       scope: entry.scopes.join(' '),
     }),
   }, fetchImpl);
@@ -173,6 +174,18 @@ export const ensureDcrClient = async (
       'client_registration_unsupported',
       'registration answer did not confirm the client and its sole callback',
     );
+  }
+  // A vendor may issue a public client where we asked for a confidential one:
+  // GitLab.com lists only secret methods and answers every registration with a
+  // PKCE-only public client (captured 2026-11-03). Accepted only when the answer
+  // says so outright, carries no secret, and S256 is offered, since S256 is then
+  // the only thing binding a code to the start that asked for it.
+  if (requested !== 'none'
+    && issued.token_endpoint_auth_method === 'none'
+    && issued.client_secret === undefined
+    && Array.isArray(metadata.code_challenge_methods_supported)
+    && metadata.code_challenge_methods_supported.includes('S256')) {
+    method = 'none';
   }
   if (method === 'none') {
     if (issued.client_secret !== undefined || issued.token_endpoint_auth_method !== 'none') {
