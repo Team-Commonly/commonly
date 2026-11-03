@@ -29,9 +29,15 @@ const AgentAsk = require('../../models/AgentAsk');
 const AgentMessageService = require('../../services/agentMessageService');
 
 // Stub the event service before requiring routes.
-jest.mock('../../services/agentEventService', () => ({
-  enqueue: jest.fn(async () => ({ _id: 'stub-event' })),
-}));
+jest.mock('../../services/agentEventService', () => {
+  // askAgent asks dispatch where the target runs (F63): keep that real.
+  const actual = jest.requireActual('../../services/agentEventService');
+  return {
+    enqueue: jest.fn(async () => ({ _id: 'stub-event' })),
+    resolveEffectiveInstallation: (...args) => actual.resolveEffectiveInstallation(...args),
+    runsInProcess: (...args) => actual.runsInProcess(...args),
+  };
+});
 const AgentEventService = require('../../services/agentEventService');
 
 const registryRoutes = require('../../routes/registry');

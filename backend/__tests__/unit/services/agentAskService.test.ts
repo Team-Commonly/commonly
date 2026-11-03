@@ -10,9 +10,16 @@ const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUt
 // Stub the event service before requiring the ask service so the require()
 // chain pulls our stub. The ask service requires('./agentEventService') at
 // load time.
-jest.mock('../../../services/agentEventService', () => ({
-  enqueue: jest.fn(async () => ({ _id: 'stub-event' })),
-}));
+jest.mock('../../../services/agentEventService', () => {
+  // The refusal asks dispatch's own question (where would this event run?),
+  // so that one is the real function, never a copy (review-checklist rule 59).
+  const actual = jest.requireActual('../../../services/agentEventService');
+  return {
+    enqueue: jest.fn(async () => ({ _id: 'stub-event' })),
+    resolveEffectiveInstallation: (...args) => actual.resolveEffectiveInstallation(...args),
+    runsInProcess: (...args) => actual.runsInProcess(...args),
+  };
+});
 
 const AgentEventService = require('../../../services/agentEventService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -29,13 +36,14 @@ const POD = new mongoose.Types.ObjectId();
 const OTHER_POD = new mongoose.Types.ObjectId();
 const INSTALLER = new mongoose.Types.ObjectId();
 
-const installAgent = (agentName, instanceId, podId = POD) => AgentInstallation.create({
+const installAgent = (agentName, instanceId, podId = POD, config = undefined) => AgentInstallation.create({
   agentName: agentName.toLowerCase(),
   instanceId,
   podId,
   version: '1.0.0',
   installedBy: INSTALLER,
   status: 'active',
+  ...(config ? { config } : {}),
 });
 
 beforeAll(async () => {
@@ -204,6 +212,100 @@ describe('askAgent — guards', () => {
     await expect(askAgent({
       fromAgent: 'alice', fromInstanceId: 'one', podId: '', targetAgent: 'bob', question: 'q',
     })).rejects.toMatchObject({ code: 'podId_required' });
+  });
+});
+
+// F63: an agent that runs on Commonly's native runtime (or as a hosted agent)
+// answers @mentions only. It has no tool to respond to an ask, so an ask to it
+// was acked and stayed open until it expired (camera run, 11-02). Refuse it at
+// once and point the asker at the @mention, which works since F62.
+describe('askAgent — a target that answers @mentions only', () => {
+  const ask = () => askAgent({
+    fromAgent: 'lead',
+    fromInstanceId: 'default',
+    podId: POD.toString(),
+    targetAgent: 'scout',
+    targetInstanceId: 'default',
+    question: 'what changed today?',
+  });
+
+  const expectRefused = async () => {
+    const err = await ask().catch((e) => e);
+    expect(err).toBeInstanceOf(AgentAskError);
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('target_answers_mentions');
+    expect(err.message).toMatch(/@mention/);
+    expect(await AgentAsk.countDocuments({})).toBe(0);
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+  };
+
+  beforeEach(async () => {
+    await installAgent('lead', 'default');
+  });
+
+  it('refuses an agent on the native runtime', async () => {
+    await installAgent('scout', 'default', POD, { runtime: { runtimeType: 'native' } });
+    await expectRefused();
+  });
+
+  it('refuses a hosted agent on the native engine', async () => {
+    await installAgent('scout', 'default', POD, {
+      runtime: { runtimeType: 'hosted' },
+      hosted: { engine: 'native', provisionedAt: new Date() },
+    });
+    await expectRefused();
+  });
+
+  it('refuses a hosted agent on the Durable Object engine, which answered mentions only too', async () => {
+    await installAgent('scout', 'default', POD, {
+      runtime: { runtimeType: 'hosted' },
+      hosted: { engine: 'durable-object', provisionedAt: new Date() },
+    });
+    await expectRefused();
+  });
+
+  it('refuses a row written without a runtime when dispatch borrows a native one from the agent\'s other pod', async () => {
+    // Mention auto-join writes {heartbeat, autoJoinSource} and no runtime;
+    // dispatch then runs the event on the agent's newest row that has one.
+    await installAgent('scout', 'default', OTHER_POD, { runtime: { runtimeType: 'native' } });
+    await installAgent('scout', 'default', POD, { heartbeat: { enabled: false }, autoJoinSource: 'mention' });
+    await expectRefused();
+  });
+
+  it('refuses a row written without a runtime when the agent\'s other row is hosted on the Durable Object', async () => {
+    await installAgent('scout', 'default', OTHER_POD, {
+      runtime: { runtimeType: 'hosted' },
+      hosted: { engine: 'durable-object', provisionedAt: new Date() },
+    });
+    await installAgent('scout', 'default', POD, { heartbeat: { enabled: false }, autoJoinSource: 'mention' });
+    await expectRefused();
+  });
+
+  it.each([
+    ['webhook', { runtime: { runtimeType: 'webhook' } }],
+    ['moltbot', { runtime: { runtimeType: 'moltbot' } }],
+    ['a Claude Code wrapper', { runtime: { runtimeType: 'claude-code', host: 'byo' } }],
+    ['a row with no runtime whose other rows are a wrapper', { heartbeat: { enabled: false } }],
+  ])('still asks an agent that can respond (%s)', async (_label, config) => {
+    if (_label.startsWith('a row with no runtime')) {
+      await installAgent('scout', 'default', OTHER_POD, { runtime: { runtimeType: 'codex', host: 'byo' } });
+    }
+    await installAgent('scout', 'default', POD, config);
+    const result = await ask();
+    expect(result.requestId).toBeTruthy();
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('still asks when the runtime lookup fails, as event routing does', async () => {
+    await installAgent('scout', 'default', POD, { runtime: { runtimeType: 'native' } });
+    const lookup = jest.spyOn(AgentEventService, 'resolveEffectiveInstallation')
+      .mockRejectedValueOnce(new Error('lookup unavailable'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await ask();
+    lookup.mockRestore();
+    warn.mockRestore();
+    expect(result.requestId).toBeTruthy();
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
   });
 });
 
