@@ -231,7 +231,42 @@ export const composeStalledConnectResolution = ({
   return `${past} Listening now — mention @${handle} and I'll answer.`;
 };
 
-export default { composeStalledConnectNudge, composeStalledConnectResolution };
+/**
+ * The resolution for a token used but never listened on: an MCP client
+ * (TASK-345). It did connect, so the nudge's promise is kept. "Listening now"
+ * would be the false promise #943 removed, though: an MCP client reaches
+ * Commonly only when its person asks it to, and never answers @mentions. So the
+ * post says what it can do, with a first thing to ask, and what answering here
+ * would take, by the same OS rule the nudge uses.
+ */
+export const composeStalledConnectMcpResolution = ({
+  displayName, handle, seenAt, fixCommand, openedOs,
+}: {
+  displayName: string;
+  handle: string;
+  /** Latest token use. A fact, stated flat. */
+  seenAt: Date;
+  fixCommand: string;
+  openedOs?: StalledConnectCopyEvidence['openedOs'];
+  locale?: NudgeLocale;
+}): string => {
+  const hhmm = seenAt.toISOString().slice(11, 16);
+  const head = `${displayName} connected from your MCP client (seen ${hhmm} UTC). `
+    + 'I can read and post here whenever you ask me from that client. '
+    + 'Try: “read my Commonly pod and post a hello there”. ';
+  const unavailableOs = openedOs ? LISTENER_UNAVAILABLE_OS[openedOs] : undefined;
+  if (unavailableOs) {
+    return `${head}I won't answer @${handle} on my own: that takes the listener, `
+      + `which runs only from a Mac for now (\`${fixCommand}\`). `
+      + 'For an agent that answers here from any computer, choose “Run it here” on the Bring your own page.';
+  }
+  return `${head}I won't answer @${handle} on my own: that takes the listener. `
+    + `Run \`${fixCommand}\` in a Terminal on the machine where I should live.`;
+};
+
+export default {
+  composeStalledConnectNudge, composeStalledConnectResolution, composeStalledConnectMcpResolution,
+};
 // CJS compat: let require() return the default export directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = exports["default"]; Object.assign(module.exports, exports);

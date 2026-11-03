@@ -2,8 +2,10 @@ import StalledConnectEpisode from '../models/StalledConnectEpisode';
 import { deriveAgentState } from './agentStateService';
 import {
   composeStalledConnectNudge,
+  composeStalledConnectMcpResolution,
   composeStalledConnectResolution,
 } from './stalledConnectCopy';
+import type { StalledConnectCopyEvidence } from './stalledConnectCopy';
 
 /**
  * The stalled-connect nudge (W4 item 3). Spec: ux-lead, 2026-08-14.
@@ -114,7 +116,25 @@ export const resolveTokenEpisode = (
   return { issuedAt, source };
 };
 
-type BotTokens = Array<{ lastListenedAt?: Date; createdAt?: Date }>;
+type BotTokens = Array<{ lastListenedAt?: Date; lastUsedAt?: Date; createdAt?: Date }>;
+
+/**
+ * The latest use of any token in either store. A token used but never
+ * listened on belongs to an MCP client: `deriveAgentState` counts listening
+ * only, so such a seat stays never-connected for good although it did connect.
+ */
+const latestUse = (tokenLists: BotTokens[]): Date | null => {
+  let latest: Date | null = null;
+  for (const list of tokenLists) {
+    for (const row of list || []) {
+      if (!row?.lastUsedAt) continue;
+      const used = new Date(row.lastUsedAt);
+      if (Number.isNaN(used.getTime())) continue;
+      if (!latest || used > latest) latest = used;
+    }
+  }
+  return latest;
+};
 
 const botKey = (agentName: string, instanceId: string) => `${agentName}\u0000${instanceId}`;
 
@@ -145,7 +165,8 @@ const botTokensForMany = async (
       'botMetadata.instanceId': p.instanceId,
     })),
   }).select(
-    'botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt agentRuntimeTokens.createdAt',
+    'botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt '
+      + 'agentRuntimeTokens.lastUsedAt agentRuntimeTokens.createdAt',
   ).lean() as Array<{ botMetadata?: { agentName?: string; instanceId?: string }; agentRuntimeTokens?: BotTokens }>;
   for (const row of rows) {
     const key = botKey(String(row.botMetadata?.agentName), String(row.botMetadata?.instanceId));
@@ -387,6 +408,8 @@ const resolveConnected = async ({
   const { buildAgentUsername } = require('./agentIdentityService');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AttentionItemService = require('./attentionItemService');
+  // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+  const User = require('../models/User');
 
   const open = await StalledConnectEpisode.find({ status: 'open' }).limit(200).lean();
   const tokensBySeat = await botTokensForMany((open as Array<Record<string, any>>).map((ep) => ({
@@ -407,7 +430,14 @@ const resolveConnected = async ({
     const derived = deriveAgentState(
       install as any, userTokens as any, String(install.installedBy || ''), now.getTime(),
     );
-    if (derived.state === 'never-connected') continue;
+    // An MCP client uses its token without ever listening (TASK-345). It did
+    // connect, and the nudge promised a post when it did, so it resolves too,
+    // with copy that does not promise an answer to @mentions.
+    let mcpSeenAt: Date | null = null;
+    if (derived.state === 'never-connected') {
+      mcpSeenAt = latestUse([(install as { runtimeTokens?: BotTokens }).runtimeTokens || [], userTokens]);
+      if (!mcpSeenAt) continue;
+    }
 
     const handle = buildAgentUsername
       ? buildAgentUsername(String(ep.agentName), String(ep.instanceId))
@@ -416,6 +446,13 @@ const resolveConnected = async ({
     // survives a wrapper that connected and stopped again between passes —
     // which is why the confirmation needs no time bound (ux-lead, 53307).
     const firstSeenAt = derived.lastUsedAt ? new Date(derived.lastUsedAt) : now;
+    const fixCommand = derived.fixCommand || `commonly agent run ${ep.agentName}`;
+    let openedOs: StalledConnectCopyEvidence['openedOs'] = null;
+    if (mcpSeenAt) {
+      const installer = await User.findById(ep.installedBy).select('onboarding.byoOpenedOs').lean() as
+        { onboarding?: { byoOpenedOs?: StalledConnectCopyEvidence['openedOs'] } } | null;
+      openedOs = installer?.onboarding?.byoOpenedOs || null;
+    }
     let resolutionMessageId = '';
     try {
       const posted = await AgentMessageService.postMessage({
@@ -423,15 +460,23 @@ const resolveConnected = async ({
         instanceId: String(ep.instanceId),
         displayName: ep.displayName || String(ep.agentName),
         podId: String(ep.podId),
-        content: composeStalledConnectResolution({
-          displayName: ep.displayName || String(ep.agentName),
-          handle,
-          firstSeenAt,
-          // Derived at POST time, not at connect time: the past is a fact, the
-          // present is an inference, and they get different voices.
-          presentState: derived.state,
-          fixCommand: derived.fixCommand || `commonly agent run ${ep.agentName}`,
-        }),
+        content: mcpSeenAt
+          ? composeStalledConnectMcpResolution({
+            displayName: ep.displayName || String(ep.agentName),
+            handle,
+            seenAt: mcpSeenAt,
+            fixCommand,
+            openedOs,
+          })
+          : composeStalledConnectResolution({
+            displayName: ep.displayName || String(ep.agentName),
+            handle,
+            firstSeenAt,
+            // Derived at POST time, not at connect time: the past is a fact, the
+            // present is an inference, and they get different voices.
+            presentState: derived.state,
+            fixCommand,
+          }),
         metadata: { kind: 'stalled-connect-resolved' },
       });
       resolutionMessageId = extractMessageId(posted) || '';

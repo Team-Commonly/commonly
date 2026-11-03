@@ -132,7 +132,9 @@ export const loadConfig = (env = process.env, opts = {}) => {
  * `query` is a flat object — all values stringified and URL-encoded.
  * `_fetchImpl` is a test seam (same convention as `cli/src/lib/adapters/*.js`).
  */
-export const request = async (config, { method, path, query, body, _fetchImpl = fetch } = {}) => {
+export const request = async (config, {
+  method, path, query, body, signal, _fetchImpl = fetch,
+} = {}) => {
   let url = `${config.baseUrl}${path}`;
   if (query) {
     const params = new URLSearchParams();
@@ -154,6 +156,7 @@ export const request = async (config, { method, path, query, body, _fetchImpl = 
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   });
 
   // Read body once. Prefer JSON; fall back to text for non-JSON error pages

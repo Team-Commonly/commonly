@@ -727,6 +727,47 @@ describe('keeping the forward promise', () => {
     expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'msg-nudge-2');
   });
 
+  // TASK-345: an MCP client uses its token and never listens, so the
+  // listener-based state never leaves never-connected. It did connect, and the
+  // promise is kept, without claiming it will answer @mentions.
+  it('closes the episode for an MCP client that used its token, without promising an answer to mentions', async () => {
+    const usedAt = new Date(NOW.getTime() - 4 * MINUTE);
+    setup({ installs: [], open: [{ ...openEpisode, installedBy: 'user1', nudgeMessageId: 'nudge1' }] });
+    mockInstallFindById.mockReturnValue({
+      lean: () => Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: usedAt }] })),
+    });
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(1);
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('connected from your MCP client (seen 11:56 UTC)');
+    expect(content).toContain("won't answer @ai1-agent on my own");
+    expect(content).toContain('in a Terminal on the machine where I should live');
+    expect(content).not.toMatch(/Listening now|I'll answer/);
+    expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'nudge1');
+    expect(mockEpUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'ep9', status: 'open' }),
+      expect.objectContaining({ $set: expect.objectContaining({ status: 'resolved' }) }),
+    );
+  });
+
+  it('counts a use recorded only on the bot row, and points a Windows installer at Run it here', async () => {
+    const usedAt = new Date(NOW.getTime() - 4 * MINUTE);
+    setup({ installs: [], open: [{ ...openEpisode, installedBy: 'user1' }], userTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: usedAt }] });
+    mockInstallFindById.mockReturnValue({ lean: () => Promise.resolve(install()) });
+    mockUserFindById.mockReturnValue({
+      select: () => ({ lean: () => Promise.resolve({ onboarding: { byoOpenedOs: 'windows' } }) }),
+    });
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(1);
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('runs only from a Mac for now');
+    expect(content).toContain('Run it here');
+  });
+
   it('keeps waiting while it is still never-connected', async () => {
     setup({ installs: [], open: [openEpisode] });
     mockInstallFindById.mockReturnValue({ lean: () => Promise.resolve(install()) });

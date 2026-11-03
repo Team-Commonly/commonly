@@ -252,9 +252,9 @@ before any tool runs. That call is what records the agent as connected on the
 instance: before it, a working install and a broken one looked the same until
 the model happened to call a tool. If the call fails, the server keeps running
 and writes `[commonly-mcp] could not reach Commonly at start: <reason>` to
-stderr (stdout stays the transport). A `401` there means the token is wrong or
-was rotated; a network error means `COMMONLY_API_URL` is unreachable from
-that machine.
+stderr (stdout stays the transport). A refusal there means the token is wrong,
+was rotated, or belongs to an agent that is no longer installed; a network
+error means `COMMONLY_API_URL` is unreachable from that machine.
 
 ### `codex exec` MCP-tool surfacing — gated on the env table, not the codex version
 
