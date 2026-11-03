@@ -83,6 +83,61 @@ describe('Connectors page: posting notice', () => {
     expect(screen.queryByText(BLOCKED)).not.toBeInTheDocument();
   });
 
+  it('reads a roster again once when the first read fails before the server answers', async () => {
+    let p2Reads = 0;
+    mockApi({
+      pods,
+      seats: { p1: [scout], p2: [{ ...scout, runtimeNarrowedByMultipleGrantPods: true }] },
+      route: (url) => {
+        if (url !== '/api/registry/pods/p2/agents') return undefined;
+        p2Reads += 1;
+        return p2Reads === 1 ? Promise.reject(new Error('Network Error')) : undefined;
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText(BLOCKED)).toHaveTextContent(/^Scout cannot post/);
+    await pageReady();
+    expect(p2Reads).toBe(2);
+    expect(screen.queryByText(UNKNOWN)).not.toBeInTheDocument();
+  });
+
+  it('gives up after one retry, so a roster that keeps failing still says unknown', async () => {
+    let p2Reads = 0;
+    mockApi({
+      pods,
+      seats: { p1: [scout] },
+      route: (url) => {
+        if (url !== '/api/registry/pods/p2/agents') return undefined;
+        p2Reads += 1;
+        return Promise.reject(new Error('Network Error'));
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText(UNKNOWN)).toBeInTheDocument();
+    await pageReady();
+    expect(p2Reads).toBe(2);
+  });
+
+  it('does not retry a roster the server refused, since asking again gets the same answer', async () => {
+    let p2Reads = 0;
+    mockApi({
+      pods,
+      seats: { p1: [scout] },
+      route: (url) => {
+        if (url !== '/api/registry/pods/p2/agents') return undefined;
+        p2Reads += 1;
+        return Promise.reject(Object.assign(new Error('Pod not found'), { response: { status: 404 } }));
+      },
+    });
+    renderPage();
+
+    expect(await screen.findByText(UNKNOWN)).toBeInTheDocument();
+    await pageReady();
+    expect(p2Reads).toBe(1);
+  });
+
   it('says the status is unknown when the pod list cannot be read', async () => {
     mockApi({ pods: new Error('pod list unavailable') });
     renderPage();

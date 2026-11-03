@@ -113,7 +113,14 @@ export const useToolConnectors = (
     const [grantRes, seatResults] = await Promise.all([
       api.get<{ grants: ToolGrant[] }>('/api/grants', { params: { connectionOwner: 'me' } }).catch(() => null),
       Promise.all(podIds.map(async (podId) => {
-        const res = await api.get<{ agents?: PodSeat[] }>(`/api/registry/pods/${podId}/agents`).catch(() => null);
+        // One page load reads one roster per pod, so a single dropped request
+        // used to turn the whole page "unknown". A read that never got a server
+        // answer, or got a 5xx, is tried once more; a 4xx would answer the same.
+        const url = `/api/registry/pods/${podId}/agents`;
+        const res = await api.get<{ agents?: PodSeat[] }>(url).catch((err) => {
+          const status = err?.response?.status;
+          return status && status < 500 ? null : api.get<{ agents?: PodSeat[] }>(url).catch(() => null);
+        });
         return { podId, seats: (res?.agents ?? []).filter((seat) => !seat.internal), failed: !res };
       })),
     ]);
