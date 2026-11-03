@@ -25,11 +25,16 @@ type TokenStatus = {
   last4?: string | null;
 };
 
-const formatTokenCreatedAt = (value: string) => {
+// English keeps its day-month-year order ("4 Sep 2026"); other languages use
+// their own locale's date order.
+const formatTokenDate = (value: string, language: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  const month = date.toLocaleDateString('en-US', { month: 'short' });
-  return `Created ${date.getDate()} ${month} ${date.getFullYear()}`;
+  if (language.startsWith('en')) {
+    const month = date.toLocaleDateString('en-US', { month: 'short' });
+    return `${date.getDate()} ${month} ${date.getFullYear()}`;
+  }
+  return date.toLocaleDateString(language, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 interface SettingsSectionProps {
@@ -48,10 +53,10 @@ const developerAppsEnabled = () => process.env.REACT_APP_DEVELOPER_APPS === 'tru
 // Admin-only: the instance's user list and usage analytics. Their routes
 // survived the Settings consolidation (#1544) but the way in did not — the
 // pages were reachable only by typing the URL (2026-09-08).
-const ADMIN_SECTION = { id: 'admin', title: 'Administration' } as const;
+const ADMIN_SECTION = { id: 'admin', titleKey: 'settings.admin.title' } as const;
 const ADMIN_LINKS = [
-  { to: '/v2/admin/users', label: 'Users', detail: 'Registered users, bans, invitation codes' },
-  { to: '/v2/admin/analytics', label: 'Usage analytics', detail: 'Signups, messages, active users, activation funnel' },
+  { to: '/v2/admin/users', labelKey: 'settings.admin.users', detailKey: 'settings.admin.usersDetail' },
+  { to: '/v2/admin/analytics', labelKey: 'settings.admin.analytics', detailKey: 'settings.admin.analyticsDetail' },
 ] as const;
 
 const settingsSectionId = (id: string) => `v2-settings-${id}`;
@@ -85,7 +90,7 @@ const Warn = () => <Svg><path d="M12 4 3 20h18L12 4zM12 10v4M12 17v.5" /></Svg>;
 const V2AccountSection: React.FC = () => {
   const { currentUser, updateProfile, updateUsername } = useAuth();
   const { t } = useTranslation();
-  const accountName = String(currentUser?.displayName || currentUser?.username || 'Your account');
+  const accountName = String(currentUser?.displayName || currentUser?.username || t('settings.account.fallbackName'));
   const accountUsername = String(currentUser?.username || '');
   const accountEmail = String(currentUser?.email || '');
   const profilePicture = String(currentUser?.profilePicture || 'default');
@@ -118,7 +123,7 @@ const V2AccountSection: React.FC = () => {
     event.preventDefault();
     const nextName = name.trim();
     if (nextName === accountName) {
-      setNotice('No account changes to save.');
+      setNotice(t('settings.account.noChanges'));
       setError(null);
       return;
     }
@@ -128,10 +133,10 @@ const V2AccountSection: React.FC = () => {
     setError(null);
     try {
       await updateProfile({ displayName: nextName });
-      setNotice('Account saved.');
+      setNotice(t('settings.account.saved'));
     } catch (requestError) {
       const message = (requestError as { response?: { data?: { error?: string; msg?: string } } })?.response?.data;
-      setError(message?.error || message?.msg || 'Couldn’t save your account. Try again.');
+      setError(message?.error || message?.msg || t('settings.account.saveFailed'));
     } finally {
       setBusy(false);
     }
@@ -140,7 +145,7 @@ const V2AccountSection: React.FC = () => {
   const saveUsername = async () => {
     const nextUsername = username.trim().toLowerCase();
     if (nextUsername === accountUsername.toLowerCase()) {
-      setNotice('No username changes to save.');
+      setNotice(t('settings.username.noChanges'));
       setError(null);
       return;
     }
@@ -159,10 +164,10 @@ const V2AccountSection: React.FC = () => {
       );
       setUsername(updatedUsername);
       setSavedUsername(updatedUsername);
-      setNotice('Username saved.');
+      setNotice(t('settings.username.saved'));
     } catch (requestError) {
       const message = (requestError as { response?: { data?: { error?: string; msg?: string } } })?.response?.data;
-      setError(message?.error || message?.msg || 'Couldn’t save your username. Try again.');
+      setError(message?.error || message?.msg || t('settings.username.saveFailed'));
     } finally {
       setUsernameBusy(false);
     }
@@ -240,8 +245,8 @@ const V2AccountSection: React.FC = () => {
           <button
             type="button"
             className="v2p-b v2p-b-g v2-settings__photo-btn"
-            title="Change photo"
-            aria-label="Change photo"
+            title={t('settings.account.changePhoto')}
+            aria-label={t('settings.account.changePhoto')}
             aria-expanded={editing}
             aria-controls="v2-settings-profile-edit"
             onClick={() => setEditing(true)}
@@ -252,13 +257,13 @@ const V2AccountSection: React.FC = () => {
               src={currentUser?.profilePicture || undefined}
               kind="human"
               seed={currentUser?._id || currentUser?.id}
-              title={`${name || accountName} avatar`}
+              title={t('settings.account.avatarAlt', { name: name || accountName })}
             />
           </button>
           <span className="v2-settings__account-copy">
             <span className="v2-settings__account-name">{name || accountName}</span>
             <span className="v2-settings__meta">
-              <span>@{savedUsername}</span> · {currentUser?.role === 'admin' ? 'administrator' : 'member'}
+              <span>@{savedUsername}</span> · {t(currentUser?.role === 'admin' ? 'settings.account.roleAdmin' : 'settings.account.roleMember')}
             </span>
           </span>
         </span>
@@ -267,8 +272,8 @@ const V2AccountSection: React.FC = () => {
           <button
             type="button"
             className="v2p-b v2p-b-g v2p-ib v2p-b-sm"
-            title="Edit name and username"
-            aria-label="Edit profile"
+            title={t('settings.account.editNameTitle')}
+            aria-label={t('settings.account.editProfile')}
             aria-expanded={editing}
             aria-controls="v2-settings-profile-edit"
             onClick={() => setEditing((open) => !open)}
@@ -278,14 +283,14 @@ const V2AccountSection: React.FC = () => {
         </span>
       </div>
       <div className="v2p-lrow">
-        <span className="lb"><Chat />Email</span>
+        <span className="lb"><Chat />{t('settings.account.email')}</span>
         <span className="vl"><span className="mo v2-settings__mail">{accountEmail || '—'}</span></span>
         <span className="ac">
           <button
             type="button"
             className="v2p-b v2p-b-g v2p-ib v2p-b-sm"
-            title="Change email"
-            aria-label="Edit email"
+            title={t('settings.account.changeEmailTitle')}
+            aria-label={t('settings.account.editEmail')}
             aria-expanded={editing}
             aria-controls="v2-settings-profile-edit"
             onClick={() => setEditing((open) => !open)}
@@ -331,15 +336,15 @@ const V2AccountSection: React.FC = () => {
       )}
       <div className="v2-settings__account-fields">
         <label>
-          <span>Name</span>
+          <span>{t('settings.account.name')}</span>
           <input value={name} onChange={(event) => setName(event.target.value)} required maxLength={80} />
         </label>
         <label>
-          <span>Username</span>
+          <span>{t('settings.account.username')}</span>
           <div className="v2-settings__username-control">
             <input
               id="v2-settings-username"
-              aria-label="Username"
+              aria-label={t('settings.account.username')}
               value={username}
               onChange={(event) => setUsername(event.target.value)}
               onKeyDown={handleUsernameKeyDown}
@@ -363,17 +368,17 @@ const V2AccountSection: React.FC = () => {
           </span>
         </label>
         <div className="v2-settings__account-email">
-          <label htmlFor="v2-settings-email">Email</label>
+          <label htmlFor="v2-settings-email">{t('settings.account.email')}</label>
           <div className="v2-settings__email-control">
             <input id="v2-settings-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-            <button className="v2p-b v2p-b-s v2p-b-sm" type="button">Change</button>
+            <button className="v2p-b v2p-b-s v2p-b-sm" type="button">{t('settings.account.change')}</button>
           </div>
         </div>
       </div>
       {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
       {notice && <p className="v2-settings__message" role="status">{notice}</p>}
       <div className="v2-settings__actions">
-        <button className="v2p-b v2p-b-p" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+        <button className="v2p-b v2p-b-p" type="submit" disabled={busy}>{busy ? t('settings.account.saving') : t('settings.account.save')}</button>
       </div>
       </div>
       {avatarFile && (
@@ -411,7 +416,7 @@ const V2AccountActions: React.FC = () => {
   return (
     <details className="v2p-disc v2-settings__actions-fold">
       <summary>
-        <span className="lb"><Warn />Account actions</span>
+        <span className="lb"><Warn />{t('settings.actions.title')}</span>
         <span className="vl" />
         <Chevron />
       </summary>
@@ -430,6 +435,7 @@ const V2AccountActions: React.FC = () => {
 };
 
 const V2ApiTokenSection: React.FC = () => {
+  const { i18n, t } = useTranslation();
   const [hasToken, setHasToken] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -470,9 +476,9 @@ const V2ApiTokenSection: React.FC = () => {
       setCreatedAt(response.data.createdAt || null);
       setLast4(generatedToken ? generatedToken.slice(-4) : null);
       setShowToken(true);
-      setNotice('New API token generated. Copy it now; treat it like a password.');
+      setNotice(t('settings.apiToken.generated'));
     } catch {
-      setError('Couldn’t generate an API token. Try again.');
+      setError(t('settings.apiToken.generateFailed'));
     } finally {
       setBusy(null);
     }
@@ -489,9 +495,9 @@ const V2ApiTokenSection: React.FC = () => {
       setCreatedAt(null);
       setLast4(null);
       setShowToken(false);
-      setNotice('API token revoked.');
+      setNotice(t('settings.apiToken.revoked'));
     } catch {
-      setError('Couldn’t revoke the API token. Try again.');
+      setError(t('settings.apiToken.revokeFailed'));
     } finally {
       setBusy(null);
     }
@@ -501,35 +507,38 @@ const V2ApiTokenSection: React.FC = () => {
     if (!token) return;
     try {
       await navigator.clipboard.writeText(token);
-      setNotice('API token copied.');
+      setNotice(t('settings.apiToken.copied'));
     } catch {
-      setError('Couldn’t copy the API token. Select and copy it manually.');
+      setError(t('settings.apiToken.copyFailed'));
     }
   };
 
   const maskedToken = '••••••••••••••••••••••••••••••••';
-  const createdLabel = createdAt ? formatTokenCreatedAt(createdAt) : null;
+  const createdDate = createdAt ? formatTokenDate(createdAt, i18n.resolvedLanguage || i18n.language || 'en') : null;
+  const createdLabel = createdDate ? t('settings.apiToken.created', { date: createdDate }) : null;
 
-  const statusLabel = hasToken ? `Active${last4 ? ` · ends in ${last4}` : ''}` : 'None';
+  const statusLabel = hasToken
+    ? (last4 ? t('settings.apiToken.activeEndsIn', { last4 }) : t('settings.apiToken.active'))
+    : t('settings.apiToken.none');
 
   return (
     <>
       <div className="v2p-lrow">
-        <span className="lb"><Key />API token</span>
+        <span className="lb"><Key />{t('settings.apiToken.label')}</span>
         <span className="vl"><span className="mu">{statusLabel}</span></span>
         <span className="ac">
           {hasToken ? (
             <>
               <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => void generate()} disabled={busy !== null}>
-                {busy === 'generate' ? 'Regenerating…' : 'Regenerate'}
+                {busy === 'generate' ? t('settings.apiToken.regenerating') : t('settings.apiToken.regenerate')}
               </button>
               <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => void revoke()} disabled={busy !== null}>
-                {busy === 'revoke' ? 'Revoking…' : 'Revoke'}
+                {busy === 'revoke' ? t('settings.apiToken.revoking') : t('settings.apiToken.revoke')}
               </button>
             </>
           ) : (
             <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => void generate()} disabled={busy !== null}>
-              {busy === 'generate' ? 'Generating…' : 'Generate'}
+              {busy === 'generate' ? t('settings.apiToken.generating') : t('settings.apiToken.generate')}
             </button>
           )}
         </span>
@@ -543,9 +552,9 @@ const V2ApiTokenSection: React.FC = () => {
               <div className="v2-settings__token-value">
                 <code>{token && showToken ? token : maskedToken}</code>
                 <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => setShowToken((visible) => !visible)}>
-                  {showToken ? 'Hide' : 'Show'}
+                  {showToken ? t('settings.apiToken.hide') : t('settings.apiToken.show')}
                 </button>
-                <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => void copy()}>Copy</button>
+                <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={() => void copy()}>{t('common.copy')}</button>
               </div>
               {createdLabel && <p className="v2-settings__token-meta">{createdLabel}</p>}
             </>
@@ -590,49 +599,53 @@ const V2LanguageSection: React.FC = () => {
   );
 };
 
-const V2AdminSection: React.FC = () => (
-  <div className="v2-settings__admin-links">
-    {ADMIN_LINKS.map((link) => (
-      <Link key={link.to} className="v2-settings__admin-link" to={link.to}>
-        <span className="v2-settings__admin-link-label">{link.label}</span>
-        <span className="v2-settings__admin-link-detail">{link.detail}</span>
-      </Link>
-    ))}
-  </div>
-);
+const V2AdminSection: React.FC = () => {
+  const { t } = useTranslation();
+  return (
+    <div className="v2-settings__admin-links">
+      {ADMIN_LINKS.map((link) => (
+        <Link key={link.to} className="v2-settings__admin-link" to={link.to}>
+          <span className="v2-settings__admin-link-label">{t(link.labelKey)}</span>
+          <span className="v2-settings__admin-link-detail">{t(link.detailKey)}</span>
+        </Link>
+      ))}
+    </div>
+  );
+};
 
 const V2SettingsPage: React.FC = () => {
   const { currentUser } = useAuth();
+  const { t } = useTranslation();
   const isAdmin = currentUser?.role === 'admin';
 
   return (
-    <div className="v2-settings" aria-label="Settings">
-      <header className="v2p-ph"><h1>Settings</h1></header>
+    <div className="v2-settings" aria-label={t('common.nav.settings')}>
+      <header className="v2p-ph"><h1>{t('common.nav.settings')}</h1></header>
       <div className="v2p-body v2-settings__layout">
         <div className="v2-settings__content">
-          <SettingsSection id="account" title="Account">
+          <SettingsSection id="account" title={t('settings.groups.account')}>
             <V2AccountSection />
             <V2BillingPanel />
           </SettingsSection>
-          <SettingsSection id="access" title="Access">
+          <SettingsSection id="access" title={t('settings.groups.access')}>
             <V2DevicesPanel showHeading={false} asFold />
             <V2ApiTokenSection />
             <Link className="v2p-lrow v2-settings__link" to="/v2/connectors">
-              <span className="lb"><Plug />Connectors</span>
-              <span className="vl"><span className="mu">Manage connected services</span></span>
+              <span className="lb"><Plug />{t('common.nav.connectors')}</span>
+              <span className="vl"><span className="mu">{t('settings.connectors.detail')}</span></span>
               <span className="ac"><span className="v2p-b v2p-b-g v2p-ib v2p-b-sm" aria-hidden="true"><Next /></span></span>
             </Link>
             {developerAppsEnabled() && (
               <details className="v2-settings__developer-disclosure">
-                <summary>Developer apps</summary>
+                <summary>{t('settings.developerApps')}</summary>
                 <AppsManagement variant="settings" showIntegrations={false} />
               </details>
             )}
           </SettingsSection>
-          <SettingsSection id="look" title="Look"><V2LanguageSection /></SettingsSection>
+          <SettingsSection id="look" title={t('settings.groups.look')}><V2LanguageSection /></SettingsSection>
           <div className="v2p-list v2-settings__actions-list"><V2AccountActions /></div>
           {isAdmin && (
-            <SettingsSection id={ADMIN_SECTION.id} title={ADMIN_SECTION.title}><V2AdminSection /></SettingsSection>
+            <SettingsSection id={ADMIN_SECTION.id} title={t(ADMIN_SECTION.titleKey)}><V2AdminSection /></SettingsSection>
           )}
         </div>
       </div>

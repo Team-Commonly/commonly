@@ -78,6 +78,12 @@ module.exports = {
         'src/v2/connectors/ConnectorsPage.tsx',
         'src/v2/connectors/ToolPanels.tsx',
         'src/v2/utils/localizeRelativeTime.ts',
+        // Settings + CLI authorize chrome (launch zh-CN pass)
+        'src/v2/components/V2SettingsPage.tsx',
+        'src/v2/components/V2BillingPanel.tsx',
+        'src/v2/components/V2DevicesPanel.tsx',
+        'src/v2/components/V2AccountMenu.tsx',
+        'src/v2/components/V2CliAuthorize.tsx',
       ],
       rules: {
         'i18next/no-literal-string': ['error', {
@@ -90,7 +96,7 @@ module.exports = {
               'field',
               'inputMode', 'accept', 'd', 'viewBox', 'fill', 'fontSize', 'stroke',
               'sx', 'value', 'aria-hidden', 'anchorOrigin', 'transformOrigin',
-              'PaperProps',
+              'PaperProps', 'kind',
             ],
           },
         }],

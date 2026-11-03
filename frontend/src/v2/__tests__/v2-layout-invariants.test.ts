@@ -1525,17 +1525,17 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // a happy path cannot prove the old page stops being reachable. The
     // positive controls below pin both the new destination and the public
     // profile route that must remain available.
-    expect(settingsPage).toContain('<SettingsSection id="account" title="Account">');
+    expect(settingsPage).toContain(`<SettingsSection id="account" title={t('settings.groups.account')}>`);
     // D215 (TASK-688): Plan, Devices, API token and Connectors are rows in Account / Access.
-    expect(settingsPage).toContain('<SettingsSection id="access" title="Access">');
+    expect(settingsPage).toContain(`<SettingsSection id="access" title={t('settings.groups.access')}>`);
     // D215: the language segment lives under Look, beside the theme.
-    expect(settingsPage).toContain('<SettingsSection id="look" title="Look">');
+    expect(settingsPage).toContain(`<SettingsSection id="look" title={t('settings.groups.look')}>`);
     expect(settingsPage).toContain('className="v2-settings__avatar"');
     expect(settingsPage).toContain('src={currentUser?.profilePicture || undefined}');
     expect(settingsPage).toContain('kind="human"');
     expect(settingsPage).toContain('<AppsManagement variant="settings" showIntegrations={false} />');
     expect(settingsPage).toContain('to="/v2/connectors"');
-    expect(settingsPage).toContain('<summary>Developer apps</summary>');
+    expect(settingsPage).toContain(`<summary>{t('settings.developerApps')}</summary>`);
     expect(settingsPage).toContain('<V2BillingPanel />');
     expect(settingsPage).toContain('<V2DevicesPanel showHeading={false} asFold />');
     expect(ruleBody(ss, '.v2-settings__avatar')).toContain('width: 44px');
@@ -1583,7 +1583,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(settingsPage).toContain('value={username}');
     expect(settingsPage).toContain('className="v2-settings__email-control"');
     expect(settingsPage).toContain('id="v2-settings-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)}');
-    expect(settingsPage).toContain('type="button">Change</button>');
+    expect(settingsPage).toContain(`type="button">{t('settings.account.change')}</button>`);
     expect(settingsPage).not.toContain('Email changes go through re-verification; ask us for now.');
     expect(settingsPage).not.toContain('v2-settings__nav-note');
     expect(ruleBody(ss, '.v2-settings__account-fields')).toContain('grid-template-columns: repeat(2, minmax(0, 1fr))');

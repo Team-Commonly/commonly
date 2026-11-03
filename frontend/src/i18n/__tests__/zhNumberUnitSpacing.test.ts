@@ -56,6 +56,8 @@ const OPAQUE_PLACEHOLDERS = [
   'woken',
   // podChat.claimRun.label names the first and last task of a claim run (Latin task ids).
   'last',
+  // settings.apiToken.activeEndsIn shows the token's last four characters, letters or digits.
+  'last4',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number

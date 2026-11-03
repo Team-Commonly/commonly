@@ -1,5 +1,6 @@
 import React from 'react';
 import { Routes, Route, Navigate, useLocation, useMatch, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import V2Layout from './components/V2Layout';
 import V2FeaturePage from './components/V2FeaturePage';
 import { useAuth } from '../context/AuthContext';
@@ -66,6 +67,16 @@ const GlobalIntegrations = React.lazy(() => import('../components/admin/GlobalIn
 const V2AdminUsers = React.lazy(() => import('./components/V2AdminUsers'));
 const V2AdminAnalytics = React.lazy(() => import('./components/V2AdminAnalytics'));
 
+const V2ErrorFallback: React.FC<{ message: string }> = ({ message }) => {
+  const { t } = useTranslation();
+  return (
+    <div className="v2-empty">
+      <div className="v2-empty__title">{t('app.errorTitle')}</div>
+      <div className="v2-empty__text">{message}</div>
+    </div>
+  );
+};
+
 class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   constructor(props: { children: React.ReactNode }) {
     super(props);
@@ -82,12 +93,7 @@ class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { e
 
   render() {
     if (this.state.error) {
-      return (
-        <div className="v2-empty">
-          <div className="v2-empty__title">Something went wrong</div>
-          <div className="v2-empty__text">{this.state.error.message}</div>
-        </div>
-      );
+      return <V2ErrorFallback message={this.state.error.message} />;
     }
     return this.props.children;
   }
@@ -97,22 +103,25 @@ class V2ErrorBoundary extends React.Component<{ children: React.ReactNode }, { e
 // use the product typing rhythm. Its geometry matches the canonical minimal
 // mark in frontend/design-system/assets/commonly-mark.svg: one C ring, then
 // dots at x=25/32/39 with r=2.4 in a 64px viewBox.
-const V2Boot: React.FC = () => (
-  <div className="v2-boot" role="status" aria-label="Loading Commonly">
-    <svg className="v2-boot__mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-      <path
-        d="M 50 17.7 A 22 22 0 1 0 50 46.3"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="9"
-        strokeLinecap="round"
-      />
-      <circle className="v2-boot__mark-dot" cx="25" cy="32" r="2.4" fill="currentColor" />
-      <circle className="v2-boot__mark-dot" cx="32" cy="32" r="2.4" fill="currentColor" />
-      <circle className="v2-boot__mark-dot" cx="39" cy="32" r="2.4" fill="currentColor" />
-    </svg>
-  </div>
-);
+const V2Boot: React.FC = () => {
+  const { t } = useTranslation();
+  return (
+    <div className="v2-boot" role="status" aria-label={t('app.loading')}>
+      <svg className="v2-boot__mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+        <path
+          d="M 50 17.7 A 22 22 0 1 0 50 46.3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="9"
+          strokeLinecap="round"
+        />
+        <circle className="v2-boot__mark-dot" cx="25" cy="32" r="2.4" fill="currentColor" />
+        <circle className="v2-boot__mark-dot" cx="32" cy="32" r="2.4" fill="currentColor" />
+        <circle className="v2-boot__mark-dot" cx="39" cy="32" r="2.4" fill="currentColor" />
+      </svg>
+    </div>
+  );
+};
 
 const V2AuthenticatedShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div className="v2-authenticated-shell">
@@ -210,6 +219,7 @@ const V2LegacyChatRedirect: React.FC = () => {
 };
 
 const V2App: React.FC = () => {
+  const { t } = useTranslation();
   // The daily digest's 08:00 is the person's own (TASK-257 Phase 2b).
   useTimeZoneCapture();
   React.useEffect(() => {
@@ -333,7 +343,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="connect"
-                  element={<V2FeaturePage title="Connect" hint="MCP uses an agent token created during setup."><V2ConnectPage /></V2FeaturePage>}
+                  element={<V2FeaturePage title={t('connect.pageTitle')} hint={t('connect.pageHint')}><V2ConnectPage /></V2FeaturePage>}
                 />
                 <Route
                   path="connectors"
@@ -364,7 +374,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="settings"
-                  element={feature('Settings', <V2SettingsPage />, false, false, 'v2-feature--settings')}
+                  element={feature(t('common.nav.settings'), <V2SettingsPage />, false, false, 'v2-feature--settings')}
                 />
                 <Route
                   path="settings/devices"
