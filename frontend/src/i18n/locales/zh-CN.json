@@ -2820,7 +2820,8 @@
         "generic": "无法添加密钥，请重试。"
       },
       "agentsUnavailable": "暂时无法读取你的智能体，请刷新后重试"
-    }
+    },
+    "chooseKey": "选择密钥"
   },
   "agentManage": {
     "runtime": {

@@ -406,10 +406,26 @@ describe('Connectors page: granting an operator-key connection', () => {
   it('Grant again on a key grant whose key is gone starts with nobody, never another agent\'s key', async () => {
     const dead = keyGrant({ grantId: 'grant_gone', installationId: 'conn-deleted', target: { kind: 'pod', id: 'p2' }, effectiveAudience: [REED], ...revoked });
     const form = await openGrantAgain([scoutKey, reedKey], dead);
-    expect(within(form).queryAllByRole('checkbox', { checked: true })).toHaveLength(0);
+    // The picker says no key is chosen, rather than showing Scout's as picked.
+    expect(within(form).getByLabelText('connection')).toHaveValue('');
+    expect(within(form).getByRole('option', { name: 'Choose a key' })).toBeDisabled();
+    expect(within(form).queryAllByRole('checkbox')).toHaveLength(0);
     expect(within(form).getByRole('button', { name: 'Grant' })).toBeDisabled();
     fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
     expect(grantPost()).toBeUndefined();
+  });
+
+  it('a removed key with one key left still offers the picker, and choosing it enables Grant', async () => {
+    const dead = keyGrant({ grantId: 'grant_gone', installationId: 'conn-deleted', effectiveAudience: [REED], ...revoked });
+    const form = await openGrantAgain([scoutKey], dead);
+    const picker = within(form).getByLabelText('connection');
+    expect(picker).toHaveValue('');
+    expect(within(form).getByRole('button', { name: 'Grant' })).toBeDisabled();
+    fireEvent.change(picker, { target: { value: 'conn-scout' } });
+    expect(within(form).getByRole('checkbox', { name: 'Scout' })).toBeChecked();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(grantPost()).toBeDefined());
+    expect(grantPost()[1]).toEqual(expect.objectContaining({ connectionId: 'conn-scout', target: { kind: 'pod', id: 'p1' }, audience: [SCOUT] }));
   });
 
   it('in a pod with several agents, the first Grant reaches only the key\'s agent', async () => {
