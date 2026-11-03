@@ -447,6 +447,9 @@ hostedMcp:
     - notion
     - gitlab
     - supabase
+    # F73 (11-03): operator-key entry, hidden until the F07 walk passes: a hosted
+    # agent, the walk key, a pinned read, and a write parked for the owner.
+    - latchkey
     # Airtable passed a live prod walk on 10-31 (TASK-307: connect, a list_bases call,
     # grant revoke, disconnect), so it is offered. Its allowlist key left the overlay secret too.
     # Hidden until a fresh non-admin account walks connect, grant, call and

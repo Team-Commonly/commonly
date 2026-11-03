@@ -1,0 +1,917 @@
+{
+  "server": "latchkey",
+  "capturedAt": "2026-11-03T20:00:22.871Z",
+  "method": "initialize + tools/list against https://latchkey.dev/mcp with the walk operator key (scripted, key never logged)",
+  "resource": "https://latchkey.dev/mcp",
+  "serverInfo": {
+    "name": "latchkey-escalation-mcp",
+    "version": "0.1.0"
+  },
+  "protocolVersion": "2025-06-18",
+  "toolCount": 22,
+  "tools": [
+    {
+      "name": "list_failed_runs",
+      "title": "List failed runs",
+      "description": "List the CI runs on Latchkey-managed runners that self-heal could not fix automatically (the \"explain\" bucket): real code, test, or configuration failures, plus heals that were attempted but did not turn the run green. Includes post-run analyses of failed uses: action steps, which run outside the shell wrapper and are diagnosed after the run from the Actions log. These are the failures worth fixing in code. Returns the most recent first. Use get_failure_bundle with an attempt_id for the full context. Each entry carries a `source`. A `cli` row is a job Latchkey itself ran: its `run_url` is Latchkey's page for it (the page of the run it belongs to, or the job's own page when it belongs to no run), and is null when Latchkey holds no record of the job; its `job_id` is null when the job could not be attributed. A `github_actions` row is a GitHub Actions run Latchkey observed, and its `run_url` is that run on GitHub. Neither shape implies the other's fields are absent: read each field for itself, and treat a null as not present on this row rather than as not possible.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "description": "Restrict to one repository, in \"owner/repo\" form.",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "Restrict by self-heal verdict: \"passthrough\" = self-heal judged it a real code issue and did not touch it; \"heal\" = self-heal tried a fix (these are surfaced only when the fix did not work).",
+            "type": "string",
+            "enum": [
+              "heal",
+              "passthrough",
+              "unknown"
+            ]
+          },
+          "since": {
+            "description": "ISO 8601 timestamp; only runs decided at or after this time.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum runs to return (default 20).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "include_diagnosis": {
+            "description": "Add exit_code, root_cause and failing_file to each entry, so you can tell what broke without fetching a bundle per run. One extra batched query. Null on a run with no recorded diagnosis (a deterministic passthrough has none). Default false.",
+            "type": "boolean"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_failure_bundle",
+      "title": "Get failure bundle",
+      "description": "Get the full failure bundle for one failed run: the run identity, what self-heal decided and why, and the raw diagnostic context (the error output self-heal saw, the steps it took, and the workflow definition at failure time). Some deterministic failures are explained without an agent run: those carry a summary, a root cause and the full logs, but no step-by-step tool trail. A deterministic failure with no explanation at all returns run metadata only; a failed pattern heal that did not escalate returns the action Latchkey applied, the first try's exit code and the full logs. Post-run uses:-step analyses carry the failed step’s Actions-log section as the error output.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "attempt_id": {
+            "description": "The attempt_id of a run from list_failed_runs.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_heals",
+      "title": "List heals",
+      "description": "List this workspace's self-heal records, oldest first: the heals that fixed their failure (fixed), tried and did not (failed) or left it alone (passthrough), one entry for each heal, on its latest decided attempt. since and until bound decided_at; repository and outcome narrow the list. Each entry carries the fields list_failed_runs gives a run. Pass next_cursor back as cursor, with the same bounds, until it is null: a walk returns each attempt_id once while new heals land, and a heal that escalates after the walk passed it comes back under a new attempt_id. A heal with no outcome yet is left out, so read a range that ended a few minutes ago; one whose outcome never arrives stays out of the list, and get_heal still reads it. Heal records are kept 90 days. get_heal reads one in full.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "since": {
+            "description": "ISO 8601 timestamp; only heals decided at or after this time.",
+            "type": "string"
+          },
+          "until": {
+            "description": "ISO 8601 timestamp; only heals decided at or before this time.",
+            "type": "string"
+          },
+          "repository": {
+            "description": "Restrict to one repository, in \"owner/repo\" form.",
+            "type": "string"
+          },
+          "outcome": {
+            "description": "Restrict to one outcome: \"fixed\", \"failed\" or \"passthrough\".",
+            "type": "string",
+            "enum": [
+              "fixed",
+              "failed",
+              "passthrough"
+            ]
+          },
+          "limit": {
+            "description": "Maximum heals to return (default 20).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cursor": {
+            "description": "The next_cursor of an earlier answer, to read the next page.",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_heal",
+      "title": "Get a heal",
+      "description": "Get one heal record in full, of any outcome: the run identity, what self-heal decided and why, the error output it saw, the steps it took and the workflow at failure time. Log text and free text are secret-scrubbed at delivery. A heal that was recognized without an agent run carries a summary, or run metadata alone, and no step-by-step trail.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "attempt_id": {
+            "description": "The attempt_id of a heal from list_heals or list_failed_runs, or from heals on get_job_status.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "dispatch_workflow",
+      "title": "Dispatch a workflow",
+      "description": "Trigger a GitHub Actions workflow run (workflow_dispatch) in one of this organization’s monitored repositories, for example to re-run CI after pushing a fix. The workflow must declare the workflow_dispatch trigger, and the API key must have the mcp:dispatch scope (minted with the \"Dispatch\" access). A Latchkey CI file under .latchkey/workflows is started with run_workflow instead. Returns the new run id when it can be identified; follow up with tail_run_logs, and with get_run_status once a job of the run has reached a Latchkey runner.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "description": "Repository in \"owner/repo\" form. Must be monitored by this organization.",
+            "type": "string"
+          },
+          "workflow_file": {
+            "description": "The workflow file name under .github/workflows, e.g. \"ci.yml\". The workflow must declare the workflow_dispatch trigger.",
+            "type": "string"
+          },
+          "ref": {
+            "description": "The branch or tag to run on, e.g. \"main\".",
+            "type": "string"
+          },
+          "inputs": {
+            "description": "Optional workflow_dispatch inputs, as declared by the workflow.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "repo",
+          "workflow_file",
+          "ref"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "run_workflow",
+      "title": "Start a Latchkey CI workflow",
+      "description": "Start a run of one Latchkey CI workflow file (`.latchkey/workflows/<file>`) that declares `on: workflow_dispatch`, on a branch or tag of the repository, with its inputs. Each input reaches every job as `LATCHKEY_INPUT_` and its name in capitals, with `-` written as `_`. The run's jobs bill like a push's, a job bound to an environment that needs an approval still waits for one in a live run, and the run writes no check on its commit. An input is recorded on the run and shown on its page, and a job's log does not hide it, so never put a token or password in one: set it as a secret in Latchkey and read it with `${{ secrets.NAME }}` instead. Returns the run id and its page; follow it with get_run_status, which takes repo and the run id. A start at the workspace's spend limit or its included minutes is not refused: the run ends before any job runs, get_run_status reads it neutral with no jobs, and its page says why. Report that to your human, and do not start it again. The API key must have the workflows:run scope (\"Allow starting Latchkey CI workflows\"). dispatch_workflow starts a GitHub Actions workflow instead.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "description": "Repository in \"owner/repo\" form, connected to Latchkey CI in this workspace.",
+            "type": "string"
+          },
+          "workflow": {
+            "description": "The workflow file, e.g. \"deploy.yml\" or \".latchkey/workflows/deploy.yml\".",
+            "type": "string",
+            "minLength": 1
+          },
+          "ref": {
+            "description": "The branch or tag to run at. A name that is both is the branch: send refs/tags/<name> for the tag. Default: the repository's default branch.",
+            "type": "string"
+          },
+          "inputs": {
+            "description": "The values of the inputs the file declares, each as text.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "op_id": {
+            "description": "Optional, 1 to 64 letters, digits, - or _. To retry a start without starting a second run, send the same op_id with repo, workflow, ref and inputs as first sent. Any change to them starts a run of its own.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          }
+        },
+        "required": [
+          "repo",
+          "workflow"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_run_status",
+      "title": "Get run status",
+      "description": "Get the status of one run Latchkey served. For a Latchkey run id (lkrun-...), a run of a .latchkey/workflows file: its status and conclusion, each of its jobs with its conclusion, timing (created, started, completed, duration) and runner, and the link to the run. Pass attempt to read an earlier attempt of a re-run: the status, conclusion and jobs are then that attempt's, the answer also says attempt and latest_attempt, and each job_url opens that attempt. While the concurrency group of a Latchkey run's workflow file holds the whole run, status stays running and group_wait names the group and when the run began waiting; group_wait is null on any other run, and on a held run whose jobs Latchkey could not all read. A job parked in a concurrency group, its file's or its own, carries queue_reason with the code JOB_HELD_IN_GROUP and its sentence, as get_job_status serves it, whenever Latchkey can read the job's record; queue_reason is null otherwise. For a GitHub Actions run id, a run whose jobs ran on Latchkey runners: only the jobs Latchkey served, with the same per-job facts, and no run-level status or conclusion. A run Latchkey served no job of is refused with a code. The conclusion of a Latchkey run is its Latchkey check as written outside advisory mode, so a run that only its pipelines on trial kept from passing reads neutral. trial says why a run, or some of its pipelines, ran on trial: its cause; present_sources, the GitHub Actions files that keep them on trial; pipelines, the workflow files of the pipelines on trial; and trial_run, true when every pipeline of the run did, which makes it a trial run. On a run with no pipeline on trial and on a GitHub Actions run, trial is null. A job held on trial says so in held, with by, the key of the held job it needs, or null when it was held on its own account, and one that ran its dry run says so in dry_run, with steps, those only its dry run runs, and live_only_steps, those that run only once its pipeline runs live. Each is null on any other job. list_trial_verdicts reads how a trial run or a pipeline on trial compared with GitHub Actions.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "description": "Repository in \"owner/repo\" form: the repository the run belongs to. For a GitHub Actions run id it must be monitored by this workspace.",
+            "type": "string"
+          },
+          "run_id": {
+            "description": "A Latchkey run id (lkrun-...), or a GitHub Actions run id: numeric, \"run-<id>\", or a full Actions run URL.",
+            "type": "string"
+          },
+          "attempt": {
+            "description": "Optional, with a Latchkey run id only: the attempt to read, from 1 to the run's latest attempt. Omitted, the answer lists the latest attempt.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "repo",
+          "run_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "tail_run_logs",
+      "title": "Tail run logs",
+      "description": "Get the trailing log output of one job of a completed workflow run, including successful runs and runs self-heal never touched (get_failure_bundle only covers failures self-heal saw). Defaults to the first failed job, or pass job_name. Log text is secret-scrubbed at delivery.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repo": {
+            "description": "Repository in \"owner/repo\" form. Must be monitored by this organization.",
+            "type": "string"
+          },
+          "run_id": {
+            "description": "The GitHub Actions run id — numeric, \"run-<id>\", or a full Actions run URL.",
+            "type": "string"
+          },
+          "job_name": {
+            "description": "Which job to read. Defaults to the first failed job, else the first job.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo",
+          "run_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "run_job",
+      "title": "Run a job",
+      "description": "Run a single shell command on a fresh Latchkey-managed runner. The runner starts with NO workspace or context: an empty directory with no repository checkout. For jobs that need your code, upload it with the latchkey CLI (`npm install -g @latchkeydev/cli`; the scope matters, the unscoped `latchkey` package is an unrelated project). Execution is asynchronous: this returns as soon as the job is queued, so poll get_job_status for the state and exit code and get_job_logs for output. Jobs bill runner minutes, and the API key must have the jobs:run scope (minted with the \"CLI runner\" access). Each minute bills at the size's list rate: small $0.0025, medium $0.0050, large $0.0100, xlarge $0.0200 a minute, and a minute spends 1, 2, 4 or 8 included minutes by size, so pick the smallest size that fits. budget_usd stops the job at a dollar bound and batch groups the jobs of one piece of work. The result carries concurrency (the workspace's limit, its running and queued jobs), jobs_ahead, queue_reason while the job is held, and rate_usd_per_minute. Each workspace can create a limited number of jobs per clock hour (120 on Developer, 240 on Launch, 600 on Scale; Enterprise by contract), a refused create counts too, and a quota refusal names the reset time: wait for it instead of retrying. At the workspace's spend limit the job is refused with code JOB_CREATION_BLOCKED_SPEND_CAP_REACHED and the limit, the spend and the reset beside it; past a notice percent the result carries spend_cap. Every other limit refusal is reported too, never retried: JOB_CREATION_BLOCKED_FREE_ALLOWANCE_REACHED, JOB_CREATION_BLOCKED_NO_SUBSCRIPTION, JOB_CREATION_BLOCKED_TRIAL_EXPIRED and JOB_CREATION_BLOCKED_SUBSCRIPTION_INACTIVE stop the work until your human acts; JOB_BATCH_BUDGET_REACHED means the batch's jobs have cost its budget, so start the rest under a new batch name or report it; and JOB_BUDGET_BELOW_ONE_MINUTE and JOB_BUDGET_ABOVE_WORKSPACE_CAP ask for a budget that fits.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "command": {
+            "description": "The shell command to run, e.g. \"node --version\". Runs via bash on the runner.",
+            "type": "string"
+          },
+          "runner_size": {
+            "description": "Runner size tier (default small).",
+            "type": "string",
+            "enum": [
+              "small",
+              "medium",
+              "large",
+              "xlarge"
+            ]
+          },
+          "env": {
+            "description": "Environment variables for the command. Names must not start with LATCHKEY_, and values must not contain a NUL byte.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "timeout_seconds": {
+            "description": "Kill the job after this many seconds, between 30 and 10800 (default 1800).",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "batch": {
+            "description": "Batch this job belongs to: a name of 1 to 64 characters that groups the jobs of one piece of work. Shown on the job and kept on its billing row. A batch name cannot hold / or %, and cannot be . or .. alone.",
+            "type": "string"
+          },
+          "budget_usd": {
+            "description": "Stop the job once it has cost this many US dollars at its size's list rate, counted in whole minutes from when the command starts, with at most two decimal places. A budget too small for one minute on the size is refused. No default.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "set_batch_budget",
+      "title": "Set a batch budget",
+      "description": "Set the budget of a batch of jobs in US dollars, or lower it. Once the jobs created in the batch have cost that much at list rates, Latchkey refuses to create another job in it and holds its queued jobs, and jobs already running finish. An API key can set a batch's first budget or lower it, never raise it. It can also limit how many of the batch's jobs run at once with max_concurrent, and the rest wait in the queue. An API key can set a batch's first limit or lower it, never raise it; a raise is refused with JOB_BATCH_BUDGET_CONCURRENCY_RAISE_REFUSED, reported, never retried. Requires the jobs:run scope. A raise is refused with JOB_BATCH_BUDGET_RAISE_REFUSED, and a budget above the workspace's spend limit with JOB_BATCH_BUDGET_ABOVE_WORKSPACE_CAP; both are reported, never retried.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "batch": {
+            "description": "The batch to budget: the name of 1 to 64 characters its jobs are created with, matched exactly. A batch name cannot hold / or %, and cannot be . or .. alone.",
+            "type": "string"
+          },
+          "budget_usd": {
+            "description": "The batch's budget in US dollars with at most two decimal places. Refused when it is above the batch's current budget.",
+            "type": "number"
+          },
+          "max_concurrent": {
+            "description": "How many of the batch's jobs may run at once, a whole number from 1 to 1000. The batch's other jobs wait in the queue, and their status says why. Refused when it is above the batch's current limit. Left out, the batch keeps the limit it has.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "batch",
+          "budget_usd"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_jobs",
+      "title": "List jobs",
+      "description": "List this workspace's jobs started with run_job or the latchkey CLI, newest first, including the jobs of runs compiled from a workflow file. With state \"active\", returns every job that is queued, provisioning or running (the 100 newest, with truncated=true, when there are more); with state \"all\", the default, returns the newest jobs in any state, up to limit. Each job carries its state, runner size, when it started, how many seconds it has run and, while it runs, its cost so far at list rate before free minutes; once it has ended, cost_usd, its whole cost at list rate before free minutes, and cost_settled, true once that figure is final (its billed minutes recorded, or the job never started); a few ended jobs never settle. A listed state is read from the job's durable record and can trail get_job_status until a failed write is retried, so read get_job_status before acting on one job. Pass batch to list only the jobs created in one batch, in either state. With state \"all\" the answer carries next_before: pass it back as before, with the same batch, for the next older page, until it is null. Requires the jobs:read scope. The list is the whole workspace's, so cancel only the jobs you started.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "state": {
+            "description": "Which jobs to list: \"active\" for every job that is queued, provisioning or running, or \"all\" for the newest jobs in any state. Default \"all\".",
+            "type": "string",
+            "enum": [
+              "active",
+              "all"
+            ]
+          },
+          "limit": {
+            "description": "How many jobs to return with state \"all\", between 1 and 100 (default 20). Ignored with state \"active\", which returns every active job up to 100.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "batch": {
+            "description": "Only the jobs created in this batch: the name of 1 to 64 characters its jobs were created with, matched exactly after trimming. A batch name cannot hold / or %, and cannot be . or .. alone.",
+            "type": "string"
+          },
+          "before": {
+            "description": "With state \"all\", only the jobs queued before this: the next_before of an earlier answer, a job id, or a time such as 2026-10-19T12:00:00Z. Ignored with state \"active\".",
+            "type": "string"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_batch",
+      "title": "Get a batch",
+      "description": "Read one batch of this workspace's jobs: its budget, what its jobs have cost at list rates (spent_usd, the figure latchkey budget set answers), how many of its jobs are in each state, why its queued jobs wait (queue_reason, one for the batch: the workspace's spend limit or included minutes if either holds them, else the batch's own budget, else the batch's limit on jobs running at once, else Latchkey CI jobs going first near the workspace's limit, which a batch job gives way to for at most 30 minutes in the queue, else the workspace's concurrency limit; get_job_status gives one job's own), and its jobs, newest first, as list_jobs lists them, with next_before: pass it back as before for the next older page, until it is null. A name with no jobs and no budget is refused with JOB_BATCH_NOT_FOUND. Requires the jobs:read scope.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "batch": {
+            "description": "The batch to read: the name of 1 to 64 characters its jobs were created with, matched exactly after trimming. A batch name cannot hold / or %, and cannot be . or .. alone.",
+            "type": "string"
+          },
+          "limit": {
+            "description": "How many of its jobs to return, between 1 and 100 (default 20).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "before": {
+            "description": "Only the jobs queued before this: the next_before of an earlier answer, a job id, or a time such as 2026-10-19T12:00:00Z.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_job_status",
+      "title": "Get job status",
+      "description": "Get the current status of one job started with run_job or the latchkey CLI: lifecycle state (created, queued, provisioning, running, succeeded, failed, cancelled, skipped, or expired), the exit code and failure reason once terminal (a skipped job carries neither), a failure_explanation in plain words when Latchkey can say what ended the job (null otherwise), and per-transition timestamps, and needs (the job keys this job waited on before it could start, as its workflow file names them; an empty list when it waited on none, absent when they were not recorded, as for a job started from the command line). It also carries heals, one entry for each self-heal attempt on this job that fixed a failure or could not, with attempt_id (get_heal reads the whole record), step_order and sub_step_key (0 and empty when the record names no step), stage, pattern_id, pattern_action, category, outcome (fixed or failed; at stage 3, fixed is the agent's own report, and the job can still fail after it) and duration_ms: an empty list when there are none, and absent when they could not be read or the records have passed their 90 days, so absent never means none. It also carries concurrency (the workspace's limit, its running and queued jobs, and when they were read), jobs_ahead and queue_reason while the job is queued (queue_reason.code names what holds it), rate_usd_per_minute, cost_so_far_usd while it runs (its minutes so far at list rate, before included minutes, not the bill), cost_usd once it has ended (its whole cost at list rate, before included minutes, not the bill), cost_settled (true once that figure is final: Latchkey has recorded the job's billed minutes, or the job never started; while false, the figure comes from the job's own minutes, and a few ended jobs are never recorded, so do not wait on it after the job has ended), and last_output_at (when it last wrote log output: a long gap is a stall to report, not a reason to start it again).",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "description": "The job_id returned by run_job or listed by list_jobs (or the latchkey CLI).",
+            "type": "string",
+            "pattern": "^cli-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_job_logs",
+      "title": "Get job logs",
+      "description": "Read a job's log output in ordered chunks. Omit cursor to start at the beginning, then pass each response's next_cursor back verbatim as the next call's cursor: it is an opaque \"<chunk index>:<offset>\" position, so do not parse it or advance it yourself. Set tail=true instead of a cursor to read the end of the log: the call returns the latest output and a next_cursor at the end, and passing that cursor back returns only output written since, so an empty answer means the job has written nothing new. complete=true is the finished signal: the job is terminal and, reading forward, every log chunk has been read; on a tail it means nothing more will come. Until then keep polling, even after get_job_status reports a terminal state, since the final chunks can still be flushing. Each call returns at most max_bytes of log text, measured as the serialized size of what is emitted rather than as a character count, so colour codes and newlines cost more than plain text (default 20000, ceiling 327680); truncated=true means more log follows next_cursor. A chunk bigger than the whole budget is returned clipped and reported as clipped_chunk. Reading forward, next_cursor resumes inside it, so following the cursor reads the whole log at any max_bytes; raise max_bytes only to read more of it per call. On a tail the clipped chunk is the last one, cut at its start, and the output before the cut is not behind the cursor. Set include_steps=true to add the job's step list (a job of a workflow file has one; a single command has none). Logs stay readable for 7 days after a job finishes.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "description": "The job_id returned by run_job or listed by list_jobs (or the latchkey CLI).",
+            "type": "string",
+            "pattern": "^cli-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "cursor": {
+            "description": "Where to continue from: the previous response's next_cursor, passed back verbatim (an opaque \"<chunk index>:<offset>\" string). Omit to start at the beginning of the log, or set tail instead to start at its end.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "string",
+                "pattern": "^\\d{1,15}(:\\d{1,15})?$"
+              }
+            ]
+          },
+          "max_bytes": {
+            "description": "Maximum serialized log bytes to return in one call, between 1000 and 327680 (default 20000). Measured on the emitted result, so escape-heavy output (ANSI colour, newlines) yields fewer characters per call than plain text does. Whole chunks ship while they fit and a chunk too big for the budget is returned clipped. Reading forward, the rest follows next_cursor; with tail, the earliest chunk returned is clipped at its start and the output before it is left out.",
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 327680
+          },
+          "tail": {
+            "description": "Read the end of the log instead of its beginning: returns the latest output, up to max_bytes, and a next_cursor at the end. Pass that cursor back without tail to read only output written since. Cannot be combined with cursor.",
+            "type": "boolean"
+          },
+          "include_steps": {
+            "description": "Also return the job's step list, with each step's status and its range of log chunks. Only a job of a workflow file has steps; for a single command the list is null.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "cancel_job",
+      "title": "Cancel a job",
+      "description": "Cancel one job started with run_job or the latchkey CLI, including a job of a run compiled from a workflow file. A job that has not been submitted, or that is still held in the queue, ends at once as cancelled. A provisioning or running job is marked for cancellation and its runner ends it within about 10 seconds, so read get_job_status for the final state. A finished job cannot be cancelled. Requires the jobs:run scope. Cancel the jobs you started and no longer need: a job bills until it ends, and a queued or held job costs nothing until it starts.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "description": "The job_id returned by run_job or listed by list_jobs (or the latchkey CLI).",
+            "type": "string",
+            "pattern": "^cli-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        },
+        "required": [
+          "job_id"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "plan_migration",
+      "title": "Plan a migration",
+      "description": "Propose how a repository's GitHub Actions pipelines move to Latchkey CI: for each pipeline, the .latchkey/workflows file Latchkey would write, what happens to each step, and the steps, jobs and changes that need a person's answer. Returns the migration plan as JSON. Pass answers and moves to answer those items and choose which pipelines move; each change gives the plan a new id. Its trial_run lists, for each pipeline that moves, the jobs a trial run holds, the steps it leaves out and the dry runs it runs in their place. Each job carries environments, the names of the environments the proposed file binds it to, empty when the file binds it to none or does not carry it; once its pipeline runs live, such a job waits for an owner or admin to approve it, unless an environment's settings say otherwise, which list_environments reads with a key that has the jobs:read scope. Each secret carries repository_read_by, the pipelines whose proposed file reads it in a job that names no environment, and environment_reads, each environment a job of a proposed file names where it reads the secret, spelled as that file spells it, with the pipelines whose files read it there; both are empty when no proposed file reads it. A value at one of those environments is set by an owner or admin in the dashboard, never with an API key. A carry never takes a name that starts with GITHUB_, so such a secret's value is set directly. GITHUB_TOKEN, GitHub's own token for each job, is listed only when a proposed file still reads it, and its value is a token that can do what GitHub's did. Each pipeline the switch does not remove carries follows: the sources of the pipelines the switch removes that its on: workflow_run runs after, directly or through another pipeline that stays, and still_runs, whether it keeps running once they are gone, on its own trigger or after a workflow that keeps running; follows is null on a pipeline the switch removes, and on one that follows none. Reading writes nothing to the repository. The repository must be connected to Latchkey CI in this workspace.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "description": "Repository in \"owner/name\" form, connected to Latchkey CI in this workspace.",
+            "type": "string"
+          },
+          "answers": {
+            "description": "Answers to the steps, jobs and changes that need a person, each naming its pipeline by its GitHub Actions file and the item as the plan names it.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pipeline": {
+                  "description": "The pipeline the item is in: its GitHub Actions file, as the plan gives it in source.",
+                  "type": "string"
+                },
+                "job": {
+                  "description": "The id of the job the item is in, as the plan gives it. Leave it out for a change to the whole pipeline.",
+                  "type": "string"
+                },
+                "step": {
+                  "description": "The step's number in its job, as the plan gives it in index. Only for an answer to a step.",
+                  "type": "number"
+                },
+                "at": {
+                  "description": "Where the change is made, as the plan gives it in at. Only for an answer to a change.",
+                  "type": "string"
+                },
+                "answer": {
+                  "description": "One of the answers the plan lists for that item in answers.",
+                  "type": "string"
+                },
+                "dry_run_command": {
+                  "description": "For a dry_run answer only: the command Latchkey writes as its own run: step right after the answered step, in that step's directory, under its condition and with its plain variables but none of its secrets, run in its place only while its pipeline is on trial. At most 2,048 characters.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "pipeline",
+                "answer"
+              ]
+            }
+          },
+          "moves": {
+            "description": "Which pipelines move, one entry for each pipeline whose default you change.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pipeline": {
+                  "description": "The pipeline: its GitHub Actions file, as the plan gives it in source.",
+                  "type": "string"
+                },
+                "moves": {
+                  "description": "True to move the pipeline to Latchkey CI, false to keep it on GitHub Actions.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "pipeline",
+                "moves"
+              ]
+            }
+          }
+        },
+        "required": [
+          "repository"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "apply_migration",
+      "title": "Apply a migration",
+      "description": "Open the one pull request that adds a migration plan's Latchkey CI workflow files to its repository. Pass the plan id with the answers and moves the plan was made with: Latchkey reads the plan again and opens the pull request only while it is still that plan and every step, job and change that needs a person has an answer. The repository must be in advisory mode. Opening it closes the open pull request of any earlier apply of the same repository. A person still merges it. Needs a key with the migration:apply scope, created by someone who is still an owner or admin.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "description": "Repository in \"owner/name\" form, connected to Latchkey CI in this workspace.",
+            "type": "string"
+          },
+          "plan": {
+            "description": "The migration plan id plan_migration returned, mp_ and 12 letters and digits.",
+            "type": "string"
+          },
+          "answers": {
+            "description": "The answers the plan was made with, each naming its pipeline by its GitHub Actions file and the item as the plan names it.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pipeline": {
+                  "description": "The pipeline the item is in: its GitHub Actions file, as the plan gives it in source.",
+                  "type": "string"
+                },
+                "job": {
+                  "description": "The id of the job the item is in, as the plan gives it. Leave it out for a change to the whole pipeline.",
+                  "type": "string"
+                },
+                "step": {
+                  "description": "The step's number in its job, as the plan gives it in index. Only for an answer to a step.",
+                  "type": "number"
+                },
+                "at": {
+                  "description": "Where the change is made, as the plan gives it in at. Only for an answer to a change.",
+                  "type": "string"
+                },
+                "answer": {
+                  "description": "One of the answers the plan lists for that item in answers.",
+                  "type": "string"
+                },
+                "dry_run_command": {
+                  "description": "For a dry_run answer only: the command Latchkey writes as its own run: step right after the answered step, in that step's directory, under its condition and with its plain variables but none of its secrets, run in its place only while its pipeline is on trial. At most 2,048 characters.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "pipeline",
+                "answer"
+              ]
+            }
+          },
+          "moves": {
+            "description": "The moves the plan was made with, one entry for each pipeline whose default was changed.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "pipeline": {
+                  "description": "The pipeline: its GitHub Actions file, as the plan gives it in source.",
+                  "type": "string"
+                },
+                "moves": {
+                  "description": "True to move the pipeline to Latchkey CI, false to keep it on GitHub Actions.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "pipeline",
+                "moves"
+              ]
+            }
+          }
+        },
+        "required": [
+          "repository",
+          "plan"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_migration",
+      "title": "Get a migration",
+      "description": "Get a repository's newest migration apply: its plan, the files its pull request adds, and where that pull request stands (open, merged, closed, or superseded by a newer apply). Returns an apply of null when the repository has none.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "description": "Repository in \"owner/name\" form, connected to Latchkey CI in this workspace.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_trial_verdicts",
+      "title": "List trial verdicts",
+      "description": "List how a repository's trial runs and pipelines on trial compared with GitHub Actions, newest first, from what Latchkey recorded when each run ended. It asks GitHub nothing. One entry per run, at its latest attempt with a verdict, with the commit, the link to the run and checks_url, which opens the commit's checks on GitHub, or null when Latchkey could not read the repository's grant. workflow_path names the Latchkey workflow file of the pipeline the entry compares when a live run ran that pipeline on trial, and is null for a trial run, which compares every pipeline. Where a live run ran several pipelines on trial, its entry is the one whose verdict differs most. verdict is same, both sides agreed; fails_only_on_latchkey; fails_only_on_code_host, GitHub Actions alone failed; or not_compared. On not_compared, not_compared_reason says why: no_grant, the connection does not grant reading GitHub Actions runs; unread, GitHub, the repository's grant or its moved files could not be read in time; unfinished, GitHub Actions was still running, or the run's own jobs could not be read, when the waits ran out; no_pair, the run holds the replacement of no moved file; no_trigger, the run's event has no counterpart on GitHub Actions; no_decided_pair, no moved file passed or failed on both sides; refused, its workflow was refused at compile, so no job ran. It is null on any other verdict and on a run recorded before reasons were kept. failed_job is the first job of the run that failed on Latchkey CI among the files compared, on fails_only_on_latchkey the first in a file GitHub Actions passed, or null when none is named. On fails_only_on_latchkey its kept holds the first line of the failed step's command and up to its last 20 lines of output, for 180 days, and is null once they age out or when Latchkey holds none. Latchkey masks known secret shapes and add-mask values in the lines it read, and a value hidden outside them stays as printed unless a known shape matches. Pass verdict to list one verdict. Pass next_before back as before for the next older page, until it is null. The repository must be connected to Latchkey CI in this workspace. Requires the jobs:read scope.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "description": "The repository, as owner/name.",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "Only the runs that read this verdict at their latest attempt with one.",
+            "type": "string",
+            "enum": [
+              "same",
+              "fails_only_on_latchkey",
+              "fails_only_on_code_host",
+              "not_compared"
+            ]
+          },
+          "limit": {
+            "description": "How many runs to return, between 1 and 50 (default 20).",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "before": {
+            "description": "Only the runs older than this: the next_before of an earlier answer.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_latchkey_steps",
+      "title": "List Latchkey steps",
+      "description": "Lists every Latchkey step a workflow file can name with uses: latchkey/<name>@<version>: each published version, its digest, its inputs with their rules and defaults, and its outputs.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_environments",
+      "title": "List environment branch rules",
+      "description": "The branches each environment of one repository accepts, and whether its jobs wait for an approval (requires_approval). A job that names an environment with branches set starts only in a run on one of them: once its run is approved, or without an approval when requires_approval is false. An environment not listed accepts every branch and requires an approval. Requires the jobs:read scope. An owner or admin sets both in the dashboard; no key can change them.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "repository": {
+            "description": "The repository, as owner/name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "validate_workflow",
+      "title": "Validate a workflow file",
+      "description": "Check a .latchkey/workflows file without starting anything: the first refusal the file itself earns, or the jobs it compiles to, one per matrix leg, and the most one run of them can cost at list rates (each job's timeout plus a minute, once). That is a ceiling, not a forecast: a lost runner can add an attempt, and a re-run is another run. It checks the file alone: a secret, an environment's branches and the key a map of branches chooses are checked when a run starts. A line over 32,768 characters stops the check with a refusal of its own, source validate. Requires the jobs:read scope.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "file": {
+            "description": "The workflow file's whole text, as it would be committed, at most 128 KiB.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ]
+}
