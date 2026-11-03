@@ -175,6 +175,20 @@ describe('GET /api/health/ready', () => {
     }
   });
 
+  it.each(['-1', '0', 'soon'])('ignores an unusable probe deadline (%s) and stays healthy', async (value) => {
+    const saved = process.env.READY_PG_PROBE_DEADLINE_MS;
+    process.env.READY_PG_PROBE_DEADLINE_MS = value;
+    try {
+      mockPool.query.mockReturnValueOnce(new Promise((resolve) => { setTimeout(() => resolve({ rows: [] }), 20); }));
+      const res = await request(buildApp()).get('/api/health/ready').timeout(2500).expect(200);
+      expect(res.body.degraded).toBeUndefined();
+      expect(mockPool.releases[0]).toHaveBeenCalledWith(undefined);
+    } finally {
+      if (saved === undefined) delete process.env.READY_PG_PROBE_DEADLINE_MS;
+      else process.env.READY_PG_PROBE_DEADLINE_MS = saved;
+    }
+  });
+
   it('returns not ready while the PostgreSQL routes are not mounted (TASK-168)', async () => {
     // The 2026-09-25 production defect: the boot connect timed out, the PG
     // routes were never mounted, chat history 404'd — and this handler answered

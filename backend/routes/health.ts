@@ -178,7 +178,8 @@ type ProbePool = { connect: () => Promise<{ query: (q: string) => Promise<unknow
 let readyPgProbe: Promise<unknown> | null = null;
 const probePg = (pool: ProbePool): Promise<unknown> => {
   if (!readyPgProbe) {
-    const deadlineMs = Number(process.env.READY_PG_PROBE_DEADLINE_MS) || 10000;
+    const configured = Number(process.env.READY_PG_PROBE_DEADLINE_MS);
+    const deadlineMs = Number.isFinite(configured) && configured > 0 ? configured : 10000;
     readyPgProbe = (async () => {
       const client = await pool.connect();
       let timer: ReturnType<typeof setTimeout> | undefined;
