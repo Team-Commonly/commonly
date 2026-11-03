@@ -83,6 +83,7 @@ const setup = ({ installs = [install()], userTokens = [], open = [] } = {}) => {
       expect(fields).toContain('botMetadata.instanceId');
       expect(fields).toContain('agentRuntimeTokens.lastListenedAt');
       expect(fields).toContain('agentRuntimeTokens.createdAt');
+      expect(fields).toContain('agentRuntimeTokens.lastUsedAt');
       const rows = (filter.$or || []).map((pair) => ({
         botMetadata: {
           agentName: pair['botMetadata.agentName'],
@@ -731,8 +732,16 @@ describe('keeping the forward promise', () => {
   // listener-based state never leaves never-connected. It did connect, and the
   // promise is kept, without claiming it will answer @mentions.
   const mcpEpisode = { ...openEpisode, installedBy: 'user1', nudgeMessageId: 'nudge1', tokenIssuedAt: OLD_TOKEN };
+  // The installer read must ask for every mark the MCP decision uses, or a real
+  // query would come back without them; the mock returns only what was asked.
   const installer = (onboarding) => mockUserFindById.mockReturnValue({
-    select: () => ({ lean: () => Promise.resolve({ username: 'alice', onboarding }) }),
+    select: (fields) => {
+      ['onboarding.byoCommandCopiedAt', 'onboarding.byoCommandType', 'onboarding.byoMcpCopiedAt',
+        'onboarding.byoCliCopiedAt', 'onboarding.byoOpenedOs'].forEach((f) => expect(fields).toContain(f));
+      const asked = new Set(String(fields).split(/\s+/).map((f) => f.replace(/^onboarding\./, '')));
+      const picked = Object.fromEntries(Object.entries(onboarding).filter(([k]) => asked.has(k)));
+      return { lean: () => Promise.resolve({ username: 'alice', onboarding: picked }) };
+    },
   });
   const usedAt = new Date(NOW.getTime() - 4 * MINUTE);
 
