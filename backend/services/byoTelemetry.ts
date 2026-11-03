@@ -7,60 +7,6 @@ import mongoose from 'mongoose';
 // user keeping the page open. Fixed step names only: never a command, key or name.
 export type ServerByoStep = 'seat-registered' | 'daemon-registered';
 
-export type ByoCopyAgent = { agentName: string; podId: string };
-
-/**
- * The setup commands a person copied at or after `since` for one agent. The
- * onboarding copy marks are write-once (the first copy ever), so they cannot
- * say what was copied for a later agent; these rows carry their own time and,
- * since TASK-345, the agent the page was showing.
- *
- * An MCP copy counts only when it names this agent, so a copy for another
- * agent never stands in for this one. A listener or daemon copy counts when it
- * names this agent or names none (older rows, and the machine-wide daemon
- * command), which errs toward "not MCP-only". userId is stored as a string.
- */
-export async function byoCopiesSince(
-  userId: unknown,
-  since: Date,
-  agent: ByoCopyAgent,
-): Promise<{ firstMcpAt: Date | null; listener: number }> {
-  const rows = await mongoose.connection.db.collection('byo_telemetry').find({
-    userId: String(userId),
-    at: { $gte: since },
-    step: { $in: ['mcp-command-copied', 'cli-command-copied', 'daemon-command-copied'] },
-  }).project({ step: 1, at: 1, agentName: 1, podId: 1 }).toArray();
-  const forThisAgent = (r: Record<string, unknown>) => r.agentName === agent.agentName && r.podId === agent.podId;
-  let firstMcpAt: Date | null = null;
-  let listener = 0;
-  for (const r of rows) {
-    if (r.step === 'mcp-command-copied') {
-      if (forThisAgent(r) && (!firstMcpAt || r.at < firstMcpAt)) firstMcpAt = r.at;
-    } else if (!r.agentName || forThisAgent(r)) {
-      listener += 1;
-    }
-  }
-  return { firstMcpAt, listener };
-}
-
-/**
- * The agent a copy event names, kept only when the person installed that agent
- * in that pod. Anything else is dropped, never stored as given.
- */
-export async function byoCopyAgentFor(userId: unknown, body: Record<string, unknown>): Promise<ByoCopyAgent | null> {
-  const agentName = typeof body?.agentName === 'string' ? body.agentName : '';
-  const podId = typeof body?.podId === 'string' ? body.podId : '';
-  if (!/^[a-z0-9-]{1,64}$/.test(agentName) || !/^[a-f0-9]{24}$/.test(podId)) return null;
-  try {
-    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-    const { AgentInstallation } = require('../models/AgentRegistry');
-    const owned = await AgentInstallation.exists({ agentName, podId, installedBy: String(userId) });
-    return owned ? { agentName, podId } : null;
-  } catch {
-    return null;
-  }
-}
-
 // A once-per-seat event is keyed by a hash of the token record's hash, so the
 // unique _id index makes concurrent first calls write one row. The hash is one-way
 // and is never the credential itself.

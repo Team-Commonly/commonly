@@ -22,6 +22,9 @@ export interface IAgentRuntimeToken {
   // Set only by a listener check-in (the events poll, the agent WebSocket
   // connect), never by an ordinary authenticated call such as an MCP tool.
   lastListenedAt?: Date;
+  // Set only by a call from the Commonly MCP client (its User-Agent), so a
+  // browser memory import or an attach with the same token never sets it.
+  lastMcpSeenAt?: Date;
   expiresAt?: Date;
 }
 
@@ -420,6 +423,7 @@ const userSchema = new Schema<IUser>({
       createdAt: { type: Date, default: Date.now },
       lastUsedAt: { type: Date },
       lastListenedAt: { type: Date },
+      lastMcpSeenAt: { type: Date },
       expiresAt: { type: Date },
     },
   ],

@@ -15,10 +15,6 @@ export interface ByoSetupContext {
   setupOs: 'mac' | 'linux' | 'windows' | 'other';
   listenerAvailable: boolean;
   copyType?: ByoCopyType;
-  // The agent whose command was copied. The server keeps it only when the
-  // person installed that agent in that pod.
-  agentName?: string;
-  podId?: string;
 }
 
 // Fixed event names only. Commands and credentials must never enter telemetry.

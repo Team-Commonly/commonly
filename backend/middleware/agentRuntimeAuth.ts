@@ -44,6 +44,20 @@ const resolveSpawnChildAgentUser = async (
   return User.findOne({ _id: credential.agentUserId, isBot: true });
 };
 
+/**
+ * The fields a successful call stamps on its token record. Every call sets
+ * `lastUsedAt`. Only a call from the Commonly MCP client, which names itself
+ * `commonly-mcp/<version>` in User-Agent on every request (every published
+ * version), also sets `lastMcpSeenAt`, so a browser memory import or an
+ * `agent attach` with the same token never reads as an MCP client. The header
+ * is the token holder's own claim and only ever describes their own agent.
+ */
+export const usageStamp = (prefix: string, req: Request): Record<string, Date> => {
+  const now = new Date();
+  const mcp = /^commonly-mcp\//.test(String(req.headers?.['user-agent'] || ''));
+  return { [`${prefix}.lastUsedAt`]: now, ...(mcp ? { [`${prefix}.lastMcpSeenAt`]: now } : {}) };
+};
+
 const extractToken = (req: Request): string | undefined => {
   const authHeader = req.header('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -206,7 +220,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
       try {
         await User.updateOne(
           { _id: agentUser._id, 'agentRuntimeTokens.tokenHash': tokenHash },
-          { $set: { 'agentRuntimeTokens.$.lastUsedAt': new Date() } },
+          { $set: usageStamp('agentRuntimeTokens.$', req) },
         );
       } catch (err: unknown) {
         console.warn('Failed to update agent token usage on User:', (err as Error).message);
@@ -321,7 +335,7 @@ export default async function agentRuntimeAuth(req: Request, res: Response, next
     try {
       await AgentInstallation.updateOne(
         { _id: installation._id, 'runtimeTokens.tokenHash': tokenHash },
-        { $set: { 'runtimeTokens.$.lastUsedAt': new Date() } },
+        { $set: usageStamp('runtimeTokens.$', req) },
       );
     } catch (err: unknown) {
       console.warn('Failed to update agent token usage:', (err as Error).message);

@@ -6,7 +6,6 @@ import {
   composeStalledConnectResolution,
 } from './stalledConnectCopy';
 import type { StalledConnectCopyEvidence } from './stalledConnectCopy';
-import { byoCopiesSince } from './byoTelemetry';
 
 /**
  * The stalled-connect nudge (W4 item 3). Spec: ux-lead, 2026-08-14.
@@ -117,20 +116,21 @@ export const resolveTokenEpisode = (
   return { issuedAt, source };
 };
 
-type BotTokens = Array<{ lastListenedAt?: Date; lastUsedAt?: Date; createdAt?: Date }>;
+type BotTokens = Array<{ lastListenedAt?: Date; lastMcpSeenAt?: Date; createdAt?: Date }>;
 
 /**
- * The latest use, at or after `since`, of a token issued at or after `since`,
- * in either store. Only tokens of the current episode count: a superseded
- * token says nothing about the token the nudge was about, even if it is used
- * later.
+ * The latest MCP-client call, at or after `since`, on a token issued at or
+ * after `since`, in either store. Only `lastMcpSeenAt` counts: the generic
+ * `lastUsedAt` is also set by `agent attach` and by the BYO page's memory
+ * import, neither of which is an MCP client. Only tokens of the current
+ * episode count: a superseded token says nothing about this one.
  */
-const latestUseSince = (tokenLists: BotTokens[], since: Date): Date | null => {
+const latestMcpSeenSince = (tokenLists: BotTokens[], since: Date): Date | null => {
   let latest: Date | null = null;
   for (const list of tokenLists) {
     for (const row of list || []) {
-      if (!row?.lastUsedAt || !row.createdAt || new Date(row.createdAt) < since) continue;
-      const used = new Date(row.lastUsedAt);
+      if (!row?.lastMcpSeenAt || !row.createdAt || new Date(row.createdAt) < since) continue;
+      const used = new Date(row.lastMcpSeenAt);
       if (Number.isNaN(used.getTime()) || used < since) continue;
       if (!latest || used > latest) latest = used;
     }
@@ -169,7 +169,7 @@ const botTokensForMany = async (
     })),
   }).select(
     'botMetadata.agentName botMetadata.instanceId agentRuntimeTokens.lastListenedAt '
-      + 'agentRuntimeTokens.lastUsedAt agentRuntimeTokens.createdAt',
+      + 'agentRuntimeTokens.lastMcpSeenAt agentRuntimeTokens.createdAt',
   ).lean() as Array<{ botMetadata?: { agentName?: string; instanceId?: string }; agentRuntimeTokens?: BotTokens }>;
   for (const row of rows) {
     const key = botKey(String(row.botMetadata?.agentName), String(row.botMetadata?.instanceId));
@@ -435,22 +435,17 @@ const resolveConnected = async ({
     );
     // An MCP client uses its token without ever listening (TASK-345). It did
     // connect, and the nudge promised a post when it did, so it resolves too,
-    // with copy that does not promise an answer to @mentions. A used token alone
-    // is not an MCP client (`commonly agent attach` and the listener's own start
-    // use it too), so this episode also needs an MCP copy of THIS agent's
-    // command since its token was issued, a token use after that copy, and no
-    // listener or daemon copy. Anything less keeps waiting.
+    // with copy that does not promise an answer to @mentions. Only a call the
+    // MCP client itself made on this episode's token counts (`lastMcpSeenAt`);
+    // anything less keeps waiting.
     let mcpSeenAt: Date | null = null;
     let openedOs: StalledConnectCopyEvidence['openedOs'] = null;
     if (derived.state === 'never-connected') {
       if (!ep.tokenIssuedAt) return;
       const since = new Date(ep.tokenIssuedAt);
-      mcpSeenAt = latestUseSince([(install as { runtimeTokens?: BotTokens }).runtimeTokens || [], userTokens], since);
+      const installTokens = (install as { runtimeTokens?: BotTokens }).runtimeTokens || [];
+      mcpSeenAt = latestMcpSeenSince([installTokens, userTokens], since);
       if (!mcpSeenAt) return;
-      const copies = await byoCopiesSince(ep.installedBy, since, {
-        agentName: String(ep.agentName), podId: String(ep.podId),
-      });
-      if (!copies.firstMcpAt || copies.listener || mcpSeenAt < copies.firstMcpAt) return;
       try {
         const installer = await User.findById(ep.installedBy).select('onboarding.byoOpenedOs').lean() as
           { onboarding?: { byoOpenedOs?: StalledConnectCopyEvidence['openedOs'] } } | null;

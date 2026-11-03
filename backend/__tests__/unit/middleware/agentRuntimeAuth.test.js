@@ -539,6 +539,29 @@ describe('agentRuntimeAuth path 2 (install-bound token) — #66 fix', () => {
   });
 });
 
+describe('agentRuntimeAuth path 2 marks MCP-seen only for the MCP client (TASK-345)', () => {
+  test.each([['commonly-mcp/0.3.5', true], ['axios/1.7.9', false]])('User-Agent %s marks MCP-seen: %s', async (ua, mcp) => {
+    const install = {
+      _id: 'install-a', agentName: 'codex', instanceId: 'cody', installedBy: 'human-a',
+      podId: { toString: () => 'pod-a' }, runtimeTokens: [{ tokenHash: 'hashed-token', lastUsedAt: new Date() }],
+    };
+    mockInstallationFindOne.mockResolvedValue(install);
+    mockInstallationFind.mockResolvedValue([install]);
+    mockInstallationUpdateOne.mockResolvedValue({});
+    const req = buildReq('cm_agent_test');
+    req.headers['user-agent'] = ua;
+    const next = jest.fn();
+
+    await agentRuntimeAuth(req, buildRes(), next);
+
+    expect(next).toHaveBeenCalled();
+    const stamp = mockInstallationUpdateOne.mock.calls
+      .find(([filter]) => filter['runtimeTokens.tokenHash'] === 'hashed-token');
+    expect(stamp[1].$set['runtimeTokens.$.lastUsedAt']).toBeInstanceOf(Date);
+    expect('runtimeTokens.$.lastMcpSeenAt' in stamp[1].$set).toBe(mcp);
+  });
+});
+
 describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#916)', () => {
   const buildAgentUser = (lastUsedAt) => ({
     _id: 'bot-user-1',
@@ -546,6 +569,30 @@ describe('agentRuntimeAuth path 1 (User-row token) — first-use starter hook (#
     isBot: true,
     botMetadata: { agentName: 'my-byo-agent', instanceId: 'default', displayName: 'My BYO Agent' },
     agentRuntimeTokens: [{ tokenHash: 'hashed-token', ...(lastUsedAt ? { lastUsedAt } : {}) }],
+  });
+
+  // TASK-345: only the MCP client's own calls mark the token as MCP-seen, so
+  // the BYO page's memory import (axios UA) and `agent attach` never do.
+  test.each([
+    ['commonly-mcp/0.3.5', true],
+    ['axios/1.7.9', false],
+    ['Mozilla/5.0 commonly-mcp/0.3.5', false],
+    [undefined, false],
+  ])('a call with User-Agent %s marks MCP-seen: %s', async (ua, mcp) => {
+    mockUserFindOne.mockResolvedValue(buildAgentUser(new Date('2026-08-12T00:00:00Z')));
+    mockInstallationFind.mockReturnValue({ lean: async () => [{ podId: { toString: () => 'pod-a' } }] });
+    mockUserUpdateOne.mockClear();
+    const req = buildReq('cm_agent_test');
+    if (ua) req.headers['user-agent'] = ua;
+    const next = jest.fn();
+
+    await agentRuntimeAuth(req, buildRes(), next);
+
+    expect(next).toHaveBeenCalled();
+    const stamp = mockUserUpdateOne.mock.calls
+      .find(([filter]) => filter['agentRuntimeTokens.tokenHash'] === 'hashed-token');
+    expect(stamp[1].$set['agentRuntimeTokens.$.lastUsedAt']).toBeInstanceOf(Date);
+    expect('agentRuntimeTokens.$.lastMcpSeenAt' in stamp[1].$set).toBe(mcp);
   });
 
   test('default-instance User token includes legacy installation pods in its grant census', async () => {
