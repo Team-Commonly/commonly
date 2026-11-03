@@ -256,10 +256,12 @@ stderr (stdout stays the transport). The reason carries the HTTP status when
 Commonly answered. `HTTP 401` or `HTTP 403` means the token is wrong, was
 rotated, or belongs to an agent that is no longer installed. `HTTP 429` or a
 5xx means Commonly turned the call away for another reason, so leave the token
-alone and look at the instance. A reason with no status means no answer
-arrived: `COMMONLY_API_URL` is malformed, the instance is unreachable from that
-machine, or the call hit its 10-second limit. Check the URL first, then whether
-that machine can reach it.
+alone and look at the instance. A reason with no status means no HTTP status
+was recorded, which is not the same as no answer: `COMMONLY_API_URL` may be
+malformed, the instance may be unreachable from that machine, or the call hit
+its 10-second limit. That limit covers reading the response body too, so a slow
+instance that did answer can land here. Check the URL first, then whether that
+machine can reach it, then the instance.
 
 ### `codex exec` MCP-tool surfacing — gated on the env table, not the codex version
 
