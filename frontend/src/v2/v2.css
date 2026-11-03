@@ -4128,13 +4128,7 @@ body.modern-ui.v2-canvas {
     gap: 8px;
   }
 
-  .v2-activity__controls {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 110px;
-    width: 100%;
-  }
-  .v2-activity__window { width: 100%; }
-  .v2-root button.v2-activity__window-button { flex: 1 1 0; }
+  /* The window and scope rows are set in the ≤760 block after the ≤1100 filter row. */
   .v2-activity__scope select { width: 100%; max-width: none; }
   .v2-activity__compose-top { align-items: flex-start; flex-direction: column; gap: 8px; }
   .v2-activity__compose-pod { width: 100%; }
@@ -5479,11 +5473,9 @@ body.modern-ui.v2-canvas {
   right: -6px;
 }
 .v2-root .v2-activity__queue-actions button.v2-activity__option--other { border-color: transparent; background: transparent; color: var(--v2-accent-text); padding: 0 4px; }
-/* ≤760 (66390): the two toggles stack. The card-action stack lives in the trailing ≤760
-   block at the end of the Activity rules, after every row/action rule it must outrank. */
-@media (max-width: 760px) {
-  .v2-activity__controls { flex-direction: column; align-items: stretch; }
-}
+/* ≤760 (66390): the two toggles stack — in the block after the ≤1100 filter row below, which
+   it must outrank. The card-action stack lives in the trailing ≤760 block at the end of the
+   Activity rules, after every row/action rule it must outrank. */
 .v2-root .v2-activity__queue-row--decision .v2-activity__queue-mark { background: var(--v2-accent); color: #fff; }
 /* Categories are marks, only the deciding act is a word (direction A). The
    mark holds a 16px glyph; a secondary act is a 32px square holding one, its word in the
@@ -5503,6 +5495,21 @@ body.modern-ui.v2-canvas {
   .v2-activity__controls { position: relative; top: auto; right: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; width: 100%; padding: 10px 12px; border-bottom: 1px solid var(--v2-border-soft); }
   .v2-activity__window { width: auto; flex: 0 0 auto; }
   .v2-activity__scope { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+}
+/* ≤760 (d215 activity 390): window and scope are two full-width rows under the top bar —
+   12px gutters, 8px apart, 12px above the composer, no rule under them. Same selectors as the
+   ≤1100 row above, so this block wins by order. The gutter is margin, not padding, so the block
+   is the frame's 366px box; 2px inside the 1px border is the frame's 3px inset. The window's two
+   buttons split the row, the scope's keep their own width from the left. The artboard draws 36px
+   buttons; they hold at 44px, like every other Activity control at this width (TASK-735: a
+   deliberate touch floor, flagged for UX Lead). */
+@media (max-width: 760px) {
+  .v2-activity__controls { flex-direction: column; flex-wrap: nowrap; align-items: stretch; width: auto; margin: 12px 12px 0; padding: 0; border-bottom: 0; }
+  .v2-activity__window,
+  .v2-activity__scope { width: auto; padding: 2px; }
+  .v2-root button.v2-activity__window-button { flex: 1 1 0; justify-content: center; min-height: 44px; }
+  .v2-root button.v2-activity__scope-button { min-height: 44px; }
+  .v2-activity__controls + .v2-activity__compose { margin-top: 12px; }
 }
 @media (max-width: 640px) {
   .v2-activity__queue-row { grid-template-columns: 28px minmax(0, 1fr); }
