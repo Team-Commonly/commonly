@@ -418,7 +418,7 @@ const resolveConnected = async ({
   const tokensBySeat = await botTokensForMany((open as Array<Record<string, any>>).map((ep) => ({
     agentName: String(ep.agentName), instanceId: String(ep.instanceId),
   })));
-  for (const ep of open as Array<Record<string, any>>) {
+  const resolveEpisode = async (ep: Record<string, any>): Promise<void> => {
     const install = await AgentInstallation.findById(ep.installationId).lean();
     if (!install) {
       // Uninstalled while stalled: close it silently. There is no room to
@@ -427,7 +427,7 @@ const resolveConnected = async ({
         { _id: ep._id, status: 'open' },
         { $set: { status: 'resolved', resolvedAt: now } },
       );
-      continue;
+      return;
     }
     const userTokens = tokensBySeat.get(botKey(String(ep.agentName), String(ep.instanceId))) || [];
     const derived = deriveAgentState(
@@ -437,20 +437,28 @@ const resolveConnected = async ({
     // connect, and the nudge promised a post when it did, so it resolves too,
     // with copy that does not promise an answer to @mentions. A used token alone
     // is not an MCP client (`commonly agent attach` and the listener's own start
-    // use it too), so this episode also needs an MCP copy and no listener or
-    // daemon copy since its token was issued. Anything less keeps waiting.
+    // use it too), so this episode also needs an MCP copy of THIS agent's
+    // command since its token was issued, a token use after that copy, and no
+    // listener or daemon copy. Anything less keeps waiting.
     let mcpSeenAt: Date | null = null;
     let openedOs: StalledConnectCopyEvidence['openedOs'] = null;
     if (derived.state === 'never-connected') {
-      if (!ep.tokenIssuedAt) continue;
+      if (!ep.tokenIssuedAt) return;
       const since = new Date(ep.tokenIssuedAt);
       mcpSeenAt = latestUseSince([(install as { runtimeTokens?: BotTokens }).runtimeTokens || [], userTokens], since);
-      if (!mcpSeenAt) continue;
-      const copies = await byoCopiesSince(ep.installedBy, since);
-      if (!copies.mcp || copies.listener) continue;
-      const installer = await User.findById(ep.installedBy).select('onboarding.byoOpenedOs').lean() as
-        { onboarding?: { byoOpenedOs?: StalledConnectCopyEvidence['openedOs'] } } | null;
-      openedOs = installer?.onboarding?.byoOpenedOs || null;
+      if (!mcpSeenAt) return;
+      const copies = await byoCopiesSince(ep.installedBy, since, {
+        agentName: String(ep.agentName), podId: String(ep.podId),
+      });
+      if (!copies.firstMcpAt || copies.listener || mcpSeenAt < copies.firstMcpAt) return;
+      try {
+        const installer = await User.findById(ep.installedBy).select('onboarding.byoOpenedOs').lean() as
+          { onboarding?: { byoOpenedOs?: StalledConnectCopyEvidence['openedOs'] } } | null;
+        openedOs = installer?.onboarding?.byoOpenedOs || null;
+      } catch {
+        // The OS only picks the wording; without it the generic copy is still true.
+        openedOs = null;
+      }
     }
 
     const handle = buildAgentUsername
@@ -510,6 +518,16 @@ const resolveConnected = async ({
     result.resolved.push({
       episodeId: String(ep._id), agentName: String(ep.agentName), podId: String(ep.podId),
     });
+  };
+  for (const ep of open as Array<Record<string, any>>) {
+    // One episode's failed lookup must not end the pass for the ones after it.
+    // The failed episode stays open and is tried again on the next pass, so a
+    // lookup error fails toward silence, never toward a false "connected".
+    try {
+      await resolveEpisode(ep);
+    } catch (error) {
+      console.warn('[stalled-connect] resolution check failed:', (error as Error).message);
+    }
   }
 };
 

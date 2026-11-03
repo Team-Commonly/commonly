@@ -11,8 +11,9 @@ const mockPassThrough = () => (_req, _res, next) => next();
 jest.mock('../../../models/Pod', () => ({ countDocuments: jest.fn() }));
 jest.mock('../../../models/User', () => ({ countDocuments: jest.fn() }));
 jest.mock('../../../models/Message', () => ({ countDocuments: jest.fn() }));
+const mockInstallExists = jest.fn();
 jest.mock('../../../models/AgentRegistry', () => ({
-  AgentInstallation: { distinct: jest.fn() },
+  AgentInstallation: { distinct: jest.fn(), exists: (...args) => mockInstallExists(...args) },
 }));
 jest.mock('../../../config/db-pg', () => ({ pool: { query: jest.fn() } }));
 jest.mock('../../../middleware/auth', () => (req, _res, next) => {
@@ -124,6 +125,37 @@ describe('POST /api/stats/byo-step', () => {
   it('other steps set no surface mark', async () => {
     await request(app).post('/api/stats/byo-step').send({ step: 'page-viewed' });
     expect(mockMarkSurface).not.toHaveBeenCalled();
+  });
+
+  it('a copy names its agent only when the person installed that agent in that pod', async () => {
+    const podId = 'a'.repeat(24);
+    mockInstallExists.mockResolvedValueOnce({ _id: 'inst1' });
+    await request(app).post('/api/stats/byo-step')
+      .send({ step: 'mcp-command-copied', copyType: 'mcp-claude', agentName: 'gridrunner', podId });
+    expect(mockInstallExists).toHaveBeenCalledWith({ agentName: 'gridrunner', podId, installedBy: 'human-1' });
+    expect(mockInsertOne).toHaveBeenLastCalledWith(expect.objectContaining({
+      step: 'mcp-command-copied', agentName: 'gridrunner', podId,
+    }));
+
+    // Someone else's agent: the row is still written, without an agent.
+    mockInstallExists.mockResolvedValueOnce(null);
+    await request(app).post('/api/stats/byo-step')
+      .send({ step: 'cli-command-copied', copyType: 'listen', agentName: 'theirbot', podId });
+    const unowned = mockInsertOne.mock.calls[mockInsertOne.mock.calls.length - 1][0];
+    expect(unowned).not.toHaveProperty('agentName');
+    expect(unowned).not.toHaveProperty('podId');
+
+    // A malformed name or pod is never looked up or stored.
+    mockInstallExists.mockClear();
+    await request(app).post('/api/stats/byo-step')
+      .send({ step: 'mcp-command-copied', agentName: { $ne: null }, podId: 'x' });
+    expect(mockInstallExists).not.toHaveBeenCalled();
+    expect(mockInsertOne.mock.calls[mockInsertOne.mock.calls.length - 1][0]).not.toHaveProperty('agentName');
+
+    // Non-copy steps never carry an agent.
+    mockInstallExists.mockClear();
+    await request(app).post('/api/stats/byo-step').send({ step: 'page-viewed', agentName: 'gridrunner', podId });
+    expect(mockInstallExists).not.toHaveBeenCalled();
   });
 
   it('rejects seat-registered from the browser: the backend alone writes that row', async () => {

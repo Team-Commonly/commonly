@@ -995,7 +995,12 @@ const V2AgentBYO: React.FC = () => {
   // Every step carries the setup the page is showing (OS and listener
   // eligibility) so the server can tell "listener was possible" from "not".
   const byoStep = (step: ByoStep, copyType?: ByoCopyType) => {
-    recordByoStep(api, step, { setupOs, listenerAvailable, ...(copyType ? { copyType } : {}) });
+    recordByoStep(api, step, {
+      setupOs,
+      listenerAvailable,
+      ...(copyType ? { copyType } : {}),
+      ...(copyType && issued ? { agentName: issued.agentName, podId: issued.podId } : {}),
+    });
   };
 
   useEffect(() => {

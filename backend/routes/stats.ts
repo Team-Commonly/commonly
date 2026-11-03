@@ -84,7 +84,7 @@ const { rateLimit } = require('express-rate-limit');
 // eslint-disable-next-line global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../middleware/ipRateLimit');
 // eslint-disable-next-line global-require
-const { recordByoEvent } = require('../services/byoTelemetry');
+const { recordByoEvent, byoCopyAgentFor } = require('../services/byoTelemetry');
 
 const BYO_STEPS = new Set([
   'page-viewed', 'seat-created', 'mcp-command-copied', 'cli-command-copied', 'daemon-command-copied',
@@ -100,6 +100,8 @@ const COPY_TYPES_BY_STEP: Record<string, string[]> = {
   'token-copied': ['token'],
 };
 // Onboarding surfaces: each step also sets its write-once onboarding mark.
+const COPY_STEPS_WITH_AGENT = new Set(['mcp-command-copied', 'cli-command-copied', 'daemon-command-copied']);
+
 const SURFACE_STEPS: Record<string, string> = {
   'invite-card-shown': 'inviteCardShownAt',
   'invite-card-dismissed': 'inviteCardDismissedAt',
@@ -130,9 +132,13 @@ router.post('/byo-step', rateLimit({
   // writes nothing for a missing or malformed value.
   markByoSetup(req.userId, { setupOs: req.body?.setupOs, listenerAvailable: req.body?.listenerAvailable });
   if (SURFACE_STEPS[step]) markSurface(req.userId, SURFACE_STEPS[step]);
+  // A setup-command copy names the agent the page was showing, so a copy for
+  // one agent is never read as evidence about another (TASK-345).
+  const agent = COPY_STEPS_WITH_AGENT.has(step) ? await byoCopyAgentFor(req.userId, req.body || {}) : null;
   await recordByoEvent(req.userId, step as any, {
     ...(step === 'mcp-command-copied' ? { commandType: 'mcp' } : {}),
     ...(step === 'cli-command-copied' ? { commandType: 'cli' } : {}),
+    ...(agent || {}),
   });
   return res.json({ ok: true });
 });

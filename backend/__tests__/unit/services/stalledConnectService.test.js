@@ -747,6 +747,8 @@ describe('keeping the forward promise', () => {
     },
   });
   const usedAt = new Date(NOW.getTime() - 4 * MINUTE);
+  // The MCP command was copied, then the client started and used the token.
+  const copiedAt = new Date(usedAt.getTime() - MINUTE);
   const tokenOfThisEpisode = { createdAt: OLD_TOKEN, lastUsedAt: usedAt };
   const withInstallTokens = (runtimeTokens) => mockInstallFindById.mockReturnValue({
     lean: () => Promise.resolve(install({ runtimeTokens })),
@@ -755,14 +757,14 @@ describe('keeping the forward promise', () => {
   it('closes the episode for an MCP client that used its token, without promising an answer to mentions', async () => {
     setup({ installs: [], open: [mcpEpisode] });
     installer({});
-    mockCopies.mockResolvedValue({ mcp: 1, listener: 0 });
+    mockCopies.mockResolvedValue({ firstMcpAt: copiedAt, listener: 0 });
     withInstallTokens([tokenOfThisEpisode]);
 
     const r = await scan({ now: NOW });
 
     expect(r.resolved).toHaveLength(1);
-    // Copies are counted from this episode's token issue, never before it.
-    expect(mockCopies).toHaveBeenCalledWith('user1', OLD_TOKEN);
+    // Copies are counted from this episode's token issue, for this agent only.
+    expect(mockCopies).toHaveBeenCalledWith('user1', OLD_TOKEN, { agentName: 'ai1-agent', podId: 'pod1' });
     const { content } = mockPost.mock.calls[0][0];
     expect(content).toContain('connected from your MCP client (seen 2026-08-15 11:56 UTC)');
     expect(content).toContain("won't answer @ai1-agent on my own");
@@ -778,7 +780,7 @@ describe('keeping the forward promise', () => {
   it('counts a use recorded only on the bot row, and points a Windows installer at Run it here', async () => {
     setup({ installs: [], open: [mcpEpisode], userTokens: [tokenOfThisEpisode] });
     installer({ byoOpenedOs: 'windows' });
-    mockCopies.mockResolvedValue({ mcp: 2, listener: 0 });
+    mockCopies.mockResolvedValue({ firstMcpAt: copiedAt, listener: 0 });
     withInstallTokens([]);
 
     const r = await scan({ now: NOW });
@@ -794,7 +796,7 @@ describe('keeping the forward promise', () => {
     // used token is not by itself an MCP client.
     setup({ installs: [], open: [mcpEpisode] });
     installer({});
-    mockCopies.mockResolvedValue({ mcp: 1, listener: 1 });
+    mockCopies.mockResolvedValue({ firstMcpAt: copiedAt, listener: 1 });
     withInstallTokens([tokenOfThisEpisode]);
 
     const r = await scan({ now: NOW });
@@ -807,7 +809,7 @@ describe('keeping the forward promise', () => {
   it('keeps waiting when no MCP command was copied in this episode', async () => {
     setup({ installs: [], open: [mcpEpisode] });
     installer({});
-    mockCopies.mockResolvedValue({ mcp: 0, listener: 0 });
+    mockCopies.mockResolvedValue({ firstMcpAt: null, listener: 0 });
     withInstallTokens([tokenOfThisEpisode]);
 
     const r = await scan({ now: NOW });
@@ -819,7 +821,7 @@ describe('keeping the forward promise', () => {
   it('keeps waiting when the only use belongs to a token from before this episode, even a later use', async () => {
     setup({ installs: [], open: [mcpEpisode] });
     installer({});
-    mockCopies.mockResolvedValue({ mcp: 1, listener: 0 });
+    mockCopies.mockResolvedValue({ firstMcpAt: copiedAt, listener: 0 });
     const before = new Date(OLD_TOKEN.getTime() - 60 * MINUTE);
     withInstallTokens([
       { createdAt: before, lastUsedAt: new Date(OLD_TOKEN.getTime() - 30 * MINUTE) },
@@ -834,10 +836,51 @@ describe('keeping the forward promise', () => {
     expect(mockPost).not.toHaveBeenCalled();
   });
 
+  it('keeps waiting when the only token use came before the MCP copy (an attach, not a client)', async () => {
+    setup({ installs: [], open: [mcpEpisode] });
+    installer({});
+    mockCopies.mockResolvedValue({ firstMcpAt: new Date(usedAt.getTime() + MINUTE), listener: 0 });
+    withInstallTokens([tokenOfThisEpisode]);
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(0);
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('still posts the MCP resolution when the installer OS cannot be read', async () => {
+    setup({ installs: [], open: [mcpEpisode] });
+    mockUserFindById.mockReturnValue({ select: () => ({ lean: () => Promise.reject(new Error('mongo down')) }) });
+    mockCopies.mockResolvedValue({ firstMcpAt: copiedAt, listener: 0 });
+    withInstallTokens([tokenOfThisEpisode]);
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(1);
+    expect(mockPost.mock.calls[0][0].content).toContain('in a Terminal on the machine where I should live');
+  });
+
+  it('a failed lookup on one episode leaves it open and still resolves the episodes after it', async () => {
+    const failing = { ...mcpEpisode, _id: 'epA', installationId: 'instA' };
+    setup({ installs: [], open: [failing, openEpisode] });
+    mockCopies.mockRejectedValue(new Error('telemetry read failed'));
+    mockInstallFindById.mockImplementation((id) => ({
+      lean: () => Promise.resolve(id === 'instA'
+        ? install({ _id: 'instA', runtimeTokens: [tokenOfThisEpisode] })
+        : install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: usedAt }] })),
+    }));
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved.map((x) => x.episodeId)).toEqual(['ep9']);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockEpUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ _id: 'epA' }), expect.anything());
+  });
+
   it('keeps waiting when the episode has no token issue time to scope by', async () => {
     setup({ installs: [], open: [{ ...mcpEpisode, tokenIssuedAt: undefined }] });
     installer({});
-    mockCopies.mockResolvedValue({ mcp: 1, listener: 0 });
+    mockCopies.mockResolvedValue({ firstMcpAt: copiedAt, listener: 0 });
     withInstallTokens([tokenOfThisEpisode]);
 
     const r = await scan({ now: NOW });

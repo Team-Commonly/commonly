@@ -91,7 +91,7 @@ test('exit intent offers immediately; manual copy dismisses permanently', async 
 test('button copy suppresses the offer beyond the Copied label', async () => {
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: jest.fn().mockResolvedValue(undefined) } });
   await issue(); await act(async () => fireEvent.click(screen.getByTestId('byo-listen').querySelector('button.v2-byo__copy'))); await tick(60000); expect(offer()).not.toBeInTheDocument();
-  expect(axios.post).toHaveBeenCalledWith('/api/stats/byo-step', expect.objectContaining({ step: 'cli-command-copied', copyType: 'listen' }), expect.anything());
+  expect(axios.post).toHaveBeenCalledWith('/api/stats/byo-step', expect.objectContaining({ step: 'cli-command-copied', copyType: 'listen', agentName: 'sam-claude', podId: 'p1' }), expect.anything());
 });
 test('hosting errors preserve the command and a retryable offer', async () => {
   await issue(); axios.post.mockImplementation((url) => url === '/api/registry/install' ? Promise.reject({ response: { data: { code: 'hosted_cap_reached', cap: 1 } } }) : Promise.resolve({ data: {} }));
