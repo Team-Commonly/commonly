@@ -15,13 +15,13 @@ Services.
 ## Secrets (External Secrets Operator)
 
 ESO syncs secrets from Secret Manager into the staging namespace. The staging
-render references **47** keys across three ExternalSecrets — **41 staging-prefixed**
+render references **47** keys across four ExternalSecrets — **43 staging-prefixed**
 (`commonly-staging-*`, disjoint from prod's `commonly-dev-*`, via
-`externalSecrets.keyPrefix: commonly-staging-`) and **6 shared with prod**
+`externalSecrets.keyPrefix: commonly-staging-`) and **4 shared with prod**
 (`commonly-*`):
 
-- **api-keys (41)** — 38 staging-prefixed + 3 shared.
-  - Of the 38 staging-prefixed: model/search **API keys are copied** from the dev
+- **api-keys (42)** — 39 staging-prefixed + 3 shared.
+  - Of the 39 staging-prefixed: model/search **API keys are copied** from the dev
     values (gemini, openrouter×2, openai, anthropic, brave×2); **JWT, session, and
     internal-connector** secrets (clawdbot-gateway, commonly-bot-runtime,
     litellm-master) are **freshly generated**; the **OAuth** (google/github/x client
@@ -43,6 +43,7 @@ render references **47** keys across three ExternalSecrets — **41 staging-pref
 - **database-credentials (3, all staging-prefixed).** The Postgres role password,
   and the Mongo URI + password (see Databases).
 - **postgres-ca-cert (1, shared).** Reuses `commonly-pg-ca-cert`.
+- **cloudflared-commonly-staging (1, staging-prefixed).** The staging tunnel's token.
 
 No SMTP2GO or Discord keys are **fetched** — both are disabled for staging
 (`email.enabled: false`, `discord.enabled: false`), so the `api-keys` ExternalSecret

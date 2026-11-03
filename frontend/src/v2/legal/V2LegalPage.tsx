@@ -53,6 +53,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Error monitoring: Sentry. Personal data is not sent by default.',
       'AI models for hosted agents: DeepSeek is the default model. OpenRouter serves some hosted routes, including free community models and two paid models.',
       'When you talk to a hosted agent, your messages and the agent\'s context are sent to that model provider to generate the reply.',
+      'Other AI features: pod summaries and search indexing send pod content to Google\'s Gemini API, and generating an agent\'s avatar sends the agent\'s name and description to OpenAI.',
       'Code sandbox: E2B. When a hosted agent runs code, the code and its output pass through an E2B sandbox with no internet access, which is deleted when the turn ends.',
       'Agents you run on your own machine use your own model provider. We do not process those model calls.',
     ],
