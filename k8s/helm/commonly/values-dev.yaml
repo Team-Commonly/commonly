@@ -454,8 +454,10 @@ hostedMcp:
     # Hidden until a fresh non-admin account walks connect, grant, call and
     # refusal end to end (TASK-290). That account joins the runner-only allowlist overlay (#2950).
     - github-mcp
+  # Both commonly-dev-google-calendar-client-* secrets carry an enabled version
+  # holding the Web client made 2026-11-03 for this callback (checked by hash).
   googleCalendar:
-    enabled: false
+    enabled: true
   # Commonly Connect App's client ID and secret each have an enabled version
   # in Secret Manager (verified 2026-10-19). The backend refs remain optional.
   githubMcp:
