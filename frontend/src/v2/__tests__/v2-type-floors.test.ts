@@ -167,7 +167,7 @@ const ALLOWLIST: string[] = [
   '.v2-root button.v2-admin-users__inline-copy', // 11.0px — no-mono-family
   '.v2-root button.v2-invite-manage__action, .v2-invite-manage__action', // 11.0px — no-mono-family
   '.v2-syscard__time', // 11.5px — no-mono-family
-  // D225 glob (2026-11-03): the scan widened from 11 hand-listed sheets to
+  // Glob widening (2026-11-03): the scan widened from 11 hand-listed sheets to
   // every v2 stylesheet. These are what the 18 newly scanned sheets carried on
   // the day; same burn-down rule — removed, never added.
   '.v2m-mnav .mo', // 11.0px — no-mono-family
@@ -237,6 +237,23 @@ describe('v2 type floors (ruling h)', () => {
     // `.v2-verification-banner` is the first child of a `@media (max-width: 480px)`
     // block, which is exactly the position that was mis-keyed.
     expect(selectors).toContain('.v2-verification-banner');
+  });
+
+  test('the walk reaches every v2 stylesheet, not a hand list', () => {
+    // A changed root or a broken walk would quietly shrink the scan back to
+    // the hand-listed sheets and pass. Pin the count and a few sheets that only
+    // the walk can reach.
+    const walked = allSheets(V2_ROOT).map((file) => path.relative(V2_ROOT, file).split(path.sep).join('/'));
+    expect(walked.length).toBeGreaterThanOrEqual(29);
+    expect(walked).toEqual(expect.arrayContaining([
+      'v2.css',
+      'agents/v2-agent-settings-surface.css',
+      'cards/uiCard.css',
+      'connectors/connectors.css',
+      'landing/v2-landing.css',
+      'primitives/primitives.css',
+    ]));
+    expect(walked.some((file) => file.startsWith('__tests__/'))).toBe(false);
   });
 
   test('the scan is measuring something — the sheet parses into many rules', () => {

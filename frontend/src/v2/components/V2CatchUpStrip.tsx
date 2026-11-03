@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import V2Fold from './V2Fold';
+import { ShellGlyph } from '../icons/glyphs';
 
 // Sam's 2026-09-01 ruling: a constant TL;DR of what the agents are doing,
 // living where the question is actually felt — pinned above the messages of
@@ -146,7 +147,7 @@ const V2CatchUpStrip: React.FC<Props> = ({ podId }) => {
           aria-label={t('podChat.catchup.dismiss')}
           title={t('podChat.catchup.dismiss')}
         >
-          ×
+          <ShellGlyph name="close" size={14} />
         </button>
       </div>
       <V2Fold open={expanded && !!summary?.content} className="v2-catchup__body">

@@ -84,6 +84,11 @@ const hsl = (hex: string): { hue: number; chroma: number } => {
   return { hue, chroma: d };
 };
 
+// Arrows, ticks, crosses, chevrons, stars, sparkles, pencils, bullets, and any
+// pictographic emoji. × and ✕ count: an icon-only close button must be an SVG.
+const GLYPH = /[\u00D7\u2039\u203A\u2190-\u21FF\u2605\u2606\u2713-\u2718\u270E\u2728\u2B50]|\p{Extended_Pictographic}/u;
+const GLYPH_OR_BULLET = new RegExp(`${GLYPH.source}|\u2022`, 'u');
+
 describe('D225 AI-slop tells (docs/design/ai-slop-tells.md)', () => {
   test('the walk finds the whole tree, not a hand list', () => {
     // A changed root or a broken walk yields a vacuous pass.
@@ -168,7 +173,6 @@ describe('D225 AI-slop tells (docs/design/ai-slop-tells.md)', () => {
   });
 
   test('tell 6: no emoji or unicode glyph icons in product copy', () => {
-    const GLYPH = /[←-⇿★☆✓-✘✎✨⭐]|\p{Extended_Pictographic}/u;
     // Keyboard notation and the two reply-aim / pair marks are typography, not icons.
     const ALLOWED: Record<string, string> = {
       'activity.compose.hint': '⌘↵',
@@ -197,19 +201,32 @@ describe('D225 AI-slop tells (docs/design/ai-slop-tells.md)', () => {
   });
 
   test('tell 6: no emoji or unicode glyph icons in v2 source outside the named exceptions', () => {
-    const GLYPH = /[←-⇿★☆✓-✘✎✨⭐•]|\p{Extended_Pictographic}/u;
-    const found = SOURCES.filter((file) => {
+    // Keyed by file AND the exact line, so an exception excuses one literal,
+    // never the rest of its file.
+    const ALLOWED: Record<string, string[]> = {
+      // the reaction picker: user content, README carve-out
+      'components/V2MessageActions.tsx': ["const REACTION_PALETTE = ['👍', '❤️', '🔥', '🤔', '👀', '🚀'];"],
+      // parses the kernel's "🤝 … started a DM" event
+      'components/V2MessageRow.tsx': ['const AGENT_DM_EVENT_RE = /^🤝\\s+(.+?)\\s+—\\s+\\[view\\]\\(\\/v2\\/pods\\/([a-f0-9]{24})\\)\\s*$/i;'],
+      // the masked token's bullets
+      'components/V2SettingsPage.tsx': ["const maskedToken = '••••••••••••••••••••••••••••••••';"],
+      // ↵ key hint in the marketing demo composer
+      'landing/DemoWorkspace.tsx': ['<span className="v2-demo__enter" aria-hidden="true">↵</span>'],
+    };
+    const found: string[] = [];
+    for (const file of SOURCES) {
+      // A block comment opens at a line start, after whitespace or after `{`
+      // (JSX). Anchoring it matters: an unanchored /\*…\*/ treats the `/*` in
+      // a string such as accept="image/*" as an opener and swallows real code
+      // up to the next `*/` (it hid a × in V2Composer).
       const code = fs.readFileSync(file, 'utf8')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(^|[\s{])\/\*[\s\S]*?\*\//g, '$1')
         .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
-      return GLYPH.test(code);
-    }).map(rel);
-    exact(found, [
-      'components/V2MessageActions.tsx', // the reaction picker: user content, README carve-out
-      'components/V2MessageRow.tsx', // parses the kernel's "🤝 … started a DM" event and reaction tokens
-      'components/V2SettingsPage.tsx', // the masked token's bullets
-      'landing/DemoWorkspace.tsx', // ↵ key hint in the marketing demo composer
-    ]);
+      for (const line of code.split('\n')) {
+        if (GLYPH_OR_BULLET.test(line)) found.push(`${rel(file)} :: ${line.trim()}`);
+      }
+    }
+    exact(found, Object.entries(ALLOWED).flatMap(([file, lines]) => lines.map((line) => `${file} :: ${line}`)));
   });
 
   test('tell 7: no sparkle "AI" icon', () => {

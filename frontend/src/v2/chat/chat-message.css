@@ -716,6 +716,7 @@
 .v2-msg__quote-author { font-weight: 600; flex-shrink: 0; }
 
 .v2-msg__quote-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-msg__quote-file { display: inline-flex; align-items: center; gap: 3px; vertical-align: -2px; }
 
 /* The card sits IN the message content column, not flush with the row edge:
    38px avatar column + 12px gap, in lockstep with the .v2-msg grid. Without

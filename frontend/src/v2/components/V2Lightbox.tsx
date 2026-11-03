@@ -54,7 +54,7 @@ const V2Lightbox: React.FC<V2LightboxProps> = ({ images, index, onClose }) => {
   return (
     <div className="v2-lightbox" role="dialog" aria-modal="true" aria-label={image.name} onClick={onClose}>
       <span className="v2-lightbox__name">{image.name}{count > 1 ? ` · ${current + 1}/${count}` : ''}</span>
-      <button type="button" className="v2-lightbox__close" aria-label={t('podChat.lightbox.close')} onClick={onClose}>×</button>
+      <button type="button" className="v2-lightbox__close" aria-label={t('podChat.lightbox.close')} onClick={onClose}><ShellGlyph name="close" /></button>
       {count > 1 && (
         <>
           <button type="button" className="v2-lightbox__nav v2-lightbox__nav--prev" aria-label={t('podChat.lightbox.previous')} onClick={(event) => { event.stopPropagation(); setCurrent((i) => (i - 1 + count) % count); }}><ShellGlyph name="chevron-left" /></button>

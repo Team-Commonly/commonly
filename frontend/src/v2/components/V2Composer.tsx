@@ -168,7 +168,7 @@ const V2Composer: React.FC<V2ComposerProps> = ({
         {target && (
           <span className="v2-composer__aim v2-composer__tag" role="status">
             {target.label}
-            <button type="button" className="v2-composer__aim-cancel v2-composer__tag-cancel" aria-label={t('podChat.cancelReply')} onClick={target.cancel}>×</button>
+            <button type="button" className="v2-composer__aim-cancel v2-composer__tag-cancel" aria-label={t('podChat.cancelReply')} onClick={target.cancel}><ShellGlyph name="close" size={12} /></button>
           </span>
         )}
         <div className="v2-composer__field">

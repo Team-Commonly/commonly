@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { ShellGlyph } from '../icons/glyphs';
 
 interface V2InviteModalProps {
   open: boolean;
@@ -28,7 +29,6 @@ interface ManagedInvite {
 type ExpiryPreset = 'never' | '24' | '168' | '720';
 type MaxUsesPreset = 'unlimited' | '1' | '10' | '25';
 export type V2InviteTab = 'people' | 'agent';
-const CLOSE_MARK = '×';
 
 const inviteUrlFor = (token: string): string => (
   `${window.location.origin}/v2/invite/${token}`
@@ -179,7 +179,7 @@ const V2InviteModal: React.FC<V2InviteModalProps> = ({
       <div className="v2-modal" onClick={(e) => e.stopPropagation()}>
         <div className="v2-modal__head">
           <div className="v2-modal__title">{t('inviteModal.title', { podName })}</div>
-          <button type="button" className="v2-modal__close" aria-label={t('common.close')} onClick={onClose}>{CLOSE_MARK}</button>
+          <button type="button" className="v2-modal__close" aria-label={t('common.close')} onClick={onClose}><ShellGlyph name="close" /></button>
         </div>
         <div className="v2-modal__tabs" role="tablist">
           <button

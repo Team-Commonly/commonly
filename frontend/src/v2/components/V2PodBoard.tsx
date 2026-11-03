@@ -1234,7 +1234,7 @@ const V2PodBoard: React.FC = () => {
           <div ref={focusDialogRef} className="v2-modal v2-board__focus-editor" role="dialog" aria-modal="true" aria-label={t('board.focus.editorTitle')} onClick={(event) => event.stopPropagation()}>
             <div className="v2-modal__head">
               <div className="v2-modal__title">{t('board.focus.editorTitle')}</div>
-              <button type="button" className="v2-modal__close" onClick={closeFocusEditor}>×</button>
+              <button type="button" className="v2-modal__close" aria-label={t('common.close')} onClick={closeFocusEditor}><ShellGlyph name="close" /></button>
             </div>
             <div className="v2-modal__body">
               <label className="v2-board__field">
@@ -1333,7 +1333,7 @@ const V2PodBoard: React.FC = () => {
           >
             <div className="v2-modal__head">
               <div className="v2-modal__title">{t('board.newTask')}</div>
-              <button type="button" className="v2-modal__close" onClick={() => setCreateOpen(false)}>×</button>
+              <button type="button" className="v2-modal__close" aria-label={t('common.close')} onClick={() => setCreateOpen(false)}><ShellGlyph name="close" /></button>
             </div>
             <div className="v2-modal__body">
               <label className="v2-board__field">

@@ -56,7 +56,7 @@ const V2SettingsFrame: React.FC = () => (
         <div className="lb">Connectors</div>
         <div className="vl"><span className="mo">0 connected</span></div>
         <div className="ac">
-          <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2p-ib" aria-label="Open Connectors">›</button>
+          <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2p-ib" aria-label="Open Connectors"><ShellGlyph name="chevron-right" /></button>
         </div>
       </div>
     </div>
