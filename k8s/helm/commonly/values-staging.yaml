@@ -139,9 +139,8 @@ agents:
 #     gating them on codex-enabled is a follow-up — TASK filed.)
 #
 # No new secret and no new database: every key litellm needs already exists in the
-# staging api-keys ring (deepseek-api-key, cloudflare-account-id/-workers-ai-token,
-# gemini/openrouter/openai-api-key, litellm-master-key — all unconditional in the
-# ExternalSecret), and DATABASE_URL reuses staging's own Aiven Postgres via
+# staging api-keys ring (deepseek-api-key, gemini/openrouter/openai-api-key,
+# litellm-master-key — all unconditional in the ExternalSecret), and DATABASE_URL reuses staging's own Aiven Postgres via
 # ?schema=litellm. Guard test: backend/__tests__/unit/helm/litellmStagingEnabled.test.js.
 litellm:
   enabled: true

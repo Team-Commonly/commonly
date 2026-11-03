@@ -15,6 +15,12 @@ describe('public legal pages (TASK-530)', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByText(/DeepSeek is the default model/)).toBeInTheDocument();
     expect(screen.getByText(/^Code sandbox: E2B\./)).toBeInTheDocument();
+    // D81: the Workers AI route was removed; the page must not name it.
+    expect(screen.queryByText(/Workers AI/)).not.toBeInTheDocument();
+    // A provider our requests reach with user content is named, even one whose
+    // key is rejected: a rejected request still carried the content.
+    expect(screen.getByText(/send pod content to Google's Gemini API/)).toBeInTheDocument();
+    expect(screen.getByText(/description to OpenAI\./)).toBeInTheDocument();
   });
 
   it('links the addresses by mailto and links home', () => {
