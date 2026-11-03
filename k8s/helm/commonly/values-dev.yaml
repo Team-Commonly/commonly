@@ -428,16 +428,14 @@ slack:
   oauth:
     enabled: true
 
-# Both commonly-dev-google-calendar-client-* secrets exist with a version
-# (created 2026-10-09 in the cluster project's Secret Manager).
-# Off until an enrolled call succeeds (Wren, 2026-10-14). OAuth works, but every
-# tool call fails Google's Workspace MCP Developer Preview gate, which is
-# per Cloud project. Offering the tile meant a stranger could connect and then
-# hit an error on the first call. Turning this back on is the switch once the
-# project is enrolled and a list_calendars call succeeds.
+# Google Calendar credentials are on (2026-11-03, D239), but the tile stays
+# hidden below. Wren found on 2026-10-14 that OAuth works and every tool call
+# then fails Google's Workspace MCP Developer Preview gate, which is per Cloud
+# project, so a stranger could connect and hit an error on the first call.
+# Unhide once the project is enrolled and a list_calendars call succeeds.
 hostedMcp:
   hiddenEntries:
-    # Client secrets exist, but Workspace MCP enrollment is still off.
+    # Credentials on; hidden until Workspace MCP enrollment and a list_calendars call succeed.
     - google-calendar
     # Not walked end to end on staging before the 10-23 deploy; unwalked entries ship hidden.
     # Remove each line once its staging walk passes.
