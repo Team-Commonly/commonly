@@ -65,7 +65,7 @@ describe('Settings under zh-CN', () => {
     withAuth(<V2SettingsPage />);
 
     expect(screen.getByRole('heading', { level: 1, name: '设置' })).toBeInTheDocument();
-    for (const title of ['账号', '访问', '外观']) {
+    for (const title of ['账号', '访问权限', '外观']) {
       expect(screen.getByRole('heading', { level: 2, name: title })).toBeInTheDocument();
     }
     expect(screen.getByText('订阅方案')).toBeInTheDocument();
@@ -80,13 +80,13 @@ describe('Settings under zh-CN', () => {
 
     // The devices summary counts in Chinese and dates in the active locale.
     const lastUsed = new Date(DEVICE.lastUsedAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
-    expect(await screen.findByText(`1台 CLI 设备 · 最近使用 ${lastUsed}`)).toBeInTheDocument();
+    expect(await screen.findByText(`1台 CLI 设备 · 上次使用 ${lastUsed}`)).toBeInTheDocument();
     expect(lastUsed).toMatch(/月/);
 
     fireEvent.click(screen.getByText('设备').closest('summary'));
     expect(screen.getByRole('button', { name: '刷新' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '撤销' })).toBeInTheDocument();
-    expect(screen.getByText(/^创建于 .* · 上次使用 /)).toBeInTheDocument();
+    expect(screen.getByText(/^创建于 .* · 上次使用：/)).toBeInTheDocument();
 
     expectAbsent([
       'Settings', 'Account', 'Access', 'Look', 'Plan', 'API token', 'Generate', 'Connectors',
@@ -111,8 +111,8 @@ describe('CLI authorize under zh-CN', () => {
     withAuth(<V2CliAuthorize />, { ...auth, currentUser: null, user: null, token: null, isAuthenticated: false }, '/cli/authorize?code=ABCD-EFGH');
 
     expect(screen.getByRole('heading', { level: 1, name: '授权 Commonly CLI' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '登录并继续' })).toBeInTheDocument();
-    expect(screen.getByText('设备代码')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '登录后继续' })).toBeInTheDocument();
+    expect(screen.getByText('设备验证码')).toBeInTheDocument();
     expectAbsent(['Authorize Commonly CLI', 'Sign in to continue', 'Device code']);
   });
 
@@ -124,7 +124,7 @@ describe('CLI authorize under zh-CN', () => {
     fireEvent.click(screen.getByRole('button', { name: '继续' }));
 
     const title = await screen.findByRole('heading', { level: 1, name: /以 @lily 的身份授权/ });
-    expect(title).toHaveTextContent('以 @lily 的身份授权 sam-laptop？');
+    expect(title).toHaveTextContent('要以 @lily 的身份授权 sam-laptop 吗？');
     expect(title.querySelector('.v2-cli-authorize__host')).toHaveTextContent('sam-laptop');
     expect(screen.getByText('客户端')).toBeInTheDocument();
     expect(screen.getByText('刚刚')).toBeInTheDocument();
