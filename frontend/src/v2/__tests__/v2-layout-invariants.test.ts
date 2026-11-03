@@ -214,6 +214,32 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2.indexOf(phone)).toBeGreaterThan(artifactsPhonePad);
   });
 
+  test('/v2/activity: on a phone the window and scope controls are two full-width rows under the bar (d215 activity 390)', () => {
+    const v2 = readV2Css();
+    const phone = mediaBlockContaining(v2, '.v2-activity__controls { flex-direction: column;');
+    const controls = selectorRuleBody(phone, '.v2-activity__controls {');
+    expect(controls).toContain('flex-direction: column');
+    expect(controls).toContain('flex-wrap: nowrap');
+    expect(controls).toContain('align-items: stretch');
+    // The 12px gutter is margin, so the block is the frame's 366px box; no filter-row rule under it.
+    // width: auto drops the ≤1100 width: 100%, which plus the margin would overflow the pane by 24px.
+    expect(controls).toContain('width: auto');
+    expect(controls).toContain('margin: 12px 12px 0');
+    expect(controls).toContain('padding: 0');
+    expect(controls).toContain('border-bottom: 0');
+    // 1px border + 2px padding is the frame's 3px inset around 36px buttons: 42px rows.
+    expect(selectorRuleBody(phone, '.v2-activity__window,\n  .v2-activity__scope {')).toContain('padding: 2px');
+    const windowButton = selectorRuleBody(phone, '.v2-root button.v2-activity__window-button {');
+    expect(windowButton).toContain('flex: 1 1 0');
+    expect(windowButton).toContain('min-height: 36px');
+    expect(selectorRuleBody(phone, '.v2-root button.v2-activity__scope-button {')).toContain('min-height: 36px');
+    expect(selectorRuleBody(phone, '.v2-activity__controls + .v2-activity__compose {')).toContain('margin-top: 12px');
+    // Same selectors as the ≤1100 filter row (a row with a rule under it), so this block must come after it.
+    const filterRow = v2.indexOf('.v2-activity__controls { position: relative; top: auto; right: auto;');
+    expect(filterRow).toBeGreaterThan(-1);
+    expect(v2.indexOf(phone)).toBeGreaterThan(filterRow);
+  });
+
   test('/invite: a long pod name or description wraps inside the auth card (d215 s-invite)', () => {
     const invite = read('../components/V2InviteRedeem.css');
     expect(ruleBody(readV2Css(), '.v2-login__card--stack')).toContain('grid-template-columns: minmax(0, 1fr)');
