@@ -15,6 +15,8 @@ describe('public legal pages (TASK-530)', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByText(/DeepSeek is the default model/)).toBeInTheDocument();
     expect(screen.getByText(/^Code sandbox: E2B\./)).toBeInTheDocument();
+    // D81: the Workers AI route was removed; the page must not name it.
+    expect(screen.queryByText(/Workers AI/)).not.toBeInTheDocument();
   });
 
   it('links the addresses by mailto and links home', () => {
