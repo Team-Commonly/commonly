@@ -2794,6 +2794,9 @@
     "connectionSeparator": " · ",
     "connectionSignedIn": "Signed in",
     "connectionKey": "Key",
+    "keyOnlyAgent": "Only {{agent}} can use this key.",
+    "keyAgentNotInPod": "{{agent}} isn't in this pod.",
+    "keyAgentNotInPodUnnamed": "This key's agent isn't in this pod.",
     "disconnectConnectionLabel": "Disconnect {{label}}: {{connection}}",
     "operatorKey": {
       "note": "add a key for one of your agents",

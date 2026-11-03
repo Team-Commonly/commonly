@@ -2795,6 +2795,9 @@
     "connectionSeparator": " · ",
     "connectionSignedIn": "已登录",
     "connectionKey": "密钥",
+    "keyOnlyAgent": "只有 {{agent}} 可以使用这个密钥。",
+    "keyAgentNotInPod": "{{agent}} 不在这个 Pod 中。",
+    "keyAgentNotInPodUnnamed": "密钥所属的智能体不在这个 Pod 中。",
     "disconnectConnectionLabel": "断开 {{label}}：{{connection}}",
     "operatorKey": {
       "note": "为你的智能体添加密钥",

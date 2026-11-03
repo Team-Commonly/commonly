@@ -188,6 +188,18 @@ export const isDead = (grant: ToolGrant, now = Date.now()): boolean => Boolean(g
 export const entryCovers = (entry: ToolCatalogEntry, grant: ToolGrant): boolean => (
   (grant.tools || []).some((name) => (entry.tools || []).some((tool) => tool.name === name))
 );
+/**
+ * The agent an operator-key connection belongs to, or null for any other
+ * connection. The grant route refuses a grant on a key connection unless its
+ * audience is exactly this agent (operatorKeyAudienceRefusal in
+ * backend/services/hostedMcpOperatorKey.ts), so the draft starts there and
+ * offers no one else.
+ */
+export const boundAgentOf = (entry: ToolCatalogEntry, connectionId: string): string | null => {
+  if (entry.credentialMode !== 'operator_key') return null;
+  return entry.connections.find((connection) => connection.connectionId === connectionId)?.agentId || null;
+};
+
 // A grant that names no tool of this entry grants nothing on it — that is what
 // the enforcement path does (roomGrantService refuses any tool the grant does
 // not list), so the page must not read such an entry as granted.

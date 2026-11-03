@@ -15,6 +15,7 @@ import {
   WRITE_MODES,
   isDead,
   entryCovers,
+  boundAgentOf,
 } from './toolModel';
 import type {
   GrantWriteMode,
@@ -107,9 +108,12 @@ export const useToolConnectors = (
   // agent someone else installed too (the sole-installer rule), so an agent
   // another person installed in any roster the viewer can read is left out.
   // Rosters the viewer can't read stay invisible, and the route's 403 has the
-  // last word for those.
+  // last word for those. An agent-dm install is not ownership on the server
+  // (runtimeIdentityOwnership drops them), so agent-dm seats count on neither
+  // side.
   const keyAgents = useMemo<KeyAgent[]>(() => {
-    const all = Object.values(seats).flat();
+    const agentDmPodIds = new Set(pods.filter((pod) => pod.type === 'agent-dm').map((pod) => String(pod._id)));
+    const all = Object.entries(seats).filter(([podId]) => !agentDmPodIds.has(podId)).flatMap(([, rows]) => rows);
     const sharedInstall = new Set(all
       .filter((seat) => seat.userId && seat.installedBy && seat.installedBy !== viewerId)
       .map((seat) => seat.userId as string));
@@ -117,7 +121,7 @@ export const useToolConnectors = (
       .filter((seat) => seat.userId && viewerId && seat.installedBy === viewerId && !sharedInstall.has(seat.userId))
       .map((seat) => [seat.userId as string, { userId: seat.userId as string, label: seat.displayName || seat.name }])).values()]
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [seats, viewerId]);
+  }, [seats, viewerId, pods]);
   // The agent list is unknown when a pod list or roster couldn't be read.
   const keyAgentsUnavailable = podListFailed || seatLookupFailed;
   // An unreadable pod list or roster, or a roster whose census failed, leaves
@@ -323,16 +327,55 @@ export const useToolConnectors = (
   const q = query.trim().toLowerCase();
   const selected = selectedId ? (grants || []).find((grant) => grant.grantId === selectedId) || null : null;
 
+  const seatIdsIn = (podId: string): string[] => (seats[podId] || [])
+    .map((seat) => seat.userId).filter((id): id is string => Boolean(id));
+  // Who a draft starts with in a pod: every seat, or only the agent a key
+  // connection belongs to, when that agent sits in the pod.
+  const startingAudience = (entry: ToolCatalogEntry, connectionId: string, podId: string): string[] => {
+    const bound = boundAgentOf(entry, connectionId);
+    const ids = seatIdsIn(podId);
+    return bound ? ids.filter((id) => id === bound) : ids;
+  };
+
   const openDraft = (entry: ToolCatalogEntry, from?: ToolGrant) => {
-    const podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
+    let podId = from ? (grantPodId(from) || podIds[0] || '') : (podIds[0] || '');
+    let connectionId = entry.connections[0]?.connectionId || '';
+    // A key connection starts in a pod where its agent sits: the first pod, in
+    // list order, holding any keyed agent. Grant again keeps its grant's pod and
+    // the key it was minted on (a hosted grant's installationId is the
+    // connection's id). Other connections take neither branch.
+    // A key grant whose key is gone starts with no connection and nobody, never
+    // with another agent's key: that would mint for that agent and, for a live
+    // grant, revoke this one.
+    let keyGone = false;
+    if (from) {
+      const minted = entry.connections.find((connection) => connection.connectionId === from.installationId);
+      if (minted && boundAgentOf(entry, minted.connectionId)) connectionId = minted.connectionId;
+      else if (!minted && entry.credentialMode === 'operator_key') {
+        connectionId = '';
+        keyGone = true;
+      }
+    } else {
+      const seated = podIds.flatMap((pod) => entry.connections.map((connection) => ({ pod, connectionId: connection.connectionId })))
+        .find((pair) => {
+          const bound = boundAgentOf(entry, pair.connectionId);
+          return Boolean(bound) && seatIdsIn(pair.pod).includes(bound as string);
+        });
+      if (seated) {
+        podId = seated.pod;
+        connectionId = seated.connectionId;
+      }
+    }
     const modes = entryGrantModes(entry);
-    const agentIds = (seats[podId] || []).map((seat) => seat.userId).filter((id): id is string => Boolean(id));
+    const agentIds = seatIdsIn(podId);
     setDraft({
       entry,
       podId,
-      connectionId: entry.connections[0]?.connectionId || '',
+      connectionId,
       writeMode: from && modes.includes(from.writeMode) ? from.writeMode : modes[0] || 'read',
-      audience: from ? agentIds.filter((id) => from.effectiveAudience.includes(id)) : agentIds,
+      audience: keyGone ? [] : (from && !boundAgentOf(entry, connectionId)
+        ? agentIds.filter((id) => from.effectiveAudience.includes(id))
+        : startingAudience(entry, connectionId, podId)),
       expiryDays: 7,
       replaces: from && !isDead(from) ? from.grantId : null,
     });
@@ -358,9 +401,13 @@ export const useToolConnectors = (
   const draftTools = (entry: ToolCatalogEntry | null, mode: GrantWriteMode): string[] => (entry?.tools || [])
     .filter((tool) => MODE_RANK[tool.requiredWriteMode] <= MODE_RANK[mode]).map((tool) => tool.name);
 
+  const draftBoundAgent = draft && draftEntry ? boundAgentOf(draftEntry, draft.connectionId) : null;
+  // On a key connection only its own agent can be submitted, whatever the
+  // audience holds; the server refuses anyone else (operatorKeyAudienceRefusal).
   const selectedAgentIds = (draft ? seats[draft.podId] || [] : [])
     .map((seat) => seat.userId)
-    .filter((id): id is string => typeof id === 'string' && Boolean(id) && draft?.audience.includes(id) === true);
+    .filter((id): id is string => typeof id === 'string' && Boolean(id) && draft?.audience.includes(id) === true)
+    .filter((id) => !draftBoundAgent || id === draftBoundAgent);
 
   const submitDraft = async () => {
     if (!draft || !draftEntry || selectedAgentIds.length === 0) return;
@@ -717,6 +764,8 @@ export const useToolConnectors = (
     openGithubAppSetup,
     draftEntry,
     draftTools,
+    draftBoundAgent,
+    startingAudience,
     selectedAgentIds,
     submitDraft,
     fixJoinPolicy,
