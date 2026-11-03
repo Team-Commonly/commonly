@@ -64,12 +64,14 @@ spec:
               name: api-keys
               key: litellm-commonly-bot-key
         {{- end }}
+        {{- if .Values.aiProviders.gemini.enabled }}
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: gemini-api-key
               optional: true
+        {{- end }}
         - name: OPENROUTER_API_KEY
           valueFrom:
             secretKeyRef:

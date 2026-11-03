@@ -24,6 +24,12 @@ errorTracking:
 hostedSandbox:
   enabled: false
 
+# Model providers called directly, outside LiteLLM. Turn one off where its key
+# cannot answer: a rejected call still sends the content (F78).
+aiProviders:
+  gemini:
+    enabled: true
+
 # Web search for native turns (TASK-267a). Off by default: on, the api-keys
 # ExternalSecret references commonly-dev-search-api-key, and ESO rejects the
 # whole secret if that key is missing. `provider` is exa or tavily, and the
@@ -172,6 +178,11 @@ backend:
     agentComputerWakerUrl: ""
     nodeEnv: development
     registrationInviteOnly: "1"
+    # Avatar engine: openai | gemini | design | auto (unset = auto). `design`
+    # calls no image API and draws an SVG from the chat model's design.
+    avatarProvider: ""
+    # Embeddings: gemini | openai | litellm | none (unset = gemini).
+    embeddingProvider: ""
     agentProvisionerK8s: "1"
     agentProvisionerDocker: "0"
     agentProvisionerNodePool: ""

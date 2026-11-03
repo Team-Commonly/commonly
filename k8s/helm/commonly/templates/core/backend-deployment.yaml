@@ -289,11 +289,23 @@ spec:
               optional: true
 
         # AI Services
+        # Off where the key cannot answer (F78): every call would send content to
+        # Google and get nothing back. LiteLLM keeps its own copy for its routes.
+        {{- if .Values.aiProviders.gemini.enabled }}
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: gemini-api-key
+        {{- end }}
+        {{- if .Values.backend.env.avatarProvider }}
+        - name: AVATAR_PROVIDER
+          value: {{ .Values.backend.env.avatarProvider | quote }}
+        {{- end }}
+        {{- if .Values.backend.env.embeddingProvider }}
+        - name: EMBEDDING_PROVIDER
+          value: {{ .Values.backend.env.embeddingProvider | quote }}
+        {{- end }}
         - name: OPENROUTER_API_KEY
           valueFrom:
             secretKeyRef:
