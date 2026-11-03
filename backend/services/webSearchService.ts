@@ -1,8 +1,9 @@
 /**
  * Web search for native turns (TASK-267a).
  *
- * One function, two providers. `SEARCH_PROVIDER` picks `exa` (the default) or
- * `tavily`, so the provider is a configuration choice, not a dependency
+ * One function, three providers. `SEARCH_PROVIDER` picks `exa` (the default),
+ * `tavily`, or `keenable` (which works without SEARCH_API_KEY; a key, if set,
+ * selects its keyed endpoint), so the provider is a configuration choice, not a dependency
  * (Cofounder, 2026-10-15). Exa was chosen on the numbers: a no-card free tier,
  * the cheapest per search after it, and page text an agent can cite.
  *
@@ -81,20 +82,36 @@ const tavily: Adapter = async (query, apiKey) => {
   }));
 };
 
-const ADAPTERS: Record<string, Adapter> = { exa, tavily };
+const keenable: Adapter = async (query, apiKey) => {
+  const headers: Record<string, string> = { 'X-Keenable-Title': 'Commonly' };
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  const url = apiKey ? 'https://api.keenable.ai/v1/search' : 'https://api.keenable.ai/v1/search/public';
+  const { data } = await axios.post(url, { query, max_results: RESULT_LIMIT }, { headers, timeout: TIMEOUT_MS });
+  return (Array.isArray(data?.results) ? data.results : []).map((row: any) => ({
+    title: clip(row?.title, 200),
+    url: httpUrl(row?.url) || '',
+    text: clip(row?.description || row?.snippet, TEXT_LIMIT),
+  }));
+};
+
+const ADAPTERS: Record<string, Adapter> = { exa, tavily, keenable };
+
+/** Providers that work without SEARCH_API_KEY. */
+const KEYLESS = new Set(['keenable']);
 
 export const searchProvider = (): string => String(process.env.SEARCH_PROVIDER || 'exa').trim().toLowerCase();
 
-/** Configured when there is a key and the provider is one we have an adapter for. */
+/** Configured when the provider is one we have an adapter for and it has a key (or needs none). */
 export const isSearchConfigured = (): boolean => (
-  Boolean(process.env.SEARCH_API_KEY) && Boolean(ADAPTERS[searchProvider()])
+  Boolean(ADAPTERS[searchProvider()])
+  && (Boolean(process.env.SEARCH_API_KEY) || KEYLESS.has(searchProvider()))
 );
 
 export const searchWeb = async (rawQuery: string): Promise<WebSearchOutcome> => {
   const provider = searchProvider();
   const adapter = ADAPTERS[provider];
   const apiKey = process.env.SEARCH_API_KEY || '';
-  if (!adapter || !apiKey) throw new Error('web search is not configured on this instance');
+  if (!adapter || (!apiKey && !KEYLESS.has(provider))) throw new Error('web search is not configured on this instance');
   const query = clip(rawQuery, QUERY_LIMIT);
   if (!query) throw new Error('query is empty');
   const results = (await adapter(query, apiKey)).filter((row) => row.url).slice(0, RESULT_LIMIT);

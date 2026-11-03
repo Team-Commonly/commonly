@@ -67,6 +67,46 @@ describe('webSearchService', () => {
     expect(searchProvider()).toBe('exa');
   });
 
+  test('SEARCH_PROVIDER=keenable works without a key, using the public endpoint', async () => {
+    process.env.SEARCH_PROVIDER = 'keenable';
+    delete process.env.SEARCH_API_KEY;
+    expect(isSearchConfigured()).toBe(true);
+    axios.post.mockResolvedValue({
+      data: {
+        results: [
+          {
+            title: 'K', url: 'https://example.com/k', description: 'desc', snippet: 'long',
+          },
+          { title: 'No URL', description: 'dropped' },
+          { title: 'S', url: 'https://example.com/s', snippet: 'y'.repeat(5000) },
+        ],
+      },
+    });
+
+    const outcome = await searchWeb('q');
+
+    const [url, body, options] = axios.post.mock.calls[0];
+    expect(url).toBe('https://api.keenable.ai/v1/search/public');
+    expect(body).toEqual({ query: 'q', max_results: 5 });
+    expect(options.headers).toEqual({ 'X-Keenable-Title': 'Commonly' });
+    expect(outcome.provider).toBe('keenable');
+    expect(outcome.results.map((r) => r.url))
+      .toEqual(['https://example.com/k', 'https://example.com/s']);
+    expect(outcome.results[0].text).toBe('desc');
+    expect(outcome.results[1].text.length).toBeLessThanOrEqual(1501);
+  });
+
+  test('SEARCH_PROVIDER=keenable with a key uses the keyed endpoint', async () => {
+    process.env.SEARCH_PROVIDER = 'keenable';
+    axios.post.mockResolvedValue({ data: { results: [] } });
+
+    await searchWeb('q');
+
+    const [url, , options] = axios.post.mock.calls[0];
+    expect(url).toBe('https://api.keenable.ai/v1/search');
+    expect(options.headers).toEqual({ 'X-Keenable-Title': 'Commonly', 'X-API-Key': 'search_test_key' });
+  });
+
   test('an empty query is refused without a request', async () => {
     await expect(searchWeb('   ')).rejects.toThrow(/empty/);
     expect(axios.post).not.toHaveBeenCalled();
