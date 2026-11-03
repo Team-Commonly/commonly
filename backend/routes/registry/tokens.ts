@@ -1,5 +1,4 @@
 import { isAccountDeleting } from '../../services/accountDeletionState';
-import { holdsStoredApiToken } from '../../services/apiTokenService';
 // Token issuance + scope helpers — extracted from registry.js (GH#112)
 const AgentIdentityService = require('../../services/agentIdentityService');
 const { hash, randomSecret } = require('../../utils/secret');
@@ -454,15 +453,25 @@ const issueUserTokenForInstallation = async ({
 
   // Preserve existing token unless force-rotation is requested. Only the digest
   // is stored, so an existing token can be kept but never handed back. The
-  // stored row decides, including a retired plaintext token (holdsStoredApiToken).
-  if (!force && (agentUser.apiTokenHash || await holdsStoredApiToken(agentUser._id))) {
+  // stored row decides, including a retired plaintext token, in the same write
+  // that mints, so two concurrent calls cannot both mint (F61).
+  if (!force) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const User = require('../../models/User');
+    const minted = await User.mintApiTokenIfAbsent(agentUser._id, { apiTokenScopes: normalizedScopes });
+    if (minted) {
+      return { token: minted.token, scopes: normalizedScopes, createdAt: minted.createdAt, existing: false };
+    }
     agentUser.apiTokenScopes = normalizedScopes;
     await agentUser.save();
+    // The token may have been minted by a concurrent call after agentUser was
+    // loaded, so its creation time comes from the stored row.
+    const stored = await User.findById(agentUser._id).select('apiTokenCreatedAt').lean();
     return {
       token: null,
       requiresRotation: true,
       scopes: normalizedScopes,
-      createdAt: agentUser.apiTokenCreatedAt,
+      createdAt: stored?.apiTokenCreatedAt ?? agentUser.apiTokenCreatedAt,
       existing: true,
     };
   }

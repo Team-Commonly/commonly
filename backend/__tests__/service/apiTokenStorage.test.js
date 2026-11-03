@@ -252,6 +252,53 @@ describe('API token storage rollout', () => {
     expect((await get('cm_race-plaintext')).status).toBe(200);
   });
 
+  it('two concurrent issuances for a token-less agent mint one token, and the one returned works', async () => {
+    // F61: both calls used to check, find no token, mint and save; the later
+    // save replaced the earlier digest, so one caller held a dead bearer.
+    // Hold both loads until each has its row, so both decide on the same state.
+    const identity = require('../../services/agentIdentityService');
+    const { issueUserTokenForInstallation } = require('../../routes/registry/tokens');
+    const bot = await identity.getOrCreateAgentUser('mint-race', { instanceId: 'test' });
+    const load = identity.getOrCreateAgentUser;
+    let arrived = 0; let release;
+    const bothLoaded = new Promise((resolve) => { release = resolve; });
+    const spy = jest.spyOn(identity, 'getOrCreateAgentUser').mockImplementation(async (...args) => {
+      const loaded = await load.apply(identity, args);
+      arrived += 1;
+      if (arrived === 2) release();
+      await bothLoaded;
+      return loaded;
+    });
+    const issue = () => issueUserTokenForInstallation({ agentName: 'mint-race', instanceId: 'test', scopes: ['agent:context:read'] });
+    const results = await Promise.all([issue(), issue()]);
+    spy.mockRestore();
+
+    const minted = results.filter((r) => r.token);
+    expect(minted).toHaveLength(1);
+    const kept = results.filter((r) => r.existing && r.requiresRotation && r.token === null);
+    expect(kept).toHaveLength(1);
+    // The losing call loaded its row before the winner minted; it still reports the stored time.
+    expect(kept[0].createdAt).toEqual(minted[0].createdAt);
+    expect((await users().findOne({ _id: bot._id })).apiTokenHash).toBe(hash(minted[0].token));
+    expect((await get(minted[0].token)).status).toBe(200);
+  });
+
+  it('bootstrap mints when the bot holds no token, and the printed token works', async () => {
+    const { spawnSync } = require('child_process');
+    const path = require('path');
+    const identity = require('../../services/agentIdentityService');
+    const bot = await identity.getOrCreateAgentUser('openclaw');
+    const uri = `mongodb://${mongoose.connection.host}:${mongoose.connection.port}/${mongoose.connection.name}`;
+    const env = { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('PG_'))), PG_HOST: '' };
+    const result = spawnSync(process.execPath, ['-r', require.resolve('ts-node/register'),
+      path.resolve(__dirname, '../../scripts/bootstrap-clawd-bot.js'),
+    ], { cwd: path.resolve(__dirname, '../..'), env: { ...env, MONGO_URI: uri, NODE_NO_WARNINGS: '1' }, encoding: 'utf8', timeout: 30000 });
+    expect(result.status).toBe(0);
+    const printed = (result.stdout.match(/cm_[0-9a-f]{64}/) || [])[0];
+    expect(printed).toBeTruthy();
+    expect((await users().findOne({ _id: bot._id })).apiTokenHash).toBe(hash(printed));
+  }, 40000);
+
   it('bootstrap leaves a retired token for the backfill instead of minting over it', async () => {
     const { spawnSync } = require('child_process');
     const path = require('path');

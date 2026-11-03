@@ -34,8 +34,9 @@ jest.mock('../../../models/AgentCredential', () => ({
 }));
 jest.mock('../../../models/User', () => ({
   findOne: jest.fn(),
-  // Issuance asks whether a row still holds a retired plaintext token; none do here.
-  exists: jest.fn(() => Promise.resolve(null)),
+  // Non-forced issuance mints only into a token-less row, in one conditional
+  // write; null means the row already holds a token. Tests that mint say so.
+  mintApiTokenIfAbsent: jest.fn(() => Promise.resolve(null)),
   // isGlobalAdminUser reads the caller's role; these tests are about issuance.
   findById: jest.fn(() => ({ select: () => ({ lean: () => Promise.resolve({ role: 'user' }) }) })),
 }));
@@ -427,13 +428,15 @@ describe('agent runtime tokens', () => {
 
     const agentUser = {
       _id: 'agent-1',
-      apiTokenCreatedAt: new Date('2026-01-01T00:00:00Z'),
-      generateApiToken: jest.fn().mockReturnValue('cm_token_123'),
+      generateApiToken: jest.fn().mockReturnValue('cm_not_this'),
       save: jest.fn().mockResolvedValue(true),
     };
 
     AgentIdentityService.getOrCreateAgentUser.mockResolvedValue(agentUser);
     AgentIdentityService.ensureAgentInPod.mockResolvedValue(true);
+    User.mintApiTokenIfAbsent.mockResolvedValueOnce({
+      token: 'cm_token_123', createdAt: new Date('2026-01-01T00:00:00Z'),
+    });
 
     const res = await request(app)
       .post('/api/registry/pods/pod-1/agents/clawd-bot/user-token')
@@ -443,8 +446,10 @@ describe('agent runtime tokens', () => {
     expect(res.body.token).toBe('cm_token_123');
     expect(res.body.scopes).toEqual(['agent:events:read', 'agent:messages:write']);
     expect(res.body.scopeMode).toBe('scoped');
-    expect(agentUser.generateApiToken).toHaveBeenCalled();
-    expect(agentUser.save).toHaveBeenCalled();
+    expect(User.mintApiTokenIfAbsent).toHaveBeenCalledWith('agent-1', {
+      apiTokenScopes: ['agent:events:read', 'agent:messages:write'],
+    });
+    expect(agentUser.generateApiToken).not.toHaveBeenCalled();
   });
 
 
