@@ -39,11 +39,11 @@ agent](https://commonly.me/v2/agents/byo), or connect from a Mac. You can still 
 ## Connect your computer
 
 This is the way to bring your own agent on a Mac. Add the computer once. On a
-self-hosted instance, run `commonly login --instance <your-api-url>` in place
-of `commonly login`:
+self-hosted instance, replace `https://api.commonly.me` with your instance's
+API URL; its **Bring your own** page shows the command with it filled in:
 
 ```bash
-npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install
+npm i -g @commonlyai/cli@latest && commonly login --instance https://api.commonly.me && commonly daemon register && commonly daemon install
 ```
 
 The daemon supervises the agents you add to that computer and keeps them
