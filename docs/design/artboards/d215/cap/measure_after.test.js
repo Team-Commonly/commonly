@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { parseArgs, validateTargets, checkSurface, EXPECTED, SIDEBAR_390 } = require('./measure_after');
+const { parseArgs, validateTargets, unknownFrameError, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
 const { assertLanded, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
@@ -29,7 +29,7 @@ test('--only with an unknown surface throws', () => {
 
 test('the committed targets.json passes its own validation', () => {
   const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
-  assert.strictEqual(Object.keys(t).length, 30);
+  assert.strictEqual(Object.keys(t).length, 40);
   validateTargets(t);
 });
 
@@ -39,7 +39,40 @@ test('an empty or partial measurement is refused', () => {
   const partial = { ...t }; delete partial['board-390'];
   assert.throws(() => validateTargets(partial), /missing board-390/);
   assert.throws(() => validateTargets({ ...t, 'chat-1440': { helperWords: NaN, innerRatio: 2 } }), /invalid chat-1440/);
-  assert.strictEqual(EXPECTED.length, 30);
+  assert.strictEqual(EXPECTED.length, 40);
+});
+
+test('a frame the scorer does not know is named, with the way to fix it', () => {
+  const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
+  const extra = { ...t, 'new-thing-1440': { helperWords: 3, innerRatio: 1 }, 'new-thing-390': { helperWords: 2, innerRatio: 1 } };
+  let msg = '';
+  try { validateTargets(extra); } catch (e) { msg = e.message; }
+  assert.match(msg, /frames the scorer doesn't know: new-thing-1440, new-thing-390/);
+  assert.match(msg, /add "new-thing" to SURFACES/);
+  assert.match(msg, /SKIPPED/);
+  assert.match(msg, /data-state/);
+  assert.match(msg, /targets\.json left unchanged$/);
+  assert.match(unknownFrameError(['a-b-390']), /add "a-b" to SURFACES/);
+});
+
+// Every base frame in index.html (no data-state) is either scored or skipped on purpose, so a new
+// frame fails here, without a browser, before it can break a regeneration.
+test('every base frame in index.html is in SURFACES or SKIPPED', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const tags = html.match(/<[a-z]+\b[^>]*\bclass="frame"[^>]*>/g) || [];
+  const attr = (tag, name) => (tag.match(new RegExp(`\\b${name}="([^"]*)"`)) || [])[1];
+  const base = tags.filter(tag => attr(tag, 'data-state') === undefined);
+  assert.ok(base.length > 0, 'no base frames found; the frame pattern no longer matches index.html');
+  const seen = new Set(base.map(tag => attr(tag, 'data-surface')));
+  const unknown = [...seen].filter(s => !SURFACES.includes(s) && !(s in SKIPPED));
+  assert.deepStrictEqual(unknown, [], unknown.length ? unknownFrameError(unknown.map(s => `${s}-?`)) : '');
+  // Every scored surface is drawn at both viewports, and no surface is both scored and skipped.
+  for (const s of SURFACES) for (const vp of ['1440', '390']) {
+    assert.ok(base.some(tag => attr(tag, 'data-surface') === s && attr(tag, 'data-vp') === vp), `${s}-${vp} is in SURFACES but not drawn`);
+  }
+  assert.deepStrictEqual(SURFACES.filter(s => s in SKIPPED), []);
+  for (const [s, why] of Object.entries(SKIPPED)) assert.ok(why && seen.has(s), `SKIPPED entry ${s} needs a reason and a drawn frame`);
+  assert.ok(PROD_SURFACES.every(s => SURFACES.includes(s)));
 });
 
 // A page whose SPA shell answers 200 and then redirects to `landsOn`. Its metrics would score

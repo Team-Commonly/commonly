@@ -118,5 +118,45 @@
  "firstrun-error-390": {
   "helperWords": 58,
   "innerRatio": 1
+ },
+ "chat-agents-away-1440": {
+  "helperWords": 79,
+  "innerRatio": 1
+ },
+ "chat-agents-away-390": {
+  "helperWords": 48,
+  "innerRatio": 1
+ },
+ "chat-trace-390": {
+  "helperWords": 5,
+  "innerRatio": 1
+ },
+ "chat-trace-1440": {
+  "helperWords": 9,
+  "innerRatio": 1
+ },
+ "profile-1440": {
+  "helperWords": 7,
+  "innerRatio": 1
+ },
+ "profile-390": {
+  "helperWords": 7,
+  "innerRatio": 1
+ },
+ "run-trace-after-1440": {
+  "helperWords": 23,
+  "innerRatio": 1
+ },
+ "run-trace-after-390": {
+  "helperWords": 23,
+  "innerRatio": 1
+ },
+ "firstrun-welcome-nohost-1440": {
+  "helperWords": 13,
+  "innerRatio": 1
+ },
+ "firstrun-welcome-nohost-390": {
+  "helperWords": 9,
+  "innerRatio": 1
  }
 }
