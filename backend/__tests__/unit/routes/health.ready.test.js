@@ -98,6 +98,27 @@ describe('GET /api/health/ready', () => {
     expect(mockCreateClient).not.toHaveBeenCalled();
   });
 
+  it('answers degraded-ready before the probe timeout when PostgreSQL does not answer', async () => {
+    // 11-02/11-03 readiness flaps: under a burst of agent long-polls the probe's
+    // SELECT 1 waited on the pool past the probe's 3s timeout, and the kubelet
+    // logged "context deadline exceeded" with no warning from this handler.
+    // A slow answer is treated like a failed one: ready, degraded, and said.
+    mockPool.query.mockReturnValue(new Promise(() => {}));
+
+    const started = Date.now();
+    const res = await request(buildApp()).get('/api/health/ready').expect(200);
+
+    expect(Date.now() - started).toBeLessThan(2500);
+    expect(res.body).toEqual(expect.objectContaining({
+      status: 'ready',
+      degraded: ['postgresql'],
+    }));
+    expect(console.warn).toHaveBeenCalledWith(
+      'health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:',
+      expect.stringMatching(/did not answer within \d+ms/),
+    );
+  });
+
   it('returns not ready while the PostgreSQL routes are not mounted (TASK-168)', async () => {
     // The 2026-09-25 production defect: the boot connect timed out, the PG
     // routes were never mounted, chat history 404'd — and this handler answered

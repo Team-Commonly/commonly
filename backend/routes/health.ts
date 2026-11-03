@@ -167,6 +167,8 @@ router.get('/db', (_req: unknown, res: Res) => {
   return res.status(saturated ? 503 : 200).json(stats);
 });
 
+const READY_PG_TIMEOUT_MS = 1500;
+
 router.get('/ready', async (_req: unknown, res: Res) => {
   // Draining is not a liveness failure; only readiness stops new traffic.
   const AgentEventService = require('../services/agentEventService');
@@ -200,8 +202,22 @@ router.get('/ready', async (_req: unknown, res: Res) => {
     }
 
     if (process.env.PG_HOST && pgPool) {
+      // Bounded below the probe's 3s timeout (values.yaml readinessProbe). The
+      // query shares the pool with the agent long-polls; when it waits on that
+      // pool past the probe, the kubelet records a failed probe and this
+      // handler says nothing (11-02/11-03 flaps). A slow answer is treated like
+      // a failed one: the pod stays ready, degraded, and the warning is logged.
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        await (pgPool as { query: (q: string) => Promise<unknown> }).query('SELECT 1');
+        await Promise.race([
+          (pgPool as { query: (q: string) => Promise<unknown> }).query('SELECT 1'),
+          new Promise((_resolve, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`did not answer within ${READY_PG_TIMEOUT_MS}ms`)),
+              READY_PG_TIMEOUT_MS,
+            );
+          }),
+        ]);
       } catch (error) {
         const e = error as { message?: string };
         console.warn('health: PostgreSQL readiness check failed; continuing in Mongo fallback mode:', e.message);
@@ -210,6 +226,8 @@ router.get('/ready', async (_req: unknown, res: Res) => {
           degraded: ['postgresql'],
           timestamp: new Date().toISOString(),
         });
+      } finally {
+        clearTimeout(timer);
       }
     }
 
