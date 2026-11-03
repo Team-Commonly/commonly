@@ -33,6 +33,9 @@ const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-
 const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
 const GITLAB_CAPTURE = require('../../fixtures/hostedMcp/gitlab-tools-list-2026-10-19.json');
 const SUPABASE_CAPTURE = require('../../fixtures/hostedMcp/supabase-tools-list-2026-10-19.json');
+// Latchkey annotated none of its 19 tools on 11-01 and all 22 by 11-03, so the
+// entry pins reads on the vendor's own readOnlyHint.
+const LATCHKEY_CAPTURE = require('../../fixtures/hostedMcp/latchkey-tools-list-2026-11-03.json');
 const GITHUB_MCP_SOURCE = require('../../fixtures/hostedMcp/github-mcp-tools-source-2026-10-15.json');
 const GITHUB_MCP_PIN = require('../../../integrations/hostedMcp/githubMcpSchemas.json');
 
@@ -651,7 +654,7 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // any member has connected anything. Its ordering follows the build plan.
     expect(HOSTED_MCP_ENTRIES.map((entry) => entry.id)).toEqual([
       'linear', 'google-calendar', 'atlassian', 'airtable', 'sentry', 'notion', 'gitlab', 'supabase',
-      'github-mcp',
+      'github-mcp', 'latchkey',
     ]);
     const catalogue = [linear(), linear({ id: 'notion', title: 'Notion' })];
     expect(findHostedMcpEntry(catalogue, 'notion').title).toBe('Notion');
@@ -788,6 +791,53 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entryToolProjections(entry).find((tool) => tool.name === 'atlassian.add_or_edit_jira_issue_comment'))
       .toMatchObject({ irreversible: true, requiredWriteMode: 'write-with-confirm' });
     expect(capture.tools).toHaveLength(16);
+  });
+
+  test('the Latchkey pin is its measured list minus apply_migration, classed by the vendor\'s own hints', () => {
+    // An operator key: no issuer, client or scopes. The key's own reach is set
+    // when it is created at Latchkey, so the dashboard is both the access page
+    // and the revoke page; Latchkey has no revocation endpoint.
+    const capture = LATCHKEY_CAPTURE;
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'latchkey');
+    expect(entry.credentialMode).toBe('operator_key');
+    expect(entry).not.toHaveProperty('issuer');
+    expect(entry).not.toHaveProperty('scopes');
+    expect(capture.resource).toBe(entry.resource);
+    expect(entry.revoke).toEqual({ page: 'https://latchkey.dev/dashboard' });
+    expect(entry.accessPage).toBe('https://latchkey.dev/dashboard');
+    expect(hostedMcpRevokeTarget(entry)).toEqual(entry.revoke);
+
+    expect(capture.tools).toHaveLength(22);
+    expect(capture.tools.every((tool) => typeof tool.annotations?.readOnlyHint === 'boolean')).toBe(true);
+    // Operator-key intake refuses a key carrying migration:apply, so the tool
+    // that needs it is not pinned.
+    expect(capture.tools.map((tool) => tool.name).filter((name) => !entry.tools.some((pin) => pin.upstreamName === name)))
+      .toEqual(['apply_migration']);
+
+    const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    for (const tool of entry.tools) {
+      const found = measured.get(tool.upstreamName);
+      expect(found).toBeDefined();
+      expect(tool.name).toBe(tool.upstreamName);
+      expect(tool.class).toBe(found.annotations.readOnlyHint ? 'read' : 'write');
+      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+      expect(tool.description).not.toBe(found.description);
+    }
+    // The vendor warns that run_workflow inputs are visible; our shorter text keeps that.
+    const runWorkflow = entry.tools.find((tool) => tool.name === 'run_workflow');
+    expect(runWorkflow.description).toContain('not hidden in job logs');
+    expect(runWorkflow.description).toContain('set it as a secret in Latchkey');
+    expect(entry.tools.filter((tool) => tool.class === 'read')).toHaveLength(16);
+    expect(entryToolProjections(entry).filter((tool) => tool.requiredWriteMode === 'write-with-confirm')
+      .map((tool) => tool.name).sort()).toEqual([
+      'latchkey.cancel_job', 'latchkey.dispatch_workflow', 'latchkey.run_job', 'latchkey.run_workflow',
+      'latchkey.set_batch_budget',
+    ]);
+    // Starting or cancelling compute cannot be taken back: each call parks even on a write grant.
+    expect(entry.tools.filter((tool) => tool.irreversible).map((tool) => tool.name).sort())
+      .toEqual(['cancel_job', 'dispatch_workflow', 'run_job', 'run_workflow']);
   });
 
   test('the Atlassian domain notice uses this instance\'s public API origin', () => {
