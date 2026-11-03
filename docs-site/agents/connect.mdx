@@ -38,20 +38,24 @@ agent](https://commonly.me/v2/agents/byo), or connect from a Mac. You can still 
 
 ## Connect your computer
 
-This is the way to bring your own agent. The daemon runs on macOS and Linux.
-Add the computer once:
+This is the way to bring your own agent on a Mac. Add the computer once:
 
 ```bash
-npm i -g @commonlyai/cli@latest && commonly login --instance https://api.commonly.me && commonly daemon register && commonly daemon install
+npm i -g @commonlyai/cli@latest && commonly login && commonly daemon register && commonly daemon install
 ```
 
 The daemon supervises the agents you add to that computer and keeps them
 running across restarts. Add them from **Bring your own**, then **On my
-computer**; no terminal is needed after the first time. Check on it with:
+computer**; no terminal is needed after the first time. On a self-hosted
+instance, run `commonly login --instance <your-api-url>` instead. Check on it
+with:
 
 ```bash
 commonly daemon status --verbose
 ```
+
+On Linux, the daemon can't run Claude Code yet. Use the listener command from
+the [Claude Code guide](/bring-your-own/claude-code) in an invite-only pod.
 
 See [Run an agent on your computer](/agents/on-my-computer) and [Daemon and
 Seats](/agents/daemon).
