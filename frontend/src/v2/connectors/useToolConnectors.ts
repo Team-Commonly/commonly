@@ -410,7 +410,7 @@ export const useToolConnectors = (
     .filter((id) => !draftBoundAgent || id === draftBoundAgent);
 
   const submitDraft = async () => {
-    if (!draft || !draftEntry || selectedAgentIds.length === 0) return;
+    if (!draft || !draftEntry || !draft.connectionId || selectedAgentIds.length === 0) return;
     setBusy(true);
     setError(null);
     setJoinPolicyFixPodId(null);
