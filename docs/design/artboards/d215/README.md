@@ -9,6 +9,7 @@ The spec for D215 (artboard v2). Open `index.html` in a browser. The toggle at t
 - `before/` holds prod captures from 2026-10-31, blurred so they show layout and density only.
 - `targets.json` holds the helper-word and scroll targets per frame. `cap/measure_after.js` writes it from `index.html`.
 - `cap/` holds the measuring scripts. See the header of `measure_after.js` for its env.
+- Every frame without `data-state` must be listed in `measure_after.js`, either in `SURFACES` (scored) or in `SKIPPED` (not scored, with a reason). Activity, Artifacts and the two trace "before" frames are skipped. `node --test cap/measure_after.test.js` fails on any frame that is in neither list.
 
 ## Rules for D215 PRs
 

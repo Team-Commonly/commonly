@@ -3,6 +3,13 @@
 //   node measure_after.js            measure the artboard (../index.html) and write ../targets.json
 //   node measure_after.js prod       measure the live routes and check them against ../targets.json
 //
+// Both modes need `require('playwright')` to resolve. Outside a checkout that has it installed, point
+// NODE_PATH at any node_modules that holds it, and PLAYWRIGHT_CHROMIUM at a matching chromium, e.g.
+//   NODE_PATH=<dir>/node_modules PLAYWRIGHT_CHROMIUM=<chrome-headless-shell> node cap/measure_after.js
+//
+// Every frame in index.html without a data-state must be named in SURFACES (scored) or in SKIPPED
+// (deliberately not scored, with a reason). Any other frame stops the run and names the frame.
+//
 // prod mode signs in through lib.js (COMMONLY_TOKEN, COMMONLY_URL) and needs:
 //   D215_POD          id of a pod with a long chat history and a busy board
 //   D215_AGENT        agent route segment, e.g. "<name>/default"
@@ -18,10 +25,30 @@ const fs = require('fs');
 const HERE = __dirname;
 const TARGETS = path.join(HERE, '..', 'targets.json');
 
-const SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff', 'firstrun-welcome', 'firstrun-waiting', 'firstrun-connected', 'firstrun-error', 'connect', 'team'];
-// byo-handoff is drawn but can't be captured on prod: reaching it issues a real key. The first-run
-// dialog is a latch-gated overlay, and the Scout welcome only exists in a brand-new pod, so neither is measured on prod.
-const PROD_SURFACES = SURFACES.filter(s => s !== 'byo-handoff' && !s.startsWith('firstrun-'));
+const SURFACES = [
+  'settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff',
+  'firstrun-welcome', 'firstrun-waiting', 'firstrun-connected', 'firstrun-error', 'connect', 'team',
+  'chat-agents-away', 'chat-trace', 'run-trace-after', 'profile', 'firstrun-welcome-nohost',
+];
+// Base frames (no data-state) that are drawn but deliberately not scored. Each needs a reason.
+const SKIPPED = {
+  // Activity and Artifacts are being redesigned in another session; targets taken now would pin
+  // frames that are about to change. Score them once that redesign lands.
+  'activity-busy': 'redesign in progress elsewhere',
+  'activity-dayzero': 'redesign in progress elsewhere',
+  'activity-dayzero-pending': 'redesign in progress elsewhere',
+  'artifacts-busy': 'redesign in progress elsewhere',
+  'artifacts-dayzero': 'redesign in progress elsewhere',
+  // Drawings of the old page beside their "after" frames (390 only). They are what the fix moves
+  // away from, so they are never a target.
+  'chat-trace-before': 'before shot, not a target',
+  'run-trace-before': 'before shot, not a target',
+};
+// Surfaces with a route in prod() below. byo-handoff can't be captured on prod: reaching it issues
+// a real key. The first-run dialog is a latch-gated overlay, and the Scout welcome only exists in a
+// brand-new pod. chat-agents-away and chat-trace need a pod in that exact state, run-trace-after a
+// run id and profile a person id, none of which prod() takes yet, so they are artboard-only for now.
+const PROD_SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'connect', 'team'];
 const VIEWPORTS = ['1440', '390'];
 const EXPECTED = SURFACES.flatMap(s => VIEWPORTS.map(v => `${s}-${v}`));
 
@@ -40,15 +67,41 @@ function parseArgs(argv) {
 }
 
 // Every expected surface-viewport key must carry two finite numbers before targets.json is replaced.
+// The surface name of a `<surface>-<vp>` key.
+const surfaceOf = key => key.replace(/-(?:1440|390)$/, '');
+
+// Explains a frame the scorer doesn't know, by its surface-viewport key.
+function unknownFrameError(keys) {
+  const names = [...new Set(keys.map(surfaceOf))];
+  return `index.html draws frames the scorer doesn't know: ${keys.join(', ')}. For each, add "${names.join('", "')}" `
+    + 'to SURFACES in cap/measure_after.js to score it, add it to SKIPPED there with a reason, '
+    + 'or give the frame a data-state if it is a state of an existing surface';
+}
+
 function validateTargets(res) {
   const missing = EXPECTED.filter(k => !res[k]);
   const extra = Object.keys(res).filter(k => !EXPECTED.includes(k));
   const invalid = EXPECTED.filter(k => res[k] && !(Number.isFinite(res[k].helperWords) && Number.isFinite(res[k].innerRatio) && res[k].innerRatio >= 1));
   const problems = [];
   if (missing.length) problems.push(`missing ${missing.join(', ')}`);
-  if (extra.length) problems.push(`unexpected ${extra.join(', ')}`);
+  if (extra.length) problems.push(unknownFrameError(extra));
   if (invalid.length) problems.push(`invalid ${invalid.join(', ')}`);
   if (problems.length) throw new Error(`artboard measurement incomplete (${problems.join('; ')}); targets.json left unchanged`);
+}
+
+// Turns the page's raw per-frame measurements into `<surface>-<vp>` targets. State frames and
+// SKIPPED surfaces are dropped; a second scored frame with a key already taken is reported in
+// `dupes` (and not measured over the first) so artboard() can refuse to write.
+function keyFrames(frames, skipped) {
+  const res = {}, dupes = [];
+  for (const f of frames) {
+    if (f.hasState) continue;
+    if (Object.prototype.hasOwnProperty.call(skipped, f.surface)) continue;
+    const key = `${f.surface}-${f.vp}`;
+    if (res[key]) { dupes.push(key); continue; }
+    res[key] = { helperWords: f.helperWords, innerRatio: f.innerRatio };
+  }
+  return { res, dupes };
 }
 
 async function artboard() {
@@ -60,9 +113,9 @@ async function artboard() {
   await p.route(/^https?:\/\/(?!fonts\.)/, r => r.abort());
   await p.goto('file://' + path.join(HERE, '..', 'index.html'));
   await p.waitForTimeout(800);
-  const res = await p.evaluate(() => {
-    const out = {};
-    document.querySelectorAll('.frame:not([data-state])').forEach(f => {
+  // The page reports every frame as drawn; which ones count is decided in Node, by keyFrames.
+  const frames = await p.evaluate(() => [...document.querySelectorAll('.frame')].map(f => {
+      const base = { surface: f.dataset.surface, vp: f.dataset.vp, hasState: f.hasAttribute('data-state') };
       const app = f.querySelector('.app'); f.style.setProperty('--s', 1); f.style.overflow = 'visible'; f.style.aspectRatio = 'auto'; f.style.height = app.offsetHeight + 'px'; f.style.width = app.offsetWidth + 'px'; f.style.maxWidth = 'none';
       let words = 0;
       const w = document.createTreeWalker(app, NodeFilter.SHOW_TEXT);
@@ -76,15 +129,16 @@ async function artboard() {
         if (sat < 50 && avg > 60 && avg < 200) words += txt.split(/\s+/).filter(x => /[A-Za-z一-鿿]/.test(x)).length;
       }
       let ratio = 1; app.querySelectorAll('.pbody,.mbody2').forEach(s => { ratio = Math.max(ratio, (s.scrollHeight + (app.offsetHeight - s.clientHeight)) / app.offsetHeight); });
-      out[f.dataset.surface + '-' + f.dataset.vp] = { helperWords: words, innerRatio: +ratio.toFixed(2) };
-    });
-    return out;
-  });
+      return { ...base, helperWords: words, innerRatio: +ratio.toFixed(2) };
+    }));
+  const { res, dupes } = keyFrames(frames, SKIPPED);
   // The chat mock is a short excerpt, so its scroll target was measured on prod history with
   // the six-line fold and claim-row collapse applied to the live DOM.
   if (res['chat-1440']) res['chat-1440'].innerRatio = 5.32;
   if (res['chat-390']) res['chat-390'].innerRatio = 6.28;
   await b.close();
+  // Two scored frames with one key would silently overwrite each other's numbers.
+  if (dupes.length) throw new Error(`index.html draws more than one scored frame for ${dupes.join(', ')}; give the extra ones a data-state; targets.json left unchanged`);
   validateTargets(res);
   fs.writeFileSync(TARGETS, JSON.stringify(res, null, 1) + '\n');
   for (const [k, v] of Object.entries(res)) console.log(k.padEnd(20), String(v.helperWords).padStart(4), v.innerRatio);
@@ -186,7 +240,7 @@ async function prod(only) {
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { parseArgs, validateTargets, checkSurface, EXPECTED, SURFACES, PROD_SURFACES, SIDEBAR_390 };
+module.exports = { parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
 
 if (require.main === module) {
   let args;
