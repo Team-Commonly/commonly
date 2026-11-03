@@ -304,7 +304,8 @@ describe('Connectors page: operator-key entries', () => {
   });
 
   it('with one agent keyed, a key can still be added for another, and the keyed one is named', async () => {
-    mockCatalog([{ ...keyedEntry, connections: [scoutKey] }]);
+    const reedKey = { ...scoutKey, connectionId: 'conn-reed', agentId: REED };
+    mockCatalog([{ ...keyedEntry, connections: [scoutKey] }], [{ ...keyedEntry, connections: [scoutKey, reedKey] }]);
     renderPage();
 
     const popover = await openToolPopover('Latchkey');
@@ -316,6 +317,10 @@ describe('Connectors page: operator-key entries', () => {
     paste(popover);
     fireEvent.click(within(popover).getByRole('button', { name: 'Add key' }));
     await waitFor(() => expect(axios.post).toHaveBeenCalledWith(OPERATOR_KEY_URL, { agentId: REED, key: KEY }, expect.anything()));
+    // After the refresh both keys show, and no agent is left to key.
+    expect(await screen.findByRole('button', { name: /^Disconnect Latchkey: Key · Reed · / })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Disconnect Latchkey: Key · Scout · / })).toBeInTheDocument();
+    expect(screen.queryByLabelText('key')).toBeNull();
   });
 
   it('every own agent keyed: no form; no own agent at all: a note instead', async () => {
