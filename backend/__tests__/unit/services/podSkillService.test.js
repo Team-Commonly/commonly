@@ -81,6 +81,9 @@ describe('PodSkillService', () => {
       expect.objectContaining({
         podId: 'pod-1',
         name: 'Incident triage',
+        // F78: the model is whatever the instance configures, so the record
+        // names no provider.
+        metadata: expect.objectContaining({ generator: 'llm' }),
       }),
     );
     expect(result.skills).toHaveLength(1);

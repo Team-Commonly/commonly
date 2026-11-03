@@ -393,7 +393,7 @@ class PodSkillService {
             createdAt: ref.createdAt || null,
           })),
           generatedAt: new Date(),
-          generator: 'gemini',
+          generator: 'llm',
         },
       });
     });

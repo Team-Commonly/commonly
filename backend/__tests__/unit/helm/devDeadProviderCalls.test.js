@@ -23,6 +23,17 @@ describe('dev makes no direct calls to providers whose keys cannot answer', () =
     expect(dev.backend.env.embeddingProvider).toBe('none');
   });
 
+  // The backend jest job has no helm binary, so this reads the template text;
+  // Chart Lint renders it. Both containers must emit the dev values.
+  test.each([
+    'templates/core/backend-deployment.yaml',
+    'templates/ops/ops-runner-deployment.yaml',
+  ])('%s emits AVATAR_PROVIDER and EMBEDDING_PROVIDER from backend.env', (file) => {
+    const t = read(file);
+    expect(t).toContain('- name: AVATAR_PROVIDER\n          value: {{ .Values.backend.env.avatarProvider | quote }}');
+    expect(t).toContain('- name: EMBEDDING_PROVIDER\n          value: {{ .Values.backend.env.embeddingProvider | quote }}');
+  });
+
   test.each([
     'templates/core/backend-deployment.yaml',
     'templates/ops/ops-runner-deployment.yaml',
