@@ -89,6 +89,21 @@ function validateTargets(res) {
   if (problems.length) throw new Error(`artboard measurement incomplete (${problems.join('; ')}); targets.json left unchanged`);
 }
 
+// Turns the page's raw per-frame measurements into `<surface>-<vp>` targets. State frames and
+// SKIPPED surfaces are dropped; a second scored frame with a key already taken is reported in
+// `dupes` (and not measured over the first) so artboard() can refuse to write.
+function keyFrames(frames, skipped) {
+  const res = {}, dupes = [];
+  for (const f of frames) {
+    if (f.hasState) continue;
+    if (Object.prototype.hasOwnProperty.call(skipped, f.surface)) continue;
+    const key = `${f.surface}-${f.vp}`;
+    if (res[key]) { dupes.push(key); continue; }
+    res[key] = { helperWords: f.helperWords, innerRatio: f.innerRatio };
+  }
+  return { res, dupes };
+}
+
 async function artboard() {
   const { chromium } = require('playwright');
   const launch = { headless: true };
@@ -98,12 +113,9 @@ async function artboard() {
   await p.route(/^https?:\/\/(?!fonts\.)/, r => r.abort());
   await p.goto('file://' + path.join(HERE, '..', 'index.html'));
   await p.waitForTimeout(800);
-  const { res, dupes } = await p.evaluate(skipped => {
-    const out = {}, dupes = [];
-    document.querySelectorAll('.frame:not([data-state])').forEach(f => {
-      if (skipped.includes(f.dataset.surface)) return;
-      const key = f.dataset.surface + '-' + f.dataset.vp;
-      if (out[key]) { dupes.push(key); return; }
+  // The page reports every frame as drawn; which ones count is decided in Node, by keyFrames.
+  const frames = await p.evaluate(() => [...document.querySelectorAll('.frame')].map(f => {
+      const base = { surface: f.dataset.surface, vp: f.dataset.vp, hasState: f.hasAttribute('data-state') };
       const app = f.querySelector('.app'); f.style.setProperty('--s', 1); f.style.overflow = 'visible'; f.style.aspectRatio = 'auto'; f.style.height = app.offsetHeight + 'px'; f.style.width = app.offsetWidth + 'px'; f.style.maxWidth = 'none';
       let words = 0;
       const w = document.createTreeWalker(app, NodeFilter.SHOW_TEXT);
@@ -117,10 +129,9 @@ async function artboard() {
         if (sat < 50 && avg > 60 && avg < 200) words += txt.split(/\s+/).filter(x => /[A-Za-z一-鿿]/.test(x)).length;
       }
       let ratio = 1; app.querySelectorAll('.pbody,.mbody2').forEach(s => { ratio = Math.max(ratio, (s.scrollHeight + (app.offsetHeight - s.clientHeight)) / app.offsetHeight); });
-      out[key] = { helperWords: words, innerRatio: +ratio.toFixed(2) };
-    });
-    return { res: out, dupes };
-  }, Object.keys(SKIPPED));
+      return { ...base, helperWords: words, innerRatio: +ratio.toFixed(2) };
+    }));
+  const { res, dupes } = keyFrames(frames, SKIPPED);
   // The chat mock is a short excerpt, so its scroll target was measured on prod history with
   // the six-line fold and claim-row collapse applied to the live DOM.
   if (res['chat-1440']) res['chat-1440'].innerRatio = 5.32;
@@ -229,7 +240,7 @@ async function prod(only) {
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { parseArgs, validateTargets, unknownFrameError, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
+module.exports = { parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
 
 if (require.main === module) {
   let args;

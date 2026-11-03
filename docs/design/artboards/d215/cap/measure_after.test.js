@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { parseArgs, validateTargets, unknownFrameError, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
+const { parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
 const { assertLanded, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
@@ -53,6 +53,33 @@ test('a frame the scorer does not know is named, with the way to fix it', () => 
   assert.match(msg, /data-state/);
   assert.match(msg, /targets\.json left unchanged$/);
   assert.match(unknownFrameError(['a-b-390']), /add "a-b" to SURFACES/);
+});
+
+// keyFrames is the Node half of artboard(): the page reports every frame raw, and only this
+// decides which count. These run without a browser.
+const frame = (surface, vp, extra = {}) => ({ surface, vp, hasState: false, helperWords: 4, innerRatio: 1, ...extra });
+
+test('keyFrames keys a normal frame by surface and viewport', () => {
+  assert.deepStrictEqual(keyFrames([frame('board', '390', { helperWords: 14, innerRatio: 1.2 })], {}),
+    { res: { 'board-390': { helperWords: 14, innerRatio: 1.2 } }, dupes: [] });
+});
+
+test('keyFrames ignores a skipped surface', () => {
+  const { res, dupes } = keyFrames([frame('activity-busy', '1440'), frame('board', '1440')], { 'activity-busy': 'redesign' });
+  assert.deepStrictEqual(Object.keys(res), ['board-1440']);
+  assert.deepStrictEqual(dupes, []);
+});
+
+test('keyFrames ignores a state frame, even one sharing a scored key', () => {
+  const { res, dupes } = keyFrames([frame('settings', '1440', { helperWords: 10 }), frame('settings', '1440', { hasState: true, helperWords: 99 })], {});
+  assert.deepStrictEqual(res, { 'settings-1440': { helperWords: 10, innerRatio: 1 } });
+  assert.deepStrictEqual(dupes, []);
+});
+
+test('keyFrames reports two scored frames with one key as dupes', () => {
+  const { res, dupes } = keyFrames([frame('chat', '390', { helperWords: 9 }), frame('chat', '390', { helperWords: 50 })], {});
+  assert.deepStrictEqual(dupes, ['chat-390']);
+  assert.strictEqual(res['chat-390'].helperWords, 9);
 });
 
 // Every base frame in index.html (no data-state) is either scored or skipped on purpose, so a new
