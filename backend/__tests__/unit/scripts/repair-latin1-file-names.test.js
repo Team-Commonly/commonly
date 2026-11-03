@@ -75,6 +75,8 @@ describe('repairFileNames', () => {
     expect(report).toEqual({ scanned: 2, repairable: 1, repaired: 1 });
     expect(await names()).toEqual(['2025年报告.doc', 'café.png', 'plain.png', '已经正确.png']);
     expect(await repairFileNames(File, { apply: true, log: () => {}, undoPath: `${undoPath}.2` })).toEqual({ scanned: 1, repairable: 0, repaired: 0 });
+    // Nothing left to repair: no record is written, so it can't block a later run.
+    expect(fs.existsSync(`${undoPath}.2`)).toBe(false);
   });
   it('skips a row renamed between the scan and the write, and counts only real writes', async () => {
     await seed();

@@ -25,12 +25,15 @@
  *
  * Usage:
  *   cd backend && node dist/scripts/repair-latin1-file-names.js          # dry run
- *   cd backend && node dist/scripts/repair-latin1-file-names.js --apply
+ *   cd backend && node dist/scripts/repair-latin1-file-names.js --apply --undo /tmp/undo.json
  *
  * --apply first writes every row it will change (id, stored name, new name) to
- * repair-latin1-file-names.undo.json in the working directory, and refuses to
- * run if that file already exists. Because one rare case can't be told apart
- * (below), every write stays reversible from that record.
+ * the --undo path (default: repair-latin1-file-names.undo.json in the working
+ * directory), mode 0600 because it holds real file names unmasked, and refuses
+ * to run if that file already exists. Because one rare case can't be told apart
+ * (below), every write stays reversible from that record. Run in a pod, the
+ * record lives on the pod's own disk: copy it off (kubectl cp) before the pod
+ * exits. With nothing to repair, --apply writes no record and changes nothing.
  */
 
 /* eslint-disable no-console */
@@ -98,6 +101,9 @@ const repairFileNames = async (
     log('DRY RUN: re-run with --apply to write.');
     return { scanned: rows.length, repairable: candidates.length, repaired: 0 };
   }
+  // Nothing to change: write no record, so a later run is not blocked by an
+  // empty one.
+  if (candidates.length === 0) return { scanned: rows.length, repairable: 0, repaired: 0 };
 
   // The undo record goes to disk before any write, and 'wx' refuses to
   // overwrite one from an earlier run, so no original name is ever lost.
@@ -138,7 +144,13 @@ const main = async () => {
     process.exit(1);
   }
   await mongoose.connect(uri);
-  await repairFileNames(File.default || File, { apply: process.argv.includes('--apply') });
+  const undoAt = process.argv.indexOf('--undo');
+  const undoPath = undoAt > -1 ? process.argv[undoAt + 1] : undefined;
+  if (undoAt > -1 && !undoPath) {
+    console.error('--undo needs a path');
+    process.exit(1);
+  }
+  await repairFileNames(File.default || File, { apply: process.argv.includes('--apply'), undoPath });
   await mongoose.disconnect();
 };
 
