@@ -152,8 +152,15 @@ export async function askAgent(opts: AskAgentOptions): Promise<AskAgentResult> {
   // was acked and stayed open until it expired (F63). Refuse it now and say
   // what works instead, before any record or event exists. The runtime is
   // the one dispatch reaches, not this row's: a row written without one
-  // (mention auto-join) runs on the agent's newest row that has one.
-  const effective = await AgentEventService.resolveEffectiveInstallation(targetAgent, targetInstanceId, podId);
+  // (mention auto-join) runs on the agent's newest row that has one. The
+  // refusal is a courtesy, so a failed lookup lets the ask through, as event
+  // routing does, rather than failing it.
+  const effective = await AgentEventService
+    .resolveEffectiveInstallation(targetAgent, targetInstanceId, podId)
+    .catch((err: Error) => {
+      console.warn('[agent-ask] runtime lookup failed; asking anyway:', err.message);
+      return null;
+    });
   if (effective && (AgentEventService.runsInProcess(effective) || isHostedInstallation(effective))) {
     throw new AgentAskError(
       `${targetAgent}:${targetInstanceId} runs on Commonly and answers @mentions, not asks. `

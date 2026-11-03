@@ -295,6 +295,18 @@ describe('askAgent — a target that answers @mentions only', () => {
     expect(result.requestId).toBeTruthy();
     expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
   });
+
+  it('still asks when the runtime lookup fails, as event routing does', async () => {
+    await installAgent('scout', 'default', POD, { runtime: { runtimeType: 'native' } });
+    const lookup = jest.spyOn(AgentEventService, 'resolveEffectiveInstallation')
+      .mockRejectedValueOnce(new Error('lookup unavailable'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await ask();
+    lookup.mockRestore();
+    warn.mockRestore();
+    expect(result.requestId).toBeTruthy();
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('askAgent — rate limiting', () => {
