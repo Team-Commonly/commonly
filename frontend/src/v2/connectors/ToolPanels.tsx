@@ -366,8 +366,6 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     return keyAgents.filter((agent) => !keyed.has(agent.userId));
   };
 
-  // What a person can do with an entry that has no live grant: the verbs of the
-  // old "Not yet" row, shared by the tile's popover.
   // The paste-a-key form while any of the person's agents has no key on this
   // operator-key entry. It is offered on a granted entry too: one agent's key
   // being granted says nothing about the next agent's.
@@ -379,6 +377,18 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
       : null;
   };
 
+  // Where to make the key, for a granted entry's drawer, which skips the
+  // ungranted offer and its renderEntryNote. Ungranted, renderEntryNote
+  // carries the same two lines.
+  const renderKeyGuidance = (entry: ToolCatalogEntry) => (
+    <>
+      {entry.connectNotice && <p className="v2-cx-note">{entry.connectNotice}</p>}
+      {entry.accessPage && <p className="v2-cx-note">{renderAccessLink(entry)}</p>}
+    </>
+  );
+
+  // What a person can do with an entry that has no live grant: the verbs of the
+  // old "Not yet" row, shared by the tile's popover.
   const renderEntryActions = (entry: ToolCatalogEntry) => {
     const canAdd = entry.available && entry.connections.length > 0 && podIds.length > 0;
     const canInstallGithubApp = isAdmin && entry.installableId === 'github' && entry.available && entry.connections.length === 0;
@@ -747,5 +757,5 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
-  return { renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
+  return { renderManualRevokeNotice, renderLinearWriteNote, renderDisconnect, renderHiddenConnection, renderRow, renderAccessLink, renderKeyForm, renderKeyGuidance, renderEntryActions, renderEntryNote, renderGithubAppSetup, renderDraft, renderAside };
 };

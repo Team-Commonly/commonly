@@ -168,6 +168,28 @@ describe('Connectors page: operator-key entries', () => {
     // Scout's key is granted; Reed has none yet, so the form offers Reed only.
     expect(within(drawer).getByLabelText('key')).toBeInTheDocument();
     expect(agentOptions(drawer)).toEqual(['Reed']);
+    // Where to make the key sits beside the form here too.
+    expect(within(drawer).getByText('Create a key with read scopes only.')).toBeInTheDocument();
+    expect(within(drawer).getByRole('link', { name: 'Create a key at Latchkey' })).toHaveAttribute('href', 'https://latchkey.example/keys');
+    // The grant row still renders beside the form.
+    expect(drawer.querySelector('.v2-cx-list article')).not.toBeNull();
+  });
+
+  it('an agent installed only in an agent-dm pod is not offered, and an agent-dm install by someone else does not block', async () => {
+    axios.post.mockImplementation(async () => ({ data: {} }));
+    const dmPods = [...pods, { _id: 'dm1', name: 'Scout ↔ Nova', type: 'agent-dm', members: [{ _id: 'u1', username: 'sam' }] }];
+    mockApi({
+      pods: dmPods,
+      // Nova is the viewer's install only in the agent-dm pod; Reed is the
+      // viewer's in p2, and someone else's only in the agent-dm pod.
+      seats: { p1: [scout], p2: [reed], dm1: [{ ...nova, installedBy: 'u1' }, { ...reed, installedBy: 'u2' }] },
+      grants: [],
+      route: (url) => (url === '/api/installables' ? Promise.resolve({ data: { installables: [keyedEntry] } }) : undefined),
+    });
+    renderPage();
+
+    const popover = await openToolPopover('Latchkey');
+    expect(agentOptions(popover)).toEqual(['Reed', 'Scout']);
   });
 
   it('a success without the route\'s connected receipt reads as a failure, and does not refresh', async () => {

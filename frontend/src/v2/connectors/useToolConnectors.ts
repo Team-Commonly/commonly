@@ -108,9 +108,12 @@ export const useToolConnectors = (
   // agent someone else installed too (the sole-installer rule), so an agent
   // another person installed in any roster the viewer can read is left out.
   // Rosters the viewer can't read stay invisible, and the route's 403 has the
-  // last word for those.
+  // last word for those. An agent-dm install is not ownership on the server
+  // (runtimeIdentityOwnership drops them), so agent-dm seats count on neither
+  // side.
   const keyAgents = useMemo<KeyAgent[]>(() => {
-    const all = Object.values(seats).flat();
+    const agentDmPodIds = new Set(pods.filter((pod) => pod.type === 'agent-dm').map((pod) => String(pod._id)));
+    const all = Object.entries(seats).filter(([podId]) => !agentDmPodIds.has(podId)).flatMap(([, rows]) => rows);
     const sharedInstall = new Set(all
       .filter((seat) => seat.userId && seat.installedBy && seat.installedBy !== viewerId)
       .map((seat) => seat.userId as string));
@@ -118,7 +121,7 @@ export const useToolConnectors = (
       .filter((seat) => seat.userId && viewerId && seat.installedBy === viewerId && !sharedInstall.has(seat.userId))
       .map((seat) => [seat.userId as string, { userId: seat.userId as string, label: seat.displayName || seat.name }])).values()]
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [seats, viewerId]);
+  }, [seats, viewerId, pods]);
   // The agent list is unknown when a pod list or roster couldn't be read.
   const keyAgentsUnavailable = podListFailed || seatLookupFailed;
   // An unreadable pod list or roster, or a roster whose census failed, leaves

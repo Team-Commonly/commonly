@@ -461,13 +461,17 @@ const ConnectorsPage: React.FC = () => {
     const entryGrants = grantsOf(toolEntry);
     const liveGrants = entryGrants.filter((grant) => !isDead(grant, m.now));
     const deadGrants = entryGrants.filter((grant) => isDead(grant, m.now));
+    const grantedKeyForm = toolGranted(toolEntry) ? tp.renderKeyForm(toolEntry) : null;
     return (
       <ConnectorDrawer notices={noticeBlock} type={toolEntry.installableId} title={toolEntry.label} onClose={closeTools}>
         {/* Ungranted, the offer below carries the note through renderEntryNote. */}
         {toolGranted(toolEntry) && tp.renderLinearWriteNote(toolEntry)}
         {/* A granted operator-key entry still takes a key for an agent that has none. */}
-        {toolGranted(toolEntry) && tp.renderKeyForm(toolEntry) && (
-          <div className="v2-cx-pop__acts">{tp.renderKeyForm(toolEntry)}</div>
+        {grantedKeyForm && (
+          <>
+            {tp.renderKeyGuidance(toolEntry)}
+            <div className="v2-cx-pop__acts">{grantedKeyForm}</div>
+          </>
         )}
         {!toolGranted(toolEntry) && (
           <div className="v2-cx-drawer__offer">
