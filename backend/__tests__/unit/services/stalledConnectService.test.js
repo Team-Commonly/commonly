@@ -83,6 +83,7 @@ const setup = ({ installs = [install()], userTokens = [], open = [] } = {}) => {
       expect(fields).toContain('botMetadata.instanceId');
       expect(fields).toContain('agentRuntimeTokens.lastListenedAt');
       expect(fields).toContain('agentRuntimeTokens.createdAt');
+      expect(fields).toContain('agentRuntimeTokens.lastMcpSeenAt');
       const rows = (filter.$or || []).map((pair) => ({
         botMetadata: {
           agentName: pair['botMetadata.agentName'],
@@ -725,6 +726,128 @@ describe('keeping the forward promise', () => {
     await scan({ now: NOW });
 
     expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'msg-nudge-2');
+  });
+
+  // TASK-345: an MCP client uses its token and never listens, so the
+  // listener-based state never leaves never-connected. It did connect, and the
+  // promise is kept, without claiming it will answer @mentions.
+  const mcpEpisode = { ...openEpisode, installedBy: 'user1', nudgeMessageId: 'nudge1', tokenIssuedAt: OLD_TOKEN };
+  // The installer read asks only for the OS; the mock returns only what was asked.
+  const installer = (onboarding) => mockUserFindById.mockReturnValue({
+    select: (fields) => {
+      expect(fields).toContain('onboarding.byoOpenedOs');
+      const asked = new Set(String(fields).split(/\s+/).map((f) => f.replace(/^onboarding\./, '')));
+      const picked = Object.fromEntries(Object.entries(onboarding).filter(([k]) => asked.has(k)));
+      return { lean: () => Promise.resolve({ username: 'alice', onboarding: picked }) };
+    },
+  });
+  const seenAt = new Date(NOW.getTime() - 4 * MINUTE);
+  // A call the MCP client made on this episode's token.
+  const mcpTokenOfThisEpisode = { createdAt: OLD_TOKEN, lastUsedAt: seenAt, lastMcpSeenAt: seenAt };
+  const withInstallTokens = (runtimeTokens) => mockInstallFindById.mockReturnValue({
+    lean: () => Promise.resolve(install({ runtimeTokens })),
+  });
+
+  it('closes the episode for an MCP client that called in, without promising an answer to mentions', async () => {
+    setup({ installs: [], open: [mcpEpisode] });
+    installer({});
+    withInstallTokens([mcpTokenOfThisEpisode]);
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(1);
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('connected from your MCP client (seen 2026-08-15 11:56 UTC)');
+    expect(content).toContain("won't answer @ai1-agent on my own");
+    expect(content).toContain('in a Terminal on the machine where I should live');
+    expect(content).not.toMatch(/Listening now|I'll answer/);
+    expect(mockAttentionResolve).toHaveBeenCalledWith('message', 'nudge1');
+    expect(mockEpUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: 'ep9', status: 'open' }),
+      expect.objectContaining({ $set: expect.objectContaining({ status: 'resolved' }) }),
+    );
+  });
+
+  it('counts an MCP call recorded only on the bot row, and points a Windows installer at Run it here', async () => {
+    setup({ installs: [], open: [mcpEpisode], userTokens: [mcpTokenOfThisEpisode] });
+    installer({ byoOpenedOs: 'windows' });
+    withInstallTokens([]);
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(1);
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('runs only from a Mac for now');
+    expect(content).toContain('Run it here');
+  });
+
+  it('keeps waiting on a token used by something other than the MCP client (attach, memory import)', async () => {
+    // `lastUsedAt` alone: `commonly agent attach` and the BYO page's memory
+    // import both use the token without being an MCP client.
+    setup({ installs: [], open: [mcpEpisode], userTokens: [{ createdAt: OLD_TOKEN, lastUsedAt: seenAt }] });
+    installer({});
+    withInstallTokens([{ createdAt: OLD_TOKEN, lastUsedAt: seenAt }]);
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(0);
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEpUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps waiting when the only MCP call belongs to a token from before this episode, even a later call', async () => {
+    setup({ installs: [], open: [mcpEpisode] });
+    installer({});
+    const before = new Date(OLD_TOKEN.getTime() - 60 * MINUTE);
+    withInstallTokens([
+      { createdAt: before, lastMcpSeenAt: new Date(OLD_TOKEN.getTime() - 30 * MINUTE) },
+      // Superseded but called after this episode began: still not this episode's token.
+      { createdAt: before, lastMcpSeenAt: seenAt },
+      { createdAt: OLD_TOKEN },
+    ]);
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(0);
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('still posts the MCP resolution when the installer OS cannot be read', async () => {
+    setup({ installs: [], open: [mcpEpisode] });
+    mockUserFindById.mockReturnValue({ select: () => ({ lean: () => Promise.reject(new Error('mongo down')) }) });
+    withInstallTokens([mcpTokenOfThisEpisode]);
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(1);
+    expect(mockPost.mock.calls[0][0].content).toContain('in a Terminal on the machine where I should live');
+  });
+
+  it('a failed lookup on one episode leaves it open and still resolves the episodes after it', async () => {
+    const failing = { ...mcpEpisode, _id: 'epA', installationId: 'instA' };
+    setup({ installs: [], open: [failing, openEpisode] });
+    mockInstallFindById.mockImplementation((id) => ({
+      lean: () => (id === 'instA'
+        ? Promise.reject(new Error('read failed'))
+        : Promise.resolve(install({ runtimeTokens: [{ createdAt: OLD_TOKEN, lastListenedAt: seenAt }] }))),
+    }));
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved.map((x) => x.episodeId)).toEqual(['ep9']);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockEpUpdate).not.toHaveBeenCalledWith(expect.objectContaining({ _id: 'epA' }), expect.anything());
+  });
+
+  it('keeps waiting when the episode has no token issue time to scope by', async () => {
+    setup({ installs: [], open: [{ ...mcpEpisode, tokenIssuedAt: undefined }] });
+    installer({});
+    withInstallTokens([mcpTokenOfThisEpisode]);
+
+    const r = await scan({ now: NOW });
+
+    expect(r.resolved).toHaveLength(0);
+    expect(mockPost).not.toHaveBeenCalled();
   });
 
   it('keeps waiting while it is still never-connected', async () => {

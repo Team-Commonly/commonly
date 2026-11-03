@@ -26,9 +26,12 @@ const keyFile = join(root, 'key');
 await writeFile(keyFile, 'fake-provider-key', { mode: 0o600 });
 
 let apiHits = 0;
+let checkIns = 0;
 let providerHits = 0;
 const api = createServer((req, res) => {
-  apiHits += 1;
+  // The MCP server checks in once at start (TASK-345); counted apart from tool calls.
+  if (req.method === 'GET' && req.url === '/api/agents/runtime/installations') checkIns += 1;
+  else apiHits += 1;
   assert.equal(req.headers.authorization, 'Bearer cm_agent_mcp_probe');
   res.setHeader('content-type', 'application/json');
   res.end(JSON.stringify({ ok: true, path: req.url }));
@@ -69,6 +72,7 @@ try {
   assert.equal(observed.context.isError, undefined);
   assert.equal(observed.post.isError, undefined);
   assert.equal(apiHits, 2);
+assert.equal(checkIns, 1);
   assert.equal(providerHits, 1);
   process.stdout.write(`OpenCode bwrap provider + Commonly MCP: ${observed.mcpTools} tools, ${apiHits} API calls\n`);
 } finally {

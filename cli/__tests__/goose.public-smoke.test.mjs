@@ -29,6 +29,7 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
     'commonly__commonly_attach_file'];
   let attacked = false;
   let apiHits = 0;
+  let checkIns = 0;
   let results = [];
   const advertised = [];
   const conversations = [];
@@ -37,7 +38,9 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
     for await (const chunk of request) body += chunk;
     response.setHeader('content-type', 'application/json');
     if (request.url.startsWith('/api/')) {
-      apiHits += 1;
+      // The MCP server checks in once at start (TASK-345); counted apart from tool calls.
+      if (request.method === 'GET' && request.url === '/api/agents/runtime/installations') checkIns += 1;
+      else apiHits += 1;
       response.end(JSON.stringify({ pod: { id: podId, name: 'fixture' }, messages: [] }));
       return;
     }
@@ -112,6 +115,7 @@ smoke('real headless Goose admits Commonly MCP and refuses shell, file write and
     expect(advertised.every((tools) => tools.every((name) => allowed.has(name)))).toBe(true);
     expect(advertised.every((tools) => !tools.includes('commonly__commonly_attach_file'))).toBe(true);
     expect(apiHits).toBe(1);
+    expect(checkIns).toBe(1);
     for (const index of [1, 2, 3, 4]) {
       expect(results.find((result) => result.tool_call_id === `attempt-${index}`)?.content)
         .toMatch(/not advertised/);
