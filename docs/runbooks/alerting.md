@@ -243,6 +243,12 @@ nemotron call failed over in silence. The current OpenRouter key expires on
 expiry, call `GET https://openrouter.ai/api/v1/key` with that key. It returns
 `expires_at` and `limit_remaining`. A 401 with "API key expired." is this failure.
 
+A new model-provider key means a `/privacy` processor edit, in the same PR.
+The page (`frontend/src/v2/legal/V2LegalPage.tsx`) names only providers that
+receive user content today, and the placeholder OpenAI key and the rejected
+Gemini key are why OpenAI and Google AI are not on it (checked 2026-11-03).
+Making either key real, or adding any provider, makes the page wrong.
+
 Do not test with `guardrails: ["openai-moderation-enforce"]` unless the
 moderation key is real. That guardrail's OpenAI key is still a placeholder,
 so it 401s every call on any model. Production platform calls send
