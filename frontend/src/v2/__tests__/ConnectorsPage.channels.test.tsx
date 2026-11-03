@@ -661,6 +661,7 @@ describe('Connectors page: channels', () => {
     ['browser_mismatch', 'hostedMcpInvalidState'],
     ['issuer_mismatch', 'hostedMcpInvalidState'],
     ['consent_denied', 'hostedMcpConsentDenied'],
+    ['vendor_app_unavailable', 'hostedMcpVendorAppUnavailable'],
     ['vendor_error', 'hostedMcpVendorError'],
     ['rate_limited', 'hostedMcpRateLimited'],
     ['issuer_unreachable', 'hostedMcpIssuerUnavailable'],
@@ -686,6 +687,33 @@ describe('Connectors page: channels', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(en.connectors[noticeKey]);
     expect(window.location.search).toBe('');
     expect(screen.queryByText(/spoofed/)).toBeNull();
+  });
+
+  // Airtable refused the app for every account but one (11-02), and the page
+  // said "You didn't approve". The callback names the entry, and the page names
+  // the provider only when its own catalogue holds that entry.
+  it('names the provider when it refused the app for this account', async () => {
+    window.history.replaceState({}, '', '/v2/connectors?hostedMcp=error&code=vendor_app_unavailable&entryId=linear');
+    mockGets([], [{ ...hostedLinearCatalogEntry(), connections: [] }]);
+    renderPage();
+
+    const alert = await screen.findByRole('alert');
+    await waitFor(() => expect(alert).toHaveTextContent(
+      en.connectors.hostedMcpVendorAppUnavailableNamed.replace(/\{\{provider\}\}/g, 'Linear'),
+    ));
+    expect(window.location.search).toBe('');
+  });
+
+  it('keeps the unnamed notice for an entry its catalogue does not hold', async () => {
+    window.history.replaceState({}, '', '/v2/connectors?hostedMcp=error&code=vendor_app_unavailable&entryId=Evil%20Corp');
+    mockGets([], [{ ...hostedLinearCatalogEntry(), connections: [] }]);
+    renderPage();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(en.connectors.hostedMcpVendorAppUnavailable);
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    expect(alert).toHaveTextContent(en.connectors.hostedMcpVendorAppUnavailable);
+    expect(document.body.textContent).not.toContain('Evil Corp');
   });
 
   it('reloads connectors after a successful Slack callback and clears its query', async () => {

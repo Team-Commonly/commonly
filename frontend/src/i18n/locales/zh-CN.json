@@ -2478,6 +2478,8 @@
     "hostedMcpAuthenticationRequired": "请先登录 Commonly，再重新连接。",
     "hostedMcpClientSetup": "此连接器的登录配置有问题，请联系管理员检查。",
     "hostedMcpConsentDenied": "你没有同意此次授权。连接未保存。",
+    "hostedMcpVendorAppUnavailable": "该服务不允许你的账号使用 Commonly 的应用，连接未保存。这是我们这边的设置问题，与你的操作无关。",
+    "hostedMcpVendorAppUnavailableNamed": "{{provider}} 不允许你的账号使用 Commonly 的应用，连接未保存。这是我们在 {{provider}} 上的设置问题，与你的操作无关。",
     "hostedMcpExchangeIncomplete": "提供方返回的授权信息不完整。连接未保存。",
     "hostedMcpExchangeRefused": "提供方拒绝了连接。请重试或检查授权设置。",
     "hostedMcpExchangeUnreachable": "无法联系提供方以完成连接，请重试。",

@@ -1199,6 +1199,32 @@ describe('hosted-mcp connect: callback', () => {
     expect(Integration.findOne).not.toHaveBeenCalled();
   });
 
+  // Airtable refused every account but the client's own with this text (11-02):
+  // the member had clicked Allow, and "you didn't approve" told them otherwise.
+  // A known vendor refusal maps to its own fixed code and names the entry,
+  // never forwarding the vendor's words.
+  it('maps a vendor refusing the app itself to vendor_app_unavailable and names the entry', async () => {
+    const description = "This OAuth application cannot be used outside of development.\nPlease check your OAuth application's setting page VENDOR-SENTINEL";
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let res;
+    try {
+      res = await callback(`state=st-1&error=access_denied&error_description=${encodeURIComponent(description)}`);
+      // The entry id only: vendor text never reaches the log.
+      expect(warn).toHaveBeenCalledWith('[hosted-mcp] vendor refused the app for this account', JSON.stringify({ entryId: 'linear' }));
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('VENDOR-SENTINEL');
+    } finally {
+      warn.mockRestore();
+    }
+    const url = new URL(res.headers.location, 'https://commonly.me');
+    expect(res.status).toBe(302);
+    expect(url.searchParams.get('hostedMcp')).toBe('error');
+    expect(url.searchParams.get('code')).toBe('vendor_app_unavailable');
+    expect(url.searchParams.get('entryId')).toBe('linear');
+    expect(res.headers.location).not.toMatch(/development|setting/i);
+    expect(res.headers.location).not.toContain('VENDOR-SENTINEL');
+    expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['access_denied', 'consent_denied'],
     ['temporarily_unavailable', 'vendor_error'],

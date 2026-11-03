@@ -73,6 +73,8 @@ export const useChannelConnectors = () => {
   // what the callback URL claimed; `hostedMcpCallbackRevoke` is set only once
   // the catalogue confirms it.
   const [pendingCallbackRevoke, setPendingCallbackRevoke] = useState<{ entryId: string; revokeAt: string } | null>(null);
+  // A callback notice that may name its provider once the catalogue confirms the entry.
+  const [pendingCallbackProvider, setPendingCallbackProvider] = useState<{ entryId: string; code: string } | null>(null);
   const [hostedMcpCallbackRevoke, setHostedMcpCallbackRevoke] = useState<{
     entryId: string; provider: string; revokePage: string;
   } | null>(null);
@@ -143,10 +145,12 @@ export const useChannelConnectors = () => {
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     if (query.get('hostedMcp') !== 'error') return;
-    setHostedMcpCallbackError(hostedMcpErrorNotice(t, query.get('code')));
+    const code = query.get('code');
+    setHostedMcpCallbackError(hostedMcpErrorNotice(t, code));
     const entryId = query.get('entryId');
     const revokeAt = query.get('revokeAt');
     if (entryId && revokeAt) setPendingCallbackRevoke({ entryId, revokeAt });
+    if (entryId && code === 'vendor_app_unavailable') setPendingCallbackProvider({ entryId, code });
     query.delete('hostedMcp');
     query.delete('code');
     query.delete('entryId');
@@ -184,6 +188,17 @@ export const useChannelConnectors = () => {
       `${window.location.pathname}${remaining ? `?${remaining}` : ''}${window.location.hash}`,
     );
   }, [load, t]);
+
+  // The provider is named only from the catalogue's own entry, so a forged
+  // entryId leaves the unnamed notice as it is.
+  useEffect(() => {
+    if (!pendingCallbackProvider || loading || hostedCatalog === null) return;
+    const entry = hostedCatalog.find((candidate) => candidate.entryId === pendingCallbackProvider.entryId);
+    if (entry?.label) {
+      setHostedMcpCallbackError(hostedMcpErrorNotice(t, pendingCallbackProvider.code, entry.label));
+    }
+    setPendingCallbackProvider(null);
+  }, [hostedCatalog, loading, pendingCallbackProvider, t]);
 
   // A refused connect has no row to read, so the catalogue entry is the
   // authority: the page is linked only when it is the one the entry names.

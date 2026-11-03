@@ -94,10 +94,13 @@ const callbackRedirect = (
   code?: string,
   options?: {
     manualRevoke?: { entryId: string; revokeAt: string };
+    /** A catalogue entry the page may name in its notice; never vendor text. */
+    entryId?: string;
   },
 ) => {
   const query = new URLSearchParams({ hostedMcp: status });
   if (code) query.set('code', code);
+  if (options?.entryId) query.set('entryId', options.entryId);
   if (options?.manualRevoke) {
     query.set('entryId', options.manualRevoke.entryId);
     query.set('revokeAt', options.manualRevoke.revokeAt);
@@ -491,6 +494,10 @@ const settleUnstoredGrant = async (
   return undefined;
 };
 
+// Vendor descriptions that mean the vendor refused our app for this account,
+// whatever the member clicked. Matched, never echoed.
+const VENDOR_APP_UNAVAILABLE = /cannot be used outside of development/i;
+
 const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
   if (!entry || !isOAuthEntry(entry)) {
@@ -502,6 +509,15 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   if (vendorError) {
     // The provider denied authorization before issuing a code. Leave the
     // pending flow intact so the member can retry; never forward vendor text.
+    // A refusal of the app itself, not the member's choice, is told apart by
+    // a known description and gets its own fixed code (Airtable, 11-02).
+    const description = typeof req.query.error_description === 'string' ? req.query.error_description : '';
+    if (vendorError === 'access_denied' && VENDOR_APP_UNAVAILABLE.test(description)) {
+      // Our app's status at the vendor, not the member's choice: worth a line
+      // without anyone having to report it. The entry id only, never vendor text.
+      console.warn('[hosted-mcp] vendor refused the app for this account', JSON.stringify({ entryId: entry.id }));
+      return callbackRedirect(res, 'error', 'vendor_app_unavailable', { entryId: entry.id });
+    }
     return callbackRedirect(res, 'error', vendorError === 'access_denied' ? 'consent_denied' : 'vendor_error');
   }
   if (!state || !code) {
