@@ -549,7 +549,19 @@ jobs:
         run: bash scripts/verify-backend-worker-chart.sh
 
       - name: Verify dev provider env
-        run: node scripts/verify-dev-provider-env.js < /tmp/dev-rendered.yaml
+        run: |
+          node scripts/verify-dev-provider-env.js < /tmp/dev-rendered.yaml
+          # The verifier must also reject a render that carries the key or drops an env.
+          for flag in aiProviders.gemini.enabled=true backend.env.embeddingProvider= backend.env.avatarProvider=; do
+            helm template commonly-dev k8s/helm/commonly \
+              -f k8s/helm/commonly/values.yaml \
+              -f k8s/helm/commonly/values-dev.yaml \
+              --set "$flag" > /tmp/dev-provider-negative.yaml
+            if node scripts/verify-dev-provider-env.js < /tmp/dev-provider-negative.yaml; then
+              echo "verify-dev-provider-env accepted a render with $flag"
+              exit 1
+            fi
+          done
 
       - name: Lint rendered dev chart
         run: |
