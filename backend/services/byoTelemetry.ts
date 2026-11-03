@@ -7,6 +7,28 @@ import mongoose from 'mongoose';
 // user keeping the page open. Fixed step names only: never a command, key or name.
 export type ServerByoStep = 'seat-registered' | 'daemon-registered';
 
+/**
+ * The setup commands a person copied at or after `since`, by kind. The
+ * onboarding copy marks are write-once (the first copy ever), so they cannot
+ * say what was copied for a later agent; these rows carry their own time.
+ * Listener and daemon copies both count as a listener path. userId is stored
+ * as a string here, not an ObjectId.
+ */
+export async function byoCopiesSince(userId: unknown, since: Date): Promise<{ mcp: number; listener: number }> {
+  const rows = await mongoose.connection.db.collection('byo_telemetry').aggregate([
+    {
+      $match: {
+        userId: String(userId),
+        at: { $gte: since },
+        step: { $in: ['mcp-command-copied', 'cli-command-copied', 'daemon-command-copied'] },
+      },
+    },
+    { $group: { _id: '$step', n: { $sum: 1 } } },
+  ]).toArray();
+  const count = (step: string) => rows.find((r) => r._id === step)?.n || 0;
+  return { mcp: count('mcp-command-copied'), listener: count('cli-command-copied') + count('daemon-command-copied') };
+}
+
 // A once-per-seat event is keyed by a hash of the token record's hash, so the
 // unique _id index makes concurrent first calls write one row. The hash is one-way
 // and is never the credential itself.
