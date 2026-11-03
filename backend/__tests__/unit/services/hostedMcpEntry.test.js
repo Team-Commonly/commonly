@@ -825,6 +825,10 @@ describe('the shipped catalogue cannot land half-wired', () => {
       expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
       expect(tool.description).not.toBe(found.description);
     }
+    // The vendor warns that run_workflow inputs are visible; our shorter text keeps that.
+    const runWorkflow = entry.tools.find((tool) => tool.name === 'run_workflow');
+    expect(runWorkflow.description).toContain('not hidden in job logs');
+    expect(runWorkflow.description).toContain('set it as a secret in Latchkey');
     expect(entry.tools.filter((tool) => tool.class === 'read')).toHaveLength(16);
     expect(entryToolProjections(entry).filter((tool) => tool.requiredWriteMode === 'write-with-confirm')
       .map((tool) => tool.name).sort()).toEqual([

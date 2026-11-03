@@ -195,7 +195,8 @@ export const LATCHKEY_ENTRY: HostedMcpEntry = {
     {
       name: 'run_workflow',
       upstreamName: 'run_workflow',
-      description: "Start a run of one Latchkey CI workflow file on a branch or tag.",
+      description: "Start a run of one Latchkey CI workflow file on a branch or tag. Inputs are recorded on the run page "
+        + "and are not hidden in job logs: never put a token or password in one; set it as a secret in Latchkey instead.",
       class: 'write',
       irreversible: true,
       inputSchema: {
