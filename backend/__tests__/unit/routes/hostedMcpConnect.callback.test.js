@@ -1221,6 +1221,7 @@ describe('hosted-mcp connect: callback', () => {
     expect(url.searchParams.get('code')).toBe('vendor_app_unavailable');
     expect(url.searchParams.get('entryId')).toBe('linear');
     expect(res.headers.location).not.toMatch(/development|setting/i);
+    expect(res.headers.location).not.toContain('VENDOR-SENTINEL');
     expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
