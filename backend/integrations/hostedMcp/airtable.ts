@@ -55,13 +55,16 @@ export const AIRTABLE_ENTRY: HostedMcpEntry = {
   // consenting tools/list capture used /mcp as the endpoint on 2026-10-09.
   audience: 'https://mcp.airtable.com',
   issuer: 'https://airtable.com/oauth2/v1',
-  // Airtable advertises `client_id_metadata_document_supported: true`, but on
-  // 2026-10-27 it refused our metadata URL as a client_id without fetching it
-  // (Cloudflare logged no fetch from Airtable, TASK-318). So the client is
-  // registered at the advertised registration_endpoint instead. The metadata
-  // lists `none`, so the registry registers a public client and stores no
-  // secret. PKCE S256 is still sent.
-  client: 'dcr',
+  // A pre-registered integration, made by hand at airtable.com/create/oauth
+  // with the instance's privacy policy and terms URLs (F67). Airtable lets only
+  // an integration's own account authorize it until it names both pages, and
+  // its registration endpoint drops `policy_uri`/`tos_uri` (probed 2026-11-03),
+  // so the DCR client used from 10-27 refused every other account: "This OAuth
+  // application cannot be used outside of development" (prod, 11-02). Before
+  // that, CIMD: Airtable advertises it but refused our metadata URL without
+  // fetching it (TASK-318, 10-27). The id and secret arrive as
+  // AIRTABLE_CLIENT_ID / AIRTABLE_CLIENT_SECRET (hostedMcp.airtable in the chart).
+  client: 'pre-registered',
   scopes: [
     'data.records:read',
     'schema.bases:read',

@@ -372,10 +372,11 @@ describe('hosted-mcp intake: RFC 8707\'s resource, on every request', () => {
     const url = new URL(buildAuthorizeUrl(AIRTABLE_ENTRY, AS_METADATA.authorization_endpoint, {
       clientId: 'cid', redirectUri: 'https://api.example.test/cb', state: 's', codeChallenge: 'c',
     }));
-    const exchange = buildTokenExchangeRequest(AIRTABLE_ENTRY, {}, { clientId: 'cid' }, {
+    const client = { clientId: 'cid', clientSecret: 'secret' };
+    const exchange = buildTokenExchangeRequest(AIRTABLE_ENTRY, {}, client, {
       redirectUri: 'https://api.example.test/cb', code: 'c', codeVerifier: 'v',
     });
-    const refresh = buildRefreshRequest(AIRTABLE_ENTRY, {}, { clientId: 'cid' }, { refreshToken: 'r' });
+    const refresh = buildRefreshRequest(AIRTABLE_ENTRY, {}, client, { refreshToken: 'r' });
     expect(url.searchParams.get('resource')).toBe('https://mcp.airtable.com');
     expect(exchange.body.get('resource')).toBe('https://mcp.airtable.com');
     expect(refresh.body.get('resource')).toBe('https://mcp.airtable.com');

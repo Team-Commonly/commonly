@@ -456,6 +456,9 @@ hostedMcp:
     - github-mcp
   googleCalendar:
     enabled: false
+  # Flip on once airtable-client-id and -secret each have an enabled version.
+  airtable:
+    enabled: false
   # Commonly Connect App's client ID and secret each have an enabled version
   # in Secret Manager (verified 2026-10-19). The backend refs remain optional.
   githubMcp:

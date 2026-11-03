@@ -410,8 +410,13 @@ it('validates the instance hidden-entry setting', () => {
 it('offers a hidden hosted entry only to its configured walk user', async () => {
   const hiddenBefore = process.env.HOSTED_MCP_HIDDEN_ENTRIES;
   const allowBefore = process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
+  const idBefore = process.env.AIRTABLE_CLIENT_ID;
+  const secretBefore = process.env.AIRTABLE_CLIENT_SECRET;
   process.env.HOSTED_MCP_HIDDEN_ENTRIES = '["airtable"]';
   process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = JSON.stringify({ airtable: [userId] });
+  // Airtable is pre-registered, so it is offered only with its client configured.
+  process.env.AIRTABLE_CLIENT_ID = 'airtable-client';
+  process.env.AIRTABLE_CLIENT_SECRET = 'airtable-secret';
   try {
     const entry = HOSTED_MCP_ENTRIES.find((row) => row.id === 'airtable');
     mockInstallables([], [buildHostedMcpToolInstallable(entry)]);
@@ -431,5 +436,9 @@ it('offers a hidden hosted entry only to its configured walk user', async () => 
     else process.env.HOSTED_MCP_HIDDEN_ENTRIES = hiddenBefore;
     if (allowBefore === undefined) delete process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST;
     else process.env.HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST = allowBefore;
+    if (idBefore === undefined) delete process.env.AIRTABLE_CLIENT_ID;
+    else process.env.AIRTABLE_CLIENT_ID = idBefore;
+    if (secretBefore === undefined) delete process.env.AIRTABLE_CLIENT_SECRET;
+    else process.env.AIRTABLE_CLIENT_SECRET = secretBefore;
   }
 });

@@ -843,18 +843,17 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(capture.tools).toHaveLength(46);
   });
 
-  test('Airtable registers a public client at the registration endpoint its issuer advertises', () => {
-    // TASK-318: Airtable refused our metadata URL as a client_id without
-    // fetching it, so the entry registers by DCR. The registry reads the
-    // endpoint from discovery; this capture of that document (2026-10-28) pins
-    // where it points and that a public client is on offer.
+  test('Airtable presents a pre-registered client its issuer can authenticate', () => {
+    // TASK-318: Airtable refused our metadata URL as a client_id, then kept
+    // every DCR client in development mode, so the entry uses an integration
+    // registered by hand. This capture of discovery (2026-10-28) pins that the
+    // issuer accepts a client secret at its token endpoint.
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'airtable');
     const { url, metadata } = AIRTABLE_AS_CAPTURE;
-    expect(entry.client).toBe('dcr');
+    expect(entry.client).toBe('pre-registered');
     expect(url).toBe('https://airtable.com/.well-known/oauth-authorization-server/oauth2/v1');
     expect(metadata.issuer).toBe(entry.issuer);
-    expect(metadata.registration_endpoint).toBe('https://airtable.com/oauth2/v1/register');
-    expect(metadata.token_endpoint_auth_methods_supported).toContain('none');
+    expect(metadata.token_endpoint_auth_methods_supported).toContain('client_secret_basic');
     expect(metadata.code_challenge_methods_supported).toEqual(['S256']);
     expect([...entry.scopes].every((scope) => metadata.scopes_supported.includes(scope))).toBe(true);
   });

@@ -78,6 +78,13 @@ hostedMcp:
   hiddenEntryUserAllowlist: {}
   googleCalendar:
     enabled: false
+  # Airtable's pre-registered OAuth integration (F67). The backend reads
+  # AIRTABLE_CLIENT_ID / AIRTABLE_CLIENT_SECRET. Enable only after both
+  # `<prefix>airtable-client-id` and `-secret` exist with enabled versions in
+  # Secret Manager: a missing remoteRef stalls the api-keys sync. While off, the
+  # entry reads not_configured and the Tools catalogue omits Airtable.
+  airtable:
+    enabled: false
   # Enable only after both pre-registered GitHub App client secrets exist with
   # enabled versions in Secret Manager. A missing remoteRef stalls api-keys.
   githubMcp:

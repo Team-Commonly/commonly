@@ -412,6 +412,22 @@ spec:
               name: api-keys
               key: commonly-bot-runtime-token
 
+        # Airtable hosted-MCP client (pre-registered, F67). The names are what
+        # hostedMcpClientConfigKeys('airtable') derives. Optional: with
+        # hostedMcp.airtable off the entry reads not_configured.
+        - name: AIRTABLE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: airtable-client-id
+              optional: true
+        - name: AIRTABLE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: airtable-client-secret
+              optional: true
+
         # Google Calendar hosted-MCP client (pre-registered). The names are
         # what hostedMcpClientConfigKeys('google-calendar') derives. Optional,
         # like Slack's below: an instance with hostedMcp.googleCalendar off
