@@ -263,7 +263,12 @@ export interface IUser extends Document {
   getOrCreateDigestUnsubscribeToken(): string;
 }
 
-export interface IUserModel extends Model<IUser> {}
+export interface IUserModel extends Model<IUser> {
+  mintApiTokenIfAbsent(
+    userId: unknown,
+    extra?: { apiTokenScopes?: string[] },
+  ): Promise<{ token: string; createdAt: Date } | null>;
+}
 
 const userSchema = new Schema<IUser>({
   // Growth opts in with .select('+signupSource'); incidental profile/populate
@@ -544,17 +549,49 @@ userSchema.methods.comparePassword = async function (password: string): Promise<
 
 userSchema.index({ apiTokenHash: 1 }, { unique: true, partialFilterExpression: { apiTokenHash: { $type: 'string' } } });
 
-userSchema.methods.generateApiToken = function (): string {
+// One token shape for every mint: the bearer, and the fields stored for it.
+const freshApiToken = () => {
   const token = `cm_${crypto.randomBytes(32).toString('hex')}`;
-  this.apiTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  this.apiTokenLast4 = token.slice(-4);
+  return {
+    token,
+    fields: {
+      apiTokenHash: crypto.createHash('sha256').update(token).digest('hex'),
+      apiTokenLast4: token.slice(-4),
+      apiTokenCreatedAt: new Date(),
+    },
+  };
+};
+
+userSchema.methods.generateApiToken = function (): string {
+  const { token, fields } = freshApiToken();
+  this.apiTokenHash = fields.apiTokenHash;
+  this.apiTokenLast4 = fields.apiTokenLast4;
   // The retired plaintext field is no longer selected, and assigning undefined
   // to an unselected path is not saved once the document has been saved before.
   // Marking it forces the $unset, so a leftover never survives a rotation.
   this.apiToken = undefined;
   this.markModified('apiToken');
-  this.apiTokenCreatedAt = new Date();
+  this.apiTokenCreatedAt = fields.apiTokenCreatedAt;
   return token;
+};
+
+// Mint only when the row holds no token, digest or retired plaintext, in one
+// conditional write. Two concurrent non-forced mints used to both pass a read
+// check and both save, the later replacing the earlier bearer (F61); here one
+// write wins and the other gets null and keeps what is stored. A rotation is
+// generateApiToken + save, which replaces on purpose. Callers pass the _id of
+// an agent row they have already resolved and authorized; this checks only
+// that the row holds no token.
+userSchema.statics.mintApiTokenIfAbsent = async function (
+  userId: unknown,
+  extra: { apiTokenScopes?: string[] } = {},
+): Promise<{ token: string; createdAt: Date } | null> {
+  const { token, fields } = freshApiToken();
+  const result = await this.updateOne(
+    { _id: userId, apiTokenHash: { $not: { $type: 'string' } }, apiToken: { $not: { $type: 'string' } } },
+    { $set: { ...extra, ...fields }, $unset: { apiToken: 1 } },
+  );
+  return result.modifiedCount === 1 ? { token, createdAt: fields.apiTokenCreatedAt } : null;
 };
 
 userSchema.methods.revokeApiToken = function (): void {

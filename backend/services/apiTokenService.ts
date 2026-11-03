@@ -14,15 +14,3 @@ export const findApiTokenUser = async (token: string) => {
   const valid = safeEqual(digest, expected);
   return user && valid ? user : null;
 };
-
-// Whether the stored row holds a token, read at decision time rather than from
-// a document loaded earlier. A retired plaintext form counts: minting over it
-// would erase a bearer the backfill can still restore. Reading the digest here
-// too means a backfill that finished after the caller loaded the row is seen.
-// Only an explicit rotation replaces either. Presence only; nothing is loaded.
-export const holdsStoredApiToken = async (userId: unknown): Promise<boolean> => (
-  Boolean(await User.exists({
-    _id: userId,
-    $or: [{ apiTokenHash: { $type: 'string' } }, { apiToken: { $type: 'string' } }],
-  }))
-);
