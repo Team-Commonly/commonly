@@ -6,8 +6,16 @@ const mockMongoose = {
     readyState: 1,
   },
 };
+// The probe checks out its own client so it can destroy one that stalls.
+// `query` stands for that client's query; each checkout gets a fresh release.
 const mockPool = {
   query: jest.fn().mockResolvedValue({ rows: [{ ok: 1 }] }),
+  releases: [],
+  connect: jest.fn(async () => {
+    const release = jest.fn();
+    mockPool.releases.push(release);
+    return { query: (q) => mockPool.query(q), release };
+  }),
 };
 const mockCreateClient = jest.fn();
 const mockIsDraining = jest.fn().mockReturnValue(false);
@@ -46,6 +54,7 @@ describe('GET /api/health/ready', () => {
     mockIsDraining.mockReturnValue(false);
     mockMongoose.connection.readyState = 1;
     mockPool.query.mockResolvedValue({ rows: [{ ok: 1 }] });
+    mockPool.releases = [];
     mockPgRoutesAreMounted.mockReturnValue(true);
   });
 
@@ -142,6 +151,28 @@ describe('GET /api/health/ready', () => {
     const res = await request(app).get('/api/health/ready').expect(200);
     expect(res.body.degraded).toBeUndefined();
     expect(mockPool.query).toHaveBeenCalledTimes(2);
+  });
+
+  it('destroys a stalled probe client at its deadline, so the next probe asks afresh', async () => {
+    // Reuse alone would let one query that never settles keep every later
+    // probe degraded and hold its client for good.
+    const saved = process.env.READY_PG_PROBE_DEADLINE_MS;
+    process.env.READY_PG_PROBE_DEADLINE_MS = '200';
+    try {
+      mockPool.query.mockReturnValueOnce(new Promise(() => {}));
+      const app = buildApp();
+      await request(app).get('/api/health/ready').timeout(2500).expect(200);
+      await new Promise((resolve) => { setTimeout(resolve, 250); });
+
+      expect(mockPool.releases[0]).toHaveBeenCalledWith(expect.any(Error));
+      const res = await request(app).get('/api/health/ready').timeout(2500).expect(200);
+      expect(res.body.degraded).toBeUndefined();
+      expect(mockPool.connect).toHaveBeenCalledTimes(2);
+      expect(mockPool.releases[1]).toHaveBeenCalledWith(undefined);
+    } finally {
+      if (saved === undefined) delete process.env.READY_PG_PROBE_DEADLINE_MS;
+      else process.env.READY_PG_PROBE_DEADLINE_MS = saved;
+    }
   });
 
   it('returns not ready while the PostgreSQL routes are not mounted (TASK-168)', async () => {

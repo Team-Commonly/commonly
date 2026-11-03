@@ -168,14 +168,38 @@ router.get('/db', (_req: unknown, res: Res) => {
 });
 
 const READY_PG_TIMEOUT_MS = 1500;
-// The probe's SELECT 1 is not cancelled when it loses the race, and it may
-// hold a pool client while it waits. One query in flight per pod: a probe
-// that finds one still pending waits on it instead of starting another, so
-// stalled probes cannot pile up on the pool while the pod stays ready.
+// One probe in flight per pod: a request that finds one still pending waits
+// on it instead of starting another, so probes cannot pile up on the pool.
+// The probe checks out its own client and gives its query a deadline of its
+// own; past it the client is released with an error, which makes the pool
+// destroy it, and the next request starts afresh. Without the deadline a query
+// that never settled would hold its client and keep every later probe degraded.
+type ProbePool = { connect: () => Promise<{ query: (q: string) => Promise<unknown>; release: (err?: Error) => void }> };
 let readyPgProbe: Promise<unknown> | null = null;
-const probePg = (pool: { query: (q: string) => Promise<unknown> }): Promise<unknown> => {
+const probePg = (pool: ProbePool): Promise<unknown> => {
   if (!readyPgProbe) {
-    readyPgProbe = pool.query('SELECT 1').finally(() => { readyPgProbe = null; });
+    const deadlineMs = Number(process.env.READY_PG_PROBE_DEADLINE_MS) || 10000;
+    readyPgProbe = (async () => {
+      const client = await pool.connect();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let failure: Error | undefined;
+      try {
+        return await Promise.race([
+          client.query('SELECT 1'),
+          new Promise((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error(`probe exceeded ${deadlineMs}ms`)), deadlineMs);
+          }),
+        ]);
+      } catch (error) {
+        failure = error instanceof Error ? error : new Error(String(error));
+        throw failure;
+      } finally {
+        clearTimeout(timer);
+        client.release(failure);
+      }
+    })().finally(() => { readyPgProbe = null; });
+    // A request that stopped waiting has already answered; nothing else reads this.
+    readyPgProbe.catch(() => {});
   }
   return readyPgProbe;
 };
@@ -221,7 +245,7 @@ router.get('/ready', async (_req: unknown, res: Res) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         await Promise.race([
-          probePg(pgPool as { query: (q: string) => Promise<unknown> }),
+          probePg(pgPool as ProbePool),
           new Promise((_resolve, reject) => {
             timer = setTimeout(
               () => reject(new Error(`did not answer within ${READY_PG_TIMEOUT_MS}ms`)),
