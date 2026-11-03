@@ -20,7 +20,7 @@ render references **47** keys across three ExternalSecrets — **41 staging-pref
 `externalSecrets.keyPrefix: commonly-staging-`) and **6 shared with prod**
 (`commonly-*`):
 
-- **api-keys (43)** — 38 staging-prefixed + 5 shared.
+- **api-keys (41)** — 38 staging-prefixed + 3 shared.
   - Of the 38 staging-prefixed: model/search **API keys are copied** from the dev
     values (gemini, openrouter×2, openai, anthropic, brave×2); **JWT, session, and
     internal-connector** secrets (clawdbot-gateway, commonly-bot-runtime,
