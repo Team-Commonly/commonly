@@ -6,6 +6,7 @@
 //
 // Failure modes (all thrown as AgentAskError so the route can map to HTTP):
 //   - target agent not installed in pod                           → 404
+//   - target answers @mentions only (native or hosted runtime)    → 409
 //   - self-ask (fromAgent === targetAgent within same instanceId) → 400
 //   - rate limit exceeded                                         → 429
 //   - respond() called with unknown / expired requestId           → 404 / 410
@@ -25,6 +26,8 @@ const AgentEventService = require('./agentEventService');
 const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line global-require
 const AgentAsk = require('../models/AgentAsk');
+// eslint-disable-next-line global-require
+const { isHostedInstallation } = require('./hostedRuntimeService');
 
 // Per-(fromAgent, podId) cap to prevent runaway loops between agents. Keyed
 // only by agent NAME (not name+instance) so an attacker can't trivially
@@ -141,6 +144,22 @@ export async function askAgent(opts: AskAgentOptions): Promise<AskAgentResult> {
       `target agent ${targetAgent}:${targetInstanceId} is not installed in this pod`,
       404,
       'target_not_in_pod',
+    );
+  }
+
+  // An agent on Commonly's native runtime, or a hosted one on either engine,
+  // answers @mentions only: it has no tool to respond to an ask, so the ask
+  // was acked and stayed open until it expired (F63). Refuse it now and say
+  // what works instead, before any record or event exists. The runtime is
+  // the one dispatch reaches, not this row's: a row written without one
+  // (mention auto-join) runs on the agent's newest row that has one.
+  const effective = await AgentEventService.resolveEffectiveInstallation(targetAgent, targetInstanceId, podId);
+  if (effective && (AgentEventService.runsInProcess(effective) || isHostedInstallation(effective))) {
+    throw new AgentAskError(
+      `${targetAgent}:${targetInstanceId} runs on Commonly and answers @mentions, not asks. `
+        + '@mention it in this pod instead, and its reply will come as a pod message.',
+      409,
+      'target_answers_mentions',
     );
   }
 

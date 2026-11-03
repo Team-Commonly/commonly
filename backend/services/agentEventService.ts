@@ -1583,6 +1583,22 @@ class AgentEventService {
     instanceId: string,
     podId: EnqueueOptions['podId'],
   ): Promise<InstallationDoc | null> {
+    const installationDoc = await this.resolveEffectiveInstallation(agentName, instanceId, podId);
+    return installationDoc && this.runsInProcess(installationDoc) ? installationDoc : null;
+  }
+
+  /**
+   * The active installation in this pod as routing sees it: its own config,
+   * or, for a projection written without a runtime, that config with the
+   * runtime inherited from the identity's newest row that has one. Null when
+   * there is no active row. Also read by askAgent (F63), which must decide on
+   * the runtime the event would actually reach.
+   */
+  static async resolveEffectiveInstallation(
+    agentName: string,
+    instanceId: string,
+    podId: EnqueueOptions['podId'],
+  ): Promise<InstallationDoc | null> {
     // Plain strings and a validated id, never a caller-shaped value: a podId of
     // `{ $ne: null }` would otherwise match some other pod's installation.
     const podKey = String(podId ?? '');
@@ -1606,7 +1622,7 @@ class AgentEventService {
       status: 'active',
       'config.runtime.runtimeType': { $exists: true },
     }).sort({ createdAt: -1 }).lean() as InstallationDoc | null;
-    return this.inProcessInstallationFrom(installationDoc, sibling);
+    return this.withInheritedRuntime(installationDoc, sibling);
   }
 
   /**
@@ -1620,8 +1636,17 @@ class AgentEventService {
     installationDoc: InstallationDoc,
     sibling: InstallationDoc | null,
   ): InstallationDoc | null {
-    let installationRuntimeCfg = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
-    if (!installationRuntimeCfg.runtimeType) {
+    const effective = this.withInheritedRuntime(installationDoc, sibling);
+    return this.runsInProcess(effective) ? effective : null;
+  }
+
+  /** `installationDoc`, its config merged with `sibling`'s when it has no runtime of its own. */
+  static withInheritedRuntime(
+    installationDoc: InstallationDoc,
+    sibling: InstallationDoc | null,
+  ): InstallationDoc {
+    const ownRuntime = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
+    if (!ownRuntime.runtimeType) {
       const siblingCfg = (sibling && normalizeConfig(sibling.config)) || null;
       const siblingRuntime = siblingCfg?.runtime as Record<string, unknown> | undefined;
       if (siblingRuntime?.runtimeType) {
@@ -1632,14 +1657,18 @@ class AgentEventService {
         // the run then fell to the default model with no system prompt.
         const own = normalizeConfig(installationDoc.config) || {};
         const { heartbeat: _h, autoJoinSource: _a, ...inheritable } = siblingCfg as Record<string, unknown>;
-        installationRuntimeCfg = siblingRuntime;
         installationDoc.config = { ...inheritable, ...own, runtime: siblingRuntime } as InstallationDoc['config'];
       }
     }
-    const installationRuntimeType = String(installationRuntimeCfg.runtimeType || '').toLowerCase();
+    return installationDoc;
+  }
+
+  /** Whether the native runtime runs this (already merged) installation in-process. */
+  static runsInProcess(installationDoc: InstallationDoc): boolean {
+    const runtime = (normalizeConfig(installationDoc.config)?.runtime || {}) as Record<string, unknown>;
     // A provisioned hosted install on the native engine runs in-process too
     // (services/hostedEngine.ts); one on the Durable Object polls.
-    return installationRuntimeType === 'native' || hostedRunsNative(installationDoc) ? installationDoc : null;
+    return String(runtime.runtimeType || '').toLowerCase() === 'native' || hostedRunsNative(installationDoc);
   }
 
   /** Persist the folded digest snapshot carried by this waking delivery. */
