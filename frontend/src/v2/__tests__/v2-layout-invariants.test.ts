@@ -6165,3 +6165,39 @@ describe('chat sheets lifted out of v2.css (S3)', () => {
     expect(ruleBody(pane, '.v2-chat__messages')).not.toContain('justify-content: flex-end');
   });
 });
+
+// d215 run-trace-after at 390: the page sits in the shared V2FeaturePage body,
+// whose phone padding is 12px all round. The frame draws 16px gutters with no
+// top padding ("Back to pod" is the first 44px row) and a tighter rhythm; at
+// prod 486240fb the 12px body and loose rhythm pushed the foot's run-id line
+// under the fixed tab bar. Measured in a browser; jsdom cannot see it.
+describe('run trace keeps the frame phone gutters and clears the tab bar', () => {
+  const rt = read('../components/V2RunTrace.css');
+  const v2 = readV2Css();
+  const app = read('../V2App.tsx');
+  const phone = mediaBlockContaining(rt, '.v2-feature--run-trace > .v2-feature__body');
+
+  test('the run trace route tags its feature pane', () => {
+    expect(app).toContain("feature('Run trace', <V2RunTrace />, false, false, 'v2-feature--run-trace')");
+  });
+
+  test('at 760 and below the body has 16px side gutters and no top padding', () => {
+    expect(ruleBody(rt, '.v2-feature--run-trace > .v2-feature__body', { within: phone })).toContain('padding: 0 16px 16px');
+  });
+
+  test('the frame rhythm: paragraphs flush, a turn is an 8px grid', () => {
+    expect(ruleBody(rt, '.v2-feature--run-trace .v2-run-trace p', { within: phone })).toContain('margin: 0');
+    const turn = ruleBody(rt, '.v2-feature--run-trace .v2-run-trace__turns > li', { within: phone });
+    expect(turn).toContain('display: grid');
+    expect(turn).toContain('gap: 8px');
+  });
+
+  test('desktop is untouched: the overrides live only in the phone block', () => {
+    expect(topLevelRuleBody(rt, '.v2-feature--run-trace > .v2-feature__body')).toBe('');
+    expect(topLevelRuleBody(rt, '.v2-feature--run-trace .v2-run-trace p')).toBe('');
+  });
+
+  test('the feature pane reserves the 58px tab bar, so the foot scrolls clear of it', () => {
+    expect(ruleBody(v2, '.v2-feature', { within: mediaBlockContaining(v2, '.v2-feature {') })).toContain('padding-bottom: 58px');
+  });
+});
