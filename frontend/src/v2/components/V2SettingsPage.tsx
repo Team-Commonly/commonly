@@ -123,7 +123,7 @@ const V2AccountSection: React.FC = () => {
     event.preventDefault();
     const nextName = name.trim();
     if (nextName === accountName) {
-      setNotice(t('settings.account.noChanges'));
+      setNotice('settings.account.noChanges');
       setError(null);
       return;
     }
@@ -133,7 +133,7 @@ const V2AccountSection: React.FC = () => {
     setError(null);
     try {
       await updateProfile({ displayName: nextName });
-      setNotice(t('settings.account.saved'));
+      setNotice('settings.account.saved');
     } catch (requestError) {
       const message = (requestError as { response?: { data?: { error?: string; msg?: string } } })?.response?.data;
       setError(message?.error || message?.msg || t('settings.account.saveFailed'));
@@ -145,7 +145,7 @@ const V2AccountSection: React.FC = () => {
   const saveUsername = async () => {
     const nextUsername = username.trim().toLowerCase();
     if (nextUsername === accountUsername.toLowerCase()) {
-      setNotice(t('settings.username.noChanges'));
+      setNotice('settings.username.noChanges');
       setError(null);
       return;
     }
@@ -164,7 +164,7 @@ const V2AccountSection: React.FC = () => {
       );
       setUsername(updatedUsername);
       setSavedUsername(updatedUsername);
-      setNotice(t('settings.username.saved'));
+      setNotice('settings.username.saved');
     } catch (requestError) {
       const message = (requestError as { response?: { data?: { error?: string; msg?: string } } })?.response?.data;
       setError(message?.error || message?.msg || t('settings.username.saveFailed'));
@@ -190,7 +190,7 @@ const V2AccountSection: React.FC = () => {
       const userId = String(currentUser?._id || currentUser?.id || '');
       const profilePicture = nextPaperAvatarPreset(userId, currentUser?.profilePicture);
       await updateProfile({ profilePicture });
-      setNotice(t('settings.avatar.regenerated'));
+      setNotice('settings.avatar.regenerated');
     } catch {
       setPhotoError(t('settings.avatar.regenerateFailed'));
     } finally {
@@ -229,7 +229,7 @@ const V2AccountSection: React.FC = () => {
       if (!profilePicture?.startsWith('/api/uploads/')) throw new Error('Upload path was not returned');
       uploaded = true;
       await updateProfile({ profilePicture });
-      setNotice(t('settings.avatar.photoSaved'));
+      setNotice('settings.avatar.photoSaved');
       setAvatarFile(null);
     } catch {
       setPhotoError(t(uploaded ? 'settings.avatar.profileSaveFailed' : 'settings.avatar.uploadFailed'));
@@ -376,7 +376,7 @@ const V2AccountSection: React.FC = () => {
         </div>
       </div>
       {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
-      {notice && <p className="v2-settings__message" role="status">{notice}</p>}
+      {notice && <p className="v2-settings__message" role="status">{t(notice)}</p>}
       <div className="v2-settings__actions">
         <button className="v2p-b v2p-b-p" type="submit" disabled={busy}>{busy ? t('settings.account.saving') : t('settings.account.save')}</button>
       </div>
@@ -476,7 +476,7 @@ const V2ApiTokenSection: React.FC = () => {
       setCreatedAt(response.data.createdAt || null);
       setLast4(generatedToken ? generatedToken.slice(-4) : null);
       setShowToken(true);
-      setNotice(t('settings.apiToken.generated'));
+      setNotice('settings.apiToken.generated');
     } catch {
       setError(t('settings.apiToken.generateFailed'));
     } finally {
@@ -495,7 +495,7 @@ const V2ApiTokenSection: React.FC = () => {
       setCreatedAt(null);
       setLast4(null);
       setShowToken(false);
-      setNotice(t('settings.apiToken.revoked'));
+      setNotice('settings.apiToken.revoked');
     } catch {
       setError(t('settings.apiToken.revokeFailed'));
     } finally {
@@ -507,7 +507,7 @@ const V2ApiTokenSection: React.FC = () => {
     if (!token) return;
     try {
       await navigator.clipboard.writeText(token);
-      setNotice(t('settings.apiToken.copied'));
+      setNotice('settings.apiToken.copied');
     } catch {
       setError(t('settings.apiToken.copyFailed'));
     }
@@ -546,7 +546,7 @@ const V2ApiTokenSection: React.FC = () => {
       {(error || notice || token) && (
         <div className="v2-settings__token-detail">
           {error && <p className="v2-settings__message v2-settings__message--error" role="alert">{error}</p>}
-          {notice && <p className="v2-settings__message" role="status">{notice}</p>}
+          {notice && <p className="v2-settings__message" role="status">{t(notice)}</p>}
           {token && (
             <>
               <div className="v2-settings__token-value">

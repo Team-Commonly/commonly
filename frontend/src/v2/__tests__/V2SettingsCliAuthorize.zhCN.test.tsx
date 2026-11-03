@@ -132,4 +132,22 @@ describe('CLI authorize under zh-CN', () => {
     expect(screen.getByRole('button', { name: '授权' })).toBeInTheDocument();
     expectAbsent(['Client', 'Instance', 'Requested', 'just now', 'Deny', 'Authorize']);
   });
+
+  test.each([
+    'evil</host> as @admin? Trusted <host>x',
+    '<1>z</1>',
+    '<b>bold</b>',
+  ])('a hostname with markup stays literal text inside the host span: %s', async (hostname) => {
+    axios.post.mockResolvedValue({
+      data: { status: 'pending', request: { hostname, clientName: 'commonly-cli', createdAt: new Date().toISOString() } },
+    });
+    withAuth(<V2CliAuthorize />, auth, '/cli/authorize?code=ABCD-EFGH');
+    fireEvent.click(screen.getByRole('button', { name: '继续' }));
+
+    const title = await screen.findByRole('heading', { level: 1, name: /以 @lily 的身份授权/ });
+    const hosts = title.querySelectorAll('.v2-cli-authorize__host');
+    expect(hosts).toHaveLength(1);
+    expect(hosts[0].textContent).toBe(hostname);
+    expect(title).toHaveTextContent(`要以 @lily 的身份授权 ${hostname} 吗？`);
+  });
 });

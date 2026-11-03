@@ -188,6 +188,11 @@ const V2CliAuthorize: React.FC = () => {
             i18nKey="cliAuthorize.confirmTitle"
             values={{ hostname: request.hostname, username: user?.username || t('common.you') }}
             components={{ host: <span className="v2-cli-authorize__host" /> }}
+            // The hostname comes from the device asking for access. Escaping it before Trans
+            // parses the markup keeps a name like "x</host> as @admin" literal text inside
+            // the host span, so the approval screen can't be made to say something else.
+            tOptions={{ interpolation: { escapeValue: true } }}
+            shouldUnescape
           />
         </h1>
         <p className="v2-login__subtitle">{t('cliAuthorize.confirmSubtitle')}</p>
