@@ -151,6 +151,11 @@ const MAX_UPLOAD_BYTES = getObjectStore().capabilities.maxObjectBytes;
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
+  // Browsers send the multipart filename as raw UTF-8 with no charset
+  // parameter, and multer decodes that as latin1 by default, so "报告.doc"
+  // was stored as "æ¥å.doc". Rows saved before this line are repaired by
+  // scripts/repair-latin1-file-names.ts.
+  defParamCharset: 'utf8',
   limits: { fileSize: MAX_UPLOAD_BYTES },
   fileFilter(
     _req: unknown,
