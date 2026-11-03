@@ -429,9 +429,13 @@ const QUOTE_FILE_OPEN = '\u0001';
 const QUOTE_FILE_CLOSE = '\u0002';
 function renderQuoteText(text: string): React.ReactNode {
   if (!text.includes(QUOTE_FILE_OPEN)) return text;
-  return text.split(/\u0001([^\u0002]*)\u0002?/).map((part, index) => (index % 2 === 1
-    ? <span key={index} className="v2-msg__quote-file"><ShellGlyph name="file" size={12} />{part}</span>
-    : part));
+  // User text is stripped of both markers before they are inserted, so every marker here is ours.
+  // A cut that lands right after an opening marker leaves an empty name: render nothing for it.
+  return text.split(/\u0001([^\u0002]*)\u0002?/).map((part, index) => {
+    if (index % 2 === 0) return part;
+    if (!part) return null;
+    return <span key={index} className="v2-msg__quote-file"><ShellGlyph name="file" size={12} />{part}</span>;
+  });
 }
 
 // Match the §3.8 agent-dm-created announcement posted by commonly-bot:
@@ -839,7 +843,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
           // control characters so the render below can put a file glyph (an
           // SVG, never an emoji) in front of it after the 240-char cut.
           const quoteContent = rawQuote
-            ? String(rawQuote).replace(/\[\[upload:[^\]|]+\|([^\]|]+)\|[^\]]+\]\]/g, `${QUOTE_FILE_OPEN}$1${QUOTE_FILE_CLOSE}`)
+            ? String(rawQuote).replace(/[\u0001\u0002]/g, '').replace(/\[\[upload:[^\]|]+\|([^\]|]+)\|[^\]]+\]\]/g, `${QUOTE_FILE_OPEN}$1${QUOTE_FILE_CLOSE}`)
             : rawQuote;
           const quoteAuthor = message.replyTo?.username ?? message.reply_username;
           if (!quoteContent) return null;

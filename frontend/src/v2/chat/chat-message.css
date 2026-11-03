@@ -716,7 +716,10 @@
 .v2-msg__quote-author { font-weight: 600; flex-shrink: 0; }
 
 .v2-msg__quote-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.v2-msg__quote-file { display: inline-flex; align-items: center; gap: 3px; vertical-align: -2px; }
+/* Inline, not inline-flex: an inline-flex chip is one unbreakable box, so a long name dropped whole
+   behind the quote's ellipsis. Inline lets the name truncate like the text around it. */
+.v2-msg__quote-file { display: inline; }
+.v2-msg__quote-file svg { vertical-align: -2px; margin-right: 3px; }
 
 /* The card sits IN the message content column, not flush with the row edge:
    38px avatar column + 12px gap, in lockstep with the .v2-msg grid. Without

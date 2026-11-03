@@ -100,4 +100,15 @@ describe('a quoted upload shows a file glyph and its name, not an emoji', () => 
     expect(file.querySelector('svg').getAttribute('aria-hidden')).toBe('true');
     expect(quote.textContent).not.toMatch(/\p{Extended_Pictographic}/u);
   });
+
+  test('marker characters typed by a user never become a file glyph', () => {
+    const message = {
+      ...msg('m-spoof', 'someone'),
+      replyTo: { id: 'm-spoof', content: 'plain \u0001not a file\u0002 text', username: 'someone' },
+    };
+    const { container } = render(<MemoryRouter><V2MessageRow message={message} /></MemoryRouter>);
+    const quote = container.querySelector('.v2-msg__quote-text');
+    expect(quote.querySelector('.v2-msg__quote-file')).toBeNull();
+    expect(quote.textContent).toBe('plain not a file text');
+  });
 });

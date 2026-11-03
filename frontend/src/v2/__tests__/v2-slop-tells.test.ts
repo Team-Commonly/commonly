@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 /**
- * D225: the statically checkable AI-slop tells, over EVERY v2 stylesheet and
+ * The statically checkable AI-slop tells, over EVERY v2 stylesheet and
  * every v2 source file. The list and its reasons live in
  * docs/design/ai-slop-tells.md; each test here names its tell by number.
  *
@@ -89,7 +89,7 @@ const hsl = (hex: string): { hue: number; chroma: number } => {
 const GLYPH = /[\u00D7\u2039\u203A\u2190-\u21FF\u2605\u2606\u2713-\u2718\u270E\u2728\u2B50]|\p{Extended_Pictographic}/u;
 const GLYPH_OR_BULLET = new RegExp(`${GLYPH.source}|\u2022`, 'u');
 
-describe('D225 AI-slop tells (docs/design/ai-slop-tells.md)', () => {
+describe('AI-slop tells (docs/design/ai-slop-tells.md)', () => {
   test('the walk finds the whole tree, not a hand list', () => {
     // A changed root or a broken walk yields a vacuous pass.
     expect(SHEETS.length).toBeGreaterThanOrEqual(25);
