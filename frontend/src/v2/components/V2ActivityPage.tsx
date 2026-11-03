@@ -1287,7 +1287,11 @@ const V2ActivityPage: React.FC = () => {
                   <span>{queueCount === 0
                     ? t('activity.needsYou.emptyTitle')
                     : t('activity.needsYou.countLabel', { count: queueCount })}</span>
-                  {queueCount === 0 && lastAnsweredAt && <span>{t('activity.needsYou.emptyLast', { age: relativeTime(lastAnsweredAt) })}</span>}
+                  {/* Under a minute the age reads "now", and "answered now ago" is not a
+                      sentence in either language, so that case has its own line. */}
+                  {queueCount === 0 && lastAnsweredAt && <span>{Date.now() - new Date(lastAnsweredAt).getTime() < 60_000
+                    ? t('activity.needsYou.emptyLastNow')
+                    : t('activity.needsYou.emptyLast', { age: relativeTime(lastAnsweredAt) })}</span>}
                 </div>
               )}
               {visibleQueue.length > 0 && (

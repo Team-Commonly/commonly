@@ -5,6 +5,7 @@ import { useV2Api } from '../hooks/useV2Api';
 import { useSocket } from '../../context/SocketContext';
 import { cardHref } from './cardLinks';
 import ConnectorLogo from '../connectors/ConnectorLogo';
+import { appDateLocale } from '../utils/appLocale';
 
 export const CardContext = createContext<{ podId: string; runId: string; runPodId?: string }>({ podId: '', runId: '' });
 export type Node = ElementNode;
@@ -97,7 +98,7 @@ export function SourceView({ connector, fetchedAt }: { connector: string; fetche
   const at = new Date(fetchedAt);
   return <span className="ui-src"><span className="ui-src-mk"><ConnectorLogo type={connector} size={16} /></span>
     <span className="ui-src-n">{SOURCE_NAMES[connector] || connector}</span><span aria-hidden="true">·</span>
-    <time dateTime={fetchedAt} title={at.toLocaleString()}>{fetchedLabel(now - at.getTime())}</time></span>;
+    <time dateTime={fetchedAt} title={at.toLocaleString(appDateLocale())}>{fetchedLabel(now - at.getTime())}</time></span>;
 }
 export function TraceLink() {
   const { podId: messagePodId, runPodId, runId } = useContext(CardContext);

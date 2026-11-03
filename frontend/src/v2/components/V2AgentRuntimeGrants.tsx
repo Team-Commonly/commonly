@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { machineDisplayName } from '../utils/machineLabel';
+import { appDateLocale } from '../utils/appLocale';
 import { useV2Api } from '../hooks/useV2Api';
 import { useOpensOnDemand } from '../hooks/useOpensOnDemand';
 import V2AgentProviderKey from './V2AgentProviderKey';
@@ -70,7 +71,7 @@ export const describeRuntime = (runtime: Runtime): { mode: 'native' | 'hosted' |
 const dateLabel = (value: string | null): string => {
   if (!value) return '';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(appDateLocale());
 };
 
 const grantEnded = (grant: AgentGrant): boolean => Boolean(grant.revokedAt) || new Date(grant.expiresAt).getTime() <= Date.now();

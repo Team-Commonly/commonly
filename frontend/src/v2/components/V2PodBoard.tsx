@@ -32,6 +32,7 @@ import { useSocket } from '../../context/SocketContext';
 import V2Avatar from './V2Avatar';
 import { useAuth } from '../../context/AuthContext';
 import { taskRecordPath } from './V2TaskRecord';
+import { appDateLocale } from '../utils/appLocale';
 import { EXIT_SAFETY_MS, prefersReducedMotion, runViewTransition, useExitPresence, viewTransitionName } from '../utils/motion';
 import { ShellGlyph } from '../icons/glyphs';
 import './V2PodBoard.css';
@@ -301,7 +302,7 @@ const V2PodBoard: React.FC = () => {
     return { claimed, expiry, knownExpiry, expired: claimed && knownExpiry && expiry <= claimClock,
       minutes: knownExpiry ? Math.max(0, Math.ceil((expiry - claimClock) / 60_000)) : null };
   };
-  const timeLabel = (expiry: number) => new Intl.DateTimeFormat(undefined, {
+  const timeLabel = (expiry: number) => new Intl.DateTimeFormat(appDateLocale(), {
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).format(new Date(expiry));
   // The frame's card line is the lease timer and the claimant's avatar, nothing else:

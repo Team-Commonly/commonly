@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { appDateLocale } from '../utils/appLocale';
 
 interface AdminRef {
   id: string | null;
@@ -86,7 +87,7 @@ const formatDate = (value: string | null): string => {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(appDateLocale(), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -456,7 +457,7 @@ const V2AdminUsers: React.FC = () => {
                           ? <span className="v2-admin-users__badge v2-admin-users__badge--banned" title={u.banReason || undefined}>{t('adminUsers.registered.userStatus.banned')}</span>
                           : (u.verified ? t('adminUsers.registered.userStatus.active') : t('adminUsers.registered.userStatus.unverified'))}
                       </td>
-                      <td className="v2-admin-users__cell-muted" title={u.createdAt ? new Date(u.createdAt).toLocaleDateString() : undefined}>
+                      <td className="v2-admin-users__cell-muted" title={u.createdAt ? new Date(u.createdAt).toLocaleDateString(appDateLocale()) : undefined}>
                         {lifecycleLabel(u, lifecycle, t)}
                       </td>
                       <td className="v2-admin-users__row-actions">
