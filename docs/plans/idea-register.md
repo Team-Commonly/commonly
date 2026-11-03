@@ -82,7 +82,7 @@ Verified against the codebase, not assumed. Each is a real current gap.
 | S2 | Audit trail covers 2 event types | An `AuditLog` model and service exist; only attachment-token mints and the showcase toggle write to it. No admin action, token, login, or install is recorded | `raw` |
 | S3 | Human `cm_` API tokens stored plaintext and re-displayable | Unlike agent tokens, which are hashed | `raw` |
 | S4 | No MFA, no per-account lockout, no password policy, login enumerates accounts | Brute-force defense is per-IP only; registration accepts a one-character password | `raw` |
-| S5 | `helmet` is a dependency but never applied | No app-layer CSP/HSTS/X-Frame-Options; relies entirely on edge defaults | `raw` |
+| S5 | No app-layer security headers (`helmet` was installed but never applied; the unused package was removed in #3356) | No app-layer CSP/HSTS/X-Frame-Options; relies entirely on edge defaults | `raw` |
 | S6 | CLI credential files written with default umask | `~/.commonly/config.json` and `tokens/*.json` hold live bearer tokens without `0600` | `raw` |
 | S7 | `getPodsByType` leaks pod existence instance-wide | Membership filtering covers only the three personal pod types | `raw` |
 
