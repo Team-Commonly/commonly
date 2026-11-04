@@ -9,7 +9,7 @@ import RegistrationInviteRequired from '../components/RegistrationInviteRequired
 import VerifyEmail from '../components/VerifyEmail';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
 import ProtectedRoute from '../components/ProtectedRoute';
-import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/bricolage-grotesque/opsz.css';
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';

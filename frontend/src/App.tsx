@@ -15,7 +15,7 @@ import { checkAndRefresh } from './utils/refreshUtils';
 // thing that delivers them. Without these static imports the @font-face rules
 // would move into the app shell's async CSS, and the public landing would paint
 // in fallback fonts until the shell loaded (it never does on the landing).
-import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/bricolage-grotesque/opsz.css';
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';

@@ -360,6 +360,9 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     const selected = pod._id === selectedPodId;
     const count = attentionCountByPod[pod._id] || 0;
     const direct = isDirectPod(pod);
+    const rowName = pod.name === 'My Workspace' && pod.createdBy?._id && String(pod.createdBy._id) !== String(currentUser?._id)
+      ? t('podNames.otherWorkspace', { name: pod.name, owner: pod.createdBy.username || t('podNames.shared') })
+      : pod.name;
     const peer = direct ? directMemberFor(pod, currentUser?._id) : undefined;
     const time = relativeTime(podMessageTime(pod) || null, now);
     const isPinned = pinned.has(pod._id);
@@ -403,11 +406,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         ) : (
           <span className="v2-pods__row-mark" aria-hidden="true">{podInitials(pod.name)}</span>
         )}
-        <span className="v2-pods__row-name">
-          {pod.name === 'My Workspace' && pod.createdBy?._id && String(pod.createdBy._id) !== String(currentUser?._id)
-            ? t('podNames.otherWorkspace', { name: pod.name, owner: pod.createdBy.username || t('podNames.shared') })
-            : pod.name}
-        </span>
+        <span className="v2-pods__row-name">{rowName}</span>
         <span className="v2-pods__row-meta">
           {count > 0 && (
             <span className="v2-pods__row-pill" aria-label={t('podsSidebar.workspace.needsYouCount', { count })}>
@@ -422,7 +421,9 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
         type="button"
         className={`v2-pods__pin${isPinned ? ' v2-pods__pin--active' : ''}`}
         onClick={(event) => { event.stopPropagation(); togglePin(pod._id); }}
-        aria-label={isPinned ? t('podsSidebar.unpinAriaLabel') : t('podsSidebar.pinAriaLabel')}
+        // Named for its pod: the pin stays in the accessibility tree at rest, so a
+        // screen reader reaches it by swiping, one per row, without the hold.
+        aria-label={isPinned ? t('podsSidebar.unpinAriaLabel', { name: rowName }) : t('podsSidebar.pinAriaLabel', { name: rowName })}
         title={isPinned ? t('podsSidebar.unpinTitle') : t('podsSidebar.pinTitle')}
         aria-pressed={isPinned}
       >

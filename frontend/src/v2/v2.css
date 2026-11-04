@@ -4496,19 +4496,26 @@ body.modern-ui.v2-canvas {
   border-radius: var(--v2-r-8, 8px);
   background: var(--v2-surface-tint);
   color: var(--v2-text-secondary);
-  visibility: hidden;
+  /* At rest the pin is drawn invisible but stays in the accessibility tree and
+     the tab order, so a screen reader reaches it by swiping, without the hold.
+     It takes no taps until it shows. */
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* D215: the pin is an icon on row hover that takes the time's slot. Out of
    sight at rest, pinned or not; the Pinned segment lists the pinned pods.
-   visibility (not opacity) so a hidden pin cannot catch a tap. Keyboard focus
-   anywhere in the row shows it, so Tab reaches it; a mouse click does not set
-   :focus-visible, so a clicked row keeps its time. Touch screens have no hover:
-   the 390 frame draws the time at rest there too, and a press and hold on the
-   row (--reveal, V2PodsSidebar) is its hover state. */
+   Hidden by opacity with pointer-events off, so it stays in the accessibility
+   tree (a screen reader reaches it by swiping, Cofounder 11-04) but a hidden
+   pin cannot catch a tap. Keyboard focus anywhere in the row shows it, and so
+   does focus on the pin itself (a screen reader moving to it); a mouse click
+   does not set :focus-visible, so a clicked row keeps its time. Touch screens
+   have no hover: the 390 frame draws the time at rest there too, and a press
+   and hold on the row (--reveal, V2PodsSidebar) is its hover state. */
 .v2-pods__rowwrap:hover .v2-pods__pin,
 .v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,
-.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { visibility: visible; }
+.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,
+.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }
 
 .v2-root button.v2-pods__pin:focus-visible { outline: none; box-shadow: var(--v2-focus-ring); }
 .v2-root button.v2-pods__pin--active { color: var(--v2-accent-text); }
@@ -4518,6 +4525,7 @@ body.modern-ui.v2-canvas {
 
 .v2-pods__rowwrap:hover .v2-pods__row-time,
 .v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,
+.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,
 .v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }
 
 /* The press and hold must not open the system callout or select the name. */
