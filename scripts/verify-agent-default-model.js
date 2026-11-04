@@ -11,8 +11,10 @@
 //   - each cloud-codex agent's codex CLI model.
 // A name resolves to every model_list entry that carries it (LiteLLM balances
 // across them), and through every fallback LiteLLM would take from it:
-// fallbacks, context_window_fallbacks and content_policy_fallbacks, plus
-// default_fallbacks, in router_settings or litellm_settings.
+// fallbacks, context_window_fallbacks and content_policy_fallbacks (a `*` rule
+// applies to every name), plus default_fallbacks and model_group_alias, in
+// router_settings or litellm_settings. An upstream is DeepSeek when its model,
+// custom_llm_provider or api_base says so, in any case.
 // `google/*` gateway fallbacks go straight to Google, not through LiteLLM, so
 // they are listed but not resolved (F105 moves them); a google/* primary fails.
 // --no-deepseek (dev, Claude-only under D243): no default may reach a
@@ -35,21 +37,32 @@ const upstreamsOf = new Map();
 for (const entry of litellmConfig.model_list || []) {
   const name = String(entry.model_name);
   if (!upstreamsOf.has(name)) upstreamsOf.set(name, []);
-  upstreamsOf.get(name).push(String(entry.litellm_params?.model || ''));
+  upstreamsOf.get(name).push(entry.litellm_params || {});
 }
+const isDeepseek = (params) => /^deepseek\//i.test(String(params.model || ''))
+  || /deepseek/i.test(String(params.custom_llm_provider || ''))
+  || /deepseek/i.test(String(params.api_base || params.base_url || ''));
 const fallbacksOf = new Map();
 const defaultFallbacks = [];
+const aliases = new Set();
 for (const section of [litellmConfig.router_settings, litellmConfig.litellm_settings]) {
   if (!section) continue;
   for (const key of ['fallbacks', 'context_window_fallbacks', 'content_policy_fallbacks']) {
     for (const rule of section[key] || []) {
       for (const [from, to] of Object.entries(rule || {})) {
+        if (from === '*') { defaultFallbacks.push(...[].concat(to).map(String)); continue; }
         if (!fallbacksOf.has(from)) fallbacksOf.set(from, []);
         fallbacksOf.get(from).push(...[].concat(to).map(String));
       }
     }
   }
   defaultFallbacks.push(...[].concat(section.default_fallbacks || []).map(String));
+  for (const [alias, target] of Object.entries(section.model_group_alias || {})) {
+    const to = typeof target === 'object' && target ? target.model : target;
+    aliases.add(alias);
+    if (!fallbacksOf.has(alias)) fallbacksOf.set(alias, []);
+    fallbacksOf.get(alias).push(String(to));
+  }
 }
 // Every model name a call to `name` can end up on.
 const reachable = (name) => {
@@ -64,16 +77,16 @@ const reachable = (name) => {
 
 const resolve = (where, name) => {
   checked.push(`${where}: ${name}`);
-  if (!upstreamsOf.has(name)) {
+  if (!upstreamsOf.has(name) && !aliases.has(name)) {
     failures.push(`${where}: "${name}" is not a LiteLLM model_name`);
     return;
   }
   if (!noDeepseek) return;
   for (const reached of reachable(name)) {
-    for (const upstream of upstreamsOf.get(reached) || []) {
-      if (upstream.startsWith('deepseek/')) {
+    for (const params of upstreamsOf.get(reached) || []) {
+      if (isDeepseek(params)) {
         const via = reached === name ? '' : ` through the fallback to "${reached}"`;
-        failures.push(`${where}: "${name}" reaches ${upstream}${via}`);
+        failures.push(`${where}: "${name}" reaches DeepSeek (${params.model})${via}`);
       }
     }
   }

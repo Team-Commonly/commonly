@@ -242,6 +242,11 @@ the endpoint the caller uses:
 
 ## Config (`litellm-config.yaml`)
 
+> **Status (F103, 2026-11-04): history.** The sample below is the config from when GPT access
+> was live. Its `gpt-5.4`, `openai-codex/*`, `codex-cli/*` and nemotron routes are gone. The
+> current routes are in `k8s/helm/commonly/templates/configmaps/litellm-config.yaml`, and every
+> agent driver default names `litellm.agentDefaultModel` (see `values.yaml`).
+
 ```yaml
 model_list:
   # Codex — chatgpt/ provider reads auth.json from the chatgpt-auth PVC.

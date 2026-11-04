@@ -34,7 +34,7 @@ test('a DeepSeek deployment sharing the Claude name fails, wherever it sits in t
   for (const modelList of [[shadow, CLAUDE, DEEPSEEK], [CLAUDE, shadow, DEEPSEEK]]) {
     const result = verify(manifest({ modelList }));
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /"claude-haiku-5-5" reaches deepseek\/deepseek-v4-flash/);
+    assert.match(result.stderr, /"claude-haiku-5-5" reaches DeepSeek \(deepseek\/deepseek-v4-flash\)/);
   }
 });
 
@@ -55,11 +55,46 @@ test('a fallback chain that reaches DeepSeek in two hops fails', () => {
     routerSettings: { fallbacks: [{ 'claude-haiku-5-5': ['claude-sonnet-5-5'] }, { 'claude-sonnet-5-5': ['deepseek-v4-flash'] }] },
   }));
   assert.equal(result.status, 1);
+  assert.match(result.stderr, /reaches DeepSeek .* through the fallback to "deepseek-v4-flash"/);
 });
 
-test('a DeepSeek default_fallbacks entry fails', () => {
-  const result = verify(manifest({ routerSettings: { default_fallbacks: ['deepseek-v4-flash'] } }));
-  assert.equal(result.status, 1);
+// Each DeepSeek case must fail for that reason, not because a fixture left a
+// name unrouted.
+const failsOnDeepseek = (result, label) => {
+  assert.equal(result.status, 1, label);
+  assert.match(result.stderr, /reaches DeepSeek/, label);
+  assert.doesNotMatch(result.stderr, /is not a LiteLLM model_name/, label);
+};
+
+test('a DeepSeek default_fallbacks entry, or a `*` fallback rule, fails', () => {
+  failsOnDeepseek(verify(manifest({ routerSettings: { default_fallbacks: ['deepseek-v4-flash'] } })), 'default_fallbacks');
+  failsOnDeepseek(verify(manifest({ routerSettings: { fallbacks: [{ '*': ['deepseek-v4-flash'] }] } })), '* rule');
+});
+
+test('a model_group_alias from the default to DeepSeek fails, whether or not the name also routes', () => {
+  for (const target of ['deepseek-v4-flash', { model: 'deepseek-v4-flash', hidden: true }]) {
+    for (const modelList of [[DEEPSEEK], [CLAUDE, DEEPSEEK]]) {
+      failsOnDeepseek(verify(manifest({ modelList, routerSettings: { model_group_alias: { 'claude-haiku-5-5': target } } })), JSON.stringify(target));
+    }
+  }
+});
+
+test('a default served only through a Claude alias passes', () => {
+  const result = verify(manifest({
+    modelList: [{ model_name: 'claude-haiku-latest', litellm_params: { model: 'anthropic/claude-haiku-5-5' } }, DEEPSEEK],
+    routerSettings: { model_group_alias: { 'claude-haiku-5-5': 'claude-haiku-latest' } },
+  }));
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('DeepSeek is caught by provider, api_base or case, not only a lowercase prefix', () => {
+  for (const litellm_params of [
+    { model: 'DeepSeek/deepseek-v4-flash' },
+    { model: 'deepseek-v4-flash', custom_llm_provider: 'deepseek' },
+    { model: 'openai/deepseek-v4-flash', api_base: 'https://api.deepseek.com/v1' },
+  ]) {
+    failsOnDeepseek(verify(manifest({ modelList: [{ model_name: 'claude-haiku-5-5', litellm_params }] })), JSON.stringify(litellm_params));
+  }
 });
 
 test('a google/* primary fails; a google/* fallback is listed but not resolved', () => {

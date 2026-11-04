@@ -142,11 +142,17 @@ const normalizeFallbackModels = (value: unknown, fallback: string[] = DEFAULT_CO
   return [...fallback];
 };
 
+// The nemotron slug was the community default until F103, so a stored one is
+// the old default saved back, not an admin's choice: it reads as today's.
+const RETIRED_COMMUNITY_PRIMARY = /nemotron/i;
+
 const normalizeCommunityAgentModel = (value: unknown): CommunityAgentModel => {
   const defaultVal = DEFAULT_CONFIG.openclaw.communityAgentModel;
   if (!value || typeof value !== 'object') return { ...defaultVal };
   const v = value as Partial<CommunityAgentModel>;
-  const primary = normalizeModel(v.primary, defaultVal.primary);
+  const primary = RETIRED_COMMUNITY_PRIMARY.test(String(v.primary || ''))
+    ? defaultVal.primary
+    : normalizeModel(v.primary, defaultVal.primary);
   const fallbacks = normalizeFallbackModels(v.fallbacks, defaultVal.fallbacks);
   return { primary, fallbacks };
 };
@@ -284,12 +290,21 @@ class GlobalModelConfigService {
     };
 
     const sanitized = sanitize(mergedCandidate);
+    // The community model follows AGENT_DEFAULT_MODEL until an admin picks
+    // another one (F103). The merge above carries the resolved default into
+    // every save, so a value equal to it is not stored as a choice.
+    const stored = JSON.parse(JSON.stringify(sanitized));
+    const communityDefault = DEFAULT_CONFIG.openclaw.communityAgentModel;
+    const community = sanitized.openclaw.communityAgentModel;
+    if (community.primary === communityDefault.primary && community.fallbacks.length === 0) {
+      delete stored.openclaw.communityAgentModel;
+    }
 
     await SystemSetting.findOneAndUpdate(
       { key: MODEL_CONFIG_KEY },
       {
         $set: {
-          value: sanitized,
+          value: stored,
           updatedBy: userId || null,
         },
       },
