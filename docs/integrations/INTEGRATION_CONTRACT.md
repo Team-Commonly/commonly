@@ -114,6 +114,35 @@ Rows bound by plain members before the rule keep working. The only runtime
 gates are the three outbound summary commands above, which answer with a short
 refusal and no summary on such a row until the pod's creator reconnects it.
 
+## Who a relayed line is written as (F131)
+A live relay writes an external line into the pod **as `config.linkedUserId`**.
+That is honest only when the platform proves the sender is that person, so each
+platform declares its proof as an inbound adapter (`InboundRelayAdapter` in
+`backend/services/chatRelay/chatRelayCore.ts`, registered in
+`chatRelay/adapters.ts` as `inboundRelayAdapters`):
+- **Telegram**: the chat is `private`, so the sender is its one counterpart.
+- **Slack**: the DM's `event.user` is the `slackUserId` the OAuth bind proved.
+- **Discord**: a guild channel proves nothing, so the author must be the
+  installer's own Discord account. The install link asks for `identify`, the
+  OAuth callback reads `users/@me` with the exchange's user token, the id rides
+  in the signed install proof, and `POST /api/integrations` stores it as the
+  server-owned `config.discordUserId`. A line relays live only when
+  `author.id === discordUserId` and `linkedUserId` is the row's creator; every
+  other line stays in the summary buffer. Bots, webhooks (our own echo) and
+  system messages are ignored.
+
+`writeInboundAsLinkedUser` and `loadInboundAuthor` take a `ProvenSender`, which
+only `proveInboundSender` mints, after the adapter's proof passes. The same
+adapter declares `liveRelayRefusal`, which both integration write routes read
+before `liveRelay` goes on: the private-chat rule for Telegram and Slack (and
+any undeclared type), the proven installer for Discord.
+
+A platform that pushes one message to every backend replica (Discord's gateway
+socket) claims it with `claimInboundMessage(provider, integrationId, messageId)`
+before writing; that is the WebhookDelivery unique index the HTTP bridges'
+redelivery dedupe already uses. Inbound and outbound are separate registries:
+Discord relays inbound only, and is not in `chatRelayAdapters`.
+
 ## Testing contract
 - Shared Jest contract tests under `backend/__tests__/contracts/integrationProvider.test.js`:
   - validates `ingestEvent` produces required fields

@@ -61,6 +61,7 @@ import { readDiscordInstallProof } from '../utils/discordInstallProof';
 import {
   assertCanBindSurface, isSurfaceBindType, retargetsSurface, SurfaceBindRefusedError,
 } from '../services/chatRelay/bindSurface';
+import { liveRelayRefusalFor } from '../services/chatRelay/adapters';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
 import {
@@ -545,6 +546,17 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (relay.invalid) return res.status(400).json(relayFlagError(relay.invalid));
     const nextConfig: Record<string, unknown> = relay.next;
     if (type === 'telegram') Object.assign(nextConfig, mintConnectCode());
+    // F131: the installer's Discord user id, from the OAuth callback's proof and
+    // nowhere else (a body copy was stripped above). Only a proof for this pod,
+    // this guild and this caller counts; without one the row has no proven
+    // Discord author and cannot relay live.
+    if (type === 'discord') {
+      const proof = readDiscordInstallProof((req.body as { install?: unknown })?.install);
+      if (proof?.discordUserId && proof.podId === String(podId)
+        && proof.guildId === String(config.serverId) && proof.userId === String(req.user?.id)) {
+        nextConfig.discordUserId = proof.discordUserId;
+      }
+    }
     // First-run default: mirror. A fresh connector has no leadAgentUsername
     // and its agents use no escalation markers, so attention mode relays
     // NOTHING — a new user's first experience of the bridge would be silence.
@@ -559,6 +571,14 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     // streaming outbound. The creator IS the authenticated caller, so the
     // defaulted case is stamped exactly like an explicit liveRelay:true.
     if (nextConfig.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
+    // The platform's live-relay rule (its adapter's declaration), on the config
+    // as it will be stored, before the row or any webhook exists.
+    if (nextConfig.liveRelay === true) {
+      const refusal = liveRelayRefusalFor(
+        type, { config: nextConfig, createdBy: req.user?.id }, String(req.user?.id || ''),
+      );
+      if (refusal) return res.status(400).json({ message: refusal });
+    }
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     // F143: a chat surface people outside the pod can read (a Slack channel, a
@@ -957,11 +977,16 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       });
     }
     if (incoming && incoming.liveRelay === true) {
-      // Relay authors inbound as linkedUserId and streams outbound to chatId;
-      // both are only honest in a 1:1 private chat (#1289 inbound, F2 outbound).
-      if (nextConfig.chatId && nextConfig.chatType !== 'private') {
-        return res.status(400).json({ message: 'Live relay requires a private chat with the bot; this connector is bound to a group' });
-      }
+      // Relay authors inbound as linkedUserId, which is stamped from this caller.
+      // Each platform declares when that is honest (its inbound adapter's
+      // liveRelayRefusal): a 1:1 private chat for Telegram and Slack (#1289
+      // inbound, F2 outbound), the proven installer for Discord (F131).
+      const refusal = liveRelayRefusalFor(
+        integration.type,
+        { config: nextConfig, createdBy: integration.createdBy },
+        requesterId,
+      );
+      if (refusal) return res.status(400).json({ message: refusal });
       nextConfig.linkedUserId = req.user?.id;
     }
     const missingRequired = getMissingRequiredFields(integration.type || '', nextConfig);

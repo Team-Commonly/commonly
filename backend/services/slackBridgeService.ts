@@ -17,10 +17,12 @@ import { resolveDecisionCardReply } from './decisionCardReply';
 import type { ChannelCardEntry } from './decisionCardReply';
 import {
   loadInboundAuthor,
+  privateChatLiveRelayRefusal,
+  proveInboundSender,
   relayAgentMessageThroughAdapter,
   writeInboundAsLinkedUser,
 } from './chatRelay/chatRelayCore';
-import type { ChatRelayAdapter, OutboundRelayOptions } from './chatRelay/chatRelayCore';
+import type { ChatRelayAdapter, InboundRelayAdapter, OutboundRelayOptions } from './chatRelay/chatRelayCore';
 
 // One implementation, in slackApi.ts one step above the call that posts it. This
 // file and decisionCardReconcileService each carried their own copy, which is how
@@ -281,6 +283,17 @@ export const routeSlackReplyContent = (opts: {
     : { content: `${mention} ${content}`, routedAgent: hit.agentUsername, podId: routedPodId };
 };
 
+// Slack's inbound proof: the event's sender is the Slack user the OAuth bind
+// proved (`config.slackUserId`), never a value a request supplied.
+export const slackInboundAdapter: InboundRelayAdapter<SlackIntegrationDoc, { user?: string }> = {
+  provider: 'slack',
+  senderIsLinkedUser: (integration, event) => {
+    const slackUserId = integration.config?.slackUserId;
+    return Boolean(slackUserId) && event?.user === slackUserId;
+  },
+  liveRelayRefusal: privateChatLiveRelayRefusal,
+};
+
 // Inbound Slack DM → Commonly pod. The event route has already proven the
 // Slack signature and selected the team/channel row; this function repeats
 // the ownership-shaped checks because a bridge is never allowed to rely on a
@@ -307,12 +320,13 @@ export const relaySlackMessageToPod = async (opts: {
     return { relayed: false };
   }
   const config = integration.config || {};
-  if (
-    !isInboundRelayableIntegration(integration, String(integration.podId))
-    || !config.linkedUserId
-    || !config.slackUserId
-    || event.user !== config.slackUserId
-  ) {
+  // The proof is slackInboundAdapter.senderIsLinkedUser: the DM sender is the
+  // Slack user the OAuth bind proved. The core mints the ProvenSender every
+  // write below requires only when it passes.
+  const sender = isInboundRelayableIntegration(integration, String(integration.podId))
+    ? proveInboundSender(slackInboundAdapter, integration, event)
+    : null;
+  if (!sender) {
     console.warn(
       `[slack-bridge] inbound dropped integration=${String(integration._id)}: `
       + 'unbound or mismatched DM sender',
@@ -399,7 +413,6 @@ export const relaySlackMessageToPod = async (opts: {
     // neither addresses an agent, so they must not turn a plain DM into a mention.
     && extractMentions(String(rawText).replace(/<[^<>]*>/g, ' ')).length === 0;
   const replyToMessageId = cardReply.lateReply?.messageId || null;
-  const linkedUserId = String(config.linkedUserId);
   const senderName = event.user_profile?.display_name || event.user_profile?.real_name;
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
@@ -407,7 +420,7 @@ export const relaySlackMessageToPod = async (opts: {
 
   const author = await loadInboundAuthor({
     podId,
-    linkedUserId,
+    sender,
     logPrefix: '[slack-bridge]',
     onNotMember: () => replyNoActivePod(integration),
   });
@@ -432,7 +445,7 @@ export const relaySlackMessageToPod = async (opts: {
   await writeInboundAsLinkedUser({
     podId,
     podType: pod.type,
-    linkedUserId,
+    sender,
     linkedUser,
     content,
     replyToMessageId,
@@ -453,4 +466,5 @@ module.exports = {
   isRelayableIntegration,
   isInboundRelayableIntegration,
   slackRelayAdapter,
+  slackInboundAdapter,
 };

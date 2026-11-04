@@ -33,10 +33,12 @@ import { resolveDecisionCardReply } from './decisionCardReply';
 import type { ChannelCardEntry } from './decisionCardReply';
 import {
   loadInboundAuthor,
+  privateChatLiveRelayRefusal,
+  proveInboundSender,
   relayAgentMessageThroughAdapter,
   writeInboundAsLinkedUser,
 } from './chatRelay/chatRelayCore';
-import type { ChatRelayAdapter, OutboundRelayOptions } from './chatRelay/chatRelayCore';
+import type { ChatRelayAdapter, InboundRelayAdapter, OutboundRelayOptions } from './chatRelay/chatRelayCore';
 const OUTBOUND_TEXT_CAP = 900;
 const CARD_OUTBOUND_TEXT_CAP = 1_900;
 
@@ -306,6 +308,21 @@ export const relayAgentMessageToTelegram = async (
   opts: OutboundRelayOptions<TelegramIntegrationDoc>,
 ): Promise<void> => relayAgentMessageThroughAdapter(telegramRelayAdapter, opts);
 
+// Telegram's inbound proof: a `private` chat is 1:1 between the bot and one
+// person, so the sender is the chat's counterpart. Fails closed on an unknown
+// chatType, on the row's or on the message's. The reasoning is at the call site
+// in relayTelegramMessageToPod.
+export const telegramInboundAdapter: InboundRelayAdapter<
+  TelegramIntegrationDoc, { chat?: { type?: string } }
+> = {
+  provider: 'telegram',
+  senderIsLinkedUser: (integration, message) => (
+    integration.config?.chatType === 'private'
+    && !(message?.chat && message.chat.type !== 'private')
+  ),
+  liveRelayRefusal: privateChatLiveRelayRefusal,
+};
+
 // Inbound: Telegram message from a linked live-relay chat → pod message,
 // attributed to the integration's linked user, delivered through the same
 // seam both human routes use so mentions and wake behave identically.
@@ -374,8 +391,12 @@ export const relayTelegramMessageToPod = async (opts: {
   //
   // Widening this needs a real Telegram-sender → Commonly-user mapping, not a
   // longer list of accepted chat types.
-  const chatType = integration.config?.chatType;
-  if (chatType !== 'private' || (telegramMessage.chat && telegramMessage.chat.type !== 'private')) {
+  //
+  // The check itself is telegramInboundAdapter.senderIsLinkedUser; the core
+  // mints the ProvenSender every write below requires only when it passes.
+  const sender = proveInboundSender(telegramInboundAdapter, integration, telegramMessage);
+  if (!sender) {
+    const chatType = integration.config?.chatType;
     console.warn(
       `[tg-bridge] inbound dropped — relay authors as the linked user and chatType=${chatType || 'unknown'} `
         + 'cannot guarantee the sender is them',
@@ -470,7 +491,7 @@ export const relayTelegramMessageToPod = async (opts: {
 
   const author = await loadInboundAuthor({
     podId,
-    linkedUserId: String(linkedUserId),
+    sender,
     logPrefix: '[tg-bridge]',
     onNotMember: () => replyNoActivePod(integration),
   });
@@ -482,7 +503,7 @@ export const relayTelegramMessageToPod = async (opts: {
   await writeInboundAsLinkedUser({
     podId,
     podType: author.pod.type,
-    linkedUserId: String(linkedUserId),
+    sender,
     linkedUser: author.linkedUser,
     content,
     replyToMessageId,
@@ -502,6 +523,7 @@ module.exports = {
   relayAgentMessageToTelegram,
   relayTelegramMessageToPod,
   telegramRelayAdapter,
+  telegramInboundAdapter,
 };
 
 export {};

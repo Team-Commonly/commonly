@@ -746,4 +746,189 @@ describe('Discord binding containment (TASK-123 a)', () => {
       expect(Object.keys(update).filter((key) => key.includes('botToken'))).toEqual([]);
     });
   });
+  // F131: the installer's Discord user id is proven by the OAuth callback's
+  // users/@me read, carried in the signed install proof, and stored server-side
+  // as config.discordUserId. Live relay on a Discord row needs it.
+  describe('the installer’s Discord identity (F131)', () => {
+    const { mintDiscordInstallProof, readDiscordInstallProof, mintDiscordInstallState } = require('../../../utils/discordInstallProof');
+    const INSTALLER_DISCORD = '456789012345678901';
+    const STATE = () => encodeURIComponent(mintDiscordInstallState({ podId: 'pod-1', userId: MEMBER }));
+    const callback = () => request(app).get(`/api/discord/callback?code=abc&state=${STATE()}&guild_id=${GUILD}`);
+    const proofIn = (res) => readDiscordInstallProof(new URL(res.headers.location).searchParams.get('install'));
+    const meResponds = (impl) => axios.get.mockImplementation(async (url, ...rest) => (
+      url === 'https://discord.com/api/users/@me' ? impl(url, ...rest) : { data: { name: 'Guild' } }));
+
+    it('asks Discord for identify on the install link', async () => {
+      const res = await request(app).get('/api/discord/install-link/pod-1').set('Authorization', 'Bearer user-token');
+
+      expect(res.status).toBe(200);
+      expect(new URL(res.body.installUrl).searchParams.get('scope').split(' ')).toEqual(
+        expect.arrayContaining(['bot', 'applications.commands', 'identify']),
+      );
+    });
+
+    it('reads users/@me with the exchange’s user token and carries that id in the proof', async () => {
+      axios.post.mockResolvedValueOnce({ data: { access_token: 'user-access', guild: { id: GUILD } } });
+      meResponds(async () => ({ data: { id: INSTALLER_DISCORD, username: 'sam' } }));
+
+      const res = await callback();
+
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://discord.com/api/users/@me',
+        expect.objectContaining({ headers: { Authorization: 'Bearer user-access' } }),
+      );
+      expect(new URL(res.headers.location).pathname).toBe('/discord/success');
+      expect(proofIn(res)).toEqual({
+        podId: 'pod-1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
+      });
+    });
+
+    it('a failed users/@me read still installs, with no Discord id in the proof', async () => {
+      axios.post.mockResolvedValueOnce({ data: { access_token: 'user-access', guild: { id: GUILD } } });
+      meResponds(async () => { throw Object.assign(new Error('401'), { response: { status: 401 } }); });
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const res = await callback();
+
+        expect(new URL(res.headers.location).pathname).toBe('/discord/success');
+        expect(proofIn(res)).toEqual({ podId: 'pod-1', guildId: GUILD, userId: MEMBER });
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('never takes a malformed id from users/@me', async () => {
+      axios.post.mockResolvedValueOnce({ data: { access_token: 'user-access', guild: { id: GUILD } } });
+      meResponds(async () => ({ data: { id: 'not-a-snowflake' } }));
+
+      const res = await callback();
+
+      expect(proofIn(res).discordUserId).toBeUndefined();
+    });
+
+    describe('POST /api/integrations', () => {
+      const BODY = { podId: 'pod-1', type: 'discord', config: { serverId: GUILD, channelId: CHANNEL } };
+      const post = (body) => request(app).post('/api/integrations').set('Authorization', 'Bearer user-token').send(body);
+      const stored = () => Integration.__getLastInstance().config;
+
+      beforeEach(() => {
+        Integration.findOne.mockResolvedValue(null);
+        axios.get.mockImplementation(async (url) => (
+          url === `https://discord.com/api/channels/${CHANNEL}`
+            ? { data: { id: CHANNEL, type: 0, guild_id: GUILD } }
+            : { data: [] }));
+      });
+
+      it('stores the proof’s Discord id as config.discordUserId', async () => {
+        const install = mintDiscordInstallProof({
+          podId: 'pod-1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
+        });
+
+        const res = await post({ ...BODY, install });
+
+        expect(res.status).toBe(201);
+        expect(stored().discordUserId).toBe(INSTALLER_DISCORD);
+      });
+
+      it('strips a body-supplied discordUserId, with or without a proof', async () => {
+        const noId = mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD, userId: MEMBER });
+        const res = await post({ ...BODY, config: { ...BODY.config, discordUserId: '999999999999999999' }, install: noId });
+        expect(res.status).toBe(201);
+        expect(stored().discordUserId).toBeUndefined();
+
+        const withId = mintDiscordInstallProof({
+          podId: 'pod-1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
+        });
+        await post({ ...BODY, config: { ...BODY.config, discordUserId: '999999999999999999' }, install: withId });
+        expect(stored().discordUserId).toBe(INSTALLER_DISCORD);
+      });
+
+      it('takes no Discord id from a binding made on the prior-binding arm', async () => {
+        Integration.findOne.mockResolvedValue(discordRow());
+
+        const res = await post(BODY);
+
+        expect(res.status).toBe(201);
+        expect(stored().discordUserId).toBeUndefined();
+      });
+
+      it('refuses live relay on create without a proven Discord id, before the row or the webhook', async () => {
+        Integration.findOne.mockResolvedValue(discordRow());
+        const before = Integration.__getLastInstance();
+
+        const res = await post({ ...BODY, config: { ...BODY.config, liveRelay: true } });
+
+        expect(res.status).toBe(400);
+        expect(res.body.message).toMatch(/Discord account/);
+        expect(Integration.__getLastInstance()).toBe(before);
+        expect(axios.post).not.toHaveBeenCalled();
+      });
+
+      it('allows live relay on create with the proof, stamping the installer as the linked user', async () => {
+        const install = mintDiscordInstallProof({
+          podId: 'pod-1', guildId: GUILD, userId: MEMBER, discordUserId: INSTALLER_DISCORD,
+        });
+
+        const res = await post({ ...BODY, config: { ...BODY.config, liveRelay: true }, install });
+
+        expect(res.status).toBe(201);
+        expect(stored()).toMatchObject({ liveRelay: true, linkedUserId: MEMBER, discordUserId: INSTALLER_DISCORD });
+      });
+    });
+
+    describe('PATCH /api/integrations/:id', () => {
+      const patch = (body) => request(app)
+        .patch('/api/integrations/64b64c7f8a9e2f0012345678')
+        .set('Authorization', 'Bearer user-token')
+        .send(body);
+      const provenRow = (overrides = {}) => discordRow({
+        config: { serverId: GUILD, channelId: CHANNEL, discordUserId: INSTALLER_DISCORD },
+        ...overrides,
+      });
+
+      it('strips a body-supplied discordUserId', async () => {
+        Integration.findById.mockResolvedValue(discordRow());
+        Integration.findByIdAndUpdate.mockResolvedValue(discordRow());
+
+        const res = await patch({ config: { discordUserId: '999999999999999999', channelName: 'general' } });
+
+        expect(res.status).toBe(200);
+        const update = Integration.findByIdAndUpdate.mock.calls[0][1];
+        expect(Object.keys(update).filter((key) => key.includes('discordUserId'))).toEqual([]);
+      });
+
+      it('refuses live relay on a row with no proven Discord id', async () => {
+        Integration.findById.mockResolvedValue(discordRow());
+
+        const res = await patch({ config: { liveRelay: true } });
+
+        expect(res.status).toBe(400);
+        expect(res.body.message).toMatch(/Discord account/);
+        expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+      });
+
+      it('lets the installer turn live relay on, stamped as the linked user', async () => {
+        Integration.findById.mockResolvedValue(provenRow());
+        Integration.findByIdAndUpdate.mockResolvedValue(provenRow());
+
+        const res = await patch({ config: { liveRelay: true } });
+
+        expect(res.status).toBe(200);
+        expect(Integration.findByIdAndUpdate.mock.calls[0][1]).toMatchObject({
+          'config.liveRelay': true, 'config.linkedUserId': MEMBER,
+        });
+      });
+
+      it('refuses the pod creator who did not add the bot: their id would author the installer’s lines', async () => {
+        // MEMBER created the pod (canDeleteIntegration passes) but user-3 added the bot.
+        Integration.findById.mockResolvedValue(provenRow({ createdBy: { toString: () => 'user-3' } }));
+
+        const res = await patch({ config: { liveRelay: true } });
+
+        expect(res.status).toBe(400);
+        expect(res.body.message).toMatch(/Only the person who added the bot/);
+        expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+      });
+    });
+  });
 });
