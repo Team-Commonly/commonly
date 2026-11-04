@@ -86,7 +86,9 @@ process.env.NATIVE_RUNTIME_MODEL = 'claude-haiku-5-5';
 process.env.LITELLM_CHAT_MODEL = 'deepseek-v4-flash';
 const AgentRun = require('../../../models/AgentRun');
 const { postMessage } = require('../../../services/agentMessageService');
-const { runAgent, nativeModelFor, guardrailsForRun } = require('../../../services/nativeRuntimeService');
+const {
+  runAgent, nativeModelFor, guardrailsForRun, hostedModelsOffered,
+} = require('../../../services/nativeRuntimeService');
 
 const POD = '507f1f77bcf86cd799439011';
 const SEAT = '507f1f77bcf86cd799439013';
@@ -145,10 +147,24 @@ describe('which model a native turn runs on', () => {
     expect(nativeModelFor({ ...env, configured: 'deepseek-v4-flash', connectorRun: false })).toBe(NATIVE);
   });
 
-  test('another pinned model is kept, unless the turn holds a connector grant', () => {
+  // F98 (D243, Cofounder 11-04): hosted agents are Claude-only. Every pin the
+  // deployment does not offer maps to the native model server-side; the
+  // stored value is left as it is.
+  test.each([
+    'deepseek-v4-flash', 'deepseek-flash-1017', 'gemini-2.5-flash', 'google/gemini-2.5-flash', 'gpt-5.4',
+    'openai-codex/gpt-5.4', 'codex-mini-latest', 'nvidia/nemotron-3-super-120b-a12b:free',
+    'openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'claude-sonnet-5-5',
+  ])('a legacy pin %s runs on the native model, with or without a grant', (pin) => {
     const env = { nativeModel: NATIVE, chatModel: 'deepseek-v4-flash' };
-    expect(nativeModelFor({ ...env, configured: 'gpt-5.4', connectorRun: false })).toBe('gpt-5.4');
-    expect(nativeModelFor({ ...env, configured: 'gpt-5.4', connectorRun: true })).toBe(NATIVE);
+    expect(nativeModelFor({ ...env, configured: pin, connectorRun: false })).toBe(NATIVE);
+    expect(nativeModelFor({ ...env, configured: pin, connectorRun: true })).toBe(NATIVE);
+  });
+
+  test('the deployment offers only the native model, so a pin on it is kept', () => {
+    expect(hostedModelsOffered(NATIVE)).toEqual([NATIVE]);
+    expect(hostedModelsOffered('')).toEqual([]);
+    const env = { nativeModel: NATIVE, chatModel: 'deepseek-v4-flash' };
+    expect(nativeModelFor({ ...env, configured: NATIVE, connectorRun: false })).toBe(NATIVE);
   });
 
   test('with no native model set, nothing changes', () => {
@@ -202,14 +218,41 @@ describe('which model a native turn runs on', () => {
       .toEqual(['openai-moderation-enforce', 'injection-guard']);
   });
 
-  test('the same pinned model without a grant keeps its pin', async () => {
+  test('a non-Claude pin without a grant runs on the native model too', async () => {
     mockAxiosPost.mockResolvedValueOnce(reply('Hi.'));
     await runAgent(installation('gpt-5.4'), TRIGGER);
     const request = mockAxiosPost.mock.calls[0][1];
-    expect(request.model).toBe('gpt-5.4');
-    // The Claude-only fields stay off every other route.
-    expect(request).not.toHaveProperty('thinking');
-    expect(request).not.toHaveProperty('max_tokens');
+    expect(request.model).toBe(NATIVE);
+    expect(request.disable_fallbacks).toBe(true);
+    expect(request.thinking).toEqual({ type: 'disabled' });
+  });
+});
+
+// The spend check before DeepSeek is deleted reads who was moved, so a mapped
+// pin is logged once per agent and pin, with the model it now runs on.
+describe('a mapped pin is logged once per agent', () => {
+  let warn;
+  beforeEach(() => { warn = jest.spyOn(console, 'warn').mockImplementation(() => {}); });
+  afterEach(() => warn.mockRestore());
+  const mapped = () => warn.mock.calls.map(([line]) => line)
+    .filter((line) => typeof line === 'string' && line.includes('native_model_pin_mapped'))
+    .map((line) => JSON.parse(line));
+
+  test('names the agent, the old pin and the new model, once', async () => {
+    const pinned = { ...installation('gemini-2.5-flash'), agentName: 'pod-welcomer', instanceId: 'w-1' };
+    mockAxiosPost.mockResolvedValue(reply('Hi.'));
+    await runAgent(pinned, TRIGGER);
+    await runAgent(pinned, TRIGGER);
+    expect(mapped()).toEqual([{
+      event: 'native_model_pin_mapped', agentName: 'pod-welcomer', instanceId: 'w-1', pin: 'gemini-2.5-flash', model: NATIVE,
+    }]);
+  });
+
+  test('an unset model or a pin the deployment offers logs nothing', async () => {
+    mockAxiosPost.mockResolvedValue(reply('Hi.'));
+    await runAgent({ ...installation(), agentName: 'quiet-a' }, TRIGGER);
+    await runAgent({ ...installation(NATIVE), agentName: 'quiet-b' }, TRIGGER);
+    expect(mapped()).toEqual([]);
   });
 });
 

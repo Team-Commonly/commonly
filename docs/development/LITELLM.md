@@ -209,6 +209,14 @@ if a cloud-codex key is ever regenerated, re-add `codex-cli/*`. (Verified gap, 2
 
 ## Codex: chat path vs responses path (the `responses/` prefix rule)
 
+> **Status (F98, 2026-11-04): history.** GPT access was revoked on 2026-10-27, and
+> since then every `gpt-5.4*`, `openai-codex/*` and `codex-cli/*` alias has been a
+> DeepSeek stand-in, not a `chatgpt/` route. Those stand-ins render only under
+> `litellm.legacyAliases`, which is off on dev, so a caller there gets an
+> unknown-model error. Base keeps them for the chart's own driver defaults until
+> F103 moves those defaults. The rule below applies again only if GPT access
+> returns.
+
 LiteLLM exposes the chatgpt/ provider on TWO endpoints, and the codex model name must match
 the endpoint the caller uses:
 

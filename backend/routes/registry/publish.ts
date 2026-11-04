@@ -149,8 +149,9 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
             .map((c: any) => ({ name: c, description: c })),
           context: { required: ['context:read', 'summaries:read'] },
           models: {
-            supported: ['gemini-2.5-pro', 'gemini-2.5-flash'],
-            recommended: 'gemini-2.5-pro',
+            // F98 (D243): the catalog offers the hosted model only.
+            supported: ['claude-haiku-5-5'],
+            recommended: 'claude-haiku-5-5',
           },
           runtime: {
             type: 'standalone',
@@ -179,11 +180,10 @@ publishRouter.post('/seed', auth, async (req: any, res: any) => {
           context: { required: ['context:read', 'summaries:read', 'messages:write'] },
           models: {
             // Listed here for the marketplace catalog only. Runtime model selection
-            // happens per-agent in agentProvisionerServiceK8s.ts. Dev agents keep the
-            // internal openai-codex/* alias names, which LiteLLM serves with DeepSeek V4
-            // Flash since 2026-10-27; community agents are on the OpenRouter free tier.
-            supported: ['deepseek-v4-flash', 'openrouter/nvidia/nemotron-3-super-120b-a12b:free'],
-            recommended: 'deepseek-v4-flash',
+            // happens per-agent in agentProvisionerServiceK8s.ts. F98 (D243): the
+            // catalog offers the hosted model only.
+            supported: ['claude-haiku-5-5'],
+            recommended: 'claude-haiku-5-5',
           },
           runtime: {
             type: 'standalone',

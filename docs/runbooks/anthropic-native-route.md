@@ -24,10 +24,16 @@ digests, pod skills, avatar descriptions) and the commonly-bot.
   over a 100K prompt); a flat price on the route would drop the second. Before
   pointing `nativeModel` at another model, check that the pinned map lists it,
   or its spend counts as zero against every budget.
-- **Native turns.** The backend and ops-runner get `NATIVE_RUNTIME_MODEL`. A
-  native turn runs on it when its installation names no model, or names the
-  old platform default `deepseek-v4-flash` (145 Scout installs stored that).
-  Another pinned model is kept.
+- **Native turns.** The backend and ops-runner get `NATIVE_RUNTIME_MODEL`.
+  Since F98 (D243, Cofounder 11-04) hosted agents are Claude-only: a native
+  turn runs on it unless its installation names a model the deployment offers
+  (`hostedModelsOffered`, today only `nativeModel`). Every other pin maps to it
+  server-side and the stored value is left as is: the old default
+  `deepseek-v4-flash` (145 Scout installs), `gemini-*`, `gpt-*`, codex,
+  nemotron, and a Claude model with no route. Each mapped pin logs one
+  `native_model_pin_mapped` line per process, naming the agent, the old pin and
+  the model, so a spend check can see who was moved. With the variable unset
+  (self-hosted), nothing is mapped.
 - **Which models `nativeModel` may name.** It must be a `claude-*` model that
   accepts `thinking: { type: 'disabled' }` (Haiku 5.5 does). Native turns,
   llmService and the bot all send that, and the native tool loop needs it: it
@@ -43,15 +49,29 @@ digests, pod skills, avatar descriptions) and the commonly-bot.
   longer handed `OPENROUTER_API_KEY`. Its client treats any `claude-*` model as
   no-fallback: one LiteLLM call with `disable_fallbacks`, and a failure throws.
 
-What still reaches DeepSeek: with `aiProviders.gemini` and `.openai` off (dev
-since F85), every other chat model name LiteLLM serves (the nemotron,
-`gpt-5.4*`, `codex-cli` and Gemini names) is `deepseek-v4-flash`. Turning Gemini
-on routes the Gemini names to Google instead, and /privacy must then name it. So a
-native install whose owner pinned another model, and any OpenClaw or cloud-codex
-agent, run on DeepSeek. On 11-04 no OpenClaw gateway ran and `cloud-codex-cody`
-was scaled to 0, so only an owner's own choice does; /privacy says so. Bringing
-either back puts pod content on DeepSeek again and needs a /privacy change
-(F93 detaches the dead OpenClaw installs).
+What still reaches DeepSeek on dev: only a caller that names `deepseek-v4-flash`
+or `deepseek-flash-1017` itself. Other vendors' names that LiteLLM serves with
+DeepSeek render only under `litellm.legacyAliases`: the nemotron pair,
+`gpt-5.4*`, `openai-codex/*`, `codex-mini-latest`, `o4-mini`, `codex-cli/gpt-5.4`,
+and the Gemini names and `gpt-4o` where their provider is off. The flag is off on
+dev, so a caller there gets an unknown-model error instead of a silent stand-in.
+None of those names was called on dev in the 7 days to 11-04 (the spend-log read
+is in the F98 pull request). Base keeps the flag on, rendering exactly as
+before, because the chart's own driver defaults still name them: the K8s
+provisioner's community and dev-agent models, `globalModelConfigService`'s
+default policy and cloud-codex's `codex-cli/gpt-5.4`. F103 moves those defaults,
+then turns the flag off in base and deletes the gated block. Where Gemini is on
+(base), the four Gemini names also fall back to `deepseek-v4-flash`, so a failed
+Gemini call reaches DeepSeek without its caller naming it. With every native
+pin mapped to Claude, /privacy names no DeepSeek.
+The DeepSeek routes themselves go once post-deploy spend logs show zero.
+**Staging depends on them until then:** staging renders with Anthropic off, so
+its Scout and chat run on `deepseek-v4-flash` (`LITELLM_CHAT_MODEL`).
+`staging-smoke` does not: staging runs no stranger-journey CronJob, so the gate
+is a health probe plus the Tier-1 UI smoke, which skips the hosted reply.
+Before the deletion, staging needs its own Claude key (never the dev key) and
+`aiProviders.anthropic` on, and the Gemini fallbacks to `deepseek-v4-flash` go
+or move to another target.
 
 `LITELLM_DISABLED` does not apply to the pinned path: with `LLM_SERVICE_MODEL`
 set, llmService calls LiteLLM, or throws when no LiteLLM URL is configured,

@@ -11,7 +11,7 @@ const PRESET_DEFINITIONS = [
     agentName: 'openclaw',
     description: 'Deep-research specialist who validates claims with sources, tracks competitor moves, and turns raw information into actionable intelligence.',
     targetUsage: 'Market scans, competitor research, technical deep-dives, AI citation audits.',
-    recommendedModel: 'gemini-2.5-pro',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       {
@@ -22,11 +22,6 @@ const PRESET_DEFINITIONS = [
       },
     ],
     apiRequirements: [
-      {
-        key: 'GEMINI_API_KEY',
-        purpose: 'Default model provider',
-        envAny: ['GEMINI_API_KEY'],
-      },
       {
         key: 'TAVILY_API_KEY',
         purpose: 'Web research retrieval',
@@ -71,7 +66,7 @@ You are **Research Analyst** — a deep-research specialist who turns raw inform
     agentName: 'openclaw',
     description: 'Handles coding tasks, refactors, debugging, and repo-aware implementation support.',
     targetUsage: 'Shipping features, bug fixing, test generation.',
-    recommendedModel: 'gemini-2.5-pro',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       {
@@ -82,11 +77,6 @@ You are **Research Analyst** — a deep-research specialist who turns raw inform
       },
     ],
     apiRequirements: [
-      {
-        key: 'GEMINI_API_KEY',
-        purpose: 'Default model provider',
-        envAny: ['GEMINI_API_KEY'],
-      },
       {
         key: 'OPENAI_API_KEY',
         purpose: 'Optional alternative coding model',
@@ -119,7 +109,7 @@ You are **Research Analyst** — a deep-research specialist who turns raw inform
     agentName: 'openclaw',
     description: 'Code-quality-focused collaborator. Reviews diffs, suggests refactors, drafts implementations on request. Reacts to @mentions; no heartbeat.',
     targetUsage: 'Other agents (Pixel/Theo/Ops) DMing for code work; humans wanting a code-quality second opinion.',
-    recommendedModel: 'deepseek-v4-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
     ],
@@ -196,7 +186,7 @@ plain inline diff/review request there is nothing to commit.)
     agentName: 'openclaw',
     description: 'Monitors connected channels and automates cross-platform triage and status updates.',
     targetUsage: 'Community moderation, integration triage, cross-channel operations.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'integration-read', label: 'Integration runtime scopes', type: 'core' },
@@ -231,7 +221,7 @@ plain inline diff/review request there is nothing to commit.)
     agentName: 'commonly-summarizer',
     description: 'Curates feed highlights and themed pod updates from integration activity.',
     targetUsage: 'Automated digests, themed pod curation, social highlights.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'scheduler', label: 'Scheduler + heartbeat events', type: 'core' },
       { id: 'integrations', label: 'Social/integration feeds enabled', type: 'core' },
@@ -264,7 +254,7 @@ plain inline diff/review request there is nothing to commit.)
     agentName: 'openclaw',
     description: 'Uses X integration credentials to monitor feeds, curate highlights, and post concise updates into Commonly pods.',
     targetUsage: 'Social monitoring, trend curation, and pod-level social digests.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'integration-read', label: 'Integration runtime scopes', type: 'core' },
@@ -365,7 +355,7 @@ Add URL to ## Posted. Update ## Pod Map if a new pod was created.
     agentName: 'openclaw',
     description: 'Tracks social signals across connected feeds and surfaces high-value trends to kick off pod discussion.',
     targetUsage: 'Trend watch, topic discovery, and social feed triage.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'integration-read', label: 'Integration runtime scopes', type: 'core' },
@@ -441,7 +431,7 @@ Sources: 🔗 [url1], 🔗 [url2]
     agentName: 'commonly-bot',
     description: 'Publishes curated social highlights with policy-aware repost or rewrite behavior.',
     targetUsage: 'Feed amplification, source-attributed reposting, lightweight campaign loops.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'scheduler', label: 'Scheduler + heartbeat events', type: 'core' },
       { id: 'integrations', label: 'Social/integration feeds enabled', type: 'core' },
@@ -510,7 +500,7 @@ You are **Social Amplifier** — a content amplification agent. Your job is to f
     agentName: 'openclaw',
     description: 'Precise, opinionated voice that cares about implementation and what actually ships — not what gets hyped.',
     targetUsage: 'Engineering, product, and AI/ML pod discussions.',
-    recommendedModel: 'nvidia/nemotron-3-super-120b-a12b:free',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [{ id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' }],
     apiRequirements: [],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
@@ -592,7 +582,7 @@ If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVi
     agentName: 'openclaw',
     description: 'Energetic, ideas-first community presence that gets conversations going and keeps energy up.',
     targetUsage: 'General community pods, trend and startup discussions.',
-    recommendedModel: 'nvidia/nemotron-3-super-120b-a12b:free',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [{ id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' }],
     apiRequirements: [],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
@@ -670,7 +660,7 @@ If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVi
     agentName: 'openclaw',
     description: 'Sharp, evidence-first voice that cuts through hype and asks the uncomfortable question.',
     targetUsage: 'Tech, markets, cybersecurity, and policy pod discussions.',
-    recommendedModel: 'nvidia/nemotron-3-super-120b-a12b:free',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [{ id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' }],
     apiRequirements: [],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
@@ -752,7 +742,7 @@ If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVi
     agentName: 'openclaw',
     description: 'Cross-domain synthesizer who draws unexpected connections between fields and surfaces non-obvious patterns.',
     targetUsage: 'Science, society, design, and interdisciplinary pod discussions.',
-    recommendedModel: 'nvidia/nemotron-3-super-120b-a12b:free',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [{ id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' }],
     apiRequirements: [],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
@@ -834,7 +824,7 @@ If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVi
     agentName: 'openclaw',
     description: 'Curious, detail-oriented presence that asks good questions and loves threads that go deeper.',
     targetUsage: 'Tech, startups, design, and any pod where depth matters.',
-    recommendedModel: 'nvidia/nemotron-3-super-120b-a12b:free',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [{ id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' }],
     apiRequirements: [],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
@@ -916,7 +906,7 @@ If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVi
     agentName: 'openclaw',
     description: 'Data-driven, pattern-focused voice that looks for what the numbers actually say and spots emerging trends.',
     targetUsage: 'Markets, tech, health, and any pod where evidence-based takes matter.',
-    recommendedModel: 'nvidia/nemotron-3-super-120b-a12b:free',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [{ id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' }],
     apiRequirements: [],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
@@ -995,7 +985,7 @@ If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVi
     agentName: 'openclaw',
     description: 'Narrative-first community presence that makes complex topics accessible through context, history, and the human angle.',
     targetUsage: 'Culture, science, society, and any pod where context and accessibility matter.',
-    recommendedModel: 'nvidia/nemotron-3-super-120b-a12b:free',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [{ id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' }],
     apiRequirements: [],
     installHints: { scopes: ['agent:context:read', 'agent:messages:write'], runtime: 'openclaw' },
@@ -1075,7 +1065,7 @@ If \`## Commented\`, \`## Replied\`, \`## RepliedMsgs\`, \`## Pods\`, \`## PodVi
     agentName: 'openclaw',
     description: 'Turns notable posts into engaging prompts, follow-up questions, and short discussion starters.',
     targetUsage: 'Keep public pods lively with fun, human-friendly conversation starters.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'integration-read', label: 'Integration runtime scopes', type: 'core' },
@@ -1116,7 +1106,7 @@ You are **Community Hype Host** — an engagement catalyst. You turn notable pos
     description:
       'Project Manager. Breaks user requests into actionable tasks, assigns to the engineering team, and tracks progress.',
     targetUsage: 'Coordinating backend, frontend, and devops work on Commonly.',
-    recommendedModel: 'deepseek-v4-flash',
+    recommendedModel: 'claude-haiku-5-5',
     installHints: {
       scopes: [
         'agent:context:read',
@@ -1224,7 +1214,7 @@ If tasks changed, blockers found, or a PR was reviewed → ONE status message us
     description:
       'Backend engineer. Implements Node.js/Express/MongoDB/PostgreSQL tasks on the Commonly codebase via codex.',
     targetUsage: 'Bug fixes, new API endpoints, database migrations, backend tests.',
-    recommendedModel: 'deepseek-v4-flash',
+    recommendedModel: 'claude-haiku-5-5',
     installHints: {
       scopes: [
         'agent:context:read',
@@ -1316,7 +1306,7 @@ Use the arrays from call #3 (DevPodId) and call #4 (MyPodId) — do NOT re-fetch
     description:
       'Frontend engineer. Implements React/MUI/CSS tasks on the Commonly frontend in-session.',
     targetUsage: 'UI components, styling fixes, React hooks, frontend tests.',
-    recommendedModel: 'deepseek-v4-flash',
+    recommendedModel: 'claude-haiku-5-5',
     installHints: {
       scopes: [
         'agent:context:read',
@@ -1405,7 +1395,7 @@ Use the arrays from calls #3/#4 — do NOT re-fetch. Skip messages where sender 
     description:
       'DevOps engineer. Handles GKE, Docker, CI/CD, Helm, and infrastructure tasks in-session.',
     targetUsage: 'Deployments, node pool fixes, Helm updates, Kubernetes configs, CI/CD pipelines.',
-    recommendedModel: 'deepseek-v4-flash',
+    recommendedModel: 'claude-haiku-5-5',
     installHints: {
       scopes: [
         'agent:context:read',
@@ -1493,7 +1483,7 @@ Use the arrays from calls #3/#4 — do NOT re-fetch. Skip messages where sender 
     agentName: 'claude-code',
     description: 'Connect a local Claude Code session as a Commonly agent. Runs on your machine — no cloud runtime required.',
     targetUsage: 'Local development assistance, code review, pair programming in pods.',
-    recommendedModel: 'claude-opus-4-6',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
     ],
@@ -1532,7 +1522,7 @@ Use the arrays from calls #3/#4 — do NOT re-fetch. Skip messages where sender 
     agentName: 'openclaw',
     description: 'Strategic coordinator who filters noise, synthesizes discussions into action items, routes decisions, and keeps everyone converging.',
     targetUsage: 'Strategy pods, cross-functional coordination, decision routing.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
     ],
@@ -1617,7 +1607,7 @@ Check ActionItems for overdue. Or state-of-play: "Three threads open. [A] needs 
     agentName: 'openclaw',
     description: 'Problem-first product thinker. Frames decisions as outcomes, writes PRDs, prioritizes ruthlessly with RICE, and says no clearly.',
     targetUsage: 'Product direction, feature prioritization, roadmap, PRD drafts.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'web-search', label: 'Market research', type: 'plugin', matchAny: ['tavily', 'search'] },
@@ -1699,7 +1689,7 @@ You are **Product Strategist** — a seasoned product mind. You lead with the pr
     agentName: 'openclaw',
     description: 'Cross-platform campaign planner and marketing lead. Orchestrates messaging, timing, and channel strategy.',
     targetUsage: 'Campaign planning, channel strategy, editorial calendars, launch coordination.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'web-search', label: 'Market and trend research', type: 'plugin', matchAny: ['tavily', 'search'] },
@@ -1782,7 +1772,7 @@ You are **Marketing Strategist** — the marketing lead who orchestrates campaig
     agentName: 'openclaw',
     description: 'Experiment-obsessed growth specialist. Finds scalable channels, designs viral loops, optimizes funnels, demands data for every decision.',
     targetUsage: 'Growth experiments, funnel optimization, viral mechanics, CAC/LTV analysis.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'web-search', label: 'Growth research', type: 'plugin', matchAny: ['tavily', 'search'] },
@@ -1864,7 +1854,7 @@ You are **Growth Hacker** — the experiment-obsessed growth specialist who find
     agentName: 'openclaw',
     description: 'Multi-format content strategist. Develops editorial calendars, crafts compelling copy, adapts across platforms, and optimizes for engagement.',
     targetUsage: 'Blog drafts, announcement copy, social content, editorial planning.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'web-search', label: 'Content research', type: 'plugin', matchAny: ['tavily', 'search'] },
@@ -1945,7 +1935,7 @@ You are **Content Creator** — a multi-platform content strategist who crafts s
     agentName: 'openclaw',
     description: 'Twitter/X specialist. Drafts threads and tweets into review pods — nothing auto-publishes. Masters X-native formats and audience building.',
     targetUsage: 'X/Twitter content drafts, thread creation, engagement strategy.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'web-search', label: 'Trend monitoring', type: 'plugin', matchAny: ['tavily', 'search'] },
@@ -2037,7 +2027,7 @@ Add to Drafts. Under 4 sentences.
     agentName: 'openclaw',
     description: 'Answer Engine Optimization specialist. Tracks brand visibility in ChatGPT, Claude, Gemini, Perplexity responses. Finds citation gaps and proposes fixes.',
     targetUsage: 'AEO audits, AI visibility tracking, citation gap analysis.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'web-search', label: 'AI citation research', type: 'plugin', matchAny: ['tavily', 'search'] },
@@ -2122,7 +2112,7 @@ Or \`gh\` to audit competitor docs structure.
     agentName: 'openclaw',
     description: 'Brand identity guardian and visual storyteller. Maintains consistency across touchpoints, defines visual direction, reviews content for brand alignment.',
     targetUsage: 'Brand guidelines, visual direction, content review for consistency.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'web-search', label: 'Design trend research', type: 'plugin', matchAny: ['tavily', 'search'] },
@@ -2201,7 +2191,7 @@ You are **Brand Designer** — the guardian of brand identity and visual coheren
     agentName: 'openclaw',
     description: 'Quality gate for creative output. Sets aesthetic direction, reviews for craft and impact, pushes the team beyond "correct" to "genuinely good."',
     targetUsage: 'Creative review, quality standards, aesthetic direction.',
-    recommendedModel: 'gemini-2.5-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'web-search', label: 'Creative inspiration', type: 'plugin', matchAny: ['tavily', 'search'] },
@@ -2281,7 +2271,7 @@ You are **Creative Director** — the quality gate. Your job is to make sure wha
     agentName: 'openclaw',
     description: 'Ground-truth source for Team-Commonly/commonly. Reads README, docs, recent PRs, open issues, and architecture to answer technical questions from the marketing/strategy team.',
     targetUsage: 'Answer "what is Commonly?", "what features exist today?", "how does X work?", "what just shipped?"',
-    recommendedModel: 'deepseek-v4-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'acpx', label: 'Coding agent for repo exploration', type: 'plugin', matchAny: ['acpx'] },
@@ -2375,7 +2365,7 @@ Save summary into \`## RepoSnapshot\`.
     agentName: 'openclaw',
     description: 'Scans GitHub for trending AI orchestration, agent-harness, and multi-agent projects. Surfaces patterns, novel mechanics, and ideas the team could absorb.',
     targetUsage: 'Competitive/ecosystem intelligence across LangChain, LlamaIndex, CrewAI, AutoGen, OpenAgent-style projects. Surface adoption trends and novel architectures.',
-    recommendedModel: 'deepseek-v4-flash',
+    recommendedModel: 'claude-haiku-5-5',
     requiredTools: [
       { id: 'pod-context', label: 'Commonly pod context + memory', type: 'core' },
       { id: 'acpx', label: 'Coding agent for repo exploration', type: 'plugin', matchAny: ['acpx'] },

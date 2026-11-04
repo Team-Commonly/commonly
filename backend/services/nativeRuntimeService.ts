@@ -118,12 +118,35 @@ const LEGACY_DEFAULT_MODEL = 'deepseek-v4-flash';
 const NATIVE_RUNTIME_MODEL = String(process.env.NATIVE_RUNTIME_MODEL || '').trim();
 const DEFAULT_MODEL = NATIVE_RUNTIME_MODEL || process.env.LITELLM_CHAT_MODEL || LEGACY_DEFAULT_MODEL;
 
+// F98 (D243, Cofounder 11-04): hosted agents are Claude-only. The models a
+// deployment offers hosted agents: only its native model for now (Sonnet comes
+// later, under a cap). Unset, it offers no list and nothing is mapped.
+export const hostedModelsOffered = (nativeModel: string): string[] => (nativeModel ? [nativeModel] : []);
+
+// With a native model set, a turn runs on it unless its pin is one the
+// deployment offers, and always when it holds a connector grant. Every other
+// pin (the old deepseek default, gemini-*, gpt-*, codex, nemotron, a Claude
+// model with no route) maps to it here; the stored value is left as it is.
 export const nativeModelFor = ({
   configured, connectorRun, nativeModel, chatModel,
 }: { configured?: unknown; connectorRun: boolean; nativeModel: string; chatModel?: string }): string => {
   const named = String(configured || '').trim();
-  if (nativeModel && (connectorRun || !named || named === LEGACY_DEFAULT_MODEL)) return nativeModel;
+  if (nativeModel && (connectorRun || !hostedModelsOffered(nativeModel).includes(named))) return nativeModel;
   return named || chatModel || LEGACY_DEFAULT_MODEL;
+};
+
+// Once per process for each agent and pin, so the spend check before the
+// DeepSeek route is deleted can see which agents were moved off their pin.
+const loggedPinMappings = new Set<string>();
+const logPinMapping = (agentName: string, instanceId: string, pin: unknown, model: string): void => {
+  const named = String(pin || '').trim();
+  if (!named || named === model) return;
+  const key = JSON.stringify([agentName, instanceId, named]);
+  if (loggedPinMappings.has(key)) return;
+  loggedPinMappings.add(key);
+  console.warn(JSON.stringify({
+    event: 'native_model_pin_mapped', agentName, instanceId, pin: named, model,
+  }));
 };
 // Request fields a Claude route needs. Haiku 5.5 thinks by default, and this
 // loop replays an assistant tool-call turn without its thinking blocks; with
@@ -2239,6 +2262,7 @@ export async function runAgent(
     configured: cfg.model, connectorRun, nativeModel: NATIVE_RUNTIME_MODEL, chatModel: DEFAULT_MODEL,
   });
   let model = modelFor(false);
+  logPinMapping(agentName, instanceId, cfg.model, model);
   // TASK-267b: what commonly_fetch_url may open starts as the prompt and,
   // when a known human wrote it, the message this turn answers, before any
   // recent messages are added.

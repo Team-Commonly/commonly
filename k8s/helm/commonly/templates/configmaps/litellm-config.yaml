@@ -94,68 +94,66 @@ data:
           budget_duration: 1mo
 
       # --- Gemini (direct google provider) ---
-      # aiProviders.gemini.enabled off (F85): Google rejects the key, and a
-      # rejected call still carries the prompt. Callers keep asking for these
-      # names (llmService and the commonly-bot client default to gemini-2.5-flash),
-      # so each name stays and DeepSeek serves it directly, instead of the request
-      # going to Google first and falling back after the 401.
+      # Served by Google where aiProviders.gemini is on (off on dev since F85:
+      # Google rejects the key). F98 (D243, 11-04): with Gemini off these names
+      # used to be served by DeepSeek, which gives a caller another vendor's model
+      # with no signal. That stand-in now renders only under litellm.legacyAliases
+      # (off on dev, on in base until F103; see values.yaml), so with Gemini off on
+      # dev a caller gets an unknown-model error.
+      {{- if .Values.aiProviders.gemini.enabled }}
       - model_name: google/gemini-2.5-flash
         litellm_params:
-          {{- if .Values.aiProviders.gemini.enabled }}
           model: gemini/gemini-2.5-flash
           api_key: os.environ/GEMINI_API_KEY
-          {{- else }}
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-          {{- end }}
 
       - model_name: google/gemini-2.5-flash-lite
         litellm_params:
-          {{- if .Values.aiProviders.gemini.enabled }}
           model: gemini/gemini-2.5-flash-lite
           api_key: os.environ/GEMINI_API_KEY
-          {{- else }}
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-          {{- end }}
 
       - model_name: google/gemini-2.0-flash
         litellm_params:
-          {{- if .Values.aiProviders.gemini.enabled }}
           model: gemini/gemini-2.0-flash
           api_key: os.environ/GEMINI_API_KEY
-          {{- else }}
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-          {{- end }}
 
       # Aliases for backend llmService default model names
       - model_name: gemini-2.5-flash
         litellm_params:
-          {{- if .Values.aiProviders.gemini.enabled }}
           model: gemini/gemini-2.5-flash
           api_key: os.environ/GEMINI_API_KEY
-          {{- else }}
+      {{- end }}
+      {{- if and (not .Values.aiProviders.gemini.enabled) .Values.litellm.legacyAliases }}
+      - model_name: google/gemini-2.5-flash
+        litellm_params:
           model: deepseek/deepseek-v4-flash
           api_key: os.environ/DEEPSEEK_API_KEY
-          {{- end }}
 
-      # --- nemotron aliases (community agents / gateway) ---
-      # Registered with both prefixed and un-prefixed model names:
-      # - openrouter/* used when gateway calls via openai-codex/gpt-5.4 fallback path
-      # - nvidia/* used when gateway uses openrouter:default profile
-      #   (OpenClaw strips the "openrouter/" prefix before sending to the provider)
-      # D78 (2026-10-27): the OpenRouter route is DEAD — OpenRouter retired the free
-      # tier for this model (404 "This model is unavailable for free; use slug
-      # nvidia/nemotron-3-super-120b-a12b"). The OpenRouter key authenticates, but
-      # every call to the :free slug 404s and then fell back to deepseek-v4-flash.
-      # Rather than buy the paid slug (a new spend line) or keep the 404 hop, these
-      # aliases now point STRAIGHT at the deepseek-v4-flash backend (D111 made it our
-      # default). Callers keep their nemotron model_name but get DeepSeek with no
-      # OpenRouter round-trip. Model-level $60/mo cap mirrors the deepseek-v4-flash
-      # entry: the clawdbot gateway calls LiteLLM with the uncapped MASTER key, and
-      # removing the 404-then-fallback hop also removes the cap it inherited, so the
-      # cap moves onto the alias itself.
+      - model_name: google/gemini-2.5-flash-lite
+        litellm_params:
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+
+      - model_name: google/gemini-2.0-flash
+        litellm_params:
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+
+      - model_name: gemini-2.5-flash
+        litellm_params:
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+      {{- end }}
+
+      # --- Legacy aliases: other vendors' names served by DeepSeek ---
+      # nemotron since D78 (OpenRouter retired the free slug), the GPT/Codex names
+      # since 2026-10-27 (GPT access revoked). F98 (D243, 11-04): none was called
+      # on dev in the 7 days to 11-04, and dev renders none of them
+      # (litellm.legacyAliases false), so a caller there gets an unknown-model
+      # error instead of a silent stand-in. Base keeps them, unchanged, for the
+      # chart's own driver defaults that still name them; they retire with those
+      # defaults in F103 (see values.yaml). The nemotron pair keeps its own $60/mo
+      # cap: the clawdbot gateway calls LiteLLM with the uncapped master key.
+      {{- if .Values.litellm.legacyAliases }}
       - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
         litellm_params:
           model: deepseek/deepseek-v4-flash
@@ -170,19 +168,6 @@ data:
           max_budget: 60
           budget_duration: 1mo
 
-      # NOTE: arcee-ai/trinity-large-preview:free was deregistered at OpenRouter
-      # (404 No endpoints found) on 2026-05-03. Removed from model_list and from
-      # all fallback chains below. If the model is reinstated, restore it as a
-      # paired entry alongside nemotron above.
-
-      # --- 2026-10-27: GPT/Codex access revoked. Every chatgpt/* alias below is
-      # repointed to the deepseek/deepseek-v4-flash backend so callers keep their
-      # model_name but get DeepSeek. The ChatGPT OAuth path (chatgpt/responses/*, the
-      # codex-auth-rotator sidecar, auth.json) is dormant until GPT access returns;
-      # revert this block to restore it. deepseek-v4-flash's own entry above is the
-      # canonical backend and carries the group budget; these are thin aliases to it,
-      # so they inherit DeepSeek pricing from LiteLLM's model db. The durable caps are
-      # the service virtual keys (backend $40, commonly-bot $20). ---
       - model_name: gpt-5.4
         litellm_params:
           model: deepseek/deepseek-v4-flash
@@ -227,29 +212,31 @@ data:
         litellm_params:
           model: deepseek/deepseek-v4-flash
           api_key: os.environ/DEEPSEEK_API_KEY
+      {{- end }}
 
       # --- OpenAI (optional, for embeddings) ---
       # aiProviders.openai.enabled off (F85): the OpenAI key is a placeholder, so
-      # these upstreams only ever sent content out to be refused. gpt-4o keeps its
-      # name on DeepSeek; embeddings and images have no DeepSeek equivalent and
-      # are not routed (the backend has them off: EMBEDDING_PROVIDER=none,
-      # AVATAR_PROVIDER=design).
+      # these upstreams only ever sent content out to be refused, so none is routed
+      # (the backend has embeddings and images off: EMBEDDING_PROVIDER=none,
+      # AVATAR_PROVIDER=design). gpt-4o's DeepSeek stand-in renders only under
+      # litellm.legacyAliases (F98).
       {{- if .Values.aiProviders.openai.enabled }}
       - model_name: text-embedding-3-large
         litellm_params:
           model: openai/text-embedding-3-large
           api_key: os.environ/OPENAI_API_KEY
-      {{- end }}
 
       - model_name: gpt-4o
         litellm_params:
-          {{- if .Values.aiProviders.openai.enabled }}
           model: openai/gpt-4o
           api_key: os.environ/OPENAI_API_KEY
-          {{- else }}
+      {{- end }}
+      {{- if and (not .Values.aiProviders.openai.enabled) .Values.litellm.legacyAliases }}
+      - model_name: gpt-4o
+        litellm_params:
           model: deepseek/deepseek-v4-flash
           api_key: os.environ/DEEPSEEK_API_KEY
-          {{- end }}
+      {{- end }}
 
       # --- OpenAI image generation (agent avatars, enriched content gen) ---
       # Backend openaiImageService.ts hits these via LITELLM_BASE_URL + LITELLM_MASTER_KEY
@@ -296,27 +283,36 @@ data:
       # caller (gateway/agent) sees the failure and the "LiteLLM is failing its
       # callers" alert fires (docs/runbooks/alerting.md#litellm-failing). There is
       # no nemotron or Codex tier behind it any more.
+      # 2026-10-27: gpt-5.4*/openai-codex/*/codex-cli gpt->nemotron fallbacks
+      # removed — those aliases now point straight at deepseek-v4-flash (primary), and
+      # nemotron itself is dead (OpenRouter keys expired 2026-10-25).
+      # Dead routes fall back to deepseek-v4-flash (2026-10-15). Probing every
+      # chat route from the backend pod found exactly two answering:
+      # deepseek-v4-flash and the since-removed Workers AI route. Every Gemini name 401s
+      # (Google: ACCESS_TOKEN_TYPE_UNSUPPORTED for GEMINI_API_KEY) and both
+      # nemotron names 401 at OpenRouter. Callers still ask for those names:
+      # the commonly-bot client defaults to gemini-2.5-flash; pod-welcomer,
+      # task-clerk and pod-summarizer run on nemotron. With no fallback each
+      # call died and the feature fell back to a template or to silence; 154
+      # Gemini 401s in 24h, unnoticed. A fallback keeps the feature answering;
+      # the "LiteLLM is failing its callers" alert covers deepseek itself
+      # going dead (docs/runbooks/alerting.md#litellm-failing).
+      # F98 (11-04): a fallback renders only for a name that renders: the Gemini
+      # names where Gemini is on or legacyAliases is, the nemotron pair only
+      # under legacyAliases. Dev, with neither, has none.
+      {{- if or .Values.aiProviders.gemini.enabled .Values.litellm.legacyAliases }}
       fallbacks:
-        # 2026-10-27: gpt-5.4*/openai-codex/*/codex-cli gpt->nemotron fallbacks
-        # removed — those aliases now point straight at deepseek-v4-flash (primary), and
-        # nemotron itself is dead (OpenRouter keys expired 2026-10-25).
-        # Dead routes fall back to deepseek-v4-flash (2026-10-15). Probing every
-        # chat route from the backend pod found exactly two answering:
-        # deepseek-v4-flash and the since-removed Workers AI route. Every Gemini name 401s
-        # (Google: ACCESS_TOKEN_TYPE_UNSUPPORTED for GEMINI_API_KEY) and both
-        # nemotron names 401 at OpenRouter. Callers still ask for those names:
-        # the commonly-bot client defaults to gemini-2.5-flash; pod-welcomer,
-        # task-clerk and pod-summarizer run on nemotron. With no fallback each
-        # call died and the feature fell back to a template or to silence; 154
-        # Gemini 401s in 24h, unnoticed. A fallback keeps the feature answering;
-        # the "LiteLLM is failing its callers" alert covers deepseek itself
-        # going dead (docs/runbooks/alerting.md#litellm-failing).
         - {"gemini-2.5-flash":        ["deepseek-v4-flash"]}
         - {"google/gemini-2.5-flash": ["deepseek-v4-flash"]}
         - {"google/gemini-2.5-flash-lite": ["deepseek-v4-flash"]}
         - {"google/gemini-2.0-flash": ["deepseek-v4-flash"]}
+        {{- if .Values.litellm.legacyAliases }}
         - {"openrouter/nvidia/nemotron-3-super-120b-a12b:free": ["deepseek-v4-flash"]}
         - {"nvidia/nemotron-3-super-120b-a12b:free": ["deepseek-v4-flash"]}
+        {{- end }}
+      {{- else }}
+      fallbacks: []
+      {{- end }}
       # One retry on rate-limit with a deliberate 1s delay. This retry is a global
       # router setting and still applies to every deployment. The Codex auth.json
       # rotation it was originally written for is dormant since 2026-10-27 (no chatgpt/*
