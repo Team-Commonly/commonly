@@ -92,11 +92,18 @@ export const POLICY_ONLY_ADAPTERS = new Set(['claude']);
 
 /**
  * Does this run skip the OS jail? Only on win32, only by the user's own
- * opt-in, and only for an adapter that keeps its policy without the jail.
+ * opt-in, only for an adapter that keeps its policy without the jail, and only
+ * for a seat whose trust brings that policy (public or workspace). A seat with
+ * no confined trust is the owner's own and is never jailed anywhere, so the
+ * opt-in changes nothing for it, and the notice must not promise it a policy.
  */
-export const hostUnconfinedForRun = ({ optedIn, adapterName, platform = process.platform }) => (
-  platform === 'win32' && optedIn === true && POLICY_ONLY_ADAPTERS.has(adapterName)
-);
+export const hostUnconfinedForRun = ({
+  optedIn, adapterName, environment, platform = process.platform,
+}) => {
+  const trust = environment?.sandbox?.trust;
+  return platform === 'win32' && optedIn === true && POLICY_ONLY_ADAPTERS.has(adapterName)
+    && (trust === 'public' || trust === 'workspace');
+};
 
 /**
  * What the daemon's check-in says about this host. The server refuses grant

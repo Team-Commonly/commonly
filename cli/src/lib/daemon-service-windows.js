@@ -211,9 +211,16 @@ export const watchWindowsLauncher = ({
   everyMs = 2000,
   setIntervalFn = setInterval,
   clearIntervalFn = clearInterval,
+  streams = [process.stdout, process.stderr],
 }) => {
   const pid = Number(env[LAUNCHER_PID_ENV]);
   if (platform !== 'win32' || !Number.isInteger(pid) || pid <= 0) return () => {};
+  // The launcher holds this process's stdout and stderr. Once it exits, any
+  // log line (a poll, a heartbeat) fails with EPIPE, and an unhandled stream
+  // error would end the daemon before it stops its seats. So the streams
+  // swallow errors from the moment the watch is armed, not only after the
+  // launcher's exit is noticed up to two seconds later.
+  for (const stream of streams) stream?.on?.('error', () => {});
   const timer = setIntervalFn(() => {
     if (isAlive(pid)) return;
     clearIntervalFn(timer);

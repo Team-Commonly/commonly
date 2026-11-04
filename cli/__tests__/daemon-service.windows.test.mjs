@@ -283,6 +283,26 @@ describe('the daemon follows its launcher (schtasks /End kills the launcher only
     expect(harness({ [LAUNCHER_PID_ENV]: '4242' }, 'linux').ticks).toHaveLength(0);
   });
 
+  test('a lost pipe cannot end the daemon before it stops its seats: stream errors are swallowed from the start', async () => {
+    const { EventEmitter } = await import('events');
+    const out = new EventEmitter();
+    const err = new EventEmitter();
+    const ticks = [];
+    watchWindowsLauncher({
+      env: { [LAUNCHER_PID_ENV]: '4242' }, platform: 'win32', onGone: jest.fn(), isAlive: () => true,
+      setIntervalFn: (fn) => { ticks.push(fn); return 1; }, clearIntervalFn: () => {},
+      streams: [out, err],
+    });
+    // Armed before the first poll: a heartbeat log that hits EPIPE between the
+    // launcher's exit and its detection no longer throws an unhandled error.
+    expect(() => out.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))).not.toThrow();
+    expect(() => err.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }))).not.toThrow();
+    // A daemon the launcher did not start keeps the default stream behaviour.
+    const plain = new EventEmitter();
+    watchWindowsLauncher({ env: {}, platform: 'win32', onGone: jest.fn(), streams: [plain] });
+    expect(plain.listenerCount('error')).toBe(0);
+  });
+
   test('the real liveness probe sees this process alive and a dead pid gone', () => {
     const onGone = jest.fn();
     const ticks = [];

@@ -4282,6 +4282,7 @@ Docs:
       const hostUnconfined = hostUnconfinedForRun({
         optedIn: runOptedInUnsandboxed({ flag: opts.unsandboxed === true }),
         adapterName: record.adapter,
+        environment: record.environment,
       });
       if (hostUnconfined) console.warn(`${stamp()} [${name}] ${UNSANDBOXED_NOTICE}`);
 

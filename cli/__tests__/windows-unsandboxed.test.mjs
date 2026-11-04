@@ -97,16 +97,26 @@ describe('what the check-in reports', () => {
 
 describe('which runs skip the OS jail', () => {
   test('only win32, only the user\'s own opt-in, only Claude', () => {
-    expect(hostUnconfinedForRun({ optedIn: true, adapterName: 'claude', platform: 'win32' })).toBe(true);
+    const environment = connectPage();
+    expect(hostUnconfinedForRun({ optedIn: true, adapterName: 'claude', environment, platform: 'win32' })).toBe(true);
+    expect(hostUnconfinedForRun({
+      optedIn: true, adapterName: 'claude', environment: { sandbox: { trust: 'workspace' } }, platform: 'win32',
+    })).toBe(true);
     for (const optedIn of [false, undefined, 'true', 1, { unsandboxed: true }]) {
-      expect(hostUnconfinedForRun({ optedIn, adapterName: 'claude', platform: 'win32' })).toBe(false);
+      expect(hostUnconfinedForRun({ optedIn, adapterName: 'claude', environment, platform: 'win32' })).toBe(false);
     }
     for (const platform of ['darwin', 'linux']) {
-      expect(hostUnconfinedForRun({ optedIn: true, adapterName: 'claude', platform })).toBe(false);
+      expect(hostUnconfinedForRun({ optedIn: true, adapterName: 'claude', environment, platform })).toBe(false);
     }
     // OpenCode and Qwen stay refused; Codex is never refused on Windows.
     for (const adapterName of ['codex', 'opencode', 'qwen', 'pi']) {
-      expect(hostUnconfinedForRun({ optedIn: true, adapterName, platform: 'win32' })).toBe(false);
+      expect(hostUnconfinedForRun({ optedIn: true, adapterName, environment, platform: 'win32' })).toBe(false);
+    }
+  });
+
+  test('a seat with no confined trust is not affected, so it is not told it gets the policy', () => {
+    for (const environment of [null, undefined, {}, { sandbox: { mode: 'none' } }, { sandbox: { trust: 'trusted' } }]) {
+      expect(hostUnconfinedForRun({ optedIn: true, adapterName: 'claude', environment, platform: 'win32' })).toBe(false);
     }
   });
 
