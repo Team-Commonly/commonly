@@ -11,6 +11,12 @@ const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
   spawnSync: spawnSyncMock,
   spawn: jest.fn(),
+  // The version probe is async now (tested-version.js probeVersion); answer it
+  // from the same mock, so each test still sets the version in one place.
+  execFile: (cmd, args, options, callback) => {
+    const result = spawnSyncMock(cmd, args, options) || {};
+    setImmediate(() => callback(result.status === 0 && !result.error ? null : (result.error || new Error('exit')), result.stdout || ''));
+  },
 }));
 const {
   default: qwen,

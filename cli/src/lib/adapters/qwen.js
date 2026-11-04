@@ -1,6 +1,7 @@
 /** Qwen Code 0.25.1 and 0.26.2 wrapper. Public turns have fresh HOME, config and keys. */
 import { requireSeatModel } from './seat-model.js';
-import { isPatchAfterNewestTested } from './tested-version.js';
+import { isPatchAfterNewestTested, probeVersion } from './tested-version.js';
+import * as childProcess from 'child_process';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
@@ -50,10 +51,13 @@ const parseVersion = (output) => {
   return match ? match[1] : null;
 };
 
-const readVersion = (binary, env) => {
-  const result = spawnSync(binary, ['--version'], { encoding: 'utf8', env, timeout: 5000 });
-  return result.status === 0 && !result.error ? parseVersion(result.stdout) : null;
-};
+// Async and cached per binary (tested-version.js probeVersion): a synchronous
+// probe stalled every other seat's provider proxy on the daemon's loop. The
+// namespace import is read at call time, so a suite that mocks child_process
+// without execFile falls back to the real one.
+const readVersion = (binary, env) => probeVersion(binary, {
+  env, timeoutMs: 5000, parse: parseVersion, execFileImpl: childProcess.execFile,
+});
 
 const resolvedBinary = (env) => {
   const where = spawnSync('which', ['qwen'], { encoding: 'utf8', env });
@@ -75,7 +79,8 @@ const withProbeEnv = async (source, run) => {
     env.QWEN_CODE_SYSTEM_SETTINGS_PATH = settingsPath;
     env.QWEN_USAGE_STATISTICS_ENABLED = 'false';
     for (const name of PROXY_ENV) env[name] = '';
-    return run(env);
+    // Awaited here, so the probe home outlives an async probe.
+    return await run(env);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -254,9 +259,9 @@ export default {
     }
     const keyFile = await this.validateEnvironment(ctx.environment, ctx.cwd);
     const sourceEnv = ctx.env || process.env;
-    const { binary, version } = await withProbeEnv(sourceEnv, (probeEnv) => {
+    const { binary, version } = await withProbeEnv(sourceEnv, async (probeEnv) => {
       const path = ctx._binaryPath || resolvedBinary(probeEnv);
-      return { binary: path, version: readVersion(path, probeEnv) };
+      return { binary: path, version: await readVersion(path, probeEnv) };
     });
     if (!TESTED_QWEN_VERSIONS.includes(version)) {
       const versions = TESTED_QWEN_VERSIONS.join(', ');

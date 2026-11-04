@@ -11,7 +11,9 @@
  * replaces the spawn, and a fake package stands in for pi's install tree.
  */
 import { EventEmitter } from 'events';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'fs/promises';
+import {
+  chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, utimes, writeFile,
+} from 'fs/promises';
 import { Writable } from 'stream';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
@@ -333,6 +335,93 @@ describe('a public pi turn refuses what it cannot confine', () => {
   test('a workspace trust, which stays claude-only', () => refuses(
     (ctx) => ({ ...ctx, environment: { ...ctx.environment, sandbox: { trust: 'workspace' } } }), /claude-only/,
   ));
+});
+
+describe('the public version probe', () => {
+  // A fake pi whose --version sleeps, then answers, and counts every probe.
+  const writeProbePi = async ({ answer = '0.84.1', sleepMs = 0 } = {}) => {
+    const counter = join(root, 'probes.log');
+    await writeFile(join(packageRoot, 'dist', 'cli.js'), [
+      `#!${process.execPath}`,
+      'if (process.argv.includes("--version")) {',
+      `  require("fs").appendFileSync(${JSON.stringify(counter)}, "x");`,
+      `  setTimeout(() => process.stdout.write(${JSON.stringify(`${answer}\n`)}), ${sleepMs});`,
+      '}',
+      '',
+    ].join('\n'));
+    await chmod(join(packageRoot, 'dist', 'cli.js'), 0o755);
+    return async () => (await readFile(counter, 'utf8').catch(() => '')).length;
+  };
+  const probeCtx = (over = {}) => {
+    const ctx = publicCtx({ _wrapArgvWithSeatbelt: captureWrap().wrap, ...over });
+    delete ctx._version;
+    return ctx;
+  };
+
+  test('runs off the event loop: a timer keeps firing while a slow pi answers', async () => {
+    await writeProbePi({ sleepMs: 400 });
+    let ticks = 0;
+    const timer = setInterval(() => { ticks += 1; }, 20);
+    try {
+      const { impl } = makeSpawnImpl({ stdout: assistant('ok') });
+      await pi.spawn('hi', probeCtx({ _spawnImpl: impl }));
+    } finally {
+      clearInterval(timer);
+    }
+    expect(ticks).toBeGreaterThanOrEqual(8);
+  });
+
+  test('a second turn on the same binary does not probe again', async () => {
+    const probes = await writeProbePi();
+    for (let i = 0; i < 2; i += 1) {
+      const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
+      await pi.spawn('hi', probeCtx({ _spawnImpl: impl }));
+      expect(calls).toHaveLength(1);
+    }
+    expect(await probes()).toBe(1);
+  });
+
+  test('a binary whose mtime changed is probed again', async () => {
+    const probes = await writeProbePi();
+    const first = makeSpawnImpl({ stdout: assistant('ok') });
+    await pi.spawn('hi', probeCtx({ _spawnImpl: first.impl }));
+    const later = new Date(Date.now() + 60_000);
+    await utimes(join(packageRoot, 'dist', 'cli.js'), later, later);
+    const second = makeSpawnImpl({ stdout: assistant('ok') });
+    await pi.spawn('hi', probeCtx({ _spawnImpl: second.impl }));
+    expect(await probes()).toBe(2);
+  });
+
+  test('an unknown version is refused, and is not cached', async () => {
+    const probes = await writeProbePi({ answer: 'not a version' });
+    for (let i = 0; i < 2; i += 1) {
+      const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
+      await expect(pi.spawn('hi', probeCtx({ _spawnImpl: impl }))).rejects.toThrow(/untested pi version unknown/);
+      expect(calls).toHaveLength(0);
+    }
+    expect(await probes()).toBe(2);
+  });
+});
+
+describe('a public pi seat with a cold Commonly MCP', () => {
+  test('the shipped npx server with no host-prepared build refuses before pi starts', async () => {
+    const mcpHome = join(root, 'mcp-home');
+    await mkdir(mcpHome);
+    // A held warm lock keeps prepareMcpSpawn from starting a real warm here.
+    await writeFile(join(mcpHome, '.warm.lock'), 'warming\n');
+    const saved = process.env.COMMONLY_MCP_HOME;
+    process.env.COMMONLY_MCP_HOME = mcpHome;
+    try {
+      const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
+      const ctx = publicCtx({ _spawnImpl: impl, _wrapArgvWithSeatbelt: captureWrap().wrap });
+      ctx.environment = { ...ctx.environment, mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }] };
+      await expect(pi.spawn('hi', ctx)).rejects.toMatchObject({ code: 'public_mcp_unavailable' });
+      expect(calls.length).toBe(0);
+    } finally {
+      if (saved === undefined) delete process.env.COMMONLY_MCP_HOME;
+      else process.env.COMMONLY_MCP_HOME = saved;
+    }
+  });
 });
 
 describe('a private pi seat is unchanged', () => {
