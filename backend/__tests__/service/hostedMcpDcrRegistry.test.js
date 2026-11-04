@@ -559,6 +559,17 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       expect(await dcrClientForRow(entry, 'registered-1')).toEqual({ clientId: 'registered-1' });
     });
 
+    test('is replaced when the vendor says so in its own words (Supabase: 422 Unrecognized client_id)', async () => {
+      const sent = [];
+      const fetch = vendor(sent, () => answer(422, { message: 'Unrecognized client_id' }));
+      await ensureDcrClient(entry, metadata, callback, fetch);
+
+      expect(await retireDcrClientIfUnknown(entry, metadata, 'registered-1', fetch, after())).toBe(true);
+
+      expect(await Model.findOne({ clientId: 'registered-1' })).toMatchObject({ current: false });
+      expect(await ensureDcrClient(entry, metadata, callback, fetch)).toEqual({ clientId: 'registered-2' });
+    });
+
     test('is kept when the vendor still knows it, and asked about at most once an interval', async () => {
       const sent = [];
       const fetch = vendor(sent, () => answer(400, { error: 'invalid_grant' }));
@@ -600,6 +611,8 @@ describe('instance-scoped hosted MCP DCR registry', () => {
       const replies = [
         () => answer(500, { error: 'server_error' }),
         () => answer(400, { error: 'invalid_request' }),
+        // Supabase's answer when the client is known but the secret is missing.
+        () => answer(422, { message: 'Required parameter: client_secret' }),
         () => answer(200, { access_token: 'never-for-a-made-up-code' }),
         () => new Response('not json', { status: 401 }),
         () => { throw new Error('connect ECONNREFUSED'); },
