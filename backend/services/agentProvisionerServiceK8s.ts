@@ -1819,7 +1819,11 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
   ].filter(Boolean).join(' ');
 
   const execOnPod = async (podName: any) => new Promise<string>((resolve, reject) => {
+    // stderr gets its own sink, so a Node warning can't turn a written file
+    // into an apparent failure.
     const stdoutStream = new stream.PassThrough();
+    const stderrStream = new stream.PassThrough();
+    stderrStream.resume();
     const chunks: Buffer[] = [];
     stdoutStream.on('data', (d: Buffer) => chunks.push(d));
     k8sExec.exec(
@@ -1828,7 +1832,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
       'clawdbot-gateway',
       ['node', '-e', script],
       stdoutStream,
-      stdoutStream,
+      stderrStream,
       null,
       false,
       (status: any) => {
