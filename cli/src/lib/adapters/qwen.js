@@ -322,9 +322,12 @@ export default {
           ...EXCLUDED_TOOLS, ...(isPublic ? PUBLIC_READ_TOOLS : []),
         ].join(','),
         // Qwen ignores settings permissions in bare/safe mode, but still
-        // honours CLI allow rules. A private seat needs its declared Commonly
-        // tools approved before non-interactive execution begins.
-        ...(!isPublic && Object.hasOwn(mcp.mcpServers, 'commonly')
+        // honours CLI allow rules. Any seat needs its declared Commonly tools
+        // approved before non-interactive execution begins, public included:
+        // without it a public seat's commonly_post_message was declined
+        // (D247 walk, 11-04). Public parity with Claude's --allowedTools
+        // mcp__commonly__*; the withheld tools stay in --exclude-tools above.
+        ...(Object.hasOwn(mcp.mcpServers, 'commonly')
           ? ['--allowed-tools', 'mcp__commonly__*'] : []),
         '-o', 'stream-json', '-p', fullPrompt,
       ];
