@@ -89,6 +89,14 @@ describe('discord connector stores no bot token copy (TASK-124)', () => {
     await DiscordIntegration.deleteMany({});
     axios.post.mockReset();
     axios.post.mockResolvedValue({ data: { id: 'wh-1', token: 'wh-token', name: 'Commonly Bot' } });
+    // F90: creating a binding needs authority over the guild, here an existing
+    // binding of this pod to it, and Discord placing the channel in that guild.
+    await Integration.create({
+      podId: pod._id, type: 'discord', createdBy: creator._id, status: 'connected',
+      config: { serverId: GUILD, channelId: '123456789012345670' },
+    });
+    axios.get.mockReset();
+    axios.get.mockResolvedValue({ data: { id: CHANNEL, type: 0, guild_id: GUILD } });
   });
 
   afterEach(() => {

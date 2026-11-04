@@ -107,6 +107,9 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
             botToken: '',
             permissions: ['read_messages', 'send_messages', 'read_message_history'],
           },
+          // A first install has no binding yet; the callback's proof is the
+          // authority over the guild (F90).
+          ...(installProof ? { install: installProof } : {}),
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );

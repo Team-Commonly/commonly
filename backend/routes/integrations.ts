@@ -54,8 +54,10 @@ const { revokeConnectionGrants } = require('../services/roomGrantService');
 const { removeConnection, HOSTED_MCP_TYPE } = require('../services/connectionRemovalService');
 import { Types } from 'mongoose';
 import {
-  invalidDiscordIdError, isSupplied, malformedDiscordBindingField, serverOwnedConfigError,
+  DISCORD_BINDING_ID_FIELDS, invalidDiscordIdError, isDiscordSnowflake, isSupplied,
+  malformedDiscordBindingField, serverOwnedConfigError,
 } from '../utils/discordBinding';
+import { readDiscordInstallProof } from '../utils/discordInstallProof';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
 import {
@@ -64,6 +66,38 @@ import {
   ingestIngressRateLimit,
   ingestIntegrationsRateLimit,
 } from '../middleware/integrationRateLimit';
+
+// F90: the instance bot is in many guilds, so a request naming a guild proves
+// nothing. The caller has authority over a guild when one of their pods is
+// already bound to it, or on a first install, when they carry the OAuth
+// callback's proof for this pod and guild (F89). The same rule the channel list
+// applies (routes/discord.ts).
+const hasDiscordGuildAuthority = async (
+  userId: unknown, podId: string, guildId: string, install: unknown,
+): Promise<boolean> => {
+  const callerPods = await Pod.find({ $or: [{ members: userId }, { createdBy: userId }] })
+    .select('_id')
+    .lean();
+  const podIds = (callerPods || []).map((pod: { _id: unknown }) => pod._id);
+  if (podIds.length
+    && await Integration.findOne({ type: 'discord', 'config.serverId': guildId, podId: { $in: podIds } })) return true;
+  const proof = readDiscordInstallProof(install);
+  return !!proof && proof.guildId === guildId && proof.podId === podId
+    && podIds.some((id: unknown) => String(id) === podId);
+};
+
+// The guild a channel belongs to, as Discord answers it, or '' when it doesn't.
+const discordChannelGuild = async (channelId: string): Promise<string> => {
+  if (!isDiscordSnowflake(channelId)) return '';
+  try {
+    const response = await axios.get(`https://discord.com/api/channels/${channelId}`, {
+      headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
+    });
+    return String((response.data as { guild_id?: unknown })?.guild_id || '');
+  } catch {
+    return '';
+  }
+};
 
 // The list lives in `utils/serverOwnedConfigKeys.ts` so the manifest contract
 // and this strip read the same one (TASK-140).
@@ -508,6 +542,16 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (nextConfig.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
+    if (type === 'discord') {
+      // Authority, then the channel: both before the row or the webhook exist.
+      // One answer for both refusals, as on the channel list.
+      const guildId = String(config.serverId);
+      const install = (req.body as { install?: unknown })?.install;
+      if (!await hasDiscordGuildAuthority(req.user?.id, String(podId), guildId, install)
+        || await discordChannelGuild(String(config.channelId)) !== guildId) {
+        return res.status(404).json({ message: 'Guild not found' });
+      }
+    }
     if (missingRequired.length && (req.body as { status?: string })?.status === 'connected') return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
     validateManifestIfComplete(type, nextConfig);
     let rowConfig = nextConfig;
@@ -840,6 +884,18 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       const malformed = malformedDiscordBindingField(config);
       if (malformed) return res.status(400).json(invalidDiscordIdError(malformed));
       if (isSupplied(config.botToken)) return res.status(400).json(serverOwnedConfigError('botToken'));
+      // F90: the binding is fixed once the row exists. The create path checks
+      // authority over the guild and the channel; a retarget here would skip
+      // both, so a new binding is a new connector.
+      const moved = DISCORD_BINDING_ID_FIELDS.find((field) => isSupplied(config[field])
+        && String(config[field]) !== String(currentConfig[field] ?? ''));
+      if (moved) {
+        return res.status(400).json({
+          code: 'discord_binding_fixed',
+          field: moved,
+          message: 'A Discord connector stays bound to its server and channel; connect a new one instead.',
+        });
+      }
     }
     const relay = config ? readRelayFlags(stripServerOwnedConfig(config)) : null;
     if (relay?.invalid) return res.status(400).json(relayFlagError(relay.invalid));
