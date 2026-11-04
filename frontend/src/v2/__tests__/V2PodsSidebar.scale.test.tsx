@@ -472,6 +472,17 @@ describe('V2PodsSidebar — direction C', () => {
       // A tap outside the row puts the time back.
       fireEvent.pointerDown(document.body);
       expect(wrap).not.toHaveClass('v2-pods__rowwrap--reveal');
+      // A browser that sends no click after a long press must not leave the next
+      // keyboard Enter or mouse click swallowed (#3412 review).
+      const other = screen.getAllByRole('button', { name: 'Pin pod' })[1].parentElement
+        ?.querySelector('.v2-pods__row') as HTMLElement;
+      fireEvent.pointerDown(other, { pointerType: 'touch' });
+      act(() => { jest.advanceTimersByTime(600); });
+      fireEvent.pointerUp(other, { pointerType: 'touch' });
+      act(() => { jest.advanceTimersByTime(1000); });
+      const pathBefore = screen.getByTestId('current-path').textContent;
+      fireEvent.click(other);
+      expect(screen.getByTestId('current-path').textContent).not.toBe(pathBefore);
     } finally {
       jest.useRealTimers();
     }

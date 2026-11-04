@@ -286,15 +286,23 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     pressTimer.current = null;
   }, []);
   const startPress = (podId: string) => (event: React.PointerEvent) => {
+    pressRevealed.current = false;
     if (event.pointerType === 'mouse') return;
     cancelPress();
-    pressRevealed.current = false;
     pressTimer.current = setTimeout(() => {
       pressTimer.current = null;
       pressRevealed.current = true;
       setRevealedPin(podId);
     }, 500);
   };
+  // The click a hold ends in comes straight after the release, so the guard
+  // lives only that long. Some browsers (Chrome on Android) send no click after
+  // a long press, and a guard left set would swallow the next mouse click or
+  // keyboard Enter instead (#3412 review).
+  const endPress = useCallback(() => {
+    cancelPress();
+    if (pressRevealed.current) setTimeout(() => { pressRevealed.current = false; }, 400);
+  }, [cancelPress]);
   useEffect(() => cancelPress, [cancelPress]);
   useEffect(() => {
     if (!revealedPin) return undefined;
@@ -377,7 +385,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           selectPod(pod._id);
         }}
         onPointerDown={startPress(pod._id)}
-        onPointerUp={cancelPress}
+        onPointerUp={endPress}
         onPointerLeave={cancelPress}
         onPointerCancel={cancelPress}
         onContextMenu={(event) => { if (pressRevealed.current || pressTimer.current) event.preventDefault(); }}
