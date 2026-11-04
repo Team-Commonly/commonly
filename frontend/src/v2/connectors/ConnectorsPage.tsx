@@ -94,10 +94,21 @@ const ConnectorsPage: React.FC = () => {
 
   // ---- tools ----
   const grants = m.grants || [];
-  const toolEntries = m.catalog.filter((entry) => (
+  const toolGranted = (entry: ToolCatalogEntry): boolean => entryIsGranted(entry, grants, m.now);
+  // D248 (c): the builtin GitHub card with no connection only says an admin
+  // installs the App. A non-admin who can connect the hosted GitHub entry
+  // themselves is shown that card alone, not a second GitHub they cannot use.
+  const hostedGithubOffered = m.catalog.some((entry) => (
+    entry.connectionType === 'hosted-mcp' && entry.entryId === 'github-mcp' && entry.available
+  ));
+  const adminOnlyCard = (entry: ToolCatalogEntry): boolean => (
+    !m.isAdmin && hostedGithubOffered && entry.installableId === 'github' && entry.connectionType !== 'hosted-mcp'
+    && entry.connections.length === 0 && !toolGranted(entry)
+  );
+  const shownCatalog = m.catalog.filter((entry) => !adminOnlyCard(entry));
+  const toolEntries = shownCatalog.filter((entry) => (
     !q || entry.label.toLowerCase().includes(q) || entry.tools.some((tool) => tool.name.toLowerCase().includes(q))
   ));
-  const toolGranted = (entry: ToolCatalogEntry): boolean => entryIsGranted(entry, grants, m.now);
   const grantsOf = (entry: ToolCatalogEntry) => grants.filter((grant) => entryCovers(entry, grant));
   const hiddenOf = (entry: ToolCatalogEntry) => m.hiddenConnections.filter((connection) => connection.entryId === entry.entryId);
   const toolOff = (entry: ToolCatalogEntry): boolean => !entry.available && !toolGranted(entry);
@@ -505,7 +516,7 @@ const ConnectorsPage: React.FC = () => {
   const onCount = connectedChannels + grantedTools;
   // Counted over everything, not the search result, so the header holds still while typing.
   const offeredCount = c.items.filter((item) => !channelInactive(item)).length
-    + m.catalog.filter((entry) => !toolOff(entry)).length;
+    + shownCatalog.filter((entry) => !toolOff(entry)).length;
   const availableCount = offeredCount - onCount;
   // An orphan grant's tile is live too (TASK-754), so it counts as on. It was
   // never offered, so it leaves `available` alone.
@@ -525,8 +536,34 @@ const ConnectorsPage: React.FC = () => {
   // Per-entry copy names what that vendor's page lists, and what removing it there ends.
   const callbackRevokeContext = callbackRevoke && PER_ENTRY_REVOKE_COPY.has(callbackRevoke.entryId)
     ? callbackRevoke.entryId : undefined;
+  const callbackNotice = c.hostedMcpCallbackNotice;
   const noticeBlock = (
     <>
+      {callbackNotice && (
+        <p className="v2-cx-note" role="status">
+          {callbackNotice.kind === 'installed'
+            ? (callbackNotice.connected
+              ? t('connectors.hostedMcpAppInstalledConnected', {
+                defaultValue: '{{provider}} App installed. {{provider}} is connected.',
+                provider: callbackNotice.provider,
+              })
+              : t('connectors.hostedMcpAppInstalledFinish', {
+                defaultValue: '{{provider}} App installed. Press Connect on {{provider}} to finish.',
+                provider: callbackNotice.provider,
+              }))
+            : (
+              <>
+                {t('connectors.hostedMcpAccessNext', {
+                  defaultValue: 'Next: pick the repos {{provider}} can read.',
+                  provider: callbackNotice.provider,
+                })}{' '}
+                <a href={callbackNotice.accessPage} target="_blank" rel="noopener noreferrer">
+                  {t('tools.chooseAccess', { defaultValue: 'Choose what {{label}} can reach', label: callbackNotice.provider })}
+                </a>
+              </>
+            )}
+        </p>
+      )}
       {errorText && (
         <p className="v2-cx-error" role="alert">
           {errorText}

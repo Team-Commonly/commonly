@@ -96,11 +96,14 @@ const callbackRedirect = (
     manualRevoke?: { entryId: string; revokeAt: string };
     /** A catalogue entry the page may name in its notice; never vendor text. */
     entryId?: string;
+    /** D248: the page sends the person on to the entry's access page. */
+    next?: 'access';
   },
 ) => {
   const query = new URLSearchParams({ hostedMcp: status });
   if (code) query.set('code', code);
   if (options?.entryId) query.set('entryId', options.entryId);
+  if (options?.next) query.set('next', options.next);
   if (options?.manualRevoke) {
     query.set('entryId', options.manualRevoke.entryId);
     query.set('revokeAt', options.manualRevoke.revokeAt);
@@ -498,6 +501,13 @@ const settleUnstoredGrant = async (
 // whatever the member clicked. Matched, never echoed.
 const VENDOR_APP_UNAVAILABLE = /cannot be used outside of development/i;
 
+/** A vendor's return from installing its App (GitHub: setup_action + installation_id). */
+const isAppInstallReturn = (entry: { accessPage?: string }, query: Request['query']): boolean => (
+  Boolean(entry.accessPage)
+  && (query.setup_action === 'install' || query.setup_action === 'update')
+  && typeof query.installation_id === 'string' && /^\d{1,20}$/.test(query.installation_id)
+);
+
 const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) => {
   const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, req.params.entryId);
   if (!entry || !isOAuthEntry(entry)) {
@@ -519,6 +529,15 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
       return callbackRedirect(res, 'error', 'vendor_app_unavailable', { entryId: entry.id });
     }
     return callbackRedirect(res, 'error', vendorError === 'access_denied' ? 'consent_denied' : 'vendor_error');
+  }
+  // D248 (a): a GitHub App's "Install & Authorize" comes back here with
+  // `installation_id` and `setup_action` and no state of ours. The install
+  // worked, so it is not a failed connect, but with no state nothing ties the
+  // code to the person, so the code is never redeemed. Only an entry that has
+  // an install page can claim this outcome, and the page decides from its own
+  // catalogue whether to say "connected" or "press Connect to finish".
+  if (!state && isAppInstallReturn(entry, req.query)) {
+    return callbackRedirect(res, 'installed', undefined, { entryId: entry.id });
   }
   if (!state || !code) {
     return callbackRedirect(res, 'error', 'invalid_state');
@@ -868,12 +887,27 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   // update made the new grant visible.
   forgetHostedMcpDrift(String(consumed._id));
 
-  return callbackRedirect(res, 'connected', undefined, manualRevokeAt ? {
-    manualRevoke: {
-      entryId: entry.id,
-      revokeAt: manualRevokeAt,
-    },
-  } : undefined);
+  if (manualRevokeAt) {
+    return callbackRedirect(res, 'connected', undefined, {
+      manualRevoke: {
+        entryId: entry.id,
+        revokeAt: manualRevokeAt,
+      },
+    });
+  }
+  // D248: connected but reaching nothing yet (GitHub with no App installation).
+  // The page names the step and opens the entry's own access page; the link
+  // comes from the catalogue there, never from this query.
+  let accessNext = false;
+  if (entry.accessPage && typeof entry.needsAccessSetup === 'function') {
+    try {
+      accessNext = await entry.needsAccessSetup(tokens.access_token);
+    } catch {
+      accessNext = false;
+    }
+  }
+  return callbackRedirect(res, 'connected', undefined,
+    accessNext ? { entryId: entry.id, next: 'access' } : undefined);
 };
 
 router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {

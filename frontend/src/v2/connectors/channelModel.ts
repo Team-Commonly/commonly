@@ -93,6 +93,9 @@ export interface CatalogEntry {
   // the provider, and the callback's `revokeAt` is linked only when it equals
   // this server-owned value.
   revokePage?: string;
+  // Where the person picks what the connection reaches (GitHub: the App's
+  // install page). A callback's next step links this value, never the query's.
+  accessPage?: string;
   installation: CatalogInstallation | null;
   integration: Connector | null;
 }

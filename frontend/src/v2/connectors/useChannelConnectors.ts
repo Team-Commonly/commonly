@@ -78,6 +78,16 @@ export const useChannelConnectors = () => {
   const [hostedMcpCallbackRevoke, setHostedMcpCallbackRevoke] = useState<{
     entryId: string; provider: string; revokePage: string;
   } | null>(null);
+  // D248: a GitHub App install that came back without our state. Only the
+  // entry id is kept; the catalogue names the provider, or nothing is shown.
+  const [pendingAppInstalled, setPendingAppInstalled] = useState<string | null>(null);
+  // A non-error callback outcome: the App was installed, or a connect still
+  // needs the person to pick what it reaches. The link is the catalogue's.
+  const [hostedMcpCallbackNotice, setHostedMcpCallbackNotice] = useState<
+    | { kind: 'installed'; provider: string; connected: boolean }
+    | { kind: 'access'; provider: string; accessPage: string }
+    | null
+  >(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const podPickerRef = useRef<HTMLSelectElement | null>(null);
   // Ages must advance while the page sits open, and the source must be re-read
@@ -189,6 +199,37 @@ export const useChannelConnectors = () => {
     );
   }, [load, t]);
 
+  // GitHub's "Install & Authorize" returns without our state, so nothing was
+  // connected by it. Consume the query now; the notice waits for the catalogue.
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get('hostedMcp') !== 'installed') return;
+    setPendingAppInstalled(query.get('entryId') || '');
+    query.delete('hostedMcp');
+    query.delete('entryId');
+    query.delete('code');
+    const remaining = query.toString();
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${remaining ? `?${remaining}` : ''}${window.location.hash}`,
+    );
+  }, []);
+
+  // Whether the install also left the person connected is read from their own
+  // rows. An entry the catalogue does not hold gets no notice at all.
+  useEffect(() => {
+    if (pendingAppInstalled === null || loading || hostedCatalog === null) return;
+    const entry = hostedCatalog.find((candidate) => candidate.entryId === pendingAppInstalled);
+    if (entry?.label) {
+      const connected = connectors.some((row) => (
+        row.type === 'hosted-mcp' && row.status === 'connected' && row.config?.entryId === pendingAppInstalled
+      ));
+      setHostedMcpCallbackNotice({ kind: 'installed', provider: entry.label, connected });
+    }
+    setPendingAppInstalled(null);
+  }, [connectors, hostedCatalog, loading, pendingAppInstalled]);
+
   // The provider is named only from the catalogue's own entry, so a forged
   // entryId leaves the unnamed notice as it is.
   useEffect(() => {
@@ -224,6 +265,14 @@ export const useChannelConnectors = () => {
     if (loading || hostedCatalog === null) return;
     const entryId = query.get('entryId');
     const revokeAt = query.get('revokeAt');
+    // D248: connected, but nothing is reachable until the App is installed.
+    // The page links the entry's own access page; the query only asks for it.
+    if (entryId && query.get('next') === 'access') {
+      const entry = hostedCatalog.find((candidate) => candidate.entryId === entryId);
+      if (entry?.label && safeProviderRevokePage(entry.accessPage)) {
+        setHostedMcpCallbackNotice({ kind: 'access', provider: entry.label, accessPage: entry.accessPage });
+      }
+    }
     if (entryId && revokeAt) {
       const row = connectors.find((candidate) => (
         candidate.type === 'hosted-mcp' && candidate.config?.entryId === entryId
@@ -243,6 +292,7 @@ export const useChannelConnectors = () => {
     query.delete('entryId');
     query.delete('revokeAt');
     query.delete('code');
+    query.delete('next');
     const remaining = query.toString();
     window.history.replaceState(
       window.history.state,
@@ -1024,6 +1074,7 @@ export const useChannelConnectors = () => {
     hostedMcpCallbackError,
     setHostedMcpCallbackError,
     hostedMcpCallbackRevoke,
+    hostedMcpCallbackNotice,
     pollRef,
     podPickerRef,
     now,

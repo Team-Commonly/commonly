@@ -102,6 +102,12 @@ export interface HostedMcpEntryCommon {
    * and on the connected row, so the reach is the person's own choice; https only.
    */
   accessPage?: string;
+  /**
+   * D248: whether a fresh connection can reach nothing yet, so the callback
+   * sends the person on to `accessPage` instead of back to Commonly (GitHub
+   * with no installation of its App). Best effort: false on any doubt.
+   */
+  needsAccessSetup?: (accessToken: string) => Promise<boolean>;
   tools: HostedMcpPinnedTool[];
 }
 
