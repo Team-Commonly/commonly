@@ -107,8 +107,18 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
 
       setSuccess(t('auth.discordHandoff.created'));
 
-      // The v2 pod view takes any pod type, so the return no longer reads the pod first.
-      setTimeout(() => navigate(`/v2/pods/${encodeURIComponent(podId)}`), 2000);
+      // Every pod returns to the v2 pod view, except agent-ensemble: its controls
+      // live only in the room kept at /v2/pods/agent-ensemble/:id.
+      let back = `/v2/pods/${encodeURIComponent(podId)}`;
+      try {
+        const podResponse = await axios.get<{ type?: string }>(`/api/pods/${podId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (podResponse.data.type === 'agent-ensemble') back = `/v2/pods/agent-ensemble/${encodeURIComponent(podId)}`;
+      } catch (podError) {
+        console.error('Error fetching pod info, returning to the pod view:', podError);
+      }
+      setTimeout(() => navigate(back), 2000);
     } catch (err: unknown) {
       console.error('Error creating integration:', err);
       const e = err as { response?: { data?: { message?: string } } };
