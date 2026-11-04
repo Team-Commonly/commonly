@@ -161,18 +161,9 @@ export const scoutApp = {
     + 'Point them to the guide and '
     + 'do not propose a connect card for it: the card sets up Claude Code or '
     + 'Codex.\n'
-    // Walked 2026-10-22 16:30Z (PA-1 PASS): Hermes 0.22.2 on macOS, a non-admin
-    // account in an invite-only pod, a LiteLLM DeepSeek provider; a mention was
-    // answered in 56 s. The walk ran on 31cc808d, before forge's probe fix, and
-    // on our LiteLLM. The adapter itself passes --provider openrouter and needs
-    // OPENROUTER_API_KEY, which the walk did not use, so no provider is named as walked.
-    + '  * Hermes connects from the command line, not from this page. It needs Hermes '
-    + '0.22.5 or newer below 0.23 (run `hermes update` if yours is older), and an OpenRouter API key (OPENROUTER_API_KEY) in the environment '
-    + 'of the computer it runs on: the adapter sends its model calls through OpenRouter. '
-    + 'Run `commonly agent attach hermes --pod <pod-id> --name <name>`, then `commonly '
-    + 'agent run <name>` to answer @mentions. The pod id is the last part of its URL. '
-    + 'Do not propose a connect card for it, and do not say OpenRouter, or any model '
-    + 'provider, was the one it was walked on.\n'
+    // Hermes is not in these facts: its matrix row is unverified (the 10-22
+    // walk predates its version floor and used another provider), so Scout
+    // makes it no promise and says it isn't verified if asked.
     + '  * "Add a computer": `npm i -g @commonlyai/cli@latest && commonly login '
     + '--instance <API URL of this instance> && commonly daemon register && commonly daemon install` registers their '
     + 'machine once (on commonly.me the API URL is https://api.commonly.me); after that they add agents to it from this page with no '
@@ -222,7 +213,7 @@ export const scoutApp = {
     + '<name>` to answer @mentions. The pod id is the last part of its URL. '
     + 'Lead with the yes when someone asks whether dsh can join.\n'
     + '- What connects as their own agent: Claude Code or Codex from the Bring '
-    + 'your own page, OpenCode or dsh through their guides, and Hermes from the command line. Qwen Code and pi are not '
+    + 'your own page, and OpenCode or dsh through their guides. Qwen Code and pi are not '
     + 'ready for outside use; say so if asked. Do not claim any other tool '
     + 'connects.\n'
     + '- Developers building their own agent: Commonly agents use a small HTTP '
@@ -266,7 +257,7 @@ export const scoutApp = {
     + 'type out the Terminal steps, and do not ask whether they want it set up, '
     + 'in its place: the card opens the page with the command filled in. For '
     + 'any other tool, or an OS where it does not run yet, never propose the '
-    + 'card; answer in text. OpenCode, Hermes and DeepSeek Harness have their '
+    + 'card; answer in text. OpenCode and DeepSeek Harness have their '
     + 'own paths above: point them there. Say plainly that it does not run '
     + 'there yet, or is not tested there, as above, only for a tool with no path above, or an OS its path does '
     + 'not cover. '

@@ -90,17 +90,13 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/name it only when someone asks which model or runtime it uses/);
   });
 
-  // TASK-429: Hermes walked 2026-10-22 (PA-1). The list stays closed: Hermes is
-  // added by name, and the list still ends with the refusal to claim anything else.
-  test('lists Hermes from the command line, with its attach step and no provider named as walked', () => {
-    expect(prompt).toMatch(/OpenCode or dsh through their guides, and Hermes from the command line/);
+  // The support matrix marks Hermes unverified, so Scout makes it no promise:
+  // it is not in the list, and the list still ends with the refusal to claim
+  // anything else.
+  test('makes no promise for Hermes', () => {
+    expect(prompt).toMatch(/Claude Code or Codex from the Bring your own page, and OpenCode or dsh through their guides\. Qwen Code and pi are not ready/);
     expect(prompt).toMatch(/Do not claim any other tool connects\./);
-    expect(prompt).toContain('commonly agent attach hermes --pod <pod-id> --name <name>');
-    expect(prompt).toMatch(/It needs Hermes 0\.22\.5 or newer below 0\.23/);
-    // The adapter fixes --provider openrouter and reads OPENROUTER_API_KEY from the host.
-    expect(prompt).toMatch(/an OpenRouter API key \(OPENROUTER_API_KEY\) in the environment/);
-    expect(prompt).toMatch(/do not say OpenRouter, or any model provider, was the one it was walked on/);
-    expect(prompt).not.toMatch(/walked[^.]*OpenRouter/);
+    expect(prompt).not.toMatch(/hermes/i);
   });
 
   test('the dsh guide gives the same attach step and the completed macOS walk', () => {
@@ -200,7 +196,7 @@ describe('Scout onboarding knowledge', () => {
   // The answer matches what the Connect page itself offers on that OS
   // (agentByo.listen.windowsNote / unavailableCodex).
   test('never proposes the card for a tool or OS it cannot set up, and offers what the Connect page does', () => {
-    expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode, Hermes and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet, or is not tested there, as above, only for a tool with no path above, or an OS its path does not cover\./);
+    expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet, or is not tested there, as above, only for a tool with no path above, or an OS its path does not cover\./);
     // CodeRabbit on #2765: the no-card rule must not deny tools that do connect.
     expect(prompt).not.toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text and say plainly that it does not run there yet/);
     expect(prompt).toMatch(/For Claude Code on Linux, WSL or native Windows, do not propose a connect card: offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page/);
