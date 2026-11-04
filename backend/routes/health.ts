@@ -68,9 +68,11 @@ router.get('/', async (_req: unknown, res: Res) => {
     try {
       // eslint-disable-next-line global-require
       const { createClient } = require('redis');
+      // eslint-disable-next-line global-require
+      const { redisPassword } = require('../config/redisPassword');
       const redisHost = process.env.REDIS_HOST || 'redis';
       const redisPort = process.env.REDIS_PORT || 6379;
-      const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}`, password: process.env.REDIS_PASSWORD || undefined });
+      const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}`, password: redisPassword() });
       const redisStart = Date.now();
       await redisClient.connect();
       const pong = await redisClient.ping();

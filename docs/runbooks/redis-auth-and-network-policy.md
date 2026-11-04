@@ -12,11 +12,19 @@ generated into GCP Secret Manager and delivered via ESO (`api-keys` →
   `--requirepass`, so the password never appears in process args), hands off to
   `docker-entrypoint.sh` so it still drops to the `redis` user, and the
   `redis-cli` probes authenticate via `REDISCLI_AUTH`.
-- Clients pass `password: process.env.REDIS_PASSWORD || undefined` (undefined =
-  no AUTH, so the auth-off path is unchanged). Clients: backend (socket.io
-  adapter + health), ops-runner. litellm has no redis; commonly-bot has none.
+- Clients pass `password: redisPassword()` (undefined = no AUTH, so the auth-off
+  path is unchanged). `config/redisPassword.ts` is the single source — it trims
+  `REDIS_PASSWORD` so a stray trailing newline can't cause `WRONGPASS`. Clients:
+  backend (socket.io adapter + health), ops-runner. litellm has no redis;
+  commonly-bot has none.
 - The generated password must be hex or alphanumeric (it goes into the conf
-  unquoted) — `openssl rand -hex 32`.
+  unquoted) and must carry NO trailing newline. Create/rotate it with
+  `printf '%s' "$(openssl rand -hex 32)" | gcloud secrets versions add
+  <keyPrefix>redis-password --data-file=-`. A plain `echo … | --data-file=-`
+  appends `\n`: Redis's conf tokenizer strips it so the server's effective
+  password is the trimmed value, but a node-redis client would send it verbatim
+  and get `WRONGPASS` (staging hit this 2026-11-04). The client trims
+  defensively via `redisPassword()`, but keep the secret clean at the source.
 - Rollout: one helm upgrade carries the Secret, redis `requirepass`, and every
   client's `REDIS_PASSWORD` together, with a brief adapter reconnect window.
 
