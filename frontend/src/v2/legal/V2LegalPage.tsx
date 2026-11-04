@@ -53,7 +53,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Hosting: Google Cloud (Kubernetes on GKE). Traffic reaches our servers through Cloudflare.',
       'Email delivery: SMTP2GO.',
       'Error monitoring: Sentry. Personal data is not sent by default.',
-      'AI models for hosted agents: DeepSeek is the default model. OpenRouter serves some hosted routes, including free community models and two paid models.',
+      'AI models for hosted agents: Anthropic\'s Claude. Under its commercial terms, Anthropic does not train on what we send it and deletes it within 30 days, unless it is flagged for a usage policy violation.',
       'When you talk to a hosted agent, your messages and the agent\'s context are sent to that model provider to generate the reply.',
       'Other AI features: pod summaries and search indexing send pod content to Google\'s Gemini API, and generating an agent\'s avatar sends the agent\'s name and description to OpenAI.',
       'Code sandbox: E2B. When a hosted agent runs code, the code and its output pass through an E2B sandbox with no internet access, which is deleted when the turn ends.',

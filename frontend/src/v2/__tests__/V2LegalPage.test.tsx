@@ -13,7 +13,9 @@ describe('public legal pages (TASK-530)', () => {
 
   it('names the providers that process hosted-agent data', () => {
     render(<V2PrivacyPage />);
-    expect(screen.getByText(/DeepSeek is the default model/)).toBeInTheDocument();
+    expect(screen.getByText(/AI models for hosted agents: Anthropic's Claude\./)).toBeInTheDocument();
+    // D243: hosted agents moved off DeepSeek; the page must not name it.
+    expect(screen.queryByText(/DeepSeek/)).not.toBeInTheDocument();
     expect(screen.getByText(/^Code sandbox: E2B\./)).toBeInTheDocument();
     // D81: the Workers AI route was removed; the page must not name it.
     expect(screen.queryByText(/Workers AI/)).not.toBeInTheDocument();
