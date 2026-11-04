@@ -5,7 +5,7 @@
 // memory's `p.v2m-state`): text only, no icon, no MUI, no exclamation mark.
 import React from 'react';
 import { act, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18n from '../../i18n';
 import ProtectedRoute from '../../components/ProtectedRoute';
 import { AuthContext } from '../../context/AuthContext';
@@ -45,6 +45,21 @@ const renderGate = () => render(
 );
 
 describe('ProtectedRoute admin gate', () => {
+  test('signed out, the gate sends the person to /login and never asks the admin endpoint', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin']}>
+        <AuthContext.Provider value={{ ...authValue, isAuthenticated: false, currentUser: null, user: null, token: null }}>
+          <Routes>
+            <Route path="/admin" element={<ProtectedRoute requireAdmin><div>admin page</div></ProtectedRoute>} />
+            <Route path="/login" element={<div>sign-in page</div>} />
+          </Routes>
+        </AuthContext.Provider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('sign-in page')).toBeInTheDocument();
+    expect(screen.queryByText('admin page')).toBeNull();
+  });
+
   let errorSpy;
   beforeEach(() => {
     axios.get.mockReset();
