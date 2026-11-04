@@ -5822,7 +5822,7 @@ test('the card Source line (TASK-607) uses v2 tokens only, one value per token, 
     expect(rule).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
     expect(rule).not.toMatch(/data-v2-theme|prefers-color-scheme/);
   }
-  expect(css).toContain('.v2-ui-card .ui-src{display:inline-flex;align-items:center;gap:6px;margin-left:auto;min-width:0;font:500 11px/16px var(--mono);color:var(--m)}');
+  expect(css).toContain('.v2-ui-card .ui-src{display:inline-flex;align-items:center;gap:6px;margin-left:auto;min-width:0;font:500 11px/16px var(--v2-font-mono);color:var(--m)}');
   expect(css).toContain('.v2-ui-card .ui-src-n{color:var(--s)}');
   expect(css).toContain('.v2-ui-card .ui-src-mk>*{display:block;width:16px;height:16px}');
   // The bundled brand fills are replaced, not shown: Sentry's #362D59 is 1.4:1 on the dark card.

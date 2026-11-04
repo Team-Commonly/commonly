@@ -322,7 +322,7 @@
 }
 
 .v2-demo__card { margin: 4px 0; }
-.v2-demo__card .v2-decision-card__agent { font-size: 11px; }
+.v2-demo__card .v2-decision-card__agent { font-size: 11px; font-family: var(--v2-font-mono); }
 
 .v2-demo__pulse--dot {
   width: 8px;
