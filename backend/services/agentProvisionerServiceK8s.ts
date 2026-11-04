@@ -1642,11 +1642,16 @@ const retireReplacedLiteLLMKey = async (agentId: any, installedKey: string | nul
   const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
   if (!baseUrl || !masterKey || replaced.oldKey === masterKey || replaced.oldKey === installedKey) return;
   const axios = require('axios');
-  await axios.delete(`${baseUrl}/key/delete`, {
-    headers: { Authorization: `Bearer ${masterKey}` },
-    data: { keys: [replaced.oldKey] },
-  }).catch(() => {});
-  console.log(`[litellm] Retired the key replaced for ${id}`);
+  try {
+    await axios.delete(`${baseUrl}/key/delete`, {
+      headers: { Authorization: `Bearer ${masterKey}` },
+      data: { keys: [replaced.oldKey] },
+    });
+    console.log(`[litellm] Retired the key replaced for ${id}`);
+  } catch (err: any) {
+    // The old key is still live in LiteLLM. Say so, without the key itself.
+    console.warn(`[litellm] could not retire the key replaced for ${id}: ${err?.message || err}`);
+  }
 };
 
 const issueLiteLLMVirtualKey = async (agentId: any) => {
