@@ -25,15 +25,19 @@ async function startStub() {
 }
 
 async function withDevLive(env, fn) {
-  const keys = ['DEV_LIVE', 'DEV_LIVE_TARGET', 'DEV_LIVE_UPSTREAM'];
+  const keys = ['DEV_LIVE', 'DEV_LIVE_TARGET', 'DEV_LIVE_UPSTREAM', 'DEV_LIVE_PORT'];
   const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  // Start clean, so a DEV_LIVE_PORT exported in the shell never leaks into a case.
+  for (const k of keys) delete process.env[k];
   Object.assign(process.env, env);
   let server;
   try {
     server = await createServer({ configFile, logLevel: 'silent', server: { host: '127.0.0.1' } });
     await server.listen();
-    const port = server.httpServer.address().port;
-    return await fn(`http://127.0.0.1:${port}`, port);
+    // Requests go to the port the server actually bound. The port assertions read the
+    // configured port, so a live session already holding it can't fail a case.
+    const bound = server.httpServer.address().port;
+    return await fn(`http://127.0.0.1:${bound}`, server.config.server.port, server.config.define['process.env.REACT_APP_API_URL']);
   } finally {
     await server?.close();
     for (const k of keys) {
@@ -123,6 +127,68 @@ test('each target listens on its own port, so localStorage cannot cross targets'
     });
   } finally {
     await stub.close();
+  }
+});
+
+test('DEV_LIVE_PORT moves the port and the API base together', async () => {
+  const stub = await startStub();
+  try {
+    await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod', DEV_LIVE_UPSTREAM: stub.url, DEV_LIVE_PORT: '3113' }, async (base, port, apiBase) => {
+      assert.equal(port, 3113);
+      assert.equal(apiBase, JSON.stringify('http://localhost:3113'), 'the app must call its own origin, not 3101');
+      const res = await fetch(`${base}/api/health`);
+      assert.equal(res.status, 200);
+    });
+    await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod', DEV_LIVE_UPSTREAM: stub.url }, async (_base, port, apiBase) => {
+      assert.equal(port, 3101);
+      assert.equal(apiBase, JSON.stringify('http://localhost:3101'));
+    });
+  } finally {
+    await stub.close();
+  }
+});
+
+test('DEV_LIVE_PORT takes only its own target\'s range, so no origin serves both targets', async () => {
+  const cases = [
+    ['prod', '3102'], ['staging', '3101'], // the other target's default
+    ['prod', '3121'], ['staging', '3113'], // the other target's range
+    ['prod', '3000'], // plain npm start's origin
+    ['prod', 'abc'], ['prod', '3113.5'], ['prod', ' 3113'], ['prod', '0xC29'],
+    ['prod', '3109'], ['prod', '3120'], ['staging', '3119'], ['staging', '3130'], // just outside each range
+  ];
+  for (const [target, port] of cases) {
+    await assert.rejects(
+      withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: target, DEV_LIVE_PORT: port }, async () => {}),
+      new RegExp(`DEV_LIVE_PORT for ${target} must be a port from`),
+      `${target} on '${port}'`,
+    );
+  }
+  const stub = await startStub();
+  try {
+    // Both edges of each range are accepted, and an empty override keeps the default.
+    for (const [target, value, expected] of [['prod', '3110', 3110], ['prod', '3119', 3119], ['staging', '3120', 3120], ['staging', '3129', 3129], ['prod', '', 3101], ['staging', '', 3102]]) {
+      await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: target, DEV_LIVE_UPSTREAM: stub.url, DEV_LIVE_PORT: value }, async (_base, port, apiBase) => {
+        assert.equal(port, expected, `${target} on '${value}'`);
+        assert.equal(apiBase, JSON.stringify(`http://localhost:${expected}`));
+      });
+    }
+  } finally {
+    await stub.close();
+  }
+});
+
+test('dev:live refuses --port, so the port comes only from the target range', async () => {
+  for (const flag of [['--port', '3124'], ['--port=3124']]) {
+    process.argv.push(...flag);
+    try {
+      await assert.rejects(
+        withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod' }, async () => {}),
+        /does not take --port/,
+        flag.join(' '),
+      );
+    } finally {
+      process.argv.splice(process.argv.length - flag.length, flag.length);
+    }
   }
 });
 
