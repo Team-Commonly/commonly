@@ -646,7 +646,7 @@ describe('tick', () => {
       },
     };
     const logs = [];
-    const { supervisor, saveToken } = makeHarness({
+    const { supervisor, saveToken, children } = makeHarness({
       rows: () => [boundRow({
         runtime: { runtimeType: 'wrapper', adapter: 'qwen' },
         environment: { model: 'claude-haiku-5-5' },
@@ -658,6 +658,32 @@ describe('tick', () => {
     await supervisor.tick();
     expect(saveToken).not.toHaveBeenCalled();
     expect(logs.join('\n')).toMatch(/the qwen adapter cannot use provider.api "anthropic-messages".*keeping the current seat/);
+    // A fresh daemon still starts the retained OpenCode seat, unchanged.
+    expect(children).toHaveLength(1);
+  });
+
+  test('a record whose own adapter cannot speak its provider.api does not start', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'qwen',
+        environment: {
+          model: 'claude-haiku-5-5',
+          provider: {
+            id: 'anthropic-native', baseURL: 'https://api.anthropic.com', keyFile: '/Users/kai/.config/commonly/anthropic-key', api: 'anthropic-messages',
+          },
+        },
+      },
+    };
+    const { supervisor, saveToken, children } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter: 'qwen' }, environment: { model: 'claude-haiku-5-5' } })],
+      tokens,
+      resolveAdapter: async () => 'qwen',
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(children).toHaveLength(0);
   });
 
   test('the host-local provider survives a server environment that omits it', async () => {

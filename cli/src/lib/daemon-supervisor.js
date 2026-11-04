@@ -321,7 +321,11 @@ export const createDaemonSupervisor = ({
         ? providerRefusal(existing.environment, getAdapter(nextAdapter)) : null;
       if (providerRefused) {
         log(`[${row.agentName}] host-local provider: ${providerRefused} — keeping the current seat`);
-        return false;
+        // The record stays as it is. It still starts when its own adapter
+        // accepts the provider, so a fresh daemon doesn't leave the seat down.
+        const retainedRefused = adapterChanged
+          ? providerRefusal(existing.environment, getAdapter(existing.adapter)) : providerRefused;
+        return retainedRefused ? false : 'ready';
       }
       if (wanted) {
         const serverEnvironment = withoutServerProvider(wanted.value);
