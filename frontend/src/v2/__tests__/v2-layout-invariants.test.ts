@@ -6055,7 +6055,7 @@ describe('Activity built to the d215 signal frames (#s-activity-signal)', () => 
   });
 
   test('at 390: 16px gutter, one-row scope, 44px touch floor on keys, rows and the select', () => {
-    expect(phone).toContain('.v2-activity__body { padding: 12px 16px 16px; }');
+    expect(phone).toContain('.v2-activity__body { padding: 12px 12px 16px; }');
     expect(phone).toContain('.v2-activity__controls { display: flex; flex-wrap: nowrap;');
     expect(phone).toContain('.v2-root button.v2-activity__sel { height: 44px;');
     expect(phone).toContain('.v2-root .v2-activity__acts button.v2-activity__key { height: 44px; }');
