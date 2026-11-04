@@ -69,26 +69,51 @@ data:
           budget_duration: 1mo
 
       # --- Gemini (direct google provider) ---
+      # aiProviders.gemini.enabled off (F85): Google rejects the key, and a
+      # rejected call still carries the prompt. Callers keep asking for these
+      # names (llmService and the commonly-bot client default to gemini-2.5-flash),
+      # so each name stays and DeepSeek serves it directly, instead of the request
+      # going to Google first and falling back after the 401.
       - model_name: google/gemini-2.5-flash
         litellm_params:
+          {{- if .Values.aiProviders.gemini.enabled }}
           model: gemini/gemini-2.5-flash
           api_key: os.environ/GEMINI_API_KEY
+          {{- else }}
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          {{- end }}
 
       - model_name: google/gemini-2.5-flash-lite
         litellm_params:
+          {{- if .Values.aiProviders.gemini.enabled }}
           model: gemini/gemini-2.5-flash-lite
           api_key: os.environ/GEMINI_API_KEY
+          {{- else }}
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          {{- end }}
 
       - model_name: google/gemini-2.0-flash
         litellm_params:
+          {{- if .Values.aiProviders.gemini.enabled }}
           model: gemini/gemini-2.0-flash
           api_key: os.environ/GEMINI_API_KEY
+          {{- else }}
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          {{- end }}
 
       # Aliases for backend llmService default model names
       - model_name: gemini-2.5-flash
         litellm_params:
+          {{- if .Values.aiProviders.gemini.enabled }}
           model: gemini/gemini-2.5-flash
           api_key: os.environ/GEMINI_API_KEY
+          {{- else }}
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          {{- end }}
 
       # --- nemotron aliases (community agents / gateway) ---
       # Registered with both prefixed and un-prefixed model names:
@@ -179,15 +204,27 @@ data:
           api_key: os.environ/DEEPSEEK_API_KEY
 
       # --- OpenAI (optional, for embeddings) ---
+      # aiProviders.openai.enabled off (F85): the OpenAI key is a placeholder, so
+      # these upstreams only ever sent content out to be refused. gpt-4o keeps its
+      # name on DeepSeek; embeddings and images have no DeepSeek equivalent and
+      # are not routed (the backend has them off: EMBEDDING_PROVIDER=none,
+      # AVATAR_PROVIDER=design).
+      {{- if .Values.aiProviders.openai.enabled }}
       - model_name: text-embedding-3-large
         litellm_params:
           model: openai/text-embedding-3-large
           api_key: os.environ/OPENAI_API_KEY
+      {{- end }}
 
       - model_name: gpt-4o
         litellm_params:
+          {{- if .Values.aiProviders.openai.enabled }}
           model: openai/gpt-4o
           api_key: os.environ/OPENAI_API_KEY
+          {{- else }}
+          model: deepseek/deepseek-v4-flash
+          api_key: os.environ/DEEPSEEK_API_KEY
+          {{- end }}
 
       # --- OpenAI image generation (agent avatars, enriched content gen) ---
       # Backend openaiImageService.ts hits these via LITELLM_BASE_URL + LITELLM_MASTER_KEY
@@ -196,6 +233,7 @@ data:
       #   dall-e-3 standard 1024x1024: $0.04 / image
       #   dall-e-3 hd       1024x1024: $0.08 / image
       #   gpt-image-1       1024x1024: ~$0.04 / image (usage-based, estimate)
+      {{- if .Values.aiProviders.openai.enabled }}
       - model_name: dall-e-3
         litellm_params:
           model: openai/dall-e-3
@@ -205,6 +243,7 @@ data:
         litellm_params:
           model: openai/gpt-image-1
           api_key: os.environ/OPENAI_API_KEY
+      {{- end }}
 
       # Direct Anthropic routes removed. Claude on hosted runtimes
       # awaits OpenRouter routing; BYO Claude Code remains independent.

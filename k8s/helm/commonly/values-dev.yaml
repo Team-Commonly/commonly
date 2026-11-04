@@ -37,6 +37,10 @@ agentProvisioning:
 aiProviders:
   gemini:
     enabled: false
+  # F85 (11-04): the OpenAI key is a placeholder, so LiteLLM routes nothing to
+  # OpenAI on dev. A real key turns this back on.
+  openai:
+    enabled: false
 
 backend:
   replicaCount: 1
