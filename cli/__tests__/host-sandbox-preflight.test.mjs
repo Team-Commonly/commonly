@@ -35,6 +35,7 @@ await jest.unstable_mockModule('../src/lib/adapters/index.js', () => ({
     ? { name, detect: async () => mockCliFound }
     : null),
   listAdapterNames: () => ['claude', 'codex', 'pi', 'opencode', 'stub'],
+  listPublicAdapterNames: () => ['claude', 'codex', 'pi', 'opencode'],
 }));
 
 const { hostSandboxRefusal } = await import('../src/lib/sandbox/host-check.js');
