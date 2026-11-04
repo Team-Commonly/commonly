@@ -193,7 +193,7 @@ describe('Scout onboarding knowledge', () => {
     expect(en.agentByo.listen.windowsNote).toMatch(/^Claude Code hasn’t been tested on Windows yet\. Windows has no sandbox/);
     expect(en.agentByo.listen.windowsNote).toMatch(/--unsandboxed/);
     expect(en.agentByo.listen.unavailableClaudeLinux).toMatch(/only in an invite-only pod.*connect Claude Code from your own sessions with the command below, or choose “Run it here”/);
-    expect(en.agentByo.listen.unavailableCodex).toMatch(/Choose “Run it here” for a hosted agent, or run the command on a Mac\. Linux is not tested yet\./);
+    expect(en.agentByo.listen.unavailableCodex).toMatch(/is tested on a Mac and may not answer @mentions from \{\{os\}\} yet\. Choose “Run it here” for a hosted agent, or run the command on a Mac\./);
   });
 
   // Stranger journey 2026-10-26: Scout wrote the Terminal steps and asked

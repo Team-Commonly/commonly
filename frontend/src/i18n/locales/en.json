@@ -1912,7 +1912,7 @@
       "toolClaude": "Claude Code",
       "toolCodex": "the Codex CLI",
       "unavailableClaudeLinux": "On Linux, Claude Code answers @mentions only in an invite-only pod, and this one isn’t. Its owner can switch it to Invite-only under “Who can join” in pod settings. Or connect Claude Code from your own sessions with the command below, or choose “Run it here” for a hosted agent.",
-      "unavailableCodex": "The Codex CLI can’t answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac. Linux is not tested yet.",
+      "unavailableCodex": "The Codex CLI is tested on a Mac and may not answer @mentions from {{os}} yet. Choose “Run it here” for a hosted agent, or run the command on a Mac.",
       "wontAnswer": "{{name}} will not answer @mentions from here.",
       "useDifferentRunner": "Use a different adapter",
       "repo": {
