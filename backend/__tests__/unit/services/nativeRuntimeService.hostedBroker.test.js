@@ -382,6 +382,30 @@ describe('a hosted run in a granted pod', () => {
     expect(offered.some((name) => name.startsWith('google-calendar'))).toBe(false);
   });
 
+  // CodeRabbit on #3383: a set but non-Claude native model is not the
+  // no-training route either, so the predicate must not accept any nonempty model.
+  test('with a non-Claude native model set, a Calendar grant is still not offered', async () => {
+    const saved = process.env.NATIVE_RUNTIME_MODEL;
+    process.env.NATIVE_RUNTIME_MODEL = 'deepseek-v4-flash';
+    let isolatedRunAgent;
+    try {
+      jest.isolateModules(() => {
+        ({ runAgent: isolatedRunAgent } = require('../../../services/nativeRuntimeService'));
+      });
+    } finally {
+      if (saved === undefined) delete process.env.NATIVE_RUNTIME_MODEL; else process.env.NATIVE_RUNTIME_MODEL = saved;
+    }
+    mockRoomGrantFind.mockReturnValue(chain([{ ...LIVE_GRANT, tools: ['github.list_issues', 'google-calendar.list_events'] }]));
+    mockAxiosPost.mockResolvedValueOnce(finalTurn);
+
+    await isolatedRunAgent(INSTALLATION, { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'hello' } });
+
+    const request = mockAxiosPost.mock.calls[0][1];
+    expect(request.model).toBe('deepseek-v4-flash');
+    expect(request.tools.map((tool) => tool.function.name)).toContain('github_list_issues');
+    expect(request.tools.some((tool) => tool.function.name.startsWith('google-calendar'))).toBe(false);
+  });
+
   test('a seat that cannot be resolved gets no broker rather than a guess', async () => {
     mockSeatFindOne.mockReturnValue(seatRow(null));
     mockAxiosPost.mockResolvedValueOnce(finalTurn);

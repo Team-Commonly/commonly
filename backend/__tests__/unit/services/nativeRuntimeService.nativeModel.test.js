@@ -86,7 +86,7 @@ process.env.NATIVE_RUNTIME_MODEL = 'claude-haiku-5-5';
 process.env.LITELLM_CHAT_MODEL = 'deepseek-v4-flash';
 const AgentRun = require('../../../models/AgentRun');
 const { postMessage } = require('../../../services/agentMessageService');
-const { runAgent, nativeModelFor } = require('../../../services/nativeRuntimeService');
+const { runAgent, nativeModelFor, guardrailsForRun } = require('../../../services/nativeRuntimeService');
 
 const POD = '507f1f77bcf86cd799439011';
 const SEAT = '507f1f77bcf86cd799439013';
@@ -177,6 +177,29 @@ describe('which model a native turn runs on', () => {
     expect(request.tools.map((tool) => tool.function.name).some((name) => /calendar/.test(name))).toBe(true);
     expect(request.model).toBe(NATIVE);
     expect(request.disable_fallbacks).toBe(true);
+  });
+
+  // F92 (CodeRabbit on #3383): a Calendar result would otherwise ride every
+  // later request into openai-moderation-enforce. Once Calendar is offered only
+  // guardrails that call no other provider stay on; without it both stay.
+  test('a turn offered Calendar drops the OpenAI moderation guardrail; other turns keep it', async () => {
+    mockRoomGrantFind.mockReturnValue(chain([CALENDAR_GRANT]));
+    mockAxiosPost.mockResolvedValueOnce(reply('Nothing today.'));
+    await runAgent(installation('gpt-5.4'), TRIGGER);
+    expect(mockAxiosPost.mock.calls[0][1].guardrails).toEqual(['injection-guard']);
+
+    mockAxiosPost.mockClear();
+    mockRoomGrantFind.mockReturnValue(chain([]));
+    mockAxiosPost.mockResolvedValueOnce(reply('Hi.'));
+    await runAgent(installation(), TRIGGER);
+    expect(mockAxiosPost.mock.calls[0][1].guardrails).toEqual(['openai-moderation-enforce', 'injection-guard']);
+  });
+
+  test('guardrailsForRun keeps only local guardrails once Limited-Use is offered', () => {
+    expect(guardrailsForRun(['openai-moderation-enforce', 'injection-guard'], true)).toEqual(['injection-guard']);
+    expect(guardrailsForRun(['openai-moderation-enforce'], true)).toEqual([]);
+    expect(guardrailsForRun(['openai-moderation-enforce', 'injection-guard'], false))
+      .toEqual(['openai-moderation-enforce', 'injection-guard']);
   });
 
   test('the same pinned model without a grant keeps its pin', async () => {

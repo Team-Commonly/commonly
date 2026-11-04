@@ -34,7 +34,7 @@ import {
   hostedBrokerToolsForRun,
   HostedBrokerProjection,
 } from './grantBrokerProjectionService';
-import { isNoTrainingModel } from './limitedUseConnectors';
+import { isLimitedUseTool, isNoTrainingModel } from './limitedUseConnectors';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
 import { podIsBridged } from './outsiderGrantPodEligibility';
 import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
@@ -148,6 +148,17 @@ const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_0
 const NATIVE_RUNTIME_GUARDRAILS = (
   process.env.NATIVE_RUNTIME_GUARDRAILS ?? 'openai-moderation-enforce,injection-guard'
 ).split(',').map((s) => s.trim()).filter(Boolean);
+// Guardrails that run inside LiteLLM and call no other provider. Once a run is
+// offered a Limited-Use tool (Calendar), its tool results sit in every later
+// request, so only these stay on (F92): openai-moderation-enforce would send
+// them to OpenAI's moderation API.
+const LOCAL_GUARDRAILS: ReadonlySet<string> = new Set(['injection-guard']);
+export const guardrailsForRun = (names: string[], limitedUseOffered: boolean): string[] => (
+  limitedUseOffered ? names.filter((name) => LOCAL_GUARDRAILS.has(name)) : names
+);
+const hasLimitedUseTool = (projection: HostedBrokerProjection): boolean => (
+  [...projection.dispatch.values()].some((mapped) => isLimitedUseTool(mapped.tool))
+);
 // How a guardrail rejection reads in a chat call's error body.
 const GUARDRAIL_REJECTION = /guardrail|moderation|prompt-injection/i;
 const GUARD_CHECK_TIMEOUT_MS = 10_000;
@@ -224,10 +235,13 @@ export function isNativeRuntimeAvailable(): boolean {
 async function textsTheGuardStops(
   litellm: { baseUrl: string; apiKey: string },
   texts: string[],
+  // The run's guardrails (guardrailsForRun): after a Limited-Use tool, the
+  // checked text may echo its result, so it gets only the local ones too.
+  guardrailNames: string[],
 ): Promise<boolean[] | null> {
   try {
     return await Promise.all(texts.map(async (text) => {
-      for (const guardrailName of NATIVE_RUNTIME_GUARDRAILS) {
+      for (const guardrailName of guardrailNames) {
         // eslint-disable-next-line no-await-in-loop
         const resp = await axios.post(
           `${litellm.baseUrl}/guardrails/apply_guardrail`,
@@ -2305,6 +2319,10 @@ export async function runAgent(
     }
   };
   let broker: HostedBrokerProjection = await assembleBroker();
+  // Sticky: a Limited-Use result stays in the transcript after the tool is gone.
+  // runGuardrails is what both the chat request and the web-result check send.
+  let limitedUseOffered = false;
+  let runGuardrails = NATIVE_RUNTIME_GUARDRAILS;
 
   // A guard stop after the turn read the web is most often a page, not the
   // person. So the turn keeps where each web result sits (its tool-call round
@@ -2324,7 +2342,9 @@ export async function runAgent(
   // Returns how many results were set aside, and how many web results the
   // turn lost in all (those plus the ones in the dropped rounds).
   const setAsideStoppedWebResult = async (): Promise<{ setAside: number; removed: number }> => {
-    const stops = await textsTheGuardStops(litellm, webResults.map(({ index }) => String(messages[index].content)));
+    const stops = await textsTheGuardStops(
+      litellm, webResults.map(({ index }) => String(messages[index].content)), runGuardrails,
+    );
     // The guard stopped on something else, the pod's text or the request.
     if (stops && !stops.includes(true)) return { setAside: 0, removed: 0 };
     const before = webResults.length;
@@ -2395,6 +2415,8 @@ export async function runAgent(
       // A grant's tools go only to the native model, and once offered the turn
       // stays on it: later rounds carry what those tools returned.
       if (offeredBroker.tools.length > 0) model = modelFor(true);
+      limitedUseOffered = limitedUseOffered || hasLimitedUseTool(broker);
+      runGuardrails = guardrailsForRun(NATIVE_RUNTIME_GUARDRAILS, limitedUseOffered);
       const offeredTools = [
         ...toolsForConfig(cfg, inPodOnly, {
           webTainted,
@@ -2426,7 +2448,7 @@ export async function runAgent(
             // Guard the untrusted-user / untrusted-pod-content surface (see the
             // NATIVE_RUNTIME_GUARDRAILS note above). Omitted entirely when empty
             // so an operator can disable via env without a redeploy.
-            ...(NATIVE_RUNTIME_GUARDRAILS.length ? { guardrails: NATIVE_RUNTIME_GUARDRAILS } : {}),
+            ...(runGuardrails.length ? { guardrails: runGuardrails } : {}),
           },
           {
             headers: {
