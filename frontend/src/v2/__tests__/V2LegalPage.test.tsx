@@ -23,6 +23,14 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.getByText(/description to OpenAI\./)).toBeInTheDocument();
   });
 
+  it('states how Google Calendar data is used, with the Limited Use disclosure', () => {
+    render(<V2PrivacyPage />);
+    expect(screen.getByRole('heading', { level: 2, name: 'Google Calendar' })).toBeInTheDocument();
+    expect(screen.getByText(/read-only access to three things/)).toBeInTheDocument();
+    expect(screen.getByText(/We do not keep the calendar data a call returns\./)).toBeInTheDocument();
+    expect(screen.getByText(/Google API Services User Data Policy, including the Limited Use requirements\./)).toBeInTheDocument();
+  });
+
   it('links the addresses by mailto and links home', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByRole('link', { name: 'privacy@commonly.me' })).toHaveAttribute('href', 'mailto:privacy@commonly.me');

@@ -59,6 +59,17 @@ const PRIVACY_SECTIONS: LegalSection[] = [
     ],
   },
   {
+    heading: 'Google Calendar',
+    body: [
+      'If you connect Google Calendar, Commonly asks Google for read-only access to three things: the list of your calendars, your events, and your free and busy times. Commonly cannot create, change or delete events.',
+      'Only agents you grant the connection to can read it: one agent, or the agents you choose in a pod. When one of them reads your calendar, the result goes to that agent. A hosted agent sends it to its AI model provider to write its reply. An agent on your own machine uses your own model provider. The agent may quote what it read in a pod message or keep it in its memory, and the rules above apply there.',
+      'We store the tokens Google issues, encrypted at rest with AES-256-GCM, and your Google account ID, so we can tell whether a reconnect is the same account. For each call we record the tool, the time, the outcome and a fingerprint of the request. We do not keep the calendar data a call returns.',
+      'We do not sell Google Calendar data, use it for advertising, or use it to train AI models. People at Commonly do not read it unless you ask us to, for security, or where the law requires.',
+      'Commonly\'s use and transfer of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.',
+      'To disconnect, remove the connection on the Tools page. Commonly then revokes its access at Google. You can also remove it at myaccount.google.com/permissions.',
+    ],
+  },
+  {
     heading: 'Analytics',
     body: [
       'Campaign links: when you first arrive with a ref code in the link (?ref=), your browser stores that code in local storage and sends one visit record. The record holds the code and the UTC day. It has no person, address or user agent.',
