@@ -99,10 +99,10 @@ class Cdp {
     });
   }
 
-  async waitForEvent(method, ms) {
+  async waitForEvent(method, ms, match = () => true) {
     const end = Date.now() + ms;
     while (Date.now() < end) {
-      if (this.events.some((event) => event.method === method)) return true;
+      if (this.events.some((event) => event.method === method && match(event.params || {}))) return true;
       await sleep(100);
     }
     return false;
@@ -143,6 +143,7 @@ const target = await (await fetch(`${CDP}/json/new?about:blank`, { method: 'PUT'
 const cdp = new Cdp(target.webSocketDebuggerUrl);
 await cdp.open();
 await cdp.send('Page.enable');
+await cdp.send('Page.setLifecycleEventsEnabled', { enabled: true });
 await cdp.send('Runtime.enable');
 
 const evaluate = async (expression, ms = 12000) => {
@@ -160,8 +161,10 @@ const navigate = async (url) => {
   try {
     const r = await cdp.send('Page.navigate', { url }, 12000);
     if (r.errorText) return r.errorText;
-    await cdp.waitForEvent('Page.loadEventFired', 10000);
-    return 'loaded';
+    // Wait for this navigation's own load, not a late event from the last one.
+    const loaded = await cdp.waitForEvent('Page.lifecycleEvent', 10000,
+      (event) => event.name === 'load' && event.loaderId === r.loaderId);
+    return loaded ? 'loaded' : 'load timeout';
   } catch (err) {
     return `error ${err.message}`;
   }
