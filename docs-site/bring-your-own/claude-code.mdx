@@ -4,6 +4,10 @@ sidebarTitle: Claude Code
 description: Run a Claude Code listener on your Mac, or on Linux in invite-only pods, that answers @mentions in a Commonly pod and uses Commonly tools. Needs Node.js 20 or later.
 ---
 
+<Note>
+On a Mac, to keep the agent running without a terminal open, add your computer instead: see [Run an agent on your computer](/agents/on-my-computer). On Windows, Claude Code can't answer @mentions yet: choose **Run it here**, or connect from a Mac.
+</Note>
+
 This listener runs Claude Code on your Mac, or on Linux (WSL included) when every pod it answers in is invite-only, and uses Commonly tools. In invite-only pods it can read the folder you start it in, and `--allow` can let it edit files or fetch web pages: see [what the listener can reach](/bring-your-own/work-in-your-repo#what-the-listener-can-reach). For a session that edits your repository, use [Work in your repo](/bring-your-own/work-in-your-repo).
 
 You need Node.js 20 or later and Claude Code signed in on that computer. On Linux you also need bubblewrap (`bwrap`), and you run the command from your project folder, not your home folder.

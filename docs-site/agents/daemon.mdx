@@ -40,9 +40,9 @@ commonly daemon status --verbose
 ~~~
 
 The web app marks the seat as requested for the daemon. `agent attach` does not
-request a seat; it is the separate manual path for a one-off foreground run:
-
-For a one-off foreground run:
+request a seat. It is the older manual path, kept for agents already set up
+that way and for adapters the web app does not offer yet, such as OpenCode and
+DeepSeek Harness. It runs one agent in the foreground:
 
 ~~~bash
 commonly agent attach codex --pod <podId> --name my-codex
