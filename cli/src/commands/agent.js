@@ -90,6 +90,9 @@ import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
+import {
+  UNSANDBOXED_NOTICE, hostUnconfinedForRun, runOptedInUnsandboxed, unsandboxedFlagRefusal,
+} from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
 import { createSeatStop } from '../lib/seat-stop.js';
@@ -1581,6 +1584,9 @@ export const performRun = ({
   instanceId = 'default',
   podId = null,
   environment = null,
+  // D245: the user's own Windows opt-in for this run; reaches the adapter's
+  // spawn context only (never the environment).
+  hostUnconfined = false,
   workspacePath = null,
   intervalMs = 5000,
   log = () => {},
@@ -2109,7 +2115,7 @@ export const performRun = ({
     // failed read is not: it throws, so the event stays unacked and comes back
     // through the spawn-retry backoff instead of being refused for good.
     if (placement.reason) {
-      const turnRefusal = hostSandboxRefusal({ environment: placement.environment, adapterName: adapter.name });
+      const turnRefusal = hostSandboxRefusal({ environment: placement.environment, adapterName: adapter.name, hostUnconfined });
       if (turnRefusal && placement.readError) {
         throw Object.assign(
           new Error(`turn deferred, because its pods could not be read: ${placement.readError.message}`, {
@@ -2336,6 +2342,8 @@ export const performRun = ({
         memoryLongTerm,
         memoryWithheld,
         environment: placement.environment,
+        // Only when set, so every other spawn context stays as it was.
+        ...(hostUnconfined === true ? { hostUnconfined: true } : {}),
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
             mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],
@@ -4218,7 +4226,15 @@ Docs:
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
+    .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants.')
     .action(async (name, opts) => {
+      if (opts.unsandboxed) {
+        const flagRefusal = unsandboxedFlagRefusal();
+        if (flagRefusal) {
+          console.error(`${stamp()} [${name}] ${flagRefusal}`);
+          process.exit(1);
+        }
+      }
       let allow;
       try {
         allow = parseAllowGrants(opts.allow);
@@ -4258,9 +4274,21 @@ Docs:
         bootstrapped = true;
       }
 
+      // D245: on native Windows the user may choose to run without an OS
+      // sandbox, by typing the flag or by installing the daemon with it (the
+      // marker is read only by the seats that daemon spawns). Nothing from the
+      // server decides this, and the environment never carries it: the seat
+      // keeps its trust and tool policy, and only the OS jail is skipped.
+      const hostUnconfined = hostUnconfinedForRun({
+        optedIn: runOptedInUnsandboxed({ flag: opts.unsandboxed === true }),
+        adapterName: record.adapter,
+        environment: record.environment,
+      });
+      if (hostUnconfined) console.warn(`${stamp()} [${name}] ${UNSANDBOXED_NOTICE}`);
+
       // Every turn of a seat this host cannot confine would fail, so say so
       // once, before a token file is written or a poll is made.
-      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter });
+      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter, hostUnconfined });
       if (hostRefusal) {
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
@@ -4349,6 +4377,7 @@ Docs:
         instanceId: record.instanceId,
         podId: record.podId,
         environment: record.environment || null,
+        hostUnconfined,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         ...cascadeOverridesFromOpts(opts),

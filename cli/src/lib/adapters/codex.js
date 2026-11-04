@@ -79,6 +79,7 @@ import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 
 // Default timeout for a single codex spawn (exec mode).
 //
@@ -183,7 +184,13 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
       credentialFile: ctx.credentialFile,
       label: 'codex',
     }).env;
-    const [command, ...rest] = spawnCommand.map((a) => substitutePlaceholders(a, ctx));
+    // Win32 only: codex spawns the server without a shell, so an `npx.cmd` is
+    // resolved to its target here (#2141). Identity on every other platform.
+    const [command, ...rest] = resolveMcpCommand(
+      spawnCommand.map((a) => substitutePlaceholders(a, ctx)),
+      ctx.commandResolution,
+      { label: 'codex', name: server.name },
+    );
     // The doc block above promises bearer tokens never ride in argv, and this is
     // the place that had to hold it: an env value that carries the token is
     // diverted to env_vars, but a COMMAND ARGUMENT has no such route — codex
@@ -734,7 +741,7 @@ const CODEX_PROVIDER_KEY_ENVS = [
 // `ownGroup`: see runClaude in claude.js.
 const runCodex = ({
   args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
-  turnReap = turnReapEnabled(),
+  turnReap = turnReapEnabled(), commandResolution = {},
 }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
@@ -744,7 +751,11 @@ const runCodex = ({
   // argv prompt as intended. Surfaced live during ADR-005 Phase 2 smoke.
   // What the turn leaves running is stopped once it has closed (see claude.js).
   const turn = markTurn(env ?? process.env, { enabled: turnReap });
-  const proc = spawnInOwnGroup(spawnImpl, 'codex', args, { cwd, env: turn.env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
+  // On Windows `npm i -g @openai/codex` leaves a `codex.cmd`; it is read and
+  // its target spawned directly, never through cmd.exe, because the prompt is
+  // the last argv element and is pod content (#2141). Identity elsewhere.
+  const launch = resolveLaunch('codex', args, { env: turn.env, ...commandResolution });
+  const proc = spawnInOwnGroup(spawnImpl, launch.command, launch.args, { cwd, env: turn.env, stdio: ['ignore', 'pipe', 'pipe'] }, { ownGroup });
   observeSpawn(proc, onSpawn, controls);
   let stderr = '';
   let timedOut = false;
@@ -798,9 +809,17 @@ export default {
 
   inventory: codexRuntimeInventory,
 
-  async detect() {
+  // `opts` is a test seam only: `_commandResolution` overrides the Windows
+  // resolver's platform/env/fs. Production calls detect() with no argument.
+  async detect(opts = {}) {
     try {
-      const res = spawnSync('codex', ['--version'], { encoding: 'utf8', timeout: 5000 });
+      const located = resolveWindowsCommandWithReason('codex', opts._commandResolution);
+      if (!located.command) {
+        // Windows only: a `codex.cmd` this CLI cannot read safely, or none.
+        process.stderr.write(`codex adapter: ${located.reason}\n`);
+        return null;
+      }
+      const res = spawnSync(located.command, [...located.args, '--version'], { encoding: 'utf8', timeout: 5000 });
       if (res.error || res.status !== 0) return null;
       // `codex --version` prints e.g. "codex-cli 0.125.0" — last token is
       // the version. Defensive against future format tweaks: if no
@@ -808,6 +827,7 @@ export default {
       const stdout = (res.stdout || '').trim();
       const versionMatch = stdout.match(/(\d+\.\d+(?:\.\d+)?)/);
       const version = versionMatch ? versionMatch[1] : (stdout || 'unknown');
+      if (located.source) return { path: located.source, version };
       const where = spawnSync('which', ['codex'], { encoding: 'utf8' });
       const path = where.status === 0 ? (where.stdout || '').trim() || 'codex' : 'codex';
       return { path, version };
@@ -854,6 +874,7 @@ export default {
         instanceUrl: ctx.instanceUrl,
         credentialFile: credential?.path || null,
         publicSeat: sandbox?.trust === 'public',
+        commandResolution: { env: ctx.env || process.env, ...ctx._commandResolution },
       });
       if (mcp.unavailableMcp.length) throw publicMcpUnavailableError(mcp.unavailableMcp);
       // A derived record stores `trust: 'public'` and no mode (the block is
@@ -927,6 +948,7 @@ export default {
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,
+        commandResolution: ctx._commandResolution, // test seam only
       });
 
       let text = '';

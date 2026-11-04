@@ -28,8 +28,9 @@
  */
 import { Types } from 'mongoose';
 import User from '../models/User';
+import Machine from '../models/Machine';
 import { AgentInstallation } from '../models/AgentRegistry';
-import { GrantBrokerRefusal, grantBrokerRefusal } from './grantBrokerConfinement';
+import { GRANT_BROKER_REFUSAL_CODE, GrantBrokerRefusal, grantBrokerRefusal } from './grantBrokerConfinement';
 import { SeatEnvironmentEntry, projectSeatEnvironments, seatEnvironmentKey } from './seatEnvironmentProjection';
 
 /** `unbound` is the same word the grant read uses: nothing projected this seat. */
@@ -50,7 +51,7 @@ const NOT_JUDGED: SeatConfinementJudgement = { refusal: null, scope: 'unbound' }
 
 /** The seat's own row: the identity the auth path resolved, for the key fallback. */
 const loadSeat = async (agentUserId: unknown): Promise<{
-  botMetadata?: { agentName?: unknown; instanceId?: unknown };
+  botMetadata?: { agentName?: unknown; instanceId?: unknown; machineId?: unknown };
 } | null> => {
   // The routes in front of this pass the token's identity and Mongo will not
   // cast a non-ObjectId — a 500 is not a judgement.
@@ -118,8 +119,32 @@ const ownerIdsFor = async (keys: Set<string>): Promise<Set<string>> => {
  * this call; `scope` says what was looked at, so a null refusal does not carry
  * two meanings ("judged, confinable" vs "never projected").
  */
+/**
+ * D245: a seat bound to a machine whose daemon reported native Windows (with or
+ * without the user's own `--unsandboxed`) is refused
+ * whatever its declaration says. The declaration still reads `trust: public`
+ * there by design (the stored record keeps it), so the projection alone would
+ * judge the seat confinable. Like every rule in this file, it can only add a
+ * refusal.
+ */
+const UNCONFINED_HOST_REFUSAL: GrantBrokerRefusal = {
+  code: GRANT_BROKER_REFUSAL_CODE,
+  decidedBy: 'server',
+  reason: 'sandbox_mode_unenforceable',
+  detail: 'this agent runs on native Windows, where Commonly has no sandbox it can enforce, '
+    + 'so no grant can be used from it',
+};
+
+const onUnconfinedHost = async (machineId: unknown): Promise<boolean> => {
+  if (typeof machineId !== 'string' || !machineId) return false;
+  return Boolean(await Machine.exists({ machineId, hostUnconfined: true }));
+};
+
 export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<SeatConfinementJudgement> => {
   const seat = await loadSeat(caller.agentUserId);
+  if (await onUnconfinedHost(seat?.botMetadata?.machineId)) {
+    return { refusal: UNCONFINED_HOST_REFUSAL, scope: 'seat' };
+  }
   const keys = seatKeysFor(caller, seat);
   const owners = await ownerIdsFor(keys);
   if (!owners.size) return NOT_JUDGED;

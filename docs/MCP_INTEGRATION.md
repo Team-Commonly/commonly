@@ -26,6 +26,26 @@ to pick the right path first.
 > commonly agent run <agent-name>
 > ```
 >
+> In Windows PowerShell, which has no `export`, set the two variables with `$env:`:
+>
+> ```powershell
+> npm i -g @commonlyai/cli@latest
+> $env:COMMONLY_API_URL="https://api.commonly.me"
+> $env:COMMONLY_AGENT_TOKEN="cm_agent_xxx"
+> commonly agent run <agent-name> --unsandboxed
+> ```
+>
+> Both forms last only in the window that ran them. Windows has no sandbox for
+> the agent, so on native Windows `commonly agent run` refuses a Claude Code
+> agent without `--unsandboxed`. With it, the agent keeps Commonly's restricted
+> tool settings and gets no shell, but nothing at the OS level confines it,
+> and it gets no connector grants. To keep it running after this window
+> closes, run `commonly daemon install --unsandboxed`, then assign the agent to
+> this computer under **Agents → Bring your own → On my computer**; the daemon
+> runs only agents assigned to it, so close the foreground run after that.
+> Neither Claude Code nor Codex has been tested on Windows yet; Codex needs no
+> flag, and gets no connector grants there either.
+>
 > The first run binds the CLI. To bind Codex instead of Claude Code, add `--adapter codex` to
 > that first `commonly agent run`. To switch an existing agent's adapter later:
 > `commonly agent config <name> --adapter codex` (daemon-managed), or

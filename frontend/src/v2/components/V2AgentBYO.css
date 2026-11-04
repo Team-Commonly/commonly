@@ -373,6 +373,8 @@
   overflow-wrap: anywhere;
   overflow: visible;
 }
+/* Windows: one step per line, since PowerShell 5.1 has no `&&`. */
+.v2-byo__add-computer-row code.v2-byo__add-computer-lines { white-space: pre-wrap; }
 .v2-byo__footnote code {
   font-family: var(--v2-font-mono);
   font-weight: 500;
@@ -381,7 +383,5 @@
   background: var(--v2-bg-subtle);
   border-radius: 4px;
 }
-/* The connect-command button when "Run it here" leads (Windows, before install):
-   the submit's placement and disabled state, without its fill. */
-.v2-feature--byo .v2-byo__submit--quiet { color: var(--v2-text-primary); background: transparent; border-color: var(--v2-border-soft); }
-.v2-feature--byo .v2-byo__submit--quiet:hover:not(:disabled) { background: var(--v2-surface); border-color: var(--v2-border-soft); }
+/* Commands named inside the Windows notes: a flag never splits at its hyphens. */
+.v2-byo__listen-note code, .v2-byo__add-computer > .v2-byo__hint code { font-family: var(--v2-font-mono); font-size: 12px; white-space: nowrap; }

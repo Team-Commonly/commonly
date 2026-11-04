@@ -30,6 +30,10 @@ export interface IMachine extends Document {
   agentStates: IMachineAgentState[];
   runtimeInventory: HarnessInventory[];
   inventoryAt: Date | null;
+  // D245: the daemon reported that its user chose to run agents without a
+  // sandbox (native Windows, `commonly daemon install --unsandboxed`). Grants
+  // are refused for every seat bound to this machine while it is true.
+  hostUnconfined: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,6 +52,7 @@ const MachineSchema = new Schema<IMachine>(
     // the daemon's report is the truth, so no per-entry merging.
     runtimeInventory: { type: Schema.Types.Mixed, default: [] },
     inventoryAt: { type: Date, default: null },
+    hostUnconfined: { type: Boolean, default: false },
     agentStates: {
       type: [{
         _id: false,

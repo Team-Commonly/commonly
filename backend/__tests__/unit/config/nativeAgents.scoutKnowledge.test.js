@@ -179,7 +179,7 @@ describe('Scout onboarding knowledge', () => {
   });
 
   // The answer matches what the Connect page itself offers on that OS
-  // (agentByo.listen.unavailableClaude / unavailableCodex).
+  // (agentByo.listen.windowsNote / unavailableCodex).
   test('never proposes the card for a tool or OS it cannot set up, and offers what the Connect page does', () => {
     expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode, Hermes and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet only for a tool with no path above, or an OS its path does not cover\./);
     // CodeRabbit on #2765: the no-card rule must not deny tools that do connect.
@@ -187,7 +187,11 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/For Claude Code on native Windows, do not propose a connect card: offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page \(on Windows the page gives it as two PowerShell lines\)/);
     expect(prompt).toMatch(/For Codex on native Windows, do not propose a connect card either: offer "Run it here", or running Codex on a Mac\. Say plainly why/);
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
-    expect(en.agentByo.listen.unavailableClaude).toMatch(/Connect Claude Code from your own sessions with the command below, or choose “Run it here”/);
+    // D245: the page no longer says Claude Code can't run on Windows. It offers
+    // an untested, opt-in --unsandboxed listener, so Scout still proposes no card
+    // there and points to "Run it here" or the MCP command, as the page's note says.
+    expect(en.agentByo.listen.windowsNote).toMatch(/^Claude Code hasn’t been tested on Windows yet\. Windows has no sandbox/);
+    expect(en.agentByo.listen.windowsNote).toMatch(/--unsandboxed/);
     expect(en.agentByo.listen.unavailableClaudeLinux).toMatch(/only in an invite-only pod.*connect Claude Code from your own sessions with the command below, or choose “Run it here”/);
     expect(en.agentByo.listen.unavailableCodex).toMatch(/Choose “Run it here” for a hosted agent, or run the command on a Mac\. Linux is not tested yet\./);
   });

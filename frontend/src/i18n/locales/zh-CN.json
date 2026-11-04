@@ -1857,8 +1857,6 @@
       "loadingPods": "正在加载 Pod…",
       "machineLabel": "电脑",
       "adapterLabel": "适配器",
-      "wontAnswerBeforeInstall": "{{tool}} 暂时无法在 {{os}} 上回复 @提及。从这里连接的智能体只能在你自己的会话中使用，有人 @提及它时不会回复。想让它回复，请选择「{{hosted}}」，或在 Mac 上连接。",
-      "wontAnswerBeforeInstallNoHosted": "{{tool}} 暂时无法在 {{os}} 上回复 @提及。从这里连接的智能体只能在你自己的会话中使用，有人 @提及它时不会回复。想让它回复，请在 Mac 上连接。",
       "adapterDefault": "在这台电脑上自动检测",
       "adapterClaude": "Claude Code",
       "adapterCodex": "Codex",
@@ -1887,7 +1885,6 @@
     },
     "footnote": {
       "cliRoute": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会显示回复 @提及的监听命令。",
-      "cliRouteClaudeUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后可以在自己的 Claude Code 会话中连接 Commonly。要回复 @提及，请在支持的电脑上运行监听命令，或选择「{{hosted}}」。",
       "cliRouteClaudeLinuxUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后可以在自己的 Claude Code 会话中连接 Commonly。在 Linux 上，只有当它所在的每个 Pod 都仅限邀请时，Claude Code 才会回复 @提及；否则请选择「{{hosted}}」。",
       "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 电脑上运行监听命令。要从 {{os}} 回复 @提及，请选择「{{hosted}}」。",
       "notSure": "不确定用哪条路径？",
@@ -1943,7 +1940,9 @@
     },
     "listen": {
       "title": "在终端里运行这段命令",
+      "titleWindows": "在 PowerShell 里运行这段命令",
       "note": "仅连接 MCP 不会唤醒 {{name}} 回复 @提及。请保持终端窗口开启。",
+      "noteWindows": "仅连接 MCP 不会唤醒 {{name}} 回复 @提及。请保持这个 PowerShell 窗口开启。",
       "reachClaudeLinux": "在 Linux 上，只有当 {{name}} 所在的每个 Pod 都是私密、仅限邀请且未列入「社区」的时候，它才会回复，而且只能读取你运行这段命令时所在的文件夹。请在项目文件夹里运行（别在个人文件夹里），并先装好 bubblewrap（bwrap）。只要有一个 Pod 不再仅限邀请，{{name}} 就会停止回复，直到那个 Pod 恢复为仅限邀请。想让它编辑文件、运行命令，就在最后一行加上 --allow write。它运行的命令能读取文件夹以外的内容。想让它抓取网页，就加上 --allow web。无论加哪一个，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予这两项权限。",
       "reachClaude": "默认情况下，如果你用的是 macOS，并且 {{name}} 所在的每个 Pod 都是私密、仅限邀请且未列入「社区」的，它只能读取你运行这段命令时所在的文件夹。不满足这些条件，或者你在个人文件夹里运行这段命令，它都会在自己的临时文件夹里工作。想让它编辑文件、运行命令，就在最后一行加上 --allow write。它运行的命令能读取文件夹以外的内容。想让它抓取网页，就加上 --allow web。无论加哪一个，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予这两项权限。",
       "reachCodex": "Codex 会在系统临时目录里用自己的暂存文件夹工作，不在你运行命令的这个文件夹。--allow 对 Codex 无效，所以最后一行不带 --allow。",
@@ -1952,10 +1951,16 @@
       "stillWaiting": "{{name}} 还没接入。请在你电脑的终端里运行上面的命令，这里会自动确认。",
       "missedCommand": "你复制了 MCP 片段，但没有复制启动 {{name}} 的终端命令，也就是以 commonly agent run {{name}} 结尾的那条。MCP 片段只能让工具调用 Commonly；只有那条命令才能让 {{name}} 回复 @提及。请复制上面的命令，在你电脑的终端里运行，这里会自动确认。",
       "stopsOnClose": "关闭这个终端窗口后就会停止。如果希望智能体持续运行，请在「其他接入方式」里添加这台电脑，然后选择「在我的电脑上」。",
+      "stopsOnCloseWindows": "关闭这个 PowerShell 窗口后就会停止。如果希望智能体持续运行，请在「其他接入方式」里添加这台电脑，然后选择「在我的电脑上」。",
       "stopsOnCloseWithComputer": "关闭这个终端窗口后就会停止。如果希望智能体持续运行，请再添加一个智能体，然后选择「在我的电脑上」。",
+      "stopsOnCloseWithComputerWindows": "关闭这个 PowerShell 窗口后就会停止。如果希望智能体持续运行，请再添加一个智能体，然后选择「在我的电脑上」。",
       "npmPermission": "如果 npm 报 EACCES（权限被拒绝），不要加 sudo。请用版本管理工具（如 nvm）重新安装 Node，然后重新运行这四行。",
+      "scriptsDisabled": "如果 PowerShell 提示禁止运行脚本，先运行一次 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned，再重新运行这四行。",
+      "windowsNote": "Claude Code 还没在 Windows 上测试过。Windows 上没有能给 {{name}} 用的沙箱，系统层面没有任何东西限制它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它仍然沿用 Commonly 的受限工具设置：默认只能读取自己的文件夹，加上 <cmd>--allow write</cmd> 后才能编辑其中的文件。在 Windows 上它不能运行命令，也不会获得任何连接器授权。想让它在后台运行，可以用 <cmd>commonly daemon install --unsandboxed</cmd>，把它设成登录时自动启动的任务。",
+      "windowsCodex": "Codex 还没在 Windows 上测试过。在 Windows 上，Commonly 不会给它任何连接器授权。",
       "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
       "needs": "需要 Node 20+（含 npm）和已登录的 {{tool}}。四行都要在同一个窗口里运行，换了窗口 export 就失效。",
+      "needsWindows": "需要 Node 20+（含 npm）和已登录的 {{tool}}。四行都要在同一个 PowerShell 窗口里运行，换了窗口 $env 设置就失效。",
       "needsLinuxFolder": "在 Linux 上，请先在项目文件夹里打开窗口，并装好 bubblewrap（bwrap）：在个人文件夹里运行，它不会启动。",
       "osLabel": "你的系统：",
       "osLinux": "Linux",
@@ -1963,7 +1968,6 @@
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
       "unavailableClaudeLinux": "在 Linux 上，Claude Code 只在仅限邀请的 Pod 里回复 @提及，而这个 Pod 不是。Pod 的所有者可以在 Pod 设置的「谁可以加入」里改成「仅限邀请」。你也可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择「在这里运行」，改用托管智能体。",
-      "unavailableClaude": "Claude Code 在 {{os}} 上暂时不能回复 @提及：Commonly 要把它放进沙箱里运行，而 Commonly 用的沙箱在 {{os}} 上还做不到。你可以用下面的命令把 Commonly 的工具接进自己的 Claude Code 会话，或者选择“在这里运行”，改用托管智能体。",
       "unavailableCodex": "Codex CLI 在 {{os}} 上暂时不能回复 @提及。你可以选择“在这里运行”，改用托管智能体；也可以换到 Mac 机器上运行这条命令（Linux 尚未测试）。",
       "wontAnswer": "{{name}} 在这里不会回复 @提及。",
       "toolCodex": "Codex CLI",
@@ -2021,9 +2025,11 @@
       "openPod": "打开 pod"
     },
     "quickTry": "快速试用：这条命令在终端里运行，关闭那个窗口就会停止。如果希望智能体持续运行，请在下方「其他接入方式」里用守护进程把这台电脑添加一次。",
+    "quickTryWindows": "快速试用：这条命令在 PowerShell 里运行，关闭那个窗口就会停止。如果希望智能体持续运行，请在下方「其他接入方式」里用守护进程把这台电脑添加一次。",
     "addComputer": {
       "title": "添加电脑",
       "recommended": "推荐用于需要持续运行的智能体。把这台电脑添加一次，守护进程会在你登录时启动，智能体停止后也会自动恢复。",
+      "windowsNote": "Windows 上没有沙箱。加上 <cmd>--unsandboxed</cmd> 后，这台电脑运行的智能体在系统层面不受任何限制。它们不会获得任何连接器授权，Claude Code 也不能运行命令。",
       "after": "连接完成后刷新页面，这台电脑会以名称出现在列表中，并标记为在线。",
       "copy": "复制",
       "copied": "已复制"
@@ -2031,7 +2037,8 @@
     "compactByo": {
       "titleClaude": "接入你的 Claude Code",
       "titleCodex": "接入你的 Codex",
-      "lead": "在终端里约2分钟完成。"
+      "lead": "在终端里约2分钟完成。",
+      "leadWindows": "在 PowerShell 里约2分钟完成。"
     },
     "compact": {
       "title": "在这里运行智能体",

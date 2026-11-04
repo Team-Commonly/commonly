@@ -151,6 +151,37 @@ const seatGrant = (over = {}) => ({
 
 const podGrant = (over = {}) => seatGrant({ target: { kind: 'pod', id: POD }, audience: [OWNER, SEAT], ...over });
 
+describe('judgeSeatConfinement — a seat on a computer that runs agents without a sandbox (D245)', () => {
+  test('is refused whatever its declaration says, and admitted again once the daemon reports default', async () => {
+    await bindSeat();
+    // The stored declaration still reads public trust: the projection alone would admit it.
+    await installRow({ runtime: { adapter: 'claude', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+
+    await Machine.updateOne({ machineId: MACHINE }, { $set: { hostUnconfined: true } });
+    expect(await judge()).toEqual({
+      refusal: expect.objectContaining({ code: 'grant_broker_unconfined', reason: 'sandbox_mode_unenforceable', decidedBy: 'server' }),
+      scope: 'seat',
+    });
+
+    await Machine.updateOne({ machineId: MACHINE }, { $set: { hostUnconfined: false } });
+    expect(await judge()).toEqual({ refusal: null, scope: 'seat' });
+  });
+
+  test('refuses even a seat no projection holds (a refusal can only be added)', async () => {
+    await bindSeat();
+    await Machine.updateOne({ machineId: MACHINE }, { $set: { hostUnconfined: true } });
+    expect((await judge()).refusal?.reason).toBe('sandbox_mode_unenforceable');
+  });
+
+  test('another machine being unconfined does not refuse this seat', async () => {
+    await bindSeat();
+    await installRow({ runtime: { adapter: 'claude', host: 'byo' }, environment: { sandbox: { trust: 'public' } } });
+    await Machine.create({ ownerUserId: OWNER, machineId: 'machine-2', name: 'pc', status: 'online', hostUnconfined: true });
+    expect((await judge()).refusal).toBeNull();
+  });
+});
+
 describe('judgeSeatConfinement — which declaration judges the caller', () => {
   test('a pi seat tagged only by runtimeType is refused (the hand-attached shape)', async () => {
     // `commonly agent attach pi` writes {runtimeType: 'pi', host: 'byo'} and no

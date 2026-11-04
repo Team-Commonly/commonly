@@ -187,8 +187,8 @@ describe('BYO from an approved connect card', () => {
   });
 });
 
-// #2289: the listener runs on a Mac with either tool only (Linux is not tested
-// yet, 10-26). The compact page promises "One command in Terminal", so it opens
+// #2289: the listener runs on a Mac or Windows with either tool (Linux is not
+// tested yet, 10-26). The compact page promises "One command in Terminal", so it opens
 // only where that command will be shown.
 describe('the compact page opens only where the command exists', () => {
   const realUserAgent = window.navigator.userAgent;
@@ -211,11 +211,13 @@ describe('the compact page opens only where the command exists', () => {
     expect(screen.queryByTestId('byo-card-compact')).toBeNull();
   });
 
-  test('on Windows no card is compact, Codex included', async () => {
+  // D245: the PowerShell command exists on Windows, so the compact page opens there.
+  test('on Windows a card is compact, Codex included', async () => {
     setUserAgent(WINDOWS);
     renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');
-    expect(await screen.findByTestId('byo-mode-byo')).toBeInTheDocument();
-    expect(screen.queryByTestId('byo-card-compact')).toBeNull();
+    expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
+    expect(screen.getByText('About 2 minutes in PowerShell.')).toBeInTheDocument();
+    expect(screen.queryByText(/in Terminal\./)).toBeNull();
   });
 });
 

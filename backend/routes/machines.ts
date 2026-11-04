@@ -95,7 +95,7 @@ router.post(
         ownerUserId: req.machine?.ownerUserId,
       });
       if (!machine) return res.status(403).json({ message: 'Access denied' });
-      return res.json({ machine: await recordMachineHeartbeat(machine, req.body?.agents, req.body?.runtimeInventory) });
+      return res.json({ machine: await recordMachineHeartbeat(machine, req.body?.agents, req.body?.runtimeInventory, req.body?.sandbox) });
     } catch (error) {
       console.error('Error recording machine heartbeat:', error);
       return res.status(500).json({ message: 'Server error' });
