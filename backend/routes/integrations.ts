@@ -949,7 +949,9 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       && retargetsSurface(integration.type, currentConfig, nextConfig)) {
       await assertCanBindSurface({
         userId: requesterId,
-        pod: await Pod.findById(podId !== undefined ? podId : integration.podId),
+        // String(): podId is validated as an id string above, and the rule must
+        // never be handed a query object in its place.
+        pod: await Pod.findById(String(podId !== undefined ? podId : integration.podId)),
         type: integration.type,
         config: nextConfig,
       });

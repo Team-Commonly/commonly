@@ -220,7 +220,7 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
   return res.json({ type: 4, data: { content: 'This interaction type is not supported.', flags: 64 } });
 });
 
-router.get('/install-link/:podId', auth, async (req: AuthReq, res: Res) => {
+router.get('/install-link/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     // The instance's own application only. A caller-chosen client id would send
