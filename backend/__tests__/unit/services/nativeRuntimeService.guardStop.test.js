@@ -162,38 +162,75 @@ describe('a hosted turn the guard stops, or that fails', () => {
     });
   });
 
-  // CodeRabbit on #3384: once a run is offered a Limited-Use tool (Calendar),
-  // the standalone check that finds the stopped web result sends only the
-  // local guardrails, like the chat request; without it, every guardrail.
+  // CodeRabbit on #3384 and #3389: once a run is offered a Limited-Use tool
+  // (Calendar), the standalone check that finds the stopped web result sends
+  // only the local guardrails, like the chat request; without it, every
+  // guardrail in order. Moderation passes the page and injection-guard stops
+  // it, so the no-Calendar case must reach both. The runtime is loaded fresh
+  // on a no-training model with the guardrails pinned (both are read at module
+  // load), and the projection offers Calendar only when the runtime asks for
+  // Limited-Use tools, as the real one does.
   test.each([
-    // The check stops at the first guardrail that refuses, so without Calendar
-    // it reaches OpenAI moderation first and goes no further.
     ['offered Calendar', true, ['injection-guard'], ['injection-guard']],
-    ['without Calendar', false, ['openai-moderation-enforce', 'injection-guard'], ['openai-moderation-enforce']],
+    ['without Calendar', false, ['openai-moderation-enforce', 'injection-guard'], ['openai-moderation-enforce', 'injection-guard']],
   ])('a turn %s checks a stopped web result with only its own guardrails', async (_label, calendar, requested, checked) => {
     const SEAT = '507f1f77bcf86cd799439013';
-    const User = require('../../../models/User');
-    const Pod = require('../../../models/Pod');
-    User.findOne.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ _id: SEAT }) }) }));
-    Pod.findById.mockImplementation(() => {
+    const saved = { model: process.env.NATIVE_RUNTIME_MODEL, guardrails: process.env.NATIVE_RUNTIME_GUARDRAILS };
+    process.env.NATIVE_RUNTIME_MODEL = 'claude-haiku-5-5';
+    process.env.NATIVE_RUNTIME_GUARDRAILS = 'openai-moderation-enforce,injection-guard';
+    let iso;
+    try {
+      jest.isolateModules(() => {
+        iso = {
+          axios: require('axios').default,
+          AgentRun: require('../../../models/AgentRun'),
+          Messages: require('../../../services/agentMessageService'),
+          User: require('../../../models/User'),
+          Pod: require('../../../models/Pod'),
+          runtime: require('../../../services/nativeRuntimeService'),
+        };
+      });
+    } finally {
+      for (const [key, name] of [['model', 'NATIVE_RUNTIME_MODEL'], ['guardrails', 'NATIVE_RUNTIME_GUARDRAILS']]) {
+        if (saved[key] === undefined) delete process.env[name];
+        else process.env[name] = saved[key];
+      }
+    }
+    iso.AgentRun.countDocuments.mockResolvedValue(0);
+    iso.AgentRun.create.mockImplementation(async (doc) => ({ _id: 'run-1', ...doc, save: jest.fn().mockResolvedValue(undefined) }));
+    iso.Messages.postMessage.mockResolvedValue({ success: true });
+    iso.User.findOne.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ _id: SEAT }) }) }));
+    iso.Pod.findById.mockImplementation(() => {
       const row = { name: 'Research', members: [SEAT] };
       return { select: () => ({ lean: async () => row }), lean: async () => row };
     });
-    mockHostedBroker.mockImplementation(async () => ({
-      tools: calendar ? [{ type: 'function', function: { name: 'google-calendar_list_events', description: 'List events', parameters: { type: 'object', properties: {} } } }] : [],
-      dispatch: calendar ? new Map([['google-calendar_list_events', { grantId: 'grant-calendar', tool: 'google-calendar.list_events' }]]) : new Map(),
-      limitedUse: calendar,
-    }));
-    chatReplies = [toolCalls(fetchCall('c1', STOPPED_URL)), guardStop, reply('I could not use that page.')];
-    try {
-      await runAgent(hostedInstall(), mention);
-      expect(guardChecks().length).toBeGreaterThan(0);
-      expect([...new Set(guardChecks().map(([, body]) => body.guardrail_name))]).toEqual(checked);
-      expect(chatBodies[0].guardrails).toEqual(requested);
-    } finally {
-      User.findOne.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) }));
-      Pod.findById.mockImplementation(() => ({ lean: jest.fn().mockResolvedValue({ name: 'Research' }) }));
-    }
+    mockHostedBroker.mockImplementation(async (_actual, { limitedUse }) => (calendar && limitedUse ? {
+      tools: [{ type: 'function', function: { name: 'google-calendar_list_events', description: 'List events', parameters: { type: 'object', properties: {} } } }],
+      dispatch: new Map([['google-calendar_list_events', { grantId: 'grant-calendar', tool: 'google-calendar.list_events' }]]),
+      limitedUse: true,
+    } : { tools: [], dispatch: new Map(), limitedUse: false }));
+    const replies = [toolCalls(fetchCall('c1', STOPPED_URL)), guardStop, reply('I could not use that page.')];
+    const bodies = [];
+    iso.axios.post.mockImplementation(async (url, body) => {
+      if (url.endsWith('/guardrails/apply_guardrail')) {
+        const stops = body.guardrail_name === 'injection-guard' && String(body.text).includes(STOPPED_TEXT);
+        return stops ? { status: 400, data: {} } : { status: 200, data: {} };
+      }
+      bodies.push(JSON.parse(JSON.stringify(body)));
+      const next = replies.shift();
+      if (!next) throw new Error('unexpected model call');
+      return next;
+    });
+
+    await iso.runtime.runAgent(hostedInstall(), mention);
+
+    // The runtime asked for Limited-Use tools because its model is on the no-training route.
+    expect(mockHostedBroker.mock.calls[0][1]).toEqual(expect.objectContaining({ limitedUse: true }));
+    const stoppedChecks = iso.axios.post.mock.calls
+      .filter(([url, body]) => url.endsWith('/guardrails/apply_guardrail') && String(body.text).includes(STOPPED_TEXT))
+      .map(([, body]) => body.guardrail_name);
+    expect(stoppedChecks).toEqual(checked);
+    expect(bodies[0].guardrails).toEqual(requested);
   });
 
   test('sets aside the page the guard stops alone, keeps the clean one, and answers in one more round', async () => {
