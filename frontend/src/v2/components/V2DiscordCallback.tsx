@@ -71,7 +71,9 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
       });
       setChannels(response.data);
     } catch (err) {
-      console.error('Error fetching channels:', err);
+      // The status only: an axios error carries its request config, and with it
+      // the install proof (F89).
+      console.error('Error fetching channels:', (err as { response?: { status?: number } })?.response?.status ?? 'no response');
       setError(t('auth.discordHandoff.channelsFailed'));
     } finally {
       setLoading(false);

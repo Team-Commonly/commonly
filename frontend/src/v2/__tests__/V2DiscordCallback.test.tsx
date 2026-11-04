@@ -174,6 +174,19 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     expect(axios.get.mock.calls[0][1]).toEqual({ headers: { Authorization: 'Bearer t' } });
   });
 
+  test('a failed channel fetch logs its status, not the install proof', async () => {
+    const proof = ['eyJhbGciOiJIUzI1NiJ9', 'eyJwdXIiOiJkaXNjb3JkLWluc3RhbGwifQ', 'c2lnbmF0dXJlLV8'].join('.');
+    axios.get.mockRejectedValueOnce(Object.assign(new Error('Request failed'), {
+      config: { params: { install: proof } },
+      response: { status: 404 },
+    }));
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    renderAt(`/discord/success?pod_id=p1&guild_id=123456789012345678&server_name=S&install=${encodeURIComponent(proof)}`);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to fetch server channels');
+    expect(errors).toHaveBeenCalledWith('Error fetching channels:', 404);
+    expect(JSON.stringify(errors.mock.calls, (_k, v) => (v instanceof Error ? { ...v, message: v.message } : v))).not.toContain(proof);
+  });
+
   test('reads in Chinese under zh-CN', async () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     renderAt('/discord/error');
