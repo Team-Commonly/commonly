@@ -110,4 +110,23 @@ describe('Socket.IO Redis adapter', () => {
     sub.handlers.error(new Error('new outage'));
     expect(console.error).toHaveBeenCalledTimes(2);
   });
+
+  it('passes the trimmed REDIS_PASSWORD to createClient so a trailing-newline secret authenticates', async () => {
+    const savedPw = process.env.REDIS_PASSWORD;
+    process.env.REDIS_PASSWORD = 's3cret-pw\n';
+    try {
+      const pub = makeRedisClient();
+      const sub = makeRedisClient();
+      pub.client.duplicate.mockReturnValue(sub.client);
+      mockCreateClient.mockReturnValue(pub.client);
+      const io = { adapter: jest.fn() };
+
+      await socketConfig.init(io);
+
+      expect(mockCreateClient).toHaveBeenCalledWith(expect.objectContaining({ password: 's3cret-pw' }));
+    } finally {
+      if (savedPw === undefined) delete process.env.REDIS_PASSWORD;
+      else process.env.REDIS_PASSWORD = savedPw;
+    }
+  });
 });
