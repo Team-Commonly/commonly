@@ -2984,6 +2984,7 @@
       "stored": "stored",
       "modelsUnavailable": "model list unavailable · checked at next spawn",
       "effortUnavailable": "{{harness}} reports no effort levels · {{effort}} stays stored, not sent",
+      "modelNotListed": "{{model}} isn’t a {{harness}} model · pick one from the list",
       "unsupported": "stored choice unsupported · last spawn: {{harness}} · {{model}} · {{effort}}",
       "save": "Save",
       "saveError": "Could not save runtime settings.",

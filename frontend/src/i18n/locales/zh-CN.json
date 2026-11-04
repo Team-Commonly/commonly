@@ -2985,6 +2985,7 @@
       "stored": "已存储",
       "modelsUnavailable": "模型列表不可用 · 下次启动时检查",
       "effortUnavailable": "{{harness}} 未报告推理强度 · {{effort}} 保留存储，不会传入",
+      "modelNotListed": "{{model}} 不是 {{harness}} 的模型 · 请从列表中选择",
       "unsupported": "存储选项不受支持 · 上次启动：{{harness}} · {{model}} · {{effort}}",
       "save": "保存",
       "saveError": "无法保存运行设置。",
