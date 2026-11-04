@@ -4205,6 +4205,11 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     const phoneBody = blockAt(phone, listAt);
     expect(phoneBody).toContain('padding-left: max(12px, calc((100% - 1312px) / 2))');
     expect(phoneBody).toContain('padding-right: max(12px, calc((100% - 1312px) / 2))');
+    // The trusted strip is full-bleed at every width (hairlines and a faded marquee edge to
+    // edge), so it is in neither gutter list and its own rule keeps zero sides. Listed, it took
+    // the 12px gutter only between 681 and 760, where nothing else overrode it.
+    expect(pageList.split(',').map((x) => x.trim())).not.toContain('.v2-landing__trusted');
+    expect(selectorRuleBody(landing, '.v2-landing__trusted {')).toContain('padding: 22px 0;');
     // ...and no section keeps the old 1120 cap, or the page has two measures
     // and which one wins depends on the section.
     expect(landing).not.toContain('1120');
@@ -4239,7 +4244,7 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     expect(cap).toBeLessThan(sectionEnd);
     expect(landingTsx).toContain('aria-describedby="v2-landing-demo-caption"');
     // A frame outside the band carries the page measure itself.
-    expect(landing).toContain('.v2-landing__hero-art,\n.v2-landing__trusted,');
+    expect(landing).toContain('.v2-landing__hero-art,\n.v2-landing__section,');
     // The 94 below the frame is the board's gap between the frame container
     // (456 − 360) and the strip, and row B landed it as the strip's own
     // `margin-top` — outside its top hairline, where the board draws it. As top
