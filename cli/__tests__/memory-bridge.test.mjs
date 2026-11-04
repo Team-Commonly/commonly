@@ -177,6 +177,39 @@ describe('buildMemoryPreamble', () => {
     expect(out).toContain('=== Current turn ===\ndo the thing');
   });
 
+  // F118: a public seat reads its memory but cannot write it, so its prompt
+  // shows what it read and never names the save tool it is not offered.
+  describe('on a public seat (memoryReadOnly)', () => {
+    it('shows the long_term it read, and asks for no save', () => {
+      const out = buildMemoryPreamble('do the thing', 'notes from before', {
+        freshSession: true, memoryReadOnly: true,
+      });
+      expect(out).toContain('=== Context (your persistent memory) ===\nnotes from before');
+      expect(out).not.toContain('commonly_save_my_memory');
+      expect(out).not.toMatch(/At a natural end to meaningful work/i);
+      expect(out).toMatch(/read-only/i);
+      expect(out).toContain('=== Current turn ===\ndo the thing');
+    });
+
+    it.each([undefined, '', null])('names no save tool when memory is %p', (value) => {
+      for (const freshSession of [true, false]) {
+        const out = buildMemoryPreamble('turn', value, { freshSession, memoryReadOnly: true });
+        expect(out).not.toContain('commonly_save_my_memory');
+        expect(out).not.toMatch(/long_term write above/i);
+      }
+    });
+
+    it('still says empty for empty, and unreadable for null', () => {
+      expect(buildMemoryPreamble('turn', '', { memoryReadOnly: true })).toContain('(empty');
+      expect(buildMemoryPreamble('turn', null, { memoryReadOnly: true })).toContain('unreadable');
+    });
+
+    it('leaves the withheld cue as it is when the turn is also withheld', () => {
+      const both = buildMemoryPreamble('turn', 'notes', { freshSession: true, memoryWithheld: true, memoryReadOnly: true });
+      expect(both).toBe(buildMemoryPreamble('turn', 'notes', { freshSession: true, memoryWithheld: true }));
+    });
+  });
+
   // The non-empty path is load-bearing for every seat that has content, and
   // this change must not touch it. Asserted byte-for-byte, not by substring.
   it('prepends existing memory verbatim, unchanged', () => {

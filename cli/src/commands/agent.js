@@ -60,6 +60,7 @@ import { detectMemorySources, composeImport, importMemory } from '../lib/memory-
 import { detectSkills, importSkills, parseSkillMeta } from '../lib/skills-import.js';
 import { compileServerSkills } from '../lib/server-skills.js';
 import {
+  effectiveSandboxTrust,
   environmentForServer,
   normalizeSandboxTrust,
   parseEnvironmentFile,
@@ -2200,6 +2201,12 @@ export const performRun = ({
     // The adapter also denies the memory tools for it (memoryWithheld).
     const memoryWithheld = Boolean(placement.reason);
     const memoryLongTerm = memoryWithheld ? undefined : await readLongTerm(client, { onError });
+    // F118: a public seat reads its memory but never writes it. Its summary is
+    // its own output, which a stranger in the pod can steer, so the wrapper does
+    // not sync it back; the adapters withhold the memory-write tools the same
+    // way. A workspace seat's public turn is covered by memoryWithheld too.
+    const memoryWriteWithheld = memoryWithheld
+      || effectiveSandboxTrust(placement.environment?.sandbox?.trust) === 'public';
 
     // TASK-129: focus is a turn-start read, not an enqueue-time
     // snapshot. Read through the authorized runtime context route immediately
@@ -2675,7 +2682,7 @@ export const performRun = ({
       }
     }
     turn.finish(turnOutcome);
-    if (result.memorySummary && !memoryWithheld) {
+    if (result.memorySummary && !memoryWriteWithheld) {
       try {
         await syncBack(client, { summary: result.memorySummary });
         log(`[${event.type}] memory synced (${Buffer.byteLength(result.memorySummary)} bytes)`);

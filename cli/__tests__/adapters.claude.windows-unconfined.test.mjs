@@ -130,6 +130,36 @@ describe('claude on native Windows with the user\'s --unsandboxed', () => {
     expect(denied).toEqual(expect.arrayContaining(['Bash', 'PowerShell']));
   });
 
+  // F118 at the policy-only call site, which hands the builder no trust on a
+  // public seat. A workspace seat on the same path keeps its memory writes.
+  const mcp = [{ name: 'commonly', transport: 'http', url: 'https://api.example.test/mcp' }];
+  const PUBLIC_ONLY = ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
+    'commonly_save_my_memory', 'commonly_log_cycle'];
+
+  test('a public seat denies self-install and memory writes, and keeps the memory read', async () => {
+    const { run, calls } = turn({
+      hostUnconfined: true,
+      environment: { model: 'test-model', sandbox: { trust: 'public' }, mcp },
+    });
+    await run;
+    const denied = denied0(calls[0].args);
+    for (const tool of PUBLIC_ONLY) expect(denied).toContain(`mcp__commonly__${tool}`);
+    expect(denied).not.toContain('mcp__commonly__commonly_read_agent_memory');
+  });
+
+  test('a workspace seat keeps its memory writes and log_cycle', async () => {
+    const { run, calls } = turn({
+      hostUnconfined: true,
+      environment: { model: 'test-model', sandbox: { trust: 'workspace' }, mcp },
+    });
+    await run;
+    const denied = denied0(calls[0].args);
+    expect(denied).toContain('mcp__commonly__commonly_self_install_into_pod');
+    for (const tool of ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle']) {
+      expect(denied).not.toContain(`mcp__commonly__${tool}`);
+    }
+  });
+
   test('without the opt-in the seat is still refused (no jail on Windows)', async () => {
     const { run, calls } = turn();
     await expect(run).rejects.toThrow();

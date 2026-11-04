@@ -101,7 +101,7 @@ import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '..
 import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
 import { adapterFailure, redactKnownCredentials, spawnCredentials } from '../upstream-refusal.js';
-import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { PUBLIC_ONLY_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
@@ -596,9 +596,17 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
     ? MEMORY_TOOLS.flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)))
     : [];
   // Nor, on any confined trust, the tools no public seat is offered
-  // (public-withheld-tools.js).
-  const withheldDenies = PUBLIC_WITHHELD_TOOLS
+  // (public-withheld-tools.js). A public seat also loses self-install and every
+  // memory write (F118). Only a workspace seat is called with its trust at
+  // every call site; the public ones pass none, so "not workspace" is public.
+  const withheldTools = trust === 'workspace'
+    ? PUBLIC_WITHHELD_TOOLS
+    : [...PUBLIC_WITHHELD_TOOLS, ...PUBLIC_ONLY_WITHHELD_TOOLS];
+  const withheldDenies = withheldTools
     .flatMap((tool) => mcpToolPatterns.map((pattern) => pattern.replace(/\*$/, tool)));
+  // A tool can be denied for two reasons (a withheld turn's memory write is
+  // also a public seat's); each deny is written once.
+  const toolDenies = [...new Set([...workspaceDenies, ...memoryDenies, ...withheldDenies])];
   return [
     // HOME points at an isolated, sanitized state directory. Ignore settings
     // from user/project/local sources and disable slash-command extensions;
@@ -610,7 +618,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
     '--permission-mode', 'dontAsk',
     '--allowedTools', 'Read(./**)', ...granted, ...mcpToolPatterns,
     '--disallowedTools', ...PUBLIC_DENIED_TOOLS.filter((tool) => !granted.some((g) => g === tool || g.startsWith(`${tool}(`))),
-    ...deniedReads, ...workspaceDenies, ...memoryDenies, ...withheldDenies,
+    ...deniedReads, ...toolDenies,
   ];
 };
 
@@ -1501,10 +1509,13 @@ export default {
     // there is a signal, not a leak.
     const witnessedMcp = ctx.environment?.sandbox?.trust === 'public' ? ctx.environment?.mcp : null;
     const workCues = publicTrust ? [] : WORK_CUES;
+    // F118: a public seat reads its memory but is not offered a write.
+    const memoryReadOnly = ctx.environment?.sandbox?.trust === 'public';
     const fullPrompt = buildPrompt(prompt, ctx.memoryLongTerm, {
       freshSession: !isResume,
       workCues,
       memoryWithheld: ctx.memoryWithheld === true,
+      memoryReadOnly,
     });
     const sessionFlag = isResume ? '--resume' : '--session-id';
     // Model pin from the ADR-008 environment spec. Absent it, claude picks its
@@ -1729,6 +1740,7 @@ export default {
           freshSession: true,
           workCues,
           memoryWithheld: ctx.memoryWithheld === true,
+          memoryReadOnly,
         });
         const retryBase = ['-p', freshPrompt,
         ...STREAM_ARGS, '--session-id', freshId, ...modelArgs];

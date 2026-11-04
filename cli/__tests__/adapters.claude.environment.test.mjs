@@ -814,6 +814,38 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
+  // F118 at the bwrap call site, which hands the policy builder no trust.
+  test('a public Linux (bwrap) seat denies self-install and memory writes, and keeps the memory read', async () => {
+    const originalPlatform = process.platform;
+    const { impl, calls } = makeSpawnImpl();
+    const linux = publicLinuxClaude();
+    try {
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      await claude.spawn('hi', {
+        sessionId: null,
+        cwd,
+        env: { PATH: process.env.PATH, ...linux.env },
+        environment: { model: 'test-model',
+          sandbox: { trust: 'public' },
+          mcp: [{ name: 'commonly', transport: 'stdio', command: [process.execPath, path.join(cwd, 'server.mjs')] }],
+        },
+        _spawnImpl: impl,
+        _detectBwrap: () => ({ available: true, path: 'bwrap' }),
+        ...linux.ctx,
+      });
+      const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
+      const denied = inner.slice(inner.indexOf('--disallowedTools') + 1);
+      for (const tool of ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
+        'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_attach_file', 'commonly_catch_up']) {
+        expect(denied).toContain(`mcp__commonly__${tool}`);
+      }
+      expect(denied).not.toContain('mcp__commonly__commonly_read_agent_memory');
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+      linux.cleanup();
+    }
+  });
+
   test('a public Linux seat whose host has no bwrap refuses to derive, rather than failing per spawn', async () => {
     const originalPlatform = process.platform;
     const { impl, calls } = makeSpawnImpl();
@@ -1371,6 +1403,13 @@ describe('claude adapter — a workspace seat', () => {
     // Workspace seats follow the same list as public ones (TASK-287).
     expect(denied).toContain('mcp__commonly__commonly_attach_file');
     expect(denied).toContain('mcp__commonly__commonly_catch_up');
+    // F118: a workspace seat is not a public seat. It keeps its memory writes
+    // and log_cycle, and its prompt still teaches the save.
+    for (const tool of ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle',
+      'commonly_read_agent_memory']) {
+      expect(denied).not.toContain(`mcp__commonly__${tool}`);
+    }
+    expect(args[args.lastIndexOf('-p') + 1]).toContain('commonly_save_my_memory');
     expect(opts.env.HOME).toBe(publicState);
     expect(opts.env.COMMONLY_HOST_SECRET).toBeUndefined();
   });
@@ -1391,22 +1430,36 @@ describe('claude adapter — a workspace seat', () => {
     expect(prompt).not.toContain('notes from the project');
     expect(prompt).not.toContain('(empty');
 
-    // Control: the same public spawn, not withheld, injects the memory and keeps the tools.
+    // Control: the same public spawn, not withheld, injects the memory and
+    // keeps the read tool; its write tools are a public seat's denies (F118).
     const kept = makeSpawnImpl();
     await workspaceSpawn(kept.impl, { mode: 'workspace', trust: 'public' }, { memoryLongTerm: 'notes from the project' });
     const keptArgs = kept.calls[0].args;
     expect(keptArgs[keptArgs.lastIndexOf('-p') + 1]).toContain('notes from the project');
-    for (const tool of memoryTools) expect(keptArgs).not.toContain(tool);
+    expect(keptArgs).not.toContain('mcp__commonly__commonly_read_agent_memory');
   });
 
-  test('a public seat keeps the denies it had, without the workspace ones', async () => {
+  // F118: a public seat starts from nothing. A stranger's message must not be
+  // able to spread it into other pods or rewrite its memory, so those tools
+  // are denied on public trust. Reading its memory stays.
+  const PUBLIC_ONLY = ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
+    'commonly_save_my_memory', 'commonly_log_cycle'];
+
+  test('a public seat keeps the denies it had, without the workspace ones, and loses self-install and memory writes', async () => {
     const { impl, calls } = makeSpawnImpl();
-    await workspaceSpawn(impl, { mode: 'workspace', trust: 'public' });
+    await workspaceSpawn(impl, { mode: 'workspace', trust: 'public' }, { memoryLongTerm: 'kept notes' });
 
     const { args } = calls[0];
     expect(args).not.toContain('Read(./.env.*)');
     expect(args).not.toContain('Read(./.git/**)');
-    expect(args).not.toContain('mcp__commonly__commonly_self_install_into_pod');
+    const denied = args.slice(args.indexOf('--disallowedTools') + 1);
+    for (const tool of PUBLIC_ONLY) expect(denied).toContain(`mcp__commonly__${tool}`);
+    expect(denied).not.toContain('mcp__commonly__commonly_read_agent_memory');
+    // Each deny appears once, even where two reasons name it.
+    expect(new Set(denied).size).toBe(denied.length);
+    const prompt = args[args.lastIndexOf('-p') + 1];
+    expect(prompt).toContain('kept notes');
+    expect(prompt).not.toContain('commonly_save_my_memory');
     expect(args[1]).toContain(`(allow file-read* file-test-existence file-write* (subpath "${fs.realpathSync(cwd)}"))`);
   });
 

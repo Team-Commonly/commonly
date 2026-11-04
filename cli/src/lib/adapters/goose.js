@@ -42,6 +42,8 @@ const templateLiteral = (value) => {
 // attach_file reads this process's filesystem, including its credential file.
 // catch_up is left out too: it moves the read cursor past history unread, so a
 // public seat past 50 unseen falls back to continueAnyway, which it keeps.
+// Self-install and the memory writes (log_cycle included) are left out on every
+// public seat (F118, PUBLIC_ONLY_WITHHELD_TOOLS); reading memory stays.
 export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_get_started', 'commonly_post_message', 'commonly_claim_message',
   'commonly_release_claim', 'commonly_get_messages', 'commonly_get_context',
@@ -49,8 +51,7 @@ export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_get_posts', 'commonly_post_thread_comment', 'commonly_get_tasks',
   'commonly_create_task', 'commonly_claim_task', 'commonly_watch_task',
   'commonly_complete_task', 'commonly_update_task', 'commonly_create_pod',
-  'commonly_list_pods', 'commonly_self_install_into_pod', 'commonly_read_agent_memory',
-  'commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle',
+  'commonly_list_pods', 'commonly_read_agent_memory',
   'commonly_dm_agent', 'commonly_ask_agent', 'commonly_request_decision',
   'commonly_respond_to_ask', 'commonly_react_to_message',
 ]);
@@ -324,7 +325,8 @@ export default {
         extensions: publicExtensions.map((extension) => ({ ...extension,
           envs: { ...extension.envs, OPENSSL_CONF: opensslConfig },
         })),
-        prompt: buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true }),
+        // F118: a public seat reads its memory but is not offered a write.
+        prompt: buildMemoryPreamble(prompt, ctx.memoryLongTerm, { freshSession: true, memoryReadOnly: true }),
       })), { mode: 0o600 });
       const env = {
         ...safeEnv(sourceEnv),

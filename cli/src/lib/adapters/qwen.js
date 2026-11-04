@@ -16,7 +16,7 @@ import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
-import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 // Add a version only with a passing real clean-box sandbox smoke that names it.
 const TESTED_QWEN_VERSIONS = Object.freeze(['0.25.1', '0.26.2']);
@@ -41,8 +41,8 @@ const EXCLUDED_TOOLS = [
 const PUBLIC_READ_TOOLS = [
   'read_file', 'grep_search', 'search_file_content', 'glob', 'list_directory', 'lsp',
   // Both spellings of a Commonly MCP tool, as with the aliases above
-  // (public-withheld-tools.js).
-  ...PUBLIC_WITHHELD_TOOLS.flatMap((tool) => [tool, `mcp__commonly__${tool}`]),
+  // (public-withheld-tools.js; self-install and memory writes, F118).
+  ...PUBLIC_SEAT_WITHHELD_TOOLS.flatMap((tool) => [tool, `mcp__commonly__${tool}`]),
 ];
 
 const parseVersion = (output) => {
@@ -315,6 +315,8 @@ export default {
       // be resumed. The kernel memory preamble supplies continuity instead.
       const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
         freshSession: true,
+        // F118: a public seat reads its memory but is not offered a write.
+        memoryReadOnly: isPublic,
       });
       const args = [
         '--bare', '--safe-mode', '--auth-type', 'openai', '-m', seatModel,
