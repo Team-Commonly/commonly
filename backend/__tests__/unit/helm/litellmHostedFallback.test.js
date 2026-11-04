@@ -5,8 +5,12 @@ const yaml = require('js-yaml');
 const template = fs.readFileSync(path.join(__dirname,
   '../../../../k8s/helm/commonly/templates/configmaps/litellm-config.yaml'), 'utf8');
 // Parse the actual proxy config, not comments or the surrounding Helm template.
+// Lines that are only a Helm directive (the aiProviders gates, F85) are dropped;
+// json: true keeps the last of a gated pair, i.e. the provider-off branch, which
+// is the branch dev renders.
 const block = template.split('  config.yaml: |\n')[1].split('\n  # Mounted at /app/')[0];
-const config = yaml.load(block.replace(/^    /gm, ''));
+const config = yaml.load(block.split('\n').filter((l) => !/^\s*\{\{-?[^}]*\}\}\s*$/.test(l)).join('\n')
+  .replace(/^    /gm, ''), { json: true });
 
 test('the hosted DeepSeek default has no fallback to another model or vendor', () => {
   expect(config.model_list.find((entry) => entry.model_name === 'deepseek-v4-flash')
