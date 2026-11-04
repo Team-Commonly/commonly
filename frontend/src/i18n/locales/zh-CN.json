@@ -99,6 +99,20 @@
       "reason": "原因：{{reason}}",
       "doneBy": "由 {{name}} 完成",
       "askedOf": "询问 {{name}}"
+    },
+    "reasons": {
+      "blocked": "受阻",
+      "lease_expired": "租约到期",
+      "reassigned": "已改派",
+      "abandoned": "已放弃"
+    },
+    "decisions": {
+      "allow_once": "允许一次",
+      "reject_once": "拒绝一次",
+      "allow_always": "始终允许",
+      "reject_always": "始终拒绝",
+      "selected": "已选择",
+      "cancelled": "已取消"
     }
   },
   "common": {

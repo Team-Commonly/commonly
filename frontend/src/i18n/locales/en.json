@@ -100,6 +100,20 @@
       "reason": "reason {{reason}}",
       "doneBy": "done by {{name}}",
       "askedOf": "asked {{name}}"
+    },
+    "reasons": {
+      "blocked": "blocked",
+      "lease_expired": "lease expired",
+      "reassigned": "reassigned",
+      "abandoned": "abandoned"
+    },
+    "decisions": {
+      "allow_once": "allow once",
+      "reject_once": "reject once",
+      "allow_always": "allow always",
+      "reject_always": "reject always",
+      "selected": "selected",
+      "cancelled": "cancelled"
     }
   },
   "common": {

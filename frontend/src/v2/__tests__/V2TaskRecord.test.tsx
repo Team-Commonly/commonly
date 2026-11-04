@@ -1,8 +1,9 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18n from '../../i18n';
-import V2TaskRecord, { parseRecord, taskRecordPath } from '../components/V2TaskRecord';
+import { Link } from 'react-router-dom';
+import V2TaskRecord, { parseRecord, shortDigest, taskRecordPath } from '../components/V2TaskRecord';
 
 const mockGet = jest.fn();
 const mockApi = { get: mockGet };
@@ -235,7 +236,7 @@ test('Chinese copy covers the page', async () => {
   fireEvent.click(screen.getByRole('button', { name: '下载' }));
   expect(screen.getByRole('menuitem', { name: '下载 JSONL' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: '返回看板' })).toBeInTheDocument();
-  expect(screen.getByText('原因：blocked')).toBeInTheDocument();
+  expect(screen.getByText('原因：受阻')).toBeInTheDocument();
   expect(screen.getByText('由 Ana 完成')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: '关于此记录' })).toBeInTheDocument();
 });
@@ -296,6 +297,8 @@ test.each([
   ['the tasks read is refused', () => Promise.reject(Object.assign(new Error('http'), { response: { status: 403 } }))],
   ['the task is missing from the list', () => Promise.resolve({ tasks: [{ taskId: 'TASK-8', title: 'Another' }] })],
   ['the list is not a list', () => Promise.resolve({ tasks: 'nope' })],
+  ['the matching task\'s title is blank', () => Promise.resolve({ tasks: [{ taskId: 'TASK-7', title: '   ' }] })],
+  ['the matching task\'s title is not a string', () => Promise.resolve({ tasks: [{ taskId: 'TASK-7', title: { text: 'CI check' } }] })],
 ])('when %s, the heading stays the id and no error shows', async (_case, tasks) => {
   wire(() => Promise.resolve(JSONL), undefined, tasks);
   setup();
@@ -314,4 +317,112 @@ test('the record never waits on the tasks read: it renders with the id, then tak
   expect(screen.getByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
   land({ tasks: [{ taskId: 'TASK-7', title: 'CI check' }] });
   expect(await screen.findByRole('heading', { level: 2, name: 'CI check' })).toBeInTheDocument();
+});
+
+test('release reasons and decisions read as words in both languages; unknown values show as written', async () => {
+  const lines = [
+    line(1, 'task.released', { id: AGENT, type: 'agent' }, { reason: 'lease_expired' }),
+    line(2, 'permission.decided', { id: HUMAN, type: 'human' }, { outcome: 'selected', kind: 'reject_once', decidedBy: HUMAN }),
+    line(3, 'task.released', { id: AGENT, type: 'agent' }, { reason: 'moved_elsewhere' }),
+    line(4, 'permission.decided', { id: HUMAN, type: 'human' }, { outcome: 'cancelled', decidedBy: HUMAN }),
+  ].join('\n');
+  wire(() => Promise.resolve(lines));
+  const { unmount } = setup();
+  expect(await screen.findByText('reason lease expired')).toBeInTheDocument();
+  expect(screen.getByText('reject once')).toBeInTheDocument();
+  expect(screen.getByText('reason moved elsewhere')).toBeInTheDocument();
+  expect(screen.getByText('cancelled')).toBeInTheDocument();
+  unmount();
+  await i18n.changeLanguage('zh-CN');
+  setup();
+  expect(await screen.findByText('原因：租约到期')).toBeInTheDocument();
+  expect(screen.getByText('拒绝一次')).toBeInTheDocument();
+  expect(screen.getByText('已取消')).toBeInTheDocument();
+  expect(screen.getByText('原因：moved elsewhere')).toBeInTheDocument();
+});
+
+test('a digest shows as the frame draws it, with the full value in its title', async () => {
+  const full = `sha256:9f2c${'0'.repeat(56)}41ab`;
+  expect(shortDigest(full)).toBe('sha256:9f2c…41ab');
+  expect(shortDigest('sha256:9f2c41ab')).toBe('sha256:9f2c41ab');
+  expect(shortDigest('not a digest')).toBe('not a digest');
+  wire(() => Promise.resolve(line(1, 'tool.call', { id: AGENT, type: 'agent' }, { toolCallId: 'tc-1', title: 'Open', argsDigest: full })));
+  setup();
+  fireEvent.click((await screen.findByText('Tool call')).closest('button') as HTMLButtonElement);
+  const cell = screen.getByText('sha256:9f2c…41ab');
+  expect(cell).toHaveAttribute('title', full);
+});
+
+// Moves between two tasks' records inside one mounted page, as a link on the page would.
+const setupTwoTasks = () => render(<MemoryRouter initialEntries={[`/v2/pods/${POD}/tasks/TASK-7/record`]}>
+  <Link to={`/v2/pods/${POD}/tasks/TASK-8/record`}>next task</Link>
+  <Routes><Route path="/v2/pods/:podId/tasks/:taskId/record" element={<V2TaskRecord />} /></Routes>
+</MemoryRouter>);
+const recordOf = (taskId: string) => [
+  line(1, 'task.claimed', { id: AGENT, type: 'agent' }).replace('"TASK-7"', `"${taskId}"`),
+  line(2, 'task.released', { id: AGENT, type: 'agent' }, { reason: 'blocked' }).replace('"TASK-7"', `"${taskId}"`),
+].join('\n');
+
+test.each([
+  ['the old task\'s read lands late', true],
+  ['the next task\'s read fails', false],
+])('after moving to another task, the old title never shows when %s', async (_case, late) => {
+  let landFirst: (value: unknown) => void = () => undefined;
+  let tasksCalls = 0;
+  mockGet.mockImplementation((url: string) => {
+    if (url.startsWith(`/api/pods/${POD}/record/tasks/`)) return Promise.resolve(recordOf(url.includes('TASK-8') ? 'TASK-8' : 'TASK-7'));
+    if (url === `/api/pods/${POD}`) return Promise.resolve({ members: [] });
+    if (url === tasksUrl) {
+      tasksCalls += 1;
+      const list = { tasks: [{ taskId: 'TASK-7', title: 'Old title' }] };
+      if (tasksCalls === 1) return late ? new Promise((resolve) => { landFirst = resolve; }) : Promise.resolve(list);
+      return Promise.reject(new Error('down'));
+    }
+    return Promise.reject(new Error(`unexpected ${url}`));
+  });
+  setupTwoTasks();
+  if (!late) expect(await screen.findByRole('heading', { level: 2, name: 'Old title' })).toBeInTheDocument();
+  else expect(await screen.findByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'next task' }));
+  expect(await screen.findByRole('heading', { level: 2, name: 'TASK-8' })).toBeInTheDocument();
+  await waitFor(() => expect(tasksCalls).toBe(2));
+  // Inside act, so a state update the late read makes is rendered before the check.
+  await act(async () => {
+    landFirst({ tasks: [{ taskId: 'TASK-7', title: 'Old title' }] });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+  });
+  expect(screen.queryByText('Old title')).toBeNull();
+  expect(screen.getByRole('heading', { level: 2, name: 'TASK-8' })).toBeInTheDocument();
+});
+
+test('an open row and the Download menu do not carry over to the next task', async () => {
+  mockGet.mockImplementation((url: string) => {
+    if (url.startsWith(`/api/pods/${POD}/record/tasks/`)) return Promise.resolve(recordOf(url.includes('TASK-8') ? 'TASK-8' : 'TASK-7'));
+    if (url === `/api/pods/${POD}`) return Promise.resolve({ members: [] });
+    return Promise.reject(new Error('no tasks read'));
+  });
+  setupTwoTasks();
+  fireEvent.click((await screen.findByText('Released')).closest('button') as HTMLButtonElement);
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  expect(screen.getByRole('menu')).toBeInTheDocument();
+  expect(screen.getByText('Released').closest('button')).toHaveAttribute('aria-expanded', 'true');
+  fireEvent.click(screen.getByRole('link', { name: 'next task' }));
+  expect(await screen.findByText('TASK-8 · 2 entries', { selector: 'p' })).toBeInTheDocument();
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(screen.getByText('Released').closest('button')).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('an entry of another kind shows its first two plain values, skipping objects between them', async () => {
+  wire(() => Promise.resolve(line(1, 'attempt.settled', { id: AGENT, type: 'agent' }, { attempt: 2, failure: { kind: 'exit', detail: 'x' }, outcome: 'failed', extra: 'not shown' })));
+  setup();
+  expect(await screen.findByText('2 · failed')).toBeInTheDocument();
+  expect(screen.queryByText(/not shown/)).toBeNull();
+});
+
+test('a long actor name keeps its full text in the title, so a truncated row still says who', async () => {
+  const long = 'a-very-long-actor-id-that-would-push-the-time-off-the-row-0123456789';
+  wire(() => Promise.resolve(line(1, 'task.claimed', { id: long, type: 'human' })));
+  setup();
+  const name = await screen.findByText(long, { selector: '.v2-task-record__name' });
+  expect(name.closest('.v2-task-record__who')).toHaveAttribute('title', long);
 });

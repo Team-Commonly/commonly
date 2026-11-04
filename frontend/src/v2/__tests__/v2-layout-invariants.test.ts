@@ -5794,6 +5794,24 @@ describe('task record layout', () => {
     expect(phone).toMatch(/\.v2-task-record__body \{ padding: 16px 16px 12px; \}/);
     expect(phone).toMatch(/\.v2-task-record__menu button \{ height: 44px; \}/);
   });
+  test('at 390 the (i) trigger itself is a 44px target, not only its wrapper (#3362 review)', () => {
+    // v2.css draws button.v2-hint__trigger 28px (1px border) at <=760px. The ::after sits on the
+    // padding edge, so -9px a side gives 26 + 18 = 44px, as measured in the browser.
+    expect(phone).toMatch(/\.v2-root \.v2-feature--task-record \.v2-task-record__head button\.v2-hint__trigger \{ position: relative; \}/);
+    expect(phone).toMatch(/\.v2-root \.v2-feature--task-record \.v2-task-record__head button\.v2-hint__trigger::after \{ content: ''; position: absolute; inset: -9px; \}/);
+  });
+  test('a long actor name shrinks and truncates instead of pushing the time off the row (#3362 CodeRabbit)', () => {
+    const who = ruleBody(css, `${scope} .v2-task-record__who`);
+    expect(who).toContain('min-width: 0');
+    expect(who).toContain('flex: 0 1 auto');
+    const name = ruleBody(css, `${scope} .v2-task-record__name`);
+    expect(name).toContain('min-width: 0');
+    expect(name).toContain('overflow: hidden');
+    expect(name).toContain('text-overflow: ellipsis');
+  });
+  test('at 390 Try again in the unavailable block is 44px tall (#3362 review)', () => {
+    expect(phone).toMatch(/\.v2-feature--task-record \.v2-task-record__none \.v2-task-record__key \{ height: 44px; \}/);
+  });
   test('Done is the only filled mark, in cobalt soft; no rail or side border anywhere (D225)', () => {
     expect(ruleBody(css, `${scope} .v2-task-record__mk--done`)).toContain('background: var(--v2-accent-soft)');
     const filled = [...bare.matchAll(/([^{}@]+)\{([^{}]*)\}/g)].filter(([, , body]) => /var\(--v2-accent(-soft)?\)/.test(body)).map(([, sel]) => sel.trim());

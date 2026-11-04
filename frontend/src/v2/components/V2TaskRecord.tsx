@@ -50,6 +50,21 @@ const KindMark: React.FC<{ kind: string }> = ({ kind }) => {
   return <RecordGlyph name={mark} size={14} />;
 };
 
+// Values the writers put in a release's `reason` and a decision's `kind` /
+// `outcome` (taskRecordService, kernelWorkSweepService, brokerRecordLines,
+// record-v1 §2). Any other value shows as written, underscores as spaces.
+const RELEASE_REASONS = new Set(['blocked', 'lease_expired', 'reassigned', 'abandoned']);
+const DECISIONS = new Set(['allow_once', 'reject_once', 'allow_always', 'reject_always', 'selected', 'cancelled']);
+const spaced = (value: string) => value.replace(/_/g, ' ');
+
+// A digest as the frame draws it: the algorithm, the first and last four hex
+// characters. The full value stays in the cell's title.
+const DIGEST = /^(sha256:)([0-9a-f]{4})[0-9a-f]{4,}([0-9a-f]{4})$/i;
+export const shortDigest = (value: string): string => {
+  const match = DIGEST.exec(value);
+  return match ? `${match[1]}${match[2]}…${match[3]}` : value;
+};
+
 // The server's MAX_PAGE_LINES. A page this long may have more after it.
 const RECORD_PAGE_LINES = 1000;
 
@@ -222,21 +237,34 @@ const V2TaskRecord: React.FC = () => {
     const parts: Array<string | null> = [];
     switch (line.kind) {
       case 'task.claimed': { const time = clock(d.leaseUntil); parts.push(time ? t('taskRecord.line.leaseUntil', { time }) : null); break; }
-      case 'task.released': parts.push(str(d.reason) && t('taskRecord.line.reason', { reason: d.reason })); break;
+      case 'task.released': {
+        const reason = str(d.reason);
+        parts.push(reason && t('taskRecord.line.reason', {
+          reason: RELEASE_REASONS.has(reason) ? t(`taskRecord.reasons.${reason}`) : spaced(reason),
+        }));
+        break;
+      }
       case 'task.done': parts.push(str(d.doneBy) && t('taskRecord.line.doneBy', { name: personLabel(d.doneBy as string) })); break;
       case 'permission.requested': {
         const asked = isObject(d.askedOf) ? str(d.askedOf.id) : null;
         parts.push(str(d.question), asked && t('taskRecord.line.askedOf', { name: personLabel(asked) }));
         break;
       }
-      case 'permission.decided': parts.push((str(d.kind) || str(d.outcome))?.replace(/_/g, ' ') || null); break;
+      case 'permission.decided': {
+        const decision = str(d.kind) || str(d.outcome);
+        parts.push(decision && (DECISIONS.has(decision) ? t(`taskRecord.decisions.${decision}`) : spaced(decision)));
+        break;
+      }
       case 'tool.call': case 'tool.update': parts.push(str(d.name) || str(d.title), str(d.status)); break;
       case 'grant.issued': parts.push(str(d.grantId)); break;
       case 'grant.revoked': parts.push(str(d.reason)); break;
       default:
-        Object.entries(d).slice(0, 2).forEach(([key, value]) => {
-          if (typeof value === 'string' || typeof value === 'number') parts.push(valueLabel(key, value));
-        });
+        // Plain values first, then two: an object field between them must not
+        // push a plain one out (attempt.settled: {attempt, failure: {…}, outcome}).
+        Object.entries(d)
+          .filter(([, value]) => typeof value === 'string' || typeof value === 'number')
+          .slice(0, 2)
+          .forEach(([key, value]) => parts.push(valueLabel(key, value)));
     }
     return parts.filter(Boolean).join(' · ');
   };
@@ -249,6 +277,9 @@ const V2TaskRecord: React.FC = () => {
     return next;
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  // Another task's page starts closed: row seqs repeat across tasks, so an
+  // open row or the Download menu must not carry over.
+  useEffect(() => { setOpen(new Set()); setMenuOpen(false); }, [podId, taskId]);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
   useEffect(() => {
@@ -346,7 +377,7 @@ const V2TaskRecord: React.FC = () => {
                   <span className={`v2-task-record__mk${line.kind === 'task.done' ? ' v2-task-record__mk--done' : ''}`} aria-hidden="true"><KindMark kind={line.kind} /></span>
                   <span className="v2-task-record__main">
                     <b>{kindLabel(line.kind)}</b>
-                    <span className="v2-task-record__who">{actorMark(line.actor)}{actorLabel(line.actor)}</span>
+                    <span className="v2-task-record__who" title={actorLabel(line.actor)}>{actorMark(line.actor)}<span className="v2-task-record__name">{actorLabel(line.actor)}</span></span>
                     {detail && <span className="v2-task-record__d">{detail}</span>}
                   </span>
                   <time className="v2-task-record__t" dateTime={line.ts}>{clock(line.ts) || line.ts}</time>
@@ -355,7 +386,8 @@ const V2TaskRecord: React.FC = () => {
                 {isOpen && <dl className="v2-task-record__more" id={moreId}>
                   <dt>{t('taskRecord.entryKey')}</dt><dd>{line.seq}</dd>
                   {Object.entries(line.data || {}).map(([key, value]) => <React.Fragment key={key}>
-                    <dt>{key}</dt><dd>{valueLabel(key, value)}</dd>
+                    <dt>{key}</dt>{key === 'argsDigest' && typeof value === 'string' && shortDigest(value) !== value
+                      ? <dd title={value}>{shortDigest(value)}</dd> : <dd>{valueLabel(key, value)}</dd>}
                   </React.Fragment>)}
                 </dl>}
               </li>;
