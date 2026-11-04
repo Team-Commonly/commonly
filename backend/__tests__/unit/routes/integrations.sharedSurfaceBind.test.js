@@ -95,6 +95,19 @@ beforeEach(() => {
 });
 
 describe('POST /api/integrations — a shared surface needs authority over the pod', () => {
+  it.each([
+    ['an array', ['slack']],
+    ['an object', { $ne: 'telegram' }],
+    ['a number', 7],
+  ])('refuses a type that is %s with 400 before anything else', async (_label, type) => {
+    const res = await create(MEMBER, { podId: POD_1, type, config: { channelId: 'C123' } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toBe('type must be a string');
+    expect(Pod.findById).not.toHaveBeenCalled();
+    expect(Integration.created).toHaveLength(0);
+  });
+
   it('refuses a plain member creating a Slack connector, and writes nothing', async () => {
     const res = await create(MEMBER, { podId: POD_1, type: 'slack', config: { channelId: 'C123' } });
 

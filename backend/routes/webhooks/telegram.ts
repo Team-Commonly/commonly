@@ -203,8 +203,11 @@ const handleEnableCommand = async (chat: any, code: any) => {
     await telegramService.sendMessage(
       botToken,
       chatId,
-      "⚠️ Only the pod's creator can connect a group or channel to this pod. "
-      + 'Send the code in a private chat with this bot instead.',
+      // About the code, not the sender: a pod creator redeeming a code minted on
+      // a member's row is refused too, and must not be told they lack authority.
+      "⚠️ This code was made by someone who can't connect a group. "
+      + "The pod's creator or an admin needs to set up the Telegram connection. "
+      + 'This code still works in a private chat with this bot.',
     );
     return;
   }

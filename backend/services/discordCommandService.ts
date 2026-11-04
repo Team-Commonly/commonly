@@ -6,6 +6,8 @@ const Summary = require('../models/Summary');
 const DiscordService = require('./discordService');
 // eslint-disable-next-line global-require
 const summarizerService = require('./summarizerService');
+const Pod = require('../models/Pod');
+import { assertCanBindSurface, SurfaceBindRefusedError } from './chatRelay/bindSurface';
 
 interface CommandServiceOptions {
   guildId?: string;
@@ -42,6 +44,7 @@ interface SummaryLike {
 
 interface IntegrationDoc {
   _id?: unknown;
+  createdBy?: unknown;
   podId?: { name?: string; type?: string } | null;
   status?: string;
   lastSync?: unknown;
@@ -146,9 +149,28 @@ class DiscordCommandService {
         };
       }
 
+      // F143: the summary goes to everyone in the guild channel, so the row
+      // must have been bound by someone with authority over the pod (its
+      // creator or an admin). Rows plain members bound before #3436 get this
+      // refusal and no summary until the pod's creator reconnects them.
+      const podRef = this.integration.podId as unknown as { _id?: unknown } | null;
+      const podId = podRef?._id ?? podRef;
+      const pod = await Pod.findById(podId).lean();
+      try {
+        await assertCanBindSurface({
+          userId: this.integration.createdBy, pod, type: 'discord', config: this.integration.config || {},
+        });
+      } catch (error) {
+        if (!(error instanceof SurfaceBindRefusedError)) throw error;
+        return {
+          success: false,
+          content: "Only the pod's creator can share this pod's summary with a channel. Ask them to reconnect it.",
+        };
+      }
+
       const latestSummary = await Summary.findOne({
         type: 'chats',
-        podId: this.integration.podId,
+        podId,
       }).sort({ createdAt: -1 }) as SummaryLike | null;
 
       if (!latestSummary) {

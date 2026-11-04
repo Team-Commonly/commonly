@@ -216,7 +216,9 @@ function createGroupMeProvider(integration: { _id: unknown; config?: Record<stri
                 // without authority over the pod gets nothing until the pod's
                 // creator reconnects it.
                 const owner = latest || integration;
-                const pod = await Pod.findById(owner.podId ?? integration.podId).lean();
+                // One row decides both the check and the summary read.
+                const ownerPodId = owner.podId ?? integration.podId;
+                const pod = await Pod.findById(ownerPodId).lean();
                 try {
                   await assertCanBindSurface({
                     userId: (owner as { createdBy?: unknown }).createdBy, pod, type: 'groupme', config: effectiveConfig,
@@ -231,7 +233,7 @@ function createGroupMeProvider(integration: { _id: unknown; config?: Record<stri
                 }
                 const latestSummary = await Summary.findOne({
                   type: 'chats',
-                  podId: integration.podId,
+                  podId: ownerPodId,
                 })
                   .sort({ createdAt: -1 })
                   .lean() as { title?: string; content?: string } | null;

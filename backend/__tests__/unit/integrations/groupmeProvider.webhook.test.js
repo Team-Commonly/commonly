@@ -92,6 +92,18 @@ describe('groupmeProvider !pod in a shared group', () => {
     expect(text).toMatch(/only the pod's creator/i);
   });
 
+  test('reads the summary from the pod it checked, the stored row', async () => {
+    // The live row was moved to pod-2 after this provider was built for pod-1.
+    const stale = { ...row('creator-1'), podId: 'pod-1' };
+    const live = { ...row('creator-1'), podId: 'pod-2' };
+    Integration.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue(live) });
+    const { events } = createGroupMeProvider(stale).getWebhookHandlers();
+    const res = { sendStatus: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+    await events({ body: { group_id: '123', text: '!pod' } }, res);
+    expect(Pod.findById).toHaveBeenCalledWith('pod-2');
+    expect(Summary.findOne).toHaveBeenCalledWith(expect.objectContaining({ podId: 'pod-2' }));
+  });
+
   test.each([['the pod creator', 'creator-1'], ['an instance admin', 'admin-1']])(
     'sends the pod summary to a group %s bound',
     async (_label, createdBy) => {

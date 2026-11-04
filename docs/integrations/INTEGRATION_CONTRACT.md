@@ -97,7 +97,8 @@ not declared private, counts as shared. The server refuses with 403
 to `connectors.sharedSurfaceCreatorOnly` (en and zh-CN).
 
 It is checked at:
-- **create**: `POST /api/integrations` (Slack, Discord, GroupMe), and Discord's
+- **create**: `POST /api/integrations` (Slack, Discord, GroupMe; a non-string
+  `type` is refused with 400 first), and Discord's
   `GET /api/discord/install-link/:podId`;
 - **retarget**: `PATCH /api/integrations/:id`, when a field that picks the chat
   changes (Slack `channelId`, GroupMe `groupId`/`botId`; Discord's are fixed by
@@ -105,12 +106,13 @@ It is checked at:
 - **redemption**: Telegram's `/commonly-enable`, because the chat type is only
   known there. It is judged against the row's `createdBy`, and a refused code is
   left unspent for a private chat;
-- **outbound summaries**: Telegram `/tldr` (`/pod_summary`) and GroupMe `!pod`,
-  which send the pod's latest summary to the whole group.
+- **outbound summaries**, judged against the row's `createdBy`: Telegram
+  `/tldr` (`/pod_summary`), GroupMe `!pod`, and Discord `/commonly-summary`.
+  Each posts the pod's latest summary to everyone in the chat.
 
 Rows bound by plain members before the rule keep working. The only runtime
-gates are the two outbound summary commands above, which go quiet on such a row
-until the pod's creator reconnects it.
+gates are the three outbound summary commands above, which answer with a short
+refusal and no summary on such a row until the pod's creator reconnects it.
 
 ## Testing contract
 - Shared Jest contract tests under `backend/__tests__/contracts/integrationProvider.test.js`:

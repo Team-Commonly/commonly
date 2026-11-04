@@ -494,7 +494,10 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
 
 router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
-    const { podId, type, config } = (req.body || {}) as { podId?: string; type?: string; config?: Record<string, unknown> };
+    const { podId, type, config } = (req.body || {}) as { podId?: string; type?: unknown; config?: Record<string, unknown> };
+    // First, so every check below compares a string: an array or object `type`
+    // must not reach the shared-surface gate or a Mongoose cast (F143).
+    if (type !== undefined && typeof type !== 'string') return res.status(400).json({ message: 'type must be a string' });
     if (!podId || !type || !config) return res.status(400).json({ message: 'Missing required fields' });
     if (type === 'github-app') return res.status(400).json({ message: 'github-app connections require the administrator route' });
     // `hosted-mcp` is refused by NAME for the reason the type exists (TASK-172,

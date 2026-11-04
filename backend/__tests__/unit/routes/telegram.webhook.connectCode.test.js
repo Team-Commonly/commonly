@@ -287,9 +287,21 @@ describe('/commonly-enable in a shared chat needs authority over the pod', () =>
       await enable('c'.repeat(32), { id: -100, type, title: 'Crew' });
       expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
       expect(Integration.updateOne).not.toHaveBeenCalled();
-      expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/only the pod's creator/i);
+      expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/made by someone who can't connect a group/i);
     },
   );
+
+  it('tells a pod creator redeeming a member\'s code that the code is the problem, not them', async () => {
+    Integration.findOne = jest.fn().mockResolvedValueOnce(rowMintedBy(MEMBER)).mockResolvedValueOnce(null);
+    await enable('c'.repeat(32), { id: -100, type: 'group', title: 'Crew' });
+    const text = telegramService.sendMessage.mock.calls[0][2];
+    expect(text).toBe(
+      "⚠️ This code was made by someone who can't connect a group. "
+      + "The pod's creator or an admin needs to set up the Telegram connection. "
+      + 'This code still works in a private chat with this bot.',
+    );
+    expect(text).not.toMatch(/^⚠️ Only the pod's creator/);
+  });
 
   it('fails closed on a chat with no type', async () => {
     Integration.findOne = jest.fn().mockResolvedValueOnce(rowMintedBy(MEMBER)).mockResolvedValueOnce(null);
