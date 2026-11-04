@@ -5893,23 +5893,29 @@ describe('chat sheets lifted out of v2.css (S3)', () => {
   });
 });
 
-// d215 run-trace-after at 390: the page sits in the shared V2FeaturePage body,
-// whose phone padding is 12px all round. The frame draws 16px gutters with no
-// top padding ("Back to pod" is the first 44px row) and a tighter rhythm; at
-// prod 486240fb the 12px body and loose rhythm pushed the foot's run-id line
-// under the fixed tab bar. Measured in a browser; jsdom cannot see it.
-describe('run trace keeps the frame phone gutters and clears the tab bar', () => {
+// d215 run-trace-after at 390. The frame drew 16px gutters with "Back to pod"
+// as the first row; at prod 486240fb a loose rhythm pushed the foot's run-id
+// line under the fixed tab bar. Rulings 11-04 move it onto the shared head bar
+// (back is the bar's lead key) and the 12px phone gutter of .v2-feature__scroll.
+// Measured in a browser; jsdom cannot see it.
+describe('run trace keeps the 12px phone gutter and clears the tab bar', () => {
   const rt = read('../components/V2RunTrace.css');
   const v2 = readV2Css();
   const app = read('../V2App.tsx');
-  const phone = mediaBlockContaining(rt, '.v2-feature--run-trace > .v2-feature__body');
+  const page = read('../components/V2RunTrace.tsx');
+  const phone = mediaBlockContaining(rt, '.v2-feature--run-trace .v2-run-trace p');
 
-  test('the run trace route tags its feature pane', () => {
-    expect(app).toContain("feature(t('runTrace.title'), <V2RunTrace />, false, false, 'v2-feature--run-trace')");
+  test('the run trace route tags its feature pane and draws the shared head bar', () => {
+    expect(app).toContain("feature(t('runTrace.title'), <V2RunTrace />, false, false, 'v2-feature--bar v2-feature--run-trace')");
+    expect(page).toContain('className="v2-feature__header v2-run-trace__head"');
+    expect(page).toContain('className="v2p-b v2p-b-g v2p-ib v2-run-trace__back"');
   });
 
-  test('at 760 and below the body has 16px side gutters and no top padding', () => {
-    expect(ruleBody(rt, '.v2-feature--run-trace > .v2-feature__body', { within: phone })).toContain('padding: 0 16px 16px');
+  test('at 760 and below the body has the 12px gutter: the shared scroller, no route override', () => {
+    expect(page).toContain('<div className="v2-feature__scroll v2-run-trace__body">');
+    expect(ruleBody(v2, '.v2-feature__scroll', { within: mediaBlockContaining(v2, '  .v2-feature__scroll {') })).toContain('padding: 12px 12px 16px');
+    expect(rt).not.toMatch(/\.v2-feature__body/);
+    expect(rt).not.toMatch(/padding: 0 16px/);
   });
 
   test('the frame rhythm: paragraphs flush, a turn is an 8px grid', () => {
@@ -5920,7 +5926,6 @@ describe('run trace keeps the frame phone gutters and clears the tab bar', () =>
   });
 
   test('desktop is untouched: the overrides live only in the phone block', () => {
-    expect(topLevelRuleBody(rt, '.v2-feature--run-trace > .v2-feature__body')).toBe('');
     expect(topLevelRuleBody(rt, '.v2-feature--run-trace .v2-run-trace p')).toBe('');
   });
 
@@ -6018,6 +6023,8 @@ describe('sign-in handoff drawn from the d215 s-handoff frames', () => {
     // The backend redirects to /discord/*; without this mapping the card renders outside .v2-root, unstyled.
     expect(read('../../utils/legacyV2Path.ts')).toContain("if (pathname.startsWith('/discord/')) return `/v2${pathname}${search}`;");
     expect(read('../../index.tsx')).toContain('/^\\/discord\\/(?:callback|success|error)\\/?$/.test(bootPath)');
+  });
+});
 
 // ui-audit-1104 findings 2–8, rulings 11-04: the secondary pages take the
 // reference surfaces' head bar, keys, edges and labels. jsdom cannot see any of
@@ -6105,6 +6112,15 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
     expect(ruleBody(read('../components/V2PersonProfile.css'), '.v2-profile .v2-profile__meta')).toContain(mono);
     expect(ruleBody(read('../agents/v2-agent-profile.css'), '.v2-aprofile .v2-aprofile__meta')).toContain('11.5px');
     expect(ruleBody(boardCss, '.v2-feature--board .v2-board__subtitle')).toContain('500 11.5px/1 var(--v2-font-mono)');
+    // Run trace: "Turn 1" was Bricolage 20/700.
+    expect(ruleBody(read('../components/V2RunTrace.css'), '.v2-run-trace h2')).toContain(mono);
+  });
+
+  test('finding 7: the run trace summary and tool calls are ringed r9 cards, no 1px border', () => {
+    const card = ruleBody(read('../components/V2RunTrace.css'), '.v2-run-trace__summary, .v2-run-trace__call');
+    expect(card).toContain('border-radius: var(--v2-r-9)');
+    expect(card).toContain('box-shadow: 0 0 0 1px var(--v2-border-soft)');
+    expect(card).not.toMatch(/(^|[\s;{])border:/);
   });
 });
 

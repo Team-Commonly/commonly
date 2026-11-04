@@ -7,11 +7,15 @@ import V2Avatar from './V2Avatar';
 import V2PageHead from './V2PageHead';
 import './V2PersonProfile.css';
 
+// The shared head bar's title and count classes, plus this page's own hook.
+const HEAD_TITLE_CLASS = 'v2-feature__title v2-profile__name';
+const HEAD_META_CLASS = 'v2-profile__meta';
+
 /*
  * A person's page at /v2/profile/:id, drawn as d215 section s-profile
  * (docs/design/artboards/d215/index.html). Header (avatar, name, handle and
- * join date, counts, Follow), then "Pods in common" and "Recent posts" as
- * bordered lanes. A lane with no rows is omitted, never an empty box.
+ * join date, Follow) in the shared head bar, the counts as the intro line,
+ * then "Pods in common" and "Recent posts" as ringed lists. A lane with no rows is omitted, never an empty box.
  */
 
 interface SocialProfile {
@@ -185,7 +189,7 @@ const V2PersonProfile: React.FC = () => {
       {/* The shared page head bar (.v2-feature__header): avatar, name and handle, the act at the end. */}
       <V2PageHead
         className="v2-feature__header v2-page-head--wrap v2-profile__head"
-        titleClassName="v2-feature__title v2-profile__name"
+        titleClassName={HEAD_TITLE_CLASS}
         lead={(
           <span className="v2-profile__avatar">
             <V2Avatar
@@ -198,7 +202,7 @@ const V2PersonProfile: React.FC = () => {
           </span>
         )}
         title={name}
-        metaClassName="v2-profile__meta"
+        metaClassName={HEAD_META_CLASS}
         meta={(
           <>
             {profile.username ? `@${profile.username}` : null}

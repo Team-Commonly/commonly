@@ -9,6 +9,10 @@ import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import V2Fold from './V2Fold';
 import V2PageHead from './V2PageHead';
 
+// The shared head bar's title and count classes, plus this page's own hook.
+const HEAD_TITLE_CLASS = 'v2-feature__title v2-team__title';
+const HEAD_META_CLASS = 'v2-team__meta';
+
 /**
  * Your Team — direction C, built to `YourTeam.dc.html` (canvas: Workspace in C)
  * under the Signal identity (`docs/design/signal-identity.md`).
@@ -506,9 +510,9 @@ const V2YourTeamPage: React.FC = () => {
       {/* The shared page head bar (.v2-feature__header), as Settings and Connectors draw it. */}
       <V2PageHead
         className="v2-feature__header v2-page-head--wrap v2-team__head"
-        titleClassName="v2-feature__title v2-team__title"
+        titleClassName={HEAD_TITLE_CLASS}
         title={t('yourTeam.title')}
-        metaClassName="v2-team__meta"
+        metaClassName={HEAD_META_CLASS}
         meta={loading
           ? t('yourTeam.loading')
           : t('yourTeam.head.meta', { count: counts.agents, agents: counts.agents, working: counts.working, needsYou: counts.needsYou })}
