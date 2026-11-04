@@ -56,8 +56,7 @@ cd frontend && npm run dev:live      # localhost:3102 (staging), /api and /socke
 {
   "jest": {
     "moduleNameMapper": {
-      "^react-markdown$": "<rootDir>/src/__mocks__/react-markdown.js",
-      "^d3$": "<rootDir>/src/__mocks__/d3.js"
+      "^react-markdown$": "<rootDir>/src/__mocks__/react-markdown.js"
     }
   }
 }
@@ -65,7 +64,6 @@ cd frontend && npm run dev:live      # localhost:3102 (staging), /api and /socke
 
 ### Mock Files
 - `src/__mocks__/react-markdown.js` - ES module mock for react-markdown
-- `src/__mocks__/d3.js` - ES module mock for d3 with force simulation, scales
 
 ## Common Testing Patterns
 
@@ -165,7 +163,7 @@ test('handles timer delays in refresh function', async () => {
 
 ### ES Module Compatibility
 **Issues Fixed:**
-- `react-markdown` and `d3` ES module parsing errors in Jest
+- `react-markdown` ES module parsing errors in Jest
 - `SyntaxError: Unexpected token 'export'` errors
 
 **Solutions Applied:**
@@ -184,23 +182,6 @@ const ReactMarkdown = ({ children }) => {
 };
 
 export default ReactMarkdown;
-```
-
-### d3 Mock
-```javascript
-export const select = jest.fn(() => ({
-  append: jest.fn().mockReturnThis(),
-  attr: jest.fn().mockReturnThis(),
-  style: jest.fn().mockReturnThis(),
-  // ... more d3 methods
-}));
-
-export const forceSimulation = jest.fn(() => ({
-  force: jest.fn().mockReturnThis(),
-  nodes: jest.fn().mockReturnThis(),
-  on: jest.fn().mockReturnThis(),
-  stop: jest.fn().mockReturnThis(),
-}));
 ```
 
 ## Troubleshooting Common Issues
@@ -234,8 +215,7 @@ These are all expected and do not indicate test failures.
 ```
 src/
 ├── __mocks__/
-│   ├── react-markdown.js
-│   └── d3.js
+│   └── react-markdown.js
 ├── components/
 │   ├── WhatsHappening.test.js (22 tests)
 │   ├── ChatRoom.test.js (2 tests)
