@@ -2860,7 +2860,31 @@
       },
       "agentsUnavailable": "暂时无法读取你的智能体，请刷新后重试"
     },
-    "chooseKey": "选择密钥"
+    "chooseKey": "选择密钥",
+    "byo": {
+      "consent": "{{agent}} 运行在你的电脑上，不在 Commonly 里。它用这个授权读到的任何内容，都可能被它传出去；它读到的文字也可能是别人写的，能指使它做事。",
+      "consentNoSandbox": "{{agent}} 运行在你的电脑上，不在 Commonly 里，也没有沙箱。它用这个授权读到的任何内容，都可能被它传出去；它读到的文字也可能是别人写的，能指使它做事。",
+      "readOnlyHint": "运行在你电脑上的智能体只能读取。",
+      "reasonUnconfinedHost": "运行在原生 Windows 上，用不了任何授权。",
+      "reasonAdapterUnsupported": "只能指定 Claude Code 或 Codex 智能体。",
+      "namedHeading": "运行在你电脑上",
+      "named": "{{agent}} 在 Commonly 之外运行",
+      "namedNoSandbox": "{{agent}} 在 Commonly 之外运行，没有沙箱",
+      "remove": "移除",
+      "removeLabel": "从这个授权中移除 {{agent}}",
+      "removeError": "无法移除 {{agent}}。",
+      "removeHint": "智能体还在这个 Pod 里时，移除它会让整个授权暂停。把它移出这个 Pod，授权就会恢复。",
+      "errors": {
+        "readOnly": "运行在你电脑上的智能体只能用于只读授权。",
+        "consentRequired": "请先勾选确认：这个智能体读到的内容可能被它传出去。",
+        "limitedUse": "这个连接器只供 Commonly 托管的智能体使用。",
+        "notAudience": "只能指定这个授权覆盖的智能体。",
+        "notAgent": "授权中只能指定智能体。",
+        "notOwned": "你只能指定由你独自安装的智能体。",
+        "unconfinedHost": "这个智能体运行在原生 Windows 上，用不了任何授权。",
+        "adapterUnsupported": "授权中只能指定 Claude Code 或 Codex 智能体。"
+      }
+    }
   },
   "agentManage": {
     "runtime": {

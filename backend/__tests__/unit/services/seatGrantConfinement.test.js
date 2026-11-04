@@ -162,6 +162,8 @@ describe('judgeSeatConfinement — a seat on a computer that runs agents without
     expect(await judge()).toEqual({
       refusal: expect.objectContaining({ code: 'grant_broker_unconfined', reason: 'sandbox_mode_unenforceable', decidedBy: 'server' }),
       scope: 'seat',
+      // F94: the one refusal a grant's consent never lifts says so.
+      hostUnconfined: true,
     });
 
     await Machine.updateOne({ machineId: MACHINE }, { $set: { hostUnconfined: false } });

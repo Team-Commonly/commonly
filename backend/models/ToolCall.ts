@@ -84,7 +84,11 @@ export interface ToolCallRecord {
   providerRef?: string;
   approvalId?: string;
   durationMs?: number;
+  /** F94: the caller's confinement when the call ran (migration 0007). */
+  callerConfinement?: CallerConfinement;
 }
+
+export type CallerConfinement = 'hosted' | 'confined' | 'named_unconfined' | 'unjudged';
 
 // The tables are created by the numbered migrations (0001, retrofitted by
 // 0003 and 0004); this model only reads and writes them.
@@ -199,8 +203,8 @@ class ToolCall {
       `INSERT INTO tool_calls
        (call_id, grant_id, pod_id, installation_id, agent_user_id, tool,
         args_digest, occurred_at, outcome, reason, approval_id, duration_ms,
-        credential_owner_id, vendor_status, vendor_error, provider_repo, provider_ref)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+        credential_owner_id, vendor_status, vendor_error, provider_repo, provider_ref, caller_confinement)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
       [
         record.callId,
         record.grantId,
@@ -219,6 +223,7 @@ class ToolCall {
         record.vendorError || null,
         record.providerRepo || null,
         record.providerRef || null,
+        record.callerConfinement || null,
       ],
     );
   }
@@ -261,7 +266,7 @@ class ToolCall {
               tc.tool, tc.args_digest, tc.occurred_at, tc.credential_owner_id,
               ${EFFECTIVE_OUTCOME} AS effective_outcome,
               tc.reason, tc.approval_id, tc.duration_ms, tc.vendor_status, tc.vendor_error,
-              tc.provider_repo, tc.provider_ref
+              tc.provider_repo, tc.provider_ref, tc.caller_confinement
        FROM tool_calls tc
        LEFT JOIN ${RESOLVED_SIBLINGS}
          ON resolved.grant_id = tc.grant_id AND resolved.approval_id = tc.approval_id
@@ -286,6 +291,7 @@ class ToolCall {
       vendorError: row.vendor_error ? String(row.vendor_error) : undefined,
       providerRepo: row.provider_repo ? String(row.provider_repo) : undefined,
       providerRef: row.provider_ref ? String(row.provider_ref) : undefined,
+      callerConfinement: row.caller_confinement ? String(row.caller_confinement) as CallerConfinement : undefined,
       approvalId: row.approval_id ? String(row.approval_id) : undefined,
       durationMs: row.duration_ms === null || row.duration_ms === undefined
         ? undefined : Number(row.duration_ms),

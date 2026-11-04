@@ -29,6 +29,9 @@ import { grantBrokerRefusal } from '../services/grantBrokerConfinement';
 import type { GrantBrokerRefusal } from '../services/grantBrokerConfinement';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../services/seatEnvironmentProjection';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from '../services/outsiderGrantPodEligibility';
+import {
+  byoNamingRefusalMessage, checkByoNaming, listByoCandidates, byoPodExemptAgentIds, namedByoAgentIds,
+} from '../services/byoGrantNaming';
 import { recordGrantIssued } from '../services/brokerRecordService';
 import { agentActor, humanActor, requestActor } from '../services/recordService';
 
@@ -102,7 +105,7 @@ interface AuthenticatedRequest extends express.Request {
  * left, so only the effective audience goes out.
  */
 type GrantRow = Pick<IRoomGrant, 'binding' | 'revocationReason' | 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
-  | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt'> & { audience?: string[]; connectionId?: string };
+  | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt' | 'byoAgents' | 'byoConsent'> & { audience?: string[]; connectionId?: string };
 
 /**
  * The connector a grant belongs to, read from its tool names (TASK-753). The
@@ -138,6 +141,11 @@ const projectGrant = (
   writeMode: grant.writeMode,
   budget: grant.budget ? { calls: grant.budget.calls, windowMs: grant.budget.windowMs } : null,
   effectiveAudience: effectiveAudience(grant, currentMembers),
+  // F94: the granter's own agents running outside Commonly that this grant
+  // names, with what was known of their sandbox at mint. The granter can
+  // remove one (DELETE /:grantId/byo-agents/:agentId).
+  byoAgents: namedByoAgentIds(grant),
+  ...(grant.byoConsent ? { byoConsent: grant.byoConsent } : {}),
   expiresAt: grant.expiresAt,
   ...(grant.binding ? { binding: grant.binding } : {}),
   ...(grant.revocationReason ? { revocationReason: grant.revocationReason } : {}),
@@ -339,6 +347,22 @@ const handleError = (res: express.Response, error: unknown): express.Response =>
   return res.status(500).json({ error: 'server_error', message: 'Server error' });
 };
 
+/**
+ * F94: the caller's own agents in a pod that run outside Commonly, with the
+ * sandbox state the mint would record, so the consent line can name it.
+ */
+router.get('/byo-candidates', grantRateLimit, auth, async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const userId = callerId(req);
+    if (!userId) return res.status(401).json({ error: 'unauthorized' });
+    const podId = String(req.query.podId || '');
+    await ensureTargetAccess({ kind: 'pod', id: podId }, userId);
+    return res.json({ agents: await listByoCandidates(podId, userId) });
+  } catch (error) {
+    return handleError(res, error);
+  }
+});
+
 /** Mint a root grant. The connection owner is the granter; it is never taken from the body. */
 router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
@@ -455,11 +479,39 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       });
     }
 
-    let outsiderRefusal = await outsiderGrantPodRefusal(target, body.writeMode);
+    // F94: the granter's own agents that run outside Commonly, named with
+    // consent. Checked before the pod gate, which then exempts only them.
+    if (body.byoAgents !== undefined && (!Array.isArray(body.byoAgents)
+      || body.byoAgents.some((id: unknown) => typeof id !== 'string' || !id.trim()))) {
+      return res.status(400).json({ error: 'invalid_byo_agents', message: 'byoAgents must be a list of agent ids' });
+    }
+    const byoAgents: string[] = [...new Set<string>((body.byoAgents || []).map((id: string) => id.trim()))];
+    let byoConsent;
+    if (byoAgents.length) {
+      const naming = await checkByoNaming({
+        byoAgents,
+        consented: body.byoConsent,
+        granterId: userId,
+        audience: Array.isArray(audienceValues) ? audienceValues : members,
+        writeMode: body.writeMode,
+        entryId: hosted ? String(connection.config?.entryId || '') : undefined,
+        tools: requestedTools,
+        podId: String(target.id),
+      });
+      if (naming.refusal) {
+        return res.status(403).json({ error: naming.refusal, message: byoNamingRefusalMessage(naming.refusal) });
+      }
+      byoConsent = naming.consent;
+    }
+
+    const exemptAgentIds = byoAgents;
+    let outsiderRefusal = await outsiderGrantPodRefusal(target, body.writeMode, { exemptAgentIds });
     // A join-policy change is an in-place repair only when every other pod
     // condition already passes. Otherwise name the real remaining refusal.
     if (outsiderRefusal === 'pod_joinable') {
-      outsiderRefusal = await outsiderGrantPodRefusal(target, body.writeMode, { assumeInviteOnly: true })
+      outsiderRefusal = await outsiderGrantPodRefusal(target, body.writeMode, {
+        assumeInviteOnly: true, exemptAgentIds,
+      })
         || 'pod_joinable';
     }
     if (outsiderRefusal) {
@@ -482,6 +534,7 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       writeMode: body.writeMode,
       budget: body.budget,
       audience: audienceValues,
+      ...(byoConsent ? { byoAgents, byoConsent } : {}),
       expiresAt: body.expiresAt,
       brokerId: broker.brokerId,
       // Bound here, at mint, to the row the caller just proved they own.
@@ -518,7 +571,9 @@ router.post(
       // membership context for the seat-grant check.
       currentMemberIds: members ?? parent.audience,
     });
-    const outsiderRefusal = await outsiderGrantPodRefusal(parent.target, parent.writeMode);
+    const outsiderRefusal = await outsiderGrantPodRefusal(parent.target, parent.writeMode, {
+      exemptAgentIds: await byoPodExemptAgentIds(parent),
+    });
     if (outsiderRefusal) {
       return res.status(403).json({
         error: `outsider_grant_${outsiderRefusal}`,
@@ -569,6 +624,46 @@ const revokeHandler = async (req: AuthenticatedRequest, res: express.Response): 
     return handleError(res, error);
   }
 };
+
+/**
+ * F94: the granter takes a named agent off a grant. The agent leaves the
+ * audience, the naming and the consent together, on the grant and every
+ * descendant. While it is still in the pod, the pod gate then refuses the
+ * whole lineage: the agent would still read what the grant posts there. The
+ * response says so; taking the agent out of the pod brings the grant back.
+ */
+router.delete('/:grantId/byo-agents/:agentId', grantRateLimit, auth, async (
+  req: AuthenticatedRequest, res: express.Response,
+) => {
+  try {
+    const grant = await RoomGrant.findOne({ grantId: req.params.grantId });
+    if (!grant) return res.status(404).json({ error: 'grant_not_found' });
+    const userId = callerId(req);
+    if (!userId || !grant.ownerId || grant.ownerId !== userId) {
+      return res.status(403).json({ error: 'access_denied' });
+    }
+    if (grant.parentGrantId) {
+      return res.status(400).json({ error: 'not_root_grant', message: 'remove the agent from the grant it was named on' });
+    }
+    const agentId = String(req.params.agentId || '');
+    if (!namedByoAgentIds(grant).includes(agentId)) {
+      return res.status(404).json({ error: 'agent_not_named' });
+    }
+    await RoomGrant.updateMany(
+      { $or: [{ grantId: grant.grantId }, { rootGrantId: grant.grantId }] },
+      { $pull: { byoAgents: agentId, audience: agentId, 'byoConsent.agents': { userId: agentId } } },
+    );
+    // Only what changed: the raw row carries connectionId and brokerId, which
+    // no grant read returns.
+    const updated = await RoomGrant.findOne({ grantId: grant.grantId }).select('grantId byoAgents byoConsent').lean();
+    const target = grant.target as { kind?: string; id?: unknown } | undefined;
+    const stillInPod = target?.kind === 'pod'
+      && Boolean(await Pod.exists({ _id: target.id, members: agentId }));
+    return res.json({ grantId: grant.grantId, byoAgents: namedByoAgentIds(updated), pausedWhileInPod: stillInPod });
+  } catch (error) {
+    return handleError(res, error);
+  }
+});
 
 router.post('/:grantId/revoke', grantRateLimit, auth, revokeHandler);
 router.delete('/:grantId', grantRateLimit, auth, revokeHandler);

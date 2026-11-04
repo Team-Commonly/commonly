@@ -26,6 +26,19 @@ export interface IRoomGrantTarget {
 export type RoomGrantBindingEndsOn = 'task.done';
 export interface RoomGrantTaskBinding { taskId: string; podId: string; endsOn: RoomGrantBindingEndsOn }
 
+/**
+ * F94: the granter's consent, recorded at mint, that the named agents run
+ * outside Commonly (on the granter's own computer) and that whatever they read
+ * through this grant can leave through them. `sandbox` is what the server knew
+ * of each agent's confinement at mint.
+ */
+export interface IRoomGrantByoConsent {
+  by: string;
+  at: Date;
+  version: 'byo-v1';
+  agents: Array<{ userId: string; sandbox: 'confined' | 'unconfined' | 'unknown' }>;
+}
+
 export interface IRoomGrant extends Document {
   binding?: RoomGrantTaskBinding;
   taskEpoch?: number;
@@ -39,6 +52,13 @@ export interface IRoomGrant extends Document {
   budget?: IRoomGrantBudget;
   /** Snapshot at mint time. Effective audience is this list ∩ current members. */
   audience: string[];
+  /**
+   * F94: agents (user ids, a subset of `audience`) that run outside the
+   * narrowed native runtime and were named by the granter, who owns them. Read
+   * only together with `byoConsent`; a grant with no consent names nobody.
+   */
+  byoAgents?: string[];
+  byoConsent?: IRoomGrantByoConsent | null;
   expiresAt: Date;
   revokedAt?: Date | null;
   /** User who revoked this grant (and its descendants), when known. */
@@ -115,6 +135,22 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
     },
     budget: { type: GrantBudgetSchema },
     audience: { type: [String], required: true, default: [] },
+    byoAgents: { type: [String], default: undefined },
+    byoConsent: {
+      type: new Schema({
+        by: { type: String, required: true },
+        at: { type: Date, required: true },
+        version: { type: String, enum: ['byo-v1'], required: true },
+        agents: {
+          type: [new Schema({
+            userId: { type: String, required: true },
+            sandbox: { type: String, enum: ['confined', 'unconfined', 'unknown'], required: true },
+          }, { _id: false })],
+          default: [],
+        },
+      }, { _id: false }),
+      default: undefined,
+    },
     // No TTL index: expiry is a capability check and an audit fact, not a
     // reason to delete the grant or its call trail.
     expiresAt: { type: Date, required: true },

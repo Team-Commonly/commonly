@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'crypto';
 import Pod from '../models/Pod';
 import Integration from '../models/Integration';
 import RoomGrant, { IRoomGrant, RoomGrantWriteMode } from '../models/RoomGrant';
-import ToolCall, { digestArgs, reserveBudgetLineage } from '../models/ToolCall';
+import ToolCall, { digestArgs, reserveBudgetLineage, type CallerConfinement } from '../models/ToolCall';
 import {
   assertGrantToolAllowed,
   assertGrantUsable,
@@ -17,6 +17,7 @@ import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpTool
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import { assertPinnedArgValues } from './hostedMcpArgValues';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from './outsiderGrantPodEligibility';
+import { byoPodExemptAgentIds, namingLiftsFor, namingLiftsRefusal } from './byoGrantNaming';
 import { recordBrokerCall } from './brokerRecordService';
 import { parseSeatPushArgs, pushSeatBranch, SeatPushError } from './seatGithubPush';
 
@@ -1017,7 +1018,9 @@ const loadGrantForAgent = async (input: {
 
 const assertOutsiderGrantPodEligible = async (grant: IRoomGrant | Record<string, unknown>): Promise<void> => {
   const target = (grant as Record<string, unknown>).target as { kind?: string; id?: unknown } | undefined;
-  const refusal = await outsiderGrantPodRefusal(target || {}, (grant as Record<string, unknown>).writeMode);
+  const refusal = await outsiderGrantPodRefusal(target || {}, (grant as Record<string, unknown>).writeMode, {
+    exemptAgentIds: await byoPodExemptAgentIds(grant),
+  });
   if (refusal) {
     throw new RoomGrantError(
       `outsider_grant_${refusal}`,
@@ -1059,7 +1062,7 @@ export const listToolsForGrant = async (input: {
   // A list is a capability disclosure, and the refusal covers the list as well
   // as the call: a seat that may not use the grant must not be handed its tool
   // definitions (TASK-146's rule, now for the seat's own confinement).
-  await assertSeatCanConfine(input);
+  await assertSeatCanConfine(input, grant);
   await assertOutsiderGrantPodEligible(grant);
 
   const allowed = allToolDefinitions().filter((definition) => {
@@ -1125,20 +1128,28 @@ export const listToolsForGrant = async (input: {
  * It runs before any tool work — before the connection is resolved, the
  * approval parked, or a budget line spent — because a refusal is not a
  * spendable call; the shared catch trails it `refused`.
+ *
+ * F94: an agent the grant names (the granter's own, with consent recorded at
+ * mint) uses it unconfined. The unconfined-host refusal (native Windows) is
+ * never lifted. Returns what the call record stores as the caller's state.
  */
 const assertSeatCanConfine = async (input: {
   agentName?: string;
   instanceId?: string;
   agentUserId: string;
   hostedTurn?: boolean;
-}): Promise<void> => {
-  if (input.hostedTurn) return;
+}, grant?: IRoomGrant | Record<string, unknown>): Promise<CallerConfinement> => {
+  if (input.hostedTurn) return 'hosted';
   const judgement = await judgeSeatConfinement({
     agentName: input.agentName,
     instanceId: input.instanceId,
     agentUserId: input.agentUserId,
   });
-  if (!judgement.refusal) return;
+  if (!judgement.refusal) return judgement.scope === 'seat' ? 'confined' : 'unjudged';
+  if (!judgement.hostUnconfined && namingLiftsRefusal(judgement.refusal)
+    && await namingLiftsFor(grant, input.agentUserId)) {
+    return 'named_unconfined';
+  }
   throw new RoomGrantError(
     GRANT_BROKER_REFUSAL_CODE,
     judgement.refusal.detail,
@@ -1325,6 +1336,7 @@ const recordCall = async (
     providerRepo?: string;
     vendorStatus?: number;
     vendorError?: string;
+    callerConfinement?: CallerConfinement;
   },
 ): Promise<string> => {
   const callId = overrides?.callId || `tool_call_${randomUUID()}`;
@@ -1349,6 +1361,7 @@ const recordCall = async (
       ? (input.args as { ref: string }).ref : undefined,
     approvalId: overrides?.approvalId,
     durationMs: Math.max(0, Date.now() - startedAt),
+    callerConfinement: overrides?.callerConfinement,
   });
   // The trail row has committed; the record mirrors it (ADR-033 B1, B2, B5).
   recordBrokerCall({
@@ -1400,6 +1413,7 @@ const recordExecutionResult = async (
     args?: unknown;
     credentialOwnerId?: string;
     providerRepo?: string;
+    callerConfinement?: CallerConfinement;
   },
 ): Promise<{ callId: string; outcome: 'ok' | 'failed' }> => {
   const upstreamToolError = isToolErrorResult(result);
@@ -1464,6 +1478,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
   // names the owner on the error and is preferred by the catch.
   let credentialOwnerId: string | undefined;
   let providerRepo: string | undefined;
+  let callerConfinement: CallerConfinement | undefined;
 
   try {
     grant = await loadGrantForAgent({ grantId: input.grantId, agentUserId: input.agentUserId });
@@ -1478,7 +1493,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       // Required mode comes only from this server-side definition map.
       requiredWriteMode: definition.requiredWriteMode,
     });
-    await assertSeatCanConfine(input);
+    callerConfinement = await assertSeatCanConfine(input, grant);
     await assertOutsiderGrantPodEligible(grant);
     // The call-time half of hostedBrokerToolsForRun's rule: a hosted turn uses a
     // task-bound grant only from inside its task's pod.
@@ -1582,6 +1597,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           callId,
           args: canonicalArgs,
           credentialOwnerId,
+          callerConfinement,
         });
         throw new RoomGrantError(cause.code, cause.message, cause.statusCode, {
           recorded: true,
@@ -1593,6 +1609,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
           callId,
           args: canonicalArgs,
           credentialOwnerId,
+          callerConfinement,
         });
         throw new RoomGrantError('approval_unavailable', 'approval card could not be created', 503, {
           recorded: true,
@@ -1604,6 +1621,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
         approvalId: proposal?.approvalId,
         args: canonicalArgs,
         credentialOwnerId,
+        callerConfinement,
       });
       const approvalError = new RoomGrantError(
         'approval_required',
@@ -1634,7 +1652,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       grant,
       result,
       startedAt,
-      { credentialOwnerId, providerRepo },
+      { credentialOwnerId, providerRepo, callerConfinement },
     );
     return {
       ...recorded,
@@ -1653,6 +1671,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       ? String(error.details?.callId || '')
       : await recordCall(input, grant, outcome, startedAt, reason, {
         credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+        callerConfinement,
         providerRepo,
         vendorStatus: error instanceof RoomGrantError && typeof error.details?.vendorStatus === 'number'
           ? error.details.vendorStatus : undefined,

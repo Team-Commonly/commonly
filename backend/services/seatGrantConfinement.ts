@@ -39,6 +39,11 @@ export type SeatConfinementScope = 'seat' | 'unbound';
 export interface SeatConfinementJudgement {
   refusal: GrantBrokerRefusal | null;
   scope: SeatConfinementScope;
+  /**
+   * The seat's machine reported no sandbox Commonly can enforce (D245). Unlike
+   * a declaration, no consent lifts this one (F94, ruling A).
+   */
+  hostUnconfined?: true;
 }
 
 export interface SeatCallerIdentity {
@@ -143,7 +148,7 @@ const onUnconfinedHost = async (machineId: unknown): Promise<boolean> => {
 export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<SeatConfinementJudgement> => {
   const seat = await loadSeat(caller.agentUserId);
   if (await onUnconfinedHost(seat?.botMetadata?.machineId)) {
-    return { refusal: UNCONFINED_HOST_REFUSAL, scope: 'seat' };
+    return { refusal: UNCONFINED_HOST_REFUSAL, scope: 'seat', hostUnconfined: true };
   }
   const keys = seatKeysFor(caller, seat);
   const owners = await ownerIdsFor(keys);

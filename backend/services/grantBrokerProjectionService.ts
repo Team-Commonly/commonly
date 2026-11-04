@@ -43,6 +43,9 @@ export interface LiveGrant {
   audience?: unknown[];
   tools?: unknown[];
   writeMode?: string;
+  /** F94: read through `namedByoAgentIds`, which honours them only with consent. */
+  byoAgents?: unknown[];
+  byoConsent?: unknown;
 }
 
 /**
@@ -55,11 +58,18 @@ export interface LiveGrant {
 export const GRANT_BROKER_TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
 /** The MCP server handed to a daemon seat: one URL per grant. */
-export const grantBrokerServer = (grantId: string, name: string): Record<string, unknown> => ({
+export const grantBrokerServer = (
+  grantId: string,
+  name: string,
+  options: { byoNamed?: boolean } = {},
+): Record<string, unknown> => ({
   name,
   transport: 'http',
   url: GRANT_BROKER_URL.replace('${COMMONLY_GRANT_ID}', encodeURIComponent(grantId)),
   headers: { Authorization: GRANT_BROKER_AUTHORIZATION },
+  // F94: the grant names this seat, so the daemon delivers it to a seat it
+  // cannot confine. Delivery only: the broker re-checks the naming per call.
+  ...(options.byoNamed ? { byoNamed: true } : {}),
 });
 
 /**
@@ -105,7 +115,7 @@ export const selectLiveGrantsForIdentities = async (
     revokedAt: null,
     expiresAt: { $gt: new Date() },
     audience: { $in: ids },
-  }).select('grantId target audience tools writeMode binding taskEpoch expiresAt revokedAt parentGrantId').lean() as LiveGrant[];
+  }).select('grantId target audience tools writeMode binding taskEpoch expiresAt revokedAt parentGrantId ownerId byoAgents byoConsent').lean() as LiveGrant[];
   if (!grants.length) return output;
 
   const pods = scopedPodIds.length

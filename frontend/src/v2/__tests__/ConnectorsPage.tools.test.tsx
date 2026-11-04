@@ -1568,3 +1568,147 @@ describe('Linear write reconnect note', () => {
     expect(within(pop).queryByRole('note')).not.toBeInTheDocument();
   });
 });
+
+describe('F94: naming your own agent that runs outside Commonly', () => {
+  const claude = { name: 'claude-code', displayName: 'Claude', userId: 'b1' };
+  const candidate = (over = {}) => ({ userId: 'b1', agentName: 'claude-code', instanceId: 'default', nameable: true, sandbox: 'confined', ...over });
+  const byoRoute = (agents) => (url) => (url === '/api/grants/byo-candidates' ? Promise.resolve({ data: { agents } }) : undefined);
+  const openAdd = async (agents, seats = { p1: [scout, claude], p2: [] }) => {
+    mockTools({ grants: [], seats, route: byoRoute(agents) });
+    axios.post.mockResolvedValue({ data: { grantId: 'grant_new' } });
+    renderPage();
+    const popover = await openToolPopover('GitHub');
+    fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
+    const form = await screen.findByRole('complementary', { name: 'Add GitHub' });
+    await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/grants/byo-candidates', expect.objectContaining({ params: { podId: 'p1' } })));
+    await settle();
+    return form;
+  };
+  const NOTICE = 'Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.';
+  const consentBox = (form) => within(form).getByRole('checkbox', { name: new RegExp(NOTICE) });
+
+  it('a confined agent is disclosed without "with no sandbox"', async () => {
+    const form = await openAdd([candidate({ sandbox: 'confined' })]);
+    expect(consentBox(form)).toHaveAccessibleName(`Claude runs on your computer, outside Commonly. ${NOTICE}`);
+  });
+
+  it('an unconfined agent is disclosed "with no sandbox"', async () => {
+    const form = await openAdd([candidate({ sandbox: 'unconfined' })]);
+    expect(consentBox(form)).toHaveAccessibleName(`Claude runs on your computer, outside Commonly, with no sandbox. ${NOTICE}`);
+  });
+
+  it('an agent whose sandbox is unknown reads as having none', async () => {
+    const form = await openAdd([candidate({ sandbox: 'unknown' })]);
+    expect(consentBox(form)).toHaveAccessibleName(`Claude runs on your computer, outside Commonly, with no sandbox. ${NOTICE}`);
+  });
+
+  it('Grant waits for the consent, and the mint names the agent read-only', async () => {
+    const form = await openAdd([candidate()]);
+    const grant = within(form).getByRole('button', { name: 'Grant' });
+    expect(grant).toBeDisabled();
+    fireEvent.click(consentBox(form));
+    expect(grant).toBeEnabled();
+    fireEvent.click(grant);
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({
+      writeMode: 'read', audience: ['a1', 'b1'], byoAgents: ['b1'], byoConsent: true,
+    }), expect.anything()));
+  });
+
+  it('without a checked agent of yours, the mint carries no naming and no consent shows', async () => {
+    const form = await openAdd([candidate()]);
+    fireEvent.click(within(form).getByRole('checkbox', { name: 'Claude' }));
+    expect(within(form).queryByRole('checkbox', { name: new RegExp(NOTICE) })).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalled());
+    const body = axios.post.mock.calls.find(([url]) => url === '/api/grants')[1];
+    expect(body).not.toHaveProperty('byoAgents');
+    expect(body).not.toHaveProperty('byoConsent');
+  });
+
+  it('write modes are off while an agent of yours is checked', async () => {
+    const form = await openAdd([candidate()]);
+    expect(within(form).getByRole('button', { name: 'read and write' })).toBeDisabled();
+    expect(within(form).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(form).getByText('An agent on your computer can only read.')).toBeInTheDocument();
+    fireEvent.click(within(form).getByRole('checkbox', { name: 'Claude' }));
+    expect(within(form).getByRole('button', { name: 'read and write' })).toBeEnabled();
+  });
+
+  it('checking an agent of yours after picking a write mode puts the draft back to read', async () => {
+    const form = await openAdd([candidate()]);
+    fireEvent.click(within(form).getByRole('checkbox', { name: 'Claude' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'read and write' }));
+    expect(within(form).getByRole('button', { name: 'read and write' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(form).getByRole('checkbox', { name: 'Claude' }));
+    expect(within(form).getByRole('button', { name: 'read' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('a consent covers only the agents it was ticked for', async () => {
+    const codex = { name: 'codex', displayName: 'Codex', userId: 'b2' };
+    const form = await openAdd(
+      [candidate(), candidate({ userId: 'b2', agentName: 'codex' })],
+      { p1: [scout, claude, codex], p2: [] },
+    );
+    const grant = within(form).getByRole('button', { name: 'Grant' });
+    fireEvent.click(within(form).getByRole('checkbox', { name: 'Codex' }));
+    fireEvent.click(consentBox(form));
+    expect(grant).toBeEnabled();
+    fireEvent.click(within(form).getByRole('checkbox', { name: 'Codex' }));
+    expect(grant).toBeDisabled();
+  });
+
+  it('a child grant shows its named agents without Remove, which only the grant they were named on can do', async () => {
+    const child = {
+      ...grantLive, parentGrantId: 'grant_root', writeMode: 'read', tools: ['github.list_issues'], effectiveAudience: ['a1', 'b1'],
+      byoAgents: ['b1'],
+      byoConsent: { by: 'u1', at: iso(-3600000), version: 'byo-v1', agents: [{ userId: 'b1', sandbox: 'unconfined' }] },
+    };
+    mockTools({ grants: [child], seats: { p1: [scout, claude], p2: [] } });
+    renderPage();
+    const { aside } = await openRow('GitHub', 'View GitHub in Launch pod');
+    expect(within(aside).getByText('Claude runs outside Commonly, with no sandbox')).toBeInTheDocument();
+    expect(within(aside).queryByRole('button', { name: 'Remove Claude from this grant' })).toBeNull();
+  });
+
+  it('an agent no grant can name is offered disabled with its reason, and never submitted', async () => {
+    const form = await openAdd([candidate({ nameable: false, reason: 'unconfined_host', sandbox: 'unconfined' })]);
+    const box = within(form).getByRole('checkbox', { name: 'Claude' });
+    expect(box).toBeDisabled();
+    expect(box).not.toBeChecked();
+    expect(within(form).getByText('Runs on native Windows, where no grant can be used.')).toBeInTheDocument();
+    expect(within(form).queryByRole('checkbox', { name: new RegExp(NOTICE) })).toBeNull();
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants', expect.objectContaining({ audience: ['a1'] }), expect.anything()));
+  });
+
+  it('an agent the roster hides still appears so it can be named', async () => {
+    const form = await openAdd([candidate()], { p1: [scout], p2: [] });
+    expect(within(form).getByRole('checkbox', { name: 'claude-code' })).toBeInTheDocument();
+  });
+
+  it('a consent refusal reads in the page\'s words', async () => {
+    const form = await openAdd([candidate()]);
+    axios.post.mockRejectedValueOnce({ response: { status: 403, data: { error: 'byo_consent_required', message: 'raw' } } });
+    fireEvent.click(consentBox(form));
+    fireEvent.click(within(form).getByRole('button', { name: 'Grant' }));
+    expect(await within(form).findByText('Tick the box to confirm that what this agent reads can leave through it.')).toBeInTheDocument();
+  });
+
+  it('a grant lists its named agents with their sandbox state, and Remove takes one off', async () => {
+    const named = {
+      ...grantLive, writeMode: 'read', tools: ['github.list_issues'], effectiveAudience: ['a1', 'b1'],
+      byoAgents: ['b1'],
+      byoConsent: { by: 'u1', at: iso(-3600000), version: 'byo-v1', agents: [{ userId: 'b1', sandbox: 'unconfined' }] },
+    };
+    mockTools({ grants: [named], seats: { p1: [scout, claude], p2: [] } });
+    axios.delete.mockResolvedValue({ data: { ...named, byoAgents: [] } });
+    renderPage();
+    const { aside } = await openRow('GitHub', 'View GitHub in Launch pod');
+    expect(within(aside).getByText('Claude runs outside Commonly, with no sandbox')).toBeInTheDocument();
+    expect(within(aside).getByText('While an agent is still in this Pod, removing it pauses the whole grant. Take the agent out of the Pod to resume it.')).toBeInTheDocument();
+    const before = grantReads().length;
+    fireEvent.click(within(aside).getByRole('button', { name: 'Remove Claude from this grant' }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/grants/grant_live/byo-agents/b1', expect.any(Object)));
+    await waitFor(() => expect(grantReads().length).toBeGreaterThan(before));
+  });
+});

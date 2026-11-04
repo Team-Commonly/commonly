@@ -244,9 +244,18 @@ export const withholdGrantBroker = (environment, adapter, {
   const reason = confinementReason(environment, adapter, platform);
   if (!reason) return environment;
 
-  const kept = environment.mcp.filter((server) => !isOurGrantBroker(server, { instanceUrl }));
+  // F94: the server flags a broker whose grant names this seat (the granter's
+  // own agent, with consent) so it rides a seat no sandbox confines. Delivery
+  // only; the broker checks the naming on every call. Never on native Windows,
+  // and never for an adapter not approved for the broker.
+  const rides = (server) => server?.byoNamed === true
+    && reason !== 'adapter_cannot_confine' && platform !== 'win32';
+  const isWithheld = (server) => isOurGrantBroker(server, { instanceUrl }) && !rides(server);
+  if (!environment.mcp.some(isWithheld)) return environment;
+
+  const kept = environment.mcp.filter((server) => !isWithheld(server));
   const withheld = environment.mcp
-    .filter((server) => isOurGrantBroker(server, { instanceUrl }))
+    .filter(isWithheld)
     .map((server) => (typeof server?.name === 'string' && server.name ? server.name : '(unnamed)'));
   if (typeof onRefuse === 'function') {
     onRefuse({

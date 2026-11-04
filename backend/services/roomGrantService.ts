@@ -5,6 +5,7 @@ import Task from '../models/Task';
 import Pod from '../models/Pod';
 import RoomGrant, {
   IRoomGrant,
+  IRoomGrantByoConsent,
   IRoomGrantBudget,
   RoomGrantTargetKind,
   RoomGrantTaskBinding,
@@ -22,6 +23,9 @@ export interface RoomGrantCreateInput {
   writeMode: RoomGrantWriteMode;
   budget?: IRoomGrantBudget;
   audience: string[];
+  /** F94: set by the mint route after its checks, never copied from the body. */
+  byoAgents?: string[];
+  byoConsent?: IRoomGrantByoConsent;
   expiresAt: Date | string | number;
   brokerId: string;
   parentGrantId?: string;
@@ -468,6 +472,11 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
     writeMode: validateWriteMode(input.writeMode),
     budget,
     audience: uniqueStrings(input.audience, 'audience'),
+    // The consent is kept whenever there is one, even for a child that names
+    // nobody: the pod gate exempts by it (F94). The mint route only builds one
+    // with named agents.
+    ...(input.byoConsent
+      ? { byoAgents: uniqueStrings(input.byoAgents || [], 'byoAgents'), byoConsent: input.byoConsent } : {}),
     expiresAt,
     parentGrantId,
     rootGrantId,
@@ -599,6 +608,14 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
     writeMode,
     budget,
     audience,
+    // A child names only the parent's BYO agents it still reaches, under the
+    // parent's consent; it can never name a new one. The consent rides even
+    // when the child names nobody: the pod gate exempts by it, so a grandchild
+    // of a child scoped away from the agent still works in the shared pod.
+    ...(parent.byoConsent ? {
+      byoAgents: (parent.byoAgents || []).map(String).filter((id) => audience.includes(id)),
+      byoConsent: parent.byoConsent,
+    } : {}),
     expiresAt,
     parentGrantId,
     brokerId: parent.brokerId,

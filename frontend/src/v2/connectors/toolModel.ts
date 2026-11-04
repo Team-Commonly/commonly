@@ -27,6 +27,25 @@ export interface ToolGrant {
    * known connector.
    */
   connector?: { id: string; label: string } | null;
+  /**
+   * F94: the granter's own agents that run outside Commonly, named on this
+   * read-only grant, and the consent that named them with each one's sandbox
+   * state as it was recorded then.
+   */
+  byoAgents?: string[];
+  byoConsent?: { by: string; at: string; version: string; agents: Array<{ userId: string; sandbox: ByoSandbox }> };
+}
+
+export type ByoSandbox = 'confined' | 'unconfined' | 'unknown';
+
+/** One of the viewer's agents in a pod that runs outside Commonly (GET /api/grants/byo-candidates). */
+export interface ByoCandidate {
+  userId: string;
+  agentName: string;
+  instanceId: string;
+  nameable: boolean;
+  reason?: 'unconfined_host' | 'adapter_unsupported';
+  sandbox: ByoSandbox;
 }
 
 /** `superseded` is a DERIVED read-only value the server reports for a parked
@@ -138,6 +157,11 @@ export interface DraftGrant {
   expiryDays: 7 | 30 | 90;
   /** Change access: the grant this one replaces (revoked after the mint). */
   replaces: string | null;
+  /**
+   * F94: the named agents the person consented for, as a key. A consent covers
+   * exactly the agents it was given for, so checking another one clears it.
+   */
+  byoConsentFor?: string | null;
 }
 
 export interface GithubAppSetup {

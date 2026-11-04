@@ -11,7 +11,7 @@ const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 // two lanes claiming the same number conflict on this line.
 const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql', '0003_self_created_tables.sql',
   '0004_tool_call_provider_ref.sql', '0005_message_summary_kind.sql',
-  '0006_message_receipt.sql'];
+  '0006_message_receipt.sql', '0007_tool_call_caller_confinement.sql'];
 // The three tables 0003 took over from runtime DDL, and every column each must
 // end with (0004 adds tool_calls' provider columns). Shared by the fresh and the
 // retrofit case: both must reach it.
@@ -21,7 +21,8 @@ const SELF_CREATED = {
   tool_call_budgets: ['grant_id', 'calls_used', 'window_started_at'],
   tool_calls: ['call_id', 'grant_id', 'pod_id', 'installation_id', 'agent_user_id', 'tool',
     'args_digest', 'occurred_at', 'outcome', 'reason', 'approval_id', 'duration_ms',
-    'credential_owner_id', 'vendor_status', 'vendor_error', 'provider_repo', 'provider_ref'],
+    'credential_owner_id', 'vendor_status', 'vendor_error', 'provider_repo', 'provider_ref',
+    'caller_confinement'],
 };
 const COLUMNS_SQL = `SELECT column_name FROM information_schema.columns
   WHERE table_schema = current_schema() AND table_name = $1`;
