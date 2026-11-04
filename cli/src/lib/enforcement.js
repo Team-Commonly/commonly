@@ -668,6 +668,9 @@ export const deliverChatReply = async ({
   attachThreshold = 800,
   uploadName = 'reply.md',
   log = () => {},
+  // D245 item 4: how this reply was made (lib/reply-receipt.js). It rides
+  // the first message that actually reaches the pod and no later one.
+  receipt = null,
 }) => {
   const messagesPath = `/api/agents/runtime/pods/${podId}/messages`;
   const chunks = splitForChat(text, { limit });
@@ -697,7 +700,14 @@ export const deliverChatReply = async ({
   // override per delivery; a post that still fails throws to the next rung as
   // before. Nothing here loops.
   let freshnessOverride = false;
-  const postMessage = async (body) => {
+  let receiptDelivered = !receipt;
+  const postOnce = async (rawBody) => {
+    const body = receiptDelivered ? rawBody : { ...rawBody, receipt };
+    const response = await postGuarded(body);
+    if (response?.refused !== true && response?.skipped !== true) receiptDelivered = true;
+    return response;
+  };
+  const postGuarded = async (body) => {
     if (freshnessOverride) return client.post(messagesPath, { ...body, continueAnyway: true });
     try {
       return await client.post(messagesPath, body);
@@ -774,7 +784,7 @@ export const deliverChatReply = async ({
   // the gate (found by the fleet's implementation audit).
   const hasIndivisibleOversize = chunks.some((c) => c.length > attachThreshold);
   if (chunks.length <= 1 && !hasIndivisibleOversize) {
-    const response = await postMessage({ content: chunks[0] ?? text });
+    const response = await postOnce({ content: chunks[0] ?? text });
     if (undelivered(response)) return nonDelivery(response, 0, 1);
     return { mode: 'single', messages: 1 };
   }
@@ -782,7 +792,7 @@ export const deliverChatReply = async ({
     let messages = 0;
     for (const chunk of chunks) {
       // eslint-disable-next-line no-await-in-loop
-      const response = await postMessage({ content: chunk }); // in order, so the reply reads top-down
+      const response = await postOnce({ content: chunk }); // in order, so the reply reads top-down
       if (undelivered(response)) return nonDelivery(response, messages, chunks.length);
       messages += 1;
     }
@@ -802,7 +812,7 @@ export const deliverChatReply = async ({
     // fail at the root-id step before any continuation has posted.
     let posted = 0;
     try {
-      const rootRes = await postMessage({ content: chunks[0] });
+      const rootRes = await postOnce({ content: chunks[0] });
       if (undelivered(rootRes)) return nonDelivery(rootRes, 0, chunks.length);
       posted = 1;
       // The runtime route answers `res.json(result)` with the created row on
@@ -814,7 +824,7 @@ export const deliverChatReply = async ({
       if (!rootId) throw new Error('no message id in post response — cannot root the thread');
       for (const chunk of chunks.slice(1)) {
         // eslint-disable-next-line no-await-in-loop
-        const response = await postMessage({ content: chunk, threadRootId: String(rootId) });
+        const response = await postOnce({ content: chunk, threadRootId: String(rootId) });
         if (undelivered(response)) return nonDelivery(response, posted, chunks.length);
         posted += 1;
       }
@@ -829,7 +839,7 @@ export const deliverChatReply = async ({
         log(`thread continuation failed (${err.message}) — posting the remainder top-level`);
         for (const chunk of chunks.slice(posted)) {
           // eslint-disable-next-line no-await-in-loop
-          const response = await postMessage({ content: chunk });
+          const response = await postOnce({ content: chunk });
           if (undelivered(response)) return nonDelivery(response, posted, chunks.length);
           posted += 1;
         }
@@ -855,7 +865,7 @@ export const deliverChatReply = async ({
     const lead = chunks[0] && chunks[0].length <= limit
       ? chunks[0]
       : '(reply too large for chat — attached in full)';
-    const response = await postMessage({ content: `${lead}\n\n${directive}` });
+    const response = await postOnce({ content: `${lead}\n\n${directive}` });
     if (undelivered(response)) return nonDelivery(response, 0, 1);
     return { mode: 'attach', messages: 1 };
   } catch (err) {
@@ -863,7 +873,7 @@ export const deliverChatReply = async ({
     let messages = 0;
     for (const chunk of chunks) {
       // eslint-disable-next-line no-await-in-loop
-      const response = await postMessage({ content: chunk });
+      const response = await postOnce({ content: chunk });
       if (undelivered(response)) return nonDelivery(response, messages, chunks.length);
       messages += 1;
     }

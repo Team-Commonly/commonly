@@ -130,9 +130,12 @@ const ctxShape = (ctx) => Object.fromEntries(Object.keys(ctx).sort().map((key) =
   return [key, value === undefined ? '<undefined>' : value];
 }));
 
-const normalise = (value) => JSON.parse(JSON.stringify(value, (_key, v) => (
-  typeof v === 'string' ? v.split(home).join('<HOME>').split(os.tmpdir()).join('<TMPDIR>') : v
-)));
+// A reply receipt's duration is wall-clock (D245 item 4); the golden pins
+// that it is there, not how long the stub took.
+const normalise = (value) => JSON.parse(JSON.stringify(value, (key, v) => {
+  if (key === 'durationMs' && typeof v === 'number') return '<ms>';
+  return typeof v === 'string' ? v.split(home).join('<HOME>').split(os.tmpdir()).join('<TMPDIR>') : v;
+}));
 
 const SCENARIOS = {
   success: {

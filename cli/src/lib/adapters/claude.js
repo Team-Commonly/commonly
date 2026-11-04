@@ -53,6 +53,7 @@ import { describeTurnReap, markTurn, turnReapEnabled } from '@commonlyai/seats/t
  */
 
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
+import { claudeRunStats } from '../reply-receipt.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { accessSync, constants, realpathSync } from 'fs';
@@ -1521,6 +1522,8 @@ export default {
         text: turnReply(stdout, { credentials: spawnCredentials(spawnCtx), publicMcp: witnessedMcp }),
         newSessionId: sessionId,
         contextTokens,
+        // D245 item 4: what the run said about itself, for the reply receipt.
+        stats: claudeRunStats(stdout),
       };
     } catch (err) {
       // A public seat's refusal is not a session-store failure, whatever its
@@ -1591,6 +1594,7 @@ export default {
           text: turnReply(stdout, { credentials: spawnCredentials(retryCtx), publicMcp: witnessedMcp }),
           newSessionId: freshId,
           contextTokens,
+          stats: claudeRunStats(stdout),
         };
       }
       throw err;

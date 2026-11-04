@@ -94,6 +94,14 @@ const drainMicrotasks = async () => {
 
 let savedGitConfig;
 
+
+// D245 item 4: a reply the wrapper posts carries its receipt (lib/reply-receipt.js).
+const reply = (content, extra = {}) => ({
+  content,
+  receipt: expect.objectContaining({ adapter: expect.any(String), durationMs: expect.any(Number) }),
+  ...extra,
+});
+
 describe('performRun', () => {
   beforeEach(() => {
     savedGitConfig = new Map(['GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0']
@@ -201,7 +209,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'hello back' },
+      reply('hello back'),
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
@@ -830,7 +838,7 @@ describe('performRun', () => {
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'Hi! What are you working on today?' },
+      reply('Hi! What are you working on today?'),
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-first-contact/ack',
@@ -917,7 +925,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'my real reply' },
+      reply('my real reply'),
     );
   });
 
@@ -964,7 +972,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'my real reply' },
+      reply('my real reply'),
     );
   });
 
@@ -1148,7 +1156,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'The release owner needs to choose a date.' },
+      reply('The release owner needs to choose a date.'),
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-hb-update/ack',
@@ -1182,7 +1190,7 @@ describe('performRun', () => {
 
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content },
+      reply(content),
     );
     expect(mockPost).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-hb-prefixed-update/ack',
@@ -1551,7 +1559,7 @@ describe('performRun', () => {
       await drainMicrotasks();
       expect(spawn).toHaveBeenCalledTimes(1);
       expect(replyPosts(post)).toEqual([[
-        '/api/agents/runtime/pods/pod-abc/messages', { content: 'BYO reply' },
+        '/api/agents/runtime/pods/pod-abc/messages', reply('BYO reply'),
       ]]);
       expect(ackPosts(post)).toHaveLength(1);
       expect(wasEventHandled('my-stub', event._id)).toBe(true);
@@ -2212,8 +2220,8 @@ describe('performRun', () => {
 
     expect(held).toBe(true);
     expect(replyPosts(post)).toEqual([
-      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.' }],
-      ['/api/agents/runtime/pods/pod-abc/messages', { content: 'Summary of 43 minutes of work.', continueAnyway: true }],
+      ['/api/agents/runtime/pods/pod-abc/messages', reply('Summary of 43 minutes of work.')],
+      ['/api/agents/runtime/pods/pod-abc/messages', reply('Summary of 43 minutes of work.', { continueAnyway: true })],
     ]);
     expect(logs.some((l) => /posted .* as 1 message \(single\)/.test(l))).toBe(true);
     expect(wasEventHandled('my-stub', event._id)).toBe(true);
@@ -2983,7 +2991,7 @@ describe('performRun — ADR-018 enforcement', () => {
 
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(CLAIM_PATH, { podId: 'pod-abc', leaseSeconds: 90 });
-    expect(post).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', { content: 'on it' });
+    expect(post).toHaveBeenCalledWith('/api/agents/runtime/pods/pod-abc/messages', reply('on it'));
     expect(del).toHaveBeenCalledWith(CLAIM_PATH, { outcome: 'completed' });
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
@@ -3359,7 +3367,7 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'still answering' },
+      reply('still answering'),
     );
   });
 
@@ -3844,7 +3852,7 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(prompt).toContain('materially different');
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'a materially different take' },
+      reply('a materially different take'),
     );
     expect(del).not.toHaveBeenCalled(); // nothing was held
     expect(post).toHaveBeenCalledWith(
@@ -3895,7 +3903,7 @@ describe('performRun — ADR-018 enforcement', () => {
     expect(del).not.toHaveBeenCalled(); // nothing was held
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/pods/pod-abc/messages',
-      { content: 'glad you picked that up — one addition' },
+      reply('glad you picked that up — one addition'),
     );
     expect(post).toHaveBeenCalledWith(
       '/api/agents/runtime/events/evt-1/ack',
