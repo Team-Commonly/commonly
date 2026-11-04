@@ -49,6 +49,7 @@ jest.mock('../../../services/hostedMcpDcrRegistry', () => ({
   ensureDcrClient: jest.fn(),
   dcrClientForRow: jest.fn(),
   refuseDcrClient: jest.fn(),
+  refusalNamesUnknownClient: jest.requireActual('../../../services/hostedMcpDcrRegistry').refusalNamesUnknownClient,
   retireDcrClientIfUnknown: jest.fn(),
 }));
 
