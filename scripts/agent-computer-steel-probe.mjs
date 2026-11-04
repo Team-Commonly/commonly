@@ -215,12 +215,18 @@ record('cdp-nav-redirect-first-leg', 'control', pageHits.some((path) => path.sta
 // loads at all (recorded: Local Network Access puts private and loopback
 // addresses in one space, so only the allowlist keeps such a page out).
 
+// A string as a JavaScript literal for code the page evaluates. JSON.stringify
+// leaves <, >, / and the line separators as they are; escaping them keeps the
+// literal one token wherever the code lands.
+const jsString = (value) => JSON.stringify(String(value))
+  .replace(/[<>/\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+
 const pageFetch = (url, mode) => `Promise.race([
-  fetch(${JSON.stringify(url)}, { mode: ${JSON.stringify(mode)} }).then((r) => 'answered ' + r.type + ' ' + r.status, (e) => 'refused ' + e.message),
+  fetch(${jsString(url)}, { mode: ${jsString(mode)} }).then((r) => 'answered ' + r.type + ' ' + r.status, (e) => 'refused ' + e.message),
   new Promise((resolve) => setTimeout(() => resolve('timeout'), 8000)),
 ])`;
 const pageSocket = (url) => `new Promise((resolve) => {
-  const ws = new WebSocket(${JSON.stringify(url)});
+  const ws = new WebSocket(${jsString(url)});
   ws.onopen = () => { resolve('open'); ws.close(); };
   ws.onerror = () => resolve('error');
   setTimeout(() => resolve('timeout'), 8000);
@@ -229,11 +235,11 @@ const pageImage = (url) => `new Promise((resolve) => {
   const img = new Image();
   img.onload = () => resolve('load');
   img.onerror = () => resolve('error');
-  img.src = ${JSON.stringify(url)};
+  img.src = ${jsString(url)};
   setTimeout(() => resolve('timeout'), 8000);
 })`;
 const inWorker = (body) => `new Promise((resolve) => {
-  const code = 'self.onmessage = async () => { let out; try { out = await (' + ${JSON.stringify(body)} + '); } catch (e) { out = "refused " + e.message; } postMessage(String(out)); };';
+  const code = 'self.onmessage = async () => { let out; try { out = await (' + ${jsString(body)} + '); } catch (e) { out = "refused " + e.message; } postMessage(String(out)); };';
   const worker = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
   worker.onmessage = (m) => resolve(m.data);
   worker.onerror = (e) => resolve('worker error ' + e.message);
@@ -243,7 +249,7 @@ const inWorker = (body) => `new Promise((resolve) => {
 const pageFrame = (url) => `new Promise((resolve) => {
   const frame = document.createElement('iframe');
   frame.onload = () => resolve('load');
-  frame.src = ${JSON.stringify(url)};
+  frame.src = ${jsString(url)};
   document.body.appendChild(frame);
   setTimeout(() => resolve('timeout'), 6000);
 })`;
@@ -324,7 +330,7 @@ await browserCdp.send('Browser.resetPermissions').catch(() => {});
 for (const test of ['page-nav-loopback-ip', 'page-nav-rebind-name']) {
   const url = test === 'page-nav-loopback-ip' ? `${W}/${test}` : `${WN}/${test}`;
   await loadPage(PUBLIC_PAGE);
-  await evaluate(`setTimeout(() => { location.href = ${JSON.stringify(url)}; }, 0); 'set'`);
+  await evaluate(`setTimeout(() => { location.href = ${jsString(url)}; }, 0); 'set'`);
   await sleep(4000);
   record(test, 'assert', reached(test), await evaluate('location.href', 4000));
 }
