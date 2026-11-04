@@ -20,6 +20,7 @@ jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
     find: jest.fn(),
     findOne: jest.fn(),
+    upsert: jest.fn(),
   },
 }));
 
@@ -30,6 +31,7 @@ jest.mock('../../../models/AgentProfile', () => ({
 jest.mock('../../../models/Pod', () => ({
   findById: jest.fn(),
   find: jest.fn(),
+  updateOne: jest.fn(),
 }));
 
 jest.mock('../../../models/User', () => ({
@@ -57,6 +59,20 @@ jest.mock('../../../services/welcomeWakeService', () => ({
   maybeFireWelcomeWake: jest.fn(),
 }));
 
+// The mention-driven auto-join path (autoJoinAgentToPod) requires these at
+// call time; nothing else in the service reads them.
+jest.mock('../../../services/outsiderGrantAgentJoinPolicy', () => ({
+  assertAgentRuntimeMayJoinPod: jest.fn(),
+}));
+
+jest.mock('../../../services/dmService', () => ({
+  sharePod: jest.fn(),
+}));
+
+jest.mock('../../../services/agentMessageService', () => ({
+  postMessage: jest.fn(),
+}));
+
 const AgentMentionService = require('../../../services/agentMentionService');
 const AgentEventService = require('../../../services/agentEventService');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
@@ -65,6 +81,7 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const PGMessage = require('../../../models/pg/Message');
+const AgentIdentityService = require('../../../services/agentIdentityService');
 
 const OWNER = '64aaaaaaaaaaaaaaaaaaaaa1';
 const SEAT_A_BOT = '64bbbbbbbbbbbbbbbbbbbbb1';
@@ -104,6 +121,7 @@ const setup = ({
   podType = 'chat',
   members = [OWNER, SEAT_A_BOT],
   previous = null,
+  contacts = undefined,
 } = {}) => {
   AgentInstallation.find.mockReturnValue({
     select: jest.fn().mockReturnThis(),
@@ -111,7 +129,7 @@ const setup = ({
   });
   AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
   Pod.findById.mockReturnValue({
-    select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ type: podType, members }) }),
+    select: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ type: podType, members, contacts }) }),
     lean: jest.fn().mockResolvedValue({ _id: 'pod-1', type: podType, members }),
   });
   Pod.find.mockReturnValue(leanChain([]));
@@ -142,6 +160,11 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
   beforeEach(() => {
     jest.clearAllMocks();
     AgentEvent.countDocuments.mockResolvedValue(0);
+  });
+
+  afterEach(() => {
+    delete process.env.ENABLE_MENTION_AUTOJOIN;
+    jest.restoreAllMocks();
   });
 
   test('chat.mention (@name): rawContent is exactly what was typed, content keeps its frames', async () => {
@@ -212,5 +235,46 @@ describe('payload.rawContent is the author\'s text without frames (F109)', () =>
     expect(event.payload.rawContent).toBe(TEXT);
     expect(event.payload.content).toContain('[1:1 DM with @');
     expect(event.payload.content.endsWith(`\n\n${TEXT}`)).toBe(true);
+  });
+
+  test('chat.mention via auto-join (pod contact alias): rawContent is exactly what was typed', async () => {
+    // @helper is not installed here; pod.contacts binds it, so the mention
+    // resolves through resolveContactAlias and autoJoinAgentToPod pulls the
+    // agent in before enqueueing.
+    process.env.ENABLE_MENTION_AUTOJOIN = 'true';
+    setup({ contacts: { helper: { agentName: 'helper-bot', instanceId: 'default' } } });
+    const getOrCreate = jest.spyOn(AgentIdentityService, 'getOrCreateAgentUser')
+      .mockResolvedValue({ _id: '64ccccccccccccccccccccc1' });
+    const typed = `@helper ${TEXT}`;
+    await send(typed);
+    expect(getOrCreate).toHaveBeenCalledWith('helper-bot', { instanceId: 'default' });
+    expect(AgentInstallation.upsert).toHaveBeenCalled();
+    const event = calls('chat.mention').find((e) => e.agentName === 'helper-bot');
+    expect(event).toBeDefined();
+    expect(event.payload.autoJoined).toBe(true);
+    expect(event.payload.rawContent).toBe(typed);
+    expect(event.payload.content).toContain(POD_FRAME_MARK);
+    expect(event.payload.content.endsWith(`\n\n${typed}`)).toBe(true);
+  });
+
+  test('chat.mention via the alias fallback (@guide, two scout installs): rawContent is exactly what was typed', async () => {
+    // With two scout installs the single-install rule leaves @guide out of the
+    // mention map, so it resolves through MENTION_ALIASES and fans out to
+    // every scout install.
+    setup({
+      installations: [
+        { agentName: 'scout', instanceId: 'a', displayName: 'Scout A' },
+        { agentName: 'scout', instanceId: 'b', displayName: 'Scout B' },
+      ],
+    });
+    const typed = `@guide ${TEXT}`;
+    await send(typed);
+    const events = calls('chat.mention').filter((e) => e.agentName === 'scout');
+    expect(events.map((e) => e.instanceId).sort()).toEqual(['a', 'b']);
+    events.forEach((event) => {
+      expect(event.payload.rawContent).toBe(typed);
+      expect(event.payload.content).toContain(POD_FRAME_MARK);
+      expect(event.payload.content.endsWith(`\n\n${typed}`)).toBe(true);
+    });
   });
 });
