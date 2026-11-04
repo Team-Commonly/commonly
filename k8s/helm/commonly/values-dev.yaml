@@ -249,12 +249,17 @@ agents:
       pullPolicy: Always
     strategy:
       type: Recreate
+    # TASK-521 (ADR-021): both PVCs were deleted on 2026-11-04 after the
+    # export was verified restorable (copy in the private archive bucket).
+    # Off here, or the next upgrade recreates them empty.
     persistence:
       config:
+        enabled: false
         storageClass: standard-rwo
         size: 1Gi
         accessMode: ReadWriteOnce
       workspace:
+        enabled: false
         storageClass: standard-rwo
         size: 10Gi
         accessMode: ReadWriteOnce
