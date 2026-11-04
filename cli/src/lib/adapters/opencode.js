@@ -21,6 +21,7 @@ import { observeSpawn, controlsFromArguments } from '../runtime-observation.js';
  */
 
 import { requireSeatModel, seatModelRequired } from './seat-model.js';
+import { isPatchAfterNewestTested } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { realpathSync } from 'fs';
@@ -729,16 +730,21 @@ export default {
     if (!TESTED_OPENCODE_VERSIONS.includes(installedVersion)) {
       const mismatch = describeOpenCodeVersionMismatch(installedVersion);
       const allowOverride = process.env[ALLOW_UNTESTED_OPENCODE_VERSION_ENV] === '1';
-      if (isPublic && !allowOverride) {
+      const patchAfterTested = isPatchAfterNewestTested(installedVersion, TESTED_OPENCODE_VERSIONS);
+      if (isPublic && !allowOverride && !patchAfterTested) {
         throw new Error(
           `Public OpenCode seats refuse to run: ${mismatch}. `
           + `To override from the host process, set ${ALLOW_UNTESTED_OPENCODE_VERSION_ENV}=1.`,
         );
       }
+      let outcome = 'trusted seat continues';
+      if (isPublic) {
+        outcome = allowOverride
+          ? `continuing because the host process set ${ALLOW_UNTESTED_OPENCODE_VERSION_ENV}=1`
+          : 'a patch release on the newest smoke-tested line, so the public seat continues';
+      }
       // eslint-disable-next-line no-console
-      console.warn(isPublic
-        ? `[opencode] ${mismatch}; continuing because the host process set ${ALLOW_UNTESTED_OPENCODE_VERSION_ENV}=1`
-        : `[opencode] ${mismatch}; trusted seat continues`);
+      console.warn(`[opencode] ${mismatch}; ${outcome}`);
     }
 
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
