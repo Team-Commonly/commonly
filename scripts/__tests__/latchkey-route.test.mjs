@@ -345,3 +345,15 @@ test('tests.yml runs the probe only when the gate on GitHub-hosted says go', () 
   assert.match(route, /needs: \[changes, latchkey-gate\]/);
   assert.match(route, /GATE_GO: \$\{\{ needs\.latchkey-gate\.outputs\.go \}\}/);
 });
+
+// test-gate's own first step refuses a run whose needs miss any job other than
+// itself and the probe; a new job left out of the list fails the required check
+// on every run, merge queue included (#3440 review, round 2).
+test('tests.yml lists every job but itself and the probe in test-gate needs', () => {
+  const jobsBlock = yml.slice(yml.indexOf('\njobs:\n'));
+  const ids = [...jobsBlock.matchAll(/\n  ([A-Za-z0-9_-]+):\n/g)].map((m) => m[1])
+    .filter((id) => id !== 'test-gate' && id !== 'latchkey-probe');
+  const needs = jobBlock('test-gate').match(/^    needs: \[(.+)\]$/m);
+  assert.ok(needs, 'test-gate has no needs list');
+  assert.deepEqual(needs[1].split(',').map((n) => n.trim()).sort(), ids.sort());
+});

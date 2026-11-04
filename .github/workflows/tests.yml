@@ -413,7 +413,7 @@ jobs:
     name: Test & Coverage
     if: always()
     # latchkey-probe is left out on purpose: see the comment above it.
-    needs: [changes, latchkey-route, latchkey-backstop, backend-tests, backend-checks, frontend-tests, tool-tests, service-test, chart-lint]
+    needs: [changes, latchkey-gate, latchkey-route, latchkey-backstop, backend-tests, backend-checks, frontend-tests, tool-tests, service-test, chart-lint]
     runs-on: ubuntu-latest
     env:
       NEEDS_JSON: ${{ toJSON(needs) }}
