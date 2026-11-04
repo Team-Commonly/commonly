@@ -677,6 +677,13 @@ spec:
           value: {{ .Values.backend.env.nativeRuntimeGuardrails | quote }}
         {{- end }}
 
+        # Pods whose tasks and grants write record-v1 lines (recordService
+        # isRecordEnabled): comma-separated pod ids, or "*". Unset, no pod does.
+        {{- if .Values.backend.env.recordV1Pods }}
+        - name: RECORD_V1_PODS
+          value: {{ .Values.backend.env.recordV1Pods | quote }}
+        {{- end }}
+
         # GCP Secret Manager credentials
         {{- if .Values.externalSecrets.enabled }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
