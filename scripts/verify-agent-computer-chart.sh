@@ -74,6 +74,7 @@ q 'select(.kind == "ConfigMap" and .metadata.name == "agent-computer-chrome-poli
 pj() { "$yq_bin" -N -p json "$1" "$tmp_dir/policy.json" 2> /dev/null || echo "__yq_error__"; }
 test "$(pj '.URLBlocklist | join(",")')" = '*'
 test "$(pj '.URLAllowlist | join(",")')" = 'https://.commonly.me:443'
+test "$(pj '.LoopbackNetworkBlockedForUrls | join(",")')" = '*'
 test "$(pj '.LocalNetworkAccessBlockedForUrls | join(",")')" = '*'
 for bad in '*' 'commonly.me/x' 'commonly.me:8443' 'localhost' '.commonly.me' '127.0.0.1' '10.0.0.5' '[::1]'; do
   if helm template commonly-dev "$chart" "${dev[@]}" --set "agentComputer.users[0]=$user" \

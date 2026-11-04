@@ -26,7 +26,7 @@ with a letter, so no IP literal can be allowed. */ -}}
 {{- $allow = append $allow (printf "https://.%s:443" $host) }}
 {{- end }}
 {{- end }}
-{{- $chromePolicy := dict "URLBlocklist" (list "*") "URLAllowlist" $allow "LocalNetworkAccessBlockedForUrls" (list "*") | toPrettyJson }}
+{{- $chromePolicy := dict "URLBlocklist" (list "*") "URLAllowlist" $allow "LoopbackNetworkBlockedForUrls" (list "*") "LocalNetworkAccessBlockedForUrls" (list "*") | toPrettyJson }}
 ---
 # The browser never calls the Kubernetes API. Its own account has no token and
 # no role, and keeps it off any workload-identity binding on `default`.
@@ -47,9 +47,11 @@ automountServiceAccountToken: false
 #   - URLBlocklist * with URLAllowlist the allowed hosts: a frame navigates
 #     only to an allowed host, redirect hops and names that resolve to
 #     loopback included.
-#   - LocalNetworkAccessBlockedForUrls *: no page, worker or socket reaches a
-#     loopback or private address, with no prompt for a person to accept
-#     during a takeover.
+#   - LoopbackNetworkBlockedForUrls * and LocalNetworkAccessBlockedForUrls *:
+#     no page asks to reach a loopback or private address. Chromium splits
+#     the two since 146, and the loopback entry takes precedence.
+#     Chrome's own default already refuses a public page here, so these back
+#     that default rather than replace it (runbook, "What remains").
 # scripts/agent-computer-steel-probe.sh attacks both in CI.
 apiVersion: v1
 kind: ConfigMap
