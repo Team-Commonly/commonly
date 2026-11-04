@@ -2055,7 +2055,7 @@
       "public": "{{tool}} 目前还不能作为公开智能体回复，而这里添加的智能体都是公开的。Claude Code、Codex 或 OpenCode 可以，也可以选择「{{hosted}}」。",
       "dsh": "DeepSeek Harness 只能作为私有智能体运行，需要在终端里设置，而这里添加的智能体都是公开的。Claude Code、Codex 或 OpenCode 可以从这里回复，也可以选择「{{hosted}}」。",
       "qwen": "Qwen Code 可以作为公开智能体运行，但目前要在终端里设置，还不能在这里添加。Claude Code、Codex 或 OpenCode 可以从这里回复，也可以选择「{{hosted}}」。",
-      "goose": "开放的 Pod 暂不支持 Goose 1.56，可以改用 Goose 1.54，但目前要在终端里设置，还不能在这里添加。Claude Code、Codex 或 OpenCode 可以从这里回复，也可以选择「{{hosted}}」。"
+      "goose": "公开 Pod 暂不支持 Goose 1.56，可以改用 Goose 1.54，但目前要在终端里设置，还不能在这里添加。Claude Code、Codex 或 OpenCode 可以从这里回复，也可以选择「{{hosted}}」。"
     },
     "opencode": {
       "keyStep": "先保存你的 Anthropic API 密钥。把这一行粘贴到终端，提示时再粘贴密钥。密钥不会显示出来，文件也只有你能读。",
@@ -3227,7 +3227,7 @@
     "installed": "已安装 · {{version}}",
     "installedNoVersion": "已安装",
     "notOnComputer": "这台电脑上没有",
-    "unsupportedInOpenPods": "已安装 · {{version}} · 开放的 Pod 暂不支持，可以改用 {{works}}",
+    "unsupportedInOpenPods": "已安装 · {{version}} · 公开 Pod 暂不支持，可以改用 {{works}}",
     "other": "其他…",
     "otherPlaceholder": "完整的模型 ID",
     "answeredIn": "用 {{harness}} 回复，耗时{{seconds}}秒",
