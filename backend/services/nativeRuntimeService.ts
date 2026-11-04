@@ -107,7 +107,22 @@ const MAX_WALL_CLOCK_MS = 60_000;
 // no model fell into a 401 with no fallback group. Follow the chat model the
 // deployment already pays for, so "no model configured" means "the normal
 // model", never "the dead one".
-const DEFAULT_MODEL = process.env.LITELLM_CHAT_MODEL || 'deepseek-v4-flash';
+const LEGACY_DEFAULT_MODEL = 'deepseek-v4-flash';
+// F91 (D243): the deployment's model for native turns (Claude Haiku on dev).
+// Set, it replaces the old platform default wherever that was stored (145 Scout
+// installs carry `config.model: deepseek-v4-flash`), and every turn that holds a
+// connector grant runs on it whatever the installation names, so connector data
+// reaches only this model. Unset, nothing changes.
+const NATIVE_RUNTIME_MODEL = String(process.env.NATIVE_RUNTIME_MODEL || '').trim();
+const DEFAULT_MODEL = NATIVE_RUNTIME_MODEL || process.env.LITELLM_CHAT_MODEL || LEGACY_DEFAULT_MODEL;
+
+export const nativeModelFor = ({
+  configured, connectorRun, nativeModel, chatModel,
+}: { configured?: unknown; connectorRun: boolean; nativeModel: string; chatModel?: string }): string => {
+  const named = String(configured || '').trim();
+  if (nativeModel && (connectorRun || !named || named === LEGACY_DEFAULT_MODEL)) return nativeModel;
+  return named || chatModel || LEGACY_DEFAULT_MODEL;
+};
 const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_000;
 
 // Guardrail opt-in for the native cloud-agent inference path. Unlike dev agents
@@ -249,7 +264,10 @@ export const HOSTED_OFFER_LABEL = 'Run it here';
 // The model a hosted turn runs on. hostedNativeRunConfig leaves `model` unset,
 // so it is DEFAULT_MODEL. Named here for the same reason as the limits: Scout
 // answers "can I use DeepSeek?" from the deployment, not from its own copy.
-const MODEL_DISPLAY_NAMES: Record<string, string> = { 'deepseek-v4-flash': 'DeepSeek V4 Flash' };
+const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  'deepseek-v4-flash': 'DeepSeek V4 Flash',
+  'claude-haiku-5-5': 'Claude Haiku 5.5',
+};
 export const HOSTED_MODEL_NAME = MODEL_DISPLAY_NAMES[DEFAULT_MODEL] || DEFAULT_MODEL;
 
 // --- tool schema (OpenAI function-calling format) -------------------------
@@ -2187,7 +2205,10 @@ export async function runAgent(
 
   const systemPrompt = buildSystemPrompt(installation, cfg);
   let userMessage = nativeCueFromKernel(buildUserMessage(trigger, podName), String(podId), NATIVE_TOOL_NAMES);
-  const model = String(cfg.model || DEFAULT_MODEL);
+  const modelFor = (connectorRun: boolean) => nativeModelFor({
+    configured: cfg.model, connectorRun, nativeModel: NATIVE_RUNTIME_MODEL, chatModel: DEFAULT_MODEL,
+  });
+  let model = modelFor(false);
   // TASK-267b: what commonly_fetch_url may open starts as the prompt and,
   // when a known human wrote it, the message this turn answers, before any
   // recent messages are added.
@@ -2357,6 +2378,9 @@ export async function runAgent(
       // second call, after reading the refusal.
       const recoveryRound = webSetAside;
       offeredBroker = broker;
+      // A grant's tools go only to the native model, and once offered the turn
+      // stays on it: later rounds carry what those tools returned.
+      if (offeredBroker.tools.length > 0) model = modelFor(true);
       const offeredTools = [
         ...toolsForConfig(cfg, inPodOnly, {
           webTainted,
@@ -2472,6 +2496,20 @@ export async function runAgent(
         liteLLMCallId: extractCallId(llmResponse, responseHeaders),
         ...servedModelOf(llmResponse, responseHeaders),
       };
+
+      // A refusal (Anthropic's stop_reason "refusal", which LiteLLM reports as
+      // "content_filter"; DeepSeek uses the same value when it filters). Claude
+      // Haiku 5.5 has no server-side fallback for it, and a fallback to another
+      // vendor is what this runtime refuses anyway, so the turn ends here.
+      // Nothing of the partial answer is posted or kept, and no tool it named
+      // runs; the run reads as blocked, like a guardrail rejection.
+      if (choice?.finish_reason === 'content_filter') {
+        run.turns.push({ ...turn, llmResponseText: undefined });
+        run.status = 'failed';
+        run.errorKind = 'guardrail_blocked';
+        run.errorMessage = `Model ${model} declined this request (refusal); nothing was posted.`;
+        break;
+      }
 
       const toolCalls = msg.tool_calls || [];
 
