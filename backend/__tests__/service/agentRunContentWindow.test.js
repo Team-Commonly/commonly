@@ -118,6 +118,25 @@ describe('AgentRun content window', () => {
     expect(row.errorMessage).toBe('calendar_list_events failed: Dentist at 3pm');
   });
 
+  test('a run exactly at the cutoff keeps its content; one millisecond older loses it', async () => {
+    const [atCutoff, justExpired] = await AgentRun.create([
+      runAt(daysAgo(30)),
+      runAt(new Date(daysAgo(30).getTime() - 1)),
+    ]);
+
+    const report = await redactExpiredRunContent({ apply: true, now: NOW });
+    expect(report).toMatchObject({ matched: 1, redacted: 1 });
+
+    const kept = await AgentRun.collection.findOne({ _id: atCutoff._id });
+    expect(kept).not.toHaveProperty('contentRedactedAt');
+    expect(kept.turns[0].toolCalls[0].error).toBe('upstream echoed: Dentist');
+    expect(kept.errorMessage).toBe('calendar_list_events failed: Dentist at 3pm');
+
+    const expired = await AgentRun.collection.findOne({ _id: justExpired._id });
+    expect(expired).not.toHaveProperty('errorMessage');
+    expect(expired.turns[0].toolCalls[0]).not.toHaveProperty('error');
+  });
+
   test('a second pass finds nothing left to redact', async () => {
     await AgentRun.create([runAt(daysAgo(45))]);
     await redactExpiredRunContent({ apply: true, now: NOW });
