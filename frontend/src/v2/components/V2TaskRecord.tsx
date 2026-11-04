@@ -163,6 +163,24 @@ const V2TaskRecord: React.FC = () => {
     return () => { live = false; };
   }, [api, podId, valid]);
 
+  // The task's title, from the board's own list (there is no single-task read).
+  // Never blocks the record: until it lands, or if it fails or the task is not
+  // in the list, the heading stays the id.
+  const [title, setTitle] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setTitle(null);
+    if (!valid) return undefined;
+    api.get<{ tasks?: Array<{ taskId?: unknown; title?: unknown }> }>(`/api/v1/tasks/${encodeURIComponent(podId)}`)
+      .then((data) => {
+        if (!live || !Array.isArray(data?.tasks)) return;
+        const task = data.tasks.find((row) => row && row.taskId === taskId);
+        if (task && typeof task.title === 'string' && task.title.trim()) setTitle(task.title);
+      })
+      .catch(() => undefined);
+    return () => { live = false; };
+  }, [api, podId, taskId, valid]);
+
   const personLabel = useCallback((id: string) => names.get(id)?.name || id, [names]);
   const actorLabel = (actor: RecordLine['actor']) => {
     if (!actor) return t('taskRecord.actor.unknown');
@@ -308,8 +326,8 @@ const V2TaskRecord: React.FC = () => {
         {retryable && <button type="button" className="v2-task-record__key v2-task-record__key--soft" onClick={retry}>{t('taskRecord.retry')}</button>}
       </div>}
       {loaded && <>
-        <h2 className="v2-task-record__task">{taskId}</h2>
-        <p className="v2-task-record__id">{counts}</p>
+        <h2 className="v2-task-record__task">{title || taskId}</h2>
+        <p className="v2-task-record__id">{`${taskId} · ${counts}`}</p>
         {downloadError && <p className="v2-task-record__alert" role="alert">{t('taskRecord.downloadError')}</p>}
         {!lines.length && <div className="v2-task-record__none">
           <span className="v2-task-record__tile" aria-hidden="true"><RecordGlyph name="clock" /></span>

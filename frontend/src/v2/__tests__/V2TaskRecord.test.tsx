@@ -26,9 +26,15 @@ const recordUrl = `/api/pods/${POD}/record/tasks/TASK-7`;
 // The first page the view asks for; later pages add `after` by the last seq.
 const pageUrl = `${recordUrl}?after=0&limit=1000`;
 
-const wire = (record: () => Promise<unknown>, otlp: () => Promise<unknown> = () => Promise.resolve({ resourceSpans: [] })) => {
+const tasksUrl = `/api/v1/tasks/${POD}`;
+const wire = (
+  record: () => Promise<unknown>,
+  otlp: () => Promise<unknown> = () => Promise.resolve({ resourceSpans: [] }),
+  tasks: () => Promise<unknown> = () => Promise.reject(new Error('no tasks read in this test')),
+) => {
   mockGet.mockImplementation((url: string) => {
     if (url === pageUrl) return record();
+    if (url === tasksUrl) return tasks();
     if (url === `${recordUrl}?format=otlp`) return otlp();
     if (url === `/api/pods/${POD}`) return Promise.resolve({ members: [{ _id: HUMAN, username: 'ana', displayName: 'Ana' }, { _id: AGENT, username: 'scout' }] });
     return Promise.reject(new Error(`unexpected ${url}`));
@@ -99,7 +105,7 @@ test('keeps reading past a full page, so a long chain is not shown short', async
   });
   setup();
   // Both pages render: all 1002 entries are rows on screen.
-  expect(await screen.findByText('1002 entries')).toBeInTheDocument();
+  expect(await screen.findByText('TASK-7 · 1002 entries', { selector: 'p' })).toBeInTheDocument();
   expect(screen.getAllByRole('listitem')).toHaveLength(1002);
   expect(mockGet).toHaveBeenCalledWith(second, expect.anything());
   // A short second page ends the read: no third request.
@@ -128,7 +134,7 @@ test('reads the JSONL as text and shows every entry with member names, unknown k
   // A one-line record is still text: the transform must not parse it as JSON.
   const config = mockGet.mock.calls.find(([url]) => url === pageUrl)[1];
   expect(config.transformResponse[0](line(1, 'task.done', null))).toBe(line(1, 'task.done', null));
-  expect(screen.getByText('4 entries')).toBeInTheDocument();
+  expect(screen.getByText('TASK-7 · 4 entries', { selector: 'p' })).toBeInTheDocument();
   expect(screen.getByText(`Run ${RUN}`)).toBeInTheDocument();
   expect(screen.getByText('Released')).toBeInTheDocument();
   expect(screen.getByText('reason blocked')).toBeInTheDocument();
@@ -150,7 +156,7 @@ test('an empty chain says so rather than showing a blank page', async () => {
   wire(() => Promise.resolve(''));
   setup();
   expect(await screen.findByText('Nothing has been recorded for this task yet.')).toBeInTheDocument();
-  expect(screen.getByText('0 entries')).toBeInTheDocument();
+  expect(screen.getByText('TASK-7 · 0 entries', { selector: 'p' })).toBeInTheDocument();
 });
 
 test.each([
@@ -225,7 +231,7 @@ test('Chinese copy covers the page', async () => {
   wire(() => Promise.resolve(JSONL));
   setup();
   expect(await screen.findByText('已认领')).toBeInTheDocument();
-  expect(screen.getByText('4条记录')).toBeInTheDocument();
+  expect(screen.getByText('TASK-7 · 4条记录', { selector: 'p' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: '下载' }));
   expect(screen.getByRole('menuitem', { name: '下载 JSONL' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: '返回看板' })).toBeInTheDocument();
@@ -270,4 +276,42 @@ test('while the record loads, the header is in place and a status is announced',
   expect(screen.getByRole('status')).toHaveTextContent('Loading record…');
   expect(screen.getByRole('heading', { level: 1, name: 'Task record' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+});
+
+test('the heading is the task\'s title from the board list, with the id on the line below', async () => {
+  wire(() => Promise.resolve(JSONL), undefined, () => Promise.resolve({ tasks: [
+    { taskId: 'TASK-6', title: 'Not this one' },
+    { taskId: 'TASK-7', title: '<b>CI check</b>: fail a PR' },
+  ] }));
+  setup();
+  // Plain text: markup in a title is shown as typed, never parsed.
+  expect(await screen.findByRole('heading', { level: 2, name: '<b>CI check</b>: fail a PR' })).toBeInTheDocument();
+  expect(document.querySelector('.v2-task-record__task b')).toBeNull();
+  expect(screen.getByText('TASK-7 · 4 entries', { selector: 'p' })).toBeInTheDocument();
+  expect(mockGet).toHaveBeenCalledWith(tasksUrl);
+});
+
+test.each([
+  ['the tasks read fails', () => Promise.reject(new Error('down'))],
+  ['the tasks read is refused', () => Promise.reject(Object.assign(new Error('http'), { response: { status: 403 } }))],
+  ['the task is missing from the list', () => Promise.resolve({ tasks: [{ taskId: 'TASK-8', title: 'Another' }] })],
+  ['the list is not a list', () => Promise.resolve({ tasks: 'nope' })],
+])('when %s, the heading stays the id and no error shows', async (_case, tasks) => {
+  wire(() => Promise.resolve(JSONL), undefined, tasks);
+  setup();
+  expect(await screen.findByText('Claimed')).toBeInTheDocument();
+  await waitFor(() => expect(mockGet).toHaveBeenCalledWith(tasksUrl));
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  expect(screen.getByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('the record never waits on the tasks read: it renders with the id, then takes the title', async () => {
+  let land: (value: unknown) => void = () => undefined;
+  wire(() => Promise.resolve(JSONL), undefined, () => new Promise((resolve) => { land = resolve; }));
+  setup();
+  expect(await screen.findByText('Claimed')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
+  land({ tasks: [{ taskId: 'TASK-7', title: 'CI check' }] });
+  expect(await screen.findByRole('heading', { level: 2, name: 'CI check' })).toBeInTheDocument();
 });
