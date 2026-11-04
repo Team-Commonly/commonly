@@ -48,8 +48,9 @@ const XIcon = () => (
 // F98 (D243, Cofounder 11-04): hosted agents are Claude-only, and the gateway
 // offers Claude Haiku 5.5 only (Sonnet comes later, under a cap). Platform
 // features (llmService) are Claude-only too, but not Haiku-only, and they have
-// no model list here. A stored value that is no longer offered still shows,
-// marked stored, so an admin sees what is saved.
+// no model list here. The server always returns a full policy (what was saved,
+// or its own defaults, which still name Gemini), so a current value that is no
+// longer offered still shows, disabled and marked current.
 const HOSTED_MODEL = 'anthropic/claude-haiku-5-5';
 
 // Backend LLM service model options (provider → model list)
@@ -66,10 +67,10 @@ const OPENCLAW_MODEL_OPTIONS = {
   anthropic: [{ value: HOSTED_MODEL, label: 'Claude Haiku 5.5' }],
 };
 
-// The offered items, plus the stored value (disabled) when it is not one of them.
-const offeredItems = (options, stored) => [
-  ...(stored && !options.some((option) => option.value === stored)
-    ? [<MenuItem key={`stored-${stored}`} value={stored} disabled>{`${stored} (stored)`}</MenuItem>]
+// The offered items, plus the current value (disabled) when it is not one of them.
+const offeredItems = (options, current) => [
+  ...(current && !options.some((option) => option.value === current)
+    ? [<MenuItem key={`current-${current}`} value={current} disabled>{`${current} (current)`}</MenuItem>]
     : []),
   ...options.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>),
 ];
@@ -946,7 +947,7 @@ const GlobalIntegrations = () => {
                     })}
                     fullWidth
                     size="small"
-                    helperText="Example: openai/gpt-4.1-mini"
+                    helperText="The model ID OpenRouter routes to."
                   />
                 </Grid>
               </>
@@ -1041,7 +1042,7 @@ const GlobalIntegrations = () => {
                 })}
                 fullWidth
                 size="small"
-                helperText="Comma-separated fallbacks for dev agents, in order. Example: google/gemini-2.5-flash-lite, google/gemini-2.0-flash"
+                helperText="Comma-separated fallbacks for dev agents, in order. Left empty, the server uses its default list."
               />
             </Grid>
             <Grid item xs={12}>
@@ -1083,7 +1084,7 @@ const GlobalIntegrations = () => {
                 })}
                 fullWidth
                 size="small"
-                helperText="Primary model for agents not in Dev Agent IDs. Hosted agents run on anthropic/claude-haiku-5-5."
+                helperText="Primary model for agents not in Dev Agent IDs."
               />
             </Grid>
             <Grid item xs={12}>
@@ -1104,7 +1105,7 @@ const GlobalIntegrations = () => {
                 })}
                 fullWidth
                 size="small"
-                helperText="Comma-separated fallbacks for community agents (Gemini appended automatically). Example: openrouter/arcee-ai/trinity-large-preview:free"
+                helperText="Comma-separated fallbacks for community agents (Gemini appended automatically)."
               />
             </Grid>
           </Grid>
