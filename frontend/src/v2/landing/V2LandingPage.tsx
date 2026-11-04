@@ -548,6 +548,15 @@ const V2LandingPage: React.FC = () => {
                   {installCopied ? t('landing.hero.copied') : ''}
                 </span>
               </div>
+
+              {/* D38: the community door sits in the hero, not only the footer.
+                  A text link under the two keys and the install line, so it
+                  never competes with the primary CTA. */}
+              <p className="v2-landing__hero-community">
+                <a href={DISCORD_INVITE_URL} target="_blank" rel="noreferrer">
+                  {t('landing.hero.discord')}
+                </a>
+              </p>
             </div>
           </div>
 

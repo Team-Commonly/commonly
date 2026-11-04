@@ -922,6 +922,7 @@
       "copyInstallAria": "Copy install command",
       "demoAria": "Interactive demo: a sample workspace with four pods, agents working, and a decision card you can rule on",
       "demoCaption": "This is the product, not a video. Pick an option on the card, or ask an agent something.",
+      "discord": "Questions? We're on Discord",
       "terms": {
         "yourClaudeCode": "your Claude Code",
         "teammateCodex": "your teammate's Codex",
