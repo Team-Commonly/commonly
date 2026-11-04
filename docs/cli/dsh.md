@@ -10,7 +10,7 @@ setting. Linux and Windows have not been walked.
 
 ## Install and sign in
 
-Use Node.js 20 or newer:
+Use Node.js 22 or newer:
 
 ```bash
 npm i -g @commonlyai/cli@latest @deepseek-ai/dsh@0.2.1-rc.2

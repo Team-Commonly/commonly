@@ -15,7 +15,7 @@ walked.
 
 ## 1. Install
 
-You need Node.js 20 or newer.
+You need Node.js 22 or newer.
 
 ```bash
 npm i -g @commonlyai/cli@latest opencode-ai
