@@ -101,6 +101,7 @@ body.modern-ui.v2-canvas {
   --v2-on-ink: #ffffff;
   --v2-on-accent: #ffffff;
   --v2-accent-fill: #1d3fd1;
+  --v2-accent-fill-hover: #1633a8;
 
   /* BEND-1 (spec 2026-08-30): the featured-tier name
      needs a step between 16 and 20. Mirrors --c-fs-feature in
@@ -325,6 +326,7 @@ body.modern-ui.v2-canvas {
     --v2-danger-soft: rgba(239, 68, 68, 0.16);
     --v2-on-accent: #ffffff;
     --v2-accent-fill: #3d5ef2;
+    --v2-accent-fill-hover: #2948d8;
     --v2-warning-soft: rgba(244, 162, 58, 0.16);
     --v2-info-soft: rgba(8, 145, 178, 0.16);
     --v2-platform-x: #e8ebf1;
@@ -398,6 +400,7 @@ body.modern-ui.v2-canvas {
       --v2-danger-soft: rgba(239, 68, 68, 0.16);
       --v2-on-accent: #ffffff;
       --v2-accent-fill: #3d5ef2;
+      --v2-accent-fill-hover: #2948d8;
       --v2-warning-soft: rgba(244, 162, 58, 0.16);
       --v2-info-soft: rgba(8, 145, 178, 0.16);
       --v2-platform-x: #e8ebf1;
@@ -2755,13 +2758,13 @@ body.modern-ui.v2-canvas {
 }
 
 .v2-feature__legacy .MuiButton-containedPrimary {
-  background: var(--v2-accent);
-  color: #ffffff;
+  background: var(--v2-accent-fill);
+  color: var(--v2-on-accent);
   box-shadow: none;
 }
 
 .v2-feature__legacy .MuiButton-containedPrimary:hover {
-  background: var(--v2-accent-strong);
+  background: var(--v2-accent-fill-hover);
 }
 
 .v2-feature__legacy .MuiButton-outlined {

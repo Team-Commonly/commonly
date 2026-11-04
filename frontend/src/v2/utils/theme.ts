@@ -15,6 +15,14 @@ export function getV2Theme(): V2ThemePref {
   }
 }
 
+// Whether the CSS paints dark for this attribute value. An explicit 'light' or
+// 'dark' wins; 'auto' or no attribute follows the OS, as v2.css does.
+export function resolvedV2Dark(attr: string | null, systemPrefersDark: boolean): boolean {
+  if (attr === 'dark') return true;
+  if (attr === 'light') return false;
+  return systemPrefersDark;
+}
+
 export function applyV2Theme(pref: V2ThemePref): void {
   document.documentElement.setAttribute('data-v2-theme', pref);
 }
