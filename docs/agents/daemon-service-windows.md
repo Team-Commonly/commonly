@@ -96,9 +96,9 @@ default `npx` MCP server is resolved the same way. An unresolvable shim is refus
 never run through `cmd.exe`.
 
 npm's own `npm.cmd` and `npx.cmd` aren't cmd-shims. Before it runs npm, each one asks npm for its global
-prefix (`node npm-prefix.js`, or `npm-cli.js prefix -g` on npm 9 and older) and runs the npm it finds there.
+prefix (`node npm-prefix.js`, or `npm-cli.js prefix -g` on older npm) and runs the npm it finds there.
 That's how an npm installed with `npm i -g npm` wins. The resolver asks the same script the same
-way: `node.exe` with no shell, in the child's env and folder. It doesn't guess `%APPDATA%\npm`, which
+way: `node.exe` with no shell, in the child's env, and in its folder when the caller passes one (the warm does; the MCP config render doesn't yet). It doesn't guess `%APPDATA%\npm`, which
 is only the default prefix. If an npmrc or `npm_config_prefix` moves the prefix, a stale npm left in
 `%APPDATA%\npm` would otherwise run in place of the one the person gets by typing `npm` (TASK-775).
 No answer, or an answer that names no npm, leaves the npm bundled with Node, just as `npm.cmd` does.

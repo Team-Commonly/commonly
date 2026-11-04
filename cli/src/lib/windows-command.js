@@ -124,13 +124,13 @@ const programIsNode = (token, shimDir, text) => {
 //   IF EXIST "%NPM_PREFIX_NPX_CLI_JS%" ( SET "NPX_CLI_JS=%NPM_PREFIX_NPX_CLI_JS%" )
 //   "%NODE_EXE%" "%NPX_CLI_JS%" %*
 //
-// The FOR line asks npm for its global prefix (npm <= 9: `npm-cli.js prefix
+// The FOR line asks npm for its global prefix (older npm: `npm-cli.js prefix
 // -g`), so an npm the person upgraded with `npm i -g npm` wins over the
 // bundled one. That prefix is %APPDATA%\npm unless an npmrc or
 // `npm_config_prefix` says otherwise, and npm's config loader is the only
 // thing that knows which. So the same script is asked the same way, as
-// `node.exe <script>` with no shell, in the child's env and folder (a
-// project .npmrc counts). An answer that names no npm, or no answer at all,
+// `node.exe <script>` with no shell, in the child's env, and in its folder
+// when the caller passes `cwd` (a project .npmrc counts there). An answer that names no npm, or no answer at all,
 // leaves the bundled npm, as npm.cmd does.
 const NPM_LAUNCH = /^"%NODE_EXE%"\s+"%(NP[MX]_CLI_JS)%"\s+%\*$/i;
 const NPM_PREFIX_FOR = /^FOR\s+\/F\s+"delims="\s+%%F\s+IN\s+\('CALL\s+"%NODE_EXE%"\s+"%([A-Z_]+)%"((?:\s+[A-Za-z0-9-]+)*)'\)\s+DO\s+\($/i;
