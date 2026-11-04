@@ -31,6 +31,11 @@ const portOverride = DEV_LIVE ? process.env.DEV_LIVE_PORT : undefined;
 if (DEV_LIVE && process.argv.some((arg) => arg === '--port' || arg.startsWith('--port='))) {
   throw new Error('dev:live does not take --port; set DEV_LIVE_PORT to a port in the target\'s range instead');
 }
+// A strictPort opt-out would let Vite fall through to the next free port, which can sit in
+// the other target's range while the API base stays put.
+if (DEV_LIVE && process.argv.some((arg) => arg === '--no-strictPort' || /^--strictPort=(false|0)$/.test(arg))) {
+  throw new Error('dev:live needs strictPort; a fallback port can land in another target\'s range');
+}
 if (portOverride !== undefined && portOverride !== '') {
   const [lo, hi] = liveEntry.range;
   const n = /^\d+$/.test(portOverride) ? Number(portOverride) : NaN;

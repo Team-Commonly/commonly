@@ -177,18 +177,26 @@ test('DEV_LIVE_PORT takes only its own target\'s range, so no origin serves both
   }
 });
 
-test('dev:live refuses --port, so the port comes only from the target range', async () => {
-  for (const flag of [['--port', '3124'], ['--port=3124']]) {
+test('dev:live refuses --port and strictPort opt-outs, so the port comes only from the target range', async () => {
+  for (const [flag, message] of [
+    [['--port', '3124'], /does not take --port/], [['--port=3124'], /does not take --port/],
+    [['--no-strictPort'], /needs strictPort/], [['--strictPort=false'], /needs strictPort/],
+  ]) {
     process.argv.push(...flag);
     try {
-      await assert.rejects(
-        withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod' }, async () => {}),
-        /does not take --port/,
-        flag.join(' '),
-      );
+      await assert.rejects(withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod' }, async () => {}), message, flag.join(' '));
     } finally {
       process.argv.splice(process.argv.length - flag.length, flag.length);
     }
+  }
+});
+
+test('without DEV_LIVE, --port is left to vite and the default stays 3000', async () => {
+  process.argv.push('--port', '3124');
+  try {
+    await withDevLive({}, async (_base, port) => { assert.equal(port, 3000); });
+  } finally {
+    process.argv.splice(process.argv.length - 2, 2);
   }
 });
 
