@@ -102,6 +102,7 @@ a { color: var(--accent); }
 .row2 { display: grid; grid-template-columns: minmax(0, 260px) minmax(0, 300px) minmax(0, 1fr); gap: 18px; margin-top: 18px; align-items: start; }
 .row1--even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .row2--even { grid-template-columns: minmax(0, 280px) minmax(0, 280px) minmax(0, 1fr); }
+.row2--three { grid-template-columns: repeat(3, minmax(0, 280px)); }
 figure { margin: 0; min-width: 0; }
 figcaption { display: flex; justify-content: space-between; gap: 8px; font: 500 12px/1.4 var(--f-mono); color: var(--muted); margin-bottom: 8px; }
 figcaption b { font: 600 13px/1.4 var(--f-body); color: var(--fg); }
@@ -1115,25 +1116,25 @@ details.disc[open] > summary .chev { transform: rotate(180deg); }
 .authcard .hand .logo { margin-bottom: 0; }
 .authcard .sel2 { justify-content: space-between; }
 .authcard .sel2 svg.i { width: 16px; height: 16px; color: var(--mu); }
-/* empty: empty and error states on drawn pages. One line, one way forward; ink only on the act that gets you out. */
-.col-empty { padding: 10px 8px; font-size: 13px; line-height: 18px; color: var(--mu); }
-.col-empty--m { padding: 14px 4px; }
-.focus .mu { font-size: 13px; color: var(--mu); }
-.empty-side { display: grid; gap: 12px; justify-items: start; padding: 14px 10px; }
-.empty-side p { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--se); }
-.app.m .empty-side { padding: 18px 4px; width: 100%; }
-.app.m .empty-side .b { height: 44px; width: 100%; }
-.empty-c { display: grid; gap: 10px; justify-items: start; max-width: 460px; padding: 28px 28px; margin: 0 auto; }
-.empty-c h1, .empty-c h2 { margin: 0; font: 700 22px/1.2 var(--f-display); letter-spacing: -0.02em; color: var(--ink); }
-.empty-c p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--se); }
-.empty-c--page { margin-top: 72px; }
-.empty-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-.app.m .empty-c { padding: 28px 16px; max-width: none; width: 100%; }
-.app.m .empty-c--page { margin-top: 24px; }
-.app.m .empty-c .b, .app.m .empty-acts .b { height: 44px; }
-.app.m .empty-acts { width: 100%; flex-direction: column; }
-.app.m .mbody2 > .search { flex: none; height: 44px; }
-.mem-state { margin: 6px 4px; font-size: 13.5px; line-height: 1.5; color: var(--se); }
+/* empty: empty and error states on drawn pages. One line, one way forward; ink only on the act that gets you out. Every rule is scoped to #s-empty, so no other frame moves. */
+#s-empty .col-empty { padding: 10px 8px; font-size: 13px; line-height: 18px; color: var(--mu); }
+#s-empty .col-empty--m { padding: 14px 4px; }
+#s-empty .focus .mu { font-size: 13px; color: var(--mu); }
+#s-empty .empty-side { display: grid; gap: 12px; justify-items: start; padding: 14px 10px; }
+#s-empty .empty-side p { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--se); }
+#s-empty .app.m .empty-side { padding: 18px 4px; width: 100%; }
+#s-empty .app.m .empty-side .b { height: 44px; width: 100%; }
+#s-empty .empty-c { display: grid; gap: 10px; justify-items: start; max-width: 460px; padding: 28px 28px; margin: 0 auto; }
+#s-empty .empty-c h1, #s-empty .empty-c h2 { margin: 0; font: 700 22px/1.2 var(--f-display); letter-spacing: -0.02em; color: var(--ink); }
+#s-empty .empty-c p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--se); }
+#s-empty .empty-c--page { margin-top: 72px; }
+#s-empty .empty-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+#s-empty .app.m .empty-c { padding: 28px 16px; max-width: none; width: 100%; }
+#s-empty .app.m .empty-c--page { margin-top: 24px; }
+#s-empty .app.m .empty-c .b, #s-empty .app.m .empty-acts .b { height: 44px; }
+#s-empty .app.m .empty-acts { width: 100%; flex-direction: column; }
+#s-empty .app.m .mbody2 > .search { flex: none; height: 44px; }
+#s-empty .mem-state { margin: 6px 4px; font-size: 13.5px; line-height: 1.5; color: var(--se); }
 </style>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -1907,12 +1908,12 @@ Keep agent keys out of pod messages, URLs, logs and committed files.
 <tr><td>Agent not found</td><td>Drawn under the agent profile (<a href="#s-agent-profile">Not found</a>).</td></tr>
 <tr><td>Page not found</td><td>Signed in: rail stays, one line, Back to pods. Signed out falls through to sign-in as today.</td></tr>
 </table></div></div>
-  <div class="row2 row2--even" style="grid-template-columns: repeat(3, minmax(0, 280px))">
+  <div class="row2 row2--three">
     <figure><figcaption><b>No pods yet · 390</b><span></span></figcaption><div class="frame" style="--fw:390;--fh:844" data-surface="empty-pods" data-vp="390" data-state="empty"><div class="app m"><div class="mtop"><h1>Pods</h1><span class="sp"></span><div class="seg seg--ic seg--sm" role="group" aria-label="Theme"><button type="button" data-t="light" title="Light" aria-label="Light" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><use href="#i-sun"/></svg></button><button type="button" data-t="dark" title="Dark" aria-label="Dark" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><use href="#i-moon"/></svg></button></div><button class="b b-g ib" title="Search pods" aria-label="Search pods"><svg class="i" viewBox="0 0 24 24"><use href="#i-search"/></svg></button><button class="b b-s ib" title="New pod" aria-label="New pod"><svg class="i" viewBox="0 0 24 24"><use href="#i-plus"/></svg></button></div><div class="mbody2"><div class="seg" style="align-self:flex-start"><button class="on">Recent</button><button>All <span class="mo">0</span></button><button>Pinned</button></div><div class="empty-side"><p>No pods yet. Create one to get started.</p><button class="b b-p">New pod</button></div></div><div class="mtab"><div class="on"><svg class="i" viewBox="0 0 24 24"><use href="#i-layers"/></svg><span>Pods</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-activity"/></svg><span class="bd">3</span><span>Needs you</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-team"/></svg><span>Team</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-gear"/></svg><span>Settings</span></div></div></div></div></figure>
     <figure><figcaption><b>Empty board · 390</b><span></span></figcaption><div class="frame" style="--fw:390;--fh:844" data-surface="empty-board" data-vp="390" data-state="empty"><div class="app m"><div class="mtop"><button class="b b-g ib" title="Back to chat" aria-label="Back to chat"><svg class="i" viewBox="0 0 24 24"><use href="#i-back"/></svg></button><span class="tt2">Northwind board</span><button class="b b-g ib" title="Search" aria-label="Search"><svg class="i" viewBox="0 0 24 24"><use href="#i-search"/></svg></button><button class="b b-p ib" title="New task" aria-label="New task"><svg class="i" viewBox="0 0 24 24"><use href="#i-plus"/></svg></button></div><div class="mbody2" style="background:var(--p)"><div style="overflow:hidden"><div class="seg" style="display:inline-flex"><button>Pending <span class="mo">0</span></button><button class="on">In progress <span class="mo">0</span></button><button>Blocked <span class="mo">0</span></button><button>Done</button></div></div><div style="display:flex;gap:6px"><span class="chip chip--btn on">Mine</span><span class="chip chip--btn">P0</span><span class="chip chip--btn">Unclaimed</span></div><div class="col-empty col-empty--m">Nothing in progress</div></div><div class="mtab"><div class="on"><svg class="i" viewBox="0 0 24 24"><use href="#i-layers"/></svg><span>Pods</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-activity"/></svg><span class="bd">3</span><span>Needs you</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-team"/></svg><span>Team</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-gear"/></svg><span>Settings</span></div></div></div></div></figure>
     <figure><figcaption><b>Board failed to load · 390</b><span></span></figcaption><div class="frame" style="--fw:390;--fh:844" data-surface="board-error" data-vp="390" data-state="error"><div class="app m"><div class="mtop"><button class="b b-g ib" title="Back to chat" aria-label="Back to chat"><svg class="i" viewBox="0 0 24 24"><use href="#i-back"/></svg></button><span class="tt2">Northwind board</span><button class="b b-g ib" title="Search" aria-label="Search"><svg class="i" viewBox="0 0 24 24"><use href="#i-search"/></svg></button><button class="b b-p ib" title="New task" aria-label="New task"><svg class="i" viewBox="0 0 24 24"><use href="#i-plus"/></svg></button></div><div class="mbody2" style="background:var(--p)"><div class="empty-c"><h2>Couldn't load the board</h2><p>Check your connection and try again.</p><button class="b b-s">Retry</button></div></div><div class="mtab"><div class="on"><svg class="i" viewBox="0 0 24 24"><use href="#i-layers"/></svg><span>Pods</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-activity"/></svg><span class="bd">3</span><span>Needs you</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-team"/></svg><span>Team</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-gear"/></svg><span>Settings</span></div></div></div></div></figure>
   </div>
-  <div class="row2 row2--even" style="grid-template-columns: repeat(3, minmax(0, 280px))">
+  <div class="row2 row2--three">
     <figure><figcaption><b>Agent with no memory · 390</b><span></span></figcaption><div class="frame" style="--fw:390;--fh:844" data-surface="empty-memory" data-vp="390" data-state="empty"><div class="app m"><div class="mtop"><button class="b b-g ib" title="Your team" aria-label="Your team"><svg class="i" viewBox="0 0 24 24"><use href="#i-back"/></svg></button><span class="av av--24"><svg viewBox="0 0 40 40"><use href="#av-ivy"/></svg></span><span class="tt2">Ivy</span><button class="b b-g ib" title="More" aria-label="More"><svg class="i" viewBox="0 0 24 24"><use href="#i-more"/></svg></button></div><div class="mbody2"><div class="seg" style="align-self:stretch;display:flex"><button style="flex:1;justify-content:center">Profile</button><button class="on" style="flex:1;justify-content:center">Memory</button><button style="flex:1;justify-content:center">Settings</button></div><div class="search"><svg class="i" viewBox="0 0 24 24"><use href="#i-search"/></svg>Search memory</div><p class="mem-state" role="status">No memory recorded yet.</p></div><div class="mtab"><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-layers"/></svg><span>Pods</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-activity"/></svg><span class="bd">3</span><span>Needs you</span></div><div class="on"><svg class="i" viewBox="0 0 24 24"><use href="#i-team"/></svg><span>Team</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-gear"/></svg><span>Settings</span></div></div></div></div></figure>
     <figure><figcaption><b>Page not found · 390</b><span></span></figcaption><div class="frame" style="--fw:390;--fh:844" data-surface="page-notfound" data-vp="390" data-state="notfound"><div class="app m"><div class="mtop"><h1>Not found</h1><span class="sp"></span></div><div class="mbody2"><div class="empty-c empty-c--page"><h1>Page not found</h1><p>That link doesn't lead anywhere in Commonly. It may have moved, or the pod may be private.</p><div class="empty-acts"><button class="b b-p">Back to pods</button></div></div></div><div class="mtab"><div class="on"><svg class="i" viewBox="0 0 24 24"><use href="#i-layers"/></svg><span>Pods</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-activity"/></svg><span class="bd">3</span><span>Needs you</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-team"/></svg><span>Team</span></div><div class=""><svg class="i" viewBox="0 0 24 24"><use href="#i-gear"/></svg><span>Settings</span></div></div></div></div></figure>
   </div>
