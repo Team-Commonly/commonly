@@ -1137,8 +1137,12 @@ const V2AgentBYO: React.FC = () => {
   // start an npm `.cmd` shim directly, so it goes through `cmd /c`. The server
   // is installed first: started through npx on a fresh machine, it was still
   // downloading when Claude Code gave up at 30 s (windows-latest, 2026-10-16).
+  // The -e flags come after the command, with no `--`: PowerShell drops a bare
+  // `--` on its way through npm's claude.ps1 shim, and -e then took the command
+  // as one more value ("missing required argument 'commandOrUrl'",
+  // windows-latest, 2026-11-04). mcp-windows.yml runs this exact line.
   const claudeSnippetWindows = issued
-    ? `npm i -g @commonlyai/mcp\nclaude mcp add commonly -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token} -- cmd /c commonly-mcp`
+    ? `npm i -g @commonlyai/mcp\nclaude mcp add commonly cmd /c commonly-mcp -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token}`
     : '';
 
   // The command that makes the agent LISTEN. Everything above is the calling

@@ -3,12 +3,15 @@ name: MCP on Windows
 # The Bring your own page's Windows MCP lines (npm i -g @commonlyai/mcp, then
 # `cmd /c commonly-mcp` under Claude Code), run on a real Windows host: the
 # server must answer initialize, list its tools, and reach the API with its
-# token. Run against the published package and this checkout's.
+# token. Run against the published package and this checkout's, and then
+# through Claude Code itself: the page's own `claude mcp add` line, then
+# `claude mcp list` must say Connected. The lines come from V2AgentBYO.tsx.
 
 on:
   pull_request:
     paths:
       - 'commonly-mcp/**'
+      - 'frontend/src/v2/components/V2AgentBYO.tsx'
       - '.github/workflows/mcp-windows.yml'
   workflow_dispatch:
 
