@@ -56,21 +56,21 @@ export type StalledConnectCopyEvidence = {
 };
 
 /**
- * The listener answers @mentions only on a Mac for now (V2AgentBYO's
- * listenerRunsOn), for a different reason per adapter: Commonly's sandbox
- * cannot run Claude Code on Linux or Windows, and Codex there is not yet
- * tested (agentByo.listen.windowsNote for Claude on Windows / unavailableCodex;
- * frontend/src/i18n/locales/en.json). The server
- * never learns which adapter the copied command named, so the copy names the
- * listener, not the CLI, and states only what is true for both: Mac only.
+ * The listener is tested answering @mentions only on a Mac. On Linux and
+ * Windows it differs by adapter (the BYO support matrix, #3399): Claude Code
+ * is refused in a pod open to join and unverified otherwise, and Codex is
+ * unverified. The server never learns which adapter the copied command named,
+ * so the copy says only what holds for both: it may not answer there yet. It
+ * never suggests --unsandboxed: no real Windows walk exists yet.
  *
- * It hedges, unlike the rest of this file. The page shows the listener command
- * only on its Mac tab, so a copy from a Linux or Windows browser means the
- * person picked Mac there: they may have run it on a Mac, or on the machine
- * they were browsing from. byoOpenedOs is the browser's OS, not where the
+ * It hedges, unlike the rest of this file. Since #3388 the page also shows the
+ * listener command for Windows (opt-in) and for Claude Code in a private
+ * Linux pod, so a copy from a Linux or Windows browser may have run there or
+ * on a Mac. byoOpenedOs is the browser's OS, not where the
  * command ran, so the sentence is conditional on it.
  */
 const LISTENER_UNAVAILABLE_OS: Record<string, string> = { linux: 'Linux', windows: 'Windows' };
+const LISTENER_PLATFORM_NOTE = "is tested on a Mac. On Linux and Windows it may not answer @mentions yet, and we're working on that.";
 
 const copiedAtOffsetSeconds = (evidence: StalledConnectCopyEvidence): number | null => {
   if (!evidence.commandCopiedAt || !evidence.tokenIssuedAt) return null;
@@ -145,11 +145,11 @@ export const composeStalledConnectNudge = ({
     const unavailableOs = evidence.openedOs ? LISTENER_UNAVAILABLE_OS[evidence.openedOs] : undefined;
     const when = copiedAtDescription(offsetSeconds);
     if (unavailableOs) {
-      // The page offers the listener command on its Mac tab only, so do not
-      // tell this person they missed a command their browser never showed.
+      // Their browser may not have shown the listener command, so do not
+      // tell this person they missed it.
       return `@${installerName} — you copied the MCP command ${when}. `
         + `MCP-only clients can call Commonly, but they do not answer @mentions. `
-        + `The listener that does runs only from a Mac for now, and you first opened this page on ${unavailableOs}. `
+        + `The listener that does ${LISTENER_PLATFORM_NOTE} You first opened this page on ${unavailableOs}. `
         + `Run \`${fixCommand}\` in a Terminal on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
         + `I'll post here the moment I connect.`;
     }
@@ -169,8 +169,7 @@ export const composeStalledConnectNudge = ({
     if (unavailableOs) {
       return `@${installerName} — you copied the listener command `
         + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
-        + `If you ran it on ${unavailableOs}, that's likely why: the listener answers @mentions `
-        + `only from a Mac for now. `
+        + `If you ran it on ${unavailableOs}, that may be why: the listener ${LISTENER_PLATFORM_NOTE} `
         + `Run \`${fixCommand}\` on a Mac, or choose “Run it here” on the Bring your own page for a hosted agent. `
         + `I'll post here the moment I connect.`;
     }
@@ -259,7 +258,7 @@ export const composeStalledConnectMcpResolution = ({
   const unavailableOs = openedOs ? LISTENER_UNAVAILABLE_OS[openedOs] : undefined;
   if (unavailableOs) {
     return `${head}I won't answer @${handle} on my own: that takes the listener, `
-      + `which runs only from a Mac for now (\`${fixCommand}\`). `
+      + `\`${fixCommand}\`, which ${LISTENER_PLATFORM_NOTE} `
       + 'For an agent that answers here from any computer, choose “Run it here” on the Bring your own page.';
   }
   return `${head}I won't answer @${handle} on my own: that takes the listener. `
