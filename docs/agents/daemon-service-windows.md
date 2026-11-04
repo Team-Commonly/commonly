@@ -95,6 +95,14 @@ resolves the shim to `node.exe` plus its JS entry (or to the `.exe` it wraps) an
 default `npx` MCP server is resolved the same way. An unresolvable shim is refused with a reason,
 never run through `cmd.exe`.
 
+**Every child the CLI spawns by name goes through that resolver, `npm` included.** The MCP warm
+(`cli/src/lib/mcp-warm-child.mjs`) once spawned bare `npm`, which is `npm.cmd` on Windows. The warm
+failed in milliseconds, no build was ever prepared, and every public turn was refused with
+`public_mcp_unavailable`, so the page's Windows lines never answered an @mention (D164). Every unit
+tier passed, because they mock the spawn. Only the windows-latest walk below caught it. A new
+`spawn('<name>', …)` needs `resolveLaunch` (or a Windows test that runs it). `commonly dev`'s
+`npm test` is still bare, and it isn't on a seat path.
+
 ## What is proven, and what is not
 
 - **CI (`daemon-windows.yml`, windows-latest):** install registers the task; the daemon checks in to a
@@ -102,5 +110,13 @@ never run through `cmd.exe`.
   through the watchdog; killing only the launcher takes its daemon with it; every install and restart
   leaves exactly one daemon; the opt-in reaches the check-in and a plain install removes it; stop stays
   stopped through a watchdog interval; uninstall leaves nothing behind.
-- **Not proven:** a real Claude Code turn on Windows (no signed-in Claude Code on a CI runner), and
-  Codex on Windows at all. The BYO page says Codex is untested on Windows.
+- **CI (`byo-windows.yml`, windows-latest, D164):** the Bring your own page's four PowerShell lines
+  for Claude Code, lifted from `V2AgentBYO.tsx`, run in one PowerShell window against a stub Commonly
+  API with one @mention queued. Real Claude Code takes the turn and the reply comes back with the
+  @mention acknowledged, from a fresh profile, so the MCP warm and the public-seat gate run too.
+  The model is a stub, named in Claude Code's machine-wide managed settings, because a public seat
+  strips `ANTHROPIC_*` from Claude Code's env. Two legs: the published CLI and this checkout's packed
+  CLI. On a pull request the published leg only warns, because a CLI fix reaches npm after it merges.
+- **Not proven:** a turn on a signed-in Claude Code account (the walk's model is a stub), a tool call
+  from the model through the commonly MCP server on Windows (the stub answers in text), and Codex on
+  Windows at all. The BYO page says Codex is untested on Windows.
