@@ -29,6 +29,7 @@ on:
       - 'cli/__tests__/daemon-service.windows.test.mjs'
       - 'cli/__tests__/windows-*.test.mjs'
       - 'cli/__tests__/adapters.windows-launch.test.mjs'
+      - 'cli/__tests__/fixtures/windows-shims.cjs'
       - 'cli/__tests__/adapters.claude.windows-unconfined.test.mjs'
       - 'cli/__tests__/native-runtime-inventory.windows.test.mjs'
       - '.github/workflows/daemon-windows.yml'

@@ -64,6 +64,11 @@ Rules the code enforces:
   reads, written in the `/c/Users/...` form Claude Code matches on Windows) and the sanitized child
   environment still apply. An earlier draft dropped the environment to `mode: 'none'`, which lost the
   trust and loaded the owner's own `~/.claude` settings and MCP servers; don't go back to that.
+- **No shell without the jail.** On this path a workspace seat's `write` grant gives `Edit` and `Write`
+  but never `Bash` or `PowerShell`: a jail-less shell would run with the user's whole access and could
+  read the seat's token from its environment. A foreground `--unsandboxed` run doesn't report to the
+  server (only the daemon's check-in does), so this local rule and the win32 broker withhold are what
+  hold for it.
 - **Claude Code only.** OpenCode and Qwen stay refused with the flag; Codex is never refused (its own
   profiles confine it) and needs no flag.
 - **No seat on native Windows gets connector grants**, opted in or not: `confinementReason` returns

@@ -123,7 +123,7 @@ describe('V2AgentBYO on Windows', () => {
     expect(install).toHaveClass('v2-byo__submit');
     expect(install).not.toHaveClass('v2-byo__submit--quiet');
     expect(screen.queryByTestId('byo-wont-answer-before-install')).not.toBeInTheDocument();
-    expect(screen.getByTestId('byo-quick-try')).toBeInTheDocument();
+    expect(screen.getByTestId('byo-quick-try')).toHaveTextContent(/^Quick try: this command runs in PowerShell and stops when that window closes\./);
   });
 
   test('zh-CN: the PowerShell heading, the needs line, the note and the scripts hint read in Chinese', async () => {
@@ -134,8 +134,11 @@ describe('V2AgentBYO on Windows', () => {
     expect(listen).toHaveTextContent(/^在 PowerShell 里运行这段命令/);
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent('四行都要在同一个 PowerShell 窗口里运行，换了窗口 $env 设置就失效。');
     const note = screen.getByTestId('byo-listen-windows');
-    expect(note).toHaveTextContent(/^Windows 上没有能给 \S+ 用的沙箱，所以它会以你自己的权限访问文件、运行命令。加上 --unsandboxed 就表示你接受这一点/);
-    expect(note).toHaveTextContent('不过在系统层面，没有任何东西拦着它。');
+    expect(note).toHaveTextContent(/^Claude Code 还没在 Windows 上测试过。/);
+    expect(note).toHaveTextContent('--unsandboxed');
+    expect(note).toHaveTextContent('--allow write');
+    expect(note).toHaveTextContent('不能运行命令');
+    expect(note).toHaveTextContent('连接器授权');
     expect(note).toHaveTextContent('commonly daemon install --unsandboxed');
     expect(note).toHaveTextContent('--allow');
     expect(screen.getByTestId('byo-listen-stops-on-close')).toHaveTextContent(/PowerShell 窗口/);
@@ -143,6 +146,14 @@ describe('V2AgentBYO on Windows', () => {
     expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent('连接器授权');
     expect(note).not.toHaveTextContent(/您|代理/);
     expect(screen.getByTestId('byo-listen-npm-hint')).toHaveTextContent('如果 PowerShell 提示禁止运行脚本');
+  });
+
+  test('zh-CN before install: the quick-try line names PowerShell', async () => {
+    setUserAgent(WINDOWS);
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    renderPage();
+    fireEvent.click(await screen.findByTestId('byo-mode-byo'));
+    expect(await screen.findByTestId('byo-quick-try')).toHaveTextContent(/^快速试用：这条命令在 PowerShell 里运行/);
   });
 
   test('zh-CN with Codex: the note is the Codex line alone, in Chinese', async () => {

@@ -109,6 +109,21 @@ describe('claude on native Windows with the user\'s --unsandboxed', () => {
 
   // The refusal names the host's own mechanism (Seatbelt on this test host, bwrap on Windows,
   // where host-check refuses earlier still); what matters is that nothing is spawned.
+  test('a workspace seat with --allow write gets edits but no shell, and PowerShell stays denied', async () => {
+    const { run, calls } = turn({
+      hostUnconfined: true,
+      environment: { model: 'test-model', sandbox: { trust: 'workspace', allow: ['write'] } },
+    });
+    await run;
+    const { args } = calls[0];
+    const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools'));
+    expect(allowed).toEqual(expect.arrayContaining(['Read(./**)', 'Edit', 'Write']));
+    expect(allowed).not.toContain('Bash');
+    expect(allowed).not.toContain('PowerShell');
+    const denied = args.slice(args.indexOf('--disallowedTools') + 1);
+    expect(denied).toEqual(expect.arrayContaining(['Bash', 'PowerShell']));
+  });
+
   test('without the opt-in the seat is still refused (no jail on Windows)', async () => {
     const { run, calls } = turn();
     await expect(run).rejects.toThrow();

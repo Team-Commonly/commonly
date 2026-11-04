@@ -1565,7 +1565,7 @@ const V2AgentBYO: React.FC = () => {
           {/* The run command is the quick try; it dies with its Terminal. The
               daemon is the one that keeps the agent running (TASK-645 item 3). */}
           {mode === 'byo' && machines.length === 0 && listenerAvailable && (
-            <p className="v2-byo__hint" data-testid="byo-quick-try">{t('agentByo.quickTry')}</p>
+            <p className="v2-byo__hint" data-testid="byo-quick-try">{t(setupOs === 'windows' ? 'agentByo.quickTryWindows' : 'agentByo.quickTry')}</p>
           )}
           {/* One command is THE path (QA BYO walk 1): the daemon and the SDK
               are real alternatives, but shown as equals beside the button they

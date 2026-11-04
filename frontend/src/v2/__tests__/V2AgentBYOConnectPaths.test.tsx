@@ -157,7 +157,7 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     ]);
     // The flag is explained under the block it appears in.
     expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(
-      'On Windows there’s no sandbox. With --unsandboxed, the agents this computer runs act with your own access to files and commands, and get no connector grants.',
+      'On Windows there’s no sandbox. With --unsandboxed, nothing at the OS level confines the agents this computer runs. They get no connector grants, and Claude Code can’t run commands.',
     );
   });
 

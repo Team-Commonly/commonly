@@ -146,6 +146,9 @@ const PUBLIC_DENIED_TOOLS = [
   'WebSearch',
   'WebFetch',
   'Bash',
+  // Claude Code's shell tool on Windows. dontAsk and the Read(./**) allowlist
+  // already refuse it; named here so the deny list holds on its own (D245).
+  'PowerShell',
   'Write',
   'Edit',
   'NotebookEdit',
@@ -159,6 +162,7 @@ const isConfinedTrust = (trust) => trust === 'public' || trust === 'workspace';
 // WebFetch alone: WebSearch, NotebookEdit and Task stay denied at every tier.
 // Bash and Write land wherever the jail lets them, so the jail, not this list,
 // bounds a write.
+const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
 const WORKSPACE_ALLOW_TOOLS = {
   write: ['Edit', 'Write', 'Bash'],
   web: ['WebFetch'],
@@ -430,11 +434,16 @@ const MEMORY_TOOLS = Object.freeze(['commonly_read_agent_memory', 'commonly_writ
 
 const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
   trust, allow = [], memoryWithheld = false, platform = process.platform, home: homeOverride = null,
+  noShell = false,
 } = {}) => {
   const home = homeOverride || homedir();
   const deny = (sub) => absoluteToolDeny(permissionPath(join(home, sub), platform));
   // `allow` is already narrowed to a workspace seat's grants (workspaceGrants).
-  const granted = allow.flatMap((grant) => WORKSPACE_ALLOW_TOOLS[grant] || []);
+  // D245: with no OS jail (native Windows, --unsandboxed) a shell would run
+  // with the user's whole access and could read the seat's own token from its
+  // environment, so `write` grants edits only there.
+  const granted = allow.flatMap((grant) => WORKSPACE_ALLOW_TOOLS[grant] || [])
+    .filter((tool) => !(noShell && SHELL_TOOLS.has(tool)));
   const deniedReads = [
     deny('.commonly'),
     deny('.claude'),
@@ -1129,6 +1138,7 @@ const prepareArgv = async (innerArgv, ctx) => {
         memoryWithheld: ctx.memoryWithheld === true,
         platform: ctx._platform || process.platform,
         home: ctx._home || null,
+        noShell: true,
       }),
       ...(ctx.publicSkillArgs || []),
     ];

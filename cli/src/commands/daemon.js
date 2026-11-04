@@ -679,8 +679,12 @@ Examples:
         // D245: under the Windows launcher, the launcher's exit is the stop signal.
         watchWindowsLauncher({
           onGone: (pid) => {
-            stampLog(`launcher ${pid} has exited`);
+            // The launcher held our stdout, so a write now can fail with
+            // EPIPE. Swallow it, and stop the seats before logging anything.
+            process.stdout.on('error', () => {});
+            process.stderr.on('error', () => {});
             shutdown();
+            try { stampLog(`launcher ${pid} has exited`); } catch { /* stdout is gone */ }
           },
         });
       } catch (error) {

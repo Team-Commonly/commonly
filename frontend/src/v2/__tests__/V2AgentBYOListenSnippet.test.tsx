@@ -322,8 +322,10 @@ describe('BYO listener snippet', () => {
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
       expect(screen.queryByTestId('byo-listen-wont-answer')).toBeNull();
       const note = screen.getByTestId('byo-listen-windows');
-      expect(note).toHaveTextContent(/^Windows has no sandbox for \S+, so it runs with your own access to files and commands\. You choose that by adding --unsandboxed/);
-      expect(note).toHaveTextContent('It still keeps Commonly’s restricted tool settings, read-only in its folder unless you add --allow, but nothing at the OS level stops it.');
+      // Untested comes first: no real Claude Code turn has run on Windows yet.
+      expect(note).toHaveTextContent(/^Claude Code hasn’t been tested on Windows yet\. Windows has no sandbox for \S+, so nothing at the OS level confines it\. You choose that by adding --unsandboxed/);
+      expect(note).toHaveTextContent('it only reads its folder unless you add --allow write, which lets it edit files there.');
+      expect(note).toHaveTextContent('It can’t run commands on Windows, and it gets no connector grants.');
       expect(note).toHaveTextContent('commonly daemon install --unsandboxed sets it up as a task that starts when you log in');
       expect(note).not.toHaveTextContent(/WSL|Codex/);
       // PowerShell, not Terminal, on Windows.

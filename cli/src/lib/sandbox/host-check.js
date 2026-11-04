@@ -44,7 +44,7 @@ export const windowsSandboxMessage = (adapterName) => {
     ...(adapterName === 'claude'
       ? [`  - Run it without an OS sandbox: add ${UNSANDBOXED_FLAG}`
         + ` (commonly agent run <name> ${UNSANDBOXED_FLAG}, or commonly daemon install ${UNSANDBOXED_FLAG}).`
-        + " It keeps Commonly's restricted tool settings, nothing at the OS level confines it, and it gets no connector grants."]
+        + " It keeps Commonly's restricted tool settings and gets no shell, but nothing at the OS level confines it, and it gets no connector grants."]
       : []),
     ...(adapterName === 'claude'
       ? ['  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.']

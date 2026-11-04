@@ -99,7 +99,7 @@ export const hostUnconfinedForRun = ({ optedIn, adapterName, platform = process.
 );
 
 /** One plain line for the run log and `daemon status`. */
-export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox, so nothing at the OS level confines this agent. It keeps Commonly\'s restricted tool settings, and gets no connector grants.';
+export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox, so nothing at the OS level confines this agent. It keeps Commonly\'s restricted tool settings, gets no shell even with --allow write, and gets no connector grants.';
 
 export default {
   UNSANDBOXED_FLAG,
