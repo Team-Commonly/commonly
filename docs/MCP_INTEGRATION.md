@@ -263,6 +263,13 @@ its 10-second limit. That limit covers reading the response body too, so a slow
 instance that did answer can land here. Check the URL first, then whether that
 machine can reach it, then the instance.
 
+The server answers the client's `initialize` only after that call returns, or
+after one second, whichever comes first. `claude mcp list` initializes, prints
+"Connected" and closes the server at once; before this wait, it closed the
+server while the call was still connecting, so a person who had just added it
+looked like one who never had (11-04). A call still running after the second
+carries on in the background, within its 10-second limit.
+
 ### `codex exec` MCP-tool surfacing — gated on the env table, not the codex version
 
 **The gate is configuration, not the codex version.** codex sandboxes the MCP
