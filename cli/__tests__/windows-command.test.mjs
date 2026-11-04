@@ -2,6 +2,8 @@
 // shell (#2141). Every case runs with an injected platform, env and
 // filesystem, so the suite runs the same on macOS and Linux CI.
 
+import { jest } from '@jest/globals';
+
 import {
   parseCmdShim, resolveLaunch, resolveWindowsCommand, resolveWindowsCommandWithReason,
 } from '../src/lib/windows-command.js';
@@ -260,19 +262,90 @@ describe('parseCmdShim', () => {
 
 describe("npm's own npx.cmd (not a cmd-shim)", () => {
   const NODEJS = 'C:\\Program Files\\nodejs';
+  const NODE_BESIDE = `${NODEJS}\\node.exe`;
   const bundled = `${NODEJS}\\node_modules\\npm\\bin\\npx-cli.js`;
+  const prefixJs = `${NODEJS}\\node_modules\\npm\\bin\\npm-prefix.js`;
   const appData = 'C:\\Users\\ada\\AppData\\Roaming';
-  const upgraded = `${appData}\\npm\\node_modules\\npm\\bin\\npx-cli.js`;
-  const files = { [`${NODEJS}\\npx.cmd`]: NPM_NPX_CMD, [`${NODEJS}\\node.exe`]: 'MZ', [bundled]: '' };
-
-  test('resolves to the node.exe beside it and the bundled npx-cli.js', () => {
-    expect(resolveWindowsCommand('npx', win(files, { Path: NODEJS, APPDATA: appData })))
-      .toEqual({ command: `${NODEJS}\\node.exe`, args: [bundled] });
+  const appDataNpx = `${appData}\\npm\\node_modules\\npm\\bin\\npx-cli.js`;
+  const configured = 'D:\\npm-global';
+  const configuredNpx = `${configured}\\node_modules\\npm\\bin\\npx-cli.js`;
+  const files = {
+    [`${NODEJS}\\npx.cmd`]: NPM_NPX_CMD, [NODE_BESIDE]: 'MZ', [bundled]: '', [prefixJs]: '',
+  };
+  // npm.cmd's FOR line runs `node npm-prefix.js` and takes what it prints as
+  // the global prefix. npm decides that from its npmrc files and env, so the
+  // fake reports it as npm would.
+  const prefixSays = (stdout, status = 0) => jest.fn(() => ({ status, stdout, stderr: '' }));
+  const npx = (extra, env, spawnSync) => resolveWindowsCommand('npx', {
+    ...win({ ...files, ...extra }, { Path: NODEJS, APPDATA: appData, ...env }), spawnSync,
   });
 
-  test('an npm upgraded into %APPDATA%\\npm wins, as npm-prefix.js would decide', () => {
-    expect(resolveWindowsCommand('npx', win({ ...files, [upgraded]: '' }, { Path: NODEJS, APPDATA: appData })))
-      .toEqual({ command: `${NODEJS}\\node.exe`, args: [upgraded] });
+  test('resolves to the node.exe beside it and the bundled npx-cli.js', () => {
+    expect(npx({}, {}, prefixSays(`${appData}\\npm\r\n`)))
+      .toEqual({ command: NODE_BESIDE, args: [bundled] });
+  });
+
+  test('an npm upgraded into the default prefix (%APPDATA%\\npm) wins', () => {
+    expect(npx({ [appDataNpx]: '' }, {}, prefixSays(`${appData}\\npm\r\n`)))
+      .toEqual({ command: NODE_BESIDE, args: [appDataNpx] });
+  });
+
+  // CodeRabbit on #3437: npm.cmd follows npm's configured prefix, so the
+  // resolver must too, or the warm runs a different npm from the one typed.
+  test('a configured prefix wins over an npm left in %APPDATA%\\npm', () => {
+    expect(npx({ [appDataNpx]: '', [configuredNpx]: '' }, {}, prefixSays(`${configured}\r\n`)))
+      .toEqual({ command: NODE_BESIDE, args: [configuredNpx] });
+  });
+
+  test('a configured prefix with no npm in it means the bundled npm, not the %APPDATA% copy', () => {
+    expect(npx({ [appDataNpx]: '' }, {}, prefixSays(`${configured}\r\n`)))
+      .toEqual({ command: NODE_BESIDE, args: [bundled] });
+  });
+
+  test('the prefix is asked the way npm.cmd asks it: node.exe npm-prefix.js, no shell, in the child\'s env and cwd', () => {
+    const spawnSync = prefixSays(`${configured}\r\n`);
+    const env = { Path: NODEJS, APPDATA: appData, npm_config_prefix: configured };
+    resolveWindowsCommand('npx', {
+      ...win({ ...files, [configuredNpx]: '' }, env), spawnSync, cwd: 'C:\\work',
+    });
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+    const [cmd, args, opts] = spawnSync.mock.calls[0];
+    expect([cmd, args]).toEqual([NODE_BESIDE, [prefixJs]]);
+    expect(opts.shell).toBeUndefined();
+    expect(opts.env).toBe(env);
+    expect(opts.cwd).toBe('C:\\work');
+    expect(opts.timeout).toBeGreaterThan(0);
+  });
+
+  test('an older npm.cmd that asks `npm-cli.js prefix -g` is asked the same way', () => {
+    const older = NPM_NPX_CMD
+      .replace('SET "NPM_PREFIX_JS=%~dp0\\node_modules\\npm\\bin\\npm-prefix.js"\r\n', 'SET "NPM_CLI_JS=%~dp0\\node_modules\\npm\\bin\\npm-cli.js"\r\n')
+      .replace('"%NPM_PREFIX_JS%"\')', '"%NPM_CLI_JS%" prefix -g\')');
+    const npmCli = `${NODEJS}\\node_modules\\npm\\bin\\npm-cli.js`;
+    const spawnSync = prefixSays(`${configured}\r\n`);
+    expect(npx({ [`${NODEJS}\\npx.cmd`]: older, [npmCli]: '', [configuredNpx]: '' }, {}, spawnSync))
+      .toEqual({ command: NODE_BESIDE, args: [configuredNpx] });
+    expect(spawnSync.mock.calls[0].slice(0, 2)).toEqual([NODE_BESIDE, [npmCli, 'prefix', '-g']]);
+  });
+
+  test('when the prefix cannot be read, the bundled npm runs, as npm.cmd falls back', () => {
+    for (const spawnSync of [
+      prefixSays('', 1),
+      jest.fn(() => ({ status: null, error: new Error('ETIMEDOUT'), stdout: '' })),
+      jest.fn(() => { throw new Error('spawnSync EPERM'); }),
+      prefixSays('npm-global\r\n'), // not absolute: never read against some cwd
+    ]) {
+      expect(npx({ [appDataNpx]: '' }, {}, spawnSync)).toEqual({ command: NODE_BESIDE, args: [bundled] });
+    }
+  });
+
+  test('no npm-prefix.js beside npm means nothing is run, and the bundled npm', () => {
+    const spawnSync = prefixSays(`${configured}\r\n`);
+    const { [prefixJs]: _absent, ...withoutPrefixJs } = files;
+    expect(resolveWindowsCommand('npx', {
+      ...win({ ...withoutPrefixJs, [configuredNpx]: '' }, { Path: NODEJS, APPDATA: appData }), spawnSync,
+    })).toEqual({ command: NODE_BESIDE, args: [bundled] });
+    expect(spawnSync).not.toHaveBeenCalled();
   });
 
   test('missing npx-cli.js is refused with a reason', () => {
