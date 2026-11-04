@@ -111,6 +111,7 @@ export interface IAgentRun extends Document {
   completedAt?: Date;
   errorKind?: AgentRunErrorKind;
   errorMessage?: string;
+  contentRedactedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -179,6 +180,9 @@ const AgentRunSchema = new Schema<IAgentRun>(
       enum: ['turn_cap', 'token_cap', 'timeout', 'tool_error', 'llm_error', 'guardrail_blocked', 'config', 'unknown'],
     },
     errorMessage: { type: String },
+    // Set when the content window unset this run's text and tool args/results
+    // (services/agentRunContentWindow.ts).
+    contentRedactedAt: { type: Date },
   },
   { timestamps: true },
 );
