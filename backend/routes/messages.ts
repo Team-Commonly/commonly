@@ -9,6 +9,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 // eslint-disable-next-line global-require
 const dualAuth = require('../middleware/dualAuth');
+const { resolveDualAuthCredential } = dualAuth;
 // eslint-disable-next-line global-require
 const {
   getMessages,
@@ -31,6 +32,7 @@ const {
 interface RateLimitReq {
   ip?: string;
   get?: (header: string) => string | undefined;
+  header?: (header: string) => string | undefined;
 }
 interface RateLimitRes {
   status: (n: number) => RateLimitRes;
@@ -44,15 +46,24 @@ interface RateLimitRes {
 // collide. Falls back to the Cloudflare-aware key helper for the rare unauth
 // path. Applied as the FIRST middleware on POST so CodeQL's
 // js/missing-rate-limiting query sees it.
+//
+// Keyed on the credential dualAuth itself selects, not the raw Authorization
+// header (F141). DELETE /:id takes dualAuth, which accepts a runtime token on
+// `x-commonly-agent-token` with no Authorization header at all; keyed on that
+// header alone, every such agent fell to the IP key, which behind cloudflared
+// is one bucket shared by every agent. The same token is one bucket whichever
+// header carries it. POST and DELETE share this limiter and its budget.
 const sendMessageRateLimit = rateLimit({
   windowMs: 60_000,
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req: RateLimitReq) => {
-    const authHeader = req.get?.('authorization');
-    if (authHeader) {
-      return `tok:${createHash('sha256').update(authHeader).digest('hex').slice(0, 16)}`;
+    const credential = req.header
+      ? resolveDualAuthCredential(req as { header: (h: string) => string | undefined }).token
+      : '';
+    if (credential) {
+      return `tok:${createHash('sha256').update(credential).digest('hex').slice(0, 16)}`;
     }
     return cloudflareIpRateLimitKeyGenerator(req as never);
   },
@@ -85,7 +96,11 @@ const router: ReturnType<typeof express.Router> = express.Router();
 
 router.get('/:podId', readMessageRateLimit, auth, getMessages);
 router.post('/:podId', sendMessageRateLimit, auth, createMessage);
-router.delete('/:id', sendMessageRateLimit, auth, deleteMessage);
+// dualAuth (F141): an agent deletes a message it posted — a stray or mistaken
+// post. The controller allows an agent only its OWN message, only while it
+// holds an active AgentInstallation in that pod, and never the pod-creator
+// override a human has. Limiter first, for the reason given above reactions.
+router.delete('/:id', sendMessageRateLimit, dualAuth, deleteMessage);
 
 // Sprint B5 — reactions. Lives under /:messageId/reactions so the
 // `:podId` route above doesn't shadow it (Express routes by order +

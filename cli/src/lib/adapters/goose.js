@@ -45,6 +45,9 @@ const templateLiteral = (value) => {
 // public seat past 50 unseen falls back to continueAnyway, which it keeps.
 // Self-install and the memory writes (log_cycle included) are left out on every
 // public seat (F118, PUBLIC_ONLY_WITHHELD_TOOLS); reading memory stays.
+// delete_message is offered (F141): the backend lets an agent delete only its
+// own message, in a pod it is installed in, so an injected turn can at worst
+// remove the seat's own posts.
 export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_get_started', 'commonly_post_message', 'commonly_claim_message',
   'commonly_release_claim', 'commonly_get_messages', 'commonly_get_context',
@@ -54,7 +57,7 @@ export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_complete_task', 'commonly_update_task', 'commonly_create_pod',
   'commonly_list_pods', 'commonly_read_agent_memory',
   'commonly_dm_agent', 'commonly_ask_agent', 'commonly_request_decision',
-  'commonly_respond_to_ask', 'commonly_react_to_message',
+  'commonly_respond_to_ask', 'commonly_react_to_message', 'commonly_delete_message',
 ]);
 
 export const assertSandboxSupported = (environment = {}) => {

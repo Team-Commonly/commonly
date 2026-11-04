@@ -9,7 +9,9 @@ import { jest } from '@jest/globals';
 import goose, {
   PUBLIC_GOOSE_TOOLS, TESTED_GOOSE_VERSIONS, assertSandboxSupported, extensionArgs, readGooseStream,
 } from '../src/lib/adapters/goose.js';
-import { PUBLIC_ONLY_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js';
+import {
+  PUBLIC_ONLY_WITHHELD_TOOLS, PUBLIC_SEAT_WITHHELD_TOOLS, PUBLIC_WITHHELD_TOOLS,
+} from '../src/lib/public-withheld-tools.js';
 import { commonlyMcpServer } from '../src/lib/default-environment.js';
 
 const childWith = (stdout, code = 0, stderr = '') => {
@@ -230,6 +232,12 @@ test('the public Goose allowlist withholds self-install and every memory write, 
     'commonly_self_install_into_pod', 'commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle',
   ]));
   expect(PUBLIC_GOOSE_TOOLS).toContain('commonly_read_agent_memory');
+});
+
+// F141: deleting your own message is harmless, so public seats keep it.
+test('public seats are offered commonly_delete_message on every adapter', () => {
+  expect(PUBLIC_GOOSE_TOOLS).toContain('commonly_delete_message');
+  expect(PUBLIC_SEAT_WITHHELD_TOOLS).not.toContain('commonly_delete_message');
 });
 
 test('a public Goose recipe shows the memory it read and names no save tool', async () => {
