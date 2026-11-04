@@ -283,11 +283,14 @@ const buildProviderConfig = (provider, model, keyFile) => {
   } else if (typeof selectedModel.name !== 'string' || !selectedModel.name) {
     models[model] = { ...selectedModel, name: model };
   }
+  // anthropic-messages: provider.baseURL is the host (as for Claude Code's
+  // ANTHROPIC_BASE_URL); @ai-sdk/anthropic appends /messages to a /v1 base.
+  const anthropic = provider.api === 'anthropic-messages';
   return {
     [provider.id]: {
-      npm: '@ai-sdk/openai-compatible',
+      npm: anthropic ? '@ai-sdk/anthropic' : '@ai-sdk/openai-compatible',
       options: {
-        baseURL: provider.baseURL,
+        baseURL: anthropic ? `${provider.baseURL.replace(/\/+$/, '')}/v1` : provider.baseURL,
         apiKey: `{file:${keyFile}}`,
       },
       models,
@@ -652,6 +655,9 @@ export default {
   name: 'opencode',
   runtimeType: 'opencode',
   supportsProvider: true,
+  // `provider.api`: an OpenAI-compatible endpoint, or Anthropic's Messages API
+  // through OpenCode's own @ai-sdk/anthropic provider.
+  providerApis: ['openai-chat', 'anthropic-messages'],
 
   async validateEnvironment(environment, workspacePath) {
     return validateProviderEnvironment(environment, workspacePath);
@@ -787,6 +793,7 @@ export default {
         // the bearer only prevents unrelated local processes from using it.
         providerProxy = await startProviderProxy({
           provider,
+          wire: provider.api || 'openai-chat',
           keyFile: providerKeyFile, keyMaterial: ctx.providerKey,
           tokenFile: join(tempDir, 'provider-proxy-token'),
           ...(sandboxMode === 'bwrap' ? {

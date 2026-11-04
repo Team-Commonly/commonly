@@ -838,6 +838,19 @@ describe('performAttach', () => {
     }
   });
 
+  test('providerRefusal: only an adapter that lists the api may use it', async () => {
+    const { providerRefusal } = await import('../src/commands/agent.js');
+    const env = (api) => ({ model: 'm', provider: { id: 'a', baseURL: 'https://x.test', keyFile: '/k', ...(api ? { api } : {}) } });
+    const qwen = { name: 'qwen', supportsProvider: true };
+    const opencode = { name: 'opencode', supportsProvider: true, providerApis: ['openai-chat', 'anthropic-messages'] };
+    expect(providerRefusal({ model: 'm' }, null)).toBeNull();
+    expect(providerRefusal(env(), { name: 'stub' })).toMatch(/requires a provider-capable adapter/);
+    expect(providerRefusal(env(), qwen)).toBeNull();
+    expect(providerRefusal(env('anthropic-messages'), qwen))
+      .toBe('the qwen adapter cannot use provider.api "anthropic-messages"; it supports openai-chat');
+    expect(providerRefusal(env('anthropic-messages'), opencode)).toBeNull();
+  });
+
   test('falls back to /runtime-tokens when install does not return runtimeToken', async () => {
     const client = makeClient({ runtimeToken: null });
     const result = await performAttach({

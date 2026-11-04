@@ -626,6 +626,66 @@ describe('tick', () => {
     expect(JSON.stringify(saveToken.mock.calls[0][1].environment)).not.toContain('/.ssh/');
   });
 
+  // An anthropic-messages provider is OpenCode's alone; a swap to an adapter
+  // that only speaks openai-chat keeps the current seat, as a missing
+  // provider capability does, instead of a child that refuses on every start.
+  test('an adapter swap that cannot speak the host-local provider.api keeps the current seat', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: {
+          model: 'claude-haiku-5-5',
+          provider: {
+            id: 'anthropic-native', baseURL: 'https://api.anthropic.com', keyFile: '/Users/kai/.config/commonly/anthropic-key', api: 'anthropic-messages',
+          },
+        },
+      },
+    };
+    const logs = [];
+    const { supervisor, saveToken, children } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'qwen' },
+        environment: { model: 'claude-haiku-5-5' },
+      })],
+      tokens,
+      resolveAdapter: async () => 'qwen',
+      log: (line) => logs.push(line),
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toMatch(/the qwen adapter cannot use provider.api "anthropic-messages".*keeping the current record/);
+    // Not started: the retained OpenCode record would refuse the server's
+    // qwen binding at `agent run` and restart forever.
+    expect(children).toHaveLength(0);
+    expect(logs.join('\n')).toMatch(/set the adapter back to opencode/);
+  });
+
+  test('a record whose own adapter cannot speak its provider.api does not start', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'qwen',
+        environment: {
+          model: 'claude-haiku-5-5',
+          provider: {
+            id: 'anthropic-native', baseURL: 'https://api.anthropic.com', keyFile: '/Users/kai/.config/commonly/anthropic-key', api: 'anthropic-messages',
+          },
+        },
+      },
+    };
+    const { supervisor, saveToken, children } = makeHarness({
+      rows: () => [boundRow({ runtime: { runtimeType: 'wrapper', adapter: 'qwen' }, environment: { model: 'claude-haiku-5-5' } })],
+      tokens,
+      resolveAdapter: async () => 'qwen',
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(children).toHaveLength(0);
+  });
+
   test('the host-local provider survives a server environment that omits it', async () => {
     const localProvider = {
       id: 'litellm',

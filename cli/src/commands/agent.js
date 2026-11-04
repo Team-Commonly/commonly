@@ -67,6 +67,7 @@ import {
   refuseWorkspaceTrust,
   resolveWorkspace,
   validateEnvironmentSpec,
+  providerRefusal,
   WORKSPACE_SANDBOX_ALLOW,
 } from '../lib/environment.js';
 import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from '../lib/workspace-trust.js';
@@ -312,6 +313,8 @@ export const printAttachRunGuidance = ({
     warn(`\n  WARNING: ${binding?.warning || 'The server did not confirm this adapter binding.'}`);
   }
 };
+
+export { providerRefusal };
 
 // ── `agent run --adapter` against an existing token file (#2098) ────────────
 // The flag picks the CLI once, at first-run bootstrap; after that the token
@@ -1047,9 +1050,10 @@ export const updateAgentConfiguration = async ({
   if (!environment && Object.keys(environmentRuntime).length) {
     environment = { ...environmentRuntime };
   }
-  if (environment?.provider !== undefined
-    && !adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase())?.supportsProvider) {
-    throw new Error('environment.provider requires a provider-capable adapter');
+  {
+    const refusal = providerRefusal(environment,
+      adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase()));
+    if (refusal) throw new Error(refusal);
   }
   if (environment) config.environment = environmentForServer(environment);
   if (!Object.keys(config).length) {
@@ -1205,8 +1209,9 @@ export const performAttach = async ({
     // An explicit spec augments the seat; it does not remove the Commonly
     // kernel server. The daemon applies this same baseline before every spawn.
     environment = withDefaultMcpServer(await parseEnvironmentFile(envPath), adapterName);
-    if (environment?.provider !== undefined && !adapter.supportsProvider) {
-      throw new Error('environment.provider requires a provider-capable adapter');
+    {
+      const refusal = providerRefusal(environment, adapter);
+      if (refusal) throw new Error(refusal);
     }
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     if (typeof adapter.validateEnvironment === 'function') {
@@ -1678,8 +1683,9 @@ export const performRun = ({
 }) => {
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
-  if (environment?.provider !== undefined && !adapter?.supportsProvider) {
-    throw new Error('environment.provider requires a provider-capable adapter');
+  {
+    const refusal = providerRefusal(environment, adapter);
+    if (refusal) throw new Error(refusal);
   }
   const requestedTurnTimeout = Number(turnTimeoutMs ?? process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS);
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0
