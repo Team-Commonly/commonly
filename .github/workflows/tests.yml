@@ -100,7 +100,7 @@ jobs:
             printf '%s\n' "$files"
             printf '%s\n' "$files" | grep -qE '^(backend/|cli/|packages/|package(-lock)?\.json)' && backend=true
             printf '%s\n' "$files" | grep -qE '^(frontend/|backend/|README\.md$|docs/assets/|e2e/|docs/adr/|docs/cli/|docs-site/|cli/src/commands/login\.js$|commonly-mcp/src/tools\.js$)' && frontend=true
-            printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|scripts/verify-backend-worker-chart\.sh$|scripts/verify-dev-provider-env\.js$|scripts/monitoring/apply-alerting\.py$|docs/runbooks/alerting\.md$|package(-lock)?\.json)' && chart=true
+            printf '%s\n' "$files" | grep -qE '^(k8s/|charts?/|helm/|scripts/verify-backend-worker-chart\.sh$|scripts/verify-dev-provider-env\.js$|scripts/verify-agent-default-model\.js$|scripts/monitoring/apply-alerting\.py$|docs/runbooks/alerting\.md$|package(-lock)?\.json)' && chart=true
             # A change to this workflow runs the full suite as a self-test, so a
             # PR that edits the test pipeline proves every heavy leg still works.
             if printf '%s\n' "$files" | grep -qE '^\.github/workflows/tests\.yml$'; then
@@ -565,6 +565,33 @@ jobs:
               --set "$flag" > /tmp/dev-provider-negative.yaml
             if node scripts/verify-dev-provider-env.js < /tmp/dev-provider-negative.yaml; then
               echo "verify-dev-provider-env accepted a render with $flag"
+              exit 1
+            fi
+          done
+
+      - name: Verify agent default model routes
+        run: |
+          # F103: every agent driver default names a model LiteLLM serves under
+          # its own name; on dev (Claude-only, D243) none resolves to DeepSeek.
+          node scripts/verify-agent-default-model.js --no-deepseek < /tmp/dev-rendered.yaml
+          node scripts/verify-agent-default-model.js --no-deepseek < /tmp/dev-worker-rendered.yaml
+          helm template commonly-staging k8s/helm/commonly \
+            -f k8s/helm/commonly/values.yaml \
+            -f k8s/helm/commonly/values-staging.yaml > /tmp/staging-default-model.yaml
+          node scripts/verify-agent-default-model.js < /tmp/staging-default-model.yaml
+          helm template commonly-base k8s/helm/commonly \
+            -f k8s/helm/commonly/values.yaml \
+            --set litellm.enabled=true > /tmp/base-default-model.yaml
+          node scripts/verify-agent-default-model.js < /tmp/base-default-model.yaml
+          # The verifier must reject a dev default with no route, and one that
+          # resolves to DeepSeek.
+          for model in gpt-5.4 deepseek-v4-flash; do
+            helm template commonly-dev k8s/helm/commonly \
+              -f k8s/helm/commonly/values.yaml \
+              -f k8s/helm/commonly/values-dev.yaml \
+              --set "litellm.agentDefaultModel=$model" > /tmp/dev-default-model-negative.yaml
+            if node scripts/verify-agent-default-model.js --no-deepseek < /tmp/dev-default-model-negative.yaml; then
+              echo "verify-agent-default-model accepted a dev render with agentDefaultModel=$model"
               exit 1
             fi
           done

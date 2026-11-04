@@ -144,75 +144,10 @@ data:
           api_key: os.environ/DEEPSEEK_API_KEY
       {{- end }}
 
-      # --- Legacy aliases: other vendors' names served by DeepSeek ---
-      # nemotron since D78 (OpenRouter retired the free slug), the GPT/Codex names
-      # since 2026-10-27 (GPT access revoked). F98 (D243, 11-04): none was called
-      # on dev in the 7 days to 11-04, and dev renders none of them
-      # (litellm.legacyAliases false), so a caller there gets an unknown-model
-      # error instead of a silent stand-in. Base keeps them, unchanged, for the
-      # chart's own driver defaults that still name them; they retire with those
-      # defaults in F103 (see values.yaml). The nemotron pair keeps its own $60/mo
-      # cap: the clawdbot gateway calls LiteLLM with the uncapped master key.
-      {{- if .Values.litellm.legacyAliases }}
-      - model_name: openrouter/nvidia/nemotron-3-super-120b-a12b:free
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-          max_budget: 60
-          budget_duration: 1mo
-
-      - model_name: nvidia/nemotron-3-super-120b-a12b:free
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-          max_budget: 60
-          budget_duration: 1mo
-
-      - model_name: gpt-5.4
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: openai-codex/gpt-5.4
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: gpt-5.4-mini
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: openai-codex/gpt-5.4-mini
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: gpt-5.4-nano
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: openai-codex/gpt-5.4-nano
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: codex-mini-latest
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: o4-mini
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-
-      - model_name: codex-cli/gpt-5.4
-        litellm_params:
-          model: deepseek/deepseek-v4-flash
-          api_key: os.environ/DEEPSEEK_API_KEY
-      {{- end }}
+      # F103 (11-04) deleted the legacy aliases: nemotron, gpt-5.4*, openai-codex/*,
+      # codex-mini-latest, o4-mini and codex-cli/gpt-5.4, all served by DeepSeek.
+      # Every driver default that named them now names litellm.agentDefaultModel,
+      # a route listed above under its own name.
 
       # --- OpenAI (optional, for embeddings) ---
       # aiProviders.openai.enabled off (F85): the OpenAI key is a placeholder, so
@@ -298,18 +233,14 @@ data:
       # the "LiteLLM is failing its callers" alert covers deepseek itself
       # going dead (docs/runbooks/alerting.md#litellm-failing).
       # F98 (11-04): a fallback renders only for a name that renders: the Gemini
-      # names where Gemini is on or legacyAliases is, the nemotron pair only
-      # under legacyAliases. Dev, with neither, has none.
+      # names where Gemini is on or legacyAliases is. Dev, with neither, has none.
+      # (F103 deleted the nemotron pair and its fallbacks.)
       {{- if or .Values.aiProviders.gemini.enabled .Values.litellm.legacyAliases }}
       fallbacks:
         - {"gemini-2.5-flash":        ["deepseek-v4-flash"]}
         - {"google/gemini-2.5-flash": ["deepseek-v4-flash"]}
         - {"google/gemini-2.5-flash-lite": ["deepseek-v4-flash"]}
         - {"google/gemini-2.0-flash": ["deepseek-v4-flash"]}
-        {{- if .Values.litellm.legacyAliases }}
-        - {"openrouter/nvidia/nemotron-3-super-120b-a12b:free": ["deepseek-v4-flash"]}
-        - {"nvidia/nemotron-3-super-120b-a12b:free": ["deepseek-v4-flash"]}
-        {{- end }}
       {{- else }}
       fallbacks: []
       {{- end }}

@@ -152,4 +152,39 @@ describe('globalModelConfigService', () => {
       expect(result.llmService.model).toBe('gemini-2.5-flash');
     });
   });
+
+  // F103: the community default names the configured model by its own name,
+  // not the nemotron slug LiteLLM used to serve with DeepSeek.
+  describe('AGENT_DEFAULT_MODEL as the community agent default', () => {
+    const original = process.env.AGENT_DEFAULT_MODEL;
+    afterEach(() => {
+      if (original === undefined) delete process.env.AGENT_DEFAULT_MODEL;
+      else process.env.AGENT_DEFAULT_MODEL = original;
+    });
+    const stored = (value) => SystemSetting.findOne.mockReturnValueOnce({
+      lean: jest.fn().mockResolvedValueOnce(value ? { key: 'llm.globalModelConfig', value } : null),
+    });
+
+    it.each([
+      ['unset', undefined, 'openrouter/deepseek-v4-flash'],
+      ['claude-haiku-5-5', 'claude-haiku-5-5', 'openrouter/claude-haiku-5-5'],
+    ])('with AGENT_DEFAULT_MODEL %s, defaults() and an unpersisted config both name it', async (_label, env, primary) => {
+      if (env === undefined) delete process.env.AGENT_DEFAULT_MODEL; else process.env.AGENT_DEFAULT_MODEL = env;
+      stored(null);
+
+      const result = await GlobalModelConfigService.getConfig();
+
+      expect(result.openclaw.communityAgentModel).toEqual({ primary, fallbacks: [] });
+      expect(GlobalModelConfigService.defaults().openclaw.communityAgentModel).toEqual({ primary, fallbacks: [] });
+    });
+
+    it('keeps an admin-persisted community primary over the env default', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { communityAgentModel: { primary: 'openrouter/some-admin-pick', fallbacks: [] } } });
+
+      const result = await GlobalModelConfigService.getConfig();
+
+      expect(result.openclaw.communityAgentModel.primary).toBe('openrouter/some-admin-pick');
+    });
+  });
 });

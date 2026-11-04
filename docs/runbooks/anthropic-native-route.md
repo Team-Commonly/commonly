@@ -50,17 +50,19 @@ digests, pod skills, avatar descriptions) and the commonly-bot.
   no-fallback: one LiteLLM call with `disable_fallbacks`, and a failure throws.
 
 What still reaches DeepSeek on dev: only a caller that names `deepseek-v4-flash`
-or `deepseek-flash-1017` itself. Other vendors' names that LiteLLM serves with
-DeepSeek render only under `litellm.legacyAliases`: the nemotron pair,
-`gpt-5.4*`, `openai-codex/*`, `codex-mini-latest`, `o4-mini`, `codex-cli/gpt-5.4`,
-and the Gemini names and `gpt-4o` where their provider is off. The flag is off on
-dev, so a caller there gets an unknown-model error instead of a silent stand-in.
-None of those names was called on dev in the 7 days to 11-04 (the spend-log read
-is in the F98 pull request). Base keeps the flag on, rendering exactly as
-before, because the chart's own driver defaults still name them: the K8s
-provisioner's community and dev-agent models, `globalModelConfigService`'s
-default policy and cloud-codex's `codex-cli/gpt-5.4`. F103 moves those defaults,
-then turns the flag off in base and deletes the gated block. Where Gemini is on
+or `deepseek-flash-1017` itself. Agent driver defaults name one model,
+`litellm.agentDefaultModel` (F103): Claude on dev, `deepseek-v4-flash` in base.
+They cover the K8s provisioner's community and dev-agent primaries and key
+allowlists, the global policy's community default, the gateway seed config and
+cloud-codex. CI checks each render (`scripts/verify-agent-default-model.js`):
+every default must be a LiteLLM route, and on dev none may resolve to
+`deepseek/*`. F103 deleted the other vendors' names that LiteLLM served with
+DeepSeek (nemotron, `gpt-5.4*`, `openai-codex/*`, `codex-mini-latest`, `o4-mini`
+and `codex-cli/gpt-5.4`). Only the Gemini and `gpt-4o` stand-ins remain, where
+their provider is off and `litellm.legacyAliases` is on. That flag is off on dev,
+and on in base for the platform defaults that still name Gemini, until F105
+moves them. None of those names was called on dev in the 7 days to 11-04 (the
+spend-log read is in the F98 pull request). Where Gemini is on
 (base), the four Gemini names also fall back to `deepseek-v4-flash`, so a failed
 Gemini call reaches DeepSeek without its caller naming it. With every native
 pin mapped to Claude, /privacy names no DeepSeek.

@@ -1,4 +1,5 @@
 import SystemSetting from '../models/SystemSetting';
+import { agentDefaultModel } from '../config/agentDefaultModel';
 
 const MODEL_CONFIG_KEY = 'llm.globalModelConfig';
 
@@ -52,14 +53,13 @@ const DEFAULT_CONFIG: GlobalModelConfig = {
     ],
     // Agent IDs that use Codex as primary. All others use communityAgentModel as primary.
     devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
-    // Model used by non-dev agents (community agents like liz/tarik/tom/fakesam/x-curator).
-    // Trinity removed 2026-05-03 (deregistered at OpenRouter, 404 No endpoints found).
-    // Nemotron is the only working free fallback right now; if it 429s, community
-    // agents fail loud rather than escalate to paid Codex (see assertion in
-    // applyOpenClawModelDefaults).
-    communityAgentModel: {
-      primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-      fallbacks: [],
+    // Model used by non-dev agents. It names the configured default
+    // (config/agentDefaultModel, F103), read when asked, so it follows the
+    // chart's `litellm.agentDefaultModel`; before F103 it was the nemotron slug
+    // LiteLLM served with DeepSeek. Never an openai-codex model (see the
+    // assertion in applyOpenClawModelDefaults).
+    get communityAgentModel(): CommunityAgentModel {
+      return { primary: `openrouter/${agentDefaultModel()}`, fallbacks: [] };
     },
   },
 };
