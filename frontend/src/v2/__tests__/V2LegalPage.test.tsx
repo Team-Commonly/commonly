@@ -26,11 +26,17 @@ describe('public legal pages (TASK-530)', () => {
   it('states how Google Calendar data is used, with the Limited Use disclosure', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByRole('heading', { level: 2, name: 'Google Calendar' })).toBeInTheDocument();
-    expect(screen.getByText(/read-only access to three things/)).toBeInTheDocument();
-    expect(screen.getByText(/We do not store the calendar data a call returns as it came from Google\./)).toBeInTheDocument();
+    expect(screen.getByText(/It can't create, change or delete events\./)).toBeInTheDocument();
+    expect(screen.getByText(/We don't store the calendar data Google sends back\./)).toBeInTheDocument();
     // D239: Calendar is granted only to agents on their owner's machine, never to hosted agents.
-    expect(screen.getByText(/Hosted agents cannot use it\./)).toBeInTheDocument();
+    expect(screen.getByText(/never hosted agents\./)).toBeInTheDocument();
     expect(screen.getByText(/Google API Services User Data Policy, including the Limited Use requirements\./)).toBeInTheDocument();
+  });
+
+  it('states how long run records and backups keep content', () => {
+    render(<V2PrivacyPage />);
+    expect(screen.getByText(/inputs and outputs of its tool calls for 30 days\./)).toBeInTheDocument();
+    expect(screen.getByText(/can stay in a backup for up to 35 days/)).toBeInTheDocument();
   });
 
   it('links the addresses by mailto and links home', () => {

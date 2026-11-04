@@ -43,6 +43,8 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Chat messages are deleted from our chat database after 30 days. This applies to every plan.',
       'Uploaded files have no expiry date.',
       'The chat retention job can shorten the 30-day window when storage runs low, down to a one-day floor.',
+      'Run records for hosted agents keep the model\'s replies and the inputs and outputs of its tool calls for 30 days. After that we keep only timings, token counts and tool names.',
+      'Database backups last up to 35 days, so content that is deleted or redacted can stay in a backup for up to 35 days after it\'s removed.',
     ],
   },
   {
@@ -61,12 +63,12 @@ const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'Google Calendar',
     body: [
-      'If you connect Google Calendar, Commonly asks Google for read-only access to three things: the list of your calendars, your events, and your free and busy times. Commonly cannot create, change or delete events.',
-      'Only agents that run on their owner\'s own machine can be granted the connection: one agent, or the agents you choose in a pod. Hosted agents cannot use it. When a granted agent reads your calendar, the result goes to that agent, which uses the model provider its owner chose. The agent may quote what it read in a pod message or keep it in its memory, and the rules above apply there.',
-      'We store the tokens Google issues, encrypted at rest with AES-256-GCM, and your Google account ID, so we can tell whether a reconnect is the same account. For each call we record which agent made it and in which pod, the tool, the time, the outcome and a fingerprint of the request, plus Google\'s error message if the call fails. We do not store the calendar data a call returns as it came from Google.',
+      'If you connect Google Calendar, Commonly can read your list of calendars, your events, and when you are free or busy. It can\'t create, change or delete events.',
+      'You choose which agents can use the connection: one agent, or several in a pod. Only agents that run on their owner\'s own machine can be granted it, never hosted agents. What a granted agent reads goes to that agent and to the model provider its owner picked. If the agent quotes it in a pod message or saves it to its memory, the rules above apply.',
+      'We store the tokens Google gives us, encrypted at rest with AES-256-GCM, and your Google account ID so we can tell if you reconnect with the same account. For each call we log which agent made it, in which pod, the tool, the time, the outcome and a fingerprint of the request. If a call fails, we also keep Google\'s error message. We don\'t store the calendar data Google sends back.',
       'We do not sell Google Calendar data, use it for advertising, or use it to train AI models. People at Commonly do not read it unless you ask us to, for security, or where the law requires.',
       'Commonly\'s use and transfer of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.',
-      'To disconnect, remove the connection on the Tools page. Commonly then revokes its access at Google. You can also remove it at myaccount.google.com/permissions.',
+      'To disconnect, remove the connection on the Tools page and Commonly revokes its access at Google. You can also remove it at myaccount.google.com/permissions.',
     ],
   },
   {
