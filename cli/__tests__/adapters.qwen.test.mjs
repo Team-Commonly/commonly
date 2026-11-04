@@ -5,6 +5,7 @@ import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
 import { buildSeatbeltProfile } from '../src/lib/sandbox/seatbelt.js';
+import { PUBLIC_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js';
 
 const spawnSyncMock = jest.fn();
 await jest.unstable_mockModule('child_process', () => ({
@@ -384,7 +385,16 @@ test('a warm public Qwen spawn grants only the selected MCP version directory', 
           return fakeChild();
         },
       });
-      expect(launchArgs).not.toContain('--allowed-tools');
+      // F110 (D247 walk, 11-04): a public seat is offered the Commonly tools,
+      // so it must be able to call them in a non-interactive run, the way the
+      // public Claude seat's --allowedTools carries mcp__commonly__*. Before,
+      // commonly_post_message came back "declined, and this non-interactive
+      // run can't prompt". The tools no public seat is offered stay excluded.
+      expect(launchArgs[launchArgs.indexOf('--allowed-tools') + 1]).toBe('mcp__commonly__*');
+      const excluded = launchArgs[launchArgs.indexOf('--exclude-tools') + 1].split(',');
+      for (const tool of PUBLIC_WITHHELD_TOOLS) {
+        expect(excluded).toEqual(expect.arrayContaining([tool, `mcp__commonly__${tool}`]));
+      }
       expect(config.mcpServers.commonly).toMatchObject({
         command: 'node', args: [join(packageDir, 'src', 'index.js')],
       });
