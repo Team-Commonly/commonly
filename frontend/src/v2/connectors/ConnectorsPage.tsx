@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { catalogDescription } from '../utils/connectorCatalogDescription';
-import { ADD_PLATFORMS, TYPE_LABELS } from './channelModel';
+import { ADD_PLATFORMS, TYPE_LABELS, entryOffered } from './channelModel';
 import type { ListItem } from './channelModel';
 import { PER_ENTRY_REVOKE_COPY, entryCovers, entryIsGranted, isDead } from './toolModel';
 import type { ToolCatalogEntry, ToolGrant } from './toolModel';
@@ -89,7 +89,7 @@ const ConnectorsPage: React.FC = () => {
     (connector) => connector.type === type && Boolean(connector.installationId),
   );
   const availableProviders = c.catalog
-    ? c.catalog.filter((entry) => entry.available && entry.offered !== false && !entry.installation).map((entry) => ({ type: entry.installableId }))
+    ? c.catalog.filter((entry) => entry.available && entryOffered(entry) && !entry.installation).map((entry) => ({ type: entry.installableId }))
     : ADD_PLATFORMS.filter((provider) => provider.enabled && !hasInstallation(provider.type));
 
   // ---- tools ----

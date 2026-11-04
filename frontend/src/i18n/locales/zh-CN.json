@@ -2508,6 +2508,8 @@
     "availableLine": "将 {{label}} 连接到 Pod。",
     "availableSlack": "在你的工作空间中点一下",
     "availableTelegram": "发一条消息",
+    "availableDiscord": "把机器人加进你的服务器",
+    "linkInstallCreatorOnly": "只有这个 Pod 的创建者才能把 {{connector}} 机器人加进来。",
     "cancel": "取消",
     "channelDetails": "频道详情",
     "closeDetails": "关闭",

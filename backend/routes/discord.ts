@@ -25,7 +25,9 @@ const { runDiscordCommandForIntegrations } = require('../services/discordMultiCo
 import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { invalidDiscordIdError, isDiscordSnowflake, isSupplied } from '../utils/discordBinding';
-import { mintDiscordInstallProof, readDiscordInstallProof } from '../utils/discordInstallProof';
+import {
+  mintDiscordInstallProof, mintDiscordInstallState, readDiscordInstallProof, readDiscordInstallState,
+} from '../utils/discordInstallProof';
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -62,6 +64,16 @@ function verifySignature(req: { headers: Record<string, string | undefined>; bod
     return false;
   }
 }
+
+// The bot permissions the install asks for (the value the legacy room link
+// uses): view channels, send messages, manage webhooks.
+const DISCORD_BOT_PERMISSIONS = '536873984';
+
+// One redirect for the authorize request and the code exchange: Discord refuses
+// an exchange whose redirect_uri differs from the one the user authorized.
+const discordRedirectUri = (): string => (
+  `${String(process.env.BACKEND_URL || 'http://localhost:5000').replace(/\/+$/, '')}/api/discord/callback`
+);
 
 async function canManagePod(podId: string, userId: string): Promise<boolean> {
   const [user, pod] = await Promise.all([User.findById(userId), Pod.findById(podId)]) as [{ role?: string } | null, { createdBy?: { toString: () => string } } | null];
@@ -121,6 +133,7 @@ router.get('/channels/:guildId', listIntegrationsRateLimit, auth, async (req: Au
     // stands in for one: same guild, and a pod the caller belongs to (F89).
     const proof = binding ? null : readDiscordInstallProof(req.query?.install);
     const provenInstall = !!proof && proof.guildId === guildId
+      && proof.userId === String(req.user?.id)
       && podIds.some((podId: unknown) => String(podId) === proof.podId);
     // One answer for a guild that is bound elsewhere and one that does not
     // exist: the route must not become an oracle for either.
@@ -209,13 +222,24 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
 router.get('/install-link/:podId', auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
-    const clientId = req.query?.clientId || process.env.DISCORD_CLIENT_ID;
+    // The instance's own application only. A caller-chosen client id would send
+    // the bot add to an app whose callback is not ours.
+    const clientId = process.env.DISCORD_CLIENT_ID;
     const canManage = await canManagePod(podId || '', req.user?.id || '');
     if (!canManage) return res.status(403).json({ error: 'Access denied' });
     if (!clientId) return res.status(400).json({ error: 'Discord client ID is required' });
-    const baseUrl = 'https://discord.com/api/oauth2/authorize';
-    const installUrl = `${baseUrl}?client_id=${clientId}&scope=bot%20applications.commands&permissions=536873984&state=pod_${podId}`;
-    res.json({ installUrl, podId, status: 'ready' });
+    // A code grant with our callback as the redirect. Without `response_type`
+    // and `redirect_uri`, Discord adds the bot and stops on its own page, so the
+    // callback never runs: no install proof, no channel picker, no binding (walked
+    // on prod 2026-11-04).
+    const installUrl = new URL('https://discord.com/api/oauth2/authorize');
+    installUrl.searchParams.set('client_id', String(clientId));
+    installUrl.searchParams.set('scope', 'bot applications.commands');
+    installUrl.searchParams.set('permissions', DISCORD_BOT_PERMISSIONS);
+    installUrl.searchParams.set('response_type', 'code');
+    installUrl.searchParams.set('redirect_uri', discordRedirectUri());
+    installUrl.searchParams.set('state', mintDiscordInstallState({ podId: String(podId), userId: String(req.user?.id) }));
+    res.json({ installUrl: installUrl.toString(), podId, status: 'ready' });
   } catch {
     console.error('Error generating installation link');
     res.status(500).json({ error: 'Failed to generate installation link' });
@@ -327,8 +351,11 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
   try {
     const { code, state, guild_id: guildId } = req.query || {};
     if (!code) return res.redirect(`${frontend}/discord/error?error=No authorization code received`);
-    const podId = state?.replace('pod_', '');
-    if (!podId) return res.redirect(`${frontend}/discord/error?error=Invalid state parameter`);
+    // A signed state from install-link, never a bare pod id (see
+    // utils/discordInstallProof.ts). Refused before the code is exchanged.
+    const installState = readDiscordInstallState(state);
+    if (!installState) return res.redirect(`${frontend}/discord/error?error=Invalid state parameter`);
+    const { podId, userId: installerId } = installState;
     // Unauthenticated route, so `guild_id` here is request-tainted input on a URL
     // built with the instance bot token. Refused before the code exchange: a
     // malformed id must not reach Discord at all, and the same value is forwarded
@@ -336,7 +363,7 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
     if (isSupplied(guildId) && !isDiscordSnowflake(guildId)) {
       return res.redirect(`${frontend}/discord/error?error=Invalid guild id`);
     }
-    const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', { client_id: process.env.DISCORD_CLIENT_ID, client_secret: process.env.DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/discord/callback` }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', { client_id: process.env.DISCORD_CLIENT_ID, client_secret: process.env.DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: discordRedirectUri() }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
     // The token response names the guild the bot was added to. `guild_id` in the
     // query is only Discord's hint and anyone can edit it, so a disagreement is a
     // refusal, and only the token response's guild earns an install proof (F89).
@@ -362,7 +389,7 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
     successUrl.searchParams.append('pod_id', podId);
     successUrl.searchParams.append('guild_id', installedGuildId || '');
     successUrl.searchParams.append('server_name', serverName);
-    if (provenGuildId) successUrl.searchParams.append('install', mintDiscordInstallProof({ podId, guildId: provenGuildId }));
+    if (provenGuildId) successUrl.searchParams.append('install', mintDiscordInstallProof({ podId, guildId: provenGuildId, userId: installerId }));
     res.redirect(successUrl.toString());
   } catch {
     console.error('Discord OAuth callback error');

@@ -87,6 +87,7 @@ const hasDiscordGuildAuthority = async (
     })) return true;
   const proof = readDiscordInstallProof(install);
   return !!proof && proof.guildId === guildId && proof.podId === podId
+    && proof.userId === String(userId)
     && podIds.some((id: unknown) => String(id) === podId);
 };
 
@@ -557,6 +558,15 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (type === 'discord') {
       // Authority, then the channel: both before the row or the webhook exist.
       // One answer for both refusals, as on the channel list.
+      // A channel bridge is a pod-level setting: binding one takes authority
+      // over the POD, the same as the install link (routes/discord.ts
+      // canManagePod: the pod's creator or an instance admin). Guild authority
+      // alone is not enough: the prior-binding arm below proves the guild, and
+      // on its own let a plain member bridge a pod they did not create.
+      const binder = await User.findById(String(req.user?.id)) as { role?: string } | null;
+      if (binder?.role !== 'admin' && targetPod.createdBy?.toString() !== String(req.user?.id)) {
+        return res.status(403).json({ message: 'Only the pod creator can connect Discord to this pod' });
+      }
       const guildId = String(config.serverId);
       const install = (req.body as { install?: unknown })?.install;
       if (!await hasDiscordGuildAuthority(req.user?.id, String(podId), guildId, install)

@@ -178,7 +178,23 @@ export const mappedTypeLabel = (type: string): string | null => TYPE_LABELS[type
 export const CONNECT_DETAIL: Record<string, { key: string; defaultValue: string }> = {
   telegram: { key: 'connectors.availableTelegram', defaultValue: 'one message' },
   slack: { key: 'connectors.availableSlack', defaultValue: 'one click in your workspace' },
+  discord: { key: 'connectors.availableDiscord', defaultValue: 'add the bot to your server' },
 };
+
+// Providers whose Connect sends the person to the provider's own install page
+// instead of the Installable lifecycle. No builtin row is installed for them, so
+// the catalog reports `offered: false`, but the install link and the provider's
+// callback are the whole flow and `available` already says this instance holds
+// their keys. Discord: the bot add returns to /api/discord/callback, and the
+// success page binds the channel.
+export const LINK_INSTALL_PROVIDERS = new Set(['discord']);
+
+// Offered for a channel picker: a rostered provider, or a link-install one
+// whose keys this instance holds. Without the keys a link-install provider stays
+// unlisted, exactly like an unrostered one.
+export const entryOffered = (entry: { installableId: string; offered?: boolean; available?: boolean }): boolean => (
+  entry.offered !== false || (entry.available === true && LINK_INSTALL_PROVIDERS.has(entry.installableId))
+);
 
 // Fallback only: when the catalog cannot be read the page still offers the
 // two providers it can drive, exactly as it did before the catalog existed.

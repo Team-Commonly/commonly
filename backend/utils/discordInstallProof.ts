@@ -24,6 +24,8 @@ interface DiscordInstallProofPayload extends JwtPayload {
   pur: typeof PURPOSE;
   pod: string;
   gid: string;
+  // The person whose install this is: the state's user. Only they may spend it.
+  uid: string;
 }
 
 const secret = (): string => {
@@ -33,20 +35,63 @@ const secret = (): string => {
 };
 
 export const mintDiscordInstallProof = (
-  { podId, guildId }: { podId: string; guildId: string },
+  { podId, guildId, userId }: { podId: string; guildId: string; userId: string },
   ttlSeconds: number = DISCORD_INSTALL_PROOF_TTL_SECONDS,
 ): string => {
-  const payload: DiscordInstallProofPayload = { pur: PURPOSE, pod: podId, gid: guildId };
+  const payload: DiscordInstallProofPayload = { pur: PURPOSE, pod: podId, gid: guildId, uid: userId };
   return jwt.sign(payload, secret(), { expiresIn: ttlSeconds });
 };
 
-/** The proof's (pod, guild), or null for anything that is not a live proof. */
-export const readDiscordInstallProof = (token: unknown): { podId: string; guildId: string } | null => {
+/**
+ * The proof's (pod, guild, user), or null for anything that is not a live proof.
+ * A proof without a user (minted before the state was signed) is not a proof.
+ */
+export const readDiscordInstallProof = (token: unknown): { podId: string; guildId: string; userId: string } | null => {
   if (typeof token !== 'string' || !token) return null;
   try {
     const decoded = jwt.verify(token, secret()) as DiscordInstallProofPayload;
     if (decoded.pur !== PURPOSE || typeof decoded.pod !== 'string' || !isDiscordSnowflake(decoded.gid)) return null;
-    return { podId: decoded.pod, guildId: decoded.gid };
+    if (typeof decoded.uid !== 'string' || !decoded.uid) return null;
+    return { podId: decoded.pod, guildId: decoded.gid, userId: decoded.uid };
+  } catch {
+    return null;
+  }
+};
+
+// ---- The install state ----
+// The OAuth `state` the install link sends Discord, and Discord hands back to the
+// callback. The callback has no session, so this is the only thing that ties a
+// code to the person who asked for the install. It used to be the bare string
+// `pod_<id>`: a crafted callback link carrying an attacker's code and a victim's
+// pod minted a proof that the victim's browser then spent binding their pod to
+// the attacker's guild. Signed, short-lived and naming the user, it can only be
+// obtained from install-link by someone allowed to install into that pod, and the
+// proof it leads to can be spent only by that same person.
+const STATE_PURPOSE = 'discord-install-state';
+export const DISCORD_INSTALL_STATE_TTL_SECONDS = 15 * 60;
+
+interface DiscordInstallStatePayload extends JwtPayload {
+  pur: typeof STATE_PURPOSE;
+  pod: string;
+  uid: string;
+}
+
+export const mintDiscordInstallState = (
+  { podId, userId }: { podId: string; userId: string },
+  ttlSeconds: number = DISCORD_INSTALL_STATE_TTL_SECONDS,
+): string => {
+  const payload: DiscordInstallStatePayload = { pur: STATE_PURPOSE, pod: podId, uid: userId };
+  return jwt.sign(payload, secret(), { expiresIn: ttlSeconds });
+};
+
+/** The state's (pod, user), or null for anything that is not a live state. */
+export const readDiscordInstallState = (token: unknown): { podId: string; userId: string } | null => {
+  if (typeof token !== 'string' || !token) return null;
+  try {
+    const decoded = jwt.verify(token, secret()) as DiscordInstallStatePayload;
+    if (decoded.pur !== STATE_PURPOSE || typeof decoded.pod !== 'string' || !decoded.pod) return null;
+    if (typeof decoded.uid !== 'string' || !decoded.uid) return null;
+    return { podId: decoded.pod, userId: decoded.uid };
   } catch {
     return null;
   }

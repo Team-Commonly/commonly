@@ -167,7 +167,9 @@ describe('discord connector stores no bot token copy (TASK-124)', () => {
       .set('x-test-user', String(joiner._id))
       .send({ podId: String(pod._id), type: 'discord', config: { serverId: GUILD, channelId: CHANNEL } });
 
-    expect(res.status).toBe(404);
+    // Refused at the pod check now (only the creator or an admin binds a
+    // channel); before that, at the guild check. Either way nothing is written.
+    expect(res.status).toBe(403);
     expect(axios.post).not.toHaveBeenCalled();
     expect(await DiscordIntegration.countDocuments({ channelId: CHANNEL })).toBe(0);
   });
