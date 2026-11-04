@@ -266,6 +266,8 @@
 .v2-activity__moved-line { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; padding: 9px 14px; border-top: 1px solid var(--v2-border-soft); font: 400 13.5px/20px var(--v2-font); color: var(--v2-ink-2); }
 .v2-activity__moved-line time { font: 500 11.5px/20px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
 .v2-activity__moved-text { min-width: 0; overflow-wrap: anywhere; }
+/* zh times ("28分钟前") run 49px, so the column widens to keep the 12px gap. */
+.v2-root:lang(zh) .v2-activity__moved-line { grid-template-columns: 52px minmax(0, 1fr); }
 .v2-activity__moved-text strong { font-weight: 600; color: var(--v2-text-primary); }
 .v2-root button.v2-activity__moved-more {
   all: unset;
