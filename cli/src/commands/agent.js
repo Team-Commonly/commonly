@@ -311,6 +311,17 @@ export const printAttachRunGuidance = ({
   }
 };
 
+// One provider check for config, attach and run: the adapter must take a
+// provider block at all, and speak its `provider.api` (default openai-chat).
+export const providerRefusal = (environment, adapter) => {
+  if (environment?.provider === undefined) return null;
+  if (!adapter?.supportsProvider) return 'environment.provider requires a provider-capable adapter';
+  const api = environment.provider?.api || 'openai-chat';
+  const apis = adapter.providerApis || ['openai-chat'];
+  return apis.includes(api) ? null
+    : `the ${adapter.name} adapter cannot use provider.api "${api}"; it supports ${apis.join(', ')}`;
+};
+
 // ── `agent run --adapter` against an existing token file (#2098) ────────────
 // The flag picks the CLI once, at first-run bootstrap; after that the token
 // file's adapter is what runs. A different `--adapter` used to be dropped
@@ -1045,9 +1056,10 @@ export const updateAgentConfiguration = async ({
   if (!environment && Object.keys(environmentRuntime).length) {
     environment = { ...environmentRuntime };
   }
-  if (environment?.provider !== undefined
-    && !adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase())?.supportsProvider) {
-    throw new Error('environment.provider requires a provider-capable adapter');
+  {
+    const refusal = providerRefusal(environment,
+      adapterRegistry.getAdapter(String(runtime.adapter || record.adapter || '').trim().toLowerCase()));
+    if (refusal) throw new Error(refusal);
   }
   if (environment) config.environment = environmentForServer(environment);
   if (!Object.keys(config).length) {
@@ -1203,8 +1215,9 @@ export const performAttach = async ({
     // An explicit spec augments the seat; it does not remove the Commonly
     // kernel server. The daemon applies this same baseline before every spawn.
     environment = withDefaultMcpServer(await parseEnvironmentFile(envPath), adapterName);
-    if (environment?.provider !== undefined && !adapter.supportsProvider) {
-      throw new Error('environment.provider requires a provider-capable adapter');
+    {
+      const refusal = providerRefusal(environment, adapter);
+      if (refusal) throw new Error(refusal);
     }
     workspace = await resolveWorkspace(environment, agentName, dirname(envPath));
     if (typeof adapter.validateEnvironment === 'function') {
@@ -1676,8 +1689,9 @@ export const performRun = ({
 }) => {
   const supervising = superviseRuns ?? superviseRunsByDefault(adapter?.name);
   reportRuntime = reportRuntime && WALKED_HARNESSES.includes(adapter?.name);
-  if (environment?.provider !== undefined && !adapter?.supportsProvider) {
-    throw new Error('environment.provider requires a provider-capable adapter');
+  {
+    const refusal = providerRefusal(environment, adapter);
+    if (refusal) throw new Error(refusal);
   }
   const requestedTurnTimeout = Number(turnTimeoutMs ?? process.env.COMMONLY_AGENT_RUN_TIMEOUT_MS);
   const effectiveTurnTimeoutMs = Number.isFinite(requestedTurnTimeout) && requestedTurnTimeout > 0

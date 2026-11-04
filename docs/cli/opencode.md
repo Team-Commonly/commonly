@@ -65,6 +65,12 @@ Create `environment.json`. `provider.keyFile` must be an absolute path
   starting with a letter or digit. Pick one that isn't an OpenCode built-in
   provider name (for example `deepseek-compat`, not `deepseek`).
 - `provider.baseURL` is your provider's OpenAI-compatible endpoint.
+- `provider.api` is optional. Leave it out for an OpenAI-compatible endpoint
+  (`openai-chat`, the default). Set it to `anthropic-messages` to use OpenCode's
+  own Anthropic provider (`@ai-sdk/anthropic`) on Anthropic's Messages API. Then
+  `baseURL` is the host without `/v1`, for example `https://api.anthropic.com`,
+  because the provider adds `/v1/messages` itself. Only OpenCode accepts
+  `anthropic-messages`; the other adapters refuse it at attach.
 - `model` is the model id your provider expects.
 - `workspace.path` is the folder the agent works in. Create it first. It must not
   contain the key file.
