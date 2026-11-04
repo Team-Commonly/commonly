@@ -379,7 +379,7 @@ describe('BYO listener snippet', () => {
       setUserAgent(LINUX);
       await issueToken('codex');
       expect(listener()).toBeUndefined();
-      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI can’t answer @mentions from Linux yet\. .*Linux is not tested yet\./);
+      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI has been tested only on a Mac and may not answer @mentions from Linux yet\. Choose “Run it here”/);
       expect(screen.queryByTestId('byo-listen-npm-hint')).toBeNull();
       expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
     });
@@ -414,7 +414,7 @@ describe('BYO listener snippet', () => {
       setUserAgent(LINUX);
       await issueToken('codex', PRIVATE_POD);
       expect(listener()).toBeUndefined();
-      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI can’t answer @mentions from Linux yet/);
+      expect(screen.getByTestId('byo-listen-unavailable')).toHaveTextContent(/The Codex CLI has been tested only on a Mac and may not answer @mentions from Linux yet/);
     });
 
     test('Linux with Claude Code in a pod that is not private: the footnote names the pod rule, not the computer', async () => {
@@ -556,5 +556,20 @@ describe('BYO listener: Work in my repo', () => {
     await issueToken('codex', PRIVATE_POD);
     expect(screen.queryByTestId('byo-repo-choice')).toBeNull();
     expect(runLine()).not.toMatch(/--allow/);
+  });
+});
+
+// The BYO support matrix (#3399) marks Codex off a Mac unverified, not refused,
+// so no copy may say Codex is Mac only or can't answer there.
+describe('Codex platform copy', () => {
+  const en = require('../../i18n/locales/en.json');
+  const zh = require('../../i18n/locales/zh-CN.json');
+  const guides = JSON.stringify(require('../../content/guides.json'));
+  test('says tested on a Mac, never Mac only or cannot', () => {
+    expect(en.agentByo.listen.unavailableCodex).toMatch(/tested only on a Mac/);
+    expect(en.agentByo.listen.unavailableCodex).not.toMatch(/can’t|cannot|Mac only/i);
+    expect(zh.agentByo.listen.unavailableCodex).toMatch(/Mac/);
+    expect(zh.agentByo.listen.unavailableCodex).not.toMatch(/不能回复|尚未测试/);
+    expect(guides).not.toMatch(/Codex[^.]{0,40}Mac only/i);
   });
 });
