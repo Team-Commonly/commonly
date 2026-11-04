@@ -320,12 +320,13 @@ export const createDaemonSupervisor = ({
       const providerRefused = existing.environment?.provider
         ? providerRefusal(existing.environment, getAdapter(nextAdapter)) : null;
       if (providerRefused) {
-        log(`[${row.agentName}] host-local provider: ${providerRefused} — keeping the current seat`);
-        // The record stays as it is. It still starts when its own adapter
-        // accepts the provider, so a fresh daemon doesn't leave the seat down.
-        const retainedRefused = adapterChanged
-          ? providerRefusal(existing.environment, getAdapter(existing.adapter)) : providerRefused;
-        return retainedRefused ? false : 'ready';
+        // The record stays as it is, and the seat is not started: a retained
+        // adapter that needs a server binding (opencode) refuses to run under
+        // the server's new one, so starting it would only crash-loop. The
+        // owner sets the adapter back, or moves the provider to one it speaks.
+        log(`[${row.agentName}] host-local provider: ${providerRefused} — keeping the current record and not starting it; `
+          + `set the adapter back to ${existing.adapter || 'the previous one'} in Commonly, or change the provider`);
+        return false;
       }
       if (wanted) {
         const serverEnvironment = withoutServerProvider(wanted.value);

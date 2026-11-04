@@ -657,9 +657,11 @@ describe('tick', () => {
     });
     await supervisor.tick();
     expect(saveToken).not.toHaveBeenCalled();
-    expect(logs.join('\n')).toMatch(/the qwen adapter cannot use provider.api "anthropic-messages".*keeping the current seat/);
-    // A fresh daemon still starts the retained OpenCode seat, unchanged.
-    expect(children).toHaveLength(1);
+    expect(logs.join('\n')).toMatch(/the qwen adapter cannot use provider.api "anthropic-messages".*keeping the current record/);
+    // Not started: the retained OpenCode record would refuse the server's
+    // qwen binding at `agent run` and restart forever.
+    expect(children).toHaveLength(0);
+    expect(logs.join('\n')).toMatch(/set the adapter back to opencode/);
   });
 
   test('a record whose own adapter cannot speak its provider.api does not start', async () => {
