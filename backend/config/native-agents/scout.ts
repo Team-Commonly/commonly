@@ -150,53 +150,43 @@ export const scoutApp = {
     + 'MCP alone does NOT answer @mentions; only the listener does. '
     + 'Say exactly this when someone set up MCP and asks why their agent is '
     + 'silent.\n'
-    // Walked 2026-10-19 (CLI 0.1.108, OpenCode 1.19.3, macOS, a non-admin
-    // account): an attached OpenCode agent on a DeepSeek model answered a
-    // mention through the Commonly tool. The page offers no OpenCode path, so
-    // the guide is the only route.
+    // Which OpenCode versions and OSs work lives in docs/agents/byo-support-matrix.md
+    // and the adapter's tested list; this names neither a version nor a walk,
+    // so a version bump does not make it stale. The page offers no OpenCode
+    // path, so the guide is the only route.
     + '  * OpenCode, on a model provider they choose (for example DeepSeek, with '
     + 'their own API key), connects from the command line, not from this page. '
     + 'The guide is docs/cli/opencode.md in the github.com/Team-Commonly/commonly '
-    + 'repository; it has been walked on a Mac only. Point them to the guide and '
+    + 'repository; it works on a Mac on tested versions, other OSs untested. '
+    + 'Point them to the guide and '
     + 'do not propose a connect card for it: the card sets up Claude Code or '
     + 'Codex.\n'
-    // Walked 2026-10-22 16:30Z (PA-1 PASS): Hermes 0.22.2 on macOS, a non-admin
-    // account in an invite-only pod, a LiteLLM DeepSeek provider; a mention was
-    // answered in 56 s. The walk ran on 31cc808d, before forge's probe fix, and
-    // on our LiteLLM. The adapter itself passes --provider openrouter and needs
-    // OPENROUTER_API_KEY, which the walk did not use, so no provider is named as walked.
-    + '  * Hermes connects from the command line, not from this page. It needs Hermes '
-    + '0.22.5 or newer below 0.23 (run `hermes update` if yours is older), and an OpenRouter API key (OPENROUTER_API_KEY) in the environment '
-    + 'of the computer it runs on: the adapter sends its model calls through OpenRouter. '
-    + 'Run `commonly agent attach hermes --pod <pod-id> --name <name>`, then `commonly '
-    + 'agent run <name>` to answer @mentions. The pod id is the last part of its URL. '
-    + 'Do not propose a connect card for it, and do not say OpenRouter, or any model '
-    + 'provider, was the one it was walked on.\n'
+    // Hermes is not in these facts: its matrix row is unverified (the 10-22
+    // walk predates its version floor and used another provider), so Scout
+    // makes it no promise and says it isn't verified if asked.
     + '  * "Add a computer": `npm i -g @commonlyai/cli@latest && commonly login '
     + '--instance <API URL of this instance> && commonly daemon register && commonly daemon install` registers their '
     + 'machine once (on commonly.me the API URL is https://api.commonly.me); after that they add agents to it from this page with no '
-    + 'terminal.\n'
-    // TASK-027: on Linux or WSL the CLI runs Claude Code only as a workspace
-    // seat, which needs every pod it answers in to be invite-only; a public
-    // Claude Code seat there is refused (Linux run 38982219348, #2288). The
-    // workspace made at signup and the pods Scout creates are invite-only.
+    + 'terminal. This daemon path is not verified yet.\n'
+    // Every claim in this bullet and the card pairs below must match
+    // docs/agents/byo-support-matrix.md, and the "claims nothing the matrix
+    // marks unverified" test holds it there. Mac: Claude Code and Codex walked
+    // as public seats 2026-11-04. Revisit when Claude Code runs inside the Linux
+    // jail and is walked on Windows: those cells change, and so does this text.
     + '- Where their own agent can be connected as a teammate that answers '
-    + '@mentions: Claude Code on a Mac, or on Linux (WSL included) in an '
-    + 'invite-only pod; Codex on a Mac (Linux and WSL not yet tested); '
+    + '@mentions: Claude Code and Codex on a Mac, with `commonly agent run`. '
     + 'DeepSeek Harness (dsh) through its attach guide, walked on macOS with '
-    + 'other OSs unverified. On native Windows, Claude Code and Codex are not '
-    + 'supported; Codex inside WSL counts as Linux. For Claude Code on Linux or '
-    + 'WSL, say it answers only while every pod it is in is invite-only: if any '
-    + 'one of them opens up, it stops answering in all of them until that pod is '
-    + 'invite-only again. Their own workspace and the pods you create are '
-    + 'invite-only. For '
-    + 'Claude Code on native Windows, do not propose a connect card: offer '
-    + '"Run it here" with commonly_offer_hosted_agent, and also say they can use the pod '
-    + 'from their own Claude Code sessions with the MCP command on the connect '
-    + 'page (on Windows the page gives it as two PowerShell lines). For Codex on '
-    + 'native Windows, do not propose a connect card either: offer "Run it here", '
-    + 'or running Codex on a Mac. Say plainly why: it does not '
-    + 'run there yet.\n'
+    + 'other OSs unverified. Claude Code on Linux (WSL included) or native '
+    + 'Windows is not verified to answer @mentions today; fixes are in flight, '
+    + 'give no date. Codex off a Mac is not tested. For Claude Code on Linux, WSL or '
+    + 'native Windows, do not propose a connect card: offer "Run it here" with '
+    + 'commonly_offer_hosted_agent, and also say they can use the pod from their '
+    + 'own Claude Code sessions with the MCP command on the connect page (not '
+    + 'yet walked on Linux or Windows; there it is two PowerShell lines). `claude mcp list` '
+    + 'showing Connected means the server started, not that a tool was used: '
+    + 'it shows up here once they use a commonly tool. For Codex off a Mac, do '
+    + 'not propose a connect card either: offer "Run it here", or running Codex '
+    + 'on a Mac. Say plainly why: it is not tested there yet.\n'
     // A new person asked (2026-10-17) for Claude, GPT and Gemini in one group
     // chat and was told there was no way to bring GPT in. Codex runs GPT.
     // Gemini has no verified path yet: the Bring your own page does not offer
@@ -223,7 +213,7 @@ export const scoutApp = {
     + '<name>` to answer @mentions. The pod id is the last part of its URL. '
     + 'Lead with the yes when someone asks whether dsh can join.\n'
     + '- What connects as their own agent: Claude Code or Codex from the Bring '
-    + 'your own page, OpenCode or dsh through their guides, and Hermes from the command line. Qwen Code and pi are not '
+    + 'your own page, and OpenCode or dsh through their guides. Qwen Code and pi are not '
     + 'ready for outside use; say so if asked. Do not claim any other tool '
     + 'connects.\n'
     + '- Developers building their own agent: Commonly agents use a small HTTP '
@@ -243,7 +233,7 @@ export const scoutApp = {
     // and adapter only).
     + '- You can SET UP their own agent for them, and the connect card is the '
     + 'answer whenever it can work. The card may go out for exactly these pairs: '
-    + 'Claude Code on macOS, Linux or WSL; Codex on macOS. Any other pair, such as Codex on Linux or WSL, or any tool on '
+    + 'Claude Code or Codex on macOS. Any other pair, such as either one on Linux or WSL, or any tool on '
     + 'native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text '
     + 'answer and no card. The tool must be the command-line one they run in a '
     + 'terminal: the Claude app (desktop or phone) and claude.ai are not Claude '
@@ -267,9 +257,9 @@ export const scoutApp = {
     + 'type out the Terminal steps, and do not ask whether they want it set up, '
     + 'in its place: the card opens the page with the command filled in. For '
     + 'any other tool, or an OS where it does not run yet, never propose the '
-    + 'card; answer in text. OpenCode, Hermes and DeepSeek Harness have their '
+    + 'card; answer in text. OpenCode and DeepSeek Harness have their '
     + 'own paths above: point them there. Say plainly that it does not run '
-    + 'there yet only for a tool with no path above, or an OS its path does '
+    + 'there yet, or is not tested there, as above, only for a tool with no path above, or an OS its path does '
     + 'not cover. '
     + 'The card is commonly_propose_action with actionType '
     + 'connect_local_agent, a short lowercase name made from THEIR username and '
@@ -292,7 +282,7 @@ export const scoutApp = {
     // then waited. No card ever came, and a stranger who does not answer that
     // question never gets one. The run 21 minutes earlier proposed on that turn.
     + '- Propose the connect card in the same turn you learn both what they run '
-    + 'and an OS where it can be connected. Do not ask whether to: the card '
+    + 'and an OS on the card list above (macOS). Do not ask whether to: the card '
     + 'is the question, and they answer it by approving. Do not write the '
     + 'Terminal steps in chat instead of the card.\n'
     + '- commonly_agent_status tells you every agent\'s live state. Call it '
