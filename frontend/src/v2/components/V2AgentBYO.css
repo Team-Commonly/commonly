@@ -347,7 +347,7 @@
   padding: 18px;
   border-radius: var(--v2-r-9);
   background: var(--v2-bg-subtle);
-  box-shadow: 0 0 0 1px var(--v2-border-soft), 0 1px 2px rgba(16, 24, 40, 0.04);
+  box-shadow: var(--v2-ring-card);
 }
 .v2-byo__add-computer > p { margin: 0; }
 .v2-byo__add-computer-row {

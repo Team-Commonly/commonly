@@ -12,7 +12,7 @@
 .v2-team .v2-team__body { display: flex; flex-direction: column; gap: 20px; }
 .v2-team .v2-team__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 /* A card is the D215 ring and soft shadow at r9 (the primitives' .v2p-tc), not a 1px border. */
-.v2-team .v2-team-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px; border-radius: var(--v2-r-9); background: var(--v2-surface); box-shadow: 0 0 0 1px var(--v2-border-soft), 0 1px 2px rgba(16, 24, 40, 0.04); }
+.v2-team .v2-team-card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px; border-radius: var(--v2-r-9); background: var(--v2-surface); box-shadow: var(--v2-ring-card); }
 /* The one that needs you: a ring, never a tinted background (state grammar §3). */
 .v2-team .v2-team-card--needsYou { box-shadow: 0 0 0 2px var(--v2-accent); }
 /* The set-up-your-own card is an add slot, dashed like .v2p-tile.add, so it keeps a border. */

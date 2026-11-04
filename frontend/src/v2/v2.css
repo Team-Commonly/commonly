@@ -212,6 +212,9 @@ body.modern-ui.v2-canvas {
   --v2-key-inset: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(16, 24, 40, 0.06);
   --v2-shadow-pane: 0 0 0 1px rgba(16, 24, 40, 0.07), 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 28px -20px rgba(16, 24, 40, 0.18);
   --v2-shadow-pop: 0 0 0 1px rgba(16, 24, 40, 0.08), 0 2px 4px rgba(16, 24, 40, 0.04), 0 18px 36px -14px rgba(16, 24, 40, 0.28);
+  /* The card edge (D215): a 1px ring plus a 1px lift, no border. Cards that
+     are not a .v2p-tc take it from here rather than copying the pair. */
+  --v2-ring-card: 0 0 0 1px var(--v2-border-soft), 0 1px 2px rgba(16, 24, 40, 0.04);
   --v2-av-ring: rgba(16, 24, 40, 0.07);
   --v2-scrim: rgba(16, 24, 40, 0.18);
   --v2-r-6: 6px;

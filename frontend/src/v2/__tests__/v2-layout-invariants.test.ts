@@ -3670,7 +3670,7 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
     // Rulings 11-04: a card is the D215 ring and soft shadow at r9, no 1px border.
     expect(addComputer['border-radius']).toBe('var(--v2-r-9)');
     expect(addComputer.border).toBeUndefined();
-    expect(addComputer['box-shadow']).toContain('0 0 0 1px var(--v2-border-soft)');
+    expect(addComputer['box-shadow']).toBe('var(--v2-ring-card)');
     expect(addComputer.background).toBe('var(--v2-bg-subtle)');
     // Each snippet is a flat section, not a card.
     const snippet = decls(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__form, .v2-feature--byo .v2-byo__result, .v2-feature--byo .v2-byo__snippet'));
@@ -6135,9 +6135,16 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
   test('finding 7: cards are the D215 ring at r9 and lanes are r12, never a 1px border', () => {
     const card = ruleBody(read('../components/V2YourTeamPage.css'), '.v2-team .v2-team-card');
     expect(card).toContain('border-radius: var(--v2-r-9)');
-    expect(card).toContain('box-shadow: 0 0 0 1px var(--v2-border-soft)');
+    expect(card).toContain('box-shadow: var(--v2-ring-card)');
     expect(card).not.toMatch(/(^|[\s;{])border:/);
     expect(ruleBody(read('../components/V2ConnectPage.css'), '.v2-connect .v2-connect__lane')).toContain('border-radius: var(--v2-r-12)');
+    // One card edge, named once in the token sheets, not copied per page.
+    const ring = '0 0 0 1px var(--v2-border-soft), 0 1px 2px rgba(16, 24, 40, 0.04)';
+    expect(v2).toContain(`--v2-ring-card: ${ring};`);
+    expect(read('../../../design-system/tokens.css')).toMatch(/--c-ring-card:\s+0 0 0 1px var\(--c-border-soft\), 0 1px 2px rgba\(16, 24, 40, 0\.04\);/);
+    for (const sheet of ['../components/V2YourTeamPage.css', '../components/V2RunTrace.css', '../components/V2AgentBYO.css']) {
+      expect(read(sheet)).not.toContain(ring);
+    }
     expect(ruleBody(read('../components/V2PersonProfile.css'), '.v2-profile .v2-profile__list')).toContain('border-radius: var(--v2-r-12)');
     expect(ruleBody(read('../agents/v2-agent-profile.css'), '.v2-aprofile .v2-aprofile__card')).toContain('border-radius: var(--v2-r-12)');
   });
@@ -6157,7 +6164,7 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
   test('finding 7: the run trace summary and tool calls are ringed r9 cards, no 1px border', () => {
     const card = ruleBody(read('../components/V2RunTrace.css'), '.v2-run-trace__summary, .v2-run-trace__call');
     expect(card).toContain('border-radius: var(--v2-r-9)');
-    expect(card).toContain('box-shadow: 0 0 0 1px var(--v2-border-soft)');
+    expect(card).toContain('box-shadow: var(--v2-ring-card)');
     expect(card).not.toMatch(/(^|[\s;{])border:/);
   });
 });

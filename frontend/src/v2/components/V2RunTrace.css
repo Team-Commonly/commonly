@@ -12,7 +12,7 @@
 .v2-run-trace-link a { color: var(--v2-text-secondary); font-size: 12.5px; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
 .v2-run-trace-link a:hover { color: var(--v2-text-primary); text-decoration: underline; }
 /* A card is the D215 ring and soft shadow at r9, not a 1px border at r6. */
-.v2-run-trace__summary, .v2-run-trace__call { display: grid; gap: 8px; border-radius: var(--v2-r-9); background: var(--v2-surface); box-shadow: 0 0 0 1px var(--v2-border-soft), 0 1px 2px rgba(16, 24, 40, 0.04); padding: 16px; margin: 12px 0; min-width: 0; }
+.v2-run-trace__summary, .v2-run-trace__call { display: grid; gap: 8px; border-radius: var(--v2-r-9); background: var(--v2-surface); box-shadow: var(--v2-ring-card); padding: 16px; margin: 12px 0; min-width: 0; }
 .v2-run-trace__summary { margin-top: 0; }
 .v2-run-trace__meta { font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-run-trace code, .v2-run-trace dd { font-family: var(--v2-font-mono); font-size: 12px; }
