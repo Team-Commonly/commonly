@@ -11,6 +11,8 @@ interface Integration {
 interface CommandResult {
   success: boolean;
   content: string;
+  /** A bind-rule refusal (F143), not an error; see `combinedReplyIsPublic`. */
+  refused?: boolean;
   [key: string]: unknown;
 }
 
@@ -128,4 +130,15 @@ async function runDiscordCommandForIntegrations({
   return results;
 }
 
-export { runCommandForIntegration, runDiscordCommandForIntegrations };
+/**
+ * Whether the one reply that folds several pods' results is public. A bind-rule
+ * refusal (F143) carries only a short, non-sensitive sentence, so it does not
+ * make the allowed pods' summaries private; a real error still does. A reply
+ * with no success at all stays ephemeral.
+ */
+const combinedReplyIsPublic = (results: Array<{ result: { success: boolean; refused?: boolean } }>): boolean => (
+  results.some(({ result }) => result.success)
+  && results.every(({ result }) => result.success || result.refused === true)
+);
+
+export { runCommandForIntegration, runDiscordCommandForIntegrations, combinedReplyIsPublic };

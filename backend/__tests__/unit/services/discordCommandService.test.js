@@ -148,6 +148,8 @@ describe('DiscordCommandService /commonly-summary on a shared channel', () => {
     expect(Summary.findOne).not.toHaveBeenCalled();
     expect(result.content).not.toContain('pod secrets');
     expect(result.content).toMatch(/only the pod's creator/i);
+    // Marked as a refusal, not an error: the multi-pod reply reads it.
+    expect(result).toMatchObject({ success: false, refused: true });
   });
 
   it.each([['the pod creator', 'creator-1'], ['an instance admin', 'admin-1']])(

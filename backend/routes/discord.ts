@@ -19,7 +19,7 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const DiscordService = require('../services/discordService');
 // eslint-disable-next-line global-require
-const { runDiscordCommandForIntegrations } = require('../services/discordMultiCommandService');
+const { runDiscordCommandForIntegrations, combinedReplyIsPublic } = require('../services/discordMultiCommandService');
 // Static import keeps the destructive route visible to CodeQL's rate-limit
 // query while sharing the connector write bucket with its sibling routes.
 import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
@@ -201,13 +201,13 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
         return res.json({ type: 4, data: { content: '❌ Command not recognized.', flags: 64 } });
       }
 
-      const commandResults = await runDiscordCommandForIntegrations({ commandName: data.name, integrations, guildId, channelId }) as Array<{ integration: typeof integrations[0]; result: { content: string; success: boolean } }>;
+      const commandResults = await runDiscordCommandForIntegrations({ commandName: data.name, integrations, guildId, channelId }) as Array<{ integration: typeof integrations[0]; result: { content: string; success: boolean; refused?: boolean } }>;
       const header = `🔗 ${integrations.length} pods linked to this Discord channel`;
       const blocks = commandResults.map(({ integration, result }) => {
         const podName = (integration.podId as { name?: string })?.name || integration.config?.channelName || `Pod ${integration.podId || integration._id}`;
         return `**${podName}**\n${result.content}`;
       });
-      const response: Record<string, unknown> = { type: 4, data: { content: [header, ...blocks].join('\n\n'), flags: commandResults.every(({ result }) => result.success) ? 0 : 64 } };
+      const response: Record<string, unknown> = { type: 4, data: { content: [header, ...blocks].join('\n\n'), flags: combinedReplyIsPublic(commandResults) ? 0 : 64 } };
       response.interactionToken = interactionToken;
       response.interactionId = interactionId;
       return res.json(response);

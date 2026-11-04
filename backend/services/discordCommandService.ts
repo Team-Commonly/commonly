@@ -18,6 +18,11 @@ interface CommandServiceOptions {
 interface CommandResult {
   success: boolean;
   content: string;
+  /**
+   * A shared-surface bind-rule refusal (F143): not an error, and its text is
+   * not sensitive, so a combined multi-pod reply may stay public around it.
+   */
+  refused?: boolean;
 }
 
 interface SyncResult {
@@ -164,6 +169,7 @@ class DiscordCommandService {
         if (!(error instanceof SurfaceBindRefusedError)) throw error;
         return {
           success: false,
+          refused: true,
           content: "Only the pod's creator can share this pod's summary with a channel. Ask them to reconnect it.",
         };
       }

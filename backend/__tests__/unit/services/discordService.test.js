@@ -117,6 +117,19 @@ describe('DiscordService', () => {
     jest.clearAllMocks();
   });
 
+  // F143: on a single-pod channel, a bind-rule refusal of /commonly-summary is
+  // the whole reply, so it stays ephemeral (only the caller sees it).
+  describe('handleInteraction for a refused /commonly-summary', () => {
+    it('answers ephemerally', async () => {
+      discordService.handleSlashCommand = jest.fn().mockResolvedValue({
+        success: false, refused: true, content: "Only the pod's creator can share this pod's summary with a channel.",
+      });
+      const response = await discordService.handleInteraction({ type: 2, data: { name: 'commonly-summary' } });
+      expect(response.data.flags).toBe(64);
+      expect(response.data.content).toMatch(/only the pod's creator/i);
+    });
+  });
+
   describe('initialization', () => {
     it('should initialize successfully with valid integration', async () => {
       const result = await discordService.initialize();
