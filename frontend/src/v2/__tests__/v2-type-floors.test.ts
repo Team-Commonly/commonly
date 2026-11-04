@@ -168,11 +168,11 @@ const ALLOWLIST: string[] = [
   '.v2-root button.v2-invite-manage__action, .v2-invite-manage__action', // 11.0px — no-mono-family
   '.v2-syscard__time', // 11.5px — no-mono-family
   // Glob widening (2026-11-03): the scan widened from 11 hand-listed sheets to
-  // every v2 stylesheet, and the 18 newly scanned sheets carried 38 entries on
-  // the day. All 38 left the list in the same day's burn-down: 32 were mono at
-  // 11–11.5px behind a sheet-local alias (`--mono`, `--f-mono`) or inheriting
-  // the family, and now name `--v2-font-mono`; the badges and beta tags rose
-  // to mono 11, and the two sans pills on the agent profile to 12.
+  // every v2 stylesheet. Every entry it surfaced left the list in the next
+  // day's burn-down. Most were mono at 11–11.5px behind a sheet-local alias
+  // (`--mono`, `--f-mono`) or an inherited family, and now name
+  // `--v2-font-mono`; the badges and beta tags rose to mono 11, and the two
+  // sans pills on the agent profile to 12.
 ];
 
 describe('v2 type floors (ruling h)', () => {
