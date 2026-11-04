@@ -8,7 +8,7 @@
 // Runs where Linux, bubblewrap and `claude` are present, and is required to
 // in the claude-bwrap-public workflow (COMMONLY_REQUIRE_BWRAP_SMOKE=1).
 import { jest } from '@jest/globals';
-import { spawnSync } from 'child_process';
+import { spawn as nodeSpawn, spawnSync } from 'child_process';
 import { createServer } from 'http';
 import fs from 'fs';
 import os from 'os';
@@ -224,6 +224,99 @@ maybe('a public Claude Code seat on Linux (F96)', () => {
     expect(fs.existsSync(path.join(cwd, '.claude'))).toBe(false);
     expect(fs.existsSync(path.join(workspaceStatePath, '.claude', 'projects'))).toBe(true);
     expect(fs.readFileSync(path.join(loginDir, '.credentials.json'), 'utf8')).toBe(hostLogin);
+  });
+
+  // F104: the attacks below prove a token read fails, not which layer refused
+  // it; for a credential path the jail does not mount, the filesystem alone
+  // would refuse. This one isolates the permission deny rule. A workspace
+  // seat's jail holds the project's .git read-only, so the jail lets it be
+  // read; only `Read(./.git/**)` (buildPublicClaudePolicyArgs) stands between
+  // the Read tool and a .git/config that can carry a token in a remote URL.
+  //
+  // Readability is shown by the jail itself, not by Claude Code's Bash: this
+  // turn's own bwrap argv, captured at spawn, is re-run with `cat` in place of
+  // claude while the turn's mounts exist. A Bash read would not prove it,
+  // because Claude Code checks a `cat` path (and an input redirect) against the
+  // same Read deny rules ("cat in '<path>' was blocked"), so a refused Bash read
+  // would be the deny-rule layer again.
+  //
+  // Reverse check (run by hand in CI to show the deny rule is what refuses):
+  // drop the two .git denies before jest, in the workflow's container script,
+  //   sed -i "/'Read(.\/.git\/\*\*)', 'Read(.\/\*\*\/.git\/\*\*)',/d" /work/cli/src/lib/adapters/claude.js
+  // and run only this test (-t 'deny rule alone'). The Read result must then
+  // come back without is_error and with GIT_CANARY in it, failing this test at
+  // `expect(result.is_error).toBe(true)`.
+  test('a file the workspace jail lets be read is refused to the Read tool by the deny rule alone', async () => {
+    const GIT_CANARY = 'git-config-canary-c104';
+    const gitDir = path.join(cwd, '.git');
+    fs.mkdirSync(gitDir);
+    const canaryFile = path.join(gitDir, 'f104-canary');
+    fs.writeFileSync(canaryFile, `${GIT_CANARY}\n`);
+    writeLogin(8 * 3600 * 1000);
+
+    let jailArgs = null;
+    let jailRead = null;
+    const spawnThroughJail = (cmd, args, opts) => {
+      if (cmd === 'bwrap' && jailArgs === null) {
+        jailArgs = args;
+        // The same namespace, binds and HOME as this turn's claude, with cat as
+        // the only program; the turn's per-spawn folders still exist here.
+        const jail = args.slice(0, args.indexOf('--'));
+        jailRead = spawnSync('bwrap', [...jail, '--', 'cat', canaryFile], {
+          env: opts.env, encoding: 'utf8', timeout: 20_000,
+        });
+      }
+      return nodeSpawn(cmd, args, opts);
+    };
+
+    model.ask({ name: 'Read', input: { file_path: canaryFile } });
+    const before = model.seen.bodies.length;
+    const res = await claude.spawn('Say pong.', {
+      agentName,
+      sessionId: null,
+      cwd,
+      env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: loginDir, ANTHROPIC_BASE_URL: modelUrl },
+      environment: { model: 'claude-haiku-5-5', sandbox: { trust: 'workspace' } },
+      memoryLongTerm: '',
+      timeoutMs: 60_000,
+      _spawnImpl: spawnThroughJail,
+    }).catch((error) => ({ text: `turn failed: ${String(error?.message || error).slice(0, 1500)}` }));
+
+    // 1. The jail mounts the project (and its .git) read-only, and reads the file.
+    expect(jailArgs).not.toBeNull();
+    const binds = (flag, p) => jailArgs.some((a, i) => a === flag && jailArgs[i + 1] === p && jailArgs[i + 2] === p);
+    expect(binds('--ro-bind', cwd)).toBe(true);
+    expect(binds('--ro-bind-try', gitDir)).toBe(true);
+    expect(binds('--bind', cwd) || binds('--bind', gitDir)).toBe(false);
+    if (jailRead.status !== 0) {
+      // eslint-disable-next-line no-console
+      console.log('F104: cat in the jail failed', JSON.stringify({
+        status: jailRead.status, error: String(jailRead.error || ''), stderr: String(jailRead.stderr).slice(0, 1500),
+      }));
+    }
+    expect(jailRead.status).toBe(0);
+    expect(jailRead.stdout).toContain(GIT_CANARY);
+
+    // 2. The Read tool was refused by a permission rule, not by the filesystem.
+    if (model.seen.toolResults.length === 0) {
+      // eslint-disable-next-line no-console
+      console.log('F104: no tool result came back', JSON.stringify({ text: res.text }));
+    }
+    expect(model.seen.toolResults.length).toBeGreaterThanOrEqual(1);
+    for (const result of model.seen.toolResults) {
+      const text = resultText(result);
+      expect(result.is_error).toBe(true);
+      expect(text).not.toContain(GIT_CANARY);
+      // Claude Code 2.1.318's Read deny-rule refusal (its path check, nR):
+      // `Permission to read ${path} has been denied.` An OS error reads
+      // "ENOENT: no such file…", "EACCES: permission denied…" or "File does
+      // not exist", none of which this matches.
+      expect(text).toMatch(/Permission to read \S*\.git\/f104-canary has been denied/);
+      expect(text).not.toMatch(/ENOENT|EACCES|EPERM|no such file|does not exist/i);
+    }
+    for (const body of model.seen.bodies.slice(before)) {
+      for (const canary of [GIT_CANARY, ...CANARIES]) expect(body).not.toContain(canary);
+    }
   });
 
   const attacks = (credentialPath) => ({
