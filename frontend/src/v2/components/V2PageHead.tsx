@@ -10,12 +10,15 @@ interface V2PageHeadProps {
   titleClassName?: string;
   metaClassName?: string;
   hintLabel?: string;
+  /** Drawn before the title, inside the bar: a profile's avatar. */
+  lead?: React.ReactNode;
 }
 
 const V2PageHead: React.FC<V2PageHeadProps> = ({
-  title, meta, actions, hint, className = '', titleClassName = '', metaClassName = '', hintLabel = 'About this page',
+  title, meta, actions, hint, className = '', titleClassName = '', metaClassName = '', hintLabel = 'About this page', lead,
 }) => (
   <header className={`v2-page-head${className ? ` ${className}` : ''}`}>
+    {lead}
     <div className="v2-page-head__identity">
       <h1 className={titleClassName}>{title}</h1>
       {hint != null && <V2Hint label={hintLabel}>{hint}</V2Hint>}
