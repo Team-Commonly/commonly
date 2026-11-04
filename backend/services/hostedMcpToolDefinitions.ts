@@ -29,6 +29,7 @@ import {
   type HostedMcpDriftOutcome,
   type HostedMcpPinnedTool,
   type HostedMcpUpstreamTool,
+  withoutWithheldArgs,
 } from './hostedMcpEntryService';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import type { HostedMcpRow } from './hostedMcpCredentialService';
@@ -596,7 +597,10 @@ const callHostedTool = async (
   let session: Awaited<ReturnType<typeof openHostedMcpSession>> | undefined;
   try {
     session = await openHostedMcpSession(entry.resource, token, deps.fetcher, controller.signal);
-    const result = await session.request('tools/call', { name: tool.upstreamName, arguments: args });
+    const result = await session.request('tools/call', {
+      name: tool.upstreamName,
+      arguments: withoutWithheldArgs(tool, args),
+    });
     // MCP reports a tool that ran and failed as a result with `isError`, which is
     // the model's to read: throwing here would hide the vendor's own explanation
     // from the turn that asked for it. The credential comes out before the cap,

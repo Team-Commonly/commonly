@@ -746,6 +746,43 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(mockToolCall.create).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'refused' }));
   });
 
+  // F101: Notion's writers offer "tracking only" fields the pin keeps and the
+  // model's schema leaves out, so one a seat sends anyway is refused by name,
+  // before a budget slot, an approval or a tools/call (only tools/list runs).
+  it('refuses a withheld Notion tracking field before parking, budget or a vendor call', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant({
+      tools: ['notion.notion_create_pages'], writeMode: 'write-with-confirm',
+    }));
+    const row = hostedRow({ config: { entryId: 'notion', credentialRef: 'cred-1' } });
+    mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
+    // The shipped Notion entry, beside this file's fixture catalogue, and a
+    // vendor that lists the writer exactly as pinned, tracking fields included.
+    const notion = shippedEntries.find((entry) => entry.id === 'notion');
+    const writer = notion.tools.find((tool) => tool.name === 'notion_create_pages');
+    expect(writer.withheldArgs).toContain('telemetry');
+    HOSTED_MCP_ENTRIES.push(notion);
+    global.fetch = sessionFetch(async (url, init) => {
+      if (JSON.parse(init.body).method !== 'tools/list') {
+        return new Response(JSON.stringify(okReply), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: notion.tools.map((tool) => ({
+        name: tool.upstreamName, inputSchema: tool.inputSchema, ...(tool.annotations ? { annotations: tool.annotations } : {}),
+      })) } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    try {
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'notion.notion_create_pages',
+        args: { pages: [], telemetry: { intent: 'what the agent is doing', feedback: 'none' } },
+      })).rejects.toMatchObject({ code: 'invalid_tool_args' });
+    } finally {
+      HOSTED_MCP_ENTRIES.splice(HOSTED_MCP_ENTRIES.findIndex((entry) => entry.id === 'notion'), 1);
+    }
+    expect(mockProposeAction).not.toHaveBeenCalled();
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(toolCalls()).toHaveLength(0);
+    expect(refusedRow().reason).toBe('invalid_tool_args');
+  });
+
   it('refuses when the row names another entry, and never reaches the vendor', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
     const wrong = hostedRow({ config: { entryId: 'sentry', credentialRef: 'cred-1' } });
