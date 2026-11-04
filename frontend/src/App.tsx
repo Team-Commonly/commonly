@@ -42,7 +42,7 @@ const V2CliAuthorize = React.lazy(() => import('./v2/components/V2CliAuthorize')
 
 // Covers the moment a route's chunk is in flight. It deliberately depends on no
 // route chunk and paints NOTHING of its own: the pre-mount canvas belongs to
-// the bare body (App.css `body { background-color: #f8f8fb }`, the light
+// the bare body (App.css `body { background-color: #eef0f4 }`, the light
 // default the 2026-08-24 ruling established), so the frame only has to not
 // cover it.
 //

@@ -150,6 +150,10 @@
       "title": "Opening Community",
       "text": "Checking your access…"
     },
+    "adminGate": {
+      "checking": "Checking your access…",
+      "denied": "This page is for admins. Your account doesn't have access to it."
+    },
     "theme": {
       "label": "Theme",
       "auto": "Auto",

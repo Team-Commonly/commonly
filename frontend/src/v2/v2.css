@@ -22,11 +22,19 @@
    on load flash, overscroll rubber-banding, and every gap. V2App stamps
    `v2-canvas` while mounted; the compound selector out-ranks
    body.modern-ui (0-2-1 > 0-1-1) so bundle order cannot decide this.
-   Literal color: body sits outside .v2-root, so tokens don't reach it —
-   keep in lockstep with --v2-page-bg below. */
+   Literal colors: body sits outside .v2-root, so tokens don't reach it.
+   Each theme's value is --v2-page-bg of that theme's set below, and the
+   theme selectors are the ones those sets use; the two dark rules sit right
+   after the dark token sets (signalTokens.test reads the first
+   prefers-color-scheme block as the token set). utils/theme.ts stamps
+   data-v2-theme on <html>; index.html does it before first paint, and this
+   sheet ships in the entry bundle, so dark never opens on a light body.
+   Until 11-04 the body was #f8f8fb in both themes, so a dark page
+   rubber-banded onto a light canvas (consistency audit, finding 12).
+   v2-layout-invariants pins each literal to its token. */
 body.v2-canvas,
 body.modern-ui.v2-canvas {
-  background: #f8f8fb;
+  background: #eef0f4;
 }
 
 .v2-root {
@@ -399,6 +407,20 @@ body.modern-ui.v2-canvas {
       --v2-platform-messenger-soft: rgba(0, 132, 255, 0.16);
       --v2-platform-groupme-soft: rgba(0, 175, 240, 0.16);
       color-scheme: dark;
+  }
+}
+
+/* The page canvas in dark (see body.v2-canvas at the top of this sheet). */
+:root[data-v2-theme="dark"] body.v2-canvas,
+:root[data-v2-theme="dark"] body.modern-ui.v2-canvas {
+  background: #0b0e13;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-v2-theme="light"]) body.v2-canvas,
+  :root:not([data-v2-theme="light"]) body.modern-ui.v2-canvas {
+    background: #0b0e13;
+    color-scheme: dark;
   }
 }
 
@@ -2436,7 +2458,10 @@ body.modern-ui.v2-canvas {
 }
 
 /* The 390 auth frames are full-bleed: the card is the screen. This block sits
-   after the base rules above, which it overrides at equal specificity. */
+   after the base rules above, which it overrides at equal specificity. The
+   side padding is the app's 12px phone gutter (design-system README, Layout
+   rules; 11-04 consistency rulings), not the 20 the d215 auth frames draw, so
+   sign-in lines up with every reference page at 390. */
 @media (max-width: 480px) {
   .v2-login {
     padding: 0;
@@ -2448,7 +2473,7 @@ body.modern-ui.v2-canvas {
     max-width: none;
     box-shadow: none;
     border-radius: 0;
-    padding: 28px 20px;
+    padding: 28px 12px;
   }
 
   .v2-root :where(a, button).v2-login__oauth-btn {
@@ -2457,6 +2482,19 @@ body.modern-ui.v2-canvas {
 }
 
 /* ---------- Empty / loading states ---------- */
+
+/* The shell's one-line state: memory's `p.v2m-state` grammar (V2AgentMemory.css)
+   for anything outside that page, such as the admin and dev access check
+   (components/ProtectedRoute.tsx). Plex 13.5 in the secondary grey; no icon,
+   no red, no exclamation mark. No side padding: the page body already owns the
+   gutter. v2-layout-invariants keeps the type in step with .v2m-state. */
+.v2-state {
+  margin: 0;
+  padding: 14px 0;
+  font-size: 13.5px;
+  line-height: 20px;
+  color: var(--v2-text-secondary);
+}
 
 .v2-feature {
   min-width: 0;
