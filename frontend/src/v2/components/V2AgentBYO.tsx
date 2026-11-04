@@ -1238,13 +1238,6 @@ const V2AgentBYO: React.FC = () => {
     </>
   ) : null;
 
-  const pageLead = (() => {
-    if (issued) return undefined;
-    if (showCompactHosted && !hosted && hosting?.configured) return t('agentByo.compact.lead',{ agents: hosting?.caps.agentsPerUser, turns: hosting?.caps.turnsPerDay });
-    if (showCompactByo) return t(setupOs === 'windows' ? 'agentByo.compactByo.leadWindows' : 'agentByo.compactByo.lead');
-    return t('agentByo.description');
-  })();
-
   return (
     <V2FeaturePage
       title={(() => {
@@ -1257,13 +1250,18 @@ const V2AgentBYO: React.FC = () => {
         }
         return t('agentByo.title');
       })()}
+      // d215 s-byo draws the page's lead as the head's "i" hint, at 1440 and 390.
+      hint={(() => {
+        if (issued) return undefined;
+        if (showCompactHosted && !hosted && hosting?.configured) return t('agentByo.compact.lead',{ agents: hosting?.caps.agentsPerUser, turns: hosting?.caps.turnsPerDay });
+        if (showCompactByo) return t(setupOs === 'windows' ? 'agentByo.compactByo.leadWindows' : 'agentByo.compactByo.lead');
+        return t('agentByo.description');
+      })()}
       showPodsSidebar={false}
       className="v2-feature--byo"
     >
       <div className="v2-byo__layout">
       <div className="v2-byo__main">
-      {/* The page's one-line lead: it was the head's "i" hint, which no head carries now. */}
-      {pageLead && <p className="v2-byo__intro">{pageLead}</p>}
       {!issued && !hosted && personaCard && (
         <div className="v2-byo__persona" data-testid="byo-persona-context">
           <V2Avatar name={personaCard.name} size="md" kind={AGENT_KIND} seed={personaCard.avatarSeed} />

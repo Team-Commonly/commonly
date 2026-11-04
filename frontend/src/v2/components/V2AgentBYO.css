@@ -6,8 +6,6 @@
    the page's 760px phone query. Scoped to .v2-feature--byo, the page's wrapper. */
 .v2-feature--byo .v2-byo__layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 28px; max-width: 1040px; margin: 0 auto; align-items: start; }
 .v2-feature--byo .v2-byo__main { min-width: 0; }
-/* The page's lead line: the head carries no "i" hint (rulings 11-04). */
-.v2-feature--byo .v2-byo__intro { margin: 0 4px 14px; font-size: 13.5px; line-height: 20px; color: var(--v2-text-secondary); }
 .v2-feature--byo .v2-byo__form, .v2-feature--byo .v2-byo__result, .v2-feature--byo .v2-byo__snippet { display: flex; flex-direction: column; gap: 10px; }
 .v2-feature--byo .v2-byo__modes-question, .v2-feature--byo .v2-byo__preview-label, .v2-feature--byo .v2-byo__snippet-head { margin: 0 4px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-feature--byo .v2-byo__modes, .v2-feature--byo .v2-byo__os { margin: 0; display: inline-flex; align-self: flex-start; gap: 2px; padding: 2px; border-radius: 9px; background: var(--v2-surface-tint); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
@@ -23,8 +21,7 @@
 /* the page shows a field's hint only while it has focus or an error */
 .v2-feature--byo .v2-byo__field > .v2-byo__hint { display: none; }
 .v2-feature--byo .v2-byo__field:focus-within > .v2-byo__hint, .v2-feature--byo .v2-byo__field--error > .v2-byo__hint { display: block; }
-/* The v2p small key's size (.v2p-b-sm: 28 at r8, rulings 11-04); 44 on phones below. */
-.v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 10px; border-radius: var(--v2-r-8); font: 600 12.5px/1 var(--v2-font); white-space: nowrap; }
+.v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; }
 .v2-feature--byo .v2-byo__submit { align-self: flex-start; margin-top: 6px; color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
 .v2-feature--byo .v2-byo__secondary { color: var(--v2-text-secondary); }
 .v2-feature--byo .v2-byo__link { all: unset; align-self: flex-start; cursor: pointer; color: var(--v2-accent-text); font-weight: 600; }
@@ -102,8 +99,11 @@
 .v2-feature--byo textarea.v2-byo__memory-text { height: auto; padding: 10px 12px; line-height: 20px; }
 @media (max-width: 760px) {
   .v2-feature--byo .v2-byo__mode-option > .v2-hint { min-width: 44px; min-height: 44px; justify-content: center; }
-  .v2-root .v2-feature--byo .v2-byo__mode-option button.v2-hint__trigger { position: relative; }
-  .v2-root .v2-feature--byo .v2-byo__mode-option button.v2-hint__trigger::after { content: ''; position: absolute; inset: -8px; }
+  /* Every "i" hint on the page (the head's and each start's) draws 28 with a 1px border;
+     the frame's info--lg is a 44 touch box. An overlay measures from inside the border
+     (26), so it reaches 9px each way: 26 + 18 = 44. */
+  .v2-root .v2-feature--byo button.v2-hint__trigger { position: relative; }
+  .v2-root .v2-feature--byo button.v2-hint__trigger::after { content: ''; position: absolute; inset: -9px; }
 }
 
 /* not drawn in the frame yet: kept as it was */

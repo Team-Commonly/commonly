@@ -3,8 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router-dom';
 import { useV2Api } from '../hooks/useV2Api';
 import { agentKeyFor } from '../utils/agentKey';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import V2PageHead from './V2PageHead';
 import './V2RunTrace.css';
 
 export interface RunTrace {
@@ -75,26 +73,10 @@ const V2RunTrace: React.FC = () => {
     : trace?.omittedTurns ? 'limitedTurns' : trace?.omittedToolCalls ? 'limitedCalls' : 'limitedContent';
 
   return <section className="v2-run-trace" aria-labelledby="run-trace-title">
-    {/* The shared page head bar, back as its lead key (as the board and memory draw it). */}
-    <V2PageHead
-      className="v2-feature__header v2-run-trace__head"
-      titleClassName="v2-feature__title"
-      titleId="run-trace-title"
-      title={t('runTrace.title')}
-      lead={(
-        <Link
-          className="v2p-b v2p-b-g v2p-ib v2-run-trace__back"
-          to={`/v2/pods/${encodeURIComponent(podId || '')}`}
-          aria-label={t('runTrace.back')}
-          title={t('runTrace.back')}
-        >
-          <ArrowBackIcon fontSize="small" aria-hidden="true" />
-        </Link>
-      )}
-    />
-    <div className="v2-feature__scroll v2-run-trace__body">
+    <Link className="v2-run-trace__back" to={`/v2/pods/${encodeURIComponent(podId || '')}`}>{t('runTrace.back')}</Link>
+    <h1 id="run-trace-title">{t('runTrace.title')}</h1>
     {!trace && !error && <p role="status">{t('runTrace.loading')}</p>}
-    {error && <div role="alert"><p>{error}</p><button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={retry}>{t('runTrace.retry')}</button></div>}
+    {error && <div role="alert"><p>{error}</p><button type="button" onClick={retry}>{t('runTrace.retry')}</button></div>}
     {trace && <>
       <div className="v2-run-trace__summary">
         <strong>{agentLabel(trace)}</strong><span>{enumLabel('status', trace.status)} · {triggerPhrase(trace.trigger)}</span>
@@ -104,7 +86,7 @@ const V2RunTrace: React.FC = () => {
         })}</span>
         <time dateTime={trace.startedAt}>{new Date(trace.startedAt).toLocaleString(i18n.resolvedLanguage)}</time>
         {trace.errorKind && <span>{t('runTrace.stopped', { kind: trace.errorKind })}</span>}
-        {['queued', 'running'].includes(trace.status) && <p>{t('runTrace.running')} <button type="button" className="v2p-b v2p-b-s v2p-b-sm" onClick={retry}>{t('runTrace.refresh')}</button></p>}
+        {['queued', 'running'].includes(trace.status) && <p>{t('runTrace.running')} <button type="button" onClick={retry}>{t('runTrace.refresh')}</button></p>}
       </div>
       {trace.traceTruncated && <p role="status">{t(`runTrace.${limitedKey}`, { turns: trace.omittedTurns, calls: trace.omittedToolCalls })}</p>}
       {!trace.turns.length && <p>{t('runTrace.empty')}</p>}
@@ -131,7 +113,6 @@ const V2RunTrace: React.FC = () => {
         <code>{t('runTrace.runId', { id: trace.id })}</code>
       </footer>
     </>}
-    </div>
   </section>;
 };
 export default V2RunTrace;

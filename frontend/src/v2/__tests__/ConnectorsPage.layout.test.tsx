@@ -171,8 +171,12 @@ describe('Connectors page: the tile surface', () => {
     await clickTile('GitHub');
     const popover = await findPopover('GitHub');
     expect(within(popover).getByText('GitHub tool copy.')).toBeInTheDocument();
-    for (const name of names.slice(0, 3)) expect(within(popover).getByText(name)).toBeInTheDocument();
-    expect(within(popover).queryByText('d.four')).toBeNull();
+    // A chip shows the name after its namespace, as the frame draws it; the full name is its title.
+    for (const name of names.slice(0, 3)) {
+      expect(within(popover).getByText(name.slice(name.indexOf('.') + 1))).toHaveAttribute('title', name);
+    }
+    expect(within(popover).queryByText('four')).toBeNull();
+    expect(within(popover).queryByText('a.one')).toBeNull();
     expect(within(popover).getByText('+2')).toBeInTheDocument();
     expect(within(popover).getByRole('button', { name: 'Add' })).toBeInTheDocument();
   });

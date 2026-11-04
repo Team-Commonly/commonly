@@ -2476,7 +2476,9 @@ body.modern-ui.v2-canvas {
     max-width: none;
     box-shadow: none;
     border-radius: 0;
-    padding: 28px 12px;
+    /* The d215 auth frames draw a 20px side inset on every auth page at 390.
+       Pages drawn after Sam's pick follow their frames (G11 ruling, 11-04). */
+    padding: 28px 20px;
   }
 
   .v2-root :where(a, button).v2-login__oauth-btn {
@@ -4373,6 +4375,25 @@ body.modern-ui.v2-canvas {
 
 .v2-pods-aside--page .v2-pods__view { padding: 0 0 10px; }
 
+/* The phone page's Recent · All · Pinned segment is the frame's 28px (d215 sidebar
+   390), not the primitives' 44px phone size, which made this bar 58 tall and pushed
+   the list down (#3373). Each option keeps a 44px touch area through a transparent
+   ::before; the segment sits alone in its row, so no neighbour's area covers it.
+   The bar keys and rows stay at the 44px floor (Cofounder ruling 11-04). */
+@media (max-width: 760px) {
+  .v2-pods-aside--page .v2-pods__view .v2p-seg button { position: relative; height: 28px; }
+  .v2-pods-aside--page .v2-pods__view .v2p-seg button::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+    background: transparent;
+  }
+}
+
 .v2-pods__list {
   display: flex;
   min-height: 0;
@@ -4593,6 +4614,20 @@ body.modern-ui.v2-canvas {
   .v2-root button.v2-pods__pin {
     width: 28px;
     height: 28px;
+  }
+
+  /* The pin draws at 28 inside the 44px row and takes its 44px touch area from a
+     transparent ::before, which stays inside the row (ruling 11-04): it ends at the
+     row's right edge (the pin sits 6px in), since the list clips past it. */
+  .v2-root button.v2-pods__pin::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: -6px;
+    width: 44px;
+    height: 44px;
+    transform: translateY(-50%);
+    background: transparent;
   }
 }
 

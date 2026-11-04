@@ -403,13 +403,9 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
     />
   );
 
-  // In the app shell the hero is the shared page head bar (.v2-feature__header,
-  // the route's v2-feature--bar) and the rest scrolls under it; signed out it
-  // stays the public page's hero.
-  const inShell = Boolean(shell);
   const main = (
     <main className="v2-aprofile__main">
-      <header className={inShell ? 'v2-aprofile__hero v2-page-head v2-feature__header v2-page-head--wrap' : 'v2-aprofile__hero'}>
+      <header className="v2-aprofile__hero">
         {/* The avatar IS the edit control (2026-09-01). Non-owners get the
             plain avatar; owners get the same avatar as a button. */}
         {canEditAvatar ? (
@@ -428,13 +424,13 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
         ) : (
           <span className="v2-aprofile__avatar">{avatar}</span>
         )}
-        <div className={inShell ? 'v2-aprofile__hero-text v2-page-head__identity' : 'v2-aprofile__hero-text'}>
+        <div className="v2-aprofile__hero-text">
           <div className="v2-aprofile__name-row">
-            <h1 className={inShell ? 'v2-aprofile__name v2-feature__title' : 'v2-aprofile__name'}>{agent.displayName}</h1>
+            <h1 className="v2-aprofile__name">{agent.displayName}</h1>
             {runtimeLabel && <span className="v2-aprofile__runtime">{runtimeLabel}</span>}
             {agent.officialAgent && <span className="v2-aprofile__badge">{t('agentProfile.hero.official')}</span>}
           </div>
-          {agent.description && !inShell && <p className="v2-aprofile__desc">{agent.description}</p>}
+          {agent.description && <p className="v2-aprofile__desc">{agent.description}</p>}
           <p className="v2-aprofile__meta">
             {t('agentProfile.hero.activeInPods', { count: pods.count })}
             {memory.has && ` · ${t('agentProfile.hero.memories', { count: memory.entryCount })}`}
@@ -445,16 +441,13 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
             )}
           </p>
         </div>
-        <div className={inShell ? 'v2-aprofile__keys v2-page-head__actions' : 'v2-aprofile__keys'}>
+        <div className="v2-aprofile__keys">
           {isOwner && signedIn && (
             <Link className="v2-aprofile__btn v2-aprofile__btn--ghost" to={agentPath}>{t('agentSettings.settings')}</Link>
           )}
           {primaryKey}
         </div>
       </header>
-      <div className={inShell ? 'v2-feature__scroll v2-aprofile__body' : 'v2-aprofile__body'}>
-      {/* In the bar there is room for the name and one meta line; the description is the intro line under it. */}
-      {agent.description && inShell && <p className="v2-aprofile__desc v2-aprofile__intro">{agent.description}</p>}
       {avatarDialogOpen && (
         <section id="agent-avatar-picker" className="v2-aprofile__avatar-picker" aria-labelledby="agent-avatar-picker-title">
           <h2 id="agent-avatar-picker-title" className="v2-aprofile__avatar-title">{t('agentProfile.avatar.title')}</h2>
@@ -619,7 +612,6 @@ const V2AgentProfile: React.FC<V2AgentProfileProps> = ({ shell }) => {
           </ul>
         </section>
       )}
-      </div>
     </main>
   );
 
