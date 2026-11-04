@@ -4,12 +4,25 @@ The spec for D215 (artboard v2). Open `index.html` in a browser. The toggle at t
 
 - `index.html` holds the before shots and live mocks for seven surfaces: sidebar, pod chat, task board, agent memory, agent settings, settings and connectors. The mock's names, messages and task titles are neutral samples. Counts and times come from the captures.
 - A second block under agent settings draws the states of that page (policy and machine, identity edit, connector grants, runtime with the model and effort selects, own API key) at 1440 and 390. The runtime and key frames follow V2RuntimeControls and V2AgentProviderKey, including the stored-model refusal and the key-save error. Those frames carry `data-state`, so `measure_after.js` skips them and `targets.json` does not move.
+- Two state-only surfaces: `task-record` (the task record page, loaded and not-available, under the reply trace) and `handoff` (the OAuth and Discord return pages, `data-state` working, done, error, on the auth card). Every frame carries `data-state`, so the scorer skips them and `targets.json` does not move.
 - A block under Settings draws the free-plan Plan row and the administrator-only Administration group (`data-state="admin-free"`, 1440 and 390, also skipped by the scorer).
+- Under Activity and under Artifacts, a block redraws each page in the picked language (`#s-activity-signal`, `#s-artifacts-signal`): busy and day zero at 1440 and 390, built only from the seven picked surfaces' blocks. Sam approved them on 11-03. The frames carry `data-state="signal"`, so the scorer skips them until each page's build PR makes them the scored frames; the frames above them stay as the record of the live page until then.
 - The theme switch (sun / moon, D224) sits in the rail above the avatar at 1440. At 390 there is no rail, so the same switch rides the Pods top bar, left of Search. It is a two-item segment: the item for the theme in effect is the white key.
 - `before/` holds prod captures from 2026-10-31, blurred so they show layout and density only.
 - `targets.json` holds the helper-word and scroll targets per frame. `cap/measure_after.js` writes it from `index.html`.
 - `cap/` holds the measuring scripts. See the header of `measure_after.js` for its env.
 - Every frame without `data-state` must be listed in `measure_after.js`, either in `SURFACES` (scored) or in `SKIPPED` (not scored, with a reason). Activity, Artifacts and the two trace "before" frames are skipped. `node --test cap/measure_after.test.js` fails on any frame that is in neither list.
+
+## Where each frame came from
+
+Passing the prod check means a page matches its frame. It means the page matches the style Sam picked only when the frame came from his pick. Every frame is in one of four groups. Only the first two have scored frames, and prod scores are reported per group, never as one total.
+
+| Group | Frames | Source |
+|---|---|---|
+| **From Sam's pick** | sidebar, chat, board, agent-memory, agent-settings, settings, connectors | The seven surfaces picked on 10-31 (#3059). Later edits: the theme switch (#3175) and the open thread (#3178). #3288 (the 390 agent-settings and settings frames, brought up to the shipped pages) and #3289 (memory notes drawn as the API holds them) moved those frames toward the live page, so read them with that in mind. |
+| **Drawn after the pick** | dm, byo, byo-handoff, connect, team, firstrun-\*, signin, signup, signup-sent, verify-email, forgot-password, reset-password, cli-authorize, invite, invite-required, profile, agent-profile, run-trace-after, chat-trace, chat-agents-away, and the agent-settings and settings state blocks | New drawings in the picked language, from 11-01 on. Sam has not reviewed them as a set. |
+| **Approved by Sam, 11-03** | activity-\*, artifacts-\* with `data-state="signal"`; task-record-\*; handoff-\* | Sam saw each one live-beside-proposed and answered "Build as drawn" for all four pages. Activity and Artifacts are built only from the picked surfaces' blocks. The scorer still skips these frames (they carry `data-state`). Each page's build PR makes its approved frame the scored one and retires the frame it replaces. |
+| **Drawn from live, being retired** | activity-\*, artifacts-\* without `data-state` | Traced from the live pages with small fixes (#3316, #3318). The scorer skips them (`SKIPPED` in `cap/measure_after.js`). Scoring a page against them would only show it has not drifted from itself. The Activity and Artifacts build PRs remove them. The two before frames, `run-trace-before` and `chat-trace-before`, draw the old pages and are never a target. |
 
 ## Rules for D215 PRs
 
