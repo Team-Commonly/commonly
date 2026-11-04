@@ -43,12 +43,13 @@
 
 import { requireSeatModel } from './seat-model.js';
 import { probeVersion } from './tested-version.js';
+import { resolveOnPath } from '../resolve-on-path.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
-import { accessSync, constants as fsConstants, existsSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, readFileSync, realpathSync } from 'fs';
 import { mkdir, readdir, writeFile } from 'fs/promises';
 import { homedir } from 'os';
-import { delimiter, dirname, isAbsolute, join } from 'path';
+import { dirname, isAbsolute, join } from 'path';
 import { fileURLToPath } from 'url';
 import {
   readUpstreamRefusal,
@@ -396,18 +397,8 @@ export const assertSandboxSupported = (environment = {}, platform = process.plat
   }
 };
 
-/** The first executable `name` on PATH, absolute, or null. No shell involved. */
-export const resolveOnPath = (name, pathValue) => {
-  for (const dir of String(pathValue || '').split(delimiter)) {
-    if (!dir || !isAbsolute(dir)) continue;
-    const candidate = join(dir, name);
-    try {
-      accessSync(candidate, fsConstants.X_OK);
-      return candidate;
-    } catch { /* next */ }
-  }
-  return null;
-};
+// Shared with the version probe (tested-version.js).
+export { resolveOnPath };
 
 /**
  * pi's install tree: the nearest directory above the real entry file whose
