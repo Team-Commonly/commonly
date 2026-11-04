@@ -87,6 +87,11 @@ describe('toPodMessage', () => {
     });
     expect(plain).not.toHaveProperty('summary');
     expect(plain).not.toHaveProperty('kind');
+    expect(plain).not.toHaveProperty('receipt');
+    const receipt = { adapter: 'codex', source: 'self-reported' };
+    expect(toPodMessage({
+      _id: 'm4', podId: 'p1', userId: 'u1', content: 'done', receipt,
+    }).receipt).toEqual(receipt);
   });
 
   it('maps a populated MongoDB message onto the PG row shape', () => {

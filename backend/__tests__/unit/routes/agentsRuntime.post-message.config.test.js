@@ -129,7 +129,9 @@ describe('agentsRuntime post message installation config forwarding', () => {
     const installation = { podId: 'pod-1', agentName: 'openclaw', instanceId: 'tarik' };
     const req = {
       params: { podId: 'pod-1' },
-      body: { content: 'hello', summary: 'Fixed it', kind: 'reasoning' },
+      body: {
+        content: 'hello', summary: 'Fixed it', kind: 'reasoning', receipt: { adapter: 'claude', turns: 1 },
+      },
       agentInstallation: installation,
       agentInstallations: [installation],
     };
@@ -138,7 +140,7 @@ describe('agentsRuntime post message installation config forwarding', () => {
     await handler(req, res);
 
     expect(AgentMessageService.postMessage).toHaveBeenCalledWith(expect.objectContaining({
-      content: 'hello', summary: 'Fixed it', kind: 'reasoning',
+      content: 'hello', summary: 'Fixed it', kind: 'reasoning', receipt: { adapter: 'claude', turns: 1 },
     }));
     expect(res.status).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({ success: true, warnings, mentionNotices: [] });

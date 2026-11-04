@@ -24,6 +24,7 @@ beforeAll(async () => {
     author_kind VARCHAR(20),
     summary TEXT,
     kind VARCHAR(20),
+    receipt JSONB,
     payload JSONB,
     reply_to_message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     thread_root_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
@@ -57,10 +58,23 @@ describe('message contract columns (D245)', () => {
     expect(row).toMatchObject({ summary: null, kind: null });
   });
 
+  it('stores a receipt as JSON and returns it on both reads (D245 item 4)', async () => {
+    const receipt = {
+      adapter: 'claude', turns: 2, tools: ['Read'], source: 'self-reported', 
+    };
+    const row = await create({ summary: null, kind: null, receipt });
+    expect(row.receipt).toEqual(receipt);
+    expect((await PGMessage.findById(String(row.id))).receipt).toEqual(receipt);
+    const page = await PGMessage.findByPodId(POD, 50);
+    expect(page.find((m) => m.pgId === String(row.id)).receipt).toEqual(receipt);
+  });
+
   it('an edit clears the summary, so it never outlives the text it described', async () => {
     const row = await create({ summary: 'The old claim', kind: 'result' });
     const edited = await PGMessage.update(String(row.id), 'corrected text');
-    expect(edited).toMatchObject({ content: 'corrected text', summary: null, kind: 'result' });
+    expect(edited).toMatchObject({
+      content: 'corrected text', summary: null, kind: 'result', receipt: null, 
+    });
     expect((await PGMessage.findById(String(row.id))).summary).toBeNull();
   });
 });

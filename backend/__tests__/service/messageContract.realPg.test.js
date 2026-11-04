@@ -57,9 +57,11 @@ real('message contract columns on real PostgreSQL (D245)', () => {
     await seed();
     await pool.query("INSERT INTO messages (pod_id, user_id, content) VALUES ($1, $2, 'kept')", [POD, USER]);
 
-    expect(await runPgMigrations(pool)).toEqual(['0005_message_summary_kind.sql']);
-    expect((await pool.query('SELECT content, summary, kind FROM messages')).rows)
-      .toEqual([{ content: 'kept', summary: null, kind: null }]);
+    expect(await runPgMigrations(pool)).toEqual(['0005_message_summary_kind.sql', '0006_message_receipt.sql']);
+    expect((await pool.query('SELECT content, summary, kind, receipt FROM messages')).rows)
+      .toEqual([{
+        content: 'kept', summary: null, kind: null, receipt: null,
+      }]);
     expect(await runPgMigrations(pool)).toEqual([]);
   });
 
@@ -111,6 +113,20 @@ real('message contract columns on real PostgreSQL (D245)', () => {
         { summary: 'Answered', kind: 'answer' },
       );
       expect(reply).toMatchObject({ summary: 'Answered', kind: 'answer', thread_root_id: root.id });
+    });
+
+    it('stores a self-reported receipt as JSONB, returns it on both reads, and an edit clears it (D245 item 4)', async () => {
+      const receipt = {
+        adapter: 'claude', model: 'claude-opus-5-5', turns: 3, tools: ['Read', 'Bash'], durationMs: 41250, source: 'self-reported',
+      };
+      const row = await PGMessage.create(POD, USER, 'Done.', 'text', null, null, null, null, null, { receipt });
+      expect(row.receipt).toEqual(receipt);
+      expect((await PGMessage.findById(String(row.id))).receipt).toEqual(receipt);
+      const [listed] = await PGMessage.findByPodId(POD, 10);
+      expect(listed.receipt).toEqual(receipt);
+      const { rows: [typed] } = await pool.query('SELECT jsonb_typeof(receipt) AS t FROM messages WHERE id = $1', [row.id]);
+      expect(typed.t).toBe('object');
+      expect((await PGMessage.update(String(row.id), 'Edited.')).receipt).toBeNull();
     });
 
     it('an edit clears the summary', async () => {

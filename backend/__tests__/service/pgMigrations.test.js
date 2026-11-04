@@ -10,7 +10,8 @@ const real = process.env.INTEGRATION_TEST === 'true' ? describe : describe.skip;
 // Every migration that ships, in order. A new migration adds its name here, so
 // two lanes claiming the same number conflict on this line.
 const SHIPPED = ['0001_legacy_schema.sql', '0002_record_chains.sql', '0003_self_created_tables.sql',
-  '0004_tool_call_provider_ref.sql', '0005_message_summary_kind.sql'];
+  '0004_tool_call_provider_ref.sql', '0005_message_summary_kind.sql',
+  '0006_message_receipt.sql'];
 // The three tables 0003 took over from runtime DDL, and every column each must
 // end with (0004 adds tool_calls' provider columns). Shared by the fresh and the
 // retrofit case: both must reach it.

@@ -45,6 +45,7 @@ export interface LegacyMessageDoc {
   // D245: the optional message contract; copied as stored.
   summary?: string | null;
   kind?: string | null;
+  receipt?: unknown;
   payload?: unknown;
   createdAt: Date;
 }
@@ -93,8 +94,8 @@ export async function copyOne(doc: LegacyMessageDoc): Promise<'moved' | 'present
   const id = doc._id.toString();
   const inserted = await pool.query(
     `INSERT INTO messages (pod_id, user_id, content, message_type, created_at, legacy_mongo_id, author_kind, payload,
-       summary, kind)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       summary, kind, receipt)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (legacy_mongo_id) DO NOTHING
      RETURNING id`,
     [
@@ -108,6 +109,11 @@ export async function copyOne(doc: LegacyMessageDoc): Promise<'moved' | 'present
       doc.payload == null ? null : JSON.stringify(doc.payload),
       doc.summary || null,
       doc.kind || null,
+      // Re-stamped here too, so the copy never depends on every Mongo writer
+      // having stamped it.
+      doc.receipt == null || typeof doc.receipt !== 'object'
+        ? null
+        : JSON.stringify({ ...(doc.receipt as Record<string, unknown>), source: 'self-reported' }),
     ],
   );
   let pgId = inserted.rows[0]?.id;
