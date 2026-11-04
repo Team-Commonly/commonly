@@ -1,0 +1,52 @@
+name: Bring your own on Windows
+
+# D164: the Bring your own page's Windows lines for Claude Code, walked on a
+# real Windows host. The four PowerShell lines (install the CLI, set the URL
+# and token, `commonly agent run … --adapter claude --unsandboxed`) run in one
+# PowerShell process against a stub Commonly API with one @mention queued.
+# The walk passes when the reply comes back and the @mention is acknowledged.
+# Claude Code is real; only its model is a stub. The lines come from
+# V2AgentBYO.tsx. It walks the published CLI and this checkout's.
+
+on:
+  pull_request:
+    paths:
+      - 'cli/src/**'
+      - 'cli/package.json'
+      - 'cli/package-lock.json'
+      - 'packages/seats/**'
+      - 'cli/scripts/windows-byo-smoke.mjs'
+      - 'frontend/src/v2/components/V2AgentBYO.tsx'
+      - '.github/workflows/byo-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  byo:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # The same Claude Code the other real-Claude smokes pin.
+      - name: Install Claude Code
+        run: npm i -g @anthropic-ai/claude-code@2.1.318
+      - name: Pack this checkout's CLI
+        id: pack
+        shell: bash
+        working-directory: cli
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          tgz=$(npm pack --silent --pack-destination "$RUNNER_TEMP" | tail -n 1)
+          echo "tarball=$RUNNER_TEMP\\$tgz" >> "$GITHUB_OUTPUT"
+      - name: Walk the page's Windows lines
+        env:
+          COMMONLY_BYO_TREE_TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: node cli/scripts/windows-byo-smoke.mjs
