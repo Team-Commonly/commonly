@@ -58,7 +58,10 @@ log(`stub API on ${API}`);
 // npm is itself a .cmd on Windows; a fixed command line through cmd is how a
 // PowerShell user runs it too.
 const npm = (args) => {
-  const r = spawnSync('cmd.exe', ['/d', '/s', '/c', `npm ${args}`], { encoding: 'utf8' });
+  // Verbatim, the way Node's own shell:true builds it: otherwise Node escapes the
+  // quotes around a path as \" and npm reads them as part of the path (seen on
+  // windows-latest, 11-04).
+  const r = spawnSync('cmd.exe', ['/d', '/s', '/c', `"npm ${args}"`], { encoding: 'utf8', windowsVerbatimArguments: true });
   if (r.status !== 0) throw new Error(`npm ${args} exited ${r.status}: ${(r.stderr || '').slice(-2000)}`);
   return r.stdout;
 };
