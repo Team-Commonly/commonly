@@ -982,4 +982,24 @@ describe('F103 review: an old LiteLLM key is retired only after its replacement 
 
     expect(oldKeyDeletes()).toEqual([{ keys: [OLD], afterWrite: true }]);
   });
+
+  // CodeRabbit on #3421 (review 5774510935): a failed /key/delete was
+  // swallowed and then logged as retired, so the log could claim a live key
+  // was gone.
+  it('when the delete of the old key fails, it warns with the error and never logs it as retired', async () => {
+    process.env.CODEX_BYPASS_LITELLM = 'true';
+    pvc('ok');
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+    axios.delete.mockRejectedValue(new Error('LiteLLM 503'));
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await provisionTheo();
+
+    const logged = log.mock.calls.map((args) => args.join(' '));
+    const warned = warn.mock.calls.map((args) => args.join(' '));
+    expect(logged.filter((line) => /Retired the key replaced/.test(line))).toEqual([]);
+    expect(warned.filter((line) => /could not retire the key replaced for theo: LiteLLM 503/.test(line))).toHaveLength(1);
+    expect(warned.join('\n')).not.toContain(OLD);
+  });
 });
