@@ -163,6 +163,10 @@ AgentEventSchema.index({ agentName: 1, instanceId: 1, podId: 1, status: 1, deliv
 // This keeps that bounded page and its true-count query from scanning pending
 // work in every other pod for the same agent installation.
 AgentEventSchema.index({ agentName: 1, instanceId: 1, status: 1, podId: 1, createdAt: 1 });
+// The roster's last heartbeat per seat (TASK-774): one seek per install for
+// the newest delivered heartbeat. Without `type` here that read fetched every
+// delivered event of the seat, of every type, to find its heartbeats.
+AgentEventSchema.index({ agentName: 1, instanceId: 1, type: 1, status: 1, createdAt: -1 });
 
 export const AgentEvent: Model<IAgentEvent> = mongoose.model<IAgentEvent>(
   'AgentEvent',

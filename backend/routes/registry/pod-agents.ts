@@ -5,7 +5,6 @@ const auth = require('../../middleware/auth');
 const { AgentRegistry, AgentInstallation } = require('../../models/AgentRegistry');
 const AgentProfile = require('../../models/AgentProfile');
 const AgentTemplate = require('../../models/AgentTemplate');
-const AgentEvent = require('../../models/AgentEvent');
 const AgentCredential = require('../../models/AgentCredential');
 const Machine = require('../../models/Machine');
 const { deriveAgentConnection } = require('../../services/agentConnectionStateService');
@@ -218,24 +217,11 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     });
 
     // Heartbeat-only timestamps still ride the payload (lastHeartbeatAt is
-    // its own field); fetch them cheaply from the same event source.
-    const heartbeatRead = read(() => AgentEvent.aggregate([
-      {
-        $match: {
-          type: 'heartbeat',
-          status: 'delivered',
-          agentName: { $in: agentNames },
-          instanceId: { $in: installations.map((i: any) => i.instanceId || 'default') },
-        },
-      },
-      { $sort: { createdAt: -1 } },
-      {
-        $group: {
-          _id: { agentName: '$agentName', instanceId: '$instanceId' },
-          lastHeartbeatAt: { $first: '$createdAt' },
-        },
-      },
-    ]));
+    // its own field): one index seek per install (TASK-774).
+    const heartbeatRead = read(() => {
+      const { lastHeartbeatPerInstall } = require('../../services/agentStateService');
+      return lastHeartbeatPerInstall(installations) as Promise<Map<string, Date>>;
+    });
 
     const registryRead = read(() => AgentRegistry.find({
       agentName: { $in: agentNames },
@@ -383,7 +369,7 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
     const adminRead: Promise<boolean> = needsAdminCheck ? read(() => isGlobalAdminUser(userId)) : Promise.resolve(false);
 
     const [
-      narrowing, activityMap, heartbeatRows, registryEntries, templateCandidates, profiles, userRows,
+      narrowing, activityMap, heartbeatMap, registryEntries, templateCandidates, profiles, userRows,
       connection, lastMessageByUserId, mentionMap, callerSpoke, seatRuntimeIdentities, viewerIsAdmin,
     ] = await Promise.all([
       narrowingRead, activityRead, heartbeatRead, registryRead, templateRead, profileRead, userRead,
@@ -394,9 +380,6 @@ podAgentsRouter.get('/pods/:podId/agents', auth, async (req: any, res: any) => {
       credentialByAgent, credentialByMachine, machineById, connectionAvailable,
     } = connection;
 
-    const heartbeatMap = new Map(
-      heartbeatRows.map((r: any) => [`${r._id.agentName}:${r._id.instanceId}`, r.lastHeartbeatAt]),
-    );
     const iconMap = new Map(registryEntries.map((entry: any) => [entry.agentName, entry.iconUrl || '']));
     const getTemplateIcon = (installation: any) => {
       const displayName = normalizeDisplayName(installation.displayName);
