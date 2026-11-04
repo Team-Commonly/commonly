@@ -1,13 +1,14 @@
 /**
  * AgentRun content window (F84, ruled 2026-11-04).
  *
- * A run stores the model's text and each tool call's args and result, which
- * can carry connector data (a calendar event, an issue body). Nothing in the
- * product reads them back: every AgentRun reader selects metadata only. So
- * after RUN_CONTENT_WINDOW_DAYS the content is unset and the row stays, with
- * its status, trigger, tokens, timings, models and tool names, so proof of
- * life, recent activity, traces and spend history are unchanged. No row is
- * deleted.
+ * A run stores the model's text, each tool call's args, result and error,
+ * and its own errorMessage, any of which can carry connector data (a calendar
+ * event, an issue body, an exception that echoed either). Nothing in the
+ * product reads any of them back: every AgentRun reader selects metadata only.
+ * So after RUN_CONTENT_WINDOW_DAYS they are unset and the
+ * row stays, with its status, errorKind, trigger, tokens, timings, models and
+ * tool names, so proof of life, recent activity, traces and spend history are
+ * unchanged. No row is deleted.
  */
 import AgentRun from '../models/AgentRun';
 
@@ -59,7 +60,7 @@ export const redactExpiredRunContent = async (
                     $map: {
                       input: { $ifNull: ['$$turn.toolCalls', []] },
                       as: 'call',
-                      in: without('$$call', ['args', 'result']),
+                      in: without('$$call', ['args', 'result', 'error']),
                     },
                   },
                 },
@@ -70,6 +71,7 @@ export const redactExpiredRunContent = async (
         contentRedactedAt: now,
       },
     },
+    { $unset: 'errorMessage' },
   ]);
   return { cutoff, matched, redacted: result.modifiedCount };
 };

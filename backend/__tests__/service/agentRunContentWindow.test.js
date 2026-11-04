@@ -2,9 +2,9 @@
  * F84 — AgentRun content window. Real Mongo (tier 1): the redaction is an
  * aggregation-pipeline update, which an in-process fake can't evaluate.
  *
- * After 30 days a run loses the model's text and each tool call's args and
- * result. The row and its metadata stay; nothing is deleted; a dry run
- * changes nothing.
+ * After 30 days a run loses the model's text, each tool call's args, result
+ * and error, and its own errorMessage. The row and its metadata stay; nothing
+ * is deleted; a dry run changes nothing.
  */
 const mongoose = require('mongoose');
 
@@ -24,7 +24,9 @@ const runAt = (startedAt, extra = {}) => ({
   agentName: 'scout',
   instanceId: 'default',
   trigger: 'mention',
-  status: 'succeeded',
+  status: 'failed',
+  errorKind: 'tool_error',
+  errorMessage: 'calendar_list_events failed: Dentist at 3pm',
   totalTokens: 1200,
   startedAt,
   turns: [
@@ -40,7 +42,7 @@ const runAt = (startedAt, extra = {}) => ({
           name: 'calendar_list_events',
           args: { calendarId: 'primary' },
           result: { items: [{ summary: 'Dentist' }] },
-          error: 'partial',
+          error: 'upstream echoed: Dentist',
           elapsedMs: 300,
         },
         { name: 'commonly_post_message', callId: 'call-1', outcome: 'ok', elapsedMs: 40 },
@@ -71,7 +73,7 @@ describe('AgentRun content window', () => {
     expect(withText).toBe(3);
   });
 
-  test('an expired run loses its text and tool args/results and keeps everything else', async () => {
+  test('an expired run loses its text, tool args/results/errors and errorMessage, and keeps everything else', async () => {
     const [old] = await AgentRun.create([runAt(daysAgo(45))]);
 
     const report = await redactExpiredRunContent({ apply: true, now: NOW });
@@ -82,11 +84,13 @@ describe('AgentRun content window', () => {
     expect(row.turns[0]).not.toHaveProperty('llmResponseText');
     expect(row.turns[0].toolCalls[0]).not.toHaveProperty('args');
     expect(row.turns[0].toolCalls[0]).not.toHaveProperty('result');
+    expect(row.turns[0].toolCalls[0]).not.toHaveProperty('error');
+    expect(row).not.toHaveProperty('errorMessage');
     expect(JSON.stringify(row)).not.toMatch(/Dentist|dentist|primary/);
 
     // Metadata stays: what proof of life, activity, traces and spend read.
     expect(row).toMatchObject({
-      agentName: 'scout', trigger: 'mention', status: 'succeeded', totalTokens: 1200,
+      agentName: 'scout', trigger: 'mention', status: 'failed', errorKind: 'tool_error', totalTokens: 1200,
     });
     expect(row.startedAt.toISOString()).toBe(daysAgo(45).toISOString());
     expect(row.turns).toHaveLength(2);
@@ -94,7 +98,7 @@ describe('AgentRun content window', () => {
       turnIndex: 0, model: 'deepseek-chat', servedModel: 'deepseek-chat', totalTokens: 1200, elapsedMs: 900,
     });
     expect(row.turns[0].toolCalls).toEqual([
-      { name: 'calendar_list_events', error: 'partial', elapsedMs: 300 },
+      { name: 'calendar_list_events', elapsedMs: 300 },
       { name: 'commonly_post_message', callId: 'call-1', outcome: 'ok', elapsedMs: 40 },
     ]);
     expect(row.turns[1]).toMatchObject({ turnIndex: 1, model: 'deepseek-chat', toolCalls: [] });
@@ -110,6 +114,8 @@ describe('AgentRun content window', () => {
     expect(row).not.toHaveProperty('contentRedactedAt');
     expect(row.turns[0].llmResponseText).toBe('Your 3pm with the dentist moved to Friday.');
     expect(row.turns[0].toolCalls[0].result).toEqual({ items: [{ summary: 'Dentist' }] });
+    expect(row.turns[0].toolCalls[0].error).toBe('upstream echoed: Dentist');
+    expect(row.errorMessage).toBe('calendar_list_events failed: Dentist at 3pm');
   });
 
   test('a second pass finds nothing left to redact', async () => {
