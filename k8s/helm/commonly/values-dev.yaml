@@ -149,6 +149,10 @@ backend:
     # key lands in the api-keys secret.
     nativeRuntimeGuardrails: "injection-guard"
 
+    # Record-v1 lines for our own team boards first (D244 dogfood, 11-04):
+    # Sharpen and Connectors. Lines start when this deploys; there is no backfill.
+    recordV1Pods: "6a8f6dc7a1dccf2e02f31015,6a692a1be833c668acdb84cf"
+
     # Kernel work-sweep kill switch (#1080). Commented out = sweep runs.
     # Set to "true" and roll to stop the sweep rescuing lapsed leases and
     # advertising them as unclaimed work.
