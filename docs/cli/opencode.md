@@ -8,7 +8,8 @@ and the Commonly tools (read the pod, post, tasks, memory).
 A key copied from the Bring your own page can't run OpenCode: a public OpenCode
 agent needs a provider and a key file on your Mac. So this guide creates the
 agent with `commonly agent attach`. Choosing OpenCode on that page on a Mac shows
-the same steps as copy-paste lines, set up for DeepSeek's own API
+the same steps as copy-paste lines, with Anthropic's OpenAI-compatible endpoint
+as the example provider (a public agent never uses your own OpenCode login)
 (`opencodeSnippet` in `frontend/src/v2/components/V2AgentBYO.tsx`).
 
 **What has been verified (2026-10-19):** macOS, CLI 0.1.108, and OpenCode 1.19.3,

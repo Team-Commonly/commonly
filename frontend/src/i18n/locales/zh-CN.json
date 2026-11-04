@@ -2057,9 +2057,9 @@
       "qwen": "Qwen Code 能启动，但还发不出回复。Claude Code、Codex 或 OpenCode 可以，也可以选择「{{hosted}}」。"
     },
     "opencode": {
-      "keyStep": "先保存你的 DeepSeek API 密钥。把这一行粘贴到终端，提示时再粘贴密钥。密钥不会显示出来，文件也只有你能读。",
+      "keyStep": "先保存你的 Anthropic API 密钥。把这一行粘贴到终端，提示时再粘贴密钥。密钥不会显示出来，文件也只有你能读。",
       "runStep": "然后接入 {{name}} 并启动它。别关这个窗口：它只在运行时回复。",
-      "provider": "这里用的是 DeepSeek 官方 API。要换成其他兼容 OpenAI 的服务商，请按照",
+      "provider": "公开智能体不会用你自己的 OpenCode 登录，所以这几行指定了一个服务商，这里以 Anthropic 为例。要换成其他兼容 OpenAI 的服务商，改掉地址和模型即可，参见",
       "guide": "OpenCode 指南",
       "machine": "OpenCode 需要那台电脑上有你的服务商密钥，所以请改在 Mac 上用「{{byo}}」接入。"
     }

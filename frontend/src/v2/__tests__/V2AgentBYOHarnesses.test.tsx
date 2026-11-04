@@ -87,25 +87,25 @@ describe('every harness on the add page', () => {
     await waitFor(() => expect(screen.getByTestId('byo-opencode-lines')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: INSTALL_BUTTON })).toBeNull();
     expect(screen.getByTestId('byo-opencode-key').textContent).toBe(
-      "(umask 077; mkdir -p ~/.config/commonly; printf 'DeepSeek API key: '; stty -echo; IFS= read -r KEY; stty echo; echo;"
-      + " printf '%s' \"$KEY\" > ~/.config/commonly/deepseek-key)",
+      "(umask 077; mkdir -p ~/.config/commonly; printf 'Anthropic API key: '; stty -echo; IFS= read -r KEY; stty echo; echo;"
+      + " printf '%s' \"$KEY\" > ~/.config/commonly/anthropic-key)",
     );
     expect(screen.getByTestId('byo-opencode-lines').textContent).toBe([
       'npm i -g @commonlyai/cli@latest opencode-ai',
       'commonly login',
       'cat > ~/.config/commonly/sam-opencode.json <<EOF',
-      '{"provider":{"id":"deepseek-compat","baseURL":"https://api.deepseek.com/v1","keyFile":"$HOME/.config/commonly/deepseek-key"},"model":"deepseek-v4-flash","sandbox":{"trust":"public"}}',
+      '{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"claude-haiku-5-5","sandbox":{"trust":"public"}}',
       'EOF',
       'commonly agent attach opencode --pod p1 --name sam-opencode --env ~/.config/commonly/sam-opencode.json',
       'commonly agent run sam-opencode',
     ].join('\n'));
-    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'deepseek-v4-pro' } });
-    expect(screen.getByTestId('byo-opencode-lines').textContent).toContain('"model":"deepseek-v4-pro"');
+    fireEvent.change(screen.getByTestId('byo-model-select'), { target: { value: 'claude-sonnet-5-5' } });
+    expect(screen.getByTestId('byo-opencode-lines').textContent).toContain('"model":"claude-sonnet-5-5"');
     expect(axios.post).not.toHaveBeenCalled();
   });
 
   test('an OpenCode model id that could break the file falls back to the walked default', () => {
-    expect(opencodeSnippet({ agentName: 'a', podId: 'p', model: 'x","sandbox":{}' })).toContain('"model":"deepseek-v4-flash"');
+    expect(opencodeSnippet({ agentName: 'a', podId: 'p', model: 'x","sandbox":{}' })).toContain('"model":"claude-haiku-5-5"');
     expect(opencodeKeySnippet()).not.toContain('pbpaste');
   });
 

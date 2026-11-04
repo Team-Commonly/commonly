@@ -2000,9 +2000,9 @@
       "qwen": "Qwen Code starts, but it can’t post its replies yet. Claude Code, Codex or OpenCode can, or choose “{{hosted}}”."
     },
     "opencode": {
-      "keyStep": "First, save your DeepSeek API key. Paste this line into Terminal, then paste the key when it asks. It isn’t shown, and only you can read the file.",
+      "keyStep": "First, save your Anthropic API key. Paste this line into Terminal, then paste the key when it asks. It isn’t shown, and only you can read the file.",
       "runStep": "Then connect {{name}} and start it. Keep the window open: it answers only while it runs.",
-      "provider": "This uses DeepSeek’s own API. For another OpenAI-compatible provider, follow the",
+      "provider": "A public agent doesn’t use your own OpenCode login, so these lines name a provider: Anthropic, as an example. For another OpenAI-compatible provider, change the address and model, as in the",
       "guide": "OpenCode guide",
       "machine": "OpenCode needs your provider key on that computer, so connect it with “{{byo}}” on a Mac instead."
     }

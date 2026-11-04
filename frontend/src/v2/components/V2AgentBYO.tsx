@@ -91,11 +91,14 @@ export const connectSnippet = ({
 // a provider and a key file on that Mac (adapters/opencode.js), so it is
 // connected with `agent attach --env`, as docs/cli/opencode.md walks. The key
 // is typed into its own line first, because a pasted block would feed its own
-// next line to the prompt. DeepSeek's API is the provider that guide walked.
-export const OPENCODE_DEFAULT_MODEL = 'deepseek-v4-flash';
+// next line to the prompt. A public seat never uses the person's own OpenCode
+// login (adapters/opencode.js), so a provider is named: Anthropic's
+// OpenAI-compatible endpoint is the example, and any OpenAI-compatible
+// provider works by changing baseURL and model.
+export const OPENCODE_DEFAULT_MODEL = 'claude-haiku-5-5';
 export const opencodeKeySnippet = (): string => (
-  '(umask 077; mkdir -p ~/.config/commonly; printf \'DeepSeek API key: \'; stty -echo; IFS= read -r KEY; stty echo; echo;'
-  + ' printf \'%s\' "$KEY" > ~/.config/commonly/deepseek-key)'
+  '(umask 077; mkdir -p ~/.config/commonly; printf \'Anthropic API key: \'; stty -echo; IFS= read -r KEY; stty echo; echo;'
+  + ' printf \'%s\' "$KEY" > ~/.config/commonly/anthropic-key)'
 );
 export const opencodeSnippet = ({ agentName, podId, model }: { agentName: string; podId: string; model?: string }): string => {
   const safeModel = model && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(model) ? model : OPENCODE_DEFAULT_MODEL;
@@ -104,7 +107,7 @@ export const opencodeSnippet = ({ agentName, podId, model }: { agentName: string
     'npm i -g @commonlyai/cli@latest opencode-ai',
     'commonly login',
     `cat > ${envFile} <<EOF`,
-    `{"provider":{"id":"deepseek-compat","baseURL":"https://api.deepseek.com/v1","keyFile":"$HOME/.config/commonly/deepseek-key"},"model":"${safeModel}","sandbox":{"trust":"public"}}`,
+    `{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"${safeModel}","sandbox":{"trust":"public"}}`,
     'EOF',
     `commonly agent attach opencode --pod ${podId} --name ${agentName} --env ${envFile}`,
     `commonly agent run ${agentName}`,
