@@ -864,7 +864,9 @@ describe('claude adapter — ctx.environment', () => {
       }).then(() => null, (e) => e);
       expect(error).toBeInstanceOf(Error);
       expect(error.message).toMatch(/Windows/);
-      expect(error.message).toContain('--unsandboxed');
+      expect(error.message).toContain('commonly agent run <name> --unsandboxed');
+      // A seat the daemon runs takes the flag at install, not at run.
+      expect(error.message).toContain('commonly daemon install --unsandboxed');
       expect(error.message).toContain('Run it here');
       expect(error.message).not.toMatch(/macOS|bwrap|Linux/);
       expect(calls).toHaveLength(0);

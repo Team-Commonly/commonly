@@ -540,6 +540,9 @@ describe('performAttach', () => {
       expect(error.message).toContain(`sandbox.mode=${mode}`);
       expect(error.message).toContain(windowsSandboxMessage('claude'));
       expect(error.message).toContain('commonly agent run <name> --unsandboxed');
+      // This attach made no agent, so the message says how to get one before the run options.
+      expect(error.message.indexOf('Attach without --env')).toBeGreaterThan(-1);
+      expect(error.message.indexOf('Attach without --env')).toBeLessThan(error.message.indexOf('--unsandboxed'));
       expect(error.message).not.toMatch(/macOS|Seatbelt|On Linux|requested but unavailable/);
       expect(client.post).not.toHaveBeenCalled();
     }

@@ -1220,7 +1220,13 @@ export const performAttach = async ({
       ? `confined dsh sandbox.mode=${sandboxMode} needs a sandbox, and Commonly has no sandbox for Windows yet, `
         + 'so dsh cannot run confined on native Windows. Choose "Run it here" on the Connect page for a hosted agent.'
       : `This environment file asks for sandbox.mode=${sandboxMode}, which Commonly cannot enforce on Windows, `
-        + `so attach stops here.\n${windowsSandboxMessage(adapterName)}`);
+        + 'so attach stops here.\n'
+        // The options below act on an attached agent, and this attach made none:
+        // say how to get one first (#3407 review B1).
+        + (adapterName === 'claude'
+          ? 'Attach without --env, as the Connect page\'s commands do; these options then apply to that agent:\n'
+          : '')
+        + windowsSandboxMessage(adapterName));
     if (sandboxMode === 'bwrap') {
       const bwrap = probeBwrap();
       if (!bwrap.available) {
