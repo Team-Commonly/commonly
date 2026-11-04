@@ -2218,6 +2218,19 @@ test('every indexable page links the comparison and use-case pages, not only the
   }
 });
 
+test('the static / links the privacy policy and terms without JavaScript (D239)', async () => {
+  const [translationText, useCaseText, guideText] = await Promise.all([
+    readFile(resolve(frontendDir, 'src/i18n/locales/en.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/use-cases.json'), 'utf8'),
+    readFile(resolve(frontendDir, 'src/content/guides.json'), 'utf8'),
+  ]);
+  const translations = JSON.parse(translationText);
+  const pages = buildPageDefinitions({ landing: translations.landing, compare: translations.compare, useCases: JSON.parse(useCaseText), guides: JSON.parse(guideText) });
+  const landing = pages.find((page) => page.path === '/');
+  assert.ok(landing.content.includes('href="/privacy"'));
+  assert.ok(landing.content.includes('href="/terms"'));
+});
+
 test('a compare page renders GTM markdown and refuses to build while a HOLD is open', () => {
   const html = renderMarkdown([
     '# Title',

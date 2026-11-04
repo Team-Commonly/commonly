@@ -267,6 +267,7 @@ export const renderSiteLinks = ({ useCases = {}, compareSources = {} }) => {
         <p><a href="/guides/">Guides</a></p>
         ${compareLinks.length ? `<p>Compare: ${compareLinks.join(' · ')}</p>` : ''}
         ${useCaseLinks.length ? `<p>Use cases: ${useCaseLinks.join(' · ')}</p>` : ''}
+        <p><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
       </nav>`;
 };
 
