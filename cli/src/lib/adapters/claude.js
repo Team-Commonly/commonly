@@ -422,7 +422,8 @@ const accessOnlyLogin = (text, { source, mustOutlastMs, apiKeyHint = true }) => 
   if (typeof oauth.expiresAt === 'number' && oauth.expiresAt - Date.now() < mustOutlastMs) {
     const minutes = Math.max(0, Math.floor((oauth.expiresAt - Date.now()) / 60000));
     throw new Error(`the Claude login on this machine expires in ${minutes} min, before this turn could end. `
-      + `Sign in again on this machine (\`claude\`, then /login)${apiKeyHint ? ', or set ANTHROPIC_API_KEY for the agent' : ''}.`);
+      + 'Sign in again in your own terminal on this machine, outside the agent: run `claude`, then /login'
+      + `${apiKeyHint ? '. Or set ANTHROPIC_API_KEY for the agent' : ''}.`);
   }
   // An allowlist, not "everything but refreshToken": a field the host record
   // gains later, secret or not, never reaches the seat's writable HOME.

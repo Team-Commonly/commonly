@@ -1822,7 +1822,7 @@ describe('claude adapter — a workspace seat on Linux', () => {
     test('a workspace seat whose login would expire mid-turn is refused, without the API-key advice', async () => {
       fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription({ expiresAt: Date.now() + 60_000 }), { mode: 0o600 });
       const { impl, calls } = childImpl();
-      await expect(linuxSpawn(impl, { trust: 'workspace' })).rejects.toThrow(/expires in 0 min/);
+      await expect(linuxSpawn(impl, { trust: 'workspace' })).rejects.toThrow(/expires in 0 min.*in your own terminal on this machine, outside the agent: run `claude`, then \/login/);
       await expect(linuxSpawn(impl, { trust: 'workspace' })).rejects.not.toThrow(/ANTHROPIC_API_KEY/);
       expect(calls).toHaveLength(0);
     });
