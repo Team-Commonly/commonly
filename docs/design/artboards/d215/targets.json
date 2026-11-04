@@ -174,5 +174,21 @@
  "firstrun-welcome-nohost-390": {
   "helperWords": 9,
   "innerRatio": 1
+ },
+ "artifacts-busy-1440": {
+  "helperWords": 36,
+  "innerRatio": 1
+ },
+ "artifacts-busy-390": {
+  "helperWords": 34,
+  "innerRatio": 1
+ },
+ "artifacts-dayzero-1440": {
+  "helperWords": 0,
+  "innerRatio": 1
+ },
+ "artifacts-dayzero-390": {
+  "helperWords": 0,
+  "innerRatio": 1
  }
 }

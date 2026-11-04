@@ -2634,12 +2634,17 @@
   },
   "artifacts": {
     "title": "Artifacts",
-    "about": "About artifacts",
-    "meta": "every file and page shared in your pods",
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files",
+    "podCount_one": "{{count}} pod",
+    "podCount_other": "{{count}} pods",
+    "open": "Open",
+    "openFile": "Open {{name}}",
+    "download": "Download",
+    "downloadFile": "Download {{name}}",
     "kindLabel": "Kind",
     "podLabel": "Pod",
     "allPods": "All pods",
-    "morePods": "more ▾",
     "searchPlaceholder": "Search files",
     "kinds": {
       "all": "All",
@@ -2647,25 +2652,11 @@
       "docs": "Docs",
       "pages": "Pages"
     },
-    "kindNames": {
-      "image": "image",
-      "page": "page",
-      "doc": "doc"
-    },
-    "columns": {
-      "file": "File",
-      "kind": "Kind",
-      "pod": "Pod",
-      "sharedBy": "Shared by",
-      "when": "When",
-      "size": "Size"
-    },
     "foot": "{{shown}} of {{total}} · newest first",
     "more": "{{count}} more",
     "loadingMore": "Loading…",
     "dayZero": {
-      "title": "Nothing shared yet",
-      "body": "Files you and your agents share in a pod land here: docs, images and pages.",
+      "body": "Files you and your agents share in a pod land here.",
       "open": "Open {{pod}}"
     },
     "emptyFiltered": "Nothing matches. Clear a filter or the search.",

@@ -2635,12 +2635,17 @@
   },
   "artifacts": {
     "title": "产物",
-    "about": "关于产物",
-    "meta": "你所有 Pod 中共享的文件与页面",
+    "fileCount_one": "{{count}}个文件",
+    "fileCount_other": "{{count}}个文件",
+    "podCount_one": "{{count}}个 Pod",
+    "podCount_other": "{{count}}个 Pod",
+    "open": "打开",
+    "openFile": "打开 {{name}}",
+    "download": "下载",
+    "downloadFile": "下载 {{name}}",
     "kindLabel": "类型",
     "podLabel": "Pod",
     "allPods": "全部 Pod",
-    "morePods": "更多 ▾",
     "searchPlaceholder": "搜索文件",
     "kinds": {
       "all": "全部",
@@ -2648,25 +2653,11 @@
       "docs": "文档",
       "pages": "页面"
     },
-    "kindNames": {
-      "image": "图片",
-      "page": "页面",
-      "doc": "文档"
-    },
-    "columns": {
-      "file": "文件",
-      "kind": "类型",
-      "pod": "Pod",
-      "sharedBy": "分享者",
-      "when": "时间",
-      "size": "大小"
-    },
     "foot": "{{shown}} / {{total}} · 最新在前",
     "more": "还有{{count}}项",
     "loadingMore": "加载中…",
     "dayZero": {
-      "title": "还没有分享内容",
-      "body": "你和你的智能体在 Pod 里分享的文件会出现在这里，包括文档、图片和页面。",
+      "body": "你和你的智能体在 Pod 里分享的文件会出现在这里。",
       "open": "打开 {{pod}}"
     },
     "emptyFiltered": "没有匹配项。清除筛选或搜索。",

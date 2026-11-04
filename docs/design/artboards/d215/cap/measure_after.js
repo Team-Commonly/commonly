@@ -29,15 +29,12 @@ const SURFACES = [
   'settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff',
   'firstrun-welcome', 'firstrun-waiting', 'firstrun-connected', 'firstrun-error', 'connect', 'team',
   'chat-agents-away', 'chat-trace', 'run-trace-after', 'profile', 'firstrun-welcome-nohost',
-  // Activity: the frames Sam approved 11-03 ("Build as drawn"), built in V2ActivityPage.
-  'activity-busy', 'activity-dayzero',
+  // Activity and Artifacts: the frames Sam approved 11-03 ("Build as drawn"), built in
+  // V2ActivityPage and V2ArtifactsPage.
+  'activity-busy', 'activity-dayzero', 'artifacts-busy', 'artifacts-dayzero',
 ];
 // Base frames (no data-state) that are drawn but deliberately not scored. Each needs a reason.
 const SKIPPED = {
-  // Artifacts is being redesigned in another session; targets taken now would pin frames that
-  // are about to change. Score them once that redesign lands.
-  'artifacts-busy': 'redesign in progress elsewhere',
-  'artifacts-dayzero': 'redesign in progress elsewhere',
   // Drawings of the old page beside their "after" frames (390 only). They are what the fix moves
   // away from, so they are never a target.
   'chat-trace-before': 'before shot, not a target',
@@ -47,8 +44,9 @@ const SKIPPED = {
 // a real key. The first-run dialog is a latch-gated overlay, and the Scout welcome only exists in a
 // brand-new pod. chat-agents-away and chat-trace need a pod in that exact state, run-trace-after a
 // run id and profile a person id, none of which prod() takes yet, so they are artboard-only for now.
-// activity-dayzero needs an account with no asks and no agents, so only the busy page is checked.
-const PROD_SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'connect', 'team', 'activity-busy'];
+// activity-dayzero needs an account with no asks and no agents, and artifacts-dayzero one with no
+// shared file, so only the two busy pages are checked on prod.
+const PROD_SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'connect', 'team', 'activity-busy', 'artifacts-busy'];
 const VIEWPORTS = ['1440', '390'];
 const EXPECTED = SURFACES.flatMap(s => VIEWPORTS.map(v => `${s}-${v}`));
 
@@ -192,6 +190,16 @@ async function checkSurface(p, [name, route, opt = {}], vp, targets) {
     if (!(await p.locator(opt.list390.list).first().isVisible())) throw new Error(`${name}-${vp}: pods list ${opt.list390.list} is not visible`);
   }
   assertLanded(url, p.url());
+  if (opt.busy) {
+    const B = opt.busy;
+    if (await p.locator(B.refuse).first().isVisible()) throw new Error(`${name}-${vp}: the list did not load (${B.refuse} on screen in place of rows)`);
+    const n = await p.locator(B.rows).count();
+    if (n < B.keep) throw new Error(`${name}-${vp}: ${n} ${B.rows} rows on the page; the busy frame draws ${B.keep}, so this is not the busy state`);
+    await p.evaluate(([rows, group, keep]) => {
+      document.querySelectorAll(rows).forEach((el, i) => { if (i >= keep) el.remove(); });
+      document.querySelectorAll(group).forEach(g => { if (!g.querySelector(rows)) g.remove(); });
+    }, [B.rows, B.group, B.keep]);
+  }
   const m = await p.evaluate(METRICS);
   const key = `${name}-${vp}`, t = targets[key];
   return { key, m, t, ok: m.helperWords <= t.helperWords && m.innerRatio <= t.innerRatio };
@@ -204,6 +212,17 @@ const SIDEBAR_390 = {
   back: '.v2-thread__back',
   list: '.v2-shell--list .v2-pods__list',
   failed: '.v2-shell--list .v2-pods__empty:not(.v2-pods__list .v2-pods__empty)',
+};
+
+// Artifacts' busy frame draws six file rows; prod returns a page of up to 50. The scorer refuses
+// the error line and the spinner, refuses a list shorter than the frame (an empty account or the
+// day-zero page), and then measures the first six rows only, the way chat's scroll target is
+// measured with its fold applied. Groups left with no rows go too.
+const ARTIFACTS_BUSY = {
+  rows: '.v2a-file',
+  group: '.v2a-group',
+  refuse: '.v2a-state, .v2a-loading',
+  keep: 6,
 };
 
 async function prod(only) {
@@ -222,6 +241,7 @@ async function prod(only) {
     ['connect', () => '/v2/connect'],
     ['team', () => '/v2/agents'],
     ['activity-busy', () => '/v2/activity'],
+    ['artifacts-busy', () => '/v2/artifacts', { busy: ARTIFACTS_BUSY }],
     ['chat', () => `/v2/pods/${pod}`],
     ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];
@@ -241,7 +261,7 @@ async function prod(only) {
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
+module.exports = { ARTIFACTS_BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
 
 if (require.main === module) {
   let args;

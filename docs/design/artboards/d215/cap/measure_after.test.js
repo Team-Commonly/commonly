@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
+const { ARTIFACTS_BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
 const { assertLanded, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
@@ -29,7 +29,7 @@ test('--only with an unknown surface throws', () => {
 
 test('the committed targets.json passes its own validation', () => {
   const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
-  assert.strictEqual(Object.keys(t).length, 44);
+  assert.strictEqual(Object.keys(t).length, 48);
   validateTargets(t);
 });
 
@@ -39,7 +39,7 @@ test('an empty or partial measurement is refused', () => {
   const partial = { ...t }; delete partial['board-390'];
   assert.throws(() => validateTargets(partial), /missing board-390/);
   assert.throws(() => validateTargets({ ...t, 'chat-1440': { helperWords: NaN, innerRatio: 2 } }), /invalid chat-1440/);
-  assert.strictEqual(EXPECTED.length, 44);
+  assert.strictEqual(EXPECTED.length, 48);
 });
 
 test('a frame the scorer does not know is named, with the way to fix it', () => {
@@ -192,4 +192,43 @@ test('only the /v2 pod auto-select counts as landing', () => {
   assertLanded('/v2', BASE + '/v2/pods/abc123');
   assert.throws(() => assertLanded('/v2/agents/a/default', BASE + '/v2'), /redirected to \/v2$/);
   assert.throws(() => assertLanded('/v2/settings', BASE + '/v2/pods/abc123'), /redirected/);
+});
+
+// The Artifacts page on its route, with `rows` file rows and optionally the error line or the
+// spinner on screen. `trimmed` records the trim the scorer asked for before measuring.
+const fakeArtifacts = ({ rows, refused = false }) => {
+  let url = 'about:blank';
+  const page = {
+    trimmed: null,
+    measured: 0,
+    goto: async () => { url = BASE + '/v2/artifacts'; return { ok: () => true, status: () => 200 }; },
+    waitForTimeout: async () => {},
+    url: () => url,
+    locator: sel => {
+      if (sel === ARTIFACTS_BUSY.refuse) return { first: () => ({ isVisible: async () => refused }) };
+      if (sel === ARTIFACTS_BUSY.rows) return { count: async () => rows };
+      throw new Error(`unexpected locator ${sel}`);
+    },
+    evaluate: async (fn, arg) => {
+      if (arg) { page.trimmed = arg; return undefined; }
+      page.measured++;
+      return { helperWords: 0, innerRatio: 1 };
+    },
+  };
+  return page;
+};
+
+test('artifacts-busy scores only a loaded list as long as the frame, measured at the frame\'s six rows', async () => {
+  const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
+  const surf = ['artifacts-busy', () => '/v2/artifacts', { busy: ARTIFACTS_BUSY }];
+  const failed = fakeArtifacts({ rows: 0, refused: true });
+  await assert.rejects(checkSurface(failed, surf, '1440', t), /did not load/);
+  assert.strictEqual(failed.measured, 0);
+  const short = fakeArtifacts({ rows: 2 });
+  await assert.rejects(checkSurface(short, surf, '390', t), /2 \.v2a-file rows .* not the busy state/);
+  assert.strictEqual(short.measured, 0);
+  const busy = fakeArtifacts({ rows: 50 });
+  assert.strictEqual((await checkSurface(busy, surf, '1440', t)).ok, true);
+  assert.deepStrictEqual(busy.trimmed, ['.v2a-file', '.v2a-group', 6]);
+  assert.strictEqual(busy.measured, 1);
 });
