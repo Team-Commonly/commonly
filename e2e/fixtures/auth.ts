@@ -10,7 +10,7 @@ export const TEST_USER = {
 
 /**
  * Registers and verifies a test user via the API.
- * When SENDGRID_API_KEY is not set the backend auto-verifies on register,
+ * When SMTP2GO email delivery is not configured the backend auto-verifies on register,
  * so no email step is needed.
  */
 export async function ensureTestUser(request: APIRequestContext): Promise<void> {

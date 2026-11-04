@@ -60,7 +60,7 @@ async function main() {
     assert('uptime' in body, 'Missing body.uptime');
   });
 
-  // 4. Register test user (auto-verified when SENDGRID_API_KEY unset)
+  // 4. Register test user (auto-verified when SMTP2GO email delivery is unset)
   const tag = Date.now();
   const email = `smoketest_${tag}@commonly.test`;
   const password = 'SmokeTest1234!';

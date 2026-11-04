@@ -66,8 +66,8 @@ PG_DATABASE=commonly
 REACT_APP_API_URL=http://localhost:5000
 
 # Email (optional for development)
-SENDGRID_API_KEY=your_sendgrid_api_key
-SENDGRID_FROM_EMAIL=no-reply@commonly.com
+SMTP2GO_API_KEY=your_smtp2go_api_key
+SMTP2GO_FROM_EMAIL=no-reply@commonly.com
 FRONTEND_URL=http://localhost:3000
 
 # Discord Integration (optional)

@@ -32,7 +32,6 @@ describe('Auth Routes Integration Tests', () => {
     // Set environment variables for testing
     process.env.JWT_SECRET = 'test-jwt-secret';
     process.env.FRONTEND_URL = 'http://localhost:3000';
-    process.env.SENDGRID_FROM_EMAIL = 'test@example.com';
 
     // Register auth routes
     app.use('/api/auth', authRoutes);

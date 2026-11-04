@@ -74,8 +74,8 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       
       # Email settings
-      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
-      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      - SMTP2GO_API_KEY=${SMTP2GO_API_KEY}
+      - SMTP2GO_FROM_EMAIL=${SMTP2GO_FROM_EMAIL}
       
       # Frontend URL
       - FRONTEND_URL=${FRONTEND_URL}
