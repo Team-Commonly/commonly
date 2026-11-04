@@ -17,18 +17,23 @@ describe('public legal pages (TASK-530)', () => {
     // sent only there, and what the agent posts from it is ordinary pod content.
     expect(screen.getByText(/^AI models, reached through our own model gateway: hosted agents run on Anthropic's Claude Haiku unless their owner chose another model\./)).toBeInTheDocument();
     expect(screen.getByText(/what the agent reads from it is sent only to Anthropic\. Anything the agent then posts in a pod is ordinary pod content/)).toBeInTheDocument();
-    expect(screen.getByText(/the chat summaries process it through DeepSeek\./)).toBeInTheDocument();
+    expect(screen.getByText(/each agent's model processes what that agent reads\./)).toBeInTheDocument();
+    // F92: summaries, the connected-chat bot and avatar descriptions moved to
+    // Claude with no fallback. Every other chat model name our gateway serves is
+    // DeepSeek, so DeepSeek is left only behind an owner's own model choice (no
+    // OpenClaw gateway or Codex agent runs on dev, 11-04).
+    expect(screen.getByText(/So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent's avatar\. If an owner picks a model other than Claude for their hosted agent, our gateway serves it with DeepSeek\./)).toBeInTheDocument();
+    expect(screen.queryByText(/OpenClaw/)).not.toBeInTheDocument();
     expect(screen.getByText(/^Code sandbox: E2B\./)).toBeInTheDocument();
     // D81: the Workers AI route was removed; the page must not name it.
     expect(screen.queryByText(/Workers AI/)).not.toBeInTheDocument();
     // A provider our requests reach with user content is named, even one whose
     // key is rejected: a rejected request still carried the content. F85: with
     // aiProviders.gemini and .openai off on dev, LiteLLM routes nothing to Google
-    // or OpenAI and the backend holds no Gemini key, so neither is named; the
-    // commonly-bot client still falls back to OpenRouter on any gateway error,
-    // a budget refusal included.
-    expect(screen.getByText(/the design description behind an agent's avatar/)).toBeInTheDocument();
-    expect(screen.getByText(/fails or turns a request away, the Commonly bot that summarizes connected chats may retry it through OpenRouter/)).toBeInTheDocument();
+    // or OpenAI and the backend holds no Gemini key, so neither is named.
+    // F92: on Claude the bot has no OpenRouter fallback, and the chart no longer
+    // hands it the key, so nothing reaches OpenRouter.
+    expect(screen.queryByText(/OpenRouter/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Gemini/)).not.toBeInTheDocument();
     expect(screen.queryByText(/OpenAI/)).not.toBeInTheDocument();
   });

@@ -284,6 +284,19 @@ describe('a hosted-MCP grant through the broker', () => {
     },
   );
 
+  // F92: a Limited-Use connector (Calendar) runs only for a hosted run on the
+  // no-training model, which says so with limitedUse. Any other caller, a hosted
+  // turn included, is refused before the grant is even read.
+  it('refuses a Calendar call without limitedUse, before anything loads', async () => {
+    for (const extra of [{}, { hostedTurn: true }, { limitedUse: 'yes' }]) {
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'google-calendar.list_events', args: {}, ...extra,
+      })).rejects.toMatchObject({ code: 'limited_use_native_only', statusCode: 403 });
+    }
+    expect(mockRoomGrant.findOne).not.toHaveBeenCalled();
+    expect(toolCalls()).toHaveLength(0);
+  });
+
   // F40 review: a task-bound grant is usable from a hosted turn only inside its
   // task's pod. A seat grant reaches the agent everywhere; its claim is checked
   // against the task's pod, not the run's.

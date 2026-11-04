@@ -64,6 +64,17 @@ describe('the Claude route for native turns', () => {
     ['templates/core/backend-deployment.yaml', 'templates/ops/ops-runner-deployment.yaml'].forEach((file) => {
       expect(gatedBlock(file, '- name: NATIVE_RUNTIME_MODEL'))
         .toContain('value: {{ .Values.aiProviders.anthropic.nativeModel | quote }}');
+      // F92: llmService on the same model, in the same gate.
+      expect(gatedBlock(file, '- name: LLM_SERVICE_MODEL'))
+        .toMatch(/- name: LLM_SERVICE_MODEL\n\s+value: \{\{ \.Values\.aiProviders\.anthropic\.nativeModel \| quote \}\}/);
     });
+  });
+
+  // F92: the commonly-bot summarizes connected chats. Under the gate it runs on
+  // the native model and is not handed the OpenRouter key its fallback reads.
+  test('commonly-bot runs on the native model under the gate, with no OpenRouter key', () => {
+    const bot = read('templates/agents/commonly-bot-deployment.yaml');
+    expect(bot).toMatch(/- name: AGENT_MODEL\n\s+\{\{- if \.Values\.aiProviders\.anthropic\.enabled \}\}\n\s+value: \{\{ \.Values\.aiProviders\.anthropic\.nativeModel \| quote \}\}/);
+    expect(bot).toMatch(/\{\{- if not \.Values\.aiProviders\.anthropic\.enabled \}\}\n(\s+#.*\n)*\s+- name: OPENROUTER_API_KEY/);
   });
 });

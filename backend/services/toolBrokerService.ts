@@ -1,3 +1,4 @@
+import { isLimitedUseTool } from './limitedUseConnectors';
 import { createHash, randomUUID } from 'crypto';
 import Pod from '../models/Pod';
 import Integration from '../models/Integration';
@@ -105,6 +106,11 @@ export interface BrokerCallInput {
    * one this flag must not answer.
    */
   hostedTurn?: boolean;
+  /**
+   * Set only by a hosted run on the no-training model (F92). Without it a
+   * Limited-Use connector's tool (Calendar) is refused before anything loads.
+   */
+  limitedUse?: boolean;
   /** Server-set native turn marker. A parked approval card must stay in the pod. */
   noOutboundRelay?: boolean;
   /** Server-owned origin for approval cards posted into another pod. */
@@ -1439,6 +1445,13 @@ const seatPushBudgetEntries = (input: Pick<BrokerCallInput, 'grantId' | 'agentUs
  * consulted. Membership is loaded for every call so leavers lose access.
  */
 export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult> => {
+  if (isLimitedUseTool(input.tool) && input.limitedUse !== true) {
+    throw new RoomGrantError(
+      'limited_use_native_only',
+      'This connector is used only by Commonly-hosted agents on the no-training model.',
+      403,
+    );
+  }
   const startedAt = Date.now();
   const definition = lookupToolDefinition(input.tool);
   let grant: IRoomGrant | Record<string, unknown> | undefined;
