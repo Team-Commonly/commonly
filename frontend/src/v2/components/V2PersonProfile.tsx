@@ -66,6 +66,16 @@ const formatDate = (value: string | undefined, language: string, options: Intl.D
   }
 };
 
+// The frame sets each count in bold and its word in the secondary tone. The
+// locale strings carry the number inside the sentence ("12 followers",
+// "关注了8人"), so the formatted string is split at the number, not rebuilt.
+const boldCount = (text: string, count: number): React.ReactNode => {
+  const n = String(count);
+  const at = text.indexOf(n);
+  if (at < 0) return text;
+  return <>{text.slice(0, at)}<b>{n}</b>{text.slice(at + n.length)}</>;
+};
+
 const V2PersonProfile: React.FC = () => {
   const { id = '' } = useParams<{ id: string }>();
   const { t, i18n } = useTranslation();
@@ -198,9 +208,9 @@ const V2PersonProfile: React.FC = () => {
           </span>
           {!profile.isBot && (
             <span className="v2-profile__counts" data-testid="profile-counts">
-              {t('profile.followers', { count: profile.followersCount || 0 })}
+              {boldCount(t('profile.followers', { count: profile.followersCount || 0 }), profile.followersCount || 0)}
               {' · '}
-              {t('profile.followingCount', { count: profile.followingCount || 0 })}
+              {boldCount(t('profile.followingCount', { count: profile.followingCount || 0 }), profile.followingCount || 0)}
             </span>
           )}
         </div>

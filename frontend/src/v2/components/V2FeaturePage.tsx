@@ -12,6 +12,8 @@ import V2PageHead from './V2PageHead';
 interface V2FeaturePageProps {
   title: string;
   hint?: React.ReactNode;
+  /** Drawn before the title in the head bar (BYO's phone back key). */
+  lead?: React.ReactNode;
   children: React.ReactNode;
   showPodsSidebar?: boolean;
   showHeader?: boolean;
@@ -295,6 +297,7 @@ const v2FeatureTheme = createTheme({
 const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
   title,
   hint,
+  lead,
   children,
   showPodsSidebar = false,
   showHeader = true,
@@ -333,7 +336,7 @@ const V2FeaturePage: React.FC<V2FeaturePageProps> = ({
       <V2NavRail needsYouCount={attention.count} />
       {showPodsSidebar && <V2PodsSidebar selectedPodId={null} />}
       <main className={`v2-pane v2-pane--main v2-feature${className ? ` ${className}` : ''}`} onClickCapture={handleClickCapture} aria-label={title}>
-        {showHeader && <V2PageHead className="v2-feature__header" titleClassName="v2-feature__title" title={title} hint={hint} hintLabel={t('common.aboutPage', { title })} />}
+        {showHeader && <V2PageHead className="v2-feature__header" titleClassName="v2-feature__title" title={title} hint={hint} lead={lead} hintLabel={t('common.aboutPage', { title })} />}
         <section className="v2-feature__body">
           <ThemeProvider theme={v2FeatureTheme}>
             <V2EmbeddedProvider>

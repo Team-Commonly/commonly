@@ -600,12 +600,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // visibility, not opacity: an opacity-0 pin still catches a tap on the time.
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('visibility: hidden');
     expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).not.toContain('opacity: 0');
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin { visibility: visible; }');
-    // Touch has no hover: the pin shows at rest there, or a phone cannot pin.
-    expect(v2).toMatch(/@media \(hover: none\) and \(pointer: coarse\) \{\n  \.v2-root button\.v2-pods__pin \{ visibility: visible; \}\n  \.v2-pods__row-time \{ visibility: hidden; \}/);
+    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { visibility: visible; }');
+    // Touch has no hover: the 390 frame still draws the time at rest, and a press and
+    // hold (--reveal) is the row's hover state there, or a phone cannot pin.
+    expect(v2).not.toMatch(/@media \(hover: none\) and \(pointer: coarse\) \{\n  \.v2-root button\.v2-pods__pin \{ visibility: visible; \}/);
+    expect(podsSidebar).toContain("revealedPin === pod._id ? 'v2-pods__rowwrap--reveal' : ''");
     expect(v2).not.toContain('.v2-root button.v2-pods__pin--active { opacity: 1; }');
     expect(v2).not.toContain("button.v2-pods__pin::before { content: '⌖'");
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
     expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
     // The shared segment: a tinted track with the checked option raised.
     // D223: the segment draws as the primitives' v2p-seg; v2.css keeps only its states.
@@ -6412,5 +6414,51 @@ describe('front door keys, auth gutter and the shell state line (11-04)', () => 
     const gate = read('../../components/ProtectedRoute.tsx');
     expect(gate).not.toContain('@mui/material');
     expect(gate.match(/className="v2-state"/g) || []).toHaveLength(2);
+  });
+});
+
+// G11 polish (11-04): four mismatches a reviewer found by eye in the frame-vs-live
+// pngs, which the box scorer cannot see. Each guard pins what the frame draws.
+describe('G11 polish: what the d215 frames draw that the scorer cannot see', () => {
+  const profileCss = read('../components/V2PersonProfile.css');
+  const profile = read('../components/V2PersonProfile.tsx');
+  const byoCss = read('../components/V2AgentBYO.css');
+  const byo = read('../components/V2AgentBYO.tsx');
+  const feature = read('../components/V2FeaturePage.tsx');
+  const rt = read('../components/V2RunTrace.css');
+
+  test('profile: each count is a 600 number in the primary ink (frame .v2-profile__counts b)', () => {
+    const b = ruleBody(profileCss, '.v2-profile .v2-profile__counts b');
+    expect(b).toContain('font-weight: 600');
+    expect(b).toContain('color: var(--v2-text-primary)');
+    expect(profile).toContain('<b>{n}</b>');
+  });
+
+  test('BYO 390: the phone head leads with a 44px back key, hidden above 760', () => {
+    expect(feature).toContain('lead={lead}');
+    expect(byo).toContain('className="v2-byo__back"');
+    expect(byo).toContain("onClick={() => navigate('/v2/agents')}");
+    const phone = mediaBlockContaining(byoCss, '.v2-root .v2-feature--byo button.v2-byo__back');
+    const back = ruleBody(byoCss, '.v2-root .v2-feature--byo button.v2-byo__back', { within: phone });
+    expect(back).toContain('width: 44px; height: 44px');
+    expect(byoCss).toMatch(/@media \(min-width: 761px\) \{\n  \.v2-feature--byo \.v2-byo__back \{ display: none; \}/);
+  });
+
+  test('BYO 390: the 16px title fills the bar, and each "i" is a 44 box with the plain 15px glyph', () => {
+    const phone = mediaBlockContaining(byoCss, '.v2-feature--byo > .v2-feature__header .v2-feature__title');
+    const title = ruleBody(byoCss, '.v2-feature--byo > .v2-feature__header .v2-feature__title', { within: phone });
+    expect(title).toContain('flex: 1 1 0; font: 700 16px/1.1 var(--v2-font-display)');
+    const hint = ruleBody(byoCss, '.v2-root .v2-feature--byo button.v2-hint__trigger', { within: phone });
+    expect(hint).toContain('width: 44px; height: 44px');
+    expect(hint).toContain('border: 0');
+    expect(hint).toContain('font-size: 0');
+    expect(ruleBody(byoCss, '.v2-root .v2-feature--byo button.v2-hint__trigger::before', { within: phone })).toContain('width: 15px; height: 15px');
+    expect(byoCss).not.toContain('button.v2-hint__trigger::after { content: \'\'; position: absolute; inset: -9px; }');
+  });
+
+  test('run trace: headings balance their lines and "Back to pod" is underlined, as the frame draws', () => {
+    expect(ruleBody(rt, '.v2-run-trace h1')).toContain('text-wrap: balance');
+    expect(ruleBody(rt, '.v2-run-trace h2')).toContain('text-wrap: balance');
+    expect(ruleBody(rt, '.v2-root a.v2-run-trace__back')).toContain('text-decoration: underline');
   });
 });

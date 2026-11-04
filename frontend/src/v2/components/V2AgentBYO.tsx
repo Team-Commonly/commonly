@@ -1257,6 +1257,20 @@ const V2AgentBYO: React.FC = () => {
         if (showCompactByo) return t(setupOs === 'windows' ? 'agentByo.compactByo.leadWindows' : 'agentByo.compactByo.lead');
         return t('agentByo.description');
       })()}
+      // d215 s-byo 390: the phone head leads with a back key to Your team; the
+      // 1440 head has none, so the key is hidden above 760.
+      lead={(
+        <button
+          type="button"
+          className="v2-byo__back"
+          aria-label={t('yourTeam.title')}
+          title={t('yourTeam.title')}
+          onClick={() => navigate('/v2/agents')}
+          data-testid="byo-back"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
+        </button>
+      )}
       showPodsSidebar={false}
       className="v2-feature--byo"
     >

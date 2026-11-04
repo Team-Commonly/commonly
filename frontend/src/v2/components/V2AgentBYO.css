@@ -99,11 +99,38 @@
 .v2-feature--byo textarea.v2-byo__memory-text { height: auto; padding: 10px 12px; line-height: 20px; }
 @media (max-width: 760px) {
   .v2-feature--byo .v2-byo__mode-option > .v2-hint { min-width: 44px; min-height: 44px; justify-content: center; }
-  /* Every "i" hint on the page (the head's and each start's) draws 28 with a 1px border;
-     the frame's info--lg is a 44 touch box. An overlay measures from inside the border
-     (26), so it reaches 9px each way: 26 + 18 = 44. */
-  .v2-root .v2-feature--byo button.v2-hint__trigger { position: relative; }
-  .v2-root .v2-feature--byo button.v2-hint__trigger::after { content: ''; position: absolute; inset: -9px; }
+  /* Every "i" hint on the page (the head's and each start's) is the frame's info--lg:
+     a 44 box with no border holding the 15px i-info glyph in the placeholder tone. V2Hint
+     draws the letter "i", so the letter is hidden and the glyph is masked in its place. */
+  .v2-root .v2-feature--byo button.v2-hint__trigger {
+    position: relative; width: 44px; height: 44px; flex: 0 0 44px;
+    border: 0; border-radius: 50%; font-size: 0; color: var(--v2-text-placeholder);
+  }
+  .v2-root .v2-feature--byo button.v2-hint__trigger:hover { background: transparent; color: var(--v2-text-primary); }
+  .v2-root .v2-feature--byo button.v2-hint__trigger::before {
+    content: ''; position: absolute; inset: 0; margin: auto; width: 15px; height: 15px; background: currentColor;
+    -webkit-mask: var(--v2-byo-info-glyph) center / 15px 15px no-repeat;
+    mask: var(--v2-byo-info-glyph) center / 15px 15px no-repeat;
+  }
+  /* The phone head (frame .mtop): back key, the 16px title filling the bar, the hint at its right edge. */
+  .v2-feature--byo {
+    --v2-byo-info-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 16v-4M12 8h.01'/%3E%3C/svg%3E");
+  }
+  .v2-feature--byo > .v2-feature__header .v2-page-head__identity { flex: 1 1 0; }
+  .v2-feature--byo > .v2-feature__header .v2-feature__title {
+    flex: 1 1 0; font: 700 16px/1.1 var(--v2-font-display); letter-spacing: -0.02em;
+  }
+  .v2-root .v2-feature--byo button.v2-byo__back {
+    all: unset; box-sizing: border-box; cursor: pointer; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 12px; color: var(--v2-text-secondary);
+  }
+  .v2-root .v2-feature--byo button.v2-byo__back:hover { background: var(--v2-surface-hover); color: var(--v2-text-primary); }
+  .v2-root .v2-feature--byo button.v2-byo__back:focus-visible { box-shadow: var(--v2-focus-ring); }
+  .v2-feature--byo .v2-byo__back svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+}
+@media (min-width: 761px) {
+  .v2-feature--byo .v2-byo__back { display: none; }
 }
 
 /* not drawn in the frame yet: kept as it was */

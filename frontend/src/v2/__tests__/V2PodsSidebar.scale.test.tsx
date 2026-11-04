@@ -441,6 +441,34 @@ describe('V2PodsSidebar — direction C', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/sharpen');
   });
 
+  test('a touch press and hold reveals the row pin in the time slot without opening the pod', () => {
+    jest.useFakeTimers();
+    try {
+      renderSidebar(fleet, null);
+      const pin = screen.getAllByRole('button', { name: 'Pin pod' })[0];
+      const wrap = pin.parentElement as HTMLElement;
+      const row = wrap.querySelector('.v2-pods__row') as HTMLElement;
+      const before = screen.getByTestId('current-path').textContent;
+      // A quick tap opens the pod and reveals nothing.
+      fireEvent.pointerDown(row, { pointerType: 'touch' });
+      fireEvent.pointerUp(row, { pointerType: 'touch' });
+      act(() => { jest.advanceTimersByTime(600); });
+      expect(wrap).not.toHaveClass('v2-pods__rowwrap--reveal');
+      // A hold reveals the pin; the click it ends in stays on the list.
+      fireEvent.pointerDown(row, { pointerType: 'touch' });
+      act(() => { jest.advanceTimersByTime(600); });
+      expect(wrap).toHaveClass('v2-pods__rowwrap--reveal');
+      fireEvent.pointerUp(row, { pointerType: 'touch' });
+      fireEvent.click(row);
+      expect(screen.getByTestId('current-path').textContent).toBe(before);
+      // A tap outside the row puts the time back.
+      fireEvent.pointerDown(document.body);
+      expect(wrap).not.toHaveClass('v2-pods__rowwrap--reveal');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('recentPods excludes pinned pods and caps at the limit', () => {
     const rows = recentPods(fleet, new Set(['sharpen']), 3);
     expect(rows.map((p) => p._id)).toEqual(['connectors', 'hq', 'rewire']);

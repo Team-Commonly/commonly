@@ -273,6 +273,39 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     navigate(`/v2/pods/${podId}`);
   }, [navigate]);
 
+  // d215 s-sidebar 390 draws each row's time at rest and the pin only in the
+  // row's hover state (.pod.hov), which a touch screen has no pointer for. A
+  // press and hold is that state on touch: it reveals the row's pin in the
+  // time's slot, and the click the press ends in does not open the pod. A tap
+  // anywhere outside the row puts the time back.
+  const [revealedPin, setRevealedPin] = useState<string | null>(null);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressRevealed = useRef(false);
+  const cancelPress = useCallback(() => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  }, []);
+  const startPress = (podId: string) => (event: React.PointerEvent) => {
+    if (event.pointerType === 'mouse') return;
+    cancelPress();
+    pressRevealed.current = false;
+    pressTimer.current = setTimeout(() => {
+      pressTimer.current = null;
+      pressRevealed.current = true;
+      setRevealedPin(podId);
+    }, 500);
+  };
+  useEffect(() => cancelPress, [cancelPress]);
+  useEffect(() => {
+    if (!revealedPin) return undefined;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (!target?.closest?.('.v2-pods__rowwrap--reveal')) setRevealedPin(null);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, [revealedPin]);
+
   const chooseListView = (view: PodListView) => {
     setListView(view);
     writeListView(view);
@@ -323,7 +356,14 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
     const time = relativeTime(podMessageTime(pod) || null, now);
     const isPinned = pinned.has(pod._id);
     return (
-      <div key={pod._id} className={`v2-pods__rowwrap${isPinned ? ' v2-pods__rowwrap--pinned' : ''}`}>
+      <div
+        key={pod._id}
+        className={[
+          'v2-pods__rowwrap',
+          isPinned ? 'v2-pods__rowwrap--pinned' : '',
+          revealedPin === pod._id ? 'v2-pods__rowwrap--reveal' : '',
+        ].filter(Boolean).join(' ')}
+      >
       <button
         type="button"
         className={[
@@ -332,7 +372,15 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           count > 0 ? 'v2-pods__row--unread' : '',
           inFold ? 'v2-pods__row--in-fold' : '',
         ].filter(Boolean).join(' ')}
-        onClick={() => selectPod(pod._id)}
+        onClick={() => {
+          if (pressRevealed.current) { pressRevealed.current = false; return; }
+          selectPod(pod._id);
+        }}
+        onPointerDown={startPress(pod._id)}
+        onPointerUp={cancelPress}
+        onPointerLeave={cancelPress}
+        onPointerCancel={cancelPress}
+        onContextMenu={(event) => { if (pressRevealed.current || pressTimer.current) event.preventDefault(); }}
         aria-current={selected ? 'page' : undefined}
       >
         {peer ? (
@@ -361,7 +409,7 @@ const V2PodsSidebar: React.FC<V2PodsSidebarProps> = ({
           {time && <span className="v2-pods__row-time" aria-hidden="true">{time}</span>}
         </span>
       </button>
-      {/* D215: the pin is an icon on row hover that takes the time's slot. */}
+      {/* D215: the pin is an icon on row hover (or a touch press and hold) that takes the time's slot. */}
       <button
         type="button"
         className={`v2-pods__pin${isPinned ? ' v2-pods__pin--active' : ''}`}
