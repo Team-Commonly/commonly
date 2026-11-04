@@ -248,6 +248,8 @@ describe('per-installation agent settings', () => {
       [{ heartbeatMinutes: 0 }, 'heartbeatMinutes'],
       [{ heartbeatEnabled: false, heartbeatMinutes: 1441 }, 'heartbeatMinutes'],
       [{ heartbeatEnabled: false, heartbeatMinutes: '30' }, 'heartbeatMinutes'],
+      // Omitted means absent: null is a value sent, and is refused.
+      [{ heartbeatEnabled: false, heartbeatMinutes: null }, 'heartbeatMinutes'],
     ];
     for (const [patch, field] of cases) {
       // eslint-disable-next-line no-await-in-loop
