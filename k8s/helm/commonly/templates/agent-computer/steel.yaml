@@ -130,8 +130,11 @@ spec:
         # request and WebSocket upgrade must carry the bearer token only the
         # backend's broker holds. Its /healthz reflects Steel's own health.
         - name: gate
-          image: "{{ $.Values.backend.image.repository }}:{{ $.Values.backend.image.tag }}"
-          imagePullPolicy: {{ $.Values.backend.image.pullPolicy }}
+          # Any change to the pod template restarts the browser (Recreate), and
+          # every deploy moves backend.image.tag. Pin gate.imageTag to keep
+          # deploys from restarting a live session; empty follows the backend.
+          image: "{{ $.Values.backend.image.repository }}:{{ $steel.gate.imageTag | default $.Values.backend.image.tag }}"
+          imagePullPolicy: IfNotPresent
           workingDir: /app
           command: ["node", "dist/services/agentComputerSteelGate.js"]
           env:

@@ -37,7 +37,7 @@ const fakeSteel = ({ healthStatus = 200 } = {}) => {
         res.end('{"status":"ok"}');
         return;
       }
-      res.writeHead(200, { 'content-type': 'application/json' });
+      res.writeHead(200, { 'content-type': 'application/json', 'x-steel-hop': 'internal', connection: 'x-steel-hop' });
       res.end(JSON.stringify({ sessions: [{ id: 's1', status: 'live' }] }));
     });
   });
@@ -111,6 +111,9 @@ describe('agentComputerSteelGate', () => {
     expect(steel.seen[0]).toMatchObject({ method: 'POST', url: '/v1/sessions', body: '{"persist":true}' });
     expect(steel.seen[0].headers.authorization).toBeUndefined();
     expect(steel.seen[0].headers.host).toMatch(/^127\.0\.0\.1:\d+$/);
+    // Nothing about the inside of the pod comes back out.
+    expect(res.headers.get('host')).toBeNull();
+    expect(res.headers.get('x-steel-hop')).toBeNull();
   });
 
   test('/healthz is open and reports only whether Steel is healthy', async () => {

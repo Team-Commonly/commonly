@@ -24,19 +24,21 @@ export type SteelGateConfig = {
   upstreamPort: number;
 };
 
-// Hop-by-hop headers belong to one connection and are never forwarded, and
-// the credential stops here.
-const DROPPED = new Set([
+// Hop-by-hop headers belong to one connection and are never forwarded, nor is
+// any header a Connection header names. The credential stops here, and Host is
+// set per direction (only on the way to Steel).
+const HOP_BY_HOP = new Set([
   'authorization', 'proxy-authorization', 'connection', 'keep-alive', 'proxy-connection',
-  'te', 'trailer', 'upgrade', 'host',
+  'te', 'trailer', 'transfer-encoding', 'upgrade', 'host',
 ]);
 
-const forwardHeaders = (headers: http.IncomingHttpHeaders, upstream: string): http.OutgoingHttpHeaders => {
+const forwardHeaders = (headers: http.IncomingHttpHeaders): http.OutgoingHttpHeaders => {
+  const named = new Set(String(headers.connection || '').split(',').map((name) => name.trim().toLowerCase()));
   const out: http.OutgoingHttpHeaders = {};
   Object.entries(headers).forEach(([name, value]) => {
-    if (!DROPPED.has(name.toLowerCase()) && value !== undefined) out[name] = value;
+    const lower = name.toLowerCase();
+    if (!HOP_BY_HOP.has(lower) && !named.has(lower) && value !== undefined) out[name] = value;
   });
-  out.host = upstream;
   return out;
 };
 
@@ -87,9 +89,9 @@ export const createSteelGate = (config: SteelGateConfig): http.Server => {
       port: config.upstreamPort,
       method: req.method,
       path: req.url,
-      headers: forwardHeaders(req.headers, upstream),
+      headers: { ...forwardHeaders(req.headers), host: upstream },
     }, (up) => {
-      res.writeHead(up.statusCode || 502, forwardHeaders(up.headers, upstream));
+      res.writeHead(up.statusCode || 502, forwardHeaders(up.headers));
       up.pipe(res);
     });
     proxied.on('error', () => {

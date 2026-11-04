@@ -68,7 +68,10 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
    - `<keyPrefix>agent-computer-waker-token`
    - `<keyPrefix>agent-computer-steel-token`
 2. Add the owner's user id to `agentComputer.users` in the private overlay.
-3. Run `Deploy Dev`.
+3. Run `Deploy Dev`. Then set `agentComputer.steel.gate.imageTag` in the
+   overlay to that deploy's backend tag. Every deploy moves the backend tag,
+   and any change to the Steel pod template restarts the browser, so an
+   unpinned gate drops a live session on each deploy.
 4. The backend reads both tokens only at pod start (the secret refs are
    optional). If the backend pod started before the ExternalSecrets synced,
    restart it. `agentComputerEnabled()` stays false until the env holds both.
@@ -81,6 +84,15 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
 6. Do the one-time sign-in through `computer_request_takeover`. The owner signs
    in by hand in the takeover UI, and the agent never types a password. The
    profile disk keeps that session across restarts.
+
+The gate token is a Secret in the namespace, so it is exactly as private as
+the namespace's Secrets. Workloads that already read those (the backend and
+ops-runner run as `agent-provisioner`) can read it too, and a port-forward into
+the pod reaches Steel's loopback port directly.
+
+Pages loaded in the browser can also reach Steel's loopback port, which takes no
+credentials. Only allowlisted origins load, so this matters only if script on
+an allowlisted origin turns hostile.
 
 Outbound traffic from the browser is held by the broker's request guard:
 navigation goes only to the allowed hosts, and subresources only to public

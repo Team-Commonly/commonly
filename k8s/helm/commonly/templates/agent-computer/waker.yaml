@@ -2,9 +2,8 @@
 The agent computer waker (backend/services/agentComputerWaker.ts). The broker
 POSTs /v1/users/{userId}/wake with the shared bearer token before it opens a
 person's browser; the waker scales steel-{userId} to one replica and answers
-once it is Ready. It holds the only Kubernetes permission involved, named
-down to the rendered steel-{userId} Deployments, so the backend never gets
-scale rights.
+once it is Ready. Its own Role is named down to the rendered steel-{userId}
+Deployments.
 */ -}}
 {{- $users := include "commonly.agentComputer.users" . | fromJsonArray -}}
 {{- if $users }}

@@ -5,11 +5,11 @@
  * service makes sure that person's `steel-{userId}` Deployment has a replica
  * and answers only once it is Ready.
  *
- * It holds the one Kubernetes permission involved, so the backend never gets
- * scale rights: its Role names only the `steel-{userId}` Deployments the chart
- * rendered (templates/agent-computer/). The Deployment name is built here from
- * a validated id that must also be on the configured user list; nothing the
- * caller sends reaches the Kubernetes API as a name.
+ * It runs under its own service account, whose Role names only the
+ * `steel-{userId}` Deployments the chart rendered (templates/agent-computer/),
+ * so the wake path needs nothing from the backend's account. The Deployment
+ * name is built here from a validated id that must also be on the configured
+ * user list; nothing the caller sends reaches the Kubernetes API as a name.
  *
  * Runs from the backend image: `node dist/services/agentComputerWaker.js`.
  */

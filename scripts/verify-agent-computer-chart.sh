@@ -14,7 +14,7 @@ trap 'rm -rf "$tmp_dir"' EXIT
 # must produce something that matches no expected value. `$(...)` would
 # otherwise swallow the failure.
 command -v "$yq_bin" > /dev/null || { echo "verify-agent-computer-chart: $yq_bin not found"; exit 1; }
-q() { "$yq_bin" -N "$1" "$2" 2> /dev/null || echo "__yq_error__: $1"; }
+q() { "$yq_bin" -N "$1" "$2" 2> /dev/null || echo "__yq_error__"; }
 
 user=aaaaaaaaaaaaaaaaaaaaaaaa
 dev=(-f "$chart/values.yaml" -f "$chart/values-dev.yaml")
@@ -59,6 +59,11 @@ test "$(q "$gate | .env[] | select(.name == \"STEEL_UPSTREAM_PORT\") | .value" "
 test "$(q "$gate | .env[] | select(.name == \"STEEL_GATE_TOKEN\") | .valueFrom.secretKeyRef.name" "$on")" = agent-computer-steel
 test "$(q "$gate | .readinessProbe.httpGet.path" "$on")" = /healthz
 test "$(q "$gate | .securityContext.runAsNonRoot" "$on")" = true
+# The gate follows the backend tag unless pinned, and a pin holds.
+test "$(q "$gate | .image" "$on")" = "$(q 'select(.kind == "Deployment" and .metadata.name == "backend") | .spec.template.spec.containers[] | select(.name == "backend") | .image' "$on")"
+helm template commonly-dev "$chart" "${dev[@]}" --set "agentComputer.users[0]=$user" \
+  --set backend.image.tag=moved --set agentComputer.steel.gate.imageTag=pinned > "$tmp_dir/pinned.yaml"
+test "$(q "$gate | .image" "$tmp_dir/pinned.yaml" | sed 's/.*://')" = pinned
 test "$(q "select(.kind == \"Service\" and .metadata.name == \"steel-$user\") | .spec.ports[] | (.port | tostring) + \"->\" + .targetPort" "$on")" = "3000->api"
 test "$(q 'select(.kind == "ExternalSecret" and .metadata.name == "agent-computer-steel") | .spec.data[0].remoteRef.key' "$on")" = commonly-dev-agent-computer-steel-token
 
@@ -77,6 +82,7 @@ test "$(q 'select(.kind == "ExternalSecret" and .metadata.name == "agent-compute
 # Both tokens have their own ExternalSecret; api-keys must not grow a key that
 # could fail its sync. Read its key list first, so an empty read can't pass.
 api_keys=$(q 'select(.kind == "ExternalSecret" and .metadata.name == "api-keys") | .spec.data[].secretKey' "$on")
+test "$api_keys" != "__yq_error__"
 test "$(printf '%s\n' "$api_keys" | grep -c -- '-key\|secret')" -gt 0
 test "$(printf '%s\n' "$api_keys" | grep -c 'agent-computer' || true)" = 0
 

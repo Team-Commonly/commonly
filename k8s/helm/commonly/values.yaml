@@ -273,6 +273,10 @@ agentComputer:
     shmSizeLimit: "512Mi"
     # The token gate in front of Steel (a sidecar from the backend image).
     gate:
+      # A backend image tag carrying the gate. Empty follows backend.image.tag,
+      # which restarts the browser on every deploy; pin it once a deploy that
+      # includes the gate has run.
+      imageTag: ""
       resources:
         requests:
           cpu: "10m"
