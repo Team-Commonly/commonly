@@ -34,8 +34,10 @@ async function withDevLive(env, fn) {
   try {
     server = await createServer({ configFile, logLevel: 'silent', server: { host: '127.0.0.1' } });
     await server.listen();
-    const port = server.httpServer.address().port;
-    return await fn(`http://127.0.0.1:${port}`, port, server.config.define['process.env.REACT_APP_API_URL']);
+    // Requests go to the port the server actually bound. The port assertions read the
+    // configured port, so a live session already holding it can't fail a case.
+    const bound = server.httpServer.address().port;
+    return await fn(`http://127.0.0.1:${bound}`, server.config.server.port, server.config.define['process.env.REACT_APP_API_URL']);
   } finally {
     await server?.close();
     for (const k of keys) {
@@ -172,6 +174,21 @@ test('DEV_LIVE_PORT takes only its own target\'s range, so no origin serves both
     }
   } finally {
     await stub.close();
+  }
+});
+
+test('dev:live refuses --port, so the port comes only from the target range', async () => {
+  for (const flag of [['--port', '3124'], ['--port=3124']]) {
+    process.argv.push(...flag);
+    try {
+      await assert.rejects(
+        withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod' }, async () => {}),
+        /does not take --port/,
+        flag.join(' '),
+      );
+    } finally {
+      process.argv.splice(process.argv.length - flag.length, flag.length);
+    }
   }
 });
 

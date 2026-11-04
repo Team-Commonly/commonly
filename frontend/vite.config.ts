@@ -26,6 +26,11 @@ if (DEV_LIVE && !liveEntry) {
 // dev:live at once. It moves the API base with it (below), which `--port` does not. Only
 // the target's own range is accepted (see LIVE_TARGETS).
 const portOverride = DEV_LIVE ? process.env.DEV_LIVE_PORT : undefined;
+// `--port` would move the server without moving the API base, and outside any range,
+// so a prod run could take a port in staging's range. Under dev:live the port comes only from DEV_LIVE_PORT.
+if (DEV_LIVE && process.argv.some((arg) => arg === '--port' || arg.startsWith('--port='))) {
+  throw new Error('dev:live does not take --port; set DEV_LIVE_PORT to a port in the target\'s range instead');
+}
 if (portOverride !== undefined && portOverride !== '') {
   const [lo, hi] = liveEntry.range;
   const n = /^\d+$/.test(portOverride) ? Number(portOverride) : NaN;

@@ -38,8 +38,8 @@ cd frontend && npm run dev:live      # localhost:3102 (staging), /api and /socke
   target's own range: prod 3110–3119, staging 3120–3129. For example,
   `DEV_LIVE_PORT=3113 DEV_LIVE_TARGET=prod npm run dev:live`. It moves the API base too.
   The ranges never overlap, so one origin never serves both targets and a prod token saved
-  there never reaches a staging run. Never pass `--port` instead: the app would keep calling
-  the target's default port, and so whatever happens to be listening there.
+  there never reaches a staging run. `dev:live` refuses `--port`, which would move the server
+  but leave the app calling the target's default port.
 - **Prod, read-only.** `DEV_LIVE_TARGET=prod npm run dev:live` serves on localhost:3101
   and points at `https://api.commonly.me`. HTTP writes are refused at the proxy (the response is
   a Vite 404), and `/socket.io` is not proxied, so the page renders from GET
