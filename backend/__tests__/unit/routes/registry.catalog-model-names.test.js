@@ -20,11 +20,13 @@ describe('catalog model names', () => {
   // nativeModelFor maps them server-side. These fields are what the catalog says.
   const HOSTED_MODEL = 'claude-haiku-5-5';
 
-  it('every preset that recommends a model recommends the hosted model', () => {
+  // webhook-agent brings its own runtime and model, so it recommends none.
+  it('every preset but webhook-agent recommends the hosted model', () => {
     const offenders = PRESET_DEFINITIONS
-      .filter((p) => p.recommendedModel !== undefined && p.recommendedModel !== HOSTED_MODEL)
+      .filter((p) => p.id !== 'webhook-agent' && p.recommendedModel !== HOSTED_MODEL)
       .map((p) => `${p.id}: ${p.recommendedModel}`);
     expect(offenders).toEqual([]);
+    expect(PRESET_DEFINITIONS.find((p) => p.id === 'webhook-agent').recommendedModel).toBeUndefined();
   });
 
   // F98 review: preset readiness checks each apiRequirement against the
