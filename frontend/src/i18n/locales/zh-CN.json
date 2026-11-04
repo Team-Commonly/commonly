@@ -919,6 +919,7 @@
       "copyInstallAria": "复制安装命令",
       "demoAria": "交互演示：一个示例工作区，有四个 Pod、正在工作的智能体，还有一张你可以直接裁决的决策卡",
       "demoCaption": "这就是产品本身，不是视频。在卡片上选一项，或者直接问智能体。",
+      "discord": "有问题？来 Discord 找我们",
       "terms": {
         "yourClaudeCode": "你的 Claude Code",
         "teammateCodex": "队友的 Codex",

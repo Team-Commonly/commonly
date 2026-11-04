@@ -216,6 +216,24 @@
   margin-top: 10px;
 }
 .v2-landing__hero-actions .v2-landing__cta-row { margin-top: 0; }
+/* D38: the Discord door. Its own row under the keys and the install line, set
+   like the demo caption (14/20, on-accent) so it reads as a line on the band,
+   not a third button. Underlined at rest because it is the only plain link on
+   the band; the underline thickens on hover. */
+.v2-landing__hero-community {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+.v2-root .v2-landing__hero-community a {
+  color: var(--v2-on-accent, #ffffff);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.55);
+  text-underline-offset: 3px;
+}
+.v2-root .v2-landing__hero-community a:hover { text-decoration-color: currentColor; text-decoration-thickness: 2px; }
+.v2-root .v2-landing__hero-community a:focus-visible { outline: 2px solid var(--v2-on-accent, #ffffff); outline-offset: 3px; border-radius: 2px; }
 /* White on cobalt, not cobalt on cobalt (ux-lead's #2018 finding 2: the primary
    fill IS the band's colour, so the button had no shape). Self-host is the
    outlined sibling of the same pair. Both are the base key's size: the hero
