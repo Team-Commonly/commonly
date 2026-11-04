@@ -67,7 +67,7 @@ jobs:
       PG_PASSWORD: postgres
       PG_SSL_ENABLED: "false"
       NODE_ENV: test
-      # SENDGRID_API_KEY intentionally omitted — backend auto-verifies users without it
+      # SMTP2GO_* intentionally omitted — backend auto-verifies users without it
       E2E_BASE_URL: http://localhost:5173
       E2E_API_URL: http://localhost:5000
 

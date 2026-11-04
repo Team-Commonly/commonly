@@ -94,7 +94,8 @@ router.get('/', async (_req: unknown, res: Res) => {
     discord: { configured: !!(process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CLIENT_ID) },
     gemini: { configured: !!process.env.GEMINI_API_KEY },
     litellm: { configured: !!(process.env.LITELLM_BASE_URL && process.env.LITELLM_MASTER_KEY) },
-    sendgrid: { configured: !!process.env.SENDGRID_API_KEY },
+    // Email delivery: the same two variables authController and admin/users check.
+    smtp2go: { configured: !!(process.env.SMTP2GO_API_KEY && process.env.SMTP2GO_FROM_EMAIL) },
     telegram: { configured: !!process.env.TELEGRAM_BOT_TOKEN },
   };
 

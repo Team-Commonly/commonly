@@ -631,8 +631,8 @@ PG_DATABASE=commonly
 PG_SSL_CA_PATH=/app/ca.pem
 
 # Email
-SENDGRID_API_KEY=your_sendgrid_api_key
-SENDGRID_FROM_EMAIL=no-reply@commonly.com
+SMTP2GO_API_KEY=your_smtp2go_api_key
+SMTP2GO_FROM_EMAIL=no-reply@commonly.com
 
 # Frontend URL (for email links)
 FRONTEND_URL=http://localhost:3000

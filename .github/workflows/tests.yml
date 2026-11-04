@@ -255,8 +255,6 @@ jobs:
     runs-on: ${{ needs.latchkey-route.outputs.backend || 'ubuntu-latest' }}
     env:
       JWT_SECRET: test-jwt-secret
-      SENDGRID_API_KEY: fake-api-key
-      SENDGRID_FROM_EMAIL: test@example.com
       FRONTEND_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
@@ -453,8 +451,6 @@ jobs:
 
     env:
       JWT_SECRET: test-jwt-secret
-      SENDGRID_API_KEY: fake-api-key
-      SENDGRID_FROM_EMAIL: test@example.com
       FRONTEND_URL: http://localhost:3000
       INTEGRATION_TEST: "true"
       MONGO_URI: mongodb://localhost:27017/commonly-test

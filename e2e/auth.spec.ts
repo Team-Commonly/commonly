@@ -46,7 +46,7 @@ test.describe('Authentication', () => {
   });
 
   test('login with valid credentials redirects into /v2', async ({ page, request }) => {
-    // Register a fresh user (auto-verified when SENDGRID_API_KEY not set)
+    // Register a fresh user (auto-verified when SMTP2GO email delivery is not configured)
     const tag = uniqueTag();
     const email = `login_${tag}@commonly.test`;
     const password = 'LoginPass456!';
