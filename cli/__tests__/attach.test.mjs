@@ -538,11 +538,14 @@ describe('performAttach', () => {
       });
       expect(error).toBeInstanceOf(Error);
       expect(error.message).toContain(`sandbox.mode=${mode}`);
-      expect(error.message).toContain(windowsSandboxMessage('claude'));
-      expect(error.message).toContain('commonly agent run <name> --unsandboxed');
-      // This attach made no agent, so the message says how to get one before the run options.
-      expect(error.message.indexOf('Attach without --env')).toBeGreaterThan(-1);
-      expect(error.message.indexOf('Attach without --env')).toBeLessThan(error.message.indexOf('--unsandboxed'));
+      // This attach made no agent, so the run option is the Connect page's commands, which
+      // set the two env vars and run with the flag (keeping the public trust and policy),
+      // never "attach without --env", which drops the sandbox block (#3407 review B1).
+      expect(error.message).toContain('use the commands on the Connect page');
+      expect(error.message).toContain('COMMONLY_API_URL and COMMONLY_AGENT_TOKEN');
+      expect(error.message).toContain('commonly agent run <name> --adapter claude --unsandboxed');
+      expect(error.message).toContain('Run it here');
+      expect(error.message).not.toMatch(/without --env|commonly agent run <name> --unsandboxed/);
       expect(error.message).not.toMatch(/macOS|Seatbelt|On Linux|requested but unavailable/);
       expect(client.post).not.toHaveBeenCalled();
     }
