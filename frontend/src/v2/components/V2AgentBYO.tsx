@@ -103,15 +103,11 @@ export const opencodeKeySnippet = (): string => (
 export const opencodeSnippet = ({ agentName, podId, model }: { agentName: string; podId: string; model?: string }): string => {
   const safeModel = model && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(model) ? model : OPENCODE_DEFAULT_MODEL;
   const envFile = `~/.config/commonly/${agentName}.json`;
-  // Its own workspace folder: run from a fresh terminal, the cwd is ~, and the
-  // key file under ~/.config must sit outside the agent's workspace.
-  const workspace = `$HOME/commonly-agents/${agentName}`;
   return [
     'npm i -g @commonlyai/cli@latest opencode-ai',
     'commonly login',
-    `mkdir -p ${workspace}`,
     `cat > ${envFile} <<EOF`,
-    `{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"${safeModel}","workspace":{"path":"${workspace}"},"sandbox":{"trust":"public"}}`,
+    `{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"${safeModel}","sandbox":{"trust":"public"}}`,
     'EOF',
     `commonly agent attach opencode --pod ${podId} --name ${agentName} --env ${envFile}`,
     `commonly agent run ${agentName}`,

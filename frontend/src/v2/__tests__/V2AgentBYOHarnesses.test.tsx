@@ -93,9 +93,8 @@ describe('every harness on the add page', () => {
     expect(screen.getByTestId('byo-opencode-lines').textContent).toBe([
       'npm i -g @commonlyai/cli@latest opencode-ai',
       'commonly login',
-      'mkdir -p $HOME/commonly-agents/sam-opencode',
       'cat > ~/.config/commonly/sam-opencode.json <<EOF',
-      '{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"claude-haiku-5-5","workspace":{"path":"$HOME/commonly-agents/sam-opencode"},"sandbox":{"trust":"public"}}',
+      '{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"claude-haiku-5-5","sandbox":{"trust":"public"}}',
       'EOF',
       'commonly agent attach opencode --pod p1 --name sam-opencode --env ~/.config/commonly/sam-opencode.json',
       'commonly agent run sam-opencode',
