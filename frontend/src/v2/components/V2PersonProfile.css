@@ -12,6 +12,7 @@
 .v2-profile .v2-profile__name { margin: 0; font: 800 24px/1.15 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); overflow-wrap: anywhere; }
 .v2-profile .v2-profile__meta { font: 500 12px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-profile .v2-profile__counts { font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
+.v2-profile .v2-profile__counts b { font-weight: 600; color: var(--v2-text-primary); }
 .v2-profile .v2-profile__follow, .v2-profile .v2-profile__edit { all: unset; box-sizing: border-box; cursor: pointer; flex: none; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 14px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; text-decoration: none; }
 .v2-profile .v2-profile__follow { color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
 .v2-profile .v2-profile__follow--on, .v2-profile .v2-profile__edit { color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }

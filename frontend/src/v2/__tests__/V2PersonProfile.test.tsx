@@ -73,6 +73,8 @@ describe('V2PersonProfile', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Juno Park' })).toBeInTheDocument();
     expect(screen.getByText(/@junopark/)).toBeInTheDocument();
     expect(screen.getByTestId('profile-counts')).toHaveTextContent('12 followers · 8 following');
+    // d215 s-profile: each number is bold, its word stays in the line's tone.
+    expect([...screen.getByTestId('profile-counts').querySelectorAll('b')].map((b) => b.textContent)).toEqual(['12', '8']);
     expect(screen.getByRole('heading', { name: 'Pods in common' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Northwind/ })).toHaveAttribute('href', '/v2/pods/pod-1');
     expect(screen.getByText('7 members')).toBeInTheDocument();

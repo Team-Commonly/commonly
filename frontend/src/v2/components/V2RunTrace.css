@@ -1,7 +1,11 @@
 .v2-run-trace { max-width: 880px; min-width: 0; color: var(--v2-text-primary); }
-.v2-run-trace h1 { font-family: var(--v2-font-display); font-size: 32px; line-height: 1.1; letter-spacing: -0.03em; margin: 16px 0; overflow-wrap: anywhere; }
-.v2-run-trace h2 { font-family: var(--v2-font-display); font-size: 20px; margin: 0; }
+/* d215 run-trace-after: the frame's headings balance their lines (its global
+   h1, h2 rule), so at 390 the title breaks "How this reply / was made". */
+.v2-run-trace h1 { font-family: var(--v2-font-display); font-size: 32px; line-height: 1.1; letter-spacing: -0.03em; margin: 16px 0; overflow-wrap: anywhere; text-wrap: balance; }
+.v2-run-trace h2 { font-family: var(--v2-font-display); font-size: 20px; margin: 0; text-wrap: balance; }
 .v2-run-trace__back { color: var(--v2-text-primary); min-height: 32px; display: inline-flex; align-items: center; }
+/* The frame draws "Back to pod" as a plain underlined link; `.v2-root a` (0,1,1) strips it. */
+.v2-root a.v2-run-trace__back { text-decoration: underline; }
 /* Under an agent reply: as quiet as a timestamp (d215 s-chat, trace link). */
 .v2-run-trace-link a { color: var(--v2-text-secondary); font-size: 12.5px; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
 .v2-run-trace-link a:hover { color: var(--v2-text-primary); text-decoration: underline; }
