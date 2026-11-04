@@ -42,7 +42,10 @@ const extOf = (file) => win32.extname(file).toLowerCase();
 // not: `{ ...process.env, PATH }` can carry both `Path` and `PATH`. Read
 // `Path` first (the casing Windows itself uses), then `PATH`, then any other
 // casing, and drop duplicates.
-const pathEntries = (env = {}) => {
+// A relative entry (`.`, `bin`) names a folder relative to the working
+// directory the child is spawned in, as Windows reads it there. Given `cwd`,
+// it is resolved against that, never against this process's own directory.
+const pathEntries = (env = {}, cwd) => {
   const keys = Object.keys(env).filter((key) => key.toLowerCase() === 'path');
   const rank = (key) => (key === 'Path' ? 0 : key === 'PATH' ? 1 : 2);
   keys.sort((a, b) => rank(a) - rank(b));
@@ -50,7 +53,8 @@ const pathEntries = (env = {}) => {
   const entries = [];
   for (const key of keys) {
     for (const raw of String(env[key] || '').split(';')) {
-      const dir = raw.trim().replace(/^"(.*)"$/, '$1');
+      const entry = raw.trim().replace(/^"(.*)"$/, '$1');
+      const dir = entry && cwd && !win32.isAbsolute(entry) ? win32.resolve(cwd, entry) : entry;
       if (!dir || seen.has(dir.toLowerCase())) continue;
       seen.add(dir.toLowerCase());
       entries.push(dir);
@@ -251,6 +255,8 @@ const classify = (file, deps) => {
  * Resolve `name` to something spawnable without a shell, with the reason when
  * it cannot be. On anything but win32, `{ command: name, args: [] }`.
  * On win32, `source` is the file found on PATH (the shim, or the .exe).
+ * `cwd` is the child's working directory; relative PATH entries are read
+ * against it (unset: this process's, as before).
  *
  * @returns {{ command: string, args: string[], source?: string }
  *   | { command: null, reason: string, source?: string }}
@@ -261,6 +267,7 @@ export const resolveWindowsCommandWithReason = (name, {
   existsSync = realExistsSync,
   readFileSync = realReadFileSync,
   execPath = process.execPath,
+  cwd,
 } = {}) => {
   if (platform !== 'win32') return { command: name, args: [] };
   const deps = { existsSync, readFileSync, execPath, env };
@@ -290,7 +297,7 @@ export const resolveWindowsCommandWithReason = (name, {
   // (a `.vbs`, a `.js`, a `.ps1` someone added to PATHEXT), the answer is a
   // refusal, never a later match, which would be a different program from the
   // one the person runs by typing the name.
-  for (const dir of pathEntries(env)) {
+  for (const dir of pathEntries(env, cwd)) {
     for (const candidate of candidatesFor(win32.join(dir, name))) {
       if (!existsSync(candidate)) continue;
       return classify(candidate, deps) || {
