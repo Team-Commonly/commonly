@@ -116,6 +116,9 @@ describe('ADR-026 machine lifecycle service', () => {
       // eslint-disable-next-line no-await-in-loop
       expect((await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), [], undefined, value)).hostUnconfined).toBe(true);
     }
+    // A Windows daemon without the opt-in still has no OS sandbox (Codex, or a removed marker).
+    await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), [], undefined, 'default');
+    expect((await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), [], undefined, 'native-windows')).hostUnconfined).toBe(true);
     const cleared = await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), [], undefined, 'default');
     expect(cleared.hostUnconfined).toBe(false);
   });

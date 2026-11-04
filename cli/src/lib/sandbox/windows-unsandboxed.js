@@ -98,6 +98,15 @@ export const hostUnconfinedForRun = ({ optedIn, adapterName, platform = process.
   platform === 'win32' && optedIn === true && POLICY_ONLY_ADAPTERS.has(adapterName)
 );
 
+/**
+ * What the daemon's check-in says about this host. The server refuses grant
+ * use for every seat on a machine that reports either Windows value.
+ */
+export const hostSandboxReport = ({ platform = process.platform, load = () => loadUnsandboxedOptIn({ platform }) } = {}) => {
+  if (platform !== 'win32') return 'default';
+  return load() === true ? 'unsandboxed-opted-in' : 'native-windows';
+};
+
 /** One plain line for the run log and `daemon status`. */
 export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox, so nothing at the OS level confines this agent. It keeps Commonly\'s restricted tool settings, gets no shell even with --allow write, and gets no connector grants.';
 
@@ -111,4 +120,5 @@ export default {
   unsandboxedFlagRefusal,
   unsandboxedMarkerPath,
   hostUnconfinedForRun,
+  hostSandboxReport,
 };

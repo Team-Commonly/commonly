@@ -40,7 +40,7 @@ import {
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
 import { watchWindowsLauncher } from '../lib/daemon-service-windows.js';
 import {
-  UNSANDBOXED_FLAG, clearUnsandboxedOptIn, loadUnsandboxedOptIn, saveUnsandboxedOptIn, unsandboxedFlagRefusal,
+  UNSANDBOXED_FLAG, clearUnsandboxedOptIn, hostSandboxReport, loadUnsandboxedOptIn, saveUnsandboxedOptIn, unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
 import { loadDaemonState, saveDaemonState } from '../lib/daemon-state.js';
 import {
@@ -628,9 +628,11 @@ Examples:
           },
           loadToken: loadAgentToken,
           saveToken: saveAgentToken,
-          // 'default' clears the server's record when the user reinstalls
-          // without --unsandboxed; an older daemon sends nothing, which leaves it.
-          machineReport: () => ({ sandbox: loadUnsandboxedOptIn() ? 'unsandboxed-opted-in' : 'default' }),
+          // Native Windows has no OS sandbox for any adapter, so it never
+          // reports 'default': Codex there runs on its own profiles only, and a
+          // removed marker must not read as "confined" while seats may still run.
+          // An older daemon sends nothing, which leaves the server's record.
+          machineReport: () => ({ sandbox: hostSandboxReport() }),
           runtimeInventory: async () => {
             if (!cachedInventory || Date.now() - inventoryCheckedAt > 300_000) {
               cachedInventory = await collectRuntimeInventory(getAdapter);
@@ -680,11 +682,12 @@ Examples:
         watchWindowsLauncher({
           onGone: (pid) => {
             // The launcher held our stdout, so a write now can fail with
-            // EPIPE. Swallow it, and stop the seats before logging anything.
+            // EPIPE. Swallow it before any log line, so a lost pipe can never
+            // stop the daemon before it has stopped its seats.
             process.stdout.on('error', () => {});
             process.stderr.on('error', () => {});
-            shutdown();
             try { stampLog(`launcher ${pid} has exited`); } catch { /* stdout is gone */ }
+            shutdown();
           },
         });
       } catch (error) {

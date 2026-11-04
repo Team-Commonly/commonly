@@ -134,7 +134,7 @@ try {
   const installedAt = Date.now() - 1000;
   await waitFor('first check-in after install', beatSince(installedAt), 90_000);
   const first = await waitFor('daemon process', daemonPids, 30_000);
-  if (beats.at(-1).body.sandbox !== 'default') fail(`a default install reported sandbox ${JSON.stringify(beats.at(-1).body.sandbox)}`);
+  if (beats.at(-1).body.sandbox !== 'native-windows') fail(`a default install reported sandbox ${JSON.stringify(beats.at(-1).body.sandbox)}`);
   await exactlyOneDaemon('after install');
 
   // ── kill the daemon: the launcher restarts it ─────────────────────────────
@@ -173,12 +173,12 @@ try {
   await exactlyOneDaemon('after install --unsandboxed');
   await cli('daemon', 'install');
   const clearedAt = Date.now();
-  await waitFor('check-in without the opt-in after a plain install', () => beats.find((b) => b.at > clearedAt + 1000 && b.body.sandbox === 'default'), 90_000);
+  await waitFor('check-in without the opt-in after a plain install', () => beats.find((b) => b.at > clearedAt + 1000 && b.body.sandbox === 'native-windows'), 90_000);
   const [plain] = await exactlyOneDaemon('after a plain reinstall');
   // With one daemon left, every check-in from here on must come without the opt-in.
   const plainAt = Date.now();
   await sleep(35_000);
-  if (beats.some((b) => b.at > plainAt && b.body.sandbox !== 'default')) fail(`a check-in still carried the opt-in after a plain reinstall (daemon ${plain})`);
+  if (beats.some((b) => b.at > plainAt && b.body.sandbox !== 'native-windows')) fail(`a check-in still carried the opt-in after a plain reinstall (daemon ${plain})`);
 
   // ── stop: disabled, nothing running, and the watchdog does not restart it
   await cli('daemon', 'stop');

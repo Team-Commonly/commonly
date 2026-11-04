@@ -120,8 +120,8 @@ const ownerIdsFor = async (keys: Set<string>): Promise<Set<string>> => {
  * two meanings ("judged, confinable" vs "never projected").
  */
 /**
- * D245: a seat bound to a machine whose daemon reported running agents without
- * a sandbox (native Windows, the user's own `--unsandboxed`) is refused
+ * D245: a seat bound to a machine whose daemon reported native Windows (with or
+ * without the user's own `--unsandboxed`) is refused
  * whatever its declaration says. The declaration still reads `trust: public`
  * there by design (the stored record keeps it), so the projection alone would
  * judge the seat confinable. Like every rule in this file, it can only add a
@@ -131,7 +131,7 @@ const UNCONFINED_HOST_REFUSAL: GrantBrokerRefusal = {
   code: GRANT_BROKER_REFUSAL_CODE,
   decidedBy: 'server',
   reason: 'sandbox_mode_unenforceable',
-  detail: 'this agent runs on a computer whose owner chose to run agents without a sandbox (native Windows), '
+  detail: 'this agent runs on native Windows, where Commonly has no sandbox it can enforce, '
     + 'so no grant can be used from it',
 };
 

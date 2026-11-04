@@ -59,6 +59,8 @@ const turn = (over = {}) => {
   return { run, calls };
 };
 
+const denied0 = (args) => args.slice(args.indexOf('--disallowedTools') + 1);
+
 describe('claude on native Windows with the user\'s --unsandboxed', () => {
   test('keeps the public tool policy and skips only the jail', async () => {
     const { run, calls } = turn({ hostUnconfined: true });
@@ -117,7 +119,11 @@ describe('claude on native Windows with the user\'s --unsandboxed', () => {
     await run;
     const { args } = calls[0];
     const allowed = args.slice(args.indexOf('--allowedTools') + 1, args.indexOf('--disallowedTools'));
-    expect(allowed).toEqual(expect.arrayContaining(['Read(./**)', 'Edit', 'Write']));
+    expect(allowed).toEqual(expect.arrayContaining(['Read(./**)', 'Edit(./**)', 'Write(./**)']));
+    // Scoped to the folder: no bare Edit or Write that could reach the user's profile.
+    expect(allowed).not.toContain('Edit');
+    expect(allowed).not.toContain('Write');
+    expect(denied0(args)).not.toContain('Edit');
     expect(allowed).not.toContain('Bash');
     expect(allowed).not.toContain('PowerShell');
     const denied = args.slice(args.indexOf('--disallowedTools') + 1);

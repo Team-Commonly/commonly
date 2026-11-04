@@ -442,8 +442,11 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
   // D245: with no OS jail (native Windows, --unsandboxed) a shell would run
   // with the user's whole access and could read the seat's own token from its
   // environment, so `write` grants edits only there.
+  // With no jail the edit tools are also scoped to the working folder: a bare
+  // Edit/Write could reach the user's profile (a Startup script, ~/.claude).
   const granted = allow.flatMap((grant) => WORKSPACE_ALLOW_TOOLS[grant] || [])
-    .filter((tool) => !(noShell && SHELL_TOOLS.has(tool)));
+    .filter((tool) => !(noShell && SHELL_TOOLS.has(tool)))
+    .map((tool) => (noShell && (tool === 'Edit' || tool === 'Write') ? `${tool}(./**)` : tool));
   const deniedReads = [
     deny('.commonly'),
     deny('.claude'),
@@ -490,7 +493,7 @@ const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
     '--no-chrome',
     '--permission-mode', 'dontAsk',
     '--allowedTools', 'Read(./**)', ...granted, ...mcpToolPatterns,
-    '--disallowedTools', ...PUBLIC_DENIED_TOOLS.filter((tool) => !granted.includes(tool)),
+    '--disallowedTools', ...PUBLIC_DENIED_TOOLS.filter((tool) => !granted.some((g) => g === tool || g.startsWith(`${tool}(`))),
     ...deniedReads, ...workspaceDenies, ...memoryDenies, ...withheldDenies,
   ];
 };

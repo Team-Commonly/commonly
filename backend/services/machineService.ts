@@ -201,10 +201,14 @@ export async function machineHasLiveAuthorization(
 }
 
 // D245: what a daemon says about its host's confinement on each check-in.
-// 'unsandboxed-opted-in' turns grant refusal on for the machine's seats and
-// 'default' turns it off; anything else (an older daemon sends nothing) leaves
-// the last report standing.
-export const HOST_SANDBOX_REPORTS = { unconfined: 'unsandboxed-opted-in', confined: 'default' } as const;
+// Both native-Windows values turn grant refusal on for the machine's seats:
+// 'native-windows' (no OS sandbox; Codex runs on its own profiles) and
+// 'unsandboxed-opted-in' (the user's --unsandboxed). 'default' turns it off.
+// Anything else (an older daemon sends nothing) leaves the last report standing.
+export const HOST_SANDBOX_REPORTS = {
+  unconfined: ['unsandboxed-opted-in', 'native-windows'] as readonly string[],
+  confined: 'default',
+} as const;
 
 export async function recordMachineHeartbeat(
   machine: IMachine,
@@ -220,7 +224,7 @@ export async function recordMachineHeartbeat(
   if (normalized !== null) machine.agentStates = normalized;
   const inventory = normalizeRuntimeInventory(runtimeInventory);
   if (inventory !== null) { machine.runtimeInventory = inventory; machine.inventoryAt = new Date(); }
-  if (hostSandbox === HOST_SANDBOX_REPORTS.unconfined) machine.hostUnconfined = true;
+  if (typeof hostSandbox === 'string' && HOST_SANDBOX_REPORTS.unconfined.includes(hostSandbox)) machine.hostUnconfined = true;
   else if (hostSandbox === HOST_SANDBOX_REPORTS.confined) machine.hostUnconfined = false;
   await machine.save();
   return serializeMachine(machine.toObject ? machine.toObject() : machine);

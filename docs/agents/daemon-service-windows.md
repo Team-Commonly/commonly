@@ -73,10 +73,12 @@ Rules the code enforces:
   profiles confine it) and needs no flag.
 - **No seat on native Windows gets connector grants**, opted in or not: `confinementReason` returns
   `sandbox_mode_unenforceable` on win32 for every adapter.
-- **The server refuses too.** The check-in carries `sandbox: 'unsandboxed-opted-in'` or `'default'`.
-  The server stores it as `Machine.hostUnconfined`, and `judgeSeatConfinement` refuses grant use for
-  every seat bound to an opted-in machine (`'default'` clears it; an older daemon that sends nothing
-  leaves it as it was).
+- **The server refuses too.** A Windows check-in carries `sandbox: 'native-windows'`, or
+  `'unsandboxed-opted-in'` with the marker; macOS and Linux send `'default'`. Windows never reports
+  `'default'`, so a Codex daemon or a removed marker can't clear the server's refusal.
+  The server stores either Windows value as `Machine.hostUnconfined`, and `judgeSeatConfinement`
+  refuses grant use for every seat bound to that machine (`'default'` clears it; an older daemon that
+  sends nothing leaves it as it was).
 - The flag is refused on macOS and Linux. A failed install puts the marker back as it was; uninstall
   removes it even when uninstall fails partway.
 - If the 77/78 park cannot disable the task, the launcher sleeps instead of exiting, so the watchdog

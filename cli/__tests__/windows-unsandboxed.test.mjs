@@ -14,6 +14,7 @@ import {
   unsandboxedFlagRefusal,
   unsandboxedMarkerPath,
   hostUnconfinedForRun,
+  hostSandboxReport,
 } from '../src/lib/sandbox/windows-unsandboxed.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../src/lib/sandbox/host-check.js';
 import { detectBwrap } from '../src/lib/sandbox/bwrap.js';
@@ -83,6 +84,14 @@ describe('who decides for a run', () => {
     expect(runOptedInUnsandboxed({ flag: false, env: {}, load: yes })).toBe(false);
     expect(runOptedInUnsandboxed({ flag: undefined, env: { COMMONLY_MANAGED_RUNNER: 'true' }, load: yes })).toBe(false);
     expect(runOptedInUnsandboxed({ flag: false, env: { COMMONLY_MANAGED_RUNNER: '1' }, load: () => false })).toBe(false);
+  });
+});
+
+describe('what the check-in reports', () => {
+  test('native Windows never reports default, opted in or not', () => {
+    expect(hostSandboxReport({ platform: 'win32', load: () => true })).toBe('unsandboxed-opted-in');
+    expect(hostSandboxReport({ platform: 'win32', load: () => false })).toBe('native-windows');
+    for (const platform of ['darwin', 'linux']) expect(hostSandboxReport({ platform, load: () => true })).toBe('default');
   });
 });
 
