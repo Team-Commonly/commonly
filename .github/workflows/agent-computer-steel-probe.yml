@@ -8,7 +8,6 @@ on:
   push:
     paths:
       - k8s/helm/commonly/templates/agent-computer/**
-      - k8s/helm/commonly/files/agent-computer/**
       - k8s/helm/commonly/values.yaml
       - scripts/agent-computer-steel-probe.*
       - .github/workflows/agent-computer-steel-probe.yml

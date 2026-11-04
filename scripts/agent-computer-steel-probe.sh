@@ -124,12 +124,20 @@ probe report
 python3 - "$tmp/enforce.json" "$tmp/report.json" << 'EOF'
 import json, sys
 enforce, report = (json.load(open(p)) for p in sys.argv[1:3])
+mine = {r["test"]: r for r in enforce["results"]}
 other = {r["test"]: r for r in report["results"]}
+order = [r["test"] for r in enforce["results"]] + [r["test"] for r in report["results"] if r["test"] not in mine]
+def word(x):
+    if x is None:
+        return "not loaded"
+    if x["kind"] == "control":
+        return "ok" if x["reached"] else "FAILED"
+    return "reached" if x["reached"] else "blocked"
 print(f"Browser: {enforce['browser']}")
-print(f"{'attack':30} {'kind':9} {'chart policy':14} {'image policy':14}")
-for r in enforce["results"]:
-    word = lambda x: ("ok" if x["reached"] else "FAILED") if x["kind"] == "control" else ("reached" if x["reached"] else "blocked")
-    print(f"{r['test']:30} {r['kind']:9} {word(r):14} {word(other[r['test']]):14} {r['detail'][:60]}")
+print(f"{'attack':36} {'kind':9} {'chart policy':14} {'image policy':14}")
+for test in order:
+    r = mine.get(test) or other[test]
+    print(f"{test:36} {r['kind']:9} {word(mine.get(test)):14} {word(other.get(test)):14} {r['detail'][:60]}")
 EOF
 
 enforce_rc=$(cat "$tmp/enforce.rc")
