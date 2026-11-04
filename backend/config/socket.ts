@@ -40,6 +40,9 @@ module.exports = {
 
         pubClient = createClient({
           url: redisUrl,
+          // undefined when REDIS_PASSWORD is unset (local/dev without auth), so
+          // node-redis sends no AUTH; set in clusters where redis requires it.
+          password: process.env.REDIS_PASSWORD || undefined,
           socket: {
             reconnectStrategy: (retries: number) => Math.min(2 ** retries * 100, 10_000),
             connectTimeout: 5_000,

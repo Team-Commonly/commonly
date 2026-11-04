@@ -569,6 +569,21 @@ jobs:
             fi
           done
 
+      - name: Verify redis auth render
+        run: |
+          # redis-password must render whenever redis.auth is on, independent of
+          # any AI-provider flag (it regressed once by nesting under
+          # aiProviders.anthropic.enabled — #3400), and be absent when auth is off.
+          on=$(helm template commonly-dev k8s/helm/commonly \
+            -f k8s/helm/commonly/values.yaml \
+            --set redis.auth.enabled=true --set aiProviders.anthropic.enabled=false)
+          if ! echo "$on" | grep -q 'secretKey: redis-password'; then
+            echo "FAIL: redis-password missing with redis.auth on + anthropic off"; exit 1; fi
+          off=$(helm template commonly-dev k8s/helm/commonly -f k8s/helm/commonly/values.yaml)
+          if echo "$off" | grep -q 'redis-password'; then
+            echo "FAIL: redis-password rendered with redis.auth off"; exit 1; fi
+          echo "redis auth render OK"
+
       - name: Lint rendered dev chart
         run: |
           kubeconform --strict --summary -output text \

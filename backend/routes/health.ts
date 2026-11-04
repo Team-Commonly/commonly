@@ -70,7 +70,7 @@ router.get('/', async (_req: unknown, res: Res) => {
       const { createClient } = require('redis');
       const redisHost = process.env.REDIS_HOST || 'redis';
       const redisPort = process.env.REDIS_PORT || 6379;
-      const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}` });
+      const redisClient = createClient({ url: `redis://${redisHost}:${redisPort}`, password: process.env.REDIS_PASSWORD || undefined });
       const redisStart = Date.now();
       await redisClient.connect();
       const pong = await redisClient.ping();

@@ -286,6 +286,11 @@ mongodb:
       operator: Equal
       value: spot
 
+# Require AUTH from clients (password via ESO: commonly-staging-redis-password).
+redis:
+  auth:
+    enabled: true
+
 # Staging-only connector key ring (commonly-staging-connector-secret-keys / -active-key in SM,
 # fresh keys, never prod's). Without it every hosted-MCP OAuth callback on staging threw.
 connectorSecrets:

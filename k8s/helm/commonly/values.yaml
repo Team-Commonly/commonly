@@ -378,6 +378,10 @@ postgresql:
 # Redis configuration (for Socket.io adapter)
 redis:
   enabled: true
+  # Redis AUTH (requirepass). Default off so the OSS chart and local dev run
+  # without a password; dev/staging/prod enable it and supply the password via ESO.
+  auth:
+    enabled: false
   image:
     repository: redis
     tag: "7-alpine"
