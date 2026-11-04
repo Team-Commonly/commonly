@@ -887,14 +887,6 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   // update made the new grant visible.
   forgetHostedMcpDrift(String(consumed._id));
 
-  if (manualRevokeAt) {
-    return callbackRedirect(res, 'connected', undefined, {
-      manualRevoke: {
-        entryId: entry.id,
-        revokeAt: manualRevokeAt,
-      },
-    });
-  }
   // D248: connected but reaching nothing yet (GitHub with no App installation).
   // The page names the step and opens the entry's own access page; the link
   // comes from the catalogue there, never from this query.
@@ -905,6 +897,17 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
     } catch {
       accessNext = false;
     }
+  }
+  // A reconnect that left the old grant for the person to withdraw still gets
+  // the access step: the page shows both on one return.
+  if (manualRevokeAt) {
+    return callbackRedirect(res, 'connected', undefined, {
+      manualRevoke: {
+        entryId: entry.id,
+        revokeAt: manualRevokeAt,
+      },
+      ...(accessNext ? { next: 'access' as const } : {}),
+    });
   }
   return callbackRedirect(res, 'connected', undefined,
     accessNext ? { entryId: entry.id, next: 'access' } : undefined);

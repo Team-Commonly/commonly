@@ -35,6 +35,12 @@ const builtinGithub = {
   installableId: 'github', list: 'tools', label: 'GitHub', description: 'Issues and pull requests.', available: true,
   connectionType: 'github-app', broker: { id: 'commonly-grant-broker' }, tools: [], connections: [],
 };
+// A live grant on the builtin entry: the tool it names is the entry's own.
+const builtinGrant = {
+  grantId: 'grant_gh', installationId: 'inst-1', target: { kind: 'pod', id: 'p1' }, tools: ['github.list_issues'],
+  writeMode: 'read', effectiveAudience: ['a1'], expiresAt: new Date(Date.now() + 86400000).toISOString(),
+  revokedAt: null, revokedBy: null, createdAt: new Date(Date.now() - 3600000).toISOString(), grantedBy: 'u1',
+};
 const githubRow = { _id: 'i-gh', type: 'hosted-mcp', status: 'connected', config: { entryId: 'github-mcp' } };
 
 const settle = () => act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
@@ -103,7 +109,13 @@ describe('connected, with the App not installed yet (next=access)', () => {
 
     const notice = (await screen.findByText(fill(en.connectors.hostedMcpAccessNext), { exact: false })).closest('p');
     expect(notice).toHaveAttribute('role', 'status');
-    const link = within(notice).getByRole('link', { name: 'Choose what GitHub can reach' });
+    // GitHub's install page preselects "All repositories" and always reads
+    // public repos, so the notice names the choice; the link only opens the page.
+    expect(notice).toHaveTextContent(
+      "Choose 'Only select repositories' to limit which private repos GitHub can read. Public repos are always readable.",
+    );
+    const link = within(notice).getByRole('link', { name: fill(en.connectors.hostedMcpAccessOpen) });
+    expect(link).toHaveTextContent('Open GitHub');
     expect(link).toHaveAttribute('href', accessPage);
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
@@ -125,6 +137,21 @@ describe('connected, with the App not installed yet (next=access)', () => {
     const popover = await findPopover('GitHub');
     expect(await within(popover).findByRole('link', { name: "Open GitHub's connected apps" })).toHaveAttribute('href', revokePage);
     expect(window.location.search).toBe('');
+  });
+
+  it('reads in zh-CN, keeping GitHub\'s own option label in English', async () => {
+    window.history.replaceState({}, '', '/v2/connectors?hostedMcp=connected&entryId=github-mcp&next=access');
+    mockApi({ connectors: [githubRow], installables: [hostedGithub({ connections: [{ connectionId: 'i-gh', owner: 'sam', repo: '' }] })] });
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      renderPage();
+      const notice = (await screen.findByText('Only select repositories', { exact: false })).closest('p');
+      expect(notice).toHaveTextContent('选择“Only select repositories”，限定 GitHub 可以读取哪些私有仓库。公开仓库始终可以读取。');
+      expect(within(notice).getByRole('link', { name: '打开 GitHub' })).toHaveAttribute('href', accessPage);
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
   });
 
   it('shows no access step for an entry without an access page', async () => {
@@ -169,6 +196,55 @@ describe('the admin-only builtin GitHub card', () => {
     await findTile('GitHub');
     await settle();
     expect(screen.getByRole('img', { name: 'An admin installs this once' })).toBeInTheDocument();
+  });
+
+  // The card hides only when it is the empty admin-only card. A connection or a
+  // grant on it is the person's own access, and must stay seeable and revocable.
+  it('is still shown to a non-admin who already has a builtin GitHub connection', async () => {
+    mockApi({
+      installables: [
+        { ...builtinGithub, connections: [{ connectionId: 'conn-1', owner: 'Team-Commonly', repo: 'commonly' }] },
+        hostedGithub(),
+      ],
+    });
+    renderPage();
+
+    await findTile('GitHub');
+    await settle();
+    expect(githubTiles()).toHaveLength(2);
+  });
+
+  it('is still shown to a non-admin who holds a grant on the builtin GitHub entry', async () => {
+    mockApi({
+      installables: [
+        { ...builtinGithub, tools: [{ name: 'github.list_issues', requiredWriteMode: 'read', irreversible: false }] },
+        hostedGithub(),
+      ],
+      grants: [builtinGrant],
+    });
+    renderPage();
+
+    await findTile('GitHub');
+    await settle();
+    expect(githubTiles()).toHaveLength(2);
+  });
+
+  it('is not counted as available to a non-admin it is hidden from', async () => {
+    mockApi({ installables: [builtinGithub, hostedGithub()] });
+    renderPage();
+
+    await findTile('GitHub');
+    await settle();
+    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('0 on · 1 available');
+  });
+
+  it('counts for an admin, who sees it', async () => {
+    mockApi({ installables: [builtinGithub, hostedGithub()] });
+    renderPage({ auth: adminAuth() });
+
+    await findTile('GitHub');
+    await settle();
+    expect(document.querySelector('.v2-cx-head__meta')).toHaveTextContent('0 on · 2 available');
   });
 
   it('stays for an admin, who installs the App from it', async () => {

@@ -553,12 +553,14 @@ const ConnectorsPage: React.FC = () => {
               }))
             : (
               <>
+                {/* GitHub's install page preselects "All repositories" and always
+                    reads public repos, so the notice names the choice to make there. */}
                 {t('connectors.hostedMcpAccessNext', {
-                  defaultValue: 'Next: pick the repos {{provider}} can read.',
+                  defaultValue: "Choose 'Only select repositories' to limit which private repos {{provider}} can read. Public repos are always readable.",
                   provider: callbackNotice.provider,
                 })}{' '}
                 <a href={callbackNotice.accessPage} target="_blank" rel="noopener noreferrer">
-                  {t('tools.chooseAccess', { defaultValue: 'Choose what {{label}} can reach', label: callbackNotice.provider })}
+                  {t('connectors.hostedMcpAccessOpen', { defaultValue: 'Open {{provider}}', provider: callbackNotice.provider })}
                 </a>
               </>
             )}

@@ -227,6 +227,55 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
       FIXTURE_ENTRY.accessPage = 'https://github.com/apps/commonly-connect/installations/new';
       FIXTURE_ENTRY.needsAccessSetup = jest.fn().mockRejectedValue(new Error('timeout'));
       expect(outcome(await callback())).toEqual({ status: 302, hostedMcp: 'connected', code: null });
+      // "Still reports connected" holds only if the pair was stored first: the
+      // check runs after both puts and the publishing row write, never before.
+      expect(connectorSecrets.put).toHaveBeenCalledTimes(2);
+      expect(Integration.findOneAndUpdate).toHaveBeenCalledTimes(3);
+      const checkedAt = FIXTURE_ENTRY.needsAccessSetup.mock.invocationCallOrder[0];
+      const lastWrite = Math.max(
+        ...connectorSecrets.put.mock.invocationCallOrder,
+        ...Integration.findOneAndUpdate.mock.invocationCallOrder,
+      );
+      expect(checkedAt).toBeGreaterThan(lastWrite);
+    });
+
+    // A reconnect whose old grant only the person can withdraw returns early
+    // with the revoke page; the access step rides along on the same redirect.
+    describe('on a reconnect that names the revoke page', () => {
+      // An old pair with no recorded subject: the accounts cannot be compared,
+      // so the old token is never sent and the page is the only recovery.
+      const uncomparableReconnect = () => setStoredRow({
+        credentialRef: 'ref-old-access',
+        refreshTokenRef: 'ref-old-refresh',
+      });
+
+      it('also sends the page on to the access step when nothing is reachable yet', async () => {
+        FIXTURE_ENTRY.accessPage = 'https://github.com/apps/commonly-connect/installations/new';
+        FIXTURE_ENTRY.needsAccessSetup = jest.fn().mockResolvedValue(true);
+        uncomparableReconnect();
+        expect(outcome(await callback())).toEqual({
+          status: 302,
+          hostedMcp: 'connected',
+          code: null,
+          entryId: 'linear',
+          revokeAt: FIXTURE_ENTRY.revoke.page,
+          next: 'access',
+        });
+        expect(FIXTURE_ENTRY.needsAccessSetup).toHaveBeenCalledWith('access-1');
+      });
+
+      it('names only the revoke page when access is already set up', async () => {
+        FIXTURE_ENTRY.accessPage = 'https://github.com/apps/commonly-connect/installations/new';
+        FIXTURE_ENTRY.needsAccessSetup = jest.fn().mockResolvedValue(false);
+        uncomparableReconnect();
+        expect(outcome(await callback())).toEqual({
+          status: 302,
+          hostedMcp: 'connected',
+          code: null,
+          entryId: 'linear',
+          revokeAt: FIXTURE_ENTRY.revoke.page,
+        });
+      });
     });
 
     it('never asks without an access page to send the person to', async () => {
@@ -252,6 +301,12 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
       expect(global.fetch).not.toHaveBeenCalled();
       expect(Integration.findOne).not.toHaveBeenCalled();
       expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('a vendor error wins over install parameters on the same return', async () => {
+      const res = await callback('error=access_denied&setup_action=install&installation_id=1', null);
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'consent_denied' });
+      expect(global.fetch).not.toHaveBeenCalled();
     });
 
     it('a stateless return that is not an install is still refused', async () => {
