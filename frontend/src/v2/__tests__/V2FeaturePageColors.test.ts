@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { V2_COLORS, V2_DARK_COLORS } from '../components/V2FeaturePage';
+import { V2_COLORS, V2_DARK_COLORS, V2_SECONDARY_MAIN } from '../components/V2FeaturePage';
 import { resolvedV2Dark } from '../utils/theme';
 
 // TASK-681/685: V2FeaturePage's MUI theme cannot read var(), so its colours stay
@@ -24,7 +24,7 @@ const TOKEN_FOR: Record<keyof typeof V2_COLORS, string> = {
   accentSoft: 'accent-soft',
   onAccent: 'on-accent',
   accentFill: 'accent-fill',
-  accentFillHover: 'accent-strong',
+  accentFillHover: 'accent-fill-hover',
   success: 'success',
   warning: 'warning',
   danger: 'danger',
@@ -49,14 +49,6 @@ const blockOf = (selector: string): string => {
 const darkBlock = blockOf(':root[data-v2-theme="dark"] .v2-root {');
 const darkTwinBlock = blockOf(':root:not([data-v2-theme="light"]) .v2-root {');
 
-// Where a role takes a different token in dark. The filled button's hover is
-// accent-strong in light, but dark's accent-strong is the fill itself, so dark
-// hovers on accent-deep.
-const DARK_TOKEN_FOR: Partial<Record<keyof typeof V2_COLORS, string>> = {
-  accentFillHover: 'accent-deep',
-};
-const darkTokenFor = (key: keyof typeof V2_COLORS): string => DARK_TOKEN_FOR[key] ?? TOKEN_FOR[key];
-
 // First declaration wins: the light block sits above the dark scopes.
 const lightTokenValue = (name: string): string | null => valueIn(css, name);
 
@@ -74,14 +66,14 @@ describe('V2FeaturePage MUI palette matches the --v2-* tokens', () => {
   });
 
   test.each(colourKeys)('dark %s equals its dark token, or the light one where dark inherits it', (key) => {
-    expect(V2_DARK_COLORS[key].toLowerCase()).toBe(darkTokenValue(darkTokenFor(key)));
+    expect(V2_DARK_COLORS[key].toLowerCase()).toBe(darkTokenValue(TOKEN_FOR[key]));
   });
 
   test('the dark block and its prefers-color-scheme twin agree', () => {
     // The twin paints when no attribute is set, so a drift between the two would
     // show dark on one path and not the other.
     colourKeys.forEach((key) => {
-      expect(valueIn(darkTwinBlock, darkTokenFor(key))).toBe(valueIn(darkBlock, darkTokenFor(key)));
+      expect(valueIn(darkTwinBlock, TOKEN_FOR[key])).toBe(valueIn(darkBlock, TOKEN_FOR[key]));
     });
   });
 });
@@ -103,6 +95,27 @@ describe('a filled primary button keeps its text readable', () => {
     expect(contrast(c.onAccent, c.accentFill)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(c.onAccent, c.accentFillHover)).toBeGreaterThanOrEqual(4.5);
     expect(c.accentFillHover).not.toBe(c.accentFill);
+  });
+
+  test.each([['light', V2_COLORS], ['dark', V2_DARK_COLORS]] as const)('%s filled secondary text reaches 4.5:1', (_mode, c) => {
+    expect(contrast(c.onAccent, V2_SECONDARY_MAIN)).toBeGreaterThanOrEqual(4.5);
+    expect(V2_SECONDARY_MAIN).toBe(lightTokenValue('accent-deep'));
+  });
+});
+
+describe('the legacy MUI button rule in v2.css paints the same fill', () => {
+  // .v2-feature__legacy .MuiButton-containedPrimary outranks the MUI theme's class,
+  // so this rule, not the theme, is what a filled button shows.
+  test('the filled primary rule reads the fill, its hover and on-accent', () => {
+    const rule = (sel: string): string => {
+      const i = css.indexOf(`${sel} {`);
+      expect(i).toBeGreaterThan(-1);
+      return css.slice(i, css.indexOf('}', i));
+    };
+    const base = rule('.v2-feature__legacy .MuiButton-containedPrimary');
+    expect(base).toContain('background: var(--v2-accent-fill);');
+    expect(base).toContain('color: var(--v2-on-accent);');
+    expect(rule('.v2-feature__legacy .MuiButton-containedPrimary:hover')).toContain('background: var(--v2-accent-fill-hover);');
   });
 });
 

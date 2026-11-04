@@ -82,6 +82,10 @@ export const V2_DARK_COLORS: typeof V2_COLORS = {
   shadowLg: 'none',
 };
 
+// Light --v2-accent-deep, kept in both modes so a filled secondary stays a deep
+// navy under white text (14:1).
+export const V2_SECONDARY_MAIN = '#0f2378';
+
 type V2Palette = typeof V2_COLORS;
 
 const buildV2FeatureTheme = (c: V2Palette, mode: 'light' | 'dark') => createTheme({
@@ -94,8 +98,8 @@ const buildV2FeatureTheme = (c: V2Palette, mode: 'light' | 'dark') => createThem
       contrastText: c.onAccent,
     },
     secondary: {
-      main: '#0f2378',
-      contrastText: c.surface,
+      main: V2_SECONDARY_MAIN,
+      contrastText: c.onAccent,
     },
     success: { main: c.success },
     warning: { main: c.warning },
