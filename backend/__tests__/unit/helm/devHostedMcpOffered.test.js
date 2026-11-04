@@ -5,8 +5,9 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { HELM_CHART } = require('../../utils/repoRoot');
 
-const chart = path.join(__dirname, '../../../../k8s/helm/commonly');
+const chart = HELM_CHART;
 const dev = yaml.load(fs.readFileSync(path.join(chart, 'values-dev.yaml'), 'utf8'), { json: true });
 const hidden = dev.hostedMcp.hiddenEntries;
 

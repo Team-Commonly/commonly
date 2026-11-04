@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { HELM_CHART } = require('../../utils/repoRoot');
 
-const template = fs.readFileSync(path.join(__dirname,
-  '../../../../k8s/helm/commonly/templates/configmaps/litellm-config.yaml'), 'utf8');
+const template = fs.readFileSync(path.join(HELM_CHART,
+  'templates/configmaps/litellm-config.yaml'), 'utf8');
 // Parse the actual proxy config, not comments or the surrounding Helm template.
 const block = template.split('  config.yaml: |\n')[1].split('\n  # Mounted at /app/')[0];
 const config = yaml.load(block.replace(/^    /gm, ''));

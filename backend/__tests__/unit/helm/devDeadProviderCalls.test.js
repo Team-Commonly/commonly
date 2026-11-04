@@ -1,11 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { HELM_CHART } = require('../../utils/repoRoot');
 
 // F78, 2026-11-03: on dev, Google rejects the Gemini key and the OpenAI key is a
 // placeholder, so every direct call sent content out and got nothing back.
 // Values-level like the other tests here; the Chart Lint CI tier renders it.
-const chart = path.join(__dirname, '../../../../k8s/helm/commonly');
+const chart = HELM_CHART;
 const read = (f) => fs.readFileSync(path.join(chart, f), 'utf8');
 // json: true resolves a duplicate key last-wins, as Helm does; values.yaml
 // carries one (backend.nodeSelector) that strict parsing rejects.

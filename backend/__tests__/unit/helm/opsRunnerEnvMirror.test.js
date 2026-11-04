@@ -21,8 +21,9 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { HELM_CHART } = require('../../utils/repoRoot');
 
-const chart = path.join(__dirname, '../../../../k8s/helm/commonly');
+const chart = HELM_CHART;
 
 // Parse a Deployment template's MAIN container env block into an ARRAY of
 // `name<TAB>source` tuples (duplicates kept — if/else branches repeat names).

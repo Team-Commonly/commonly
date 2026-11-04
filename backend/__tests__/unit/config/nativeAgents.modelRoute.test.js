@@ -9,10 +9,11 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { HELM_CHART } = require('../../utils/repoRoot');
 const { FIRST_PARTY_APPS } = require('../../../config/native-agents/apps');
 
-const litellmConfig = fs.readFileSync(path.join(__dirname,
-  '../../../../k8s/helm/commonly/templates/configmaps/litellm-config.yaml'), 'utf8');
+const litellmConfig = fs.readFileSync(path.join(HELM_CHART,
+  'templates/configmaps/litellm-config.yaml'), 'utf8');
 const declaredModels = new Set(
   [...litellmConfig.matchAll(/model_name:\s*(\S+)/g)].map((m) => m[1]),
 );
