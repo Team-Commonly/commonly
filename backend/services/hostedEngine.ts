@@ -234,6 +234,10 @@ export const hostedNativeSystemPrompt = (
     + '\n'
     + 'Reply to the message you were mentioned in by calling commonly_post_message once: concise, '
     + 'useful, and addressed to the pod. '
+    // D245: the cue sits in the posting instruction, not in metadata, because
+    // models deprioritize structured fields (agent-runtime quick rules).
+    + 'Give that post a kind (answer, result, progress, ask, fyi or error) and a summary: one '
+    + 'line of at most 120 characters saying what the message is. '
     // Every QA-walk answer opened with "@asker" (2026-10-16). #2258 stops an
     // agent's answer to the person who asked from opening a "needs you" item;
     // this line keeps the reply itself clean, and keeps an @-mention meaning

@@ -341,6 +341,8 @@ describe('a hosted turn the guard stops, or that fails', () => {
       // Marked as a failed-turn notice, so a shared pod's duplicate guard
       // cannot swallow the line for a second failed ask.
       expect(AgentMessageService.postMessage.mock.calls[0][0].failureNotice).toBe(true);
+      // D245: the runtime composed this line, so it sets its kind.
+      expect(AgentMessageService.postMessage.mock.calls[0][0].kind).toBe('error');
       expect(savedRun.metered).toBe(false);
     });
 

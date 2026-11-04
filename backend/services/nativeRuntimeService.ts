@@ -42,6 +42,7 @@ import { isSearchConfigured, searchWeb } from './webSearchService';
 import { getFromPublicAddress, isOutboundUrlRefused } from './outboundUrlGuard';
 import { GivenAddresses } from './webAddressProvenance';
 import { nativeCueFromKernel } from './nativeKernelCue';
+import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
 import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalization';
@@ -360,6 +361,10 @@ export const TOOLS = [
           content: { type: 'string', description: 'Markdown-supported message content and required UI text fallback' },
           messageType: { type: 'string', enum: ['text', 'card'] },
           payload: { type: 'object', description: `Optional {kind:"ui",v:1,lang:"openui@1",source,...catalogue}. Catalogue fields: ${JSON.stringify(UI_CARD_CATALOGUE)}. Requires messageType card; validated locally before writing.` },
+          // D245: the message contract, warn-only. A bad value posts anyway
+          // and comes back in the result's `warnings`.
+          summary: { type: 'string', description: 'One line, at most 120 characters: what this message is.' },
+          kind: { type: 'string', enum: [...MESSAGE_KINDS], description: 'What kind of message this is.' },
         },
         required: ['content'],
       },
@@ -977,6 +982,8 @@ export async function dispatchTool(
           content,
           messageType,
           ...(args.payload !== undefined ? { payload: args.payload } : {}),
+          ...(args.summary !== undefined ? { summary: args.summary } : {}),
+          ...(args.kind !== undefined ? { kind: args.kind } : {}),
           displayName: ctx.displayName,
           installationConfig: ctx.installationConfig,
           metadata: { source: 'native-runtime' },
@@ -2841,6 +2848,7 @@ export async function runAgent(
           installationConfig: cfg,
           metadata: { source: 'native-runtime', runFailed: true },
           failureNotice: true,
+          kind: 'error',
           noOutboundRelay: Boolean(dispatchCtx.webTainted || dispatchCtx.brokerCallSeen),
           answeringMessageId: dispatchCtx.answeringMessageId,
           threadRootId: dispatchCtx.answeringThreadRootId ?? null,
