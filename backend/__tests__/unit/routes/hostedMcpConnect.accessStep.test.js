@@ -235,4 +235,44 @@ describe('hosted-mcp connect: callback access step (D248)', () => {
       expect(FIXTURE_ENTRY.needsAccessSetup).not.toHaveBeenCalled();
     });
   });
+
+  // D248 (a): GitHub's "Install & Authorize" returns to this callback with
+  // `code`, `installation_id` and `setup_action`, and no state of ours. The
+  // walk on 11-04 showed "This connection attempt expired" after an install
+  // that worked. It is an install outcome, not a failed connect, and its code
+  // is never redeemed: with no state there is no way to tie it to the person.
+  describe('a return from installing the App', () => {
+    const ACCESS = 'https://github.com/apps/commonly-connect/installations/new';
+    beforeEach(() => { FIXTURE_ENTRY.accessPage = ACCESS; });
+    afterEach(() => { delete FIXTURE_ENTRY.accessPage; });
+
+    it.each(['install', 'update'])('setup_action=%s with no state lands as installed, redeeming nothing', async (action) => {
+      const res = await callback(`code=code-1&installation_id=123456&setup_action=${action}`, null);
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'installed', code: null, entryId: 'linear' });
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(Integration.findOne).not.toHaveBeenCalled();
+      expect(Integration.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('a stateless return that is not an install is still refused', async () => {
+      expect(outcome(await callback('code=code-1', null)))
+        .toEqual({ status: 302, hostedMcp: 'error', code: 'invalid_state' });
+    });
+
+    it('an installation id that is not a number is refused', async () => {
+      expect(outcome(await callback('code=code-1&installation_id=12x&setup_action=install', null)))
+        .toEqual({ status: 302, hostedMcp: 'error', code: 'invalid_state' });
+    });
+
+    it('an entry with no install page is refused, so no other vendor can claim the outcome', async () => {
+      delete FIXTURE_ENTRY.accessPage;
+      expect(outcome(await callback('code=code-1&installation_id=123456&setup_action=install', null)))
+        .toEqual({ status: 302, hostedMcp: 'error', code: 'invalid_state' });
+    });
+
+    it('a return that does carry our state finishes the connect as usual', async () => {
+      const res = await callback('state=st-1&code=code-1&installation_id=123456&setup_action=install');
+      expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'connected', code: null });
+    });
+  });
 });
