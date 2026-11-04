@@ -20,6 +20,13 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs';
 
+// The keychain link points at ~/Library/Keychains, which a Linux CI runner
+// doesn't have. existsSync follows the link, so a dangling link would read as
+// absent; check the link itself.
+const isLink = (p) => {
+  try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; }
+};
+
 await jest.unstable_mockModule('child_process', () => ({
   spawnSync: jest.fn(),
   spawn: jest.fn(),
@@ -93,7 +100,7 @@ describe('a Seatbelt-confined Claude seat with ANTHROPIC_API_KEY (F151)', () => 
   const spawnImpl = ({ code = 0, stdout = COMMONLY_CONNECTED } = {}) => {
     const calls = [];
     const impl = (cmd, args, opts) => {
-      calls.push({ cmd, args, opts, keychainLink: fs.existsSync(path.join(state, 'Library', 'Keychains')) });
+      calls.push({ cmd, args, opts, keychainLink: isLink(path.join(state, 'Library', 'Keychains')) });
       return fakeChild({ stdout, code });
     };
     return { impl, calls };
