@@ -46,9 +46,12 @@ q 'select(.kind == "ConfigMap" and .metadata.name == "agent-computer-chrome-poli
 python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$tmp/policy/00_policy.json"
 
 env_args=()
-while IFS=$'\t' read -r name value; do
-  env_args+=(-e "$name=$value")
-done < <(q "$browser | .env[] | select(has(\"value\")) | .name + \"\t\" + .value")
+while IFS= read -r pair; do
+  env_args+=(-e "$pair")
+done < <(q "$browser | .env[] | select(has(\"value\")) | .name + \"=\" + .value")
+# The run must carry the pod's env, or Chrome starts with Steel's defaults.
+printf '%s\n' "${env_args[@]}" | grep -qx 'DISABLE_CHROME_SANDBOX=true'
+printf '%s\n' "${env_args[@]}" | grep -qx "CHROME_USER_DATA_DIR=$profile_dir"
 mapfile -t steel_args < <(q "$browser | .args[]")
 
 # The attacking page: a page, a text file, and a redirect to any URL.
