@@ -322,10 +322,8 @@ describe('BYO listener snippet', () => {
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
       expect(screen.queryByTestId('byo-listen-wont-answer')).toBeNull();
       const note = screen.getByTestId('byo-listen-windows');
-      // A real Claude Code turn answers an @mention on windows-latest from these
-      // lines (byo-windows.yml, D164), so the note no longer calls it untested.
-      expect(note).toHaveTextContent(/^Windows has no sandbox for \S+, so nothing at the OS level confines it\. You choose that by adding --unsandboxed/);
-      expect(note).not.toHaveTextContent(/tested/);
+      // Untested comes first: no real Claude Code turn has run on Windows yet.
+      expect(note).toHaveTextContent(/^Claude Code hasn’t been tested on Windows yet\. Windows has no sandbox for \S+, so nothing at the OS level confines it\. You choose that by adding --unsandboxed/);
       expect(note).toHaveTextContent('it only reads its folder unless you add --allow write, which lets it edit files there.');
       expect(note).toHaveTextContent('It can’t run commands on Windows, and it gets no connector grants.');
       expect(note).toHaveTextContent('commonly daemon install --unsandboxed sets it up as a task that starts when you log in');
