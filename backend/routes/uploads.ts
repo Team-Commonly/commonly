@@ -366,6 +366,64 @@ router.post('/', uploadCredentialRateLimit, auth, uploadRateLimit, uploadSingle(
   await handleUpload(req, res, req.userId);
 });
 
+// Batch signed-URL mint. A pod chat draws one thumbnail per image message, and
+// one mint per thumbnail 429'd a viewer with more than 30 images on screen (the
+// limiter's budget is per minute per token). The frontend now coalesces the mints
+// it needs in one tick into a single request here.
+//
+// - The request counts ONCE against the same `mintRateLimit` instance (same store,
+//   same per-token key) as the single route, so the two routes share one budget,
+//   and a page cap bounds what one request can mint.
+// - Every name passes the same `canReadAttachment` check as a single mint. A name
+//   the caller cannot read (or that does not exist) is listed in `refused` and the
+//   rest are still minted; `refused` does not say which reason applied, the same
+//   single 403 the single route answers for both.
+// - Each minted name gets its own token (bound to that file) and its own audit row.
+export const BATCH_MINT_MAX = 50;
+// A plain upload file name: no path separator, no `..`, no control characters,
+// at most 200 characters. Uploads are named `<user>-<time>-<rand>.<ext>`.
+const isBatchMintName = (name: unknown): name is string => typeof name === 'string'
+  && name.length > 0 && name.length <= 200
+  && !/[/\\]/.test(name) && !name.includes('..')
+  && ![...name].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f);
+
+router.post('/urls', mintRateLimit, auth, async (req: AuthReq, res: Res) => {
+  try {
+    if (!req.userId) return res.status(401).json({ msg: 'auth required' });
+    const fileNames = (req.body as { fileNames?: unknown } | undefined)?.fileNames;
+    if (!Array.isArray(fileNames) || fileNames.length === 0 || fileNames.length > BATCH_MINT_MAX) {
+      return res.status(400).json({ msg: `fileNames must be an array of 1 to ${BATCH_MINT_MAX} names` });
+    }
+    if (!fileNames.every(isBatchMintName)) {
+      return res.status(400).json({ msg: 'fileNames must be plain upload file names' });
+    }
+    const unique = [...new Set(fileNames as string[])];
+    const userId = req.userId;
+    const allowed = await Promise.all(unique.map((fileName) => canReadAttachment(fileName, userId).catch(() => false)));
+    const urls: Record<string, { url: string; expiresIn: number }> = {};
+    const refused: string[] = [];
+    unique.forEach((fileName, index) => {
+      if (!allowed[index]) {
+        refused.push(fileName);
+        return;
+      }
+      const token = signAttachmentToken(fileName, userId);
+      urls[fileName] = { url: `/api/uploads/${fileName}?t=${encodeURIComponent(token)}`, expiresIn: DEFAULT_TOKEN_TTL_SECONDS };
+      void logAttachmentTokenMint({
+        fileName,
+        userId,
+        ip: req.ip,
+        userAgent: req.get?.('user-agent'),
+      });
+    });
+    return res.json({ urls, refused });
+  } catch (err) {
+    const e = err as { message?: string };
+    console.error('Batch mint signed URLs error:', e.message);
+    return res.status(500).json({ msg: 'Server Error' });
+  }
+});
+
 // ADR-002 Phase 1b: signed-URL mint endpoint. Declared before the bare
 // `:fileName` GET so Express doesn't match `/:fileName/url` as a fileName
 // containing a slash. `mintRateLimit` runs before `auth` because (1) CodeQL's
