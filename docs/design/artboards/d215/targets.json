@@ -87,6 +87,22 @@
   "helperWords": 34,
   "innerRatio": 1.93
  },
+ "activity-busy-1440": {
+  "helperWords": 94,
+  "innerRatio": 1
+ },
+ "activity-busy-390": {
+  "helperWords": 84,
+  "innerRatio": 1.31
+ },
+ "activity-dayzero-1440": {
+  "helperWords": 52,
+  "innerRatio": 1
+ },
+ "activity-dayzero-390": {
+  "helperWords": 53,
+  "innerRatio": 1
+ },
  "firstrun-welcome-1440": {
   "helperWords": 16,
   "innerRatio": 1

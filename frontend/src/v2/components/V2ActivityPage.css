@@ -1,0 +1,342 @@
+/* Activity, built to the approved d215 frames (#s-activity-signal, Sam 11-03,
+   "Build as drawn"). The page is made only of the picked surfaces' blocks:
+   the Connectors head (title, mono count, one .seg, one .sel), mono section
+   labels over one hairline-split list (Settings, Memory), Memory's hover key
+   cluster and Journal's mono time column. Keys, the segment and the head come
+   from the v2p- primitives; the rest are the frame's values on --v2-* tokens
+   (artboard → token: --sf surface, --p bg-subtle, --t surface-tint, --d
+   border-soft, --b border, --mu text-muted, --se text-secondary, --ph
+   text-placeholder, --ink text-primary, --ink2 ink-2, --c accent). */
+
+/* The page owns its pane, like Settings and Connectors: the head stays put and
+   the body scrolls under it. */
+.v2-feature--activity > .v2-feature__body { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.v2-feature--activity .v2-feature__legacy { flex: 1 1 auto; width: 100%; max-width: none; min-height: 0; margin: 0; display: flex; flex-direction: column; }
+.v2-activity { flex: 1 1 auto; min-height: 0; width: 100%; display: flex; flex-direction: column; color: var(--v2-text-primary); }
+
+/* Head: the frame's .ph. The window segment and the scope select sit at its right. */
+.v2-activity__head.v2p-ph { min-width: 0; }
+.v2-activity__controls { display: flex; align-items: center; gap: 10px; flex: none; }
+.v2-activity__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 24px 28px; box-sizing: border-box; }
+.v2-activity__col { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; min-width: 0; }
+
+/* The select key (.sel): a bordered 32px key that names the choice and opens a list. */
+.v2-activity__picker { position: relative; min-width: 0; flex: none; }
+.v2-root button.v2-activity__sel {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  height: 32px;
+  max-width: 220px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 11px;
+  border-radius: var(--v2-r-9);
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border);
+  font: 500 12.5px/1 var(--v2-font);
+  color: var(--v2-ink-2);
+  white-space: nowrap;
+}
+.v2-activity__sel-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.v2-activity__sel svg { flex: none; color: var(--v2-text-muted); }
+.v2-root button.v2-activity__sel:focus-visible { box-shadow: inset 0 0 0 1px var(--v2-border), var(--v2-focus-ring); }
+.v2-root button.v2-activity__sel:disabled { cursor: default; opacity: 0.55; }
+
+/* Popovers: the scope and destination lists, and the phone's ⋯ menu. */
+.v2-activity__menu {
+  position: absolute;
+  z-index: 6;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  gap: 2px;
+  min-width: 180px;
+  max-width: min(300px, 85vw);
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: var(--v2-r-10);
+  background: var(--v2-surface);
+  box-shadow: var(--v2-shadow-pop);
+}
+.v2-root button.v2-activity__menu-item {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: var(--v2-r-7);
+  font: 500 13px/18px var(--v2-font);
+  color: var(--v2-text-primary);
+  overflow-wrap: anywhere;
+}
+.v2-root button.v2-activity__menu-item:hover:not(:disabled) { background: var(--v2-surface-tint); }
+.v2-root button.v2-activity__menu-item.is-active { background: var(--v2-surface-tint); font-weight: 600; }
+.v2-root button.v2-activity__menu-item:focus-visible { box-shadow: var(--v2-focus-ring); }
+.v2-root button.v2-activity__menu-item:disabled { cursor: default; opacity: 0.55; }
+.v2-activity__menu-item svg { flex: none; color: var(--v2-text-secondary); }
+
+/* Composer: Memory's one-line search shape until its text area takes focus, then
+   the open card with Post in ▾, ⌘↵ and Send. Focus is the token ring. */
+.v2-activity__compose {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  margin-bottom: 4px;
+  padding: 0 4px 0 12px;
+  box-sizing: border-box;
+  border-radius: var(--v2-r-10);
+  background: var(--v2-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  color: var(--v2-text-placeholder);
+}
+.v2-activity__compose-icon { display: inline-flex; flex: none; }
+.v2-root .v2-activity__compose textarea {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--v2-text-primary);
+  font: 400 13px/20px var(--v2-font);
+  resize: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.v2-root .v2-activity__compose textarea::placeholder { color: var(--v2-text-placeholder); }
+/* The ring belongs to the composer, not the text area inside it. */
+.v2-root .v2-activity__compose textarea:focus-visible { outline: none; box-shadow: none; }
+.v2-activity__compose-foot { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; }
+.v2-activity__compose-post,
+.v2-activity__compose-sp,
+.v2-activity__kbd,
+.v2-activity__send { display: none; }
+.v2-activity__compose--open {
+  display: block;
+  padding: 12px 10px 10px 14px;
+  border-radius: var(--v2-r-12);
+  background: var(--v2-surface);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+}
+.v2-activity__compose--open:focus-within { box-shadow: inset 0 0 0 1px var(--v2-accent), var(--v2-focus-ring); }
+.v2-activity__compose--open .v2-activity__compose-icon { display: none; }
+.v2-root .v2-activity__compose--open textarea { display: block; width: 100%; height: auto; min-height: 44px; font-size: 14px; line-height: 20px; white-space: pre-wrap; overflow: auto; }
+.v2-activity__compose--open .v2-activity__compose-foot { margin-top: 4px; }
+.v2-activity__compose--open .v2-activity__compose-post { display: inline; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-activity__compose--open .v2-activity__compose-sp { display: block; flex: 1; }
+.v2-activity__compose--open .v2-activity__kbd {
+  display: inline-block;
+  padding: 3px 5px;
+  border-radius: 5px;
+  background: var(--v2-surface);
+  box-shadow: 0 0 0 1px var(--v2-border-soft);
+  font: 500 11px/1 var(--v2-font-mono);
+  color: var(--v2-text-muted);
+}
+.v2-activity__compose--open .v2-activity__send { display: inline-flex; }
+.v2-activity__compose .v2-activity__action-error { flex-basis: 100%; margin-top: 8px; }
+
+/* Section labels: mono, 13px line icon, the order or count on the right edge. */
+.v2-activity__gtitle { display: flex; align-items: center; gap: 8px; margin: 18px 4px 8px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-activity__gtitle svg { flex: none; }
+.v2-activity__gtitle h2 { margin: 0; font: inherit; color: inherit; }
+.v2-activity__gtitle-r { margin-left: auto; white-space: nowrap; }
+.v2-activity__count { font: inherit; }
+
+/* One list per section, split by hairlines. No card stack. */
+.v2-activity__list { border: 1px solid var(--v2-border-soft); border-radius: var(--v2-r-12); background: var(--v2-surface); min-width: 0; }
+.v2-activity__moved-list { overflow: hidden; }
+.v2-activity__list > :first-child { border-top: 0; border-top-left-radius: 11px; border-top-right-radius: 11px; }
+.v2-activity__list > :last-child { border-bottom-left-radius: 11px; border-bottom-right-radius: 11px; }
+
+/* A row: 16px line mark, copy, acts. The title is one line with its pod and age in mono. */
+.v2-activity__queue-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+  padding: 9px 12px 9px 14px;
+  box-sizing: border-box;
+  border-top: 1px solid var(--v2-border-soft);
+}
+.v2-activity__queue-row:focus { outline: none; box-shadow: var(--v2-focus-ring); z-index: 1; }
+.v2-activity__queue-mark { display: inline-flex; align-self: start; margin-top: 2px; width: 16px; height: 16px; color: var(--v2-text-secondary); }
+.v2-activity__queue-copy { min-width: 0; }
+.v2-activity__queue-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.v2-activity__queue-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 13.5px/20px var(--v2-font); color: var(--v2-text-primary); }
+.v2-activity__queue-meta { flex: none; font: 500 11.5px/20px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
+.v2-activity__queue-snip { margin: 1px 0 0; font: 400 12.5px/18px var(--v2-font); color: var(--v2-text-secondary); }
+/* The snippet is one line until the reader opens it (hover, focus or a tap). */
+.v2-root button.v2-activity__queue-detail {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  max-width: 100%;
+  margin-top: 1px;
+  cursor: pointer;
+  font: 400 12.5px/18px var(--v2-font);
+  color: var(--v2-text-secondary);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2-root button.v2-activity__queue-detail--expanded,
+.v2-root button.v2-activity__queue-detail:focus-visible:not(.v2-activity__queue-detail--dismissed),
+.v2-root .v2-activity__queue-row--open button.v2-activity__queue-detail { white-space: normal; overflow-wrap: anywhere; }
+.v2-root button.v2-activity__queue-detail:focus-visible { box-shadow: var(--v2-focus-ring); border-radius: 4px; }
+@media (hover: hover) {
+  .v2-root button.v2-activity__queue-detail:hover:not(:focus):not(.v2-activity__queue-detail--dismissed) { white-space: normal; overflow-wrap: anywhere; }
+}
+
+/* Acts: the row's one key, with the hover cluster before it at desktop. */
+.v2-activity__acts { display: flex; align-items: center; gap: 8px; justify-self: end; }
+.v2-activity__hv { order: -1; display: none; gap: 2px; padding: 2px; border-radius: var(--v2-r-8); background: var(--v2-surface); box-shadow: var(--v2-shadow-pop); }
+.v2-activity__queue-row:hover,
+.v2-activity__queue-row:focus-within { background: var(--v2-bg-subtle); }
+.v2-activity__queue-row:hover .v2-activity__hv,
+.v2-activity__queue-row:focus-within .v2-activity__hv { display: flex; }
+@media (hover: none) {
+  .v2-activity__hv { display: flex; box-shadow: none; padding: 0; }
+}
+.v2-root button.v2-activity__key:disabled,
+.v2-root button.v2-activity__icon-key:disabled,
+.v2-root button.v2-activity__option:disabled,
+.v2-root .v2-activity__editor button:disabled,
+.v2-root button.v2-activity__send:disabled { cursor: default; opacity: 0.55; }
+
+/* The open decision: its choices are 28px keys inside the row, in authored order. */
+.v2-activity__queue-row--open { align-items: start; }
+.v2-activity__queue-row--open .v2-activity__queue-name { white-space: normal; overflow-wrap: anywhere; }
+.v2-activity__keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.v2-activity__option-recommended { font: 500 11px/1 var(--v2-font-mono); color: var(--v2-text-muted); text-transform: lowercase; }
+.v2-activity__option-notes { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 2px; font: 400 12.5px/18px var(--v2-font); color: var(--v2-text-secondary); }
+.v2-activity__option-notes b { font-weight: 600; color: var(--v2-text-primary); }
+.v2-activity__decision-ruled { display: block; margin-top: 2px; font: 500 12.5px/18px var(--v2-font); color: var(--v2-text-secondary); }
+
+/* The reply and Other… editors open inside the row, at the copy's full width. */
+.v2-activity__editor { display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; }
+.v2-root .v2-activity__editor textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 10px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--v2-r-10);
+  background: var(--v2-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--v2-border-soft);
+  color: var(--v2-text-primary);
+  font: 400 13px/18px var(--v2-font);
+  resize: vertical;
+}
+.v2-root .v2-activity__editor textarea:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--v2-accent), var(--v2-focus-ring); }
+.v2-activity__action-error { margin-top: 8px; font: 400 12.5px/18px var(--v2-font); color: var(--v2-danger-text); }
+
+/* Quiet one-liners: an empty section, a load failure, the spinner. */
+.v2-activity__empty { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 11px 14px 11px 42px; font: 400 13px/20px var(--v2-font); color: var(--v2-text-muted); }
+.v2-activity__empty .v2-activity__queue-more { margin-left: auto; }
+.v2-activity__loading { display: grid; place-items: center; min-height: 120px; }
+.v2-activity__error { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border: 1px solid var(--v2-border-soft); border-radius: var(--v2-r-12); font: 400 13px/20px var(--v2-font); color: var(--v2-danger-text); }
+.v2-activity__error .v2-activity__queue-more { margin-left: auto; }
+.v2-activity__foot { display: flex; padding: 10px 4px 0; }
+
+/* Get started: rows like any other group. Checking holds the same rows with bars. */
+.v2-activity__start-bar { display: block; height: 18px; width: 72%; border-radius: var(--v2-r-6); background: var(--v2-surface-tint); }
+.v2-activity__start-bar--title { width: 38%; height: 20px; margin-bottom: 2px; }
+.v2-activity__start-bar--key { width: 120px; height: 28px; border-radius: var(--v2-r-8); }
+
+/* Moved forward: a mono sub-row per pod, then Journal's time column. No table head. */
+.v2-activity__moved-group + .v2-activity__moved-group { border-top: 1px solid var(--v2-border-soft); }
+.v2-activity__moved-head { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-text-secondary); background: var(--v2-bg-subtle); }
+.v2-activity__moved-head span + span { margin-left: auto; color: var(--v2-text-muted); }
+.v2-activity__moved-line { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; padding: 9px 14px; border-top: 1px solid var(--v2-border-soft); font: 400 13.5px/20px var(--v2-font); color: var(--v2-ink-2); }
+.v2-activity__moved-line time { font: 500 11.5px/20px var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; }
+.v2-activity__moved-text { min-width: 0; overflow-wrap: anywhere; }
+/* zh times ("28分钟前") run 49px, so the column widens to keep the 12px gap. */
+.v2-root:lang(zh) .v2-activity__moved-line { grid-template-columns: 52px minmax(0, 1fr); }
+.v2-activity__moved-text strong { font-weight: 600; color: var(--v2-text-primary); }
+.v2-root button.v2-activity__moved-more {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 14px 8px 70px;
+  border-top: 1px solid var(--v2-border-soft);
+  font: 500 12.5px/20px var(--v2-font);
+  color: var(--v2-accent-text);
+}
+.v2-root button.v2-activity__moved-more:hover { background: var(--v2-bg-subtle); }
+.v2-root button.v2-activity__moved-more:focus-visible { box-shadow: inset 0 0 0 2px var(--v2-accent); }
+.v2-activity__moved-cap-note { display: block; padding: 6px 14px 8px 70px; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+
+/* CJK: no negative tracking on the title, and a taller line under wrapped copy. */
+.v2-root:lang(zh) .v2-activity__title { letter-spacing: 0; }
+.v2-root:lang(zh) .v2-activity__empty,
+.v2-root:lang(zh) button.v2-activity__queue-detail--expanded,
+.v2-root:lang(zh) .v2-activity__queue-snip { line-height: 1.6; }
+
+/* 390: the top bar holds the title and count; one 44px control row opens the page;
+   rows and keys sit at the 44px touch floor; the 12px side gutter of the picked pages. */
+@media (max-width: 760px) {
+  .v2-activity__head.v2p-ph { height: 52px; gap: 8px; padding: 0 10px 0 12px; }
+  .v2-activity__head.v2p-ph h1 { font-size: 21px; min-width: 0; flex: none; }
+  .v2-activity__head.v2p-ph .meta { min-width: 0; font: 500 11.5px/1 var(--v2-font-mono); overflow: hidden; text-overflow: ellipsis; }
+  .v2-activity__body { padding: 12px 12px 16px; }
+  .v2-activity__col { gap: 10px; }
+  /* The scope stays one row (#3342, #3329): the segment takes the room, the select keeps its own. */
+  .v2-activity__controls { display: flex; flex-wrap: nowrap; gap: 8px; min-width: 0; }
+  .v2-activity__controls .v2-activity__window { flex: 1 1 auto; display: flex; min-width: 0; }
+  .v2-root .v2-activity__controls .v2-activity__window button { flex: 1 1 0; justify-content: center; height: 40px; }
+  .v2-activity__controls .v2-activity__picker { flex: 0 1 auto; }
+  .v2-root button.v2-activity__sel { height: 44px; max-width: 160px; }
+  /* The destination key keeps the 44px floor, so the line is 52 (the frame draws 44 round a 32 key). */
+  .v2-activity__compose { min-height: 52px; margin: 0; }
+  .v2-activity__compose--open .v2-activity__send { min-height: 44px; }
+  .v2-activity__gtitle { margin: 8px 4px 8px; }
+  .v2-root button.v2-activity__menu-item { min-height: 44px; }
+  .v2-activity__menu { right: 0; }
+  .v2-activity__queue-row { min-height: 60px; padding: 8px 8px 8px 12px; gap: 10px; }
+  .v2-activity__queue-line { display: block; }
+  .v2-activity__queue-name { display: block; white-space: normal; overflow-wrap: anywhere; }
+  .v2-activity__queue-meta { display: block; margin-top: 1px; line-height: 16px; }
+  .v2-root .v2-activity__acts button.v2-activity__key { height: 44px; }
+  .v2-root .v2-activity__acts button.v2-activity__icon-key,
+  .v2-root .v2-activity__more button.v2-activity__more-key { width: 44px; height: 44px; }
+  .v2-activity__more { position: relative; }
+  /* The open decision: the meta follows the snippet, and the keys go full width at 44px. */
+  .v2-activity__queue-row--open { padding: 12px; }
+  .v2-activity__queue-row--open .v2-activity__queue-copy { display: flex; flex-direction: column; }
+  .v2-activity__queue-row--open .v2-activity__queue-line { display: contents; }
+  .v2-activity__queue-row--open .v2-activity__queue-meta { order: 1; }
+  .v2-activity__queue-row--open .v2-activity__keys,
+  .v2-activity__queue-row--open .v2-activity__option-notes,
+  .v2-activity__queue-row--open .v2-activity__editor { order: 2; }
+  .v2-activity__keys { flex-direction: column; }
+  .v2-root .v2-activity__keys button.v2-activity__option { width: 100%; height: 44px; padding: 0 18px; border-radius: var(--v2-r-12); font-size: 14px; }
+  .v2-activity__editor { flex-direction: column; align-items: stretch; }
+  .v2-root .v2-activity__editor button { min-height: 44px; }
+  /* Get started rows open: the step's key goes under its copy, full width. */
+  .v2-activity__start-row { grid-template-columns: 16px minmax(0, 1fr); align-items: start; padding: 12px; }
+  .v2-activity__start-row .v2-activity__acts { grid-column: 2; justify-self: stretch; }
+  .v2-root .v2-activity__start-row .v2-activity__acts button { width: 100%; height: 44px; }
+  .v2-activity__start-row .v2-activity__start-bar--key { width: 100%; height: 44px; }
+  .v2-activity__moved-line { padding: 8px 12px; }
+  .v2-root button.v2-activity__moved-more { min-height: 44px; padding-left: 68px; }
+  .v2-root .v2-activity__foot button { height: 44px; }
+}

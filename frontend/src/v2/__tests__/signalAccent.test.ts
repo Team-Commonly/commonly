@@ -58,7 +58,8 @@ describe('Signal accent on standalone and bridged surfaces', () => {
     ['src/components/landing/guideShell.ts', /accent:\s*'#1d3fd1'/],
     ['src/v2/components/V2FeaturePage.tsx', /accent:\s*'#1d3fd1'/],
     ['design-system/tokens.css', /::selection\s*\{\s*background:\s*rgba\(29, 63, 209, 0\.20\)/],
-    ['src/v2/v2.css', /\.v2-activity__compose:focus-within\s*\{\s*box-shadow: 0 0 0 4px rgba\(29, 63, 209, 0\.10\)/],
+    // The open composer's ring is the focus token, so it shows on the dark ground too (d215 activity).
+    ['src/v2/components/V2ActivityPage.css', /\.v2-activity__compose--open:focus-within \{ box-shadow: inset 0 0 0 1px var\(--v2-accent\), var\(--v2-focus-ring\); \}/],
   ])('%s retains its intended cobalt accent', (name, expected) => {
     expect(read(name as string)).toMatch(expected as RegExp);
   });

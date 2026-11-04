@@ -57,8 +57,7 @@ listed again.
    line, so it excuses one literal, never the rest of the file.
    *Exception:* keyboard notation (`⌘↵`), the reply-aim `↳`, the DM pair `↔`;
    user content (the reaction picker); the parser for the kernel's `🤝` DM
-   event; masked-token bullets; `↵` in the marketing demo. Dated 2026-11-03:
-   `activity.decision.ruled`, left to the Activity redesign owner.
+   event; masked-token bullets; `↵` in the marketing demo.
 7. **A sparkle "AI" icon.** It is the category's cliché, and it names the
    technology rather than the act.
    *Check:* no `AutoAwesome`, `AutoFixHigh`, `Sparkle(s)` or `✨` in v2
@@ -101,9 +100,9 @@ any live app surface. It found one chromatic glow, the logo key, which is drawn.
 | 3 | Frosted glass | `landing/v2-landing.css:87` | the marketing sticky header only | acceptable | guard |
 | 4 | Gradients | 30+ key rules | all d215 a/b key pairs; 4 named masks, track and hatch | acceptable | guard |
 | 5 | Glow | `v2.css` `.v2-rail__brand-icon`, `primitives.css` `.v2p-b-c` | artboard values (`d215/index.html:167`, `:226`) | acceptable | guard |
-| 5 | Focus halo | `v2.css` `.v2-activity__compose:focus-within` | hard-coded `rgba(29,63,209,.10)` 4px, not `--v2-focus-ring`; on the dark ground it is all but invisible (`rgb(138,162,255)` 4px ring with the token, measured on a local build) | real | proposal for the Activity/Artifacts redesign owner |
+| 5 | Focus halo | `v2.css` `.v2-activity__compose:focus-within` | hard-coded `rgba(29,63,209,.10)` 4px, not `--v2-focus-ring`; on the dark ground it is all but invisible (`rgb(138,162,255)` 4px ring with the token, measured on a local build) | real | fixed by the Activity build: the open composer's ring is `var(--v2-focus-ring)` (`components/V2ActivityPage.css`) |
 | 6 | Glyph icons | `en`/`zh-CN`: `inviteModal.connectOwnAgent`, `adminUsers.registered.analyticsLink`, `adminAnalytics.userAdminLink` (`→`), `approvalCard.approved` (`✓`) | strings | real | glyphs dropped from the copy |
-| 6 | Glyph icons | `activity.decision.ruled` (`✓ {{by}} ruled`), shown on Activity and the thread decision card | string | real | proposal for the Activity/Artifacts redesign owner; allowlisted by name and date in the guard |
+| 6 | Glyph icons | `activity.decision.ruled` (`✓ {{by}} ruled`), shown on Activity and the thread decision card | string | real | fixed by the Activity build: the `✓` left both locales and the guard's allowlist |
 | 6 | Glyph icons | `V2PodBoard.tsx` Follow `✓`, `V2LangSwitch.tsx` `✓`, `V2FirstRunHero.tsx` `↗`, `V2Lightbox.tsx` `←`/`→`, `V2SettingsFrame.tsx` `✎` | JSX text | real | SVG glyphs from `icons/glyphs.tsx` (two chevrons added) |
 | 6 | Close and chevron glyphs | `×` on the close buttons in `V2Lightbox`, `V2PodBoard` (focus editor and new task, both with no accessible name), `V2Composer` (reply aim), `V2InviteModal`, `V2CatchUpStrip` and `V2AvatarCropDialog`; `›` in `V2SettingsFrame` | JSX text | real | `ShellGlyph` `close` (added) and `chevron-right`; the two board buttons gained `aria-label` from `common.close` |
 | 6 | Emoji | `V2MessageRow.tsx` reply quote | quoted uploads rendered as `📎 name` | real | an `aria-hidden` SVG file glyph before the name |
@@ -129,11 +128,9 @@ floors burn-down allowlist under a heading dated 2026-11-03, not fixed here.
 
 ### Proposals for the Activity/Artifacts redesign owner
 
-- `.v2-activity__compose:focus-within` should use `var(--v2-focus-ring)`. The
-  hard-coded 10% cobalt halo barely shows in dark mode.
-- Drop the `✓` from `activity.decision.ruled` (en and zh-CN), and the
-  allowlist entry in `v2-slop-tells.test.ts` with it.
-- The Class A note on "Needs you" below.
+- Done for Activity (the d215 build): the composer ring is the token, the `✓`
+  left `activity.decision.ruled`, and "Needs you" is one hairline-split list
+  (the Class A note below).
 
 ### Proposals for UX Lead (Class A, not made here)
 

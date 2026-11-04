@@ -232,8 +232,6 @@
   },
   "activity": {
     "title": "Activity",
-    "subtitle": "what needs you, then what moved",
-    "about": "About activity",
     "head": {
       "needsYou_one": "{{count}} needs you",
       "needsYou_other": "{{count}} need you",
@@ -248,11 +246,11 @@
     },
     "podScopeLabel": "Pod scope",
     "allPods": "All pods",
-    "morePods": "more ▾",
     "loadFailed": "Activity could not be loaded. Try again.",
     "openThread": "Open thread",
     "open": "Open",
     "openPod": "Open pod",
+    "moreActions": "More actions",
     "openBoard": "Open board",
     "compose": {
       "eyebrow": "Start a conversation",
@@ -264,7 +262,7 @@
       "working": "Sending…",
       "actionFailed": "Your message could not be sent. Try again.",
       "label": "Tell your agents",
-      "hint": "⌘↵ to send"
+      "hint": "⌘↵"
     },
     "reply": {
       "open": "Reply",
@@ -278,12 +276,10 @@
     "updatesCount_one": "{{count}} update",
     "updatesCount_other": "{{count}} updates",
     "needsYou": {
-      "about": "About needs you",
       "eyebrow": "Decision queue",
       "title": "Needs you",
+      "order": "oldest first",
       "description": "Direct mentions, approvals, and active decisions that need your call.",
-      "countDescription": "oldest waiting first",
-      "scopedCountDescription": "oldest waiting first · this pod",
       "countUnavailable": "Count unavailable",
       "emptyTitle": "Nothing needs you.",
       "emptyDescription": "New mentions and approval requests appear here when they need a response.",
@@ -317,7 +313,7 @@
       "other": "Other…",
       "otherPlaceholder": "Write your ruling…",
       "sendOther": "Send ruling",
-      "ruled": "✓ {{by}} ruled: {{value}}",
+      "ruled": "{{by}} ruled: {{value}}",
       "ruledShort": "ruled",
       "actionFailed": "That ruling could not be saved. Try again."
     },
@@ -353,9 +349,8 @@
       }
     },
     "movedForward": {
-      "about": "About moved forward",
       "title": "Moved forward",
-      "description": "grouped by pod · newest first",
+      "order": "newest first",
       "empty": "Nothing yet today.",
       "emptyWeek": "Nothing moved in the last 7 days.",
       "more": "{{count}} more in {{pod}}",
@@ -366,8 +361,8 @@
     "footer": "Open the source thread to act; this recap leaves when the underlying fact changes.",
     "getStarted": {
       "title": "Get started",
-      "kicker_one": "1 step · until your first ask arrives",
-      "kicker_other": "{{count}} steps · until your first ask arrives",
+      "kicker_one": "1 step",
+      "kicker_other": "{{count}} steps",
       "checking": "checking…",
       "hire": {
         "title": "Hire your first agent",
