@@ -139,29 +139,56 @@ const labels = (use) => ({
   service: GITHUB_LABEL,
 });
 
+// The checks that decide whether this run may spend Latchkey minutes at all: no
+// fresh hold, a budget start that has begun, and room under the paced budget.
+// Shared by the gate (which keeps the probe itself off Latchkey) and the route.
+const preflight = async (now) => {
+  const holds = await listArtifacts(HOLD_ARTIFACT);
+  const holdMin = Number(env('HOLD_MIN', '60'));
+  if (holdActive(holds, now(), holdMin)) return { ok: false, reason: `a Latchkey hold was recorded in the last ${holdMin} min` };
+
+  const budgetStart = env('BUDGET_START', '');
+  if (!budgetStart || Number.isNaN(Date.parse(budgetStart))) return { ok: false, reason: 'LATCHKEY_BUDGET_START is not set' };
+  // A start in the future would count no runs and leave the budget open.
+  if (Date.parse(budgetStart) > now()) return { ok: false, reason: `LATCHKEY_BUDGET_START (${budgetStart}) has not begun` };
+  const { start, periodMs } = budgetPeriod(now(), budgetStart);
+  const runs = runsSince(await listArtifacts(RUN_ARTIFACT, start), start);
+  const budget = budgetDecision({
+    runs,
+    eqPerRun: Number(env('EQ_PER_RUN', '48')),
+    budgetEqMin: Number(env('BUDGET_EQMIN', '10000')),
+    elapsedMs: now() - Date.parse(start),
+    periodMs,
+  });
+  summary(`Latchkey budget since ${start}: ${runs} runs, about ${budget.used} small-equivalent minutes used; ${Math.floor(budget.allowed)} allowed so far, of ${budget.limit} for the month.`);
+  if (!budget.ok) return { ok: false, reason: 'the Latchkey budget is spent for this point in the month' };
+  return { ok: true };
+};
+
+// Run by the "Latchkey gate" job on GitHub-hosted. The probe lands on a Latchkey
+// runner, so it runs only when this says go; otherwise every heavy push would
+// spend a probe's minutes that the budget never counts.
+export const gate = async ({ now = () => Date.now() } = {}) => {
+  try {
+    const check = await preflight(now);
+    if (!check.ok) summary(`No Latchkey probe: ${check.reason}.`);
+    return output({ go: check.ok });
+  } catch (error) {
+    summary(`No Latchkey probe: the gate failed (${error.message}).`);
+    return output({ go: false });
+  }
+};
+
 export const route = async ({ now = () => Date.now(), wait = sleep } = {}) => {
   const fallback = (reason, hold = false) => {
     summary(`Heavy jobs on GitHub-hosted runners: ${reason}.`);
     output({ ...labels(false), hold });
   };
   try {
-    const holds = await listArtifacts(HOLD_ARTIFACT);
-    const holdMin = Number(env('HOLD_MIN', '60'));
-    if (holdActive(holds, now(), holdMin)) return fallback(`a Latchkey hold was recorded in the last ${holdMin} min`);
-
-    const budgetStart = env('BUDGET_START', '');
-    if (!budgetStart || Number.isNaN(Date.parse(budgetStart))) return fallback('LATCHKEY_BUDGET_START is not set');
-    const { start, periodMs } = budgetPeriod(now(), budgetStart);
-    const runs = runsSince(await listArtifacts(RUN_ARTIFACT, start), start);
-    const budget = budgetDecision({
-      runs,
-      eqPerRun: Number(env('EQ_PER_RUN', '48')),
-      budgetEqMin: Number(env('BUDGET_EQMIN', '10000')),
-      elapsedMs: now() - Date.parse(start),
-      periodMs,
-    });
-    summary(`Latchkey budget since ${start}: ${runs} runs, about ${budget.used} small-equivalent minutes used; ${Math.floor(budget.allowed)} allowed so far, of ${budget.limit} for the month.`);
-    if (!budget.ok) return fallback('the Latchkey budget is spent for this point in the month');
+    // With no probe to wait for, waiting would only end in a false hold.
+    if (env('GATE_GO', 'true') !== 'true') return fallback('the gate kept the probe off Latchkey');
+    const check = await preflight(now);
+    if (!check.ok) return fallback(check.reason);
 
     const pickupSec = Number(env('PICKUP_SEC', '180'));
     const deadline = now() + pickupSec * 1000;
@@ -233,10 +260,11 @@ export const backstop = async ({ now = () => Date.now(), wait = sleep } = {}) =>
 
 if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const mode = process.argv[2];
-  if (mode === 'route') await route();
+  if (mode === 'gate') await gate();
+  else if (mode === 'route') await route();
   else if (mode === 'backstop') await backstop();
   else {
-    console.error('usage: latchkey-route.mjs route|backstop');
+    console.error('usage: latchkey-route.mjs gate|route|backstop');
     process.exit(2);
   }
 }

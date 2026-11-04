@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
+import { gate,
   PROBE_JOB, backstop, budgetDecision, budgetPeriod, heavyJobs, holdActive, probeState, route, runsSince, stuckJobs,
 } from '../latchkey-route.mjs';
 
@@ -199,6 +199,57 @@ test('route falls back without probing when a hold is fresh or the budget is spe
   await h.restore();
 });
 
+// The probe itself lands on a Latchkey runner, so it runs only after a check on
+// GitHub-hosted says the hold and budget allow a Latchkey run. Without the gate
+// the probe ran on every heavy push (about 100 a day) and the budget never
+// counted it (#3440 review).
+test('gate says go only when no hold is fresh and the budget allows a run', async () => {
+  let h = await harness({ BUDGET_EQMIN: '4000', EQ_PER_RUN: '13' }, [[]]);
+  await h.run(gate);
+  assert.deepEqual(await h.out(), { go: 'true' });
+  await h.restore();
+  h = await harness({}, [[]], { 'latchkey-hold': [{ created_at: ago(120), expired: false }] });
+  await h.run(gate);
+  assert.deepEqual(await h.out(), { go: 'false' });
+  await h.restore();
+  h = await harness({ BUDGET_EQMIN: '0' }, [[]]);
+  await h.run(gate);
+  assert.deepEqual(await h.out(), { go: 'false' });
+  await h.restore();
+  h = await harness({ BUDGET_START: '' }, [[]]);
+  await h.run(gate);
+  assert.deepEqual(await h.out(), { go: 'false' });
+  await h.restore();
+});
+
+test('gate says no on an API error', async () => {
+  const h = await harness({}, [[]]);
+  globalThis.fetch = async () => ({ ok: false, status: 502, json: async () => ({}) });
+  await h.run(gate);
+  assert.deepEqual(await h.out(), { go: 'false' });
+  await h.restore();
+});
+
+test('a budget start later than now keeps everything on GitHub', async () => {
+  const later = new Date(NOW + 86400000).toISOString();
+  let h = await harness({ BUDGET_START: later }, [[]]);
+  await h.run(gate);
+  assert.deepEqual(await h.out(), { go: 'false' });
+  await h.restore();
+  h = await harness({ BUDGET_START: later }, [[job(PROBE_JOB, 'in_progress', ['latchkey-small'])]]);
+  await h.run(route);
+  assert.equal((await h.out()).use, 'false');
+  await h.restore();
+});
+
+test('route falls back at once, recording no hold, when the gate kept the probe off', async () => {
+  // A probe that is never picked up would make a waiting route record a hold.
+  const h = await harness({ GATE_GO: 'false', PICKUP_SEC: '60' }, [[job(PROBE_JOB, 'queued', ['latchkey-small'])]]);
+  await h.run(route);
+  assert.deepEqual(await h.out(), { use: 'false', backend: 'ubuntu-latest', frontend: 'ubuntu-latest', service: 'ubuntu-latest', hold: 'false' });
+  await h.restore();
+});
+
 test('route falls back on an API error and when the budget start is unset', async () => {
   let h = await harness({}, [new Error('502')]);
   await h.run(route);
@@ -282,4 +333,15 @@ test('tests.yml keeps frontend and service tests on GitHub-hosted runners', () =
   }
   // The backstop's expected count matches the one routed job.
   assert.match(jobBlock('latchkey-backstop'), /EXPECTED_HEAVY: '1'/);
+});
+
+test('tests.yml runs the probe only when the gate on GitHub-hosted says go', () => {
+  assert.equal(runsOn('latchkey-gate'), 'ubuntu-latest');
+  assert.match(jobBlock('latchkey-gate'), /node scripts\/latchkey-route\.mjs gate/);
+  const probe = jobBlock('latchkey-probe');
+  assert.match(probe, /needs: \[changes, latchkey-gate\]/);
+  assert.match(probe, /needs\.latchkey-gate\.outputs\.go == 'true'/);
+  const route = jobBlock('latchkey-route');
+  assert.match(route, /needs: \[changes, latchkey-gate\]/);
+  assert.match(route, /GATE_GO: \$\{\{ needs\.latchkey-gate\.outputs\.go \}\}/);
 });

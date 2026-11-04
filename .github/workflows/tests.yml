@@ -131,8 +131,8 @@ jobs:
   # changes filter above — D227), so a docs-only merge does not spend Latchkey
   # minutes. Backend shards 2-3, frontend and both service shards always run on
   # GitHub-hosted runners: routing every heavy job spent the month's free
-  # minutes in under a month, and one representative job keeps the burn about a
-  # quarter of that. Every other run — PRs, and the merge_group required check —
+  # minutes in under a month, so one representative job is enough to keep the
+  # path proven. Every other run — PRs, and the merge_group required check —
   # stays on GitHub-hosted runners, which are free on this public repo. The
   # heavy jobs still RUN on push and merge_group regardless (safety net); only
   # the runner shard 1 lands on depends on the route. Unsetting LATCHKEY_HEAVY
@@ -145,10 +145,39 @@ jobs:
   # the time elapsed in it is allowed), and otherwise waits for this probe to be
   # picked up first. The probe is deliberately outside the gate's needs: a held
   # probe must not hold the required check. See docs/runbooks/ci-heavy-runner.md.
-  latchkey-probe:
-    name: Latchkey probe
+  #
+  # The probe itself runs on a Latchkey runner, so the hold and budget checks
+  # run first, on GitHub-hosted, in latchkey-gate. Without it the probe spent
+  # Latchkey minutes on every heavy push (about 100 a day) that the budget never
+  # counted; now a probe runs only on a run the budget allows and counts.
+  latchkey-gate:
+    name: Latchkey gate
     needs: changes
     if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.LATCHKEY_HEAVY == 'on' && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.chart == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.latchkey) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      go: ${{ steps.gate.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/latchkey-route.mjs
+          sparse-checkout-cone-mode: false
+      - id: gate
+        run: node scripts/latchkey-route.mjs gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUDGET_START: ${{ vars.LATCHKEY_BUDGET_START }}
+          BUDGET_EQMIN: ${{ inputs.latchkey_budget_eqmin || vars.LATCHKEY_BUDGET_EQMIN }}
+          EQ_PER_RUN: ${{ vars.LATCHKEY_EQ_PER_RUN }}
+
+  latchkey-probe:
+    name: Latchkey probe
+    needs: [changes, latchkey-gate]
+    if: ${{ needs.latchkey-gate.outputs.go == 'true' }}
     runs-on: ${{ inputs.latchkey_probe_label || vars.LATCHKEY_LIGHT_LABEL || 'latchkey-small' }}
     timeout-minutes: 2
     steps:
@@ -156,7 +185,7 @@ jobs:
 
   latchkey-route:
     name: Latchkey route
-    needs: changes
+    needs: [changes, latchkey-gate]
     if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.LATCHKEY_HEAVY == 'on' && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.chart == 'true')) || (github.event_name == 'workflow_dispatch' && inputs.latchkey) }}
     runs-on: ubuntu-latest
     timeout-minutes: 6
@@ -182,6 +211,7 @@ jobs:
           EQ_PER_RUN: ${{ vars.LATCHKEY_EQ_PER_RUN }}
           PICKUP_SEC: ${{ vars.LATCHKEY_PICKUP_SEC }}
           BACKEND_LABEL: ${{ vars.LATCHKEY_BACKEND_LABEL }}
+          GATE_GO: ${{ needs.latchkey-gate.outputs.go }}
       - if: ${{ steps.route.outputs.hold == 'true' }}
         run: echo "probe not picked up in run ${{ github.run_id }}" > latchkey-hold.txt
       - if: ${{ steps.route.outputs.hold == 'true' }}

@@ -19,9 +19,11 @@ two service shards on small) cost an estimated 48 small-equivalent minutes per
 run. At about 100 heavy pushes to `main` a day, that spent the whole free
 allowance (22,452 minutes) in under a month, and `LATCHKEY_HEAVY` was turned
 off until the monthly reset. One representative job keeps the routing, the
-probe and the backstop exercised on every routed run at about a quarter of the
-cost: shard 1 takes about 4 minutes on medium, which bills at about 12 small-
-equivalent minutes, plus about one for the probe, so about 13 per run.
+probe and the backstop exercised on every routed run: shard 1 takes about 4
+minutes on medium, which bills at about 12 small-equivalent minutes, plus about
+one for the probe, so about 13 per run. The probe runs only on a run the budget
+allows (the gate below), so its minute is inside those 13 and nothing else
+spends Latchkey minutes.
 
 History: before 2026-11-01 this routed on `merge_group`; it moved to push:main
 plus the path filter because the queue ran Latchkey on every entry. Until
@@ -37,12 +39,20 @@ backstop below still cancels the held post-merge run so it does not hang.
 Nothing is sent to Latchkey blind. The logic is `scripts/latchkey-route.mjs`,
 with tests in `scripts/__tests__/latchkey-route.test.mjs`.
 
-1. **Latchkey probe** asks for a `latchkey-small` runner and only echoes. It
-   is not in the gate's needs, so a held probe never holds the required check.
-2. **Latchkey route** (GitHub-hosted) picks GitHub-hosted for shard 1 when:
+1. **Latchkey gate** (GitHub-hosted) runs the hold and budget checks of step
+   3 first, and says go only when they pass. The probe lands on a Latchkey
+   runner and costs minutes, so without this check it ran on every heavy push
+   (about 100 a day) and the budget never counted it, which alone came to about
+   2,800 minutes a month. A gate "no" leaves the probe skipped, and the route
+   falls back at once without recording a hold.
+2. **Latchkey probe** asks for a `latchkey-small` runner and only echoes. It
+   runs only when the gate says go, and it is not in the required check's
+   needs, so a held probe never holds the required check.
+3. **Latchkey route** (GitHub-hosted) picks GitHub-hosted for shard 1 when:
+   - the gate said no;
    - a `latchkey-hold` artifact was recorded in the last 60 minutes;
    - the paced budget is spent for this point in the month, or
-     `LATCHKEY_BUDGET_START` is unset; or
+     `LATCHKEY_BUDGET_START` is unset or later than now; or
    - the probe isn't picked up within 180 s. This case also records a hold.
 
    Otherwise it outputs the Latchkey backend label and records a
@@ -52,7 +62,7 @@ with tests in `scripts/__tests__/latchkey-route.test.mjs`.
    `${{ matrix.shard == 1 && needs.latchkey-route.outputs.backend || 'ubuntu-latest' }}`:
    shards 2 and 3 get `ubuntu-latest`, and so does shard 1 when the route is
    skipped (empty output) or falls back.
-3. **Latchkey backstop** (GitHub-hosted) watches shard 1 once it is routed
+4. **Latchkey backstop** (GitHub-hosted) watches shard 1 once it is routed
    (`EXPECTED_HEAVY: '1'`). If it is still queued after 300 s, it records a
    hold and cancels
    the (post-merge) run instead of letting it hang, and later push-to-main runs
@@ -112,8 +122,9 @@ gh variable delete LATCHKEY_HEAVY --repo Team-Commonly/commonly
 ```
 
 `LATCHKEY_BUDGET_START` can stay at its old value: the period never starts
-before the current month. Set it to a later time only to discard runs already
-counted this month.
+before the current month. Set it to a later time, no later than now, only to
+discard runs already counted this month. A start in the future keeps every run
+on GitHub-hosted until it arrives.
 
 Sizing: 4000 × 0.8 / 13 ≈ 246 routed runs a month, paced to about 8 a day. At
 about 100 heavy pushes a day, most pushes run shard 1 on GitHub-hosted; the
