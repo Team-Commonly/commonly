@@ -50,4 +50,10 @@ describe('GET /api/health — Redis AUTH wiring', () => {
     await request(buildApp()).get('/api/health');
     expect(mockCreateClient).toHaveBeenCalledWith(expect.objectContaining({ password: undefined }));
   });
+
+  it('trims a trailing newline so the client authenticates against an auth-required Redis (the 2026-11-04 WRONGPASS)', async () => {
+    process.env.REDIS_PASSWORD = 's3cret-pw\n';
+    await request(buildApp()).get('/api/health');
+    expect(mockCreateClient).toHaveBeenCalledWith(expect.objectContaining({ password: 's3cret-pw' }));
+  });
 });
