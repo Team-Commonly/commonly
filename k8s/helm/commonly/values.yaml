@@ -248,6 +248,46 @@ opsRunner:
   nodeSelector: {}
   tolerations: []
 
+# Agent computer (templates/agent-computer/): one Steel browser per person who
+# has one, plus the waker the broker calls before it opens that browser. Nothing
+# renders unless backend.env.agentComputerEnabled is "true" AND `users` lists at
+# least one Commonly user id (24 hex). A user id is a production record, so it
+# belongs in the private values overlay, never in a committed values file.
+# Runbook: docs/runbooks/agent-computer-steel.md
+agentComputer:
+  users: []
+  steel:
+    image:
+      repository: ghcr.io/steel-dev/steel-browser
+      # Pinned by digest only (upstream publishes `latest` and nothing else).
+      # Multi-arch index resolved 2026-11-04; its amd64 build is 2026-11-03.
+      digest: "sha256:c94f9ef7f18cf0a2c3c44e5b754119099488f62b4dea411e37459d6281c19799"
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "1Gi"
+      limits:
+        cpu: "1"
+        memory: "2Gi"
+    # Chromium's shared memory. Memory-backed, so it counts toward the limit.
+    shmSizeLimit: "512Mi"
+    # The browser profile (cookies, the one-time sign-in) lives here.
+    persistence:
+      size: 5Gi
+      storageClass: ""
+    nodeSelector: {}
+    tolerations: []
+  waker:
+    port: 8080
+    resources:
+      requests:
+        cpu: "10m"
+        memory: "64Mi"
+      limits:
+        memory: "192Mi"
+    nodeSelector: {}
+    tolerations: []
+
 # Frontend service configuration
 frontend:
   enabled: true

@@ -1,0 +1,158 @@
+{{- /*
+One Steel browser per person (agentComputer.users): a profile disk, a
+Deployment and a ClusterIP Service, all named steel-{userId} to match the
+backend's AGENT_COMPUTER_STEEL_*_URL_TEMPLATE. Only the broker in the backend
+talks to it; agents never get its address (agentComputerBroker.ts).
+*/ -}}
+{{- $users := include "commonly.agentComputer.users" . | fromJsonArray -}}
+{{- if $users }}
+{{- $ns := include "commonly.namespace" . -}}
+{{- $steel := .Values.agentComputer.steel -}}
+---
+# The browser never calls the Kubernetes API. Its own account has no token and
+# no role, and keeps it off any workload-identity binding on `default`.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-computer-steel
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" $ | nindent 4 }}
+    app: agent-computer-steel
+automountServiceAccountToken: false
+{{- range $id := $users }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: steel-{{ $id }}-profile
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" $ | nindent 4 }}
+    app: agent-computer-steel
+    commonly.me/computer-user: {{ $id | quote }}
+  annotations:
+    # The profile holds the person's signed-in session; a helm uninstall or a
+    # dropped user id must not delete it.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with $steel.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $steel.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: steel-{{ $id }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" $ | nindent 4 }}
+    app: agent-computer-steel
+    commonly.me/computer-user: {{ $id | quote }}
+spec:
+  # No replicas field, on purpose. The waker owns scale (it wakes a stopped
+  # browser), and with the field absent from every render helm's three-way
+  # merge leaves a live session alone on upgrade. A new Deployment starts at 1.
+  strategy:
+    # The profile disk is ReadWriteOnce: the old pod must let go of it first.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: agent-computer-steel
+      commonly.me/computer-user: {{ $id | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.labels" $ | nindent 8 }}
+        app: agent-computer-steel
+        commonly.me/computer-user: {{ $id | quote }}
+    spec:
+      serviceAccountName: agent-computer-steel
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: steel
+          image: "{{ $steel.image.repository }}@{{ $steel.image.digest }}"
+          imagePullPolicy: IfNotPresent
+          # The broker reaches CDP through Steel's own WebSocket proxy on the
+          # API port, the path the 10-25 spike proved. The bundled nginx on 9223
+          # forwards the caller's Host header, and Chrome answers /json/version
+          # only for an IP or localhost Host, so it stays off.
+          args: ["--no-nginx"]
+          ports:
+            - name: api
+              containerPort: 3000
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: api
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml $steel.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            # Steel's persistent sessions (the broker always asks persist:true)
+            # keep the profile at <app>/api/user-data-dir.
+            - name: profile
+              mountPath: /app/api/user-data-dir
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: profile
+          persistentVolumeClaim:
+            claimName: steel-{{ $id }}-profile
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ $steel.shmSizeLimit }}
+      {{- with $steel.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $steel.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: steel-{{ $id }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" $ | nindent 4 }}
+    app: agent-computer-steel
+    commonly.me/computer-user: {{ $id | quote }}
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-computer-steel
+    commonly.me/computer-user: {{ $id | quote }}
+  ports:
+    - name: api
+      port: 3000
+      targetPort: api
+      protocol: TCP
+{{- end }}
+{{- end }}

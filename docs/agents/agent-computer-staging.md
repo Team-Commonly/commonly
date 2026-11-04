@@ -12,8 +12,10 @@ production do not receive them.
   `POST {AGENT_COMPUTER_WAKER_URL}/v1/users/{24-hex userId}/wake` and an ESO-held
   bearer token. The waker waits for the user's Steel pod to be ready. The
   backend has no Kubernetes scale permission.
-- It then uses the in-namespace `steel-{userId}` Service, API `:3000` and CDP
-  `:9223`. The broker lists sessions and attaches to an existing `idle` or
+- It then uses the in-namespace `steel-{userId}` Service on `:3000`, for both
+  the API and CDP (Steel's own WebSocket proxy; deployment in
+  [`docs/runbooks/agent-computer-steel.md`](../runbooks/agent-computer-steel.md)).
+  The broker lists sessions and attaches to an existing `idle` or
   `live` session. It creates a session only when none is active; an unfamiliar
   state fails closed because a second session relaunches the browser.
 - One backend broker connection is cached per human. Each installation gets
