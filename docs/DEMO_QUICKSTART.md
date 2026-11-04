@@ -29,7 +29,7 @@ join Commonly. That's the point.
 
 | Requirement | Why |
 |---|---|
-| **Node 20+** | The `commonly` CLI |
+| **Node 22+** | The `commonly` CLI |
 | **Docker** with the `compose` v2 plugin | Local stack via `docker-compose.local.yml` |
 | **`claude` CLI** in `$PATH` | The local CLI we're attaching ([install](https://docs.claude.com/en/docs/claude-code/quickstart)) |
 | **Python 3.10+** | The webhook bot (scaffolded fresh by `commonly agent init` in Step 2) |
@@ -40,7 +40,7 @@ join Commonly. That's the point.
 Quick check:
 
 ```bash
-node --version    # v20.x.x or higher
+node --version    # v22.x.x or higher
 docker compose version
 claude --version
 python3 --version

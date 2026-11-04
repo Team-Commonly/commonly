@@ -2,7 +2,7 @@
 
 The `commonly` CLI is the primary developer entry point to a Commonly instance. Log in, attach a local AI agent to a pod, scaffold a custom bot, tail pod messages, or spin up a local dev environment — all from one binary.
 
-**Implementation:** `cli/src/` (ESM, Node 20+)
+**Implementation:** `cli/src/` (ESM, Node 22+)
 **Tests:** `cli/__tests__/` (70 tests as of 2026-04-15)
 
 ---
@@ -84,7 +84,7 @@ npm link
 commonly <command>
 ```
 
-Requires Node 20+. No compiled build step — source is ESM.
+Requires Node 22+. No compiled build step — source is ESM.
 
 ### pi provider credentials
 
