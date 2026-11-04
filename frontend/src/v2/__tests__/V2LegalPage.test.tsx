@@ -15,14 +15,16 @@ describe('public legal pages (TASK-530)', () => {
     render(<V2PrivacyPage />);
     // F91: hosted agents on Claude Haiku by default; a connected tool's data is
     // sent only there, and what the agent posts from it is ordinary pod content.
-    expect(screen.getByText(/^AI models, reached through our own model gateway: hosted agents run on Anthropic's Claude Haiku unless their owner chose another model\./)).toBeInTheDocument();
+    expect(screen.getByText(/^AI models, reached through our own model gateway: hosted agents run on Anthropic's Claude Haiku\./)).toBeInTheDocument();
     expect(screen.getByText(/what the agent reads from it is sent only to Anthropic\. Anything the agent then posts in a pod is ordinary pod content/)).toBeInTheDocument();
     expect(screen.getByText(/each agent's model processes what that agent reads\./)).toBeInTheDocument();
     // F92: summaries, the connected-chat bot and avatar descriptions moved to
-    // Claude with no fallback. Every other chat model name our gateway serves is
-    // DeepSeek, so DeepSeek is left only behind an owner's own model choice (no
-    // OpenClaw gateway or Codex agent runs on dev, 11-04).
-    expect(screen.getByText(/So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent's avatar\. If an owner picks a model other than Claude for their hosted agent, our gateway serves it with DeepSeek\./)).toBeInTheDocument();
+    // Claude with no fallback. F98: a hosted agent's own model pin no longer
+    // reaches DeepSeek either (the server maps every pin to Claude Haiku), so
+    // the page names no owner choice and no DeepSeek.
+    expect(screen.getByText(/So do the automatic chat summaries, the Commonly bot that summarizes connected chats, and the design description behind an agent's avatar\.$/)).toBeInTheDocument();
+    expect(screen.queryByText(/DeepSeek/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/unless their owner chose/)).not.toBeInTheDocument();
     expect(screen.queryByText(/OpenClaw/)).not.toBeInTheDocument();
     expect(screen.getByText(/^Code sandbox: E2B\./)).toBeInTheDocument();
     // D81: the Workers AI route was removed; the page must not name it.

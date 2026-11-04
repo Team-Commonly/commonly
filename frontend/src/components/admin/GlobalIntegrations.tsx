@@ -45,40 +45,34 @@ const XIcon = () => (
   </svg>
 );
 
-const GEMINI_MODELS = [
-  { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite' },
-  { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-];
-
-const OPENAI_MODELS = [
-  { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
-  { value: 'openai/gpt-4o', label: 'GPT-4o' },
-  { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-  { value: 'openai/gpt-4.1', label: 'GPT-4.1' },
-];
-
-const ANTHROPIC_MODELS = [
-  { value: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6' },
-  { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  { value: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-];
+// F98 (D243, Cofounder 11-04): hosted agents are Claude-only, and the gateway
+// offers Claude Haiku 5.5 only (Sonnet comes later, under a cap). Platform
+// features (llmService) are Claude-only too, but not Haiku-only, and they have
+// no model list here. A stored value that is no longer offered still shows,
+// marked stored, so an admin sees what is saved.
+const HOSTED_MODEL = 'anthropic/claude-haiku-5-5';
 
 // Backend LLM service model options (provider → model list)
-const LLM_SERVICE_MODEL_OPTIONS = {
-  gemini: GEMINI_MODELS,
-};
+const LLM_SERVICE_PROVIDERS = [
+  { value: 'auto', label: 'Auto (LiteLLM then Gemini)' },
+  { value: 'litellm', label: 'LiteLLM' },
+  { value: 'openrouter', label: 'OpenRouter' },
+];
+const LLM_SERVICE_MODEL_OPTIONS = {};
 
 // OpenClaw gateway model options (provider → model list)
+const OPENCLAW_PROVIDERS = [{ value: 'anthropic', label: 'Anthropic' }];
 const OPENCLAW_MODEL_OPTIONS = {
-  google: GEMINI_MODELS,
-  'openai-codex': [
-    { value: 'openai-codex/gpt-5.4', label: 'GPT-5.4 (OAuth)' },
-    { value: 'openai-codex/gpt-5.3-codex', label: 'GPT-5.3 Codex (OAuth, legacy)' },
-  ],
-  openai: OPENAI_MODELS,
-  anthropic: ANTHROPIC_MODELS,
+  anthropic: [{ value: HOSTED_MODEL, label: 'Claude Haiku 5.5' }],
 };
+
+// The offered items, plus the stored value (disabled) when it is not one of them.
+const offeredItems = (options, stored) => [
+  ...(stored && !options.some((option) => option.value === stored)
+    ? [<MenuItem key={`stored-${stored}`} value={stored} disabled>{`${stored} (stored)`}</MenuItem>]
+    : []),
+  ...options.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>),
+];
 
 // Saved tokens never come back from the API; the field is write-only once one is on file.
 const SAVED_TOKEN_PLACEHOLDER = 'Saved \u2014 leave blank to keep';
@@ -103,20 +97,20 @@ const GlobalIntegrations = () => {
   const [modelPolicy, setModelPolicy] = useState({
     llmService: {
       provider: 'auto',
-      model: 'gemini-2.5-flash',
+      model: 'claude-haiku-5-5',
       openrouter: {
         baseUrl: 'https://openrouter.ai/api/v1',
         model: '',
       },
     },
     openclaw: {
-      provider: 'google',
-      model: 'google/gemini-2.5-flash',
-      fallbackModels: ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
+      provider: 'anthropic',
+      model: HOSTED_MODEL,
+      fallbackModels: [],
       devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
       communityAgentModel: {
-        primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-        fallbacks: ['openrouter/arcee-ai/trinity-large-preview:free'],
+        primary: HOSTED_MODEL,
+        fallbacks: [],
       },
     },
   });
@@ -224,29 +218,29 @@ const GlobalIntegrations = () => {
             provider: nextModelPolicy?.llmService?.provider || 'auto',
             model: nextModelPolicy?.llmService?.model
               || nextModelPolicy?.llmService?.defaultModel
-              || 'gemini-2.5-flash',
+              || 'claude-haiku-5-5',
             openrouter: {
               baseUrl: nextModelPolicy?.llmService?.openrouter?.baseUrl || 'https://openrouter.ai/api/v1',
               model: nextModelPolicy?.llmService?.openrouter?.model || '',
             },
           },
           openclaw: {
-            provider: nextModelPolicy?.openclaw?.provider || 'google',
+            provider: nextModelPolicy?.openclaw?.provider || 'anthropic',
             model: nextModelPolicy?.openclaw?.model
               || nextModelPolicy?.openclaw?.defaultModel
-              || 'google/gemini-2.5-flash',
+              || HOSTED_MODEL,
             fallbackModels: Array.isArray(nextModelPolicy?.openclaw?.fallbackModels)
               ? nextModelPolicy.openclaw.fallbackModels
-              : ['google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
+              : [],
             devAgentIds: Array.isArray(nextModelPolicy?.openclaw?.devAgentIds)
               ? nextModelPolicy.openclaw.devAgentIds
               : ['theo', 'nova', 'pixel', 'ops'],
             communityAgentModel: {
               primary: nextModelPolicy?.openclaw?.communityAgentModel?.primary
-                || 'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
+                || HOSTED_MODEL,
               fallbacks: Array.isArray(nextModelPolicy?.openclaw?.communityAgentModel?.fallbacks)
                 ? nextModelPolicy.openclaw.communityAgentModel.fallbacks
-                : ['openrouter/arcee-ai/trinity-large-preview:free'],
+                : [],
             },
           },
         });
@@ -273,7 +267,7 @@ const GlobalIntegrations = () => {
         },
       },
       openclaw: {
-        provider: modelPolicy?.openclaw?.provider || 'google',
+        provider: modelPolicy?.openclaw?.provider || 'anthropic',
         model: modelPolicy?.openclaw?.model || '',
         fallbackModels,
         devAgentIds: Array.isArray(modelPolicy?.openclaw?.devAgentIds)
@@ -882,10 +876,7 @@ const GlobalIntegrations = () => {
                     });
                   }}
                 >
-                  <MenuItem value="auto">Auto (LiteLLM then Gemini)</MenuItem>
-                  <MenuItem value="gemini">Gemini</MenuItem>
-                  <MenuItem value="litellm">LiteLLM</MenuItem>
-                  <MenuItem value="openrouter">OpenRouter</MenuItem>
+                  {offeredItems(LLM_SERVICE_PROVIDERS, modelPolicy.llmService.provider)}
                 </Select>
               </FormControl>
             </Grid>
@@ -902,9 +893,7 @@ const GlobalIntegrations = () => {
                       llmService: { ...modelPolicy.llmService, model: event.target.value },
                     })}
                   >
-                    {LLM_SERVICE_MODEL_OPTIONS[modelPolicy.llmService.provider].map((opt) => (
-                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                    ))}
+                    {offeredItems(LLM_SERVICE_MODEL_OPTIONS[modelPolicy.llmService.provider], modelPolicy.llmService.model)}
                   </Select>
                 </FormControl>
               ) : (
@@ -997,12 +986,7 @@ const GlobalIntegrations = () => {
                     });
                   }}
                 >
-                  <MenuItem value="google">Google (Gemini)</MenuItem>
-                  <MenuItem value="openai-codex">OpenAI Codex (OAuth)</MenuItem>
-                  <MenuItem value="openrouter">OpenRouter</MenuItem>
-                  <MenuItem value="openai">OpenAI</MenuItem>
-                  <MenuItem value="anthropic">Anthropic</MenuItem>
-                  <MenuItem value="custom">Custom</MenuItem>
+                  {offeredItems(OPENCLAW_PROVIDERS, modelPolicy.openclaw.provider)}
                 </Select>
               </FormControl>
             </Grid>
@@ -1022,9 +1006,7 @@ const GlobalIntegrations = () => {
                       },
                     })}
                   >
-                    {OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider].map((opt) => (
-                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                    ))}
+                    {offeredItems(OPENCLAW_MODEL_OPTIONS[modelPolicy.openclaw.provider], modelPolicy.openclaw.model)}
                   </Select>
                 </FormControl>
               ) : (
@@ -1044,13 +1026,6 @@ const GlobalIntegrations = () => {
                 />
               )}
             </Grid>
-            {modelPolicy.openclaw.provider === 'openai-codex' && (
-              <Grid item xs={12}>
-                <Alert severity="info" sx={{ py: 0.5 }}>
-                  Codex requires OAuth tokens in the K8s Secret <code>api-keys</code>. Gemini fallbacks are applied automatically on reprovision.
-                </Alert>
-              </Grid>
-            )}
             <Grid item xs={12}>
               <TextField
                 label="Dev Agent Fallback Models"
@@ -1108,7 +1083,7 @@ const GlobalIntegrations = () => {
                 })}
                 fullWidth
                 size="small"
-                helperText="Primary model for agents not in Dev Agent IDs. Example: openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+                helperText="Primary model for agents not in Dev Agent IDs. Hosted agents run on anthropic/claude-haiku-5-5."
               />
             </Grid>
             <Grid item xs={12}>

@@ -57,13 +57,52 @@ describe('LiteLLM routes no request to a provider that is switched off', () => {
     found.forEach(({ i }) => expect(gateAbove(i)).toBe('{{- if .Values.aiProviders.openai.enabled }}'));
   });
 
-  test.each(['gemini-2.5-flash', 'google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash', 'gpt-4o'])(
-    '%s keeps its name and is served by DeepSeek when its provider is off',
-    (name) => {
-      const at = lines.findIndex((l) => l.trim() === `- model_name: ${name}`);
-      expect(at).toBeGreaterThan(-1);
-      const block = lines.slice(at + 1, lines.findIndex((l, k) => k > at && l.trim().startsWith('- model_name:'))).join('\n');
-      expect(block).toMatch(/\{\{- else \}\}\s*\n\s*model: deepseek\/deepseek-v4-flash\s*\n\s*api_key: os\.environ\/DEEPSEEK_API_KEY/);
-    },
-  );
+});
+
+// F98 (D243, Cofounder 11-04): hosted agents are Claude-only, and a name that
+// answers with another vendor's model gives its caller that model with no
+// signal. The 7-day spend log to 11-04 showed no call to any of these names,
+// so each is gone or exists only where its own provider is on: a caller now
+// gets an unknown-model error instead of a silent stand-in.
+const entries = () => lines.map((l, i) => ({ l: l.trim(), i }))
+  .filter(({ l }) => l.startsWith('- model_name:'))
+  .map(({ l, i }) => ({ name: l.replace('- model_name:', '').trim(), i }));
+const blockOf = (at) => {
+  const next = lines.findIndex((l, k) => k > at && /^\s*- model_name:|^\s*router_settings:/.test(l));
+  return lines.slice(at + 1, next === -1 ? undefined : next).join('\n');
+};
+
+describe('no other vendor\'s name is served by DeepSeek', () => {
+  test('every entry that reaches DeepSeek is named for DeepSeek', () => {
+    const offenders = entries()
+      .filter(({ i }) => /model:\s*deepseek\//.test(blockOf(i)))
+      .map(({ name }) => name)
+      .filter((name) => !name.startsWith('deepseek-'));
+    expect(offenders).toEqual([]);
+  });
+
+  test.each([
+    'openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'nvidia/nemotron-3-super-120b-a12b:free',
+    'gpt-5.4', 'openai-codex/gpt-5.4', 'gpt-5.4-mini', 'openai-codex/gpt-5.4-mini', 'gpt-5.4-nano',
+    'openai-codex/gpt-5.4-nano', 'codex-mini-latest', 'o4-mini', 'codex-cli/gpt-5.4',
+  ])('%s is gone, and no fallback names it', (name) => {
+    expect(entries().map((entry) => entry.name)).not.toContain(name);
+    expect(lines.some((l) => l.includes(`"${name}"`))).toBe(false);
+  });
+
+  test.each([
+    ['gemini-2.5-flash', 'gemini'], ['google/gemini-2.5-flash', 'gemini'], ['google/gemini-2.5-flash-lite', 'gemini'],
+    ['google/gemini-2.0-flash', 'gemini'], ['gpt-4o', 'openai'],
+  ])('%s exists only where %s is on', (name, provider) => {
+    const at = lines.findIndex((l) => l.trim() === `- model_name: ${name}`);
+    expect(at).toBeGreaterThan(-1);
+    expect(gateAbove(at)).toBe(`{{- if .Values.aiProviders.${provider}.enabled }}`);
+    expect(blockOf(at)).not.toMatch(/deepseek/);
+  });
+
+  test('a Gemini fallback exists only where Gemini is on', () => {
+    lines.forEach((l, i) => {
+      if (/^\s*- \{"(gemini-|google\/)/.test(l)) expect(gateAbove(i)).toBe('{{- if .Values.aiProviders.gemini.enabled }}');
+    });
+  });
 });

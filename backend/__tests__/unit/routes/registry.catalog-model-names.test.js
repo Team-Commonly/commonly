@@ -15,6 +15,28 @@ describe('catalog model names', () => {
     expect(offenders).toEqual([]);
   });
 
+  // F98 (D243, Cofounder 11-04): hosted agents are Claude-only, and the catalog
+  // offers Haiku only (Sonnet comes later, under a cap). Legacy pins still run:
+  // nativeModelFor maps them server-side. These fields are what the catalog says.
+  const HOSTED_MODEL = 'claude-haiku-5-5';
+
+  it('every preset that recommends a model recommends the hosted model', () => {
+    const offenders = PRESET_DEFINITIONS
+      .filter((p) => p.recommendedModel !== undefined && p.recommendedModel !== HOSTED_MODEL)
+      .map((p) => `${p.id}: ${p.recommendedModel}`);
+    expect(offenders).toEqual([]);
+  });
+
+  it('every published manifest supports and recommends only the hosted model', () => {
+    const src = fs.readFileSync(path.join(__dirname, '../../../routes/registry/publish.ts'), 'utf8');
+    const blocks = [...src.matchAll(/models:\s*\{[\s\S]*?supported:\s*\[([^\]]*)\][\s\S]*?recommended:\s*'([^']*)'/g)];
+    expect(blocks.length).toBeGreaterThanOrEqual(2);
+    blocks.forEach(([, supported, recommended]) => {
+      expect([...supported.matchAll(/'([^']+)'/g)].map((m) => m[1])).toEqual([HOSTED_MODEL]);
+      expect(recommended).toBe(HOSTED_MODEL);
+    });
+  });
+
   it('the published openclaw manifest lists no GPT or openai-codex model', () => {
     const src = fs.readFileSync(path.join(__dirname, '../../../routes/registry/publish.ts'), 'utf8');
     const models = src.match(/name: 'openclaw',[\s\S]*?models:\s*\{[\s\S]*?supported:\s*\[([^\]]*)\][\s\S]*?recommended:\s*'([^']*)'/);
