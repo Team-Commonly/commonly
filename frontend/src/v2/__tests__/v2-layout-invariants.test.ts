@@ -1077,8 +1077,24 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // never decide the canvas color. Keep the literal in lockstep with
     // --v2-page-bg (tokens don't reach body — it sits outside .v2-root).
     expect(v2).toContain('body.modern-ui.v2-canvas');
-    expect(v2).toMatch(/body\.v2-canvas,\nbody\.modern-ui\.v2-canvas \{[\s\S]*?background: #f8f8fb/);
-    expect(v2).toContain('--v2-page-bg: #eef0f4');
+    // 11-04 (consistency audit, finding 12): the canvas IS --v2-page-bg, in
+    // both themes. It was #f8f8fb in both, so a dark page rubber-banded onto a
+    // light body. Each literal is read against the token of its own theme set,
+    // so a token change that leaves the body behind reds here.
+    const pageBg = (block: string): string => /--v2-page-bg:\s*(#[0-9a-f]{6})/i.exec(block)?.[1] ?? 'missing';
+    const lightPageBg = pageBg(ruleBody(v2, '.v2-root'));
+    const darkPageBg = pageBg(ruleBody(v2, ':root[data-v2-theme="dark"] .v2-root'));
+    const autoDarkPageBg = pageBg(blockContaining(v2, '@media (prefers-color-scheme: dark)', ':root:not([data-v2-theme="light"]) .v2-root {'));
+    expect(lightPageBg).toBe('#eef0f4');
+    expect(darkPageBg).toBe('#0b0e13');
+    expect(autoDarkPageBg).toBe(darkPageBg);
+    const canvasBg = (block: string): string => /background:\s*(#[0-9a-f]{6})/i.exec(block)?.[1] ?? 'missing';
+    expect(canvasBg(ruleBody(v2, 'body.v2-canvas,\nbody.modern-ui.v2-canvas'))).toBe(lightPageBg);
+    const explicitDark = ruleBody(v2, ':root[data-v2-theme="dark"] body.v2-canvas,\n:root[data-v2-theme="dark"] body.modern-ui.v2-canvas');
+    expect(canvasBg(explicitDark)).toBe(darkPageBg);
+    expect(explicitDark).toContain('color-scheme: dark');
+    const autoDark = blockContaining(v2, '@media (prefers-color-scheme: dark)', ':root:not([data-v2-theme="light"]) body.v2-canvas');
+    expect(canvasBg(ruleBody(autoDark, '  :root:not([data-v2-theme="light"]) body.v2-canvas,\n  :root:not([data-v2-theme="light"]) body.modern-ui.v2-canvas'))).toBe(darkPageBg);
     // The flash half of the same bug: App.css's BARE body rule painted every
     // load dark before React could stamp any class. The dark default is
     // V1-scoped under body.modern-ui; the bare default matches v2's canvas.
@@ -1086,7 +1102,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The standalone `body {` rule, not the `html,\nbody {` reset above it —
     // hence the no-comma-before lookbehind.
     const bareBody = appCss.match(/(?<!,)\nbody \{([^}]*)\}/)?.[1] ?? '';
-    expect(bareBody).toContain('background-color: #f8f8fb');
+    expect(bareBody).toContain(`background-color: ${lightPageBg}`);
     expect(bareBody).not.toContain('#0b1220');
     expect(ruleBody(appCss, 'body.modern-ui')).toContain('#0b1220');
     // The render-time half: MUI CssBaseline injects the V1 palette's dark
@@ -4170,6 +4186,17 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
     );
     expect(frameBody).toContain('padding-left: max(24px, calc((100% - 1312px) / 2))');
     expect(frameBody).toContain('padding-right: max(24px, calc((100% - 1312px) / 2))');
+    // At ≤760 the floor is the app's 12px phone gutter (README Layout rules,
+    // 11-04 rulings), on the SAME selector list, so no band keeps 24 at 390.
+    const phone = mediaAt(landing, '@media (max-width: 760px) {');
+    const listAt = phone.indexOf('  .v2-landing__bar,');
+    const phoneList = phone.slice(listAt, phone.indexOf('{', listAt)).replace(/\s+/g, ' ').trim();
+    const pageList = landing.slice(frameStart, landing.indexOf('{', frameStart))
+      .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\s+/g, ' ').trim();
+    expect(phoneList).toBe(pageList);
+    const phoneBody = blockAt(phone, listAt);
+    expect(phoneBody).toContain('padding-left: max(12px, calc((100% - 1312px) / 2))');
+    expect(phoneBody).toContain('padding-right: max(12px, calc((100% - 1312px) / 2))');
     // ...and no section keeps the old 1120 cap, or the page has two measures
     // and which one wins depends on the section.
     expect(landing).not.toContain('1120');
@@ -4232,16 +4259,9 @@ describe('TASK-167 row A — the landing hero onto Signal', () => {
   test('the hero CTA is white on cobalt; the bar\'s stays primary on white', () => {
     // --primary measured cobalt on cobalt: only the label showed (finding 2).
     expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--onaccent" to={appHref}>{primaryLabel}');
-    // Row E joins these two rules with the CTA band's own buttons, so the
-    // selector list's tail is optional rather than one literal line.
-    expect(landing).toMatch(
-      /\.v2-landing__hero-actions \.v2-landing__btn--onaccent(?:,\n\.v2-landing__cta \.v2-landing__btn--primary)? \{ padding: 0 26px; font-weight: 700; \}/,
-    );
-    const small = mediaAt(landing, '@media (max-width: 680px) {');
-    expect(small).toMatch(
-      /\.v2-landing__hero-actions \.v2-landing__btn--onaccent(?:,\n  \.v2-landing__cta \.v2-landing__btn--primary)? \{ padding: 0 20px; font-size: 16px; \}/,
-    );
-    expect(small).toContain('.v2-landing__hero-actions .v2-landing__btn--onaccent-ghost { padding: 0 18px; font-size: 16px; }');
+    // Size is the base key's (11-04, finding 13): the hero no longer carries
+    // 56px buttons, here or in the phone block.
+    expect(landing).not.toMatch(/\.v2-landing__hero-actions \.v2-landing__btn[^{]*\{[^}]*(height|padding|font-size)/);
     // The bar CTA sits on the page's white ground and keeps the fill.
     expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--primary v2-landing__btn--sm" to={appHref}');
   });
@@ -4418,8 +4438,10 @@ describe('TASK-167 row B — trusted, wedge and In action onto Signal', () => {
     const label = selectorRuleBody(landing, '.v2-landing__trusted-label {');
     expect(label).toContain('font-family: var(--v2-font-mono)');
     expect(label).toContain('font-weight: 500');
-    expect(label).toContain('letter-spacing: 0.06em');
-    expect(label).toContain('text-transform: uppercase');
+    // Sentence case, untracked: the hero eyebrow is the landing's one
+    // uppercase label (11-04, finding 14; slop-tells tell 9).
+    expect(label).not.toContain('letter-spacing');
+    expect(label).not.toContain('text-transform');
   });
 
   test('the phone halves of the marquee move together, or the loop jumps', () => {
@@ -4608,7 +4630,8 @@ describe('TASK-167 row C — How it works, Why open source and What you get onto
     expect(landing).toContain('.v2-landing__open-item + .v2-landing__open-item { border-top: 1px solid var(--v2-border-soft); }');
     // Row A's fill belongs to the hero; row D's cobalt belongs to Pro.
     expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--ghost" href={REPO}');
-    expect(topLevelRuleBody(landing, '.v2-landing__open .v2-landing__btn')).toContain('height: 48px');
+    // Base key size: no section sizes its own button (finding 13).
+    expect(topLevelRuleBody(landing, '.v2-landing__open .v2-landing__btn')).toBe('');
   });
 
   test('the value cards are bordered and their icons are gone', () => {
@@ -4799,14 +4822,12 @@ describe('TASK-167 row D — Use cases, Architecture, the proof panel and Pricin
     const featured = topLevelRuleBody(landing, '.v2-landing__tier--featured');
     expect(featured).toContain('border: 2px solid var(--v2-accent)');
     expect(featured).toContain('padding: 31px');
-    expect(landing).toContain(
-      '.v2-landing__tier--featured .v2-landing__btn { font-weight: 700; }',
-    );
+    // Pro's button is cobalt by colour, at the base key's size and weight.
+    expect(landing).not.toContain('.v2-landing__tier--featured .v2-landing__btn');
     expect(topLevelRuleBody(landing, '.v2-landing__tier')).toContain('padding: 32px');
     const btn = landing.match(/\.v2-landing__tier \.v2-landing__btn \{[^}]*\}/)?.[0] ?? '';
-    expect(btn).toContain('height: 48px');
-    expect(btn).toContain('padding: 0 20px');
-    expect(btn).toContain('font-size: 16px');
+    expect(btn).toContain('width: 100%');
+    expect(btn).not.toMatch(/height|padding|font-size/);
   });
 
   test('the enterprise row is a bordered grid, and the price foot is left-aligned', () => {
@@ -5000,8 +5021,8 @@ describe('TASK-167 row E — the closing CTA and the footer onto Signal', () => 
     expect(title).toContain('font-size: 12px');
     expect(title).toContain('line-height: 20px');
     expect(title).toContain('font-weight: 500');
-    expect(title).toContain('letter-spacing: 0.06em');
-    expect(title).toContain('text-transform: uppercase');
+    expect(title).not.toContain('letter-spacing');
+    expect(title).not.toContain('text-transform');
     expect(title).toContain('color: var(--v2-text-primary)');
     expect(title).toContain('margin-bottom: 4px');
   });
@@ -5024,9 +5045,9 @@ describe('TASK-167 row E — the closing CTA and the footer onto Signal', () => 
   });
 
   test('the close joins row A\'s button rules instead of restating them', () => {
-    expect(landing).toContain('.v2-landing__cta .v2-landing__btn { height: 56px; font-size: 17px; }');
-    expect(landing).toContain('.v2-landing__cta .v2-landing__btn--primary { padding: 0 26px; font-weight: 700; }');
-    expect(landing).toContain('.v2-landing__cta .v2-landing__btn--ghost { padding: 0 22px; }');
+    // ...which, since 11-04 (finding 13), means the base key: the close has
+    // no size rule of its own.
+    expect(landing).not.toContain('.v2-landing__cta .v2-landing__btn');
     // The section's one cobalt button, on the page's white: base colours.
     expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--primary" to={appHref}>{primaryLabel}');
     expect(landingTsx).toContain('v2-landing__btn v2-landing__btn--ghost" href={REPO}');
@@ -5043,8 +5064,6 @@ describe('TASK-167 row E — the closing CTA and the footer onto Signal', () => 
     const phone = mediaAt(landing, '@media (max-width: 680px)');
     expect(phone).toContain('.v2-landing__cta { padding-top: 48px; padding-bottom: 48px; gap: 20px; }');
     expect(phone).toContain('.v2-landing__cta-title { font-size: 36px; line-height: 38px; }');
-    expect(phone).toContain('.v2-landing__cta .v2-landing__btn { height: 48px; }');
-    expect(phone).toContain('.v2-landing__cta .v2-landing__btn--ghost { padding: 0 18px; font-size: 16px; }');
     expect(phone).toContain('.v2-landing__footer { padding-top: 32px; }');
     expect(phone).toContain('.v2-landing__footer-legal { padding: 16px 0 20px; }');
     // The old phone gaps are gone: the 900 block carries the column gaps now,
@@ -6069,5 +6088,68 @@ describe('Activity built to the d215 signal frames (#s-activity-signal)', () => 
     expect(phone).toMatch(/button\.v2-activity__option \{ width: 100%; height: 44px;/);
     expect(phone).toContain('.v2-root button.v2-activity__menu-item { min-height: 44px; }');
     expect(phone).toContain('.v2-activity__compose { min-height: 52px;');
+  });
+});
+
+// 11-04 consistency pass, shell edges and front door (audit findings 9, 13 and
+// the 12px phone gutter). Each block pins the rule a real-browser capture
+// measured, because jsdom cannot see a height, a radius or a gutter.
+describe('front door keys, auth gutter and the shell state line (11-04)', () => {
+  const v2 = readV2Css();
+  const landing = read('../landing/v2-landing.css');
+  const demo = read('../landing/demo-workspace.css');
+  const memory = read('../agents/V2AgentMemory.css');
+
+  test('every landing button is an auth key: 40 at r10, 44 on phones', () => {
+    const base = topLevelRuleBody(landing, '.v2-landing__btn');
+    expect(base).toContain('height: 40px');
+    expect(base).toContain('border-radius: var(--v2-r-10, 10px)');
+    expect(base).toContain('font-size: 14px');
+    expect(base).toContain('font-weight: 600');
+    // The auth keys it copies (v2.css): same height and radius.
+    const submit = ruleBody(v2, '.v2-root button.v2-login__submit');
+    expect(submit).toContain('height: 40px');
+    expect(submit).toContain('border-radius: var(--v2-r-10, 10px)');
+    // The fill is the cobalt key pair, the bordered one the grey key.
+    expect(topLevelRuleBody(landing, '.v2-landing__btn--primary'))
+      .toContain('linear-gradient(180deg, var(--v2-accent-fill-a), var(--v2-accent-fill-b))');
+    const ghost = topLevelRuleBody(landing, '.v2-landing__btn--ghost');
+    expect(ghost).toContain('linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b))');
+    expect(ghost).toContain('border: 1px solid var(--v2-key-edge)');
+    expect(landing).not.toMatch(/\.v2-landing__btn--sm \{/);
+    // No section sizes its own button: one height on the page, one on phones.
+    const heights = Array.from(landing.matchAll(/\.v2-landing__btn[^{]*\{[^}]*\bheight:\s*(\d+)px/g), (m) => m[1]);
+    expect(heights.sort()).toEqual(['40', '44']);
+    const phone = mediaAt(landing, '@media (max-width: 760px) {');
+    expect(phone).toContain('.v2-landing__btn { height: 44px; font-size: 16px; }');
+  });
+
+  test('the demo\'s decision choices are keys too, scoped to the demo', () => {
+    const choice = ruleBody(demo, '.v2-root .v2-demo__card button.v2-decision-card__choice');
+    expect(choice).toContain('min-height: 40px');
+    expect(choice).toContain('border-radius: var(--v2-r-10, 10px)');
+    expect(ruleBody(demo, '.v2-root .v2-demo__card button.v2-decision-card__choice--primary'))
+      .toContain('linear-gradient(180deg, var(--v2-accent-fill-a), var(--v2-accent-fill-b))');
+    expect(blockContaining(demo, '@media (max-width: 760px)', 'v2-demo__card button.v2-decision-card__choice'))
+      .toContain('.v2-root .v2-demo__card button.v2-decision-card__choice { min-height: 44px;');
+  });
+
+  test('the auth pages sit on the 12px phone gutter', () => {
+    const phone = blockContaining(v2, '@media (max-width: 480px)', '.v2-login__card {');
+    expect(ruleBody(phone, '  .v2-login__card')).toContain('padding: 28px 12px');
+  });
+
+  test('the shell state line is memory\'s p.v2m-state grammar', () => {
+    const state = ruleBody(v2, '.v2-state');
+    const ref = ruleBody(memory, '.v2m-state');
+    for (const decl of ['font-size: 13.5px', 'color: var(--v2-text-secondary)', 'margin: 0']) {
+      expect(ref).toContain(decl);
+      expect(state).toContain(decl);
+    }
+    // No icon, no red: the rule carries no danger colour and no background.
+    expect(state).not.toMatch(/danger|#ef4444|background|border/);
+    const gate = read('../../components/ProtectedRoute.tsx');
+    expect(gate).not.toContain('@mui/material');
+    expect(gate.match(/className="v2-state"/g) || []).toHaveLength(2);
   });
 });

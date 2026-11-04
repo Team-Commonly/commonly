@@ -70,7 +70,14 @@ listed again.
    decision. One above every section is a template.
    *Check:* every `text-transform: uppercase` rule is on a named list (tell
    9). A new one is a design call and lands there by name.
-   *Exception:* the 11 app badges and kickers plus 6 landing labels on the list.
+   *Exception:* the 11 app badges and kickers on the list, and on the landing
+   one eyebrow, the hero's `.v2-landing__eyebrow` (open source, the licence),
+   plus the FAQ's `::first-letter` capital. Corrected 2026-11-04: this line
+   said 6 landing labels and the sweep below said "the landing uses one
+   eyebrow", but the live page showed 15 tracked uppercase kickers and labels
+   plus 3 tier names and 4 footer heads. The section kickers, the trusted line,
+   the tier names and the footer heads are now sentence-case mono with no
+   tracking, and a second guard holds the landing to its one.
 10. **Oversized radii on dense UI.** 20–32px pills on rows and cards read as a
     mobile template.
     *Check:* no `border-radius` past 16px except pills (≥ 999px) (tell 10).
@@ -108,7 +115,7 @@ any live app surface. It found one chromatic glow, the logo key, which is drawn.
 | 6 | Emoji | `V2MessageRow.tsx` reply quote | quoted uploads rendered as `📎 name` | real | an `aria-hidden` SVG file glyph before the name |
 | 7 | Sparkle | none | 0 hits | clean | guard |
 | 8 | Purple | `v2.css` `--v2-violet`, `#611f69`; `chat-states.css` merged `#6f42c1` | role tint, Slack token, GitHub state | acceptable | guard |
-| 9 | Eyebrows | 11 app rules, 6 landing | badges and kickers (LEAD, PR state, approval badge, table heads); the landing uses one eyebrow | acceptable | ratchet guard |
+| 9 | Eyebrows | 11 app rules, 6 landing | badges and kickers (LEAD, PR state, approval badge, table heads). The landing claim was wrong: commonly.me rendered 22 uppercase labels, 15 of them tracked eyebrows and kickers (11-04 audit, finding 14) | real (corrected 2026-11-04) | the landing keeps one, the hero eyebrow; the rest are sentence-case mono; ratchet guard plus a landing-only guard |
 | 9 | (floor) | `.v2-aprofile__runtime`, `.v2-approval__badge` | mono at 10.5px, under the 11px floor | real | 11px |
 | 10 | Big radii | none over 16px | `.v2-first-run` at 16px is the d215 pop surface | clean | guard |
 | 11 | Same weight | Your Team (42 cards), Activity "Needs you" (408 bordered cards), Connectors tiles | screenshots `team-1440-*`, `activity-1440-*`, `connectors-1440-*` | real, Class A | proposal below |

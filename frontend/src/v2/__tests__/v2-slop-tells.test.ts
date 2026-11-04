@@ -265,15 +265,31 @@ describe('AI-slop tells (docs/design/ai-slop-tells.md)', () => {
         'components/V2YourTeamPage.css :: .v2-team .v2-team-card__mark',
         'landing/v2-landing.css :: .v2-landing__eyebrow',
         'landing/v2-landing.css :: .v2-landing__faq-item dt::first-letter',
-        'landing/v2-landing.css :: .v2-landing__footer-title',
-        'landing/v2-landing.css :: .v2-landing__kicker',
-        'landing/v2-landing.css :: .v2-landing__tier-name',
-        'landing/v2-landing.css :: .v2-landing__trusted-label',
         'v2.css :: .v2-admin-analytics__chart-title',
         'v2.css :: .v2-admin-users__table th',
         'v2.css :: .v2-avatar',
       ],
     );
+  });
+
+  test('tell 9: the landing keeps ONE uppercase eyebrow', () => {
+    // 11-04 (audit finding 14): the landing had four tracked uppercase labels
+    // above its sections (IN ACTION, NEEDS YOU, OPEN-SOURCE · APACHE, TRUSTED BY
+    // PEOPLE) plus uppercase tier names and footer heads. The hero's credential
+    // is the one that earns its place; the rest are sentence-case mono. The
+    // ::first-letter rule only capitalises an FAQ question's first letter.
+    const landing = RULES
+      .filter((rule) => key(rule).startsWith('landing/'))
+      .filter((rule) => /text-transform:\s*uppercase/.test(rule.body))
+      .map(key)
+      .filter((k) => !k.endsWith('::first-letter'));
+    expect(landing).toEqual(['landing/v2-landing.css :: .v2-landing__eyebrow']);
+    // And no landing label keeps the tracking that went with the uppercase.
+    const tracked = RULES
+      .filter((rule) => key(rule).startsWith('landing/'))
+      .filter((rule) => /letter-spacing:\s*0\.0[4-9]em/.test(rule.body))
+      .map(key);
+    expect(tracked).toEqual(['landing/v2-landing.css :: .v2-landing__eyebrow']);
   });
 
   test('tell 10: no radius past the 16px pop surface, except pills', () => {
