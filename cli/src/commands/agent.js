@@ -73,6 +73,7 @@ import {
   ADAPTERS_WITH_DEFAULT_MCP,
   ADAPTERS_WITH_GRANT_BROKER,
   ADAPTERS_WITH_DEFAULT_SANDBOX,
+  ADAPTERS_WITH_SANDBOX_ENFORCEMENT,
   defaultMcpServers,
   seatBaseline,
   withDefaultMcpServer,
@@ -1151,7 +1152,7 @@ export const resolveAttachSandbox = ({
   // pure — a mode and an adapter name — so it belongs with the derivation, and
   // its witnesses live beside it.
   if ((mode === 'workspace' || mode === 'read-only')
-    && (!confined || !ADAPTERS_WITH_DEFAULT_SANDBOX.has(adapterName))) {
+    && (!confined || !ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has(adapterName))) {
     throw new Error(
       `sandbox.mode=${mode} requires public trust and an adapter with sandbox enforcement`,
     );

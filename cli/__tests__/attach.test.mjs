@@ -46,7 +46,9 @@ const {
   resolveAttachSandbox,
   assertSandboxDeclaredForPublicPod,
 } = await import('../src/commands/agent.js');
-const { ADAPTERS_WITH_GRANT_BROKER, seatBaseline } = await import('../src/lib/default-environment.js');
+const {
+  ADAPTERS_WITH_DEFAULT_SANDBOX, ADAPTERS_WITH_GRANT_BROKER, ADAPTERS_WITH_SANDBOX_ENFORCEMENT, seatBaseline,
+} = await import('../src/lib/default-environment.js');
 const { windowsSandboxMessage } = await import('../src/lib/sandbox/host-check.js');
 
 describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)', () => {
@@ -87,6 +89,33 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'pi',
     })).toThrow(/requires public trust and an adapter with sandbox enforcement/);
+  });
+
+  test('a public Goose seat attaches under the sandbox its adapter enforces (F113, D247)', () => {
+    // Goose confines public turns with Seatbelt or bwrap (adapters/goose.js),
+    // but this gate read ADAPTERS_WITH_DEFAULT_SANDBOX, the set that receives
+    // the daemon's default block. Goose is left out of that set only because a
+    // default cannot supply its provider and model, so the 11-04 walk's public
+    // Goose seat was refused here before its adapter ever ran.
+    const environment = { provider: { name: 'litellm' }, model: 'm', sandbox: { trust: 'public' } };
+    expect(resolveAttachSandbox({ environment, adapterName: 'goose', platform: 'darwin' }))
+      .toEqual({ mode: 'workspace', trust: 'public' });
+    expect(resolveAttachSandbox({ environment, adapterName: 'goose', platform: 'linux' }))
+      .toEqual({ mode: 'bwrap', trust: 'public' });
+    // Enforcement is still required: a Goose mode with no confined trust stays
+    // refused, and pi, which enforces nothing, stays refused under public trust.
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { mode: 'workspace' } }, adapterName: 'goose',
+    })).toThrow(/sandbox enforcement/);
+    expect(() => resolveAttachSandbox({
+      environment: { sandbox: { trust: 'public' } }, adapterName: 'pi', platform: 'darwin',
+    })).toThrow(/sandbox enforcement/);
+  });
+
+  test('the enforcement set is the default-sandbox set plus Goose, and never pi', () => {
+    expect([...ADAPTERS_WITH_SANDBOX_ENFORCEMENT].sort())
+      .toEqual([...ADAPTERS_WITH_DEFAULT_SANDBOX, 'goose'].sort());
+    expect(ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has('pi')).toBe(false);
   });
 
   test('an explicit mode is taken as declared, and a public one is guarded', () => {

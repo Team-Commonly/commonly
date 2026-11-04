@@ -49,6 +49,14 @@ export const ADAPTERS_WITH_DEFAULT_MCP = new Set(['claude', 'codex', 'pi', 'open
  */
 export const ADAPTERS_WITH_DEFAULT_SANDBOX = new Set(['claude', 'codex', 'opencode', 'qwen']);
 
+// Adapters that confine a public turn themselves. This is wider than the set
+// above: Goose enforces Seatbelt/bwrap but is not handed the default block,
+// because a default cannot supply its required provider and model. The attach
+// gate (agent.js resolveAttachSandbox) reads this set, not the default one, or
+// an explicitly configured public Goose seat is refused before its adapter runs
+// (D247 walk, 11-04). pi stays out until it has a sandbox path.
+export const ADAPTERS_WITH_SANDBOX_ENFORCEMENT = new Set([...ADAPTERS_WITH_DEFAULT_SANDBOX, 'goose']);
+
 // The server has not yet admitted OpenCode to its grant-broker confinement
 // allowlist. Keep runtime sandbox support separate from the narrower set of
 // adapters that may receive a room grant.
