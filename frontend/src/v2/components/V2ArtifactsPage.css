@@ -62,8 +62,15 @@
 .v2a-hv { display: none; gap: 2px; padding: 2px; border-radius: var(--v2-r-8); background: var(--v2-surface); box-shadow: var(--v2-shadow-pop); }
 .v2a-file:hover .v2a-hv, .v2a-file:focus-within .v2a-hv { display: flex; }
 .v2a-file:hover .v2a-size, .v2a-file:focus-within .v2a-size { display: none; }
+/* A wide touch screen has no hover, so the keys stay out and the size steps aside. */
+@media (hover: none) and (min-width: 761px) {
+  .v2a-file .v2a-hv { display: flex; }
+  .v2a-file .v2a-size { display: none; }
+}
 .v2a-keys { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.v2a-empty { margin: 0; padding: 11px 14px 11px 42px; font-size: 13px; line-height: 20px; color: var(--v2-text-muted); }
+.v2a-empty { margin: 0; padding: 11px 14px 11px 42px; font-size: 13.5px; line-height: 20px; color: var(--v2-text-secondary); }
+/* Errors speak memory's one-line state (p.v2m-state): text only, no icon, no box. */
+.v2a-state { margin: 0; padding: 4px 2px; font: 400 13.5px/20px var(--v2-font); color: var(--v2-text-secondary); }
 .v2a-loading { display: grid; place-items: center; padding: 24px; }
 
 /* ---- foot: shown of total, then a quiet "N more" ---- */

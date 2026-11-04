@@ -6,7 +6,7 @@ import { render, screen, fireEvent, waitFor, within, act } from '@testing-librar
 import { MemoryRouter } from 'react-router-dom';
 import axios from 'axios';
 import i18n from '../../i18n';
-import V2ArtifactsPage, { extOf, formatSize, whenLabel, groupByPod } from '../components/V2ArtifactsPage';
+import V2ArtifactsPage, { extOf, formatSize, whenLabel, groupByPod, safeDownloadName } from '../components/V2ArtifactsPage';
 
 jest.mock('axios', () => {
   const mock = { get: jest.fn(), post: jest.fn(), defaults: { baseURL: '', headers: { common: {} } }, interceptors: { request: { use: jest.fn(), eject: jest.fn() }, response: { use: jest.fn(), eject: jest.fn() } } };
@@ -188,6 +188,14 @@ describe('V2ArtifactsPage (d215 signal)', () => {
     open.mockRestore();
   });
 
+  test('the download name drops separators and control characters, keeps CJK, and falls back', () => {
+    expect(safeDownloadName('../../etc/passwd', 'x1.txt')).toBe('etcpasswd');
+    expect(safeDownloadName('a\\b:c*?"<>|d.md', 'x1.md')).toBe('abcd.md');
+    expect(safeDownloadName('报告\u0007 2026.pdf', 'x1.pdf')).toBe('报告 2026.pdf');
+    expect(safeDownloadName('...', 'x1.bin')).toBe('x1.bin');
+    expect(safeDownloadName('', 'x1.bin')).toBe('x1.bin');
+  });
+
   test('download saves the bytes from the signed URL under the file’s own name', async () => {
     const blob = new Blob(['x']);
     global.fetch = jest.fn().mockResolvedValue({ ok: true, blob: async () => blob });
@@ -204,6 +212,8 @@ describe('V2ArtifactsPage (d215 signal)', () => {
     // Download is a read: every request it makes is a GET.
     expect(global.fetch.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
     expect(open).not.toHaveBeenCalled();
+    // The object URL is let go after a beat, not left to leak.
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:artifact'), { timeout: 2000 });
     // When the bytes can't be read, the signed URL opens and the server decides.
     global.fetch = jest.fn().mockRejectedValue(new TypeError('cors'));
     fireEvent.click(screen.getByRole('button', { name: 'Download walk-1440.png' }));

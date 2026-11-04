@@ -105,6 +105,11 @@ const Glyph: React.FC<{ name: keyof typeof PATHS }> = ({ name }) => (
 // Saves the file under its own name (CJK included). The bytes come through the same signed URL
 // the open path mints; when the blob read fails (CORS, network), the signed URL opens instead,
 // and the server's Content-Disposition decides between showing and saving.
+// The stored name is the uploader's: drop path separators, characters a file system
+// refuses and control characters, keep CJK, and fall back to the stored file name.
+// eslint-disable-next-line no-control-regex
+export const safeDownloadName = (name: string, fallback: string): string => name.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, '').replace(/^\.+/, '').trim() || fallback;
+
 const saveFile = async (item: ArtifactItem): Promise<void> => {
   const url = await getSignedAttachmentUrl(`/api/uploads/${item.fileName}`);
   if (!url) return;
@@ -115,11 +120,12 @@ const saveFile = async (item: ArtifactItem): Promise<void> => {
     const href = URL.createObjectURL(await res.blob());
     const anchor = document.createElement('a');
     anchor.href = href;
-    anchor.download = item.name;
+    anchor.download = safeDownloadName(item.name, item.fileName);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    globalThis.window.setTimeout(() => URL.revokeObjectURL(href), 0);
+    // Revoked after a beat: some browsers cancel a download whose URL goes away at once.
+    globalThis.window.setTimeout(() => URL.revokeObjectURL(href), 1000);
   } catch {
     globalThis.window.open(url, '_blank', 'noopener');
   }
@@ -309,7 +315,7 @@ const V2ArtifactsPage: React.FC = () => {
             </>
           )}
 
-          {error && <div className="v2p-list"><div className="v2a-row v2a-row--one" role="alert"><Glyph name="file" /><div className="v2a-tx v2a-tx--plain">{error}</div></div></div>}
+          {error && <p className="v2a-state" role="alert">{error}</p>}
           {loading && !error && <div className="v2a-loading"><span className="v2-spinner" /></div>}
           {dayZero && (
             <div className="v2p-list">

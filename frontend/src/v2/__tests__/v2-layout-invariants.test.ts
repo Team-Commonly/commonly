@@ -993,6 +993,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-workspace-inspector__all-files')).toContain('color: var(--v2-accent-text)');
   });
 
+  test('Artifacts on a wide touch screen: no hover, so Open and Download stay out', () => {
+    const ac = read('../components/V2ArtifactsPage.css');
+    const touch = blockContaining(ac, '@media (hover: none) and (min-width: 761px)', '.v2a-hv');
+    expect(touch).toContain('.v2a-file .v2a-hv { display: flex; }');
+    expect(touch).toContain('.v2a-file .v2a-size { display: none; }');
+  });
+
   test('Artifacts 390 (d215 .app.m.sg): 52px bar, 12px gutter, 44px controls and keys, wrapping names, no sideways scroll', () => {
     const ac = read('../components/V2ArtifactsPage.css');
     const phone = blockContaining(ac, '@media (max-width: 760px)', '.v2a-head');
