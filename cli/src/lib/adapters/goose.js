@@ -1,4 +1,4 @@
-/** Goose 1.54.0 wrapper. Public seats expose only the Commonly MCP extension. */
+/** Goose wrapper (1.54.0, 1.56.0). Public seats expose only the Commonly MCP extension. */
 import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -18,7 +18,10 @@ import { wrapArgvWithSeatbelt } from '../sandbox/seatbelt.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 
 // A version enters this list only after a real headless turn with that binary.
-export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0']);
+// Each version here is proven by the real-binary smoke test on macOS and Linux
+// (.github/workflows/goose-public-proof.yml carries one pinned row per version).
+// 1.56.0: D247 harness walk, 11-04.
+export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0', '1.56.0']);
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
 const DEFAULT_PROVIDER_HOST = 'https://litellm.commonly.me';

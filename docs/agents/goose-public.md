@@ -1,6 +1,6 @@
 # Goose public seats
 
-TASK-236 admits only Goose 1.54.0 with a prepared Commonly stdio MCP server,
+TASK-236 admits only smoke-tested Goose versions (1.54.0 and 1.56.0, `TESTED_GOOSE_VERSIONS`) with a prepared Commonly stdio MCP server,
 a declared model and provider whose `keyFile` is an absolute, regular 0600 file
 (the sandbox check needs the declaration; the spawn checks the file), and an
 enforced Seatbelt (macOS) or bwrap (Linux) boundary. Other extensions, HTTP MCP declarations, untested versions,
