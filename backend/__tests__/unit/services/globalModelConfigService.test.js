@@ -211,6 +211,15 @@ describe('globalModelConfigService', () => {
       expect(savedValue().openclaw.communityAgentModel).toEqual({ primary: 'openrouter/some-admin-pick', fallbacks: [] });
     });
 
+    it('an admin\'s other nemotron pick is kept; only the retired default slug is mapped', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { communityAgentModel: { primary: 'openrouter/nvidia/nemotron-ultra-253b', fallbacks: [] } } });
+
+      const result = await GlobalModelConfigService.getConfig();
+
+      expect(result.openclaw.communityAgentModel.primary).toBe('openrouter/nvidia/nemotron-ultra-253b');
+    });
+
     it('a stored nemotron community primary, retired in F103, reads as the default', async () => {
       process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
       stored({ openclaw: { communityAgentModel: { primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', fallbacks: [] } } });

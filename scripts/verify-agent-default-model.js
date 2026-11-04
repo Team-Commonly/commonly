@@ -13,8 +13,9 @@
 // across them), and through every fallback LiteLLM would take from it:
 // fallbacks, context_window_fallbacks and content_policy_fallbacks (a `*` rule
 // applies to every name), plus default_fallbacks and model_group_alias, in
-// router_settings or litellm_settings. An upstream is DeepSeek when its model,
-// custom_llm_provider or api_base says so, in any case.
+// router_settings or litellm_settings. Every name reached that way must be a
+// model_name or an alias. An upstream is DeepSeek when its model (under any
+// provider prefix), custom_llm_provider or api_base says so, in any case.
 // `google/*` gateway fallbacks go straight to Google, not through LiteLLM, so
 // they are listed but not resolved (F105 moves them); a google/* primary fails.
 // --no-deepseek (dev, Claude-only under D243): no default may reach a
@@ -39,7 +40,7 @@ for (const entry of litellmConfig.model_list || []) {
   if (!upstreamsOf.has(name)) upstreamsOf.set(name, []);
   upstreamsOf.get(name).push(entry.litellm_params || {});
 }
-const isDeepseek = (params) => /^deepseek\//i.test(String(params.model || ''))
+const isDeepseek = (params) => /deepseek/i.test(String(params.model || ''))
   || /deepseek/i.test(String(params.custom_llm_provider || ''))
   || /deepseek/i.test(String(params.api_base || params.base_url || ''));
 const fallbacksOf = new Map();
@@ -75,14 +76,19 @@ const reachable = (name) => {
   return [...seen];
 };
 
+const routed = (name) => upstreamsOf.has(name) || aliases.has(name);
 const resolve = (where, name) => {
   checked.push(`${where}: ${name}`);
-  if (!upstreamsOf.has(name) && !aliases.has(name)) {
+  if (!routed(name)) {
     failures.push(`${where}: "${name}" is not a LiteLLM model_name`);
     return;
   }
-  if (!noDeepseek) return;
   for (const reached of reachable(name)) {
+    if (!routed(reached)) {
+      failures.push(`${where}: "${name}" falls back to "${reached}", which is not a LiteLLM model_name`);
+      continue;
+    }
+    if (!noDeepseek) continue;
     for (const params of upstreamsOf.get(reached) || []) {
       if (isDeepseek(params)) {
         const via = reached === name ? '' : ` through the fallback to "${reached}"`;

@@ -92,8 +92,23 @@ test('DeepSeek is caught by provider, api_base or case, not only a lowercase pre
     { model: 'DeepSeek/deepseek-v4-flash' },
     { model: 'deepseek-v4-flash', custom_llm_provider: 'deepseek' },
     { model: 'openai/deepseek-v4-flash', api_base: 'https://api.deepseek.com/v1' },
+    { model: 'openrouter/deepseek/deepseek-r1-0528' },
   ]) {
     failsOnDeepseek(verify(manifest({ modelList: [{ model_name: 'claude-haiku-5-5', litellm_params }] })), JSON.stringify(litellm_params));
+  }
+});
+
+test('a fallback or alias target with no route fails, with or without --no-deepseek', () => {
+  for (const args of [['--no-deepseek'], []]) {
+    for (const routerSettings of [
+      { fallbacks: [{ 'claude-haiku-5-5': ['no-such-model'] }] },
+      { default_fallbacks: ['no-such-model'] },
+      { model_group_alias: { 'claude-haiku-5-5': 'no-such-model' } },
+    ]) {
+      const result = verify(manifest({ routerSettings }), args);
+      assert.equal(result.status, 1, `${args} ${JSON.stringify(routerSettings)}`);
+      assert.match(result.stderr, /falls back to "no-such-model", which is not a LiteLLM model_name/);
+    }
   }
 });
 

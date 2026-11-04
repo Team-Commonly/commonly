@@ -142,15 +142,16 @@ const normalizeFallbackModels = (value: unknown, fallback: string[] = DEFAULT_CO
   return [...fallback];
 };
 
-// The nemotron slug was the community default until F103, so a stored one is
-// the old default saved back, not an admin's choice: it reads as today's.
-const RETIRED_COMMUNITY_PRIMARY = /nemotron/i;
+// This slug was the community default until F103, so a stored one is the old
+// default saved back, not an admin's choice: it reads as today's. Any other
+// model an admin picked, nemotron or not, is kept.
+const RETIRED_COMMUNITY_PRIMARY = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
 
 const normalizeCommunityAgentModel = (value: unknown): CommunityAgentModel => {
   const defaultVal = DEFAULT_CONFIG.openclaw.communityAgentModel;
   if (!value || typeof value !== 'object') return { ...defaultVal };
   const v = value as Partial<CommunityAgentModel>;
-  const primary = RETIRED_COMMUNITY_PRIMARY.test(String(v.primary || ''))
+  const primary = String(v.primary || '').trim() === RETIRED_COMMUNITY_PRIMARY
     ? defaultVal.primary
     : normalizeModel(v.primary, defaultVal.primary);
   const fallbacks = normalizeFallbackModels(v.fallbacks, defaultVal.fallbacks);
