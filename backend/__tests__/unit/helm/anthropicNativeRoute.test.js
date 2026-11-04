@@ -37,8 +37,9 @@ describe('the Claude route for native turns', () => {
     const block = gatedBlock('templates/configmaps/litellm-config.yaml', '- model_name: {{ .Values.aiProviders.anthropic.nativeModel }}');
     expect(block).toContain('model: anthropic/{{ .Values.aiProviders.anthropic.nativeModel }}');
     expect(block).toContain('api_key: os.environ/ANTHROPIC_API_KEY');
-    expect(block).toContain('input_cost_per_token: 0.0000001');
-    expect(block).toContain('output_cost_per_token: 0.0000005');
+    // Priced by LiteLLM's cost map, which has the over-100K tier; a flat
+    // override here would bill a long prompt at a fifth of its price.
+    expect(block).not.toMatch(/cost_per_token/);
     const cap = Number((block.match(/max_budget: (\d+)/) || [])[1]);
     expect(cap).toBeGreaterThan(0);
     expect(cap).toBeLessThanOrEqual(100);

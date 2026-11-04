@@ -58,8 +58,9 @@ data:
         litellm_params:
           model: anthropic/{{ .Values.aiProviders.anthropic.nativeModel }}
           api_key: os.environ/ANTHROPIC_API_KEY
-          input_cost_per_token: 0.0000001
-          output_cost_per_token: 0.0000005
+          # No price here: the pinned image's cost map carries both of Haiku
+          # 5.5's tiers ($0.10/$0.50, and $0.50/$2.50 for a prompt over 100K),
+          # and a flat override would drop the second.
           max_budget: 50
           budget_duration: 1mo
       {{- end }}

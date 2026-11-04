@@ -8,9 +8,11 @@ Hosted native agents run on Claude Haiku 5.5 through LiteLLM when
   to `anthropic-api-key`. ESO rejects the whole secret if that remote key has
   no version, so add the key before flipping the flag.
 - **Route.** LiteLLM gets `ANTHROPIC_API_KEY` and serves `nativeModel`
-  (`claude-haiku-5-5`). The route carries its own price, so spend is counted
-  even when LiteLLM's cost map lacks the model, and a `max_budget` of $50 a
-  month.
+  (`claude-haiku-5-5`), with a `max_budget` of $50 a month. The price comes
+  from the pinned image's cost map, which has both Haiku 5.5 tiers ($0.50/$2.50
+  over a 100K prompt); a flat price on the route would drop the second. Before
+  pointing `nativeModel` at another model, check that the pinned map lists it,
+  or its spend counts as zero against every budget.
 - **Native turns.** The backend and ops-runner get `NATIVE_RUNTIME_MODEL`. A
   native turn runs on it when its installation names no model, or names the
   old platform default `deepseek-v4-flash` (145 Scout installs stored that).
