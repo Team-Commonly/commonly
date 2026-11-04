@@ -544,6 +544,9 @@ describe('performAttach', () => {
       expect(error.message).toContain('use the commands on the Connect page');
       expect(error.message).toContain('COMMONLY_API_URL and COMMONLY_AGENT_TOKEN');
       expect(error.message).toContain('commonly agent run <name> --adapter claude --unsandboxed');
+      // agent run prefers a saved record over the env vars, so the promise holds only for a
+      // fresh agent: the message says to remove an older one first (#3407, CodeRabbit).
+      expect(error.message).toContain('commonly agent detach <name> --force');
       expect(error.message).toContain('Run it here');
       expect(error.message).not.toMatch(/without --env|commonly agent run <name> --unsandboxed/);
       expect(error.message).not.toMatch(/macOS|Seatbelt|On Linux|requested but unavailable/);

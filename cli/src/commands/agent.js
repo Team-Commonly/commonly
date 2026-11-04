@@ -1231,7 +1231,11 @@ export const performAttach = async ({
             + ' They set COMMONLY_API_URL and COMMONLY_AGENT_TOKEN, then run'
             + ` commonly agent run <name> --adapter claude ${UNSANDBOXED_FLAG}.`
             + " It keeps Commonly's restricted tool settings and gets no shell, but nothing at the OS level"
-            + ' confines it, and it gets no connector grants.',
+            + ' confines it, and it gets no connector grants.'
+            // agent run prefers a saved record over the page's env vars, so an
+            // older record of that name would run with its own settings (#3407).
+            + ' If this computer already has an agent saved under that name, the run uses that one and its'
+            + ' settings instead: remove it first with commonly agent detach <name> --force.',
           '  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.',
           '  - A hosted agent: choose "Run it here" on the Connect page. Nothing runs on this machine.',
         ].join('\n') : windowsSandboxMessage(adapterName)));
