@@ -57,8 +57,8 @@ describe('hostSandboxRefusal', () => {
     });
     expect(message).toMatch(/runs a connected Claude Code inside a sandbox, and has no sandbox for Windows yet/);
     expect(message).toMatch(/cannot listen for @mentions from native Windows/);
-    // WSL is Linux, where Claude Code is refused too (next arm).
-    expect(message).not.toContain('WSL');
+    // WSL runs the Linux sandbox, which carries Claude Code since F96.
+    expect(message).toContain('WSL 2 (Ubuntu): install Node and Claude Code inside WSL');
     expect(message).toContain('PowerShell `claude mcp add` command');
     expect(message).toContain('"Run it here"');
     // The old advice turned the sandbox off, which a public seat refuses anyway.
@@ -73,27 +73,19 @@ describe('hostSandboxRefusal', () => {
         + 'sandbox-exec preflight failed: exit 1');
   });
 
-  // Ubuntu run, 2026-10-16: under bwrap a confined spawn could not even start
-  // Claude Code (`execvp …/.local/bin/claude: No such file or directory`).
-  // A public Linux seat still stops here: only the workspace jail (#2784)
-  // carries Claude's install and login, and it never runs for a public pod.
-  test('a public Claude Code seat on Linux (WSL included) stops at start with its options, before any detection', () => {
-    const message = hostSandboxRefusal({
-      environment: connectPage, adapterName: 'claude', platform: 'linux', detectBwrap: never, detectSeatbelt: never,
-    });
-    expect(message).toMatch(/On Linux \(WSL included\) it does that only\nfor an agent whose pods are all invite-only/);
-    expect(message).toContain('From an invite-only pod');
-    expect(message).toContain('`claude mcp add` command');
-    expect(message).toContain('"Run it here"');
-    expect(message).not.toContain('bubblewrap');
-  });
-
-  test('a Claude Code bwrap seat with no workspace trust is refused on Linux the same way', () => {
+  // F96: a public Claude Code seat on Linux runs in the jail the workspace
+  // tier built (#2784), so it is checked like any other bwrap seat: it runs
+  // where bubblewrap does, and stops with the install line where it does not.
+  test('a public Claude Code seat on Linux (WSL included) runs where bubblewrap does', () => {
     for (const sandbox of [{ mode: 'bwrap' }, { trust: 'public', mode: 'bwrap' }, { trust: 'internal' }]) {
-      expect(hostSandboxRefusal({
-        environment: { sandbox }, adapterName: 'claude', platform: 'linux', detectBwrap: never, detectSeatbelt: never,
-      })).toMatch(/pods are all invite-only/);
+      const args = { environment: { sandbox }, adapterName: 'claude', platform: 'linux', detectSeatbelt: never };
+      expect(hostSandboxRefusal({ ...args, detectBwrap: available })).toBeNull();
+      expect(hostSandboxRefusal({ ...args, detectBwrap: missing('bwrap not found on PATH. Install bubblewrap: `apt install bubblewrap` (Debian/Ubuntu).') }))
+        .toMatch(/^This seat runs in a bubblewrap sandbox, which is not available here\. bwrap not found on PATH/);
     }
+    expect(hostSandboxRefusal({
+      environment: connectPage, adapterName: 'claude', platform: 'linux', detectBwrap: available, detectSeatbelt: never,
+    })).toBeNull();
   });
 
   test('on Linux, a missing bubblewrap stops an OpenCode seat with the install line', () => {

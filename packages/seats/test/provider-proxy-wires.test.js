@@ -27,7 +27,7 @@ const startUpstream = async () => {
 
 const call = (baseURL, method, path, headers = {}, body, agent = undefined) => new Promise((resolve, reject) => {
   const url = new URL(path, baseURL);
-  const req = httpRequest({ hostname: url.hostname, port: url.port, path: url.pathname, method, headers, agent }, (res) => {
+  const req = httpRequest({ hostname: url.hostname, port: url.port, path: `${url.pathname}${url.search}`, method, headers, agent }, (res) => {
     let text = '';
     res.on('data', (chunk) => { text += chunk; });
     res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, text }));
@@ -74,6 +74,26 @@ test('anthropic-messages: a Bearer token is accepted too, and count_tokens and m
   assert.deepEqual(upstream.seen.map((r) => [r.method, r.url, r.headers['x-api-key']]), [
     ['POST', '/v1/messages/count_tokens', KEY], ['GET', '/v1/models', KEY],
   ]);
+}));
+
+// F96: Claude Code calls `/v1/messages?beta=true` (CI, 11-04: every turn
+// through the proxy was a 403). That one query goes through as sent; any
+// other query, and that query on another wire, is still refused.
+test('anthropic-messages: Claude Code\'s ?beta=true goes through as sent, and no other query does', () => withProxy('anthropic-messages', '', async ({ upstream, proxy }) => {
+  const auth = { 'x-api-key': proxy.token };
+  assert.equal((await call(proxy.baseURL, 'POST', '/v1/messages?beta=true', auth, '{}')).status, 200);
+  assert.equal((await call(proxy.baseURL, 'POST', '/v1/messages/count_tokens?beta=true', auth, '{}')).status, 200);
+  assert.deepEqual(upstream.seen.map((r) => r.url), ['/v1/messages?beta=true', '/v1/messages/count_tokens?beta=true']);
+  for (const path of ['/v1/messages?beta=false', '/v1/messages?beta=true&x=1', '/v1/messages?x=1', '/v1/messages?beta=TRUE']) {
+    assert.equal((await call(proxy.baseURL, 'POST', path, auth, '{}')).status, 403, path);
+  }
+  assert.equal(upstream.seen.length, 2);
+}));
+
+test('the beta query is the Anthropic wire\'s alone', () => withProxy(undefined, '/v1', async ({ upstream, proxy }) => {
+  const auth = { authorization: `Bearer ${proxy.token}` };
+  assert.equal((await call(proxy.baseURL, 'POST', '/v1/chat/completions?beta=true', auth, '{}')).status, 403);
+  assert.equal(upstream.seen.length, 0);
 }));
 
 test('a missing or wrong token is 401 in either header, and nothing reaches the provider', () => withProxy('anthropic-messages', '', async ({ upstream, proxy }) => {

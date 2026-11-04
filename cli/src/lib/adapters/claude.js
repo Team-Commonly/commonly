@@ -64,9 +64,11 @@ import {
   mkdtemp,
   open,
   readFile,
+  readdir,
   readlink,
   rename,
   rm,
+  rmdir,
   symlink,
   unlink,
   writeFile,
@@ -98,11 +100,12 @@ import {
 import { BACKGROUND_PROCESS_CUE, buildMemoryPreamble, ROW_SLICING_CUE } from '../memory-bridge.js';
 import { claudeConfigDirFor, claudeContextTokens, claudeTranscriptPath } from '../session-recycle.js';
 import { skillsAsText } from '../skill-prompt.js';
-import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
+import { adapterFailure, redactKnownCredentials, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
+import { startProviderProxy } from '../provider-proxy.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -325,14 +328,71 @@ const replacePrivateFile = async (dir, name, content) => {
   return target;
 };
 
-// A workspace seat on Linux runs under bwrap, which has no keychain. Claude
-// Code on Linux keeps its login in <config dir>/.credentials.json, so the
-// seat's own state dir gets a copy of the person's, taken fresh each spawn:
-// their own credential on their own machine, the exposure the macOS keychain
-// arm already has. Only the copy is inside the jail. Nothing is written back:
-// the jail can write its copy, and a write-back would let it replace the
-// person's login with one of its choosing. A missing login removes the copy,
-// so a person who logged out is not still signed in here.
+// The host's ANTHROPIC_BASE_URL, for a seat that reaches the model on the
+// person's login. Only when it is the route the login uses: with an
+// ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN beside it, it is that key's
+// gateway, and the jail (which never gets the key) would send the person's
+// subscription token there instead. A URL carrying a user or password is not
+// forwarded either.
+export const loginRouteBaseUrl = (source = {}) => {
+  if (!source.ANTHROPIC_BASE_URL || source.ANTHROPIC_API_KEY || source.ANTHROPIC_AUTH_TOKEN) return null;
+  try {
+    const url = new URL(source.ANTHROPIC_BASE_URL);
+    return url.username || url.password ? null : source.ANTHROPIC_BASE_URL;
+  } catch {
+    return null;
+  }
+};
+
+// Two turns of one public agent share its folder (a daemon and a separate
+// `agent run`, or two events at once). Each registers itself in a sibling of
+// that folder, outside the jail's writable bind so a turn cannot forge one,
+// and the login copy is removed only by the last live turn to finish.
+const registerLoginTurn = async (statePath) => {
+  const dir = `${statePath}.login-turns`;
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const marker = join(dir, `${process.pid}-${randomUUID()}`);
+  await writeFile(marker, '', { mode: 0o600, flag: 'wx' });
+  return marker;
+};
+const pidAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === 'EPERM';
+  }
+};
+const releaseLoginTurn = async (marker, loginPath) => {
+  await rm(marker, { force: true });
+  const dir = dirname(marker);
+  let others = [];
+  try {
+    others = await readdir(dir);
+  } catch { /* gone: nobody else is registered */ }
+  let live = 0;
+  for (const name of others) {
+    const pid = Number(name.split('-')[0]);
+    if (Number.isInteger(pid) && pid > 0 && pidAlive(pid)) live += 1;
+    else await rm(join(dir, name), { force: true });
+  }
+  if (!live) {
+    await rm(loginPath, { force: true });
+    // Only an empty folder goes: a turn registering at this moment keeps it.
+    try { await rmdir(dir); } catch { /* not empty, or already gone */ }
+  }
+};
+
+// A seat on Linux runs under bwrap, which has no keychain. Claude Code on
+// Linux keeps its login in <config dir>/.credentials.json, so the seat's own
+// state dir gets a copy of the person's, taken fresh each spawn. Only the copy
+// is inside the jail. Nothing is written back: the jail can write its copy, and
+// a write-back would let it replace the person's login with one of its
+// choosing. Since F96 the copy is access-only for every seat, workspace ones
+// included: a jail that refreshed would spend the host's refresh token and
+// leave the person signed out (CI, 11-04: Claude Code rewrites the jail's copy
+// when its session check fails). A missing login removes the copy, so a person
+// who logged out is not still signed in here.
 const claudeLoginSource = (env) => join(
   env?.CLAUDE_CONFIG_DIR || process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'),
   '.credentials.json',
@@ -340,7 +400,39 @@ const claudeLoginSource = (env) => join(
 
 // Opened once, without following a symlink, and checked on the open handle,
 // so the file read is the file checked (a FIFO cannot hold the open either).
-const carryClaudeLogin = async (env, configDir) => {
+// A public seat's copy (F96) holds the access token alone. Claude Code
+// rotates the refresh token when it refreshes, so a jail holding one could
+// spend it and leave the host signed out; without one it cannot refresh at
+// all, so a login that would expire mid-turn is refused here instead.
+// What a public seat's access-only login keeps: the token and the account
+// metadata Claude Code reads beside it.
+const ACCESS_ONLY_LOGIN_FIELDS = ['accessToken', 'expiresAt', 'scopes', 'subscriptionType', 'rateLimitTier'];
+
+const accessOnlyLogin = (text, { source, mustOutlastMs, apiKeyHint = true }) => {
+  let login;
+  try {
+    login = JSON.parse(text);
+  } catch {
+    throw new Error(`refusing a Claude login that is not JSON: ${source}`);
+  }
+  const oauth = login?.claudeAiOauth;
+  if (!oauth || typeof oauth.accessToken !== 'string' || !oauth.accessToken) {
+    throw new Error(`refusing a Claude login with no access token: ${source}`);
+  }
+  if (typeof oauth.expiresAt === 'number' && oauth.expiresAt - Date.now() < mustOutlastMs) {
+    const minutes = Math.max(0, Math.floor((oauth.expiresAt - Date.now()) / 60000));
+    throw new Error(`the Claude login on this machine expires in ${minutes} min, before this turn could end. `
+      + `Sign in again on this machine (\`claude\`, then /login)${apiKeyHint ? ', or set ANTHROPIC_API_KEY for the agent' : ''}.`);
+  }
+  // An allowlist, not "everything but refreshToken": a field the host record
+  // gains later, secret or not, never reaches the seat's writable HOME.
+  const access = Object.fromEntries(ACCESS_ONLY_LOGIN_FIELDS
+    .filter((field) => oauth[field] !== undefined)
+    .map((field) => [field, oauth[field]]));
+  return `${JSON.stringify({ claudeAiOauth: access })}\n`;
+};
+
+const carryClaudeLogin = async (env, configDir, { accessOnly = false, mustOutlastMs = 0, apiKeyHint = true } = {}) => {
   const source = claudeLoginSource(env);
   const refuse = () => new Error(`refusing a Claude login that is not a regular file: ${source}`);
   let handle;
@@ -356,20 +448,33 @@ const carryClaudeLogin = async (env, configDir) => {
   }
   try {
     if (!(await handle.stat()).isFile()) throw refuse();
-    return replacePrivateFile(configDir, '.credentials.json', await handle.readFile('utf8'));
+    const text = await handle.readFile('utf8');
+    return replacePrivateFile(configDir, '.credentials.json', accessOnly
+      ? accessOnlyLogin(text, { source, mustOutlastMs, apiKeyHint })
+      : text);
   } finally {
     await handle.close();
   }
 };
 
-// State for a workspace seat under bwrap: the same per-seat folder the macOS
-// path uses, outside the person's project, with the auth metadata whitelist
-// and the login copy. The jail binds this folder writable and makes it HOME,
-// so transcripts land here rather than in the project.
-const prepareWorkspaceBwrapClaudeState = async (ctx) => {
+// The per-seat folder a bwrap seat runs in. A public seat (F96) gets its own,
+// never the workspace seat's: that one holds the transcripts of private-pod
+// turns, and the same agent can run both kinds of
+// turn, even at once (a daemon and a separate `agent run`).
+export const bwrapClaudeStatePath = (ctx, seat = 'workspace') => {
+  if (ctx._publicClaudeState) return ctx._publicClaudeState;
   const identity = ctx.agentName || ctx.cwd || 'anonymous';
   const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
-  const statePath = ctx._publicClaudeState || publicClaudeStateRoot(identityHash);
+  return publicClaudeStateRoot(seat === 'public' ? `${identityHash}-public` : identityHash);
+};
+
+// State for a seat under bwrap, outside the person's project, with the auth
+// metadata whitelist and the login copy. The jail binds this folder writable
+// and makes it HOME, so transcripts land here rather than in the project.
+// Every seat carries an access-only copy of the login, or a public seat none
+// when an API key reaches the model through the provider proxy instead.
+const prepareWorkspaceBwrapClaudeState = async (ctx, { login = 'carry', seat = 'workspace' } = {}) => {
+  const statePath = bwrapClaudeStatePath(ctx, seat);
   const tmpPath = join(statePath, 'tmp');
   const configDir = join(statePath, '.claude');
   await mkdir(statePath, { recursive: true, mode: 0o700 });
@@ -386,7 +491,15 @@ const prepareWorkspaceBwrapClaudeState = async (ctx) => {
   const configPath = await replacePrivateFile(
     statePath, '.claude.json', `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`,
   );
-  const loginPath = await carryClaudeLogin(ctx.env, configDir);
+  if (login === 'none') {
+    await rm(join(configDir, '.credentials.json'), { force: true });
+    return { statePath, tmpPath, configPath, loginPath: null };
+  }
+  const loginPath = await carryClaudeLogin(ctx.env, configDir, login === 'access-only'
+    // A workspace seat's jail never sees the host's API key, so only a public
+    // seat is told to set one.
+    ? { accessOnly: true, mustOutlastMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS, apiKeyHint: seat === 'public' }
+    : {});
   return { statePath, tmpPath, configPath, loginPath };
 };
 
@@ -640,12 +753,14 @@ const publicWitnessError = ({ code, tool, error }) => {
 };
 
 // The reply a turn posts. A public seat's turn is witnessed first (TASK-256).
+// Both ways out of a turn are redacted: a reply that echoes a credential the
+// child was handed (the per-turn proxy token included), and the witness error.
 const turnReply = (stdout, { credentials, publicMcp }) => {
   if (publicMcp) {
     const failure = claudePublicMcpWitness(stdout, publicMcp);
-    if (failure) throw publicWitnessError(failure);
+    if (failure) throw publicWitnessError({ ...failure, error: redactKnownCredentials(String(failure.error), credentials) });
   }
-  return claudeResultText(stdout, { credentials });
+  return redactKnownCredentials(claudeResultText(stdout, { credentials }), credentials);
 };
 
 // The failure tail for a non-zero exit. Stream events are mostly system init
@@ -1063,7 +1178,7 @@ const resolveClaudeInstall = (env) => {
 
 // A jail that cannot carry claude would fail inside at every spawn.
 const claudeInstallRefusal = (claudeBin) => new Error(
-  'workspace Claude agents on Linux need Claude Code on PATH, so the sandbox can carry its install; '
+  'Claude agents on Linux need Claude Code on PATH, so the sandbox can carry its install; '
   + `\`${claudeBin}\` could not be resolved`,
 );
 
@@ -1231,8 +1346,8 @@ const prepareArgv = async (innerArgv, ctx) => {
     if (!bwrap.available) {
       throw new Error(`${sandboxTrust} Claude agents require bwrap: ${bwrap.error}`);
     }
-    if (workspaceBwrapSandbox && !ctx.publicClaudeState) {
-      throw new Error('workspace Claude state was not prepared before argv construction');
+    if (!ctx.publicClaudeState) {
+      throw new Error(`${sandboxTrust} Claude state was not prepared before argv construction`);
     }
     innerArgv = [
       ...innerArgv,
@@ -1244,7 +1359,7 @@ const prepareArgv = async (innerArgv, ctx) => {
   } else if (allowedPatterns.length > 0) {
     innerArgv = [...innerArgv, '--allowedTools', ...allowedPatterns];
   }
-  if (workspaceBwrapSandbox) {
+  if (workspaceBwrapSandbox || publicBwrapSandbox) {
     // Seatbelt denies writes under .git by path, present or not. A bwrap mount
     // needs the path to exist, so a writable project without a .git could get
     // one from the child, hooks included, that the person's next git command
@@ -1432,6 +1547,10 @@ export default {
 
     let mcpConfig = null;
     let publicClaudeState = null;
+    let providerProxy = null;
+    // A login seat's gateway, when the host names one: config, not a secret.
+    let publicLoginBaseUrl = null;
+    let loginTurn = null;
     let publicSkillArgs = [];
     // D245: no jail to prepare for on a policy-only Windows host.
     const jailed = !policyOnlyHost(ctx);
@@ -1441,6 +1560,18 @@ export default {
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
     const workspaceBwrapSandbox = jailed && ctx.environment?.sandbox?.trust === 'workspace'
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
+    // The proxy's address and per-turn token, never the host's key.
+    const withProvider = (env) => {
+      if (providerProxy) {
+        return Object.assign(env, { ANTHROPIC_BASE_URL: providerProxy.baseURL, ANTHROPIC_API_KEY: providerProxy.token });
+      }
+      return publicLoginBaseUrl ? Object.assign(env, { ANTHROPIC_BASE_URL: publicLoginBaseUrl }) : env;
+    };
+    // The values a failure tail or reply must never echo: the seat's own, and
+    // the per-turn proxy token the child was handed in place of the host key.
+    const turnCredentials = (spawnContext) => [
+      ...spawnCredentials(spawnContext), providerProxy?.token,
+    ].filter(Boolean);
     try {
       // Trust is normalized at entry (legacy `internal` reads as public). The
       // MCP policy follows trust alone, whatever confines the seat: a public
@@ -1455,7 +1586,50 @@ export default {
         if (!bwrap.available) throw new Error(`workspace Claude agents require bwrap: ${bwrap.error}`);
         const { claudeBin, claudeInstall } = resolveClaudeInstall(withClaudePath(ctx.env));
         if (!claudeInstall) throw claudeInstallRefusal(claudeBin);
-        publicClaudeState = await prepareWorkspaceBwrapClaudeState(ctx);
+        publicClaudeState = await prepareWorkspaceBwrapClaudeState(ctx, { login: 'access-only' });
+        // The host's model route, when it is the one the login uses.
+        publicLoginBaseUrl = loginRouteBaseUrl(ctx.env || process.env);
+      } else if (publicBwrapSandbox) {
+        // F96: the workspace tier's jail, reaching the model one of two ways.
+        // An API key stays on the host behind a per-turn proxy; without one,
+        // the seat gets an access-only copy of the login, deleted after the turn.
+        // Either way the model is across the network: restricted networking
+        // (--unshare-net) cuts off the host proxy and the vendor alike, so the
+        // seat is refused before a proxy starts or a login is copied.
+        if (ctx.environment?.sandbox?.network?.policy === 'restricted') {
+          throw new Error('public Claude agents on Linux need shared bwrap networking to reach the model; '
+            + 'sandbox.network.policy "restricted" cuts it off.');
+        }
+        // A public seat sees its project and its own folder, nothing more: the
+        // server's environment cannot bind more of the host into a jail that
+        // strangers drive (goose refuses the same).
+        for (const key of ['read-outside', 'write-outside']) {
+          if (ctx.environment?.sandbox?.filesystem?.[key]?.length) {
+            throw new Error(`public Claude agents on Linux do not allow sandbox.filesystem.${key}`);
+          }
+        }
+        const bwrap = (ctx._detectBwrap || detectBwrap)();
+        if (!bwrap.available) throw new Error(`public Claude agents require bwrap: ${bwrap.error}`);
+        const { claudeBin, claudeInstall } = resolveClaudeInstall(withClaudePath(ctx.env));
+        if (!claudeInstall) throw claudeInstallRefusal(claudeBin);
+        const source = ctx.env || process.env;
+        if (source.ANTHROPIC_API_KEY) {
+          publicClaudeState = await prepareWorkspaceBwrapClaudeState(ctx, { login: 'none', seat: 'public' });
+          providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
+            provider: { baseURL: source.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' },
+            keyMaterial: source.ANTHROPIC_API_KEY,
+            wire: 'anthropic-messages',
+            adapterLabel: 'Claude',
+          });
+        } else {
+          publicClaudeState = await prepareWorkspaceBwrapClaudeState(ctx, { login: 'access-only', seat: 'public' });
+          publicLoginBaseUrl = loginRouteBaseUrl(source);
+          if (!publicClaudeState.loginPath) {
+            throw new Error('public Claude agents on Linux need ANTHROPIC_API_KEY in the agent\'s environment, '
+              + 'or sign in with `claude` on this machine first.');
+          }
+          loginTurn = await registerLoginTurn(publicClaudeState.statePath);
+        }
       }
       if (publicTrust) {
         const prompt = await publicSkillPromptArgs(mountedSkills);
@@ -1480,14 +1654,14 @@ export default {
         });
       }
       if (mcpConfig?.unavailableMcp.length) throw publicMcpUnavailableError(mcpConfig.unavailableMcp);
-      const claudeEnv = buildClaudeEnv(
+      const claudeEnv = withProvider(buildClaudeEnv(
         ctx.env,
         publicClaudeState,
         mcpConfig?.expansionEnv,
         mcpConfig?.credential?.path || null,
         publicTrust,
         ctx._platform || process.platform,
-      );
+      ));
       if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
         Object.assign(claudeEnv, ctx.commitAttributionEnv);
       }
@@ -1511,7 +1685,7 @@ export default {
         // check. Snapshot before the spawn: claude is subscription-authenticated
         // and its provider key is not an env var here, so the seat credential is
         // the value a tail can echo back.
-        credentials: spawnCredentials(spawnCtx),
+        credentials: turnCredentials(spawnCtx),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         transcriptPath: claudeTranscriptPath({
@@ -1530,7 +1704,7 @@ export default {
         cwd: physicalPath(ctx.cwd), sessionId, configDir: claudeConfigDirFor({ ...env, HOME: childHome || env?.HOME }),
       });
       return {
-        text: turnReply(stdout, { credentials: spawnCredentials(spawnCtx), publicMcp: witnessedMcp }),
+        text: turnReply(stdout, { credentials: turnCredentials(spawnCtx), publicMcp: witnessedMcp }),
         newSessionId: sessionId,
         contextTokens,
         // D245 item 4: what the run said about itself, for the reply receipt.
@@ -1564,14 +1738,14 @@ export default {
           mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
           publicClaudeState,
           publicSkillArgs,
-          claudeEnv: buildClaudeEnv(
+          claudeEnv: withProvider(buildClaudeEnv(
             ctx.env,
             publicClaudeState,
             mcpConfig?.expansionEnv,
             mcpConfig?.credential?.path || null,
             publicTrust,
             ctx._platform || process.platform,
-          ),
+          )),
         };
         if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
           Object.assign(retryCtx.claudeEnv, ctx.commitAttributionEnv);
@@ -1583,7 +1757,7 @@ export default {
           cwd: ctx.cwd,
           env: retry.env,
           timeoutMs: ctx.timeoutMs || DEFAULT_TIMEOUT_MS,
-          credentials: spawnCredentials(retryCtx),
+          credentials: turnCredentials(retryCtx),
           spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(modelArgs, { modelFlag: '--model', effortFlag: '--effort' }),
           ownGroup: wantsOwnProcessGroup(ctx),
           transcriptPath: claudeTranscriptPath({
@@ -1602,7 +1776,7 @@ export default {
           configDir: claudeConfigDirFor({ ...retry.env, HOME: retry.childHome || retry.env?.HOME }),
         });
         return {
-          text: turnReply(stdout, { credentials: spawnCredentials(retryCtx), publicMcp: witnessedMcp }),
+          text: turnReply(stdout, { credentials: turnCredentials(retryCtx), publicMcp: witnessedMcp }),
           newSessionId: freshId,
           contextTokens,
           stats: claudeRunStats(stdout),
@@ -1612,6 +1786,13 @@ export default {
     } finally {
       if (mcpConfig?.dir) {
         try { await rm(mcpConfig.dir, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+      try { await providerProxy?.close(); } catch { /* ignore */ }
+      // A public seat's login copy lives for its turns (F96): the last live
+      // turn of the agent to finish removes it.
+      if (publicBwrapSandbox && !workspaceBwrapSandbox && publicClaudeState?.loginPath) {
+        if (loginTurn) await releaseLoginTurn(loginTurn, publicClaudeState.loginPath);
+        else await rm(publicClaudeState.loginPath, { force: true });
       }
     }
   },
