@@ -61,7 +61,7 @@ import { HOSTED_MCP_ACCESS_TOKEN, HOSTED_MCP_REFRESH_TOKEN } from './connectorSe
 import { secretWriteGeneration } from './hostedMcpSecretGeneration';
 import { upstreamFetch } from './upstreamFetch';
 import { hostedVendorFetch } from './hostedVendorFetch';
-import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
+import { dcrClientForRow, refuseDcrClient, refusalNamesUnknownClient } from './hostedMcpDcrRegistry';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 export { HostedMcpCredentialError, type HostedMcpCredentialErrorCode } from './hostedMcpCredentialError';
 
@@ -274,7 +274,7 @@ export const refreshTokenAtVendor = async ({
   // `error` body, so a 200 is not proof of a token.
   if (!response.ok || (!body.access_token && body.error)) {
     const code = String(body.error || '');
-    if (code === 'invalid_client' && entry.client === 'dcr') {
+    if (refusalNamesUnknownClient(body) && entry.client === 'dcr') {
       await refuseDcrClient(entry, clientId);
       throw new HostedMcpCredentialError(
         'reconnect_required',

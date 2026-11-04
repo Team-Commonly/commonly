@@ -295,6 +295,20 @@ export const refuseDcrClient = async (entry: HostedMcpOAuthEntry, clientId: stri
   if (refused?.clientSecretRef) await connectorSecrets.revoke(refused.clientSecretRef).catch(() => {});
 };
 
+/**
+ * Whether a vendor's refusal says it doesn't know the client: RFC 6749 §5.2's
+ * `invalid_client`, or a vendor's own words for it. api.supabase.com answers a
+ * client it no longer has with 422 {"message":"Unrecognized client_id"}, at its
+ * authorize page and its token endpoint alike (probed 2026-11-04), so a deleted
+ * Supabase client was never retired and every start reused it.
+ */
+export const refusalNamesUnknownClient = (refusal: unknown): boolean => {
+  if (!refusal || typeof refusal !== 'object') return false;
+  const { error, message } = refusal as { error?: unknown; message?: unknown };
+  if (error === 'invalid_client') return true;
+  return typeof message === 'string' && message.trim().toLowerCase() === 'unrecognized client_id';
+};
+
 /** The vendor is asked about one registration at most this often. */
 export const DCR_ASK_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -303,8 +317,9 @@ export type DcrClientAnswer = 'unknown_client' | 'known' | 'unclear';
 /**
  * Whether the vendor still knows a client, asked at its token endpoint with a
  * made-up code. RFC 6749 §5.2: invalid_client is a client the server can't
- * authenticate, which for a public client means one it no longer has;
- * invalid_grant means it knew the client and refused only the code. Anything
+ * authenticate, which for a public client means one it no longer has (some
+ * vendors say it in their own words: refusalNamesUnknownClient); invalid_grant
+ * means it knew the client and refused only the code. Anything
  * else, a failure to answer included, is unclear and changes nothing.
  */
 export const askVendorAboutDcrClient = async (
@@ -331,7 +346,7 @@ export const askVendorAboutDcrClient = async (
     }, fetchImpl);
     if (response.ok) return 'unclear';
     const refusal = await response.json().catch(() => null) as { error?: unknown } | null;
-    if (refusal?.error === 'invalid_client') return 'unknown_client';
+    if (refusalNamesUnknownClient(refusal)) return 'unknown_client';
     if (refusal?.error === 'invalid_grant') return 'known';
     return 'unclear';
   } catch {

@@ -1259,6 +1259,15 @@ describe('hosted-mcp connect: callback', () => {
     expect(connectorSecrets.put).not.toHaveBeenCalled();
   });
 
+  it('names a client the vendor calls unrecognized as client_auth_refused (Supabase)', async () => {
+    global.fetch.mockResolvedValue({
+      ok: false, status: 422, json: async () => ({ message: 'Unrecognized client_id' }),
+    });
+    const res = await callback();
+    expect(outcome(res)).toEqual({ status: 302, hostedMcp: 'error', code: 'client_auth_refused' });
+    expect(connectorSecrets.put).not.toHaveBeenCalled();
+  });
+
   it('reports an exchange that returned no token as incomplete, not as connected', async () => {
     global.fetch.mockResolvedValue({ ok: true, json: async () => ({ scope: 'read' }) });
     const res = await callback();

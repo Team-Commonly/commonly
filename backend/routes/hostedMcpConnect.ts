@@ -24,7 +24,7 @@ import { writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { upstreamFetch } from '../services/upstreamFetch';
 import {
-  dcrClientForRow, ensureDcrClient, refuseDcrClient, retireDcrClientIfUnknown,
+  dcrClientForRow, ensureDcrClient, refuseDcrClient, refusalNamesUnknownClient, retireDcrClientIfUnknown,
 } from '../services/hostedMcpDcrRegistry';
 import { forgetHostedMcpDrift } from '../services/hostedMcpToolDefinitions';
 import { publicAppUrl } from '../utils/publicAppUrl';
@@ -615,7 +615,7 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
     });
     if (!response.ok) {
       const refusal = await response.json().catch(() => null) as { error?: unknown } | null;
-      if (refusal?.error === 'invalid_client') {
+      if (refusalNamesUnknownClient(refusal)) {
         await refuseDcrClient(entry, client.clientId);
         return callbackRedirect(res, 'error', 'client_auth_refused');
       }

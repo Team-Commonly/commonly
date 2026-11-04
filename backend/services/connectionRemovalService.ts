@@ -61,7 +61,7 @@ import {
 import * as connectorSecrets from './connectorSecrets';
 import { upstreamFetch, UPSTREAM_TIMEOUT_MS } from './upstreamFetch';
 import { hostedVendorFetch } from './hostedVendorFetch';
-import { dcrClientForRow, refuseDcrClient } from './hostedMcpDcrRegistry';
+import { dcrClientForRow, refuseDcrClient, refusalNamesUnknownClient } from './hostedMcpDcrRegistry';
 
 export const HOSTED_MCP_TYPE = 'hosted-mcp';
 
@@ -276,7 +276,7 @@ export const revokeTokenAtVendor = async (input: {
   if (response.ok) return;
   if (input.entry.client === 'dcr') {
     const refusal = await response.json().catch(() => null) as { error?: unknown } | null;
-    if (refusal?.error === 'invalid_client') {
+    if (refusalNamesUnknownClient(refusal)) {
       await refuseDcrClient(input.entry, input.clientId);
       const error = new Error('provider refused the registered client');
       Object.assign(error, { code: 'invalid_client' });
