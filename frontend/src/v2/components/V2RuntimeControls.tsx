@@ -60,6 +60,13 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
   // Only a computer's own list can say a model is unsupported; the catalogue
   // is a starting point, and "Other…" exists for ids it lacks.
   const unsupportedModel = Boolean(editable && choices?.fromDevice && model && !choices.models.includes(model));
+  // Save never writes a model the selected harness doesn't list, unless it
+  // was typed under "Other…". A stored id that no catalogue lists (an earlier
+  // "Other…") stays saveable; one another harness lists (a Codex model left
+  // under Claude Code) does not.
+  const listedElsewhere = catalog.some((row) => row.id !== harness && row.models?.includes(model));
+  const unlistedModel = Boolean(editable && models?.length && model && !models.includes(model) && !otherModel
+    && (harness !== savedHarness || model !== (runtime.model || '') || listedElsewhere));
   const storedEffort = Boolean(effort && !levels.includes(effort));
   const unsupportedEffort = editable && storedEffort && levels.length > 0;
   const changed = harness !== savedHarness || model !== (runtime.model || '') || effort !== (runtime.effort || '');
@@ -111,7 +118,14 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
       </span>
       <span className="vl">
         <span className="sel v2-runtime-controls__control">
-          {field === 'harness' ? <select id="runtime-harness" className={unsupportedHarness ? 'is-unsupported' : ''} disabled={!editable || busy} value={harness} onChange={(event) => { setHarness(event.target.value); setEffort(''); setOtherModel(false); }}>
+          {field === 'harness' ? <select id="runtime-harness" className={unsupportedHarness ? 'is-unsupported' : ''} disabled={!editable || busy} value={harness} onChange={(event) => {
+            // Back to the saved harness restores the saved pair; any other
+            // harness starts from its own default, never the last one's model.
+            const next = event.target.value;
+            const back = next === savedHarness;
+            setHarness(next); setOtherModel(false);
+            setModel(back ? runtime.model || '' : ''); setEffort(back ? runtime.effort || '' : '');
+          }}>
             {!harnessIds.includes(harness) && <option value={harness}>{harness ? label(harness) : k('unknown')}</option>}
             {harnessIds.map((id) => {
               const note = harnessDeviceNote(inventory, id, t);
@@ -139,6 +153,7 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
       </span>
       <span className="ac" />
     </div>)}
+    {unlistedModel && alertRow(k('modelNotListed', { model, harness: label(harness) }))}
     {(unsupportedHarness || unsupportedModel || unsupportedEffort) && alertRow(k('unsupported', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') }))}
     {runtime.observation?.lastSpawnOutcome === 'failed' && alertRow(k('spawnFailed', { harness: value(last, 'harness'), model: value(last, 'model'), effort: value(last, 'effort') }))}
     <div className="lrow v2-agent-settings-page__stack v2-runtime-controls__status">
@@ -152,7 +167,7 @@ const V2RuntimeControls: React.FC<{ runtime: RuntimeSettings; onSave?: (update: 
         {last && <span>{k('lastSpawn')} · {new Date(last.at).toLocaleString(appDateLocale())}</span>}
       </span>
       <span className="ac">
-        {editable && <button type="button" className="b b-p b-sm" aria-label={k('saveRuntime')} disabled={busy || !changed || unsupportedHarness || !model.trim() || unsupportedModel || Boolean(levels.length && unsupportedEffort)} onClick={() => { void save(); }}>{k('save')}</button>}
+        {editable && <button type="button" className="b b-p b-sm" aria-label={k('saveRuntime')} disabled={busy || !changed || unsupportedHarness || !model.trim() || unsupportedModel || unlistedModel || Boolean(levels.length && unsupportedEffort)} onClick={() => { void save(); }}>{k('save')}</button>}
         {error && <span role="alert" className="v2-agent-settings-page__note"><V2AgentSettingsIcon name="alert" />{error}</span>}
       </span>
     </div>
