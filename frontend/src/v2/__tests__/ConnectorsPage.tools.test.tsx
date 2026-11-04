@@ -435,6 +435,7 @@ describe('Connectors page: tools', () => {
   const REFUSAL_LABELS = [
     ['tool_drift', 'the provider changed this tool since Commonly checked it', '服务商在 Commonly 核对后改动了此工具'],
     ['tool_unavailable', 'this connection\'s tool list does not include this tool', '此连接的工具列表中没有这个工具'],
+    ['write_scope_required', 'the connection needs reconnecting', '需要重新连接'],
     ['tool_not_found', 'this tool is not registered with Commonly', '此工具未在 Commonly 中注册'],
     ['definition_digest_mismatch', 'the tool changed after approval was asked for, so it needs asking again', '工具在申请审批后有变动，需要重新审批'],
     ['args_digest_mismatch', 'the arguments no longer match the ones sent for approval', '参数与提交审批时的不一致'],

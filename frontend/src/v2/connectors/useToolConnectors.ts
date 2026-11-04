@@ -283,6 +283,8 @@ export const useToolConnectors = (
       broker_error: t('tools.reasonBrokerError', { defaultValue: 'the broker failed' }),
       tool_drift: t('tools.reasonToolDrift', { defaultValue: 'the provider changed this tool since Commonly checked it' }),
       tool_unavailable: t('tools.reasonToolUnavailable', { defaultValue: "this connection's tool list does not include this tool" }),
+      // A write the connection never consented to (F102): the same instruction as reconnect_required.
+      write_scope_required: t('tools.reasonReconnect', { defaultValue: 'the connection needs reconnecting' }),
       tool_not_found: t('tools.reasonToolNotFound', { defaultValue: 'this tool is not registered with Commonly' }),
       definition_digest_mismatch: t('tools.reasonToolChangedSinceApproval', { defaultValue: 'the tool changed after approval was asked for, so it needs asking again' }),
       args_digest_mismatch: t('tools.reasonArgsChangedSinceApproval', { defaultValue: 'the arguments no longer match the ones sent for approval' }),
