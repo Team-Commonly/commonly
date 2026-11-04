@@ -133,6 +133,7 @@ Entry ids are checked at load against both the hosted catalogue and the builtin 
 | upstream | result for that tool |
 |---|---|
 | missing | `tool_unavailable` |
+| a `write` pin missing, on a row whose recorded `grantedScope` lacks the entry's `writeScope` (F102, 11-04) | `not_granted`: the list follows the row's consent, so this is the row and not the vendor. It writes no assessment log line and files no drift card; a listing hides the pin and a call refuses `write_scope_required`, the mint's reconnect instruction (`consentHoldsWriteScope`, which the mint also calls). A missing `read` pin, or a write on a row that consented to `writeScope`, stays `tool_unavailable` |
 | a `read` pin's `inputSchema` differs from the pin only compatibly (below) | offered and callable under the pin's schema, and logged; the annotations row still applies |
 | otherwise, `inputSchema` differs from the pin | `tool_drift` until a PR re-pins it: the owner approves canonical args under the pinned schema, and a changed schema can change what those args mean |
 | annotations moved toward write since the pin: a claim it recorded (`readOnlyHint: true`, `destructiveHint: false`) is no longer made, or a tool pinned with `readOnlyHint: true` now also says `destructiveHint: true` | `tool_drift`: the hint grants nothing, but a vendor withdrawing it is a reason to stop |
@@ -390,7 +391,7 @@ The refusal must also hold where the tool runs, not only where the entry is offe
 | 5xx, a timeout, no connection | fails the call | `failed`, `provider_error` or `provider_unreachable`; a vendor's answer keeps its status and first line (below) | untouched |
 | 404 on a request that carried a session id, the `initialized` notification included | opens a new session once, then sends that request once more (below) | as the retry ends; a second 404 is `failed`, `provider_error` | untouched |
 | a result with `isError: true` | preserves the vendor content and marks the tool result as an error | `failed`, `upstream_tool_error` | untouched |
-| a pinned tool missing, or drifted (§3) | refuses before calling | `refused`, `tool_unavailable` or `tool_drift` | untouched |
+| a pinned tool missing, or drifted (§3) | refuses before calling | `refused`, `tool_unavailable`, `tool_drift`, or `write_scope_required` for a write the row never consented to (F102) | untouched |
 | an argument the pin does not declare (§3) | refuses before calling, parking or spending budget | `refused`, `invalid_tool_args` | untouched |
 | the row's owner banned or gone (§7) | refuses before calling | `refused`, `connection_owner_banned`, `connection_owner_missing` or `connection_owner_bot` | untouched, and so is the grant |
 | `invalid_client` on a `dcr` row's refresh | marks the registration refused (§4) and fails the call | `refused`, `reconnect_required` | `status: 'error'`, "reconnect"; the registration's other rows are refused by the line below before their next call |
@@ -444,6 +445,7 @@ Each step can be tested without the vendor, except the live measurements in step
    - `an upstream tool not in the entry is never offered`
    - `the upstream description never reaches an agent`
    - `a pinned tool missing upstream is refused tool_unavailable`
+   - F102 (`hostedMcpNotGranted.test.js`), on Sam's real read-scoped Linear list (`read openid`, 38 listed): the 26 missing write pins are `not_granted` and every read is `ok`; reversed, the same list on a row that consented to `write` is 26 `tool_unavailable`; a missing read stays `tool_unavailable`; a listed write is assessed as any pin; the cache logs no not-granted pin; a call refuses `write_scope_required` before `tools/call`, and a listing hides the pin
    - `a pinned tool whose schema changed upstream is refused tool_drift`. Its fixture adds an optional top-level property to a `read` pin, which §3's compatible rule makes `ok`, so with that rule it moves to an incompatible change and the addition becomes an arm below.
    - The compatible rule (§3):
      - `a read pin whose upstream adds an optional top-level property, or changes only a description, is ok`, with a detail saying so
