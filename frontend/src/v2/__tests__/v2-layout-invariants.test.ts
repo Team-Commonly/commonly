@@ -2983,6 +2983,10 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(entry).toContain("import './v2/v2.css';");
 
       const shell = read('../V2App.tsx');
+      // The shell loads the same optical-size faces; the default file there would
+      // register weight-only faces after the entry's (#3415 review).
+      expect(shell).toContain("import '@fontsource-variable/bricolage-grotesque/opsz.css';");
+      expect(shell).not.toMatch(/^import '@fontsource-variable\/bricolage-grotesque';$/m);
       // The composer lives in V2Layout, so V2Layout stays IN the shell chunk.
       // Making it lazy would add a serial round trip to the very path this row
       // is measured on while shrinking nothing that path does not need.

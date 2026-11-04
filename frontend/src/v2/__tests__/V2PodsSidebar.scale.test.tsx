@@ -218,6 +218,10 @@ describe('V2PodsSidebar — direction C', () => {
     renderSidebar([own, shared]);
     expect(screen.getByRole('button', { name: /^My Workspace \(alex\)/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^My Workspace$/ })).toBeInTheDocument();
+    // Each pin carries the same owner-qualified name its row shows, so the two
+    // workspaces' pins are told apart by a screen reader too (#3415 review).
+    expect(screen.getByRole('button', { name: 'Pin My Workspace (alex)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pin My Workspace' })).toBeInTheDocument();
   });
 
   test('direct rows render the peer character for agents and Paper for unpicked people', () => {
