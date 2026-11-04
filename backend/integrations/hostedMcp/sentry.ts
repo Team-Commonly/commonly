@@ -13,8 +13,13 @@
  * added `1h` to search_issues. That row was consented without Triage or Seer,
  * so its list leaves out update_issue and Seer analysis: update_issue keeps its
  * 10-19 pin, and a row without Triage sees it as unavailable.
- * find_dropped_events is no longer a top-level tool (it moved behind the
- * dispatcher), so it is not pinned. The get_sentry_resource pin deliberately
+ * The eight project and search reads are re-pinned again from the same row's
+ * capture at 2026-11-04T12:32:32Z, where Sentry had added an optional `fresh`
+ * boolean to every tool and dropped `organizationSlug` from `required`. That
+ * list has 49 tools: the by-name dispatcher is gone and 39 tools are listed
+ * directly, find_dropped_events among them. None of the 39 is pinned, since each
+ * needs its own review. find_organizations and get_sentry_resource keep their
+ * 11-01 pins, which still assess as compatible. The get_sentry_resource pin deliberately
  * omits the vendor's optional `url`: that route can reach types outside the
  * pinned enum, so its live schema always reports a compatible addition in the
  * assessment log. The by-name dispatcher and its catalogue are excluded because
@@ -80,6 +85,7 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
       class: 'read',
       inputSchema: {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           organizationSlug: {
             type: "string",
@@ -121,11 +127,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
               },
             ],
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -315,10 +321,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -401,10 +408,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -487,10 +495,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -573,10 +582,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -659,10 +669,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -748,10 +759,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
@@ -830,10 +842,11 @@ export const SENTRY_ENTRY: HostedMcpEntry = {
             description: "Include explanation of how the query was translated or repaired",
             type: "boolean",
           },
+          fresh: {
+            description: "Bypass cached reads.",
+            type: "boolean",
+          },
         },
-        required: [
-          "organizationSlug",
-        ],
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
