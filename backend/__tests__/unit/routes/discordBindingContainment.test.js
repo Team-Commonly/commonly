@@ -601,11 +601,13 @@ describe('Discord binding containment (TASK-123 a)', () => {
         expect(outboundCalls()).toBe(0);
       });
 
-      it('looks for the binding only in the caller’s own pods', async () => {
+      it('counts only a binding the caller made, in one of their own pods', async () => {
+        // Membership of a pod someone else bound is not authority: a listed pod
+        // can be joined by anyone.
         await post(BODY);
 
         expect(Integration.findOne).toHaveBeenCalledWith({
-          type: 'discord', 'config.serverId': GUILD, podId: { $in: ['pod-1'] },
+          type: 'discord', 'config.serverId': GUILD, podId: { $in: ['pod-1'] }, createdBy: 'user-1',
         });
       });
 
@@ -641,6 +643,15 @@ describe('Discord binding containment (TASK-123 a)', () => {
 
         expect(res.status).toBe(404);
         expect(Integration.__getLastInstance()).toBe(before);
+        expect(created()).toBe(false);
+      });
+
+      it.each([['a thread', 11], ['a category', 4], ['a forum', 15]])('refuses %s', async (_label, type) => {
+        axios.get.mockResolvedValue({ data: { id: CHANNEL, type, guild_id: GUILD } });
+
+        const res = await post(BODY);
+
+        expect(res.status).toBe(404);
         expect(created()).toBe(false);
       });
 

@@ -129,7 +129,9 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
       }
       setTimeout(() => navigate(back), 2000);
     } catch (err: unknown) {
-      console.error('Error creating integration:', err);
+      // The status only, as for the channel list: the request body now carries
+      // the install proof (F90).
+      console.error('Error creating integration:', (err as { response?: { status?: number } })?.response?.status ?? 'no response');
       const e = err as { response?: { data?: { message?: string } } };
       setError(e.response?.data?.message || t('auth.discordHandoff.createFailed'));
     } finally {

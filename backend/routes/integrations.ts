@@ -68,10 +68,12 @@ import {
 } from '../middleware/integrationRateLimit';
 
 // F90: the instance bot is in many guilds, so a request naming a guild proves
-// nothing. The caller has authority over a guild when one of their pods is
-// already bound to it, or on a first install, when they carry the OAuth
-// callback's proof for this pod and guild (F89). The same rule the channel list
-// applies (routes/discord.ts).
+// nothing. The caller has authority over a guild when they themselves bound it
+// to one of their pods before, or, on a first install, when they carry the
+// OAuth callback's proof for this pod and guild (F89). A binding someone else
+// made does not count: anyone can join a listed pod, and membership must not
+// hand over every channel in that pod's guild. The channel list (routes/
+// discord.ts) is looser, since it only shows channel names.
 const hasDiscordGuildAuthority = async (
   userId: unknown, podId: string, guildId: string, install: unknown,
 ): Promise<boolean> => {
@@ -80,20 +82,30 @@ const hasDiscordGuildAuthority = async (
     .lean();
   const podIds = (callerPods || []).map((pod: { _id: unknown }) => pod._id);
   if (podIds.length
-    && await Integration.findOne({ type: 'discord', 'config.serverId': guildId, podId: { $in: podIds } })) return true;
+    && await Integration.findOne({
+      type: 'discord', 'config.serverId': guildId, podId: { $in: podIds }, createdBy: userId,
+    })) return true;
   const proof = readDiscordInstallProof(install);
   return !!proof && proof.guildId === guildId && proof.podId === podId
     && podIds.some((id: unknown) => String(id) === podId);
 };
 
-// The guild a channel belongs to, as Discord answers it, or '' when it doesn't.
+// A text or announcement channel, the kinds the picker lists and a webhook
+// can be made on; a thread, category or forum would fail after the row saves.
+const WEBHOOK_CHANNEL_TYPES = new Set([0, 5]);
+
+// The guild a channel belongs to, as Discord answers it, or '' when it doesn't
+// (or when it is not a channel a connector can use).
 const discordChannelGuild = async (channelId: string): Promise<string> => {
   if (!isDiscordSnowflake(channelId)) return '';
   try {
     const response = await axios.get(`https://discord.com/api/channels/${channelId}`, {
       headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
+      timeout: 10_000,
     });
-    return String((response.data as { guild_id?: unknown })?.guild_id || '');
+    const channel = response.data as { guild_id?: unknown; type?: unknown };
+    if (!WEBHOOK_CHANNEL_TYPES.has(Number(channel?.type))) return '';
+    return String(channel?.guild_id || '');
   } catch {
     return '';
   }
