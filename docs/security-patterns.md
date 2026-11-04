@@ -5,7 +5,8 @@ Reference doc for backend authors. Captures the patterns CodeQL's
 sanitizers, plus the anti-patterns that look safe but fail review.
 
 Updated when a CodeQL battle on a real PR uncovers a non-obvious
-shape. Sources at the bottom.
+shape, or a review finds an authorization shape worth reusing. Sources at
+the bottom.
 
 ---
 
@@ -170,7 +171,9 @@ Reference implementation: `backend/utils/discordInstallProof.ts`
 install proof), with the walk-through test in
 `backend/__tests__/service/discordInstallBind.test.js`. Until #3436 the Discord
 state was `pod_<id>`. One click from a signed-in member on a crafted link could
-bind their pod to an outside server, which could then read the pod's summary.
+bind their pod to an outside server. That server's `/commonly summary` command
+then answered with the pod's latest chat summary
+(`discordCommandService.handleSummaryCommand`).
 
 ## Anti-patterns
 
@@ -205,13 +208,12 @@ through `String()` and bound length when logging user content.
 
 ## Sources
 
-- PR #3436 — a signed, user-bound OAuth state for the Discord install, and
-  pod authority on the bind.
-
 - PR #408 — first `String + replace + roundtrip` shape in the
   install endpoint, set the pattern.
 - PR #413 — the 5-iteration CodeQL battle that drove the
   in-memory-Set refactor (and revealed regex captures are
   untrackable in our setup).
+- PR #3436 — a signed, user-bound OAuth state for the Discord install, and
+  pod authority on the bind.
 - CodeQL JS query docs:
   https://codeql.github.com/codeql-query-help/javascript/js-nosql-injection/
