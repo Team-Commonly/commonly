@@ -434,7 +434,9 @@ describe('drift is a named refusal', () => {
     };
     expect(assessRead(pin, { ...pin, required: ['team', 'limit'] }).verdict).toBe('tool_drift');
     expect(assessRead(pin, { ...pin, required: ['limit'] }).verdict).toBe('tool_drift');
-    expect(assessRead({ ...pin, required: undefined }, pin).verdict).toBe('tool_drift');
+    // A pin with no required list at all (the key absent, as JSON has it).
+    const { required: _omitted, ...pinWithoutRequired } = pin;
+    expect(assessRead(pinWithoutRequired, pin).verdict).toBe('tool_drift');
   });
 
   const TEAM_SCOPE = { team: { type: 'string' }, scope: { type: 'string' } };
@@ -483,6 +485,21 @@ describe('drift is a named refusal', () => {
       properties: { team: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
       not: { properties: { team: { $ref: '#/properties/team' } }, required: ['team'] },
     }, (pin) => ({ ...pin, properties: { team: { ...pin.properties.team, required: [] } } })],
+    // The pin takes [{ a: 1, b: 1 }, { a: 1 }] (one match, within
+    // maxContains 1); requiring less, both items match and it is refused.
+    ['contains', {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          contains: { type: 'object', required: ['a', 'b'] },
+          maxContains: 1,
+        },
+      },
+    }, (pin) => ({
+      ...pin,
+      properties: { ids: { ...pin.properties.ids, contains: { type: 'object', required: ['a'] } } },
+    })],
     // An anchor makes any position a reference target.
     ['a schema carrying an $anchor', {
       type: 'object',
