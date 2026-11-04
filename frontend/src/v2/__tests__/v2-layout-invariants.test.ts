@@ -6077,6 +6077,44 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
     }
   });
 
+  test('finding 5: a phone icon key is square, 44x44 from the primitives or the D223 32x32 in chat, never 32x44', () => {
+    // The primitives' phone icon key grows on both axes together.
+    const phone = mediaBlockContaining(primitives, '.v2p-b, .v2p-b-sm {');
+    const icon = ruleBody(primitives, '.v2p-ib, .v2p-ib.v2p-b-sm', { within: phone });
+    expect(icon.match(/width: (\d+)px/)?.[1]).toBe(icon.match(/height: (\d+)px/)?.[1]);
+    // The chat keys that carry the D223 44px ::after hit area draw at 32x32 on a
+    // phone. The primitives' 44px height alone would leave them 32 wide and 44 tall.
+    const sizesOn = (css: string, key: string) => {
+      const sizes: { width?: string; height?: string } = {};
+      const flat = css.replace(/\/\*[\s\S]*?\*\//g, '');
+      for (let at = flat.indexOf('@media (max-width: 760px)'); at !== -1; at = flat.indexOf('@media (max-width: 760px)', at + 1)) {
+        const block = blockAt(flat, at);
+        const inner = block.slice(block.indexOf('{') + 1, -1);
+        for (const [, selectors, body] of inner.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+          if (!selectors.split(',').map((one) => one.trim()).includes(`.v2-root button.${key}`)) continue;
+          const width = /(?:^|[;\s])width:\s*(\d+px)/.exec(body)?.[1];
+          const height = /(?:^|[;\s])height:\s*(\d+px)/.exec(body)?.[1];
+          if (width) sizes.width = width;
+          if (height) sizes.height = height;
+        }
+      }
+      return sizes;
+    };
+    const pane = read('../chat/chat-pane.css');
+    const composer = read('../chat/chat-composer.css');
+    const d223 = [
+      [pane, 'v2-thread__back'],
+      [pane, 'v2-thread__inspector-toggle'],
+      [pane, 'v2-pod-header__invite'],
+      [composer, 'v2-composer__plus'],
+      [composer, 'v2-composer__send'],
+    ] as const;
+    for (const [css, key] of d223) {
+      expect(css).toContain(`.v2-root button.${key}::after`);
+      expect({ key, ...sizesOn(css, key) }).toEqual({ key, width: '32px', height: '32px' });
+    }
+  });
+
   test('finding 6: the board header icon keys never shrink on a phone', () => {
     const phone = mediaBlockContaining(boardCss, '.v2-feature--board .v2-board__key--icon { flex: none; }');
     expect(ruleBody(boardCss, '.v2-feature--board .v2-board__key--icon', { within: phone })).toContain('flex: none');
