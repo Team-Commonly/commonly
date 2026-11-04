@@ -197,6 +197,28 @@ describe('performRun', () => {
       adapter: 'codex', model: 'gpt-6.1-sol', effort: 'max' }));
   });
 
+  // A record with no environment keeps running as it did, and says once why
+  // the saved model and effort don't reach it.
+  test('a listener with no saved environment says once that saved controls cannot apply', async () => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    const mockGet = jest.fn(async (url) => (url === '/api/agents/runtime/installations'
+      ? { installations: [{ type: 'installation', podId: 'pod-abc', instanceId: 'default',
+        runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
+      : { events: [makeEvent()] }));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const logs = [];
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', podId: 'pod-abc', readSavedControls: true,
+      adapter: { name: 'codex', detect: stubAdapter.detect, spawn },
+      environment: null, setTimeoutImpl: noopTimeout, log: (line) => logs.push(line) });
+    await drainMicrotasks(); stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][1].environment).toBeNull();
+    expect(logs.filter((line) => line.includes("don't apply to it"))).toHaveLength(1);
+    expect(logs.join('\n')).toContain('commonly agent detach my-stub --force');
+  });
+
   test('event with content → adapter.spawn receives sandboxed attribution → reply posted → acked', async () => {
     // Make the full attribution env differ from sandboxEnv at the adapter seam.
     process.env.GIT_CONFIG_COUNT = '1';

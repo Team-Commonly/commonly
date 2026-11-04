@@ -19,7 +19,10 @@ describe('seat runtime controls (D247)', () => {
     ];
     expect(savedRuntimeControls({ installations, podId: 'p2', instanceId: 'default' }))
       .toEqual({ model: 'gpt-6-sol', effort: 'max' });
-    expect(savedRuntimeControls({ installations, podId: 'p1', instanceId: 'default' })).toBeNull();
+    // An empty row in this pod doesn't hide the controls saved on the other one.
+    expect(savedRuntimeControls({ installations, podId: 'p1', instanceId: 'default' }))
+      .toEqual({ model: 'gpt-6-sol', effort: 'max' });
+    expect(savedRuntimeControls({ installations: [installations[0]], podId: 'p1', instanceId: 'default' })).toBeNull();
     expect(savedRuntimeControls({ installations, podId: 'p9', instanceId: 'default' }))
       .toEqual({ model: 'gpt-6-sol', effort: 'max' });
     expect(savedRuntimeControls({ installations: [{ type: 'installation', podId: 'p1' }], podId: 'p1' })).toBeNull();

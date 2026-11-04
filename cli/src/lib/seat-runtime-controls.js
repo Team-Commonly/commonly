@@ -19,10 +19,13 @@ export const savedRuntimeControls = ({ installations, podId, instanceId } = {}) 
   const rows = installations.filter((row) => row?.type === 'installation'
     && row.runtimeControls && typeof row.runtimeControls === 'object');
   const wantedInstance = String(instanceId || 'default');
+  // /installations returns runtimeControls on every row, `{}` when nothing is
+  // saved, so both matches require a value: an empty row in this pod must not
+  // hide the controls saved on the identity's other installation.
+  const hasControls = (entry) => isControl(entry.runtimeControls.model) || isControl(entry.runtimeControls.effort);
   const row = rows.find((entry) => String(entry.podId || '') === String(podId || '')
-    && String(entry.instanceId || 'default') === wantedInstance)
-    || rows.find((entry) => String(entry.instanceId || 'default') === wantedInstance
-      && (isControl(entry.runtimeControls.model) || isControl(entry.runtimeControls.effort)));
+    && String(entry.instanceId || 'default') === wantedInstance && hasControls(entry))
+    || rows.find((entry) => String(entry.instanceId || 'default') === wantedInstance && hasControls(entry));
   if (!row) return null;
   const controls = {};
   if (isControl(row.runtimeControls.model)) controls.model = row.runtimeControls.model;

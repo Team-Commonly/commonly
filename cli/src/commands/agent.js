@@ -1849,10 +1849,11 @@ export const performRun = ({
   // D247: the model and effort this turn spawns with. A listener seat reads
   // its saved controls first; then an effort is dropped only when the device
   // listed its levels and this one is not among them.
+  let savedControlsNoticeShown = false;
   const refreshSeatEnvironment = async () => {
     const inventory = await runtimeInventoryPromise;
     let desiredEnvironment = requestedSeatEnvironment;
-    if (readSavedControls && requestedSeatEnvironment) {
+    if (readSavedControls) {
       try {
         const identity = await client.get('/api/agents/runtime/installations', {}, {
           signal: AbortSignal.timeout(5000),
@@ -1862,6 +1863,14 @@ export const performRun = ({
         });
       } catch { /* keep the last controls read; a failed read changes nothing */ }
       desiredEnvironment = withSavedRuntimeControls(requestedSeatEnvironment, lastSavedControls);
+      // A record with no environment (from before attach wrote one) can't take
+      // saved controls: building one here would switch the adapter out of its
+      // no-environment mode (claude.js), not just set a model. Say so once.
+      if (!requestedSeatEnvironment && lastSavedControls && !savedControlsNoticeShown) {
+        savedControlsNoticeShown = true;
+        log(`${agentName} has no saved environment on this computer, so the model and effort saved in Commonly `
+          + `don't apply to it. To pick them up: commonly agent detach ${agentName} --force, then attach it again.`);
+      }
     }
     // Dropped only when the device listed its levels and this one is not
     // among them; with nothing reported the harness decides (D247).
