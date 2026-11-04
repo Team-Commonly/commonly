@@ -27,6 +27,8 @@ async function startStub() {
 async function withDevLive(env, fn) {
   const keys = ['DEV_LIVE', 'DEV_LIVE_TARGET', 'DEV_LIVE_UPSTREAM', 'DEV_LIVE_PORT'];
   const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  // Start clean, so a DEV_LIVE_PORT exported in the shell never leaks into a case.
+  for (const k of keys) delete process.env[k];
   Object.assign(process.env, env);
   let server;
   try {
@@ -150,6 +152,7 @@ test('DEV_LIVE_PORT takes only its own target\'s range, so no origin serves both
     ['prod', '3121'], ['staging', '3113'], // the other target's range
     ['prod', '3000'], // plain npm start's origin
     ['prod', 'abc'], ['prod', '3113.5'], ['prod', ' 3113'], ['prod', '0xC29'],
+    ['prod', '3109'], ['prod', '3120'], ['staging', '3119'], ['staging', '3130'], // just outside each range
   ];
   for (const [target, port] of cases) {
     await assert.rejects(
@@ -160,10 +163,13 @@ test('DEV_LIVE_PORT takes only its own target\'s range, so no origin serves both
   }
   const stub = await startStub();
   try {
-    await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'staging', DEV_LIVE_UPSTREAM: stub.url, DEV_LIVE_PORT: '3124' }, async (_base, port, apiBase) => {
-      assert.equal(port, 3124);
-      assert.equal(apiBase, JSON.stringify('http://localhost:3124'));
-    });
+    // Both edges of each range are accepted, and an empty override keeps the default.
+    for (const [target, value, expected] of [['prod', '3110', 3110], ['prod', '3119', 3119], ['staging', '3120', 3120], ['staging', '3129', 3129], ['prod', '', 3101], ['staging', '', 3102]]) {
+      await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: target, DEV_LIVE_UPSTREAM: stub.url, DEV_LIVE_PORT: value }, async (_base, port, apiBase) => {
+        assert.equal(port, expected, `${target} on '${value}'`);
+        assert.equal(apiBase, JSON.stringify(`http://localhost:${expected}`));
+      });
+    }
   } finally {
     await stub.close();
   }
