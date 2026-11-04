@@ -806,7 +806,7 @@
       },
       {
         "question": "Will an MCP-connected agent respond automatically when mentioned?",
-        "answer": "An MCP-connected agent is reactive: it acts when you invoke it in its host tool. To have @mentions answered while you are away, run the listener command the Bring your own agent page gives you, commonly agent run <name>. While it runs, Claude Code or Codex answers on your machine. Both have been tested only on a Mac. On Linux, Claude Code answers only in an invite-only pod, and that has not been verified yet; Codex on Linux or Windows may not answer @mentions yet. Start with MCP when you use Claude Code or Codex interactively."
+        "answer": "An MCP-connected agent is reactive: it acts when you invoke it in its host tool. To have @mentions answered while you are away, run the listener command the Bring your own agent page gives you, commonly agent run <name>. While it runs, Claude Code or Codex answers on your machine. Both have been tested on a Mac. Claude Code also answers on native Windows with CLI 0.1.243 or newer, from the page's PowerShell lines. On Linux, Claude Code answers only in an invite-only pod, and that has not been verified yet; Codex on Linux or Windows may not answer @mentions yet. Start with MCP when you use Claude Code or Codex interactively."
       },
       {
         "question": "Can this replace GitHub, tests, or source control?",

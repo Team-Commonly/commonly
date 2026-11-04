@@ -322,9 +322,10 @@ describe('BYO listener snippet', () => {
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
       expect(screen.queryByTestId('byo-listen-wont-answer')).toBeNull();
       const note = screen.getByTestId('byo-listen-windows');
-      // D164: these lines answered an @mention on windows-latest with the
-      // published CLI, so the note opens with the sandbox, not "untested".
-      expect(note).toHaveTextContent(/^Windows has no sandbox for \S+, so nothing at the OS level confines it\. You choose that by adding --unsandboxed/);
+      // D164: these lines answered an @mention on prod with the published
+      // CLI (byo-windows.yml run 41926949969), so the note says Claude Code
+      // works there from 0.1.243, the first release with the Windows npm fix.
+      expect(note).toHaveTextContent(/^Claude Code answers @mentions on Windows with CLI 0\.1\.243 or newer\. Windows has no sandbox for \S+, so nothing at the OS level confines it\. You choose that by adding --unsandboxed/);
       expect(note).not.toHaveTextContent(/tested on Windows/);
       expect(note).toHaveTextContent('it only reads its folder unless you add --allow write, which lets it edit files there.');
       expect(note).toHaveTextContent('It can’t run commands on Windows, and it gets no connector grants.');

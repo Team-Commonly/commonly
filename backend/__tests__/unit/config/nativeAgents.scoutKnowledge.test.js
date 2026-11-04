@@ -119,16 +119,20 @@ describe('Scout onboarding knowledge', () => {
   });
 
   // docs/agents/byo-support-matrix.md: Claude Code and Codex walked as public
-  // seats on a Mac (2026-11-04); Claude Code does not answer on Linux, WSL or
-  // native Windows today; Codex off a Mac is untested; the daemon is unverified.
+  // seats on a Mac (2026-11-04); Claude Code walked on native Windows on prod
+  // with the published CLI (D164, run 41926949969), and works there with CLI
+  // 0.1.243 or newer; it does not answer on Linux or WSL today; Codex off a
+  // Mac is untested; the daemon is unverified.
   test('says where an agent answers @mentions exactly as the support matrix does', () => {
     expect(prompt).toMatch(/@mentions: Claude Code and Codex on a Mac, with `commonly agent run`\./);
     expect(prompt).toMatch(/with no terminal\. This daemon path is not verified yet\./);
-    expect(prompt).toMatch(/Claude Code on Linux \(WSL included\) or native Windows is not verified to answer @mentions today; fixes are in flight, give no date\./);
-    expect(prompt).toMatch(/with the MCP command on the connect page \(not yet walked on Linux or Windows; there it is two PowerShell lines\)/);
+    expect(prompt).toMatch(/Claude Code on native Windows too, with CLI 0\.1\.243 or newer: the connect page gives PowerShell lines that run it with no sandbox, and it gets no connector grants\./);
+    expect(prompt).toMatch(/Claude Code on Linux \(WSL included\) is not verified to answer @mentions today; fixes are in flight, give no date\./);
+    expect(prompt).not.toMatch(/native Windows is not verified to answer/);
+    expect(prompt).toMatch(/with the MCP command on the connect page \(not yet walked on Linux\)/);
     expect(prompt).toMatch(/Codex off a Mac is not tested\./);
     expect(prompt).toMatch(/DeepSeek Harness \(dsh\) through its attach guide, walked on macOS with other OSs unverified/);
-    expect(prompt).toMatch(/For Claude Code on Linux, WSL or native Windows, do not propose a connect card/);
+    expect(prompt).toMatch(/For Claude Code on Linux or WSL, do not propose a connect card/);
     expect(prompt).toMatch(/commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions/);
     expect(prompt).toMatch(/`claude mcp list` showing Connected means the server started, not that a tool was used/);
   });
@@ -142,8 +146,6 @@ describe('Scout onboarding knowledge', () => {
       /Claude Code on macOS, Linux or WSL/,
       /Codex (on|runs on|works on) (native )?(Linux|WSL|Windows)\b(?! or WSL, or any tool)/,
       /daemon (works|is working|is verified)/,
-      /Claude Code (runs|works) on (native )?Windows/,
-      /Claude Code on (native )?Windows (works|answers)/,
       /does not answer @mentions today/,
       /MCP command on the connect page \((on|on native) Windows/,
       /--unsandboxed/,
@@ -173,10 +175,13 @@ describe('Scout onboarding knowledge', () => {
   });
 
   // The prompt is the only guard before the card, so the pairs
-  // it may go out for are listed, not inferred.
-  test('proposes the card only for Claude Code or Codex on macOS', () => {
-    expect(prompt).toMatch(/The card may go out for exactly these pairs: Claude Code or Codex on macOS\./);
-    expect(prompt).toMatch(/Any other pair, such as either one on Linux or WSL, or any tool on native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text answer and no card/);
+  // it may go out for are listed, not inferred. D164: the card lands on the
+  // connect page, which gives a Windows browser its PowerShell lines, and the
+  // server gates the card by name and adapter only, so Claude Code on native
+  // Windows joins the list now that it is walked there.
+  test('proposes the card only for Claude Code or Codex on macOS, and Claude Code on native Windows', () => {
+    expect(prompt).toMatch(/The card may go out for exactly these pairs: Claude Code or Codex on macOS, and Claude Code on native Windows\./);
+    expect(prompt).toMatch(/Any other pair, such as either one on Linux or WSL, Codex off a Mac, or any tool on ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text answer and no card/);
     ['ChromeOS', 'iPad', 'Android'].forEach((os) => expect(prompt).toContain(os));
   });
 
@@ -199,16 +204,15 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet, or is not tested there, as above, only for a tool with no path above, or an OS its path does not cover\./);
     // CodeRabbit on #2765: the no-card rule must not deny tools that do connect.
     expect(prompt).not.toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text and say plainly that it does not run there yet/);
-    expect(prompt).toMatch(/For Claude Code on Linux, WSL or native Windows, do not propose a connect card: offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page/);
+    expect(prompt).toMatch(/For Claude Code on Linux or WSL, do not propose a connect card: offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page/);
     expect(prompt).toMatch(/For Codex off a Mac, do not propose a connect card either: offer "Run it here", or running Codex on a Mac\. Say plainly why/);
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
     // D245: the page no longer says Claude Code can't run on Windows. Its note
     // describes an opt-in --unsandboxed listener and names neither "Run it
-    // here" nor the MCP command; Scout's prompt still proposes no card there
-    // and offers those two itself (asserted above), not by quoting the note.
-    // D164: the published CLI answered an @mention on windows-latest, so the
-    // note no longer calls Claude Code untested there.
-    expect(en.agentByo.listen.windowsNote).toMatch(/^Windows has no sandbox/);
+    // here" nor the MCP command. D164: the published CLI answered an @mention
+    // from those lines on prod, so the note says it works with 0.1.243 or
+    // newer, as Scout's prompt does, and Scout proposes the card there.
+    expect(en.agentByo.listen.windowsNote).toMatch(/^Claude Code answers @mentions on Windows with CLI 0\.1\.243 or newer\. Windows has no sandbox/);
     expect(en.agentByo.listen.windowsNote).not.toMatch(/tested on Windows/);
     expect(en.agentByo.listen.windowsNote).toMatch(/--unsandboxed/);
     expect(en.agentByo.listen.unavailableClaudeLinux).toMatch(/only in an invite-only pod.*connect Claude Code from your own sessions with the command below, or choose “Run it here”/);

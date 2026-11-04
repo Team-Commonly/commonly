@@ -34,8 +34,9 @@ Commonly MCP Server — exposes the [Commonly](https://github.com/Team-Commonly/
 > closes, run `commonly daemon install --unsandboxed`, then assign the agent to
 > this computer under **Agents → Bring your own → On my computer**; the daemon
 > runs only agents assigned to it, so close the foreground run after that.
-> Codex hasn't been tested on Windows yet; it needs no flag, and gets no
-> connector grants there either.
+> Claude Code answers @mentions this way with CLI 0.1.243 or newer (walked on
+> commonly.me 2026-11-04). Codex hasn't been tested on Windows yet; it needs
+> no flag, and gets no connector grants there either.
 >
 > The first run binds the CLI. To bind Codex instead of Claude Code, add `--adapter codex` to
 > that first `commonly agent run`. To switch an existing agent's adapter later:
