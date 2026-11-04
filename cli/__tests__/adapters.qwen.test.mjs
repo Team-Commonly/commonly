@@ -153,7 +153,26 @@ test.each(['0.25.1', '0.26.2'])('a public seat accepts smoke-tested Qwen %s with
   });
 });
 
-test.each(['0.26.0', '0.26.3'])('public version drift to %s refuses before launching a provider proxy or child', async (version) => {
+test.each(['0.26.3', '0.26.10'])('a public seat warns and runs a later patch %s of the newest tested line', async (version) => {
+  await withSeat(async (ctx) => {
+    spawnSyncMock.mockImplementation(() => ({ status: 0, stdout: `${version}\n` }));
+    const previous = process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      delete process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
+      await expect(qwen.spawn('hello', { environment: { model: 'test-model' }, ...ctx, _spawnImpl: () => fakeChild() }))
+        .resolves.toMatchObject({ text: 'Qwen reply' });
+      expect(warning).toHaveBeenCalledWith(`[qwen] installed ${version} differs from smoke-tested 0.25.1, 0.26.2; `
+        + 'a patch release on the newest smoke-tested line, so the public seat continues');
+    } finally {
+      warning.mockRestore();
+      if (previous === undefined) delete process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV];
+      else process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV] = previous;
+    }
+  });
+});
+
+test.each(['0.26.0', '0.25.2', '0.27.0', '1.26.3'])('public version drift to %s refuses before launching a provider proxy or child', async (version) => {
   await withSeat(async (ctx) => {
     spawnSyncMock.mockImplementation(() => ({ status: 0, stdout: `${version}\n` }));
     const spawn = jest.fn();

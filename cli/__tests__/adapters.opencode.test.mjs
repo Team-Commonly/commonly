@@ -1120,6 +1120,47 @@ describe('opencode adapter — spawn()', () => {
     });
   });
 
+  test.each(['1.19.5', '1.19.12'])('a public seat warns and runs a later patch %s of the newest tested line', async (version) => {
+    await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, undefined, async () => {
+      await withTemp(async (root) => {
+        const workspace = join(root, 'workspace');
+        const keyFile = join(root, 'provider-key');
+        await mkdir(workspace, { recursive: true });
+        await writeFile(keyFile, 'version-gate-test-key');
+        await chmod(keyFile, 0o600);
+        spawnSyncMock.mockImplementation((_cmd, args = []) => (args[0] === '--version'
+          ? { status: 0, stdout: `OpenCode ${version}\n` }
+          : { status: 0, stdout: '/usr/local/bin/opencode\n' }));
+        const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+        const spawn = makeSpawnImpl();
+        try {
+          await opencode.spawn('public turn', {
+            cwd: workspace,
+            env: { PATH: process.env.PATH },
+            environment: {
+              model: 'test-model',
+              provider: { id: 'test-provider', baseURL: 'https://llm.example.test/v1', keyFile },
+              sandbox: { trust: 'public', mode: 'workspace' },
+              mcp: [],
+            },
+            agentName: 'public-version-gate-seat',
+            _binaryPath: '/usr/local/bin/opencode',
+            _platform: 'darwin',
+            _wrapArgvWithSeatbelt: (argv) => ['/usr/bin/sandbox-exec', '-p', '(deny default)', ...argv],
+            _spawnImpl: spawn.impl,
+          });
+          expect(spawn.calls).toHaveLength(1);
+          expect(warning).toHaveBeenCalledWith(
+            `[opencode] installed OpenCode ${version} is newer than smoke-tested versions 1.18.35, 1.19.0, 1.19.4; `
+            + 'a patch release on the newest smoke-tested line, so the public seat continues',
+          );
+        } finally {
+          warning.mockRestore();
+        }
+      });
+    });
+  });
+
   test('a trusted seat warns on a newer version and still spawns', async () => {
     await withProcessEnv(ALLOW_UNTESTED_OPENCODE_VERSION_ENV, '1', async () => {
       await withTemp(async (root) => {
@@ -1163,9 +1204,14 @@ describe('opencode adapter — spawn()', () => {
       message: /installed OpenCode 1\.18\.40 differs from smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
-      description: 'untested next-patch',
-      result: { status: 0, stdout: 'OpenCode 1.19.5\n' },
-      message: /installed OpenCode 1\.19\.5 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+      description: 'prerelease of the next patch',
+      result: { status: 0, stdout: 'OpenCode 1.19.5-rc.1\n' },
+      message: /installed OpenCode 1\.19\.5-rc\.1 .*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
+    },
+    {
+      description: 'next minor',
+      result: { status: 0, stdout: 'OpenCode 1.20.1\n' },
+      message: /installed OpenCode 1\.20\.1 is newer than smoke-tested versions 1\.18\.35, 1\.19\.0, 1\.19\.4.*COMMONLY_OPENCODE_ALLOW_UNTESTED_VERSION=1/,
     },
     {
       description: 'newer',

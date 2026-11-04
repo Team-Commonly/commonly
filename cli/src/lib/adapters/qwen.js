@@ -1,5 +1,6 @@
 /** Qwen Code 0.25.1 and 0.26.2 wrapper. Public turns have fresh HOME, config and keys. */
 import { requireSeatModel } from './seat-model.js';
+import { isPatchAfterNewestTested } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { lstatSync, realpathSync } from 'fs';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
@@ -259,11 +260,15 @@ export default {
     });
     if (!TESTED_QWEN_VERSIONS.includes(version)) {
       const versions = TESTED_QWEN_VERSIONS.join(', ');
-      if (isPublic && process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV] !== '1') {
+      const allowOverride = process.env[ALLOW_UNTESTED_QWEN_VERSION_ENV] === '1';
+      const patchAfterTested = isPatchAfterNewestTested(version, TESTED_QWEN_VERSIONS);
+      if (isPublic && !allowOverride && !patchAfterTested) {
         throw new Error(`Public Qwen seats refuse version ${version || 'unknown'}; smoke-tested: ${versions}. Set ${ALLOW_UNTESTED_QWEN_VERSION_ENV}=1 in the host process to override.`);
       }
+      let outcome = 'trusted seat continues';
+      if (isPublic) outcome = allowOverride ? 'host override accepted' : 'a patch release on the newest smoke-tested line, so the public seat continues';
       // eslint-disable-next-line no-console
-      console.warn(`[qwen] installed ${version || 'unknown'} differs from smoke-tested ${versions}; ${isPublic ? 'host override accepted' : 'trusted seat continues'}`);
+      console.warn(`[qwen] installed ${version || 'unknown'} differs from smoke-tested ${versions}; ${outcome}`);
     }
     // npm launches through a symlink into the package. Qwen loads chunks next
     // to that entry file, so public sandboxes need that exact read-only tree.
