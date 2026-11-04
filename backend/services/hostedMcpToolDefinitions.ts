@@ -428,10 +428,13 @@ const listUpstreamTools = async (
   const entry = findHostedMcpEntry(entries, String(row.config?.entryId || ''));
   if (!entry) throw new RoomGrantError('connection_mismatch', 'hosted-MCP entry is unavailable', 403);
   const { token } = await deps.credentialFor(row);
-  // The consent is read off this row, before any refresh credentialFor ran. A
-  // refresh only narrows it (scopeAfterRefresh), so a pin this read calls
-  // not granted is not granted after it too; the reverse leaves a pin
-  // tool_unavailable for one TTL, which is today's verdict.
+  // The consent is read off this row, before any refresh credentialFor ran.
+  // not_granted also needs the pin missing from a list taken with the refreshed
+  // token, so a stale read can only mislabel a missing write for one TTL: a
+  // legacy row with no recorded scope can gain one on refresh (scopeAfterRefresh
+  // falls back to the entry's scopes), and a refresh that drops write leaves the
+  // pin tool_unavailable, which is the verdict before F102. Neither changes what
+  // a call can do: it is made with the refreshed token, whose scope the vendor reads.
   const grantedScope = row.config?.grantedScope;
   return {
     tools: await listHostedMcpTools(entry, token, deps.fetcher),
