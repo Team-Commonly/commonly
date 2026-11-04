@@ -372,6 +372,303 @@ describe('drift is a named refusal', () => {
     expect(verdictOf(assessEntryTools(entry, upstream), 'list_issues')).toBe('tool_drift');
   });
 
+  // Two loosenings a read pin accepts (CTO ruling 11-04): a nullable type
+  // respelled between `anyOf` of bare types and a `type` array, and a property
+  // leaving `required` where requiring less can only accept more. Neither
+  // lets a call the pin refused start to pass, except by leaving a property
+  // out. An added enum value still drifts until the broker checks values
+  // against the pin (F100).
+  const readPin = (inputSchema) => linear({ tools: [pinned({ inputSchema })] });
+  const assessRead = (pinSchema, liveSchema) => {
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = liveSchema;
+    return assessEntryTools(readPin(pinSchema), upstream).find((a) => a.name === 'list_issues');
+  };
+  const NULLABLE_PIN = {
+    type: 'object',
+    properties: {
+      team: { type: 'string' },
+      sort: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      project: { default: null, anyOf: [{ type: 'string' }, { type: 'null' }] },
+    },
+  };
+
+  test('a nullable type respelled from anyOf to a type array, either way and in any order, is compatible', () => {
+    const respelled = {
+      type: 'object',
+      properties: {
+        team: { type: 'string' },
+        sort: { type: ['string', 'null'] },
+        project: { default: null, type: ['null', 'string'] },
+      },
+    };
+    expect(assessRead(NULLABLE_PIN, respelled)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+    expect(assessRead(respelled, NULLABLE_PIN)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+    // A one-type array is that type.
+    expect(assessRead(NULLABLE_PIN, {
+      ...NULLABLE_PIN, properties: { ...NULLABLE_PIN.properties, team: { type: ['string'] } },
+    }).verdict).toBe('ok');
+  });
+
+  test.each([
+    ['a type the anyOf did not allow', { type: ['string', 'null', 'number'] }, null],
+    ['a dropped null', { type: 'string' }, null],
+    ['a branch keyword folded into the type array', { type: ['string', 'null'] }, { anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }] }],
+    ['an anyOf beside its own type', { type: 'string', anyOf: [{ type: 'string' }, { type: 'null' }] }, null],
+  ])('a respell that changes what is accepted still drifts: %s', (_change, sort, pinnedSort) => {
+    const pin = pinnedSort ? { ...NULLABLE_PIN, properties: { ...NULLABLE_PIN.properties, sort: pinnedSort } } : NULLABLE_PIN;
+    expect(assessRead(pin, { ...NULLABLE_PIN, properties: { ...NULLABLE_PIN.properties, sort } }).verdict).toBe('tool_drift');
+  });
+
+  test('an anyOf inside a data value is data, not a respellable schema', () => {
+    const pin = { type: 'object', properties: { team: { type: 'string', default: { anyOf: [{ type: 'string' }, { type: 'null' }] } } } };
+    expect(assessRead(pin, {
+      type: 'object', properties: { team: { type: 'string', default: { type: ['string', 'null'] } } },
+    }).verdict).toBe('tool_drift');
+  });
+
+  // A pointer into anyOf names a branch by its index, so reordering or folding
+  // the branches changes what the reference resolves to.
+  const REF_INTO_ANYOF = (ref, branches) => ({
+    type: 'object',
+    properties: { team: { $ref: ref } },
+    $defs: { entry: { anyOf: branches } },
+  });
+  test.each([
+    ['a pointer', '#/$defs/entry/anyOf/0'],
+    ['a percent-encoded pointer', '#/$defs/entry/%61nyOf/0'],
+  ])('a respell is not applied when %s names an anyOf branch', (_form, ref) => {
+    const pin = REF_INTO_ANYOF(ref, [{ type: 'string' }, { type: 'null' }]);
+    // Reordered: the reference now resolves to { type: 'null' }.
+    expect(assessRead(pin, REF_INTO_ANYOF(ref, [{ type: 'null' }, { type: 'string' }])).verdict).toBe('tool_drift');
+    // Folded: the reference no longer resolves at all.
+    const folded = { ...pin, $defs: { entry: { type: ['string', 'null'] } } };
+    expect(assessRead(pin, folded).verdict).toBe('tool_drift');
+  });
+
+  test('a respell beside references into $defs that avoid anyOf is compatible', () => {
+    const pin = {
+      ...NULLABLE_PIN,
+      properties: { ...NULLABLE_PIN.properties, when: { $ref: '#/$defs/DateOrDateTime' } },
+      $defs: { DateOrDateTime: { type: 'string' } },
+    };
+    const live = { ...pin, properties: { ...pin.properties, sort: { type: ['string', 'null'] } } };
+    expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+  });
+
+  test('a property leaving required is compatible, at the top level and in a property, in any order', () => {
+    const pin = {
+      type: 'object',
+      properties: {
+        team: { type: 'string' },
+        limit: { type: 'number' },
+        filter: { type: 'object', properties: { a: { type: 'string' }, b: { type: 'string' } }, required: ['a', 'b'] },
+      },
+      required: ['team', 'limit'],
+    };
+    const looser = (over) => ({ ...pin, ...over });
+    [
+      looser({ required: ['team'] }),
+      looser({ required: [] }),
+      looser({ required: undefined }),
+      looser({ required: ['limit', 'team'] }),
+      looser({ properties: { ...pin.properties, filter: { ...pin.properties.filter, required: ['b'] } } }),
+    ].forEach((live) => {
+      if (live.required === undefined) delete live.required;
+      expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+    });
+  });
+
+  test('a property becoming required, or one swapped into required, still drifts', () => {
+    const pin = {
+      type: 'object', properties: { team: { type: 'string' }, limit: { type: 'number' } }, required: ['team'],
+    };
+    expect(assessRead(pin, { ...pin, required: ['team', 'limit'] }).verdict).toBe('tool_drift');
+    expect(assessRead(pin, { ...pin, required: ['limit'] }).verdict).toBe('tool_drift');
+    // A pin with no required list at all (the key absent, as JSON has it).
+    const { required: _omitted, ...pinWithoutRequired } = pin;
+    expect(assessRead(pinWithoutRequired, pin).verdict).toBe('tool_drift');
+  });
+
+  const TEAM_SCOPE = { team: { type: 'string' }, scope: { type: 'string' } };
+  test.each([
+    // The pin refuses { scope: 'all' } (it falls to else); with less in `if`,
+    // the live schema takes it.
+    ['if', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      if: { required: ['team', 'scope'] },
+      then: {},
+      else: { properties: { scope: { const: 'mine' } } },
+    }, (pin) => ({ ...pin, if: { required: ['scope'] } })],
+    // The pin takes { team: 'x' }; the live schema refuses it.
+    ['not', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      not: { required: ['team', 'scope'] },
+    }, (pin) => ({ ...pin, not: { required: ['team'] } })],
+    // The pin takes { scope: 'y' }; live, it matches both branches and fails.
+    ['oneOf', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      oneOf: [{ required: ['team'] }, { required: ['scope'] }],
+    }, (pin) => ({ ...pin, oneOf: [{}, { required: ['scope'] }] })],
+    // A $def can be used from any position, a negative one included.
+    ['$defs', {
+      type: 'object',
+      properties: { team: { $ref: '#/$defs/t' } },
+      $defs: { t: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+    }, (pin) => ({ ...pin, $defs: { t: { ...pin.$defs.t, required: [] } } })],
+    // A $ref from `if` into a relaxed position: the pin refuses
+    // { scope: 'all' }, the live schema takes it.
+    ['if, through a $ref into anyOf', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      anyOf: [{ required: ['team', 'scope'] }, {}],
+      if: { $ref: '#/anyOf/0' },
+      then: {},
+      else: { properties: { scope: { const: 'mine' } } },
+    }, (pin) => ({ ...pin, anyOf: [{ required: ['scope'] }, {}] })],
+    // A $ref from `not` into a property: the pin takes { team: {} }, the live
+    // schema refuses it.
+    ['not, through a $ref into properties', {
+      type: 'object',
+      properties: { team: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+      not: { properties: { team: { $ref: '#/properties/team' } }, required: ['team'] },
+    }, (pin) => ({ ...pin, properties: { team: { ...pin.properties.team, required: [] } } })],
+    // The pin takes [{ a: 1, b: 1 }, { a: 1 }] (one match, within
+    // maxContains 1); requiring less, both items match and it is refused.
+    ['contains', {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          contains: { type: 'object', required: ['a', 'b'] },
+          maxContains: 1,
+        },
+      },
+    }, (pin) => ({
+      ...pin,
+      properties: { ids: { ...pin.properties.ids, contains: { type: 'object', required: ['a'] } } },
+    })],
+    // An anchor makes any position a reference target.
+    ['a schema carrying an $anchor', {
+      type: 'object',
+      properties: {
+        team: {
+          $anchor: 'team', type: 'object', properties: { id: { type: 'string' } }, required: ['id'],
+        },
+      },
+    }, (pin) => ({ ...pin, properties: { team: { ...pin.properties.team, required: [] } } })],
+  ])('requiring less under %s still drifts', (_position, pin, loosen) => {
+    expect(assessRead(pin, loosen(pin)).verdict).toBe('tool_drift');
+  });
+
+  test('a $ref that stays in $defs leaves the rest of the schema relaxable', () => {
+    const pin = {
+      type: 'object',
+      properties: { team: { $ref: '#/$defs/t' }, limit: { type: 'number' } },
+      required: ['team', 'limit'],
+      $defs: { t: { type: 'object', properties: { id: { type: 'string' } } } },
+    };
+    expect(assessRead(pin, { ...pin, required: ['team'] })).toMatchObject({
+      verdict: 'ok', detail: expect.stringContaining('compatib'),
+    });
+  });
+
+  test('requiring less under then, else, allOf and anyOf is compatible', () => {
+    const pin = {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      if: { properties: { team: { const: 'ENG' } } },
+      then: { required: ['team', 'scope'] },
+      else: { required: ['team'] },
+      allOf: [{ required: ['team'] }],
+      anyOf: [{ required: ['team', 'scope'] }, { required: ['scope'] }],
+    };
+    const live = {
+      ...pin,
+      then: { required: ['team'] },
+      else: {},
+      allOf: [{}],
+      anyOf: [{ required: ['scope'] }, { required: ['scope'] }],
+    };
+    expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+  });
+
+  test('properties named required, anyOf and type are properties, not keywords', () => {
+    const pin = {
+      type: 'object',
+      properties: {
+        required: { type: 'array', items: { type: 'string' } },
+        anyOf: { type: 'string' },
+        type: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      },
+      required: ['required'],
+    };
+    // A loosening beside them is still accepted, and the property named
+    // `type` is a schema position whose nullable respell is accepted too.
+    expect(assessRead(pin, {
+      ...pin, required: [], properties: { ...pin.properties, type: { type: ['null', 'string'] } },
+    }).verdict).toBe('ok');
+    // Their own schemas still compare exactly.
+    [
+      { required: { type: 'array', items: { type: 'number' } } },
+      { anyOf: { type: 'number' } },
+      { type: { anyOf: [{ type: 'string' }, { type: 'number' }] } },
+    ].forEach((changed) => {
+      expect(assessRead(pin, { ...pin, properties: { ...pin.properties, ...changed } }).verdict).toBe('tool_drift');
+    });
+  });
+
+  test('a loosening and an optional addition together are compatible; a widened enum beside them still drifts', () => {
+    const pin = { type: 'object', properties: { team: { type: 'string' }, sort: { anyOf: [{ type: 'string' }, { type: 'null' }] } }, required: ['team'] };
+    const live = { type: 'object', properties: { team: { type: 'string' }, sort: { type: ['string', 'null'] }, limit: { type: 'number' } } };
+    expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+    expect(assessRead(
+      { ...pin, properties: { ...pin.properties, team: { type: 'string', enum: ['ENG'] } } },
+      { ...live, properties: { ...live.properties, team: { type: 'string', enum: ['ENG', 'OPS'] } } },
+    ).verdict).toBe('tool_drift');
+  });
+
+  test('write pins accept neither loosening', () => {
+    const write = (inputSchema) => linear({ tools: [pinned({ class: 'write', inputSchema })] });
+    const upstream = upstreamOk();
+    upstream[0].inputSchema = { ...NULLABLE_PIN, properties: { ...NULLABLE_PIN.properties, sort: { type: ['string', 'null'] } } };
+    expect(verdictOf(assessEntryTools(write(NULLABLE_PIN), upstream), 'list_issues')).toBe('tool_drift');
+    upstream[0].inputSchema = { type: 'object', properties: { team: { type: 'string' } } };
+    expect(verdictOf(assessEntryTools(write({ ...upstream[0].inputSchema, required: ['team'] }), upstream), 'list_issues')).toBe('tool_drift');
+  });
+
+  test("Sentry's real 11-01 respell is compatible with its 10-19 reads, and its value changes still drift", () => {
+    // The 10-19 schemas as read pins, against the 11-01 list. As captured,
+    // search_issues (an added `1h`) and every read whose period pattern gained
+    // minutes still drift. With those two value changes put back, what is left
+    // is Sentry's respell of its nullable strings, and every read is ok.
+    const shared = SENTRY_TRIAGE_CAPTURE.tools.filter((tool) => tool.annotations?.readOnlyHint === true
+      && SENTRY_1101_CAPTURE.tools.some((later) => later.name === tool.name));
+    const entry = linear({
+      tools: shared.map((tool) => pinned({
+        name: tool.name, upstreamName: tool.name, inputSchema: tool.inputSchema, annotations: { readOnlyHint: true },
+      })),
+    });
+    const valuesPutBack = JSON.parse(JSON.stringify(SENTRY_1101_CAPTURE.tools)
+      .replaceAll('[mhdw]', '[hdw]')
+      .replaceAll('["1h","24h"', '["24h"'));
+    const respelled = (tools) => tools.filter((tool) => JSON.stringify(tool.inputSchema).includes('["string","null"]'));
+    expect(respelled(valuesPutBack).length).toBeGreaterThan(1);
+
+    const asCaptured = Object.fromEntries(assessEntryTools(entry, SENTRY_1101_CAPTURE.tools).map((a) => [a.name, a.verdict]));
+    expect(asCaptured.search_issues).toBe('tool_drift');
+    expect(Object.values(asCaptured).filter((verdict) => verdict === 'tool_drift').length).toBeGreaterThan(1);
+
+    const putBack = assessEntryTools(entry, valuesPutBack);
+    expect(putBack.map((a) => [a.name, a.verdict])).toEqual(shared.map((tool) => [tool.name, 'ok']));
+    respelled(valuesPutBack).forEach((tool) => {
+      expect(putBack.find((a) => a.name === tool.name).detail).toEqual(expect.stringContaining('compatib'));
+    });
+  });
+
   test('write pins keep exact schema equality, and a compatible read change cannot excuse a withdrawn annotation', () => {
     const upstream = upstreamOk();
     upstream[0].inputSchema = {
@@ -992,7 +1289,11 @@ describe('the shipped catalogue cannot land half-wired', () => {
       .toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatibly') }));
   });
 
-  test('the 11-01 Sentry pins drift on the 11-04 list, which is why they were re-pinned', () => {
+  test('the 11-01 Sentry pins meet the 11-04 list only by loosenings, which the read rule now accepts', () => {
+    // On 11-04 each of these reads dropped organizationSlug from `required`
+    // and added an optional `fresh`. That was drift before the read rule took
+    // a property leaving `required`, and #3396 re-pinned all eight for it.
+    // Compared exactly, as a write pin is, the same pins still drift.
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
     const reads = ['find_projects', 'search_errors', 'search_logs', 'search_traces', 'search_metrics',
       'search_profiles', 'search_replays', 'search_issues'];
@@ -1004,9 +1305,18 @@ describe('the shipped catalogue cannot land half-wired', () => {
         return { ...tool, inputSchema: captured.inputSchema };
       }),
     };
-    const drifted = assessEntryTools(old, SENTRY_CAPTURE.tools)
+    const localName = new Map(entry.tools.map((tool) => [tool.upstreamName, tool.name]));
+    const names = reads.map((upstream) => localName.get(upstream));
+    const assessed = assessEntryTools(old, SENTRY_CAPTURE.tools).filter((tool) => names.includes(tool.name));
+    expect(assessed.map((tool) => [tool.name, tool.verdict])).toEqual(names.map((name) => [name, 'ok']));
+    assessed.forEach((tool) => expect(tool.detail).toEqual(expect.stringContaining('compatib')));
+    const exact = {
+      ...old,
+      tools: old.tools.map((tool) => (reads.includes(tool.upstreamName) ? { ...tool, class: 'write', annotations: {} } : tool)),
+    };
+    const drifted = assessEntryTools(exact, SENTRY_CAPTURE.tools)
       .filter((tool) => tool.verdict === 'tool_drift').map((tool) => tool.name);
-    expect(drifted).toEqual(reads);
+    expect(drifted).toEqual(names);
   });
 
   test('the Sentry entry keeps its scopes, restricts resource lookup to type and ID, and parks the writer', () => {
