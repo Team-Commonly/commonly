@@ -22,6 +22,24 @@ describe('repo root for the helm tests (F87)', () => {
     expect(() => findRepoRoot(['/', '/repo'], has())).toThrow(/\/, \/repo/);
   });
 
+  // The module's own candidate list, not one the test supplies: with the chart
+  // only under /repo (the dev container), loading the module must land there.
+  test('the module falls back to /repo when only the container mount holds the chart', () => {
+    try {
+      jest.isolateModules(() => {
+        jest.doMock('fs', () => ({
+          ...jest.requireActual('fs'),
+          existsSync: (p) => p === '/repo/k8s/helm/commonly/Chart.yaml',
+        }));
+        const container = require('../../utils/repoRoot');
+        expect(container.REPO_ROOT).toBe('/repo');
+        expect(container.HELM_CHART).toBe('/repo/k8s/helm/commonly');
+      });
+    } finally {
+      jest.dontMock('fs');
+    }
+  });
+
   test('resolves to a real chart in this runner', () => {
     expect(HELM_CHART).toBe(path.join(REPO_ROOT, 'k8s/helm/commonly'));
     expect(require('fs').existsSync(path.join(HELM_CHART, 'Chart.yaml'))).toBe(true);
