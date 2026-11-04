@@ -203,10 +203,13 @@ describe('Scout onboarding knowledge', () => {
     expect(prompt).toMatch(/For Codex off a Mac, do not propose a connect card either: offer "Run it here", or running Codex on a Mac\. Say plainly why/);
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
     // D245: the page no longer says Claude Code can't run on Windows. Its note
-    // describes an untested, opt-in --unsandboxed listener and names neither
-    // "Run it here" nor the MCP command; Scout's prompt still proposes no card
-    // there and offers those two itself (asserted above), not by quoting the note.
-    expect(en.agentByo.listen.windowsNote).toMatch(/^Claude Code hasn’t been tested on Windows yet\. Windows has no sandbox/);
+    // describes an opt-in --unsandboxed listener and names neither "Run it
+    // here" nor the MCP command; Scout's prompt still proposes no card there
+    // and offers those two itself (asserted above), not by quoting the note.
+    // D164: the published CLI answered an @mention on windows-latest, so the
+    // note no longer calls Claude Code untested there.
+    expect(en.agentByo.listen.windowsNote).toMatch(/^Windows has no sandbox/);
+    expect(en.agentByo.listen.windowsNote).not.toMatch(/tested on Windows/);
     expect(en.agentByo.listen.windowsNote).toMatch(/--unsandboxed/);
     expect(en.agentByo.listen.unavailableClaudeLinux).toMatch(/only in an invite-only pod.*connect Claude Code from your own sessions with the command below, or choose “Run it here”/);
     expect(en.agentByo.listen.unavailableCodex).toMatch(/has been tested only on a Mac and may not answer @mentions from \{\{os\}\} yet\. Choose “Run it here” for a hosted agent, or run the command on a Mac\./);

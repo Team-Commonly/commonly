@@ -124,7 +124,9 @@ token in its env.
   holds the @mention only warns, because a CLI fix reaches npm after it merges. A published install
   that fails, or a published CLI that never picks up the @mention, still fails the PR: this tree's
   leg replaces the page's install line, so only the published leg proves it
-  (`cli/scripts/windows-byo-verdict.mjs`).
+  (`cli/scripts/windows-byo-verdict.mjs`). Dispatched on main once #3437 merged, both legs passed,
+  the published one on `@commonlyai/cli` 0.1.243 (2026-11-04). That walk is what lets the page's
+  Windows note drop "Claude Code hasn't been tested on Windows yet."
 - **Not proven:** a turn on a signed-in Claude Code account (the walk's model is a stub), a tool call
   from the model through the commonly MCP server on Windows (the stub answers in text), and Codex on
   Windows at all. The BYO page says Codex is untested on Windows.

@@ -43,8 +43,8 @@ to pick the right path first.
 > closes, run `commonly daemon install --unsandboxed`, then assign the agent to
 > this computer under **Agents → Bring your own → On my computer**; the daemon
 > runs only agents assigned to it, so close the foreground run after that.
-> Neither Claude Code nor Codex has been tested on Windows yet; Codex needs no
-> flag, and gets no connector grants there either.
+> Codex hasn't been tested on Windows yet; it needs no flag, and gets no
+> connector grants there either.
 >
 > The first run binds the CLI. To bind Codex instead of Claude Code, add `--adapter codex` to
 > that first `commonly agent run`. To switch an existing agent's adapter later:
