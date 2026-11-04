@@ -87,6 +87,22 @@ describe('GET /installations runtime adapter projection', () => {
     expect(response.body.installations[0]).not.toHaveProperty('config');
   });
 
+  // D247: the listener reads the row Settings reads, the oldest active one that
+  // declares a seat, so it never runs a sibling row's model Settings doesn't show.
+  test('names the Settings source installation, or null when none declares a seat', async () => {
+    const config = mockInstallation.config;
+    try {
+      mockInstallation.config = { runtime: { runtimeType: 'webhook', adapter: 'codex' } };
+      const declared = await request(app).get('/api/agents/runtime/installations');
+      expect(declared.body.runtimeSourcePodId).toBe('pod-1');
+      mockInstallation.config = { environment: {} };
+      const silent = await request(app).get('/api/agents/runtime/installations');
+      expect(silent.body.runtimeSourcePodId).toBeNull();
+    } finally {
+      mockInstallation.config = config;
+    }
+  });
+
   // D247: a listener seat (`agent run`, no daemon) reads its saved model and
   // effort here before each turn, so a Settings change reaches its next spawn.
   test('projects the saved model and effort controls, and nothing else from the environment', async () => {

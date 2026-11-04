@@ -29,6 +29,17 @@ describe('seat runtime controls (D247)', () => {
     expect(savedRuntimeControls({ installations: undefined })).toBeNull();
   });
 
+  test('a server that names the Settings source is followed exactly, an empty source included', () => {
+    const installations = [
+      { type: 'installation', podId: 'p1', instanceId: 'default', runtimeControls: {} },
+      { type: 'installation', podId: 'p2', instanceId: 'default', runtimeControls: { model: 'gpt-6-sol' } },
+    ];
+    expect(savedRuntimeControls({ installations, podId: 'p2', instanceId: 'default', runtimeSourcePodId: 'p1' })).toBeNull();
+    expect(savedRuntimeControls({ installations, podId: 'p1', instanceId: 'default', runtimeSourcePodId: 'p2' }))
+      .toEqual({ model: 'gpt-6-sol' });
+    expect(savedRuntimeControls({ installations, podId: 'p2', instanceId: 'default', runtimeSourcePodId: null })).toBeNull();
+  });
+
   test('saved controls replace the record\'s, and a missing environment stays missing', () => {
     const environment = { model: 'old', sandbox: { trust: 'public' } };
     expect(withSavedRuntimeControls(environment, { effort: 'high' }))

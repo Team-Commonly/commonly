@@ -216,7 +216,8 @@ describe('performRun', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(spawn.mock.calls[0][1].environment).toBeNull();
     expect(logs.filter((line) => line.includes("don't apply to it"))).toHaveLength(1);
-    expect(logs.join('\n')).toContain('commonly agent detach my-stub --force');
+    expect(logs.join('\n')).toContain('Run once: commonly agent config my-stub --model gpt-6.1-sol --effort max');
+    expect(logs.join('\n')).not.toContain('--force');
   });
 
   test('event with content → adapter.spawn receives sandboxed attribution → reply posted → acked', async () => {

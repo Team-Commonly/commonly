@@ -1860,16 +1860,19 @@ export const performRun = ({
         });
         lastSavedControls = savedRuntimeControls({
           installations: identity?.installations, podId, instanceId,
+          ...(identity && 'runtimeSourcePodId' in identity ? { runtimeSourcePodId: identity.runtimeSourcePodId } : {}),
         });
       } catch { /* keep the last controls read; a failed read changes nothing */ }
       desiredEnvironment = withSavedRuntimeControls(requestedSeatEnvironment, lastSavedControls);
-      // A record with no environment (from before attach wrote one) can't take
-      // saved controls: building one here would switch the adapter out of its
-      // no-environment mode (claude.js), not just set a model. Say so once.
+      // A record with no environment (from before attach wrote one) isn't
+      // given one silently. `agent config` writes one to the record, and from
+      // then on saved controls apply. Say so once, with the command.
       if (!requestedSeatEnvironment && lastSavedControls && !savedControlsNoticeShown) {
         savedControlsNoticeShown = true;
+        const flag = (name, value) => (value && /^[A-Za-z0-9._:/-]+$/.test(value) ? ` --${name} ${value}` : '');
+        const flags = `${flag('model', lastSavedControls.model)}${flag('effort', lastSavedControls.effort)}` || ' --model <model>';
         log(`${agentName} has no saved environment on this computer, so the model and effort saved in Commonly `
-          + `don't apply to it. To pick them up: commonly agent detach ${agentName} --force, then attach it again.`);
+          + `don't apply to it yet. Run once: commonly agent config ${agentName}${flags}`);
       }
     }
     // Dropped only when the device listed its levels and this one is not

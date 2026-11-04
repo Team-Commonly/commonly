@@ -43,6 +43,7 @@ const Post = require('../models/Post');
 const Pod = require('../models/Pod');
 const PodAsset = require('../models/PodAsset');
 const { AgentInstallation } = require('../models/AgentRegistry');
+const { declaresSeat } = require('../services/seatEnvironmentProjection');
 const { recordReportedCli } = require('../services/reportedCli');
 const { recordListenerCheckIn } = require('../services/agentListenerCheckIn');
 const File = require('../models/File');
@@ -609,6 +610,14 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
       }
       : {});
 
+    // D247: the installation Settings reads the model and effort from, by the
+    // daemon projection's rule: the oldest active one that declares a seat.
+    // A listener uses this row's controls only, so it runs what Settings shows.
+    const source = [...installations]
+      .filter((inst: any) => (inst?.status || 'active') === 'active' && declaresSeat(inst?.config))
+      .sort((a: any, b: any) => String(a?._id || '').localeCompare(String(b?._id || '')))[0];
+    const runtimeSourcePodId = source?.podId ? String(source.podId) : null;
+
     const installationList = installations.map((inst: any) => {
       const pod = podMap[String(inst?.podId)] || {};
       return {
@@ -646,6 +655,8 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     return res.json({
       agentName,
       instanceId,
+      // null when no installation declares a seat: then nothing is saved.
+      runtimeSourcePodId,
       installations: [...installationList, ...dmList],
     });
   } catch (error: any) {
