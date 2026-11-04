@@ -5998,6 +5998,13 @@ describe('Activity built to the d215 signal frames (#s-activity-signal)', () => 
   const phone = blockContaining(css, '@media (max-width: 760px)', '.v2-activity__body');
   const rule = (selector: string, within?: string) => ruleBody(css, selector, within ? { within } : {});
 
+  test('a Moved forward line stops at two lines, the way the frame draws one sentence', () => {
+    const text = rule('.v2-activity__moved-text');
+    expect(text).toContain('-webkit-line-clamp: 2');
+    expect(text).toContain('display: -webkit-box');
+    expect(text).toContain('overflow: hidden');
+  });
+
   test('the page owns its pane: the head stays, the body scrolls, the column caps at 760', () => {
     expect(rule('.v2-feature--activity > .v2-feature__body')).toContain('overflow: hidden');
     expect(rule('.v2-activity__body')).toContain('overflow-y: auto');

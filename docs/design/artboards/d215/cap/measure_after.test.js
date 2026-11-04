@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { ARTIFACTS_BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
+const { BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 } = require('./measure_after');
 const { assertLanded, BASE } = require('./lib');
 
 const argv = (...a) => ['node', 'measure_after.js', ...a];
@@ -194,19 +194,20 @@ test('only the /v2 pod auto-select counts as landing', () => {
   assert.throws(() => assertLanded('/v2/settings', BASE + '/v2/pods/abc123'), /redirected/);
 });
 
-// The Artifacts page on its route, with `rows` file rows and optionally the error line or the
-// spinner on screen. `trimmed` records the trim the scorer asked for before measuring.
-const fakeArtifacts = ({ rows, refused = false }) => {
+// A busy page on its route. `rows` maps each trim selector to its row count, and `refused` puts
+// the error line or the spinner on screen. `trimmed` records the trim the scorer asked for.
+const fakeBusy = (name, route, { rows, refused = false }) => {
   let url = 'about:blank';
+  const B = BUSY[name];
   const page = {
     trimmed: null,
     measured: 0,
-    goto: async () => { url = BASE + '/v2/artifacts'; return { ok: () => true, status: () => 200 }; },
+    goto: async () => { url = BASE + route; return { ok: () => true, status: () => 200 }; },
     waitForTimeout: async () => {},
     url: () => url,
     locator: sel => {
-      if (sel === ARTIFACTS_BUSY.refuse) return { first: () => ({ isVisible: async () => refused }) };
-      if (sel === ARTIFACTS_BUSY.rows) return { count: async () => rows };
+      if (sel === B.refuse) return { first: () => ({ isVisible: async () => refused }) };
+      if (sel in rows) return { count: async () => rows[sel] };
       throw new Error(`unexpected locator ${sel}`);
     },
     evaluate: async (fn, arg) => {
@@ -218,17 +219,41 @@ const fakeArtifacts = ({ rows, refused = false }) => {
   return page;
 };
 
-test('artifacts-busy scores only a loaded list as long as the frame, measured at the frame\'s six rows', async () => {
+test('a busy surface scores only a loaded list as long as its frame, trimmed to the frame', async () => {
   const t = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'targets.json'), 'utf8'));
-  const surf = ['artifacts-busy', () => '/v2/artifacts', { busy: ARTIFACTS_BUSY }];
-  const failed = fakeArtifacts({ rows: 0, refused: true });
-  await assert.rejects(checkSurface(failed, surf, '1440', t), /did not load/);
+  // Keyed by name: the plain prod tuple gets the guard, with nothing for SURF to forget.
+  const artifacts = ['artifacts-busy', () => '/v2/artifacts'];
+  const failed = fakeBusy('artifacts-busy', '/v2/artifacts', { rows: { '.v2a-file': 0 }, refused: true });
+  await assert.rejects(checkSurface(failed, artifacts, '1440', t), /did not load/);
   assert.strictEqual(failed.measured, 0);
-  const short = fakeArtifacts({ rows: 2 });
-  await assert.rejects(checkSurface(short, surf, '390', t), /2 \.v2a-file rows .* not the busy state/);
+  const short = fakeBusy('artifacts-busy', '/v2/artifacts', { rows: { '.v2a-file': 2 } });
+  await assert.rejects(checkSurface(short, artifacts, '390', t), /2 \.v2a-file rows .* not the busy state/);
   assert.strictEqual(short.measured, 0);
-  const busy = fakeArtifacts({ rows: 50 });
-  assert.strictEqual((await checkSurface(busy, surf, '1440', t)).ok, true);
-  assert.deepStrictEqual(busy.trimmed, ['.v2a-file', '.v2a-group', 6]);
+  const busy = fakeBusy('artifacts-busy', '/v2/artifacts', { rows: { '.v2a-file': 50 } });
+  assert.strictEqual((await checkSurface(busy, artifacts, '1440', t)).ok, true);
+  assert.deepStrictEqual(busy.trimmed, [{ rows: '.v2a-file', group: '.v2a-group', keep: 6 }]);
   assert.strictEqual(busy.measured, 1);
+
+  // Activity: Needs you pages itself through every open item, so both lists are trimmed to the frame.
+  const activity = ['activity-busy', () => '/v2/activity'];
+  const queue = '.v2-activity__queue > .v2-activity__queue-row', moved = '.v2-activity__moved-line';
+  const thin = fakeBusy('activity-busy', '/v2/activity', { rows: { [queue]: 429, [moved]: 3 } });
+  await assert.rejects(checkSurface(thin, activity, '390', t), /3 \.v2-activity__moved-line rows/);
+  const full = fakeBusy('activity-busy', '/v2/activity', { rows: { [queue]: 429, [moved]: 5 } });
+  assert.strictEqual((await checkSurface(full, activity, '1440', t)).ok, true);
+  assert.deepStrictEqual(full.trimmed.map(x => [x.rows, x.keep]), [[queue, 4], [moved, 5]]);
+  // Every other prod surface is measured as it stands.
+  assert.deepStrictEqual(Object.keys(BUSY).sort(), ['activity-busy', 'artifacts-busy']);
+  // The selectors are the pages' real classes: a renamed or mistyped class would leave the
+  // refusal looking for nothing, so each one is pinned here and found in the page source.
+  assert.strictEqual(BUSY['activity-busy'].refuse, '.v2-activity__error, .v2-activity__loading');
+  assert.strictEqual(BUSY['artifacts-busy'].refuse, '.v2a-state, .v2a-loading');
+  const src = {
+    'activity-busy': fs.readFileSync(path.join(__dirname, '../../../../../frontend/src/v2/components/V2ActivityPage.tsx'), 'utf8'),
+    'artifacts-busy': fs.readFileSync(path.join(__dirname, '../../../../../frontend/src/v2/components/V2ArtifactsPage.tsx'), 'utf8'),
+  };
+  for (const [name, B] of Object.entries(BUSY)) {
+    const sels = [B.refuse, ...B.trim.flatMap(x => [x.rows, x.group].filter(Boolean))].join(' ');
+    for (const cls of sels.match(/\.[\w-]+/g)) assert.ok(new RegExp(`className="[^"]*\\b${cls.slice(1)}\\b`).test(src[name]), `${name}: ${cls} is not a class in the page`);
+  }
 });
