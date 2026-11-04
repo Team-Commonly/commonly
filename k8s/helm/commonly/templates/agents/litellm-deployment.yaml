@@ -209,6 +209,16 @@ spec:
               name: api-keys
               key: gemini-api-key
               optional: true
+        {{- if .Values.aiProviders.anthropic.enabled }}
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys
+              key: anthropic-api-key
+              # A missing key fails only the Claude calls. Required, a pod
+              # recreated without it would never start and take every route down.
+              optional: true
+        {{- end }}
         - name: DEEPSEEK_API_KEY
           valueFrom:
             secretKeyRef:

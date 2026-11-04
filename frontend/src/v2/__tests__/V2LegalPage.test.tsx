@@ -13,7 +13,11 @@ describe('public legal pages (TASK-530)', () => {
 
   it('names the providers that process hosted-agent data', () => {
     render(<V2PrivacyPage />);
-    expect(screen.getByText(/^AI models: DeepSeek, reached through our own model gateway\./)).toBeInTheDocument();
+    // F91: hosted agents on Claude Haiku by default; a connected tool's data is
+    // sent only there, and what the agent posts from it is ordinary pod content.
+    expect(screen.getByText(/^AI models, reached through our own model gateway: hosted agents run on Anthropic's Claude Haiku unless their owner chose another model\./)).toBeInTheDocument();
+    expect(screen.getByText(/what the agent reads from it is sent only to Anthropic\. Anything the agent then posts in a pod is ordinary pod content/)).toBeInTheDocument();
+    expect(screen.getByText(/the chat summaries process it through DeepSeek\./)).toBeInTheDocument();
     expect(screen.getByText(/^Code sandbox: E2B\./)).toBeInTheDocument();
     // D81: the Workers AI route was removed; the page must not name it.
     expect(screen.queryByText(/Workers AI/)).not.toBeInTheDocument();

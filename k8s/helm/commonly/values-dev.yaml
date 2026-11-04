@@ -41,6 +41,11 @@ aiProviders:
   # OpenAI on dev. A real key turns this back on.
   openai:
     enabled: false
+  # F91 (D243, 11-04): hosted native agents run on Claude Haiku 5.5, billed to
+  # the $400/month Anthropic credit. The key is version 3 of
+  # commonly-dev-anthropic-api-key (200 on /v1/models, 11-04).
+  anthropic:
+    enabled: true
 
 backend:
   replicaCount: 1

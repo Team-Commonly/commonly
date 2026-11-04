@@ -40,6 +40,31 @@ data:
           max_budget: 60
           budget_duration: 1mo
 
+      {{- if .Values.aiProviders.anthropic.enabled }}
+      # Claude for native turns (F91, D243). There is no fallback entry for it
+      # below, and native calls send disable_fallbacks, so a failed or refused
+      # Claude call never becomes a DeepSeek call. That is what keeps a connector
+      # grant's data (Calendar, under Google's Limited Use) on a no-training route.
+      # The price is set here so spend is counted even if this LiteLLM build has
+      # no entry for the model: Haiku 5.5 is $0.10/$0.50 per MTok up to a 100K
+      # prompt (native prompts measured at most 32K over 30 days, 11-04).
+      # $50 a month across every caller, against a $400 credit. Like the DeepSeek
+      # group above, the month-to-date figure is in the router cache and a
+      # LiteLLM restart resets it: this is a backstop. The durable cap is the
+      # backend key's (in LiteLLM's Postgres, shared with DeepSeek spend), which
+      # native turns spend through, and its 80% budget alarm
+      # (docs/runbooks/alerting.md#litellm-key-budget).
+      - model_name: {{ .Values.aiProviders.anthropic.nativeModel }}
+        litellm_params:
+          model: anthropic/{{ .Values.aiProviders.anthropic.nativeModel }}
+          api_key: os.environ/ANTHROPIC_API_KEY
+          # No price here: the pinned image's cost map carries both of Haiku
+          # 5.5's tiers ($0.10/$0.50, and $0.50/$2.50 for a prompt over 100K),
+          # and a flat override would drop the second.
+          max_budget: 50
+          budget_duration: 1mo
+      {{- end }}
+
       # DeepSeek V4.1 Flash, 1017 build. DeepSeek publishes no dated snapshot
       # id: per api-docs.deepseek.com/updates, 2026-10-17, `deepseek-flash` is
       # "the latest model" and was upgraded to DeepSeek-V4.1-Flash-1017 that

@@ -33,6 +33,14 @@ aiProviders:
   # served by DeepSeek and embeddings/images are not routed (F85).
   openai:
     enabled: true
+  # Anthropic through LiteLLM (F91, D243). On, LiteLLM gets ANTHROPIC_API_KEY
+  # from <keyPrefix>anthropic-api-key, serves `nativeModel`, and native turns run
+  # on it: an unset or old-default model follows it, and a turn holding a
+  # connector grant runs only on it. Off by default: it needs a working key in
+  # Secret Manager first (ESO rejects the whole api-keys secret on a missing one).
+  anthropic:
+    enabled: false
+    nativeModel: claude-haiku-5-5
 
 # Web search for native turns (TASK-267a). Off by default: on, the api-keys
 # ExternalSecret references commonly-dev-search-api-key, and ESO rejects the
