@@ -66,6 +66,7 @@ import {
   refuseWorkspaceTrust,
   resolveWorkspace,
   validateEnvironmentSpec,
+  providerRefusal,
   WORKSPACE_SANDBOX_ALLOW,
 } from '../lib/environment.js';
 import { firstRunWorkspace, podIsConfirmedPrivate, workspaceTurnPlacement } from '../lib/workspace-trust.js';
@@ -311,16 +312,7 @@ export const printAttachRunGuidance = ({
   }
 };
 
-// One provider check for config, attach and run: the adapter must take a
-// provider block at all, and speak its `provider.api` (default openai-chat).
-export const providerRefusal = (environment, adapter) => {
-  if (environment?.provider === undefined) return null;
-  if (!adapter?.supportsProvider) return 'environment.provider requires a provider-capable adapter';
-  const api = environment.provider?.api || 'openai-chat';
-  const apis = adapter.providerApis || ['openai-chat'];
-  return apis.includes(api) ? null
-    : `the ${adapter.name} adapter cannot use provider.api "${api}"; it supports ${apis.join(', ')}`;
-};
+export { providerRefusal };
 
 // ── `agent run --adapter` against an existing token file (#2098) ────────────
 // The flag picks the CLI once, at first-run bootstrap; after that the token

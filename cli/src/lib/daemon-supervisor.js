@@ -8,6 +8,7 @@ import {
 
 import { seatBaseline } from './default-environment.js';
 import { getAdapter } from './adapters/index.js';
+import { providerRefusal } from './environment.js';
 import { withholdGrantBroker } from './grant-broker-guard.js';
 
 /**
@@ -316,8 +317,10 @@ export const createDaemonSupervisor = ({
         nextAdapter = declaredAdapter;
         adapterChanged = existing.adapter !== nextAdapter;
       }
-      if (existing.environment?.provider && !getAdapter(nextAdapter)?.supportsProvider) {
-        log(`[${row.agentName}] host-local provider requires a provider-capable adapter — keeping the current seat`);
+      const providerRefused = existing.environment?.provider
+        ? providerRefusal(existing.environment, getAdapter(nextAdapter)) : null;
+      if (providerRefused) {
+        log(`[${row.agentName}] host-local provider: ${providerRefused} — keeping the current seat`);
         return false;
       }
       if (wanted) {

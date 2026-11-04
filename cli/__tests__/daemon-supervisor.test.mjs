@@ -628,6 +628,38 @@ describe('tick', () => {
     expect(JSON.stringify(saveToken.mock.calls[0][1].environment)).not.toContain('/.ssh/');
   });
 
+  // An anthropic-messages provider is OpenCode's alone; a swap to an adapter
+  // that only speaks openai-chat keeps the current seat, as a missing
+  // provider capability does, instead of a child that refuses on every start.
+  test('an adapter swap that cannot speak the host-local provider.api keeps the current seat', async () => {
+    const tokens = {
+      'wren-test': {
+        agentName: 'wren-test',
+        instanceUrl: record.instanceUrl,
+        adapter: 'opencode',
+        environment: {
+          model: 'claude-haiku-5-5',
+          provider: {
+            id: 'anthropic-native', baseURL: 'https://api.anthropic.com', keyFile: '/Users/kai/.config/commonly/anthropic-key', api: 'anthropic-messages',
+          },
+        },
+      },
+    };
+    const logs = [];
+    const { supervisor, saveToken } = makeHarness({
+      rows: () => [boundRow({
+        runtime: { runtimeType: 'wrapper', adapter: 'qwen' },
+        environment: { model: 'claude-haiku-5-5' },
+      })],
+      tokens,
+      resolveAdapter: async () => 'qwen',
+      log: (line) => logs.push(line),
+    });
+    await supervisor.tick();
+    expect(saveToken).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toMatch(/the qwen adapter cannot use provider.api "anthropic-messages".*keeping the current seat/);
+  });
+
   test('the host-local provider survives a server environment that omits it', async () => {
     const localProvider = {
       id: 'litellm',
