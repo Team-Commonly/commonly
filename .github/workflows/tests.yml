@@ -126,23 +126,25 @@ jobs:
       - name: Deploy-dev canary wiring regression test
         run: node --test scripts/guard-canary-wiring.test.mjs
 
-  # Heavy jobs (backend, frontend, service tests) route to Latchkey runners on
-  # a push to main when vars.LATCHKEY_HEAVY is 'on' AND the push touched a heavy
-  # path (the changes filter above — D227), so a docs-only merge does not spend
-  # Latchkey minutes. Every other run — PRs, and the merge_group required check —
-  # stays on GitHub-hosted runners, which are free on this public repo, so the
-  # queue no longer burns Latchkey minutes per entry. The heavy jobs still RUN on
-  # push and merge_group regardless (safety net); only the runner they land on
-  # depends on the route. Unsetting LATCHKEY_HEAVY turns Latchkey off entirely.
-  # (Earlier this routed on merge_group; moved to push:main 2026-11-01 to stay
-  # under the free-minute cap — the queue ran Latchkey on every entry.)
+  # One heavy job, Backend tests (1/3), routes to a Latchkey runner on a push to
+  # main when vars.LATCHKEY_HEAVY is 'on' AND the push touched a heavy path (the
+  # changes filter above — D227), so a docs-only merge does not spend Latchkey
+  # minutes. Backend shards 2-3, frontend and both service shards always run on
+  # GitHub-hosted runners: routing every heavy job spent the month's free
+  # minutes in under a month, and one representative job keeps the burn about a
+  # quarter of that. Every other run — PRs, and the merge_group required check —
+  # stays on GitHub-hosted runners, which are free on this public repo. The
+  # heavy jobs still RUN on push and merge_group regardless (safety net); only
+  # the runner shard 1 lands on depends on the route. Unsetting LATCHKEY_HEAVY
+  # turns Latchkey off entirely.
   #
   # A Latchkey job that is held (free minutes spent, or an outage) sits
   # "queued" on GitHub with no error, so the route never trusts Latchkey
-  # blind: it falls back to GitHub-hosted on a recent hold or a spent budget,
-  # and otherwise waits for this probe to be picked up first. The probe is
-  # deliberately outside the gate's needs: a held probe must not hold the
-  # required check. See docs/runbooks/ci-heavy-runner.md.
+  # blind: it falls back to GitHub-hosted on a recent hold or when the month's
+  # paced budget is spent (only a share of the month's minutes proportional to
+  # the time elapsed in it is allowed), and otherwise waits for this probe to be
+  # picked up first. The probe is deliberately outside the gate's needs: a held
+  # probe must not hold the required check. See docs/runbooks/ci-heavy-runner.md.
   latchkey-probe:
     name: Latchkey probe
     needs: changes
@@ -180,7 +182,6 @@ jobs:
           EQ_PER_RUN: ${{ vars.LATCHKEY_EQ_PER_RUN }}
           PICKUP_SEC: ${{ vars.LATCHKEY_PICKUP_SEC }}
           BACKEND_LABEL: ${{ vars.LATCHKEY_BACKEND_LABEL }}
-          LIGHT_LABEL: ${{ vars.LATCHKEY_LIGHT_LABEL }}
       - if: ${{ steps.route.outputs.hold == 'true' }}
         run: echo "probe not picked up in run ${{ github.run_id }}" > latchkey-hold.txt
       - if: ${{ steps.route.outputs.hold == 'true' }}
@@ -201,8 +202,8 @@ jobs:
           retention-days: 35
           overwrite: true
 
-  # Once the heavy jobs are routed to Latchkey, a held one would leave the
-  # required check pending. This cancels the run instead, so the queue entry
+  # Once backend shard 1 is routed to Latchkey, a held job would leave the run
+  # pending. This cancels the run instead, so the queue entry
   # fails loudly, and records a hold so the next runs stay on GitHub.
   latchkey-backstop:
     name: Latchkey backstop
@@ -222,9 +223,9 @@ jobs:
         run: node scripts/latchkey-route.mjs backstop
         env:
           GH_TOKEN: ${{ github.token }}
-          # Backend shards + frontend + service shards. Keep in step with the
-          # matrices below, or the backstop passes before every heavy job is listed.
-          EXPECTED_HEAVY: '6'
+          # Only backend shard 1 is routed. Keep in step with backend-tests'
+          # runs-on, or the backstop passes before every heavy job is listed.
+          EXPECTED_HEAVY: '1'
       - if: ${{ steps.watch.outputs.tripped == 'true' }}
         run: echo "heavy job held in run ${{ github.run_id }}" > latchkey-hold.txt
       - if: ${{ steps.watch.outputs.tripped == 'true' }}
@@ -245,14 +246,15 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3]
-    # Routed by latchkey-route (backend on medium, the rest on small; see
-    # the route job). Skipped routing leaves the output empty: GitHub-hosted.
+    # Only shard 1 is routed by latchkey-route (on medium; see the route job).
+    # Shards 2-3 always run on GitHub-hosted runners, and skipped routing
+    # leaves the output empty, which falls back to GitHub-hosted too.
     needs: [latchkey-route, changes]
     # tests-slim fast lane: skipped only on an unrelated PR. Runs on merge_group
     # (queue catches inter-PR conflicts), post-merge (push:main), nightly, and on
     # a PR only when backend/cli/packages/deps changed.
     if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
-    runs-on: ${{ needs.latchkey-route.outputs.backend || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.shard == 1 && needs.latchkey-route.outputs.backend || 'ubuntu-latest' }}
     env:
       JWT_SECRET: test-jwt-secret
       FRONTEND_URL: http://localhost:3000
@@ -297,12 +299,13 @@ jobs:
 
   frontend-tests:
     name: Frontend tests
-    # Routed by latchkey-route, as backend-tests.
+    # Always GitHub-hosted: only backend shard 1 goes to Latchkey (see the
+    # comment above latchkey-probe).
     needs: [latchkey-route, changes]
     # tests-slim fast lane: post-merge + nightly, and on a PR only when frontend or
     # backend changed (the frontend typecheck follows imports into backend).
     if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && needs.changes.outputs.frontend == 'true')) }}
-    runs-on: ${{ needs.latchkey-route.outputs.frontend || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -415,12 +418,12 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2]
-    # Routed by latchkey-route, as backend-tests.
+    # Always GitHub-hosted, as frontend-tests.
     needs: [latchkey-route, changes]
     # tests-slim fast lane: post-merge + nightly, and on a PR only when backend/cli
     # changed (these are the real-DB Tier-1 integration tests).
     if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && needs.changes.outputs.backend == 'true')) }}
-    runs-on: ${{ needs.latchkey-route.outputs.service || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
 
     services:
       mongo:

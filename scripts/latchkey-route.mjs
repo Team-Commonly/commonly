@@ -4,14 +4,16 @@
 // held job. See docs/runbooks/ci-heavy-runner.md.
 //
 //   route     run by the "Latchkey route" job. Picks GitHub-hosted when a
-//             hold is fresh or the budget is spent, otherwise waits for the
-//             "Latchkey probe" job to be picked up. A probe still queued after
-//             PICKUP_SEC means Latchkey is holding jobs: the heavy jobs go to
-//             GitHub-hosted and the job records a hold for later runs.
-//   backstop  run by the "Latchkey backstop" job once the heavy jobs are
+//             hold is fresh or the month's paced budget is spent, otherwise
+//             waits for the "Latchkey probe" job to be picked up. A probe
+//             still queued after PICKUP_SEC means Latchkey is holding jobs:
+//             the heavy job goes to GitHub-hosted and the job records a hold
+//             for later runs. Only the backend label is ever routed; the
+//             workflow sends just backend shard 1 to it.
+//   backstop  run by the "Latchkey backstop" job once the heavy job is
 //             routed. A heavy job still queued after STUCK_SEC trips it: the
-//             job records a hold and cancels the run, so a held job fails the
-//             required check instead of leaving it pending.
+//             job records a hold and cancels the run, so a held job fails
+//             instead of leaving the run pending.
 //
 // Any API error routes to GitHub-hosted. Falling back is never a failure.
 import { appendFileSync } from 'node:fs';
@@ -31,16 +33,38 @@ const ageSec = (iso, now) => (now - Date.parse(iso)) / 1000;
 export const holdActive = (artifacts, now, holdMin) => artifacts.some((a) => !a.expired
   && ageSec(a.created_at, now) < holdMin * 60);
 
+// The budget period: the current UTC calendar month, but never earlier than
+// LATCHKEY_BUDGET_START. periodMs is the whole month's length, so a start in
+// the middle of a month paces conservatively rather than front-loading.
+export const budgetPeriod = (now, startIso) => {
+  const date = new Date(now);
+  const monthStart = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+  const nextMonth = Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+  return {
+    start: new Date(Math.max(monthStart, Date.parse(startIso))).toISOString(),
+    periodMs: nextMonth - monthStart,
+  };
+};
+
 // Latchkey runs recorded since the budget period started.
 export const runsSince = (artifacts, startIso) => artifacts
   .filter((a) => Date.parse(a.created_at) >= Date.parse(startIso)).length;
 
 // The guard stops at BUDGET_FRACTION of the free minutes, leaving the rest as
-// margin for the estimate and for runs already in flight.
-export const budgetDecision = ({ runs, eqPerRun, budgetEqMin }) => {
+// margin for the estimate and for runs already in flight. It is paced: at any
+// moment only limit x min(1, elapsed / period) is allowed, so the month's
+// minutes are not spent in its first days. The floor of one run's worth lets
+// the first run of a period go; it never lifts the line above the limit.
+export const budgetDecision = ({
+  runs, eqPerRun, budgetEqMin, elapsedMs, periodMs,
+}) => {
   const used = runs * eqPerRun;
   const limit = budgetEqMin * BUDGET_FRACTION;
-  return { used, limit, ok: used < limit };
+  const paced = limit * Math.min(1, Math.max(0, elapsedMs) / periodMs);
+  const allowed = Math.min(limit, Math.max(eqPerRun, paced));
+  return {
+    used, limit, allowed, ok: used < allowed,
+  };
 };
 
 // Heavy Latchkey jobs (every Latchkey-labelled job except the probe) still
@@ -105,11 +129,14 @@ const summary = (text) => {
   console.log(text);
 };
 
+// Only the backend label is routed, and the workflow sends only backend shard
+// 1 to it: one representative job keeps the monthly burn inside the free
+// minutes. Frontend and service stay on GitHub-hosted runners.
 const labels = (use) => ({
   use,
   backend: use ? env('BACKEND_LABEL', 'latchkey-medium') : GITHUB_LABEL,
-  frontend: use ? env('LIGHT_LABEL', 'latchkey-small') : GITHUB_LABEL,
-  service: use ? env('LIGHT_LABEL', 'latchkey-small') : GITHUB_LABEL,
+  frontend: GITHUB_LABEL,
+  service: GITHUB_LABEL,
 });
 
 export const route = async ({ now = () => Date.now(), wait = sleep } = {}) => {
@@ -122,16 +149,19 @@ export const route = async ({ now = () => Date.now(), wait = sleep } = {}) => {
     const holdMin = Number(env('HOLD_MIN', '60'));
     if (holdActive(holds, now(), holdMin)) return fallback(`a Latchkey hold was recorded in the last ${holdMin} min`);
 
-    const start = env('BUDGET_START', '');
-    if (!start || Number.isNaN(Date.parse(start))) return fallback('LATCHKEY_BUDGET_START is not set');
+    const budgetStart = env('BUDGET_START', '');
+    if (!budgetStart || Number.isNaN(Date.parse(budgetStart))) return fallback('LATCHKEY_BUDGET_START is not set');
+    const { start, periodMs } = budgetPeriod(now(), budgetStart);
     const runs = runsSince(await listArtifacts(RUN_ARTIFACT, start), start);
     const budget = budgetDecision({
       runs,
       eqPerRun: Number(env('EQ_PER_RUN', '48')),
       budgetEqMin: Number(env('BUDGET_EQMIN', '10000')),
+      elapsedMs: now() - Date.parse(start),
+      periodMs,
     });
-    summary(`Latchkey budget since ${start}: ${runs} runs, about ${budget.used} of ${budget.limit} small-equivalent minutes allowed.`);
-    if (!budget.ok) return fallback('the Latchkey budget is spent');
+    summary(`Latchkey budget since ${start}: ${runs} runs, about ${budget.used} small-equivalent minutes used; ${Math.floor(budget.allowed)} allowed so far, of ${budget.limit} for the month.`);
+    if (!budget.ok) return fallback('the Latchkey budget is spent for this point in the month');
 
     const pickupSec = Number(env('PICKUP_SEC', '180'));
     const deadline = now() + pickupSec * 1000;
@@ -139,7 +169,7 @@ export const route = async ({ now = () => Date.now(), wait = sleep } = {}) => {
       // eslint-disable-next-line no-await-in-loop
       const state = probeState(await runJobs());
       if (state === 'started') {
-        summary('Heavy jobs on Latchkey runners: the probe was picked up.');
+        summary('Backend shard 1 on Latchkey: the probe was picked up.');
         return output({ ...labels(true), hold: false });
       }
       if (now() >= deadline) {
@@ -157,7 +187,7 @@ export const backstop = async ({ now = () => Date.now(), wait = sleep } = {}) =>
   const stuckSec = Number(env('STUCK_SEC', '300'));
   // Matrix jobs are listed as they expand, so a poll can see only some of
   // them. The backstop passes only once this many heavy jobs have started.
-  const expected = Number(env('EXPECTED_HEAVY', '6'));
+  const expected = Number(env('EXPECTED_HEAVY', '1'));
   // Long enough for the heavy jobs to be queued and for any of them to pass
   // stuckSec; past it there is nothing left to watch.
   const deadline = now() + (stuckSec + 300) * 1000;
