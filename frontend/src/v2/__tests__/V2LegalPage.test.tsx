@@ -30,8 +30,8 @@ describe('public legal pages (TASK-530)', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Google Calendar' })).toBeInTheDocument();
     expect(screen.getByText(/It can't create, change or delete events\./)).toBeInTheDocument();
     expect(screen.getByText(/We don't store the calendar data Google sends back\./)).toBeInTheDocument();
-    // D239: Calendar is granted only to agents on their owner's machine, never to hosted agents.
-    expect(screen.getByText(/never hosted agents\./)).toBeInTheDocument();
+    // D243: hosted agents run on Anthropic, whose commercial terms rule out training on our content.
+    expect(screen.getByText(/Hosted agents use Anthropic's Claude, which does not train on this data\./)).toBeInTheDocument();
     expect(screen.getByText(/Google API Services User Data Policy, including the Limited Use requirements\./)).toBeInTheDocument();
   });
 

@@ -64,7 +64,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
     heading: 'Google Calendar',
     body: [
       'If you connect Google Calendar, Commonly can read your list of calendars, your events, and when you are free or busy. It can\'t create, change or delete events.',
-      'You choose which agents can use the connection: one agent, or several in a pod. Only agents that run on their owner\'s own machine can be granted it, never hosted agents. What a granted agent reads goes to that agent and to the model provider its owner picked. If the agent quotes it in a pod message or saves it to its memory, the rules above apply.',
+      'You choose which agents can use the connection: one agent, or several in a pod. What a granted agent reads goes to that agent and to its model provider. Hosted agents use Anthropic\'s Claude, which does not train on this data. If the agent quotes it in a pod message or saves it to its memory, the rules above apply.',
       'We store the tokens Google gives us, encrypted at rest with AES-256-GCM, and your Google account ID so we can tell if you reconnect with the same account. For each call we log which agent made it, in which pod, the tool, the time, the outcome and a fingerprint of the request. If a call fails, we also keep Google\'s error message. We don\'t store the calendar data Google sends back.',
       'We do not sell Google Calendar data, use it for advertising, or use it to train AI models. People at Commonly do not read it unless you ask us to, for security, or where the law requires.',
       'Commonly\'s use and transfer of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements.',
