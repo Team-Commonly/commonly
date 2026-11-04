@@ -1,6 +1,14 @@
 /**
  * Notion hosted MCP entry (TASK-240). Schemas and annotations are pinned from
- * connector-ops's consenting 2026-10-19 tools/list capture.
+ * connector-ops's consenting 2026-10-19 tools/list capture, except the 14 tools
+ * Notion changed by 2026-11-04, re-pinned from the Lily-owned row's capture that
+ * day. The 11 writers match it exactly, including Notion's new tracking-only
+ * `skill`, `instructions_version` and `telemetry` fields, because a write pin
+ * must match its live schema. The three reads (get-comments,
+ * query-data-sources, query-meeting-notes) leave those fields out, as a read
+ * pin may, so the broker refuses them by name. move-pages now declares itself
+ * destructive, which its irreversible floor already assumed. The 12 tools new
+ * on 11-04 are not pinned.
  *
  * The 24-tool pin follows Wren's PR-thread ruling: Notion workspace tools only.
  * Agent-session, skill-transfer, attachment, connected-source search, and
@@ -231,6 +239,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           pages: {
             description: "The pages to create.",
@@ -267,7 +276,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                   },
                 },
                 content: {
-                  description: "The content of the new page, using Notion Markdown. For people and dates, use user and date mentions rather than plain text; notion://docs/enhanced-markdown-spec gives the syntax.",
+                  description: "The content of the new page, using Notion Markdown. For people and dates, use user and date mentions rather than plain text; notion://docs/notion-flavored-markdown-spec gives the syntax.",
                   type: "string",
                 },
                 template_id: {
@@ -390,11 +399,39 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             description: "Default to true for page creation. Set to false only when the next step needs the created pages immediately, or when async execution rejects the request as too large. When this create operation is accepted for background execution, it returns an async_task result. Use get_async_task to wait for a succeeded status before taking a dependent action on the pages. For pages created with template_id, a succeeded status does not mean template content is ready; fetch and retry until it is ready before changing or relying on that content. If omitted or false, the tool keeps the existing synchronous result shape.",
             type: "boolean",
           },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
+            type: "string",
+          },
         },
         required: [
           "pages",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
@@ -406,10 +443,11 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           page_id: {
             type: "string",
-            description: "The ID of the page to update, with or without dashes.",
+            description: "The page ID, with or without dashes, or a Notion page URL.",
           },
           command: {
             type: "string",
@@ -424,7 +462,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             description: "The update command to execute.",
           },
           properties: {
-            description: "Required for \"update_properties\" command. A JSON object that updates the page's properties.\nFor pages in a database, fetch the page or its data source first and use the exact property names and SQLite schema definition shown in <database>.\nFor pages outside of a database, the only allowed property is \"title\", which is the title of the page in inline markdown format.\nFor a Files property, an uploaded file can be provided as {\"type\":\"file_upload\",\"file_upload\":{\"id\":\"<file-upload-id>\"}} inside the property's array.\nUse null to remove a property's value.\n**IMPORTANT**: Some property types require specific formats:\n- Date properties: Split into \"date:{property}:start\", \"date:{property}:end\" (optional), and \"date:{property}:is_datetime\" (0 or 1)\n- Place properties: Split into \"place:{property}:name\", \"place:{property}:address\", \"place:{property}:latitude\", \"place:{property}:longitude\", and \"place:{property}:google_place_id\" (optional)\n- Number properties: Use JavaScript numbers (not strings)\n- Checkbox properties: Use \"__YES__\" for checked, \"__NO__\" for unchecked\n- Relation properties: Use an array of related page URLs or page IDs, e.g. [\"https://www.notion.so/26ab1f9f4c5f80b18d3bd10a6b1d2f4e\", \"26ab1f9f-4c5f-80b1-8d3b-d10a6b1d2f4e\"]\n- Person properties: Use an array of user IDs, user or agent URLs, or group references copied from fetch output (\"space_permission_group-<UUID>\"). Bare group UUIDs are also supported.\n- Files properties: Use a JSON array of file IDs, Notion Folder URLs, and/or <folder> tags copied from fetch output. Folders are stored as native Folder references, not ordinary links.\n\n\n**Special property naming**: Properties named \"id\" or \"url\" (case insensitive) must be prefixed with \"userDefined:\" (e.g., \"userDefined:URL\", \"userDefined:id\")",
+            description: "Used by the \"update_properties\" command, and required unless \"icon\", \"cover\", \"is_skill\", or \"full_width\" is set. A JSON object that updates the page's properties.\nFor pages in a database, fetch the page or its data source first and use the exact property names and SQLite schema definition shown in <database>.\nFor page titles outside a database, use \"title\" in inline Markdown.\nFor a Files property, an uploaded file can be provided as {\"type\":\"file_upload\",\"file_upload\":{\"id\":\"<file-upload-id>\"}} inside the property's array.\nUse null to remove a property's value.\n**IMPORTANT**: Some property types require specific formats:\n- Date properties: Split into \"date:{property}:start\", \"date:{property}:end\" (optional), and \"date:{property}:is_datetime\" (0 or 1)\n- Place properties: Split into \"place:{property}:name\", \"place:{property}:address\", \"place:{property}:latitude\", \"place:{property}:longitude\", and \"place:{property}:google_place_id\" (optional)\n- Number properties: Use JavaScript numbers (not strings)\n- Checkbox properties: Use \"__YES__\" for checked, \"__NO__\" for unchecked\n- Relation properties: Use an array of related page URLs or page IDs, e.g. [\"https://www.notion.so/26ab1f9f4c5f80b18d3bd10a6b1d2f4e\", \"26ab1f9f-4c5f-80b1-8d3b-d10a6b1d2f4e\"]\n- Person properties: Use an array of user IDs, user or agent URLs, or group references copied from fetch output (\"space_permission_group-<UUID>\"). Bare group UUIDs are also supported.\n- Files properties: Use a JSON array of file IDs, Notion Folder URLs, and/or <folder> tags copied from fetch output. Folders are stored as native Folder references, not ordinary links.\n\n\n**Special property naming**: Properties named \"id\" or \"url\" (case insensitive) must be prefixed with \"userDefined:\" (e.g., \"userDefined:URL\", \"userDefined:id\")",
             type: "object",
             propertyNames: {
               type: "string",
@@ -485,12 +523,16 @@ export const NOTION_ENTRY: HostedMcpEntry = {
               ],
             },
           },
+          full_width: {
+            description: "With command update_properties, set a page to full width or the default width. For database pages, overrides the database layout for this page only.",
+            type: "boolean",
+          },
           new_str: {
-            description: "Required for \"replace_content\" command. The new content string to replace the entire page content with. Preserve child pages and databases with their exact fetched <page url=\"...\"> or <database url=\"...\"> tags. For people and dates, use user and date mentions rather than plain text; notion://docs/enhanced-markdown-spec gives the syntax.",
+            description: "Required for \"replace_content\" command. The new content string to replace the entire page content with. Preserve child pages and databases with their exact fetched <page url=\"...\"> or <database url=\"...\"> tags. For people and dates, use user and date mentions rather than plain text; notion://docs/notion-flavored-markdown-spec gives the syntax.",
             type: "string",
           },
           content: {
-            description: "Required for \"insert_content\" command. The markdown content to insert into the page. For people and dates, use user and date mentions rather than plain text; notion://docs/enhanced-markdown-spec gives the syntax.",
+            description: "Required for \"insert_content\" command. The markdown content to insert into the page. For people and dates, use user and date mentions rather than plain text; notion://docs/notion-flavored-markdown-spec gives the syntax.",
             type: "string",
           },
           content_updates: {
@@ -507,7 +549,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                 },
                 new_str: {
                   type: "string",
-                  description: "The new content string to replace old_str with. For people and dates, use user and date mentions rather than plain text; notion://docs/enhanced-markdown-spec gives the syntax.",
+                  description: "The new content string to replace old_str with. For people and dates, use user and date mentions rather than plain text; notion://docs/notion-flavored-markdown-spec gives the syntax.",
                 },
                 replace_all_matches: {
                   description: "If true, replaces all occurrences of old_str. If false (default), the operation fails if there are multiple matches.",
@@ -581,27 +623,55 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             maximum: 9007199254740991,
           },
           icon: {
-            description: "An emoji character (e.g. \"🚀\"), a custom emoji by name (e.g. \":rocket_ship:\"), a Notion icon identifier as returned by fetch (e.g. \"icons/pizza_blue\"), or an external image URL. Use \"none\" to remove the icon. Omit to leave unchanged. Can be set alongside any command. Keep the title free of a duplicate leading emoji because the icon renders separately.",
+            description: "An emoji character (e.g. \"🚀\"), a custom emoji by name (e.g. \":rocket_ship:\"), a Notion icon identifier as returned by fetch (e.g. \"icons/pizza_blue\"), or an external image URL. Use \"none\" to remove the icon. Omit to leave unchanged. Can be set alongside any command. To change only the icon, use \"update_properties\" and omit \"properties\". Keep the title free of a duplicate leading emoji because the icon renders separately.",
             type: "string",
           },
           cover: {
-            description: "An external image URL for the page cover. Use \"none\" to remove the cover. Omit to leave unchanged. Can be set alongside any command.",
+            description: "An external image URL for the page cover. Use \"none\" to remove the cover. Omit to leave unchanged. Can be set alongside any command. To change only the cover, use \"update_properties\" and omit \"properties\".",
             type: "string",
           },
           is_skill: {
-            description: "Set to true to mark this page as a skill, or false to remove the skill designation. Can be set alongside any command. To change only skill status, use \"update_properties\" and omit \"properties\".",
+            description: "Set to true to mark this page as a skill, or false to remove the skill designation. Can be set alongside any command. To change only skill status, use \"update_properties\" and omit \"properties\". Before creating a skill, read the MCP resource `notion://docs/skills` through your MCP client's resource-reading interface. If your client does not support reading MCP resources, call the Notion \"fetch\" tool with this URI instead. Do NOT pass this URI to any other URL-fetching tool.",
             type: "boolean",
           },
           allow_async: {
             description: "Default to true for page updates. Set to false only when the next step needs the updated page immediately, or when async execution rejects the request as too large. When this update operation is accepted for background execution, it returns an async_task result. Use get_async_task to wait for a succeeded status before taking a dependent action on the page. For apply_template, a succeeded status does not mean template content is ready; fetch and retry until it is ready before changing or relying on that content. If omitted or false, the tool waits for a synchronous result when possible, but may still return a pollable async_task response if queued execution exceeds the synchronous wait deadline.",
             type: "boolean",
           },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
+            type: "string",
+          },
         },
         required: [
           "page_id",
           "command",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: true },
@@ -613,6 +683,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           page_or_database_ids: {
             description: "An array of up to 100 page or database IDs to move. IDs are v4 UUIDs and can be supplied with or without dashes (e.g. extracted from a <page> or <database> URL given by the \"search\" or \"fetch\" tool). Data Sources under Databases can't be moved individually.",
@@ -704,15 +775,43 @@ export const NOTION_ENTRY: HostedMcpEntry = {
               },
             ],
           },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
+            type: "string",
+          },
         },
         required: [
           "page_or_database_ids",
           "new_parent",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
-      { readOnlyHint: false, destructiveHint: false },
+      { readOnlyHint: false, destructiveHint: true },
       true,
     ),
     pin(
@@ -721,16 +820,45 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           page_id: {
             type: "string",
-            description: "The ID of the page to duplicate. This is a v4 UUID, with or without dashes, and can be parsed from a Notion page URL.",
+            description: "The page ID, with or without dashes, or a Notion page URL.",
+          },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
+            type: "string",
           },
         },
         required: [
           "page_id",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
@@ -742,6 +870,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           parent: {
             description: "The parent under which to create the new database. If omitted, the database will be created as a private page at the workspace level.",
@@ -785,8 +914,36 @@ export const NOTION_ENTRY: HostedMcpEntry = {
               "skills",
             ],
           },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
+            type: "string",
+          },
         },
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
@@ -798,6 +955,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           parent: {
             description: "Where to create the Folder.",
@@ -834,12 +992,40 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             type: "string",
             description: "The title of the new Folder.",
           },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
+            type: "string",
+          },
         },
         required: [
           "parent",
           "title",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
@@ -851,6 +1037,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           folder_id: {
             type: "string",
@@ -887,12 +1074,40 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             description: "Required for add_subfolder. The new Folder's title.",
             type: "string",
           },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
+            type: "string",
+          },
         },
         required: [
           "folder_id",
           "command",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: false,
       },
       { readOnlyHint: false, destructiveHint: true },
@@ -904,6 +1119,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           data_source_id: {
             type: "string",
@@ -960,109 +1176,10 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                       additionalProperties: false,
                     },
                     {
-                      type: "object",
-                      properties: {
-                        type: {
-                          type: "string",
-                          enum: [
-                            "properties",
-                          ],
-                          description: "The module type.",
-                        },
-                        properties: {
-                          description: "Properties in order. Unlisted properties follow in their current order and show. Don't list the title or properties placed elsewhere in the layout.",
-                          type: "array",
-                          items: {
-                            type: "object",
-                            properties: {
-                              property: {
-                                type: "string",
-                                description: "The property name.",
-                              },
-                              visibility: {
-                                description: "Defaults to show. Changes how pages look, not who can see the value.",
-                                type: "string",
-                                enum: [
-                                  "show",
-                                  "hide_if_empty",
-                                  "hide",
-                                ],
-                              },
-                            },
-                            required: [
-                              "property",
-                            ],
-                            additionalProperties: false,
-                          },
-                        },
-                      },
-                      required: [
-                        "type",
-                      ],
-                      additionalProperties: false,
+                      $ref: "#/$defs/pageLayoutPropertiesModule",
                     },
                     {
-                      type: "object",
-                      properties: {
-                        type: {
-                          type: "string",
-                          enum: [
-                            "properties",
-                          ],
-                          description: "The module type.",
-                        },
-                        sections: {
-                          minItems: 1,
-                          type: "array",
-                          items: {
-                            type: "object",
-                            properties: {
-                              name: {
-                                type: "string",
-                                minLength: 1,
-                                description: "The section name.",
-                              },
-                              properties: {
-                                type: "array",
-                                items: {
-                                  type: "object",
-                                  properties: {
-                                    property: {
-                                      type: "string",
-                                      description: "The property name.",
-                                    },
-                                    visibility: {
-                                      description: "Defaults to show. Changes how pages look, not who can see the value.",
-                                      type: "string",
-                                      enum: [
-                                        "show",
-                                        "hide_if_empty",
-                                        "hide",
-                                      ],
-                                    },
-                                  },
-                                  required: [
-                                    "property",
-                                  ],
-                                  additionalProperties: false,
-                                },
-                                description: "Properties in this section, in order. Don't list the title or properties placed elsewhere in the layout.",
-                              },
-                            },
-                            required: [
-                              "name",
-                              "properties",
-                            ],
-                            additionalProperties: false,
-                          },
-                          description: "Named sections in order. Unlisted properties go in the last section and show.",
-                        },
-                      },
-                      required: [
-                        "type",
-                        "sections",
-                      ],
-                      additionalProperties: false,
+                      $ref: "#/$defs/pageLayoutPropertiesSectionsModule",
                     },
                     {
                       type: "object",
@@ -1096,49 +1213,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                       additionalProperties: false,
                     },
                     {
-                      type: "object",
-                      properties: {
-                        type: {
-                          type: "string",
-                          enum: [
-                            "property",
-                          ],
-                          description: "The module type.",
-                        },
-                        property: {
-                          type: "string",
-                          description: "The name of the property to show.",
-                        },
-                        config: {
-                          description: "How the property looks.",
-                          type: "object",
-                          properties: {
-                            style: {
-                              type: "string",
-                              enum: [
-                                "compact",
-                                "large",
-                                "small",
-                                "landscape",
-                                "portrait",
-                                "square",
-                                "map",
-                                "text",
-                              ],
-                              description: "Display style. Which styles apply depends on the property type.",
-                            },
-                          },
-                          required: [
-                            "style",
-                          ],
-                          additionalProperties: false,
-                        },
-                      },
-                      required: [
-                        "type",
-                        "property",
-                      ],
-                      additionalProperties: false,
+                      $ref: "#/$defs/pageLayoutPropertyModule",
                     },
                     {
                       type: "object",
@@ -1171,154 +1246,13 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                 items: {
                   anyOf: [
                     {
-                      type: "object",
-                      properties: {
-                        type: {
-                          type: "string",
-                          enum: [
-                            "properties",
-                          ],
-                          description: "The module type.",
-                        },
-                        properties: {
-                          description: "Properties in order. Unlisted properties follow in their current order and show. Don't list the title or properties placed elsewhere in the layout.",
-                          type: "array",
-                          items: {
-                            type: "object",
-                            properties: {
-                              property: {
-                                type: "string",
-                                description: "The property name.",
-                              },
-                              visibility: {
-                                description: "Defaults to show. Changes how pages look, not who can see the value.",
-                                type: "string",
-                                enum: [
-                                  "show",
-                                  "hide_if_empty",
-                                  "hide",
-                                ],
-                              },
-                            },
-                            required: [
-                              "property",
-                            ],
-                            additionalProperties: false,
-                          },
-                        },
-                      },
-                      required: [
-                        "type",
-                      ],
-                      additionalProperties: false,
+                      $ref: "#/$defs/pageLayoutPropertiesModule",
                     },
                     {
-                      type: "object",
-                      properties: {
-                        type: {
-                          type: "string",
-                          enum: [
-                            "properties",
-                          ],
-                          description: "The module type.",
-                        },
-                        sections: {
-                          minItems: 1,
-                          type: "array",
-                          items: {
-                            type: "object",
-                            properties: {
-                              name: {
-                                type: "string",
-                                minLength: 1,
-                                description: "The section name.",
-                              },
-                              properties: {
-                                type: "array",
-                                items: {
-                                  type: "object",
-                                  properties: {
-                                    property: {
-                                      type: "string",
-                                      description: "The property name.",
-                                    },
-                                    visibility: {
-                                      description: "Defaults to show. Changes how pages look, not who can see the value.",
-                                      type: "string",
-                                      enum: [
-                                        "show",
-                                        "hide_if_empty",
-                                        "hide",
-                                      ],
-                                    },
-                                  },
-                                  required: [
-                                    "property",
-                                  ],
-                                  additionalProperties: false,
-                                },
-                                description: "Properties in this section, in order. Don't list the title or properties placed elsewhere in the layout.",
-                              },
-                            },
-                            required: [
-                              "name",
-                              "properties",
-                            ],
-                            additionalProperties: false,
-                          },
-                          description: "Named sections in order. Unlisted properties go in the last section and show.",
-                        },
-                      },
-                      required: [
-                        "type",
-                        "sections",
-                      ],
-                      additionalProperties: false,
+                      $ref: "#/$defs/pageLayoutPropertiesSectionsModule",
                     },
                     {
-                      type: "object",
-                      properties: {
-                        type: {
-                          type: "string",
-                          enum: [
-                            "property",
-                          ],
-                          description: "The module type.",
-                        },
-                        property: {
-                          type: "string",
-                          description: "The name of the property to show.",
-                        },
-                        config: {
-                          description: "How the property looks.",
-                          type: "object",
-                          properties: {
-                            style: {
-                              type: "string",
-                              enum: [
-                                "compact",
-                                "large",
-                                "small",
-                                "landscape",
-                                "portrait",
-                                "square",
-                                "map",
-                                "text",
-                              ],
-                              description: "Display style. Which styles apply depends on the property type.",
-                            },
-                          },
-                          required: [
-                            "style",
-                          ],
-                          additionalProperties: false,
-                        },
-                      },
-                      required: [
-                        "type",
-                        "property",
-                      ],
-                      additionalProperties: false,
+                      $ref: "#/$defs/pageLayoutPropertyModule",
                     },
                   ],
                 },
@@ -1354,154 +1288,13 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                           additionalProperties: false,
                         },
                         {
-                          type: "object",
-                          properties: {
-                            type: {
-                              type: "string",
-                              enum: [
-                                "properties",
-                              ],
-                              description: "The module type.",
-                            },
-                            properties: {
-                              description: "Properties in order. Unlisted properties follow in their current order and show. Don't list the title or properties placed elsewhere in the layout.",
-                              type: "array",
-                              items: {
-                                type: "object",
-                                properties: {
-                                  property: {
-                                    type: "string",
-                                    description: "The property name.",
-                                  },
-                                  visibility: {
-                                    description: "Defaults to show. Changes how pages look, not who can see the value.",
-                                    type: "string",
-                                    enum: [
-                                      "show",
-                                      "hide_if_empty",
-                                      "hide",
-                                    ],
-                                  },
-                                },
-                                required: [
-                                  "property",
-                                ],
-                                additionalProperties: false,
-                              },
-                            },
-                          },
-                          required: [
-                            "type",
-                          ],
-                          additionalProperties: false,
+                          $ref: "#/$defs/pageLayoutPropertiesModule",
                         },
                         {
-                          type: "object",
-                          properties: {
-                            type: {
-                              type: "string",
-                              enum: [
-                                "properties",
-                              ],
-                              description: "The module type.",
-                            },
-                            sections: {
-                              minItems: 1,
-                              type: "array",
-                              items: {
-                                type: "object",
-                                properties: {
-                                  name: {
-                                    type: "string",
-                                    minLength: 1,
-                                    description: "The section name.",
-                                  },
-                                  properties: {
-                                    type: "array",
-                                    items: {
-                                      type: "object",
-                                      properties: {
-                                        property: {
-                                          type: "string",
-                                          description: "The property name.",
-                                        },
-                                        visibility: {
-                                          description: "Defaults to show. Changes how pages look, not who can see the value.",
-                                          type: "string",
-                                          enum: [
-                                            "show",
-                                            "hide_if_empty",
-                                            "hide",
-                                          ],
-                                        },
-                                      },
-                                      required: [
-                                        "property",
-                                      ],
-                                      additionalProperties: false,
-                                    },
-                                    description: "Properties in this section, in order. Don't list the title or properties placed elsewhere in the layout.",
-                                  },
-                                },
-                                required: [
-                                  "name",
-                                  "properties",
-                                ],
-                                additionalProperties: false,
-                              },
-                              description: "Named sections in order. Unlisted properties go in the last section and show.",
-                            },
-                          },
-                          required: [
-                            "type",
-                            "sections",
-                          ],
-                          additionalProperties: false,
+                          $ref: "#/$defs/pageLayoutPropertiesSectionsModule",
                         },
                         {
-                          type: "object",
-                          properties: {
-                            type: {
-                              type: "string",
-                              enum: [
-                                "property",
-                              ],
-                              description: "The module type.",
-                            },
-                            property: {
-                              type: "string",
-                              description: "The name of the property to show.",
-                            },
-                            config: {
-                              description: "How the property looks.",
-                              type: "object",
-                              properties: {
-                                style: {
-                                  type: "string",
-                                  enum: [
-                                    "compact",
-                                    "large",
-                                    "small",
-                                    "landscape",
-                                    "portrait",
-                                    "square",
-                                    "map",
-                                    "text",
-                                  ],
-                                  description: "Display style. Which styles apply depends on the property type.",
-                                },
-                              },
-                              required: [
-                                "style",
-                              ],
-                              additionalProperties: false,
-                            },
-                          },
-                          required: [
-                            "type",
-                            "property",
-                          ],
-                          additionalProperties: false,
+                          $ref: "#/$defs/pageLayoutPropertyModule",
                         },
                       ],
                     },
@@ -1538,12 +1331,176 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             ],
             additionalProperties: false,
           },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
+            type: "string",
+          },
         },
         required: [
           "data_source_id",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
+        $defs: {
+          pageLayoutPropertiesModule: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "properties",
+                ],
+                description: "The module type.",
+              },
+              properties: {
+                description: "Properties in order. Unlisted properties follow in their current order and show. Don't list the title or properties placed elsewhere in the layout.",
+                type: "array",
+                items: {
+                  $ref: "#/$defs/pageLayoutPropertyEntry",
+                },
+              },
+            },
+            required: [
+              "type",
+            ],
+            additionalProperties: false,
+          },
+          pageLayoutPropertyEntry: {
+            type: "object",
+            properties: {
+              property: {
+                type: "string",
+                description: "The property name.",
+              },
+              visibility: {
+                description: "Defaults to show. Changes how pages look, not who can see the value.",
+                type: "string",
+                enum: [
+                  "show",
+                  "hide_if_empty",
+                  "hide",
+                ],
+              },
+            },
+            required: [
+              "property",
+            ],
+            additionalProperties: false,
+          },
+          pageLayoutPropertiesSectionsModule: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "properties",
+                ],
+                description: "The module type.",
+              },
+              sections: {
+                minItems: 1,
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    name: {
+                      type: "string",
+                      minLength: 1,
+                      description: "The section name.",
+                    },
+                    properties: {
+                      type: "array",
+                      items: {
+                        $ref: "#/$defs/pageLayoutPropertyEntry",
+                      },
+                      description: "Properties in this section, in order. Don't list the title or properties placed elsewhere in the layout.",
+                    },
+                  },
+                  required: [
+                    "name",
+                    "properties",
+                  ],
+                  additionalProperties: false,
+                },
+                description: "Named sections in order. Unlisted properties go in the last section and show.",
+              },
+            },
+            required: [
+              "type",
+              "sections",
+            ],
+            additionalProperties: false,
+          },
+          pageLayoutPropertyModule: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "The module type.",
+              },
+              property: {
+                type: "string",
+                description: "The name of the property to show.",
+              },
+              config: {
+                description: "How the property looks.",
+                type: "object",
+                properties: {
+                  style: {
+                    type: "string",
+                    enum: [
+                      "compact",
+                      "large",
+                      "small",
+                      "landscape",
+                      "portrait",
+                      "square",
+                      "map",
+                      "text",
+                    ],
+                    description: "Display style. Which styles apply depends on the property type.",
+                  },
+                },
+                required: [
+                  "style",
+                ],
+                additionalProperties: false,
+              },
+            },
+            required: [
+              "type",
+              "property",
+            ],
+            additionalProperties: false,
+          },
+        },
       },
       { readOnlyHint: false, destructiveHint: true },
       true,
@@ -1554,10 +1511,11 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           page_id: {
             type: "string",
-            description: "The ID of the page to comment on (with or without dashes).",
+            description: "The page ID, with or without dashes, or a Notion page URL.",
           },
           reply_to_comment_id: {
             description: "The ID of the comment to reply to.",
@@ -1984,14 +1942,42 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             },
           },
           markdown: {
-            description: "The content of the comment as a Markdown string. Provide exactly one of markdown or rich_text. For exact syntax, read the MCP resource `notion://docs/enhanced-markdown-spec` through your MCP client's resource-reading interface, or call the Notion \"fetch\" tool with this URI if your client does not support reading MCP resources. Do NOT pass this URI to any other URL-fetching tool. Use only the Rich text types and Mentions syntax that comments support. Comments support inline formatting (bold, italic, strikethrough, underline, code, links), inline math using $`Equation`$, and user/page/database/date mention tags such as <mention-date start=\"YYYY-MM-DD\"/>. To attach a file created by create-file-upload or create-attachment, include its returned suggested_markdown on a separate line; up to three file attachments are supported. Do not use UI shortcuts like @today, @name, [[page]], or autocomplete-style emoji syntax; those are editor affordances, not markdown syntax. Mention tags must include a real url where required by the spec. Other block-level Markdown such as fenced code blocks, headings, lists, tables, and blockquotes is stored as plain comment text rather than rendered as blocks. Example: <example>Looks good.</example>.",
+            description: "The content of the comment as a Markdown string. Provide exactly one of markdown or rich_text. For exact syntax, read the MCP resource `notion://docs/notion-flavored-markdown-spec` through your MCP client's resource-reading interface, or call the Notion \"fetch\" tool with this URI if your client does not support reading MCP resources. Do NOT pass this URI to any other URL-fetching tool. Use only the Rich text types and Mentions syntax that comments support. Comments support inline formatting (bold, italic, strikethrough, underline, code, links), inline math using $Equation$, user, page, and database mentions such as <mention url=\"user://...\" />, and date mentions such as <date start=\"YYYY-MM-DD\" />. To attach a file created by create-file-upload or create-attachment, include its returned suggested_markdown on a separate line; up to three file attachments are supported. Do not use UI shortcuts like @today, @name, [[page]], or autocomplete-style emoji syntax; those are editor affordances, not markdown syntax. Mention tags must include a real url where required by the spec. Other block-level Markdown such as fenced code blocks, headings, lists, tables, and blockquotes is stored as plain comment text rather than rendered as blocks. Example: <example>Looks good.</example>.",
+            type: "string",
+          },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
             type: "string",
           },
         },
         required: [
           "page_id",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
@@ -2003,28 +1989,28 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'read',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           page_id: {
             type: "string",
-            description: "Identifier for a Notion page.",
+            description: "The page ID, with or without dashes, or a Notion page URL.",
           },
           include_resolved: {
             description: "Include resolved discussions in the response. Defaults to false.",
-            type: "boolean",
-          },
-          include_all_blocks: {
-            description: "Include discussions on child blocks, not just page-level discussions. Defaults to false.",
             type: "boolean",
           },
           discussion_id: {
             description: "Fetch a specific discussion by ID or discussion URL (e.g., discussion://pageId/blockId/discussionId).",
             type: "string",
           },
+          cursor: {
+            description: "The `next-cursor` value from a discussion in an earlier response. Returns that discussion's older comments. Requires `discussion_id`.",
+            type: "string",
+          },
         },
         required: [
           "page_id",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
       { readOnlyHint: true, destructiveHint: false },
@@ -2115,9 +2101,10 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'read',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           data: {
-            description: "Mode parameter reference and examples.\n\nSQL mode:\n- Use single quotes for SQL string values, such as `\"Status\" = 'Done'`. Use double quotes for table and column names. In SQL, `''` is an empty string.\n- Prefer `?` placeholders for values. For text values, the `params` array uses JSON strings, so `[\"\"]` passes an empty string and `[\"__YES__\"]` passes a checked checkbox value. Do not add SQL quote marks around a bound value.\n- Checkbox SQL values: `'__YES__'` means checked; `'__NO__'` means unchecked.\n\n\nRows mode: Return up to 100 rows with faithful rich-text property values and optional structured filters and sorts.\n\nExample:\n<example>{\"mode\":\"rows\",\"data_source_url\":\"collection://f336d0bc-b841-465b-8045-024475c079dd\",\"filter\":{\"type\":\"group\",\"operator\":\"and\",\"filters\":[{\"type\":\"property\",\"property\":\"Status\",\"propertyType\":\"select\",\"operator\":\"enum_is\",\"value\":{\"type\":\"exact\",\"value\":\"In Progress\"}}]},\"limit\":20}</example>\n\nExamples:\n- Simple SQL: <example>{\"data_source_urls\":[\"collection://f336d0bc-b841-465b-8045-024475c079dd\"],\"query\":\"SELECT * FROM [collection://f336d0bc-b841-465b-8045-024475c079dd] LIMIT 10\"}</example>\n- SQL parameters: <example>{\"mode\":\"sql\",\"data_source_urls\":[\"collection://abc123\"],\"query\":\"SELECT * FROM [collection://abc123] WHERE Status = ? AND Priority = ?\",\"params\":[\"In Progress\",\"High\"]}</example>\n- Checkbox query: <example>{\"data_source_urls\":[\"collection://def456\"],\"query\":\"SELECT * FROM [collection://def456] WHERE Completed = ?\",\"params\":[\"__YES__\"]}</example>\n\nView mode: Execute a specific database view's query with its filters and sorts. Omit \"is_archived\" or set it to false for non-archived rows. Set \"is_archived\": true to apply the view inside the archived partition. When the response has \"has_more\": true, pass its \"next_cursor\" as \"start_cursor\" in a follow-up view-mode request with the same \"is_archived\" value.\n\nExample:\n<example>{\"mode\":\"view\",\"view_url\":\"https://www.notion.so/workspace/Tasks-DB-abc123?v=def456\",\"is_archived\":false}</example>",
+            description: "Mode parameter reference and examples.\n\nPut `mode`, `query`, `data_source_urls`, `data_source_url`, `params`, `limit`, filters (`filter`), sorts (`sort`), and view arguments (`view_url`, `start_cursor`, `page_size`, `is_archived`) inside `data`, never at the tool-argument root. All examples below are complete tool arguments with exactly one outer `data` wrapper. Pass them as shown; do not add another wrapper.\n\nSQL mode:\n- Use single quotes for SQL string values, such as `\"Status\" = 'Done'`. Use double quotes for table and column names. In SQL, `''` is an empty string.\n- Prefer `?` placeholders for values. For text values, the `params` array uses JSON strings, so `[\"\"]` passes an empty string and `[\"__YES__\"]` passes a checked checkbox value. Do not add SQL quote marks around a bound value.\n- Checkbox SQL values: `'__YES__'` means checked; `'__NO__'` means unchecked.\n\n\nRows mode: Return up to 100 rows with faithful rich-text property values and optional structured filters and sorts.\n\nExample:\n<example>{\"data\":{\"mode\":\"rows\",\"data_source_url\":\"collection://f336d0bc-b841-465b-8045-024475c079dd\",\"filter\":{\"type\":\"group\",\"operator\":\"and\",\"filters\":[{\"type\":\"property\",\"property\":\"Status\",\"propertyType\":\"select\",\"operator\":\"enum_is\",\"value\":{\"type\":\"exact\",\"value\":\"In Progress\"}}]},\"limit\":20}}</example>\n\nExamples:\n- Simple SQL: <example>{\"data\":{\"data_source_urls\":[\"collection://f336d0bc-b841-465b-8045-024475c079dd\"],\"query\":\"SELECT * FROM [collection://f336d0bc-b841-465b-8045-024475c079dd] LIMIT 10\"}}</example>\n- SQL parameters: <example>{\"data\":{\"mode\":\"sql\",\"data_source_urls\":[\"collection://f336d0bc-b841-465b-8045-024475c079dd\"],\"query\":\"SELECT * FROM [collection://f336d0bc-b841-465b-8045-024475c079dd] WHERE Status = ? AND Priority = ?\",\"params\":[\"In Progress\",\"High\"]}}</example>\n- Checkbox query: <example>{\"data\":{\"data_source_urls\":[\"collection://f336d0bc-b841-465b-8045-024475c079dd\"],\"query\":\"SELECT * FROM [collection://f336d0bc-b841-465b-8045-024475c079dd] WHERE Completed = ?\",\"params\":[\"__YES__\"]}}</example>\n\nView mode: Execute a specific database view's query with its filters and sorts. Omit \"is_archived\" or set it to false for non-archived rows. Set \"is_archived\": true to apply the view inside the archived partition. When the response has \"has_more\": true, pass its \"next_cursor\" as \"start_cursor\" in a follow-up view-mode request with the same \"is_archived\" value.\n\nExample:\n<example>{\"data\":{\"mode\":\"view\",\"view_url\":\"https://www.notion.so/f336d0bcb841465b8045024475c079dd?v=0123456789abcdef0123456789abcdef\",\"is_archived\":false}}</example>",
             anyOf: [
               {
                 type: "object",
@@ -2132,7 +2119,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                   },
                   query: {
                     type: "string",
-                    description: "Read-only SQLite query to execute against the data sources. Use a data source URL as the table name, e.g. SELECT * FROM \"collection://...\" WHERE .... Use only table and column names shown in the fetched `<sqlite-table>` definition; date properties use the expanded column names listed there, not the base name. Include every needed filter in WHERE (filters on views of the data source are not automatically applied). For time comparisons or ordering, normalize text timestamps with datetime(...) or date(...). SQL text values can omit rich-text mentions and formatting, and links can lose their destination. Use faithful rows mode or fetch the page before rewriting a rich-text property.",
+                    description: "Read-only SQLite query to execute against the data sources. Use a data source URL as the table name, e.g. SELECT * FROM \"collection://...\" WHERE .... Use only table and column names shown in the fetched `<sqlite-table>` definition; date properties use the expanded column names listed there, not the base name. Example: if the fetched schema has a date property `Due`, use `\"date:Due:start\"`, not `\"Due\"`. Properties of type `created_time` or `last_edited_time` keep their exact fetched base columns (e.g. `\"Created\"` only if listed). A formula or another property with a date-looking name or result does not automatically have `date:` columns or become queryable. Copy actual fetched columns, not property labels. Include every needed filter in WHERE (filters on views of the data source are not automatically applied). For time comparisons or ordering, normalize text timestamps with datetime(...) or date(...). SQL text values can omit rich-text mentions and formatting, and links can lose their destination. Use faithful rows mode or fetch the page before rewriting a rich-text property.",
                   },
                   mode: {
                     description: "Optional mode parameter. Defaults to 'sql' if not specified. SQL mode does not accept is_archived; that parameter belongs only to view mode.",
@@ -2245,2378 +2232,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                         items: {
                           anyOf: [
                             {
-                              anyOf: [
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "is_empty",
-                                        "is_not_empty",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Checks whether a property has any value.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "title",
-                                        "text",
-                                        "url",
-                                        "email",
-                                        "phone_number",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "string_is",
-                                        "string_is_not",
-                                        "string_contains",
-                                        "string_does_not_contain",
-                                        "string_starts_with",
-                                        "string_ends_with",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                    value: {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "exact",
-                                          ],
-                                          description: "Selects the filter or filter-value variant.",
-                                        },
-                                        value: {
-                                          type: "string",
-                                          description: "Literal or relative value used by the filter.",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "value",
-                                      ],
-                                      additionalProperties: false,
-                                      description: "Literal or relative value used by the filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Property filter for text-like properties.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "number",
-                                        "auto_increment_id",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "number_equals",
-                                        "number_does_not_equal",
-                                        "number_greater_than",
-                                        "number_less_than",
-                                        "number_greater_than_or_equal_to",
-                                        "number_less_than_or_equal_to",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                    value: {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "exact",
-                                          ],
-                                          description: "Selects the filter or filter-value variant.",
-                                        },
-                                        value: {
-                                          type: "number",
-                                          description: "Literal or relative value used by the filter.",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "value",
-                                      ],
-                                      additionalProperties: false,
-                                      description: "Literal or relative value used by the filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Property filter for number properties.",
-                                },
-                                {
-                                  anyOf: [
-                                    {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "property",
-                                          ],
-                                          description: "Selects the filter or filter-value variant.",
-                                        },
-                                        property: {
-                                          type: "string",
-                                          description: "Exact data source property name to filter.",
-                                        },
-                                        propertyType: {
-                                          type: "string",
-                                          enum: [
-                                            "date",
-                                            "created_time",
-                                            "last_edited_time",
-                                            "last_visited_time",
-                                          ],
-                                          description: "Notion property type used to select valid operators and value shapes.",
-                                        },
-                                        operator: {
-                                          type: "string",
-                                          enum: [
-                                            "date_is",
-                                            "date_is_before",
-                                            "date_is_after",
-                                            "date_is_on_or_before",
-                                            "date_is_on_or_after",
-                                          ],
-                                          description: "Comparison or Boolean operation applied by this filter.",
-                                        },
-                                        value: {
-                                          anyOf: [
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "exact",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "string",
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "relative",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "today",
-                                                    "tomorrow",
-                                                    "yesterday",
-                                                    "one_week_ago",
-                                                    "one_week_from_now",
-                                                    "one_month_ago",
-                                                    "one_month_from_now",
-                                                  ],
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                          ],
-                                          description: "Literal or relative value used by the filter.",
-                                        },
-                                        use_end: {
-                                          description: "For a date property, compare its end date instead of its start date.",
-                                          type: "boolean",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "property",
-                                        "propertyType",
-                                        "operator",
-                                        "value",
-                                      ],
-                                      additionalProperties: false,
-                                    },
-                                    {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "property",
-                                          ],
-                                          description: "Selects the filter or filter-value variant.",
-                                        },
-                                        property: {
-                                          type: "string",
-                                          description: "Exact data source property name to filter.",
-                                        },
-                                        propertyType: {
-                                          type: "string",
-                                          enum: [
-                                            "date",
-                                            "created_time",
-                                            "last_edited_time",
-                                            "last_visited_time",
-                                          ],
-                                          description: "Notion property type used to select valid operators and value shapes.",
-                                        },
-                                        operator: {
-                                          type: "string",
-                                          enum: [
-                                            "date_is_within",
-                                            "date_is_relative_to",
-                                          ],
-                                          description: "Comparison or Boolean operation applied by this filter.",
-                                        },
-                                        value: {
-                                          anyOf: [
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "exact",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "daterange",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    start_date: {
-                                                      description: "ISO 8601 date or date-time at the start of the range.",
-                                                      type: "string",
-                                                    },
-                                                    end_date: {
-                                                      description: "ISO 8601 date or date-time at the end of the range.",
-                                                      type: "string",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                  ],
-                                                  additionalProperties: false,
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "relative",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "custom",
-                                                  ],
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                                direction: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "past",
-                                                    "future",
-                                                  ],
-                                                  description: "Whether the custom range extends into the past or future.",
-                                                },
-                                                unit: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "year",
-                                                    "month",
-                                                    "week",
-                                                    "day",
-                                                  ],
-                                                  description: "Time unit used to measure a relative date range.",
-                                                },
-                                                count: {
-                                                  type: "number",
-                                                  description: "Number of units in the custom relative range.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                                "direction",
-                                                "unit",
-                                                "count",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "relative",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "surrounding",
-                                                  ],
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                                unit: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "year",
-                                                    "month",
-                                                    "week",
-                                                    "day",
-                                                  ],
-                                                  description: "Time unit used to measure a relative date range.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                                "unit",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "relative",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "this_week",
-                                                    "the_past_week",
-                                                    "the_past_month",
-                                                    "the_past_year",
-                                                    "the_next_week",
-                                                    "the_next_month",
-                                                    "the_next_year",
-                                                  ],
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                          ],
-                                          description: "Literal or relative value used by the filter.",
-                                        },
-                                        use_end: {
-                                          description: "For a date property, compare its end date instead of its start date.",
-                                          type: "boolean",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "property",
-                                        "propertyType",
-                                        "operator",
-                                        "value",
-                                      ],
-                                      additionalProperties: false,
-                                    },
-                                  ],
-                                  description: "Property filter for date properties.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "select",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "enum_is",
-                                        "enum_is_not",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                    value: {
-                                      anyOf: [
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "exact",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            value: {
-                                              type: "string",
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                        },
-                                        {
-                                          type: "array",
-                                          items: {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "exact",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                        },
-                                      ],
-                                      description: "Literal or relative value used by the filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Property filter for select properties by option name.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "multi_select",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "enum_contains",
-                                        "enum_does_not_contain",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                    value: {
-                                      anyOf: [
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "exact",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            value: {
-                                              type: "string",
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                        },
-                                        {
-                                          type: "array",
-                                          items: {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "exact",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                        },
-                                      ],
-                                      description: "Literal or relative value used by the filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Property filter for multi-select properties.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "checkbox",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "checkbox_is",
-                                        "checkbox_is_not",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                    value: {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "exact",
-                                          ],
-                                          description: "Selects the filter or filter-value variant.",
-                                        },
-                                        value: {
-                                          type: "boolean",
-                                          description: "Literal or relative value used by the filter.",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "value",
-                                      ],
-                                      additionalProperties: false,
-                                      description: "Literal or relative value used by the filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Property filter for checkbox properties.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "relation",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "relation_contains",
-                                        "relation_does_not_contain",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                    value: {
-                                      anyOf: [
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "exact",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            value: {
-                                              type: "string",
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                        },
-                                        {
-                                          type: "array",
-                                          items: {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "exact",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                        },
-                                      ],
-                                      description: "Literal or relative value used by the filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Property filter for relation properties.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "status",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "status_is",
-                                        "status_is_not",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                    value: {
-                                      anyOf: [
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "is_group",
-                                                "is_option",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            value: {
-                                              type: "string",
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                        },
-                                        {
-                                          type: "array",
-                                          items: {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "is_group",
-                                                  "is_option",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                        },
-                                      ],
-                                      description: "Literal or relative value used by the filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Property filter for status properties by option name.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "person",
-                                        "created_by",
-                                        "last_edited_by",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "person_contains",
-                                        "person_does_not_contain",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                    value: {
-                                      anyOf: [
-                                        {
-                                          anyOf: [
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "exact",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "string",
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "relative",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "me",
-                                                  ],
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                          ],
-                                        },
-                                        {
-                                          type: "array",
-                                          items: {
-                                            anyOf: [
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "exact",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  value: {
-                                                    type: "string",
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "relative",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  value: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "me",
-                                                    ],
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                              },
-                                            ],
-                                          },
-                                        },
-                                      ],
-                                      description: "Literal or relative value used by the filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Property filter for person-like properties. Exact values use user://, bot://, organization_bot://, or space_permission_group:// URIs; relative values use me.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "verification",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      type: "string",
-                                      enum: [
-                                        "verification_is",
-                                        "verification_is_not",
-                                      ],
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                    },
-                                    value: {
-                                      anyOf: [
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "exact",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            value: {
-                                              type: "string",
-                                              enum: [
-                                                "verified",
-                                                "expired",
-                                                "none",
-                                              ],
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                        },
-                                        {
-                                          type: "array",
-                                          items: {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "exact",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                enum: [
-                                                  "verified",
-                                                  "expired",
-                                                  "none",
-                                                ],
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                        },
-                                      ],
-                                      description: "Literal or relative value used by the filter.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "operator",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Property filter for page verification state.",
-                                },
-                                {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "property",
-                                      ],
-                                      description: "Selects the filter or filter-value variant.",
-                                    },
-                                    property: {
-                                      type: "string",
-                                      description: "Exact data source property name to filter.",
-                                    },
-                                    propertyType: {
-                                      type: "string",
-                                      enum: [
-                                        "formula",
-                                      ],
-                                      description: "Notion property type used to select valid operators and value shapes.",
-                                    },
-                                    operator: {
-                                      description: "Comparison or Boolean operation applied by this filter.",
-                                      type: "string",
-                                      enum: [
-                                        "any",
-                                        "none",
-                                        "every",
-                                      ],
-                                    },
-                                    resultFilter: {
-                                      anyOf: [
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "is_empty",
-                                                "is_not_empty",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Checks whether a property has any value.",
-                                        },
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              enum: [
-                                                "title",
-                                                "text",
-                                                "url",
-                                                "email",
-                                                "phone_number",
-                                              ],
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "string_is",
-                                                "string_is_not",
-                                                "string_contains",
-                                                "string_does_not_contain",
-                                                "string_starts_with",
-                                                "string_ends_with",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                            value: {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "exact",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "string",
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Property filter for text-like properties.",
-                                        },
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              enum: [
-                                                "number",
-                                                "auto_increment_id",
-                                              ],
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "number_equals",
-                                                "number_does_not_equal",
-                                                "number_greater_than",
-                                                "number_less_than",
-                                                "number_greater_than_or_equal_to",
-                                                "number_less_than_or_equal_to",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                            value: {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "exact",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "number",
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Property filter for number properties.",
-                                        },
-                                        {
-                                          anyOf: [
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "property",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                property: {
-                                                  type: "string",
-                                                  description: "Exact data source property name to filter.",
-                                                },
-                                                propertyType: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "date",
-                                                    "created_time",
-                                                    "last_edited_time",
-                                                    "last_visited_time",
-                                                  ],
-                                                  description: "Notion property type used to select valid operators and value shapes.",
-                                                },
-                                                operator: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "date_is",
-                                                    "date_is_before",
-                                                    "date_is_after",
-                                                    "date_is_on_or_before",
-                                                    "date_is_on_or_after",
-                                                  ],
-                                                  description: "Comparison or Boolean operation applied by this filter.",
-                                                },
-                                                value: {
-                                                  anyOf: [
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "exact",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "string",
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "relative",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "today",
-                                                            "tomorrow",
-                                                            "yesterday",
-                                                            "one_week_ago",
-                                                            "one_week_from_now",
-                                                            "one_month_ago",
-                                                            "one_month_from_now",
-                                                          ],
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                  ],
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                                use_end: {
-                                                  description: "For a date property, compare its end date instead of its start date.",
-                                                  type: "boolean",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "property",
-                                                "propertyType",
-                                                "operator",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "property",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                property: {
-                                                  type: "string",
-                                                  description: "Exact data source property name to filter.",
-                                                },
-                                                propertyType: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "date",
-                                                    "created_time",
-                                                    "last_edited_time",
-                                                    "last_visited_time",
-                                                  ],
-                                                  description: "Notion property type used to select valid operators and value shapes.",
-                                                },
-                                                operator: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "date_is_within",
-                                                    "date_is_relative_to",
-                                                  ],
-                                                  description: "Comparison or Boolean operation applied by this filter.",
-                                                },
-                                                value: {
-                                                  anyOf: [
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "exact",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "object",
-                                                          properties: {
-                                                            type: {
-                                                              type: "string",
-                                                              enum: [
-                                                                "daterange",
-                                                              ],
-                                                              description: "Selects the filter or filter-value variant.",
-                                                            },
-                                                            start_date: {
-                                                              description: "ISO 8601 date or date-time at the start of the range.",
-                                                              type: "string",
-                                                            },
-                                                            end_date: {
-                                                              description: "ISO 8601 date or date-time at the end of the range.",
-                                                              type: "string",
-                                                            },
-                                                          },
-                                                          required: [
-                                                            "type",
-                                                          ],
-                                                          additionalProperties: false,
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "relative",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "custom",
-                                                          ],
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                        direction: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "past",
-                                                            "future",
-                                                          ],
-                                                          description: "Whether the custom range extends into the past or future.",
-                                                        },
-                                                        unit: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "year",
-                                                            "month",
-                                                            "week",
-                                                            "day",
-                                                          ],
-                                                          description: "Time unit used to measure a relative date range.",
-                                                        },
-                                                        count: {
-                                                          type: "number",
-                                                          description: "Number of units in the custom relative range.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                        "direction",
-                                                        "unit",
-                                                        "count",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "relative",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "surrounding",
-                                                          ],
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                        unit: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "year",
-                                                            "month",
-                                                            "week",
-                                                            "day",
-                                                          ],
-                                                          description: "Time unit used to measure a relative date range.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                        "unit",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "relative",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "this_week",
-                                                            "the_past_week",
-                                                            "the_past_month",
-                                                            "the_past_year",
-                                                            "the_next_week",
-                                                            "the_next_month",
-                                                            "the_next_year",
-                                                          ],
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                  ],
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                                use_end: {
-                                                  description: "For a date property, compare its end date instead of its start date.",
-                                                  type: "boolean",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "property",
-                                                "propertyType",
-                                                "operator",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                          ],
-                                          description: "Property filter for date properties.",
-                                        },
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              enum: [
-                                                "select",
-                                              ],
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "enum_is",
-                                                "enum_is_not",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                            value: {
-                                              anyOf: [
-                                                {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "exact",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                                {
-                                                  type: "array",
-                                                  items: {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                },
-                                              ],
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Property filter for select properties by option name.",
-                                        },
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              enum: [
-                                                "multi_select",
-                                              ],
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "enum_contains",
-                                                "enum_does_not_contain",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                            value: {
-                                              anyOf: [
-                                                {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "exact",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                                {
-                                                  type: "array",
-                                                  items: {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                },
-                                              ],
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Property filter for multi-select properties.",
-                                        },
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              enum: [
-                                                "checkbox",
-                                              ],
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "checkbox_is",
-                                                "checkbox_is_not",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                            value: {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "exact",
-                                                  ],
-                                                  description: "Selects the filter or filter-value variant.",
-                                                },
-                                                value: {
-                                                  type: "boolean",
-                                                  description: "Literal or relative value used by the filter.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Property filter for checkbox properties.",
-                                        },
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              enum: [
-                                                "relation",
-                                              ],
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "relation_contains",
-                                                "relation_does_not_contain",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                            value: {
-                                              anyOf: [
-                                                {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "exact",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                                {
-                                                  type: "array",
-                                                  items: {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                },
-                                              ],
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Property filter for relation properties.",
-                                        },
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              enum: [
-                                                "status",
-                                              ],
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "status_is",
-                                                "status_is_not",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                            value: {
-                                              anyOf: [
-                                                {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "is_group",
-                                                        "is_option",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                                {
-                                                  type: "array",
-                                                  items: {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "is_group",
-                                                          "is_option",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                },
-                                              ],
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Property filter for status properties by option name.",
-                                        },
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              enum: [
-                                                "person",
-                                                "created_by",
-                                                "last_edited_by",
-                                              ],
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "person_contains",
-                                                "person_does_not_contain",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                            value: {
-                                              anyOf: [
-                                                {
-                                                  anyOf: [
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "exact",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "string",
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "relative",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "me",
-                                                          ],
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                  ],
-                                                },
-                                                {
-                                                  type: "array",
-                                                  items: {
-                                                    anyOf: [
-                                                      {
-                                                        type: "object",
-                                                        properties: {
-                                                          type: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "exact",
-                                                            ],
-                                                            description: "Selects the filter or filter-value variant.",
-                                                          },
-                                                          value: {
-                                                            type: "string",
-                                                            description: "Literal or relative value used by the filter.",
-                                                          },
-                                                        },
-                                                        required: [
-                                                          "type",
-                                                          "value",
-                                                        ],
-                                                        additionalProperties: false,
-                                                      },
-                                                      {
-                                                        type: "object",
-                                                        properties: {
-                                                          type: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "relative",
-                                                            ],
-                                                            description: "Selects the filter or filter-value variant.",
-                                                          },
-                                                          value: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "me",
-                                                            ],
-                                                            description: "Literal or relative value used by the filter.",
-                                                          },
-                                                        },
-                                                        required: [
-                                                          "type",
-                                                          "value",
-                                                        ],
-                                                        additionalProperties: false,
-                                                      },
-                                                    ],
-                                                  },
-                                                },
-                                              ],
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Property filter for person-like properties. Exact values use user://, bot://, organization_bot://, or space_permission_group:// URIs; relative values use me.",
-                                        },
-                                        {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "property",
-                                              ],
-                                              description: "Selects the filter or filter-value variant.",
-                                            },
-                                            property: {
-                                              type: "string",
-                                              description: "Exact data source property name to filter.",
-                                            },
-                                            propertyType: {
-                                              type: "string",
-                                              enum: [
-                                                "verification",
-                                              ],
-                                              description: "Notion property type used to select valid operators and value shapes.",
-                                            },
-                                            operator: {
-                                              type: "string",
-                                              enum: [
-                                                "verification_is",
-                                                "verification_is_not",
-                                              ],
-                                              description: "Comparison or Boolean operation applied by this filter.",
-                                            },
-                                            value: {
-                                              anyOf: [
-                                                {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "exact",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "verified",
-                                                        "expired",
-                                                        "none",
-                                                      ],
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                                {
-                                                  type: "array",
-                                                  items: {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "verified",
-                                                          "expired",
-                                                          "none",
-                                                        ],
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                },
-                                              ],
-                                              description: "Literal or relative value used by the filter.",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                            "property",
-                                            "propertyType",
-                                            "operator",
-                                            "value",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Property filter for page verification state.",
-                                        },
-                                      ],
-                                      description: "Filter on the formula's result. The propertyType in the resultFilter should be the resultType of the formula.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "property",
-                                    "propertyType",
-                                    "resultFilter",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "Filter applied to a formula property.",
-                                },
-                              ],
-                              description: "Filter applied to a single property.",
+                              $ref: "#/$defs/workflowPropertyFilter",
                             },
                             {
                               type: "object",
@@ -4640,2378 +2256,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                                   maxItems: 100,
                                   type: "array",
                                   items: {
-                                    anyOf: [
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "is_empty",
-                                              "is_not_empty",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Checks whether a property has any value.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "title",
-                                              "text",
-                                              "url",
-                                              "email",
-                                              "phone_number",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "string_is",
-                                              "string_is_not",
-                                              "string_contains",
-                                              "string_does_not_contain",
-                                              "string_starts_with",
-                                              "string_ends_with",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                          value: {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "exact",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                            description: "Literal or relative value used by the filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Property filter for text-like properties.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "number",
-                                              "auto_increment_id",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "number_equals",
-                                              "number_does_not_equal",
-                                              "number_greater_than",
-                                              "number_less_than",
-                                              "number_greater_than_or_equal_to",
-                                              "number_less_than_or_equal_to",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                          value: {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "exact",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              value: {
-                                                type: "number",
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                            description: "Literal or relative value used by the filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Property filter for number properties.",
-                                      },
-                                      {
-                                        anyOf: [
-                                          {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "property",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              property: {
-                                                type: "string",
-                                                description: "Exact data source property name to filter.",
-                                              },
-                                              propertyType: {
-                                                type: "string",
-                                                enum: [
-                                                  "date",
-                                                  "created_time",
-                                                  "last_edited_time",
-                                                  "last_visited_time",
-                                                ],
-                                                description: "Notion property type used to select valid operators and value shapes.",
-                                              },
-                                              operator: {
-                                                type: "string",
-                                                enum: [
-                                                  "date_is",
-                                                  "date_is_before",
-                                                  "date_is_after",
-                                                  "date_is_on_or_before",
-                                                  "date_is_on_or_after",
-                                                ],
-                                                description: "Comparison or Boolean operation applied by this filter.",
-                                              },
-                                              value: {
-                                                anyOf: [
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "relative",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "today",
-                                                          "tomorrow",
-                                                          "yesterday",
-                                                          "one_week_ago",
-                                                          "one_week_from_now",
-                                                          "one_month_ago",
-                                                          "one_month_from_now",
-                                                        ],
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                ],
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                              use_end: {
-                                                description: "For a date property, compare its end date instead of its start date.",
-                                                type: "boolean",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "property",
-                                              "propertyType",
-                                              "operator",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                          {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "property",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              property: {
-                                                type: "string",
-                                                description: "Exact data source property name to filter.",
-                                              },
-                                              propertyType: {
-                                                type: "string",
-                                                enum: [
-                                                  "date",
-                                                  "created_time",
-                                                  "last_edited_time",
-                                                  "last_visited_time",
-                                                ],
-                                                description: "Notion property type used to select valid operators and value shapes.",
-                                              },
-                                              operator: {
-                                                type: "string",
-                                                enum: [
-                                                  "date_is_within",
-                                                  "date_is_relative_to",
-                                                ],
-                                                description: "Comparison or Boolean operation applied by this filter.",
-                                              },
-                                              value: {
-                                                anyOf: [
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "object",
-                                                        properties: {
-                                                          type: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "daterange",
-                                                            ],
-                                                            description: "Selects the filter or filter-value variant.",
-                                                          },
-                                                          start_date: {
-                                                            description: "ISO 8601 date or date-time at the start of the range.",
-                                                            type: "string",
-                                                          },
-                                                          end_date: {
-                                                            description: "ISO 8601 date or date-time at the end of the range.",
-                                                            type: "string",
-                                                          },
-                                                        },
-                                                        required: [
-                                                          "type",
-                                                        ],
-                                                        additionalProperties: false,
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "relative",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "custom",
-                                                        ],
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                      direction: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "past",
-                                                          "future",
-                                                        ],
-                                                        description: "Whether the custom range extends into the past or future.",
-                                                      },
-                                                      unit: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "year",
-                                                          "month",
-                                                          "week",
-                                                          "day",
-                                                        ],
-                                                        description: "Time unit used to measure a relative date range.",
-                                                      },
-                                                      count: {
-                                                        type: "number",
-                                                        description: "Number of units in the custom relative range.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                      "direction",
-                                                      "unit",
-                                                      "count",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "relative",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "surrounding",
-                                                        ],
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                      unit: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "year",
-                                                          "month",
-                                                          "week",
-                                                          "day",
-                                                        ],
-                                                        description: "Time unit used to measure a relative date range.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                      "unit",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "relative",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "this_week",
-                                                          "the_past_week",
-                                                          "the_past_month",
-                                                          "the_past_year",
-                                                          "the_next_week",
-                                                          "the_next_month",
-                                                          "the_next_year",
-                                                        ],
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                ],
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                              use_end: {
-                                                description: "For a date property, compare its end date instead of its start date.",
-                                                type: "boolean",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "property",
-                                              "propertyType",
-                                              "operator",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                        ],
-                                        description: "Property filter for date properties.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "select",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "enum_is",
-                                              "enum_is_not",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                          value: {
-                                            anyOf: [
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "exact",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  value: {
-                                                    type: "string",
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                              },
-                                              {
-                                                type: "array",
-                                                items: {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "exact",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                              },
-                                            ],
-                                            description: "Literal or relative value used by the filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Property filter for select properties by option name.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "multi_select",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "enum_contains",
-                                              "enum_does_not_contain",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                          value: {
-                                            anyOf: [
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "exact",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  value: {
-                                                    type: "string",
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                              },
-                                              {
-                                                type: "array",
-                                                items: {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "exact",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                              },
-                                            ],
-                                            description: "Literal or relative value used by the filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Property filter for multi-select properties.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "checkbox",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "checkbox_is",
-                                              "checkbox_is_not",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                          value: {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "exact",
-                                                ],
-                                                description: "Selects the filter or filter-value variant.",
-                                              },
-                                              value: {
-                                                type: "boolean",
-                                                description: "Literal or relative value used by the filter.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                            description: "Literal or relative value used by the filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Property filter for checkbox properties.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "relation",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "relation_contains",
-                                              "relation_does_not_contain",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                          value: {
-                                            anyOf: [
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "exact",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  value: {
-                                                    type: "string",
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                              },
-                                              {
-                                                type: "array",
-                                                items: {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "exact",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                              },
-                                            ],
-                                            description: "Literal or relative value used by the filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Property filter for relation properties.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "status",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "status_is",
-                                              "status_is_not",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                          value: {
-                                            anyOf: [
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "is_group",
-                                                      "is_option",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  value: {
-                                                    type: "string",
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                              },
-                                              {
-                                                type: "array",
-                                                items: {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "is_group",
-                                                        "is_option",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                              },
-                                            ],
-                                            description: "Literal or relative value used by the filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Property filter for status properties by option name.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "person",
-                                              "created_by",
-                                              "last_edited_by",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "person_contains",
-                                              "person_does_not_contain",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                          value: {
-                                            anyOf: [
-                                              {
-                                                anyOf: [
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "relative",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "me",
-                                                        ],
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                ],
-                                              },
-                                              {
-                                                type: "array",
-                                                items: {
-                                                  anyOf: [
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "exact",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "string",
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                    {
-                                                      type: "object",
-                                                      properties: {
-                                                        type: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "relative",
-                                                          ],
-                                                          description: "Selects the filter or filter-value variant.",
-                                                        },
-                                                        value: {
-                                                          type: "string",
-                                                          enum: [
-                                                            "me",
-                                                          ],
-                                                          description: "Literal or relative value used by the filter.",
-                                                        },
-                                                      },
-                                                      required: [
-                                                        "type",
-                                                        "value",
-                                                      ],
-                                                      additionalProperties: false,
-                                                    },
-                                                  ],
-                                                },
-                                              },
-                                            ],
-                                            description: "Literal or relative value used by the filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Property filter for person-like properties. Exact values use user://, bot://, organization_bot://, or space_permission_group:// URIs; relative values use me.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "verification",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            type: "string",
-                                            enum: [
-                                              "verification_is",
-                                              "verification_is_not",
-                                            ],
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                          },
-                                          value: {
-                                            anyOf: [
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "exact",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  value: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "verified",
-                                                      "expired",
-                                                      "none",
-                                                    ],
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                              },
-                                              {
-                                                type: "array",
-                                                items: {
-                                                  type: "object",
-                                                  properties: {
-                                                    type: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "exact",
-                                                      ],
-                                                      description: "Selects the filter or filter-value variant.",
-                                                    },
-                                                    value: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "verified",
-                                                        "expired",
-                                                        "none",
-                                                      ],
-                                                      description: "Literal or relative value used by the filter.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "type",
-                                                    "value",
-                                                  ],
-                                                  additionalProperties: false,
-                                                },
-                                              },
-                                            ],
-                                            description: "Literal or relative value used by the filter.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "operator",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Property filter for page verification state.",
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "property",
-                                            ],
-                                            description: "Selects the filter or filter-value variant.",
-                                          },
-                                          property: {
-                                            type: "string",
-                                            description: "Exact data source property name to filter.",
-                                          },
-                                          propertyType: {
-                                            type: "string",
-                                            enum: [
-                                              "formula",
-                                            ],
-                                            description: "Notion property type used to select valid operators and value shapes.",
-                                          },
-                                          operator: {
-                                            description: "Comparison or Boolean operation applied by this filter.",
-                                            type: "string",
-                                            enum: [
-                                              "any",
-                                              "none",
-                                              "every",
-                                            ],
-                                          },
-                                          resultFilter: {
-                                            anyOf: [
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "is_empty",
-                                                      "is_not_empty",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Checks whether a property has any value.",
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "title",
-                                                      "text",
-                                                      "url",
-                                                      "email",
-                                                      "phone_number",
-                                                    ],
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "string_is",
-                                                      "string_is_not",
-                                                      "string_contains",
-                                                      "string_does_not_contain",
-                                                      "string_starts_with",
-                                                      "string_ends_with",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                  value: {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "string",
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Property filter for text-like properties.",
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "number",
-                                                      "auto_increment_id",
-                                                    ],
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "number_equals",
-                                                      "number_does_not_equal",
-                                                      "number_greater_than",
-                                                      "number_less_than",
-                                                      "number_greater_than_or_equal_to",
-                                                      "number_less_than_or_equal_to",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                  value: {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "number",
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Property filter for number properties.",
-                                              },
-                                              {
-                                                anyOf: [
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "property",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      property: {
-                                                        type: "string",
-                                                        description: "Exact data source property name to filter.",
-                                                      },
-                                                      propertyType: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "date",
-                                                          "created_time",
-                                                          "last_edited_time",
-                                                          "last_visited_time",
-                                                        ],
-                                                        description: "Notion property type used to select valid operators and value shapes.",
-                                                      },
-                                                      operator: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "date_is",
-                                                          "date_is_before",
-                                                          "date_is_after",
-                                                          "date_is_on_or_before",
-                                                          "date_is_on_or_after",
-                                                        ],
-                                                        description: "Comparison or Boolean operation applied by this filter.",
-                                                      },
-                                                      value: {
-                                                        anyOf: [
-                                                          {
-                                                            type: "object",
-                                                            properties: {
-                                                              type: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "exact",
-                                                                ],
-                                                                description: "Selects the filter or filter-value variant.",
-                                                              },
-                                                              value: {
-                                                                type: "string",
-                                                                description: "Literal or relative value used by the filter.",
-                                                              },
-                                                            },
-                                                            required: [
-                                                              "type",
-                                                              "value",
-                                                            ],
-                                                            additionalProperties: false,
-                                                          },
-                                                          {
-                                                            type: "object",
-                                                            properties: {
-                                                              type: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "relative",
-                                                                ],
-                                                                description: "Selects the filter or filter-value variant.",
-                                                              },
-                                                              value: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "today",
-                                                                  "tomorrow",
-                                                                  "yesterday",
-                                                                  "one_week_ago",
-                                                                  "one_week_from_now",
-                                                                  "one_month_ago",
-                                                                  "one_month_from_now",
-                                                                ],
-                                                                description: "Literal or relative value used by the filter.",
-                                                              },
-                                                            },
-                                                            required: [
-                                                              "type",
-                                                              "value",
-                                                            ],
-                                                            additionalProperties: false,
-                                                          },
-                                                        ],
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                      use_end: {
-                                                        description: "For a date property, compare its end date instead of its start date.",
-                                                        type: "boolean",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "property",
-                                                      "propertyType",
-                                                      "operator",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "property",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      property: {
-                                                        type: "string",
-                                                        description: "Exact data source property name to filter.",
-                                                      },
-                                                      propertyType: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "date",
-                                                          "created_time",
-                                                          "last_edited_time",
-                                                          "last_visited_time",
-                                                        ],
-                                                        description: "Notion property type used to select valid operators and value shapes.",
-                                                      },
-                                                      operator: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "date_is_within",
-                                                          "date_is_relative_to",
-                                                        ],
-                                                        description: "Comparison or Boolean operation applied by this filter.",
-                                                      },
-                                                      value: {
-                                                        anyOf: [
-                                                          {
-                                                            type: "object",
-                                                            properties: {
-                                                              type: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "exact",
-                                                                ],
-                                                                description: "Selects the filter or filter-value variant.",
-                                                              },
-                                                              value: {
-                                                                type: "object",
-                                                                properties: {
-                                                                  type: {
-                                                                    type: "string",
-                                                                    enum: [
-                                                                      "daterange",
-                                                                    ],
-                                                                    description: "Selects the filter or filter-value variant.",
-                                                                  },
-                                                                  start_date: {
-                                                                    description: "ISO 8601 date or date-time at the start of the range.",
-                                                                    type: "string",
-                                                                  },
-                                                                  end_date: {
-                                                                    description: "ISO 8601 date or date-time at the end of the range.",
-                                                                    type: "string",
-                                                                  },
-                                                                },
-                                                                required: [
-                                                                  "type",
-                                                                ],
-                                                                additionalProperties: false,
-                                                                description: "Literal or relative value used by the filter.",
-                                                              },
-                                                            },
-                                                            required: [
-                                                              "type",
-                                                              "value",
-                                                            ],
-                                                            additionalProperties: false,
-                                                          },
-                                                          {
-                                                            type: "object",
-                                                            properties: {
-                                                              type: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "relative",
-                                                                ],
-                                                                description: "Selects the filter or filter-value variant.",
-                                                              },
-                                                              value: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "custom",
-                                                                ],
-                                                                description: "Literal or relative value used by the filter.",
-                                                              },
-                                                              direction: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "past",
-                                                                  "future",
-                                                                ],
-                                                                description: "Whether the custom range extends into the past or future.",
-                                                              },
-                                                              unit: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "year",
-                                                                  "month",
-                                                                  "week",
-                                                                  "day",
-                                                                ],
-                                                                description: "Time unit used to measure a relative date range.",
-                                                              },
-                                                              count: {
-                                                                type: "number",
-                                                                description: "Number of units in the custom relative range.",
-                                                              },
-                                                            },
-                                                            required: [
-                                                              "type",
-                                                              "value",
-                                                              "direction",
-                                                              "unit",
-                                                              "count",
-                                                            ],
-                                                            additionalProperties: false,
-                                                          },
-                                                          {
-                                                            type: "object",
-                                                            properties: {
-                                                              type: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "relative",
-                                                                ],
-                                                                description: "Selects the filter or filter-value variant.",
-                                                              },
-                                                              value: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "surrounding",
-                                                                ],
-                                                                description: "Literal or relative value used by the filter.",
-                                                              },
-                                                              unit: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "year",
-                                                                  "month",
-                                                                  "week",
-                                                                  "day",
-                                                                ],
-                                                                description: "Time unit used to measure a relative date range.",
-                                                              },
-                                                            },
-                                                            required: [
-                                                              "type",
-                                                              "value",
-                                                              "unit",
-                                                            ],
-                                                            additionalProperties: false,
-                                                          },
-                                                          {
-                                                            type: "object",
-                                                            properties: {
-                                                              type: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "relative",
-                                                                ],
-                                                                description: "Selects the filter or filter-value variant.",
-                                                              },
-                                                              value: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "this_week",
-                                                                  "the_past_week",
-                                                                  "the_past_month",
-                                                                  "the_past_year",
-                                                                  "the_next_week",
-                                                                  "the_next_month",
-                                                                  "the_next_year",
-                                                                ],
-                                                                description: "Literal or relative value used by the filter.",
-                                                              },
-                                                            },
-                                                            required: [
-                                                              "type",
-                                                              "value",
-                                                            ],
-                                                            additionalProperties: false,
-                                                          },
-                                                        ],
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                      use_end: {
-                                                        description: "For a date property, compare its end date instead of its start date.",
-                                                        type: "boolean",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "property",
-                                                      "propertyType",
-                                                      "operator",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                ],
-                                                description: "Property filter for date properties.",
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "select",
-                                                    ],
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "enum_is",
-                                                      "enum_is_not",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                  value: {
-                                                    anyOf: [
-                                                      {
-                                                        type: "object",
-                                                        properties: {
-                                                          type: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "exact",
-                                                            ],
-                                                            description: "Selects the filter or filter-value variant.",
-                                                          },
-                                                          value: {
-                                                            type: "string",
-                                                            description: "Literal or relative value used by the filter.",
-                                                          },
-                                                        },
-                                                        required: [
-                                                          "type",
-                                                          "value",
-                                                        ],
-                                                        additionalProperties: false,
-                                                      },
-                                                      {
-                                                        type: "array",
-                                                        items: {
-                                                          type: "object",
-                                                          properties: {
-                                                            type: {
-                                                              type: "string",
-                                                              enum: [
-                                                                "exact",
-                                                              ],
-                                                              description: "Selects the filter or filter-value variant.",
-                                                            },
-                                                            value: {
-                                                              type: "string",
-                                                              description: "Literal or relative value used by the filter.",
-                                                            },
-                                                          },
-                                                          required: [
-                                                            "type",
-                                                            "value",
-                                                          ],
-                                                          additionalProperties: false,
-                                                        },
-                                                      },
-                                                    ],
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Property filter for select properties by option name.",
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "multi_select",
-                                                    ],
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "enum_contains",
-                                                      "enum_does_not_contain",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                  value: {
-                                                    anyOf: [
-                                                      {
-                                                        type: "object",
-                                                        properties: {
-                                                          type: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "exact",
-                                                            ],
-                                                            description: "Selects the filter or filter-value variant.",
-                                                          },
-                                                          value: {
-                                                            type: "string",
-                                                            description: "Literal or relative value used by the filter.",
-                                                          },
-                                                        },
-                                                        required: [
-                                                          "type",
-                                                          "value",
-                                                        ],
-                                                        additionalProperties: false,
-                                                      },
-                                                      {
-                                                        type: "array",
-                                                        items: {
-                                                          type: "object",
-                                                          properties: {
-                                                            type: {
-                                                              type: "string",
-                                                              enum: [
-                                                                "exact",
-                                                              ],
-                                                              description: "Selects the filter or filter-value variant.",
-                                                            },
-                                                            value: {
-                                                              type: "string",
-                                                              description: "Literal or relative value used by the filter.",
-                                                            },
-                                                          },
-                                                          required: [
-                                                            "type",
-                                                            "value",
-                                                          ],
-                                                          additionalProperties: false,
-                                                        },
-                                                      },
-                                                    ],
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Property filter for multi-select properties.",
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "checkbox",
-                                                    ],
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "checkbox_is",
-                                                      "checkbox_is_not",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                  value: {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "exact",
-                                                        ],
-                                                        description: "Selects the filter or filter-value variant.",
-                                                      },
-                                                      value: {
-                                                        type: "boolean",
-                                                        description: "Literal or relative value used by the filter.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "value",
-                                                    ],
-                                                    additionalProperties: false,
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Property filter for checkbox properties.",
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "relation",
-                                                    ],
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "relation_contains",
-                                                      "relation_does_not_contain",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                  value: {
-                                                    anyOf: [
-                                                      {
-                                                        type: "object",
-                                                        properties: {
-                                                          type: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "exact",
-                                                            ],
-                                                            description: "Selects the filter or filter-value variant.",
-                                                          },
-                                                          value: {
-                                                            type: "string",
-                                                            description: "Literal or relative value used by the filter.",
-                                                          },
-                                                        },
-                                                        required: [
-                                                          "type",
-                                                          "value",
-                                                        ],
-                                                        additionalProperties: false,
-                                                      },
-                                                      {
-                                                        type: "array",
-                                                        items: {
-                                                          type: "object",
-                                                          properties: {
-                                                            type: {
-                                                              type: "string",
-                                                              enum: [
-                                                                "exact",
-                                                              ],
-                                                              description: "Selects the filter or filter-value variant.",
-                                                            },
-                                                            value: {
-                                                              type: "string",
-                                                              description: "Literal or relative value used by the filter.",
-                                                            },
-                                                          },
-                                                          required: [
-                                                            "type",
-                                                            "value",
-                                                          ],
-                                                          additionalProperties: false,
-                                                        },
-                                                      },
-                                                    ],
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Property filter for relation properties.",
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "status",
-                                                    ],
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "status_is",
-                                                      "status_is_not",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                  value: {
-                                                    anyOf: [
-                                                      {
-                                                        type: "object",
-                                                        properties: {
-                                                          type: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "is_group",
-                                                              "is_option",
-                                                            ],
-                                                            description: "Selects the filter or filter-value variant.",
-                                                          },
-                                                          value: {
-                                                            type: "string",
-                                                            description: "Literal or relative value used by the filter.",
-                                                          },
-                                                        },
-                                                        required: [
-                                                          "type",
-                                                          "value",
-                                                        ],
-                                                        additionalProperties: false,
-                                                      },
-                                                      {
-                                                        type: "array",
-                                                        items: {
-                                                          type: "object",
-                                                          properties: {
-                                                            type: {
-                                                              type: "string",
-                                                              enum: [
-                                                                "is_group",
-                                                                "is_option",
-                                                              ],
-                                                              description: "Selects the filter or filter-value variant.",
-                                                            },
-                                                            value: {
-                                                              type: "string",
-                                                              description: "Literal or relative value used by the filter.",
-                                                            },
-                                                          },
-                                                          required: [
-                                                            "type",
-                                                            "value",
-                                                          ],
-                                                          additionalProperties: false,
-                                                        },
-                                                      },
-                                                    ],
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Property filter for status properties by option name.",
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "person",
-                                                      "created_by",
-                                                      "last_edited_by",
-                                                    ],
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "person_contains",
-                                                      "person_does_not_contain",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                  value: {
-                                                    anyOf: [
-                                                      {
-                                                        anyOf: [
-                                                          {
-                                                            type: "object",
-                                                            properties: {
-                                                              type: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "exact",
-                                                                ],
-                                                                description: "Selects the filter or filter-value variant.",
-                                                              },
-                                                              value: {
-                                                                type: "string",
-                                                                description: "Literal or relative value used by the filter.",
-                                                              },
-                                                            },
-                                                            required: [
-                                                              "type",
-                                                              "value",
-                                                            ],
-                                                            additionalProperties: false,
-                                                          },
-                                                          {
-                                                            type: "object",
-                                                            properties: {
-                                                              type: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "relative",
-                                                                ],
-                                                                description: "Selects the filter or filter-value variant.",
-                                                              },
-                                                              value: {
-                                                                type: "string",
-                                                                enum: [
-                                                                  "me",
-                                                                ],
-                                                                description: "Literal or relative value used by the filter.",
-                                                              },
-                                                            },
-                                                            required: [
-                                                              "type",
-                                                              "value",
-                                                            ],
-                                                            additionalProperties: false,
-                                                          },
-                                                        ],
-                                                      },
-                                                      {
-                                                        type: "array",
-                                                        items: {
-                                                          anyOf: [
-                                                            {
-                                                              type: "object",
-                                                              properties: {
-                                                                type: {
-                                                                  type: "string",
-                                                                  enum: [
-                                                                    "exact",
-                                                                  ],
-                                                                  description: "Selects the filter or filter-value variant.",
-                                                                },
-                                                                value: {
-                                                                  type: "string",
-                                                                  description: "Literal or relative value used by the filter.",
-                                                                },
-                                                              },
-                                                              required: [
-                                                                "type",
-                                                                "value",
-                                                              ],
-                                                              additionalProperties: false,
-                                                            },
-                                                            {
-                                                              type: "object",
-                                                              properties: {
-                                                                type: {
-                                                                  type: "string",
-                                                                  enum: [
-                                                                    "relative",
-                                                                  ],
-                                                                  description: "Selects the filter or filter-value variant.",
-                                                                },
-                                                                value: {
-                                                                  type: "string",
-                                                                  enum: [
-                                                                    "me",
-                                                                  ],
-                                                                  description: "Literal or relative value used by the filter.",
-                                                                },
-                                                              },
-                                                              required: [
-                                                                "type",
-                                                                "value",
-                                                              ],
-                                                              additionalProperties: false,
-                                                            },
-                                                          ],
-                                                        },
-                                                      },
-                                                    ],
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Property filter for person-like properties. Exact values use user://, bot://, organization_bot://, or space_permission_group:// URIs; relative values use me.",
-                                              },
-                                              {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "property",
-                                                    ],
-                                                    description: "Selects the filter or filter-value variant.",
-                                                  },
-                                                  property: {
-                                                    type: "string",
-                                                    description: "Exact data source property name to filter.",
-                                                  },
-                                                  propertyType: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "verification",
-                                                    ],
-                                                    description: "Notion property type used to select valid operators and value shapes.",
-                                                  },
-                                                  operator: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "verification_is",
-                                                      "verification_is_not",
-                                                    ],
-                                                    description: "Comparison or Boolean operation applied by this filter.",
-                                                  },
-                                                  value: {
-                                                    anyOf: [
-                                                      {
-                                                        type: "object",
-                                                        properties: {
-                                                          type: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "exact",
-                                                            ],
-                                                            description: "Selects the filter or filter-value variant.",
-                                                          },
-                                                          value: {
-                                                            type: "string",
-                                                            enum: [
-                                                              "verified",
-                                                              "expired",
-                                                              "none",
-                                                            ],
-                                                            description: "Literal or relative value used by the filter.",
-                                                          },
-                                                        },
-                                                        required: [
-                                                          "type",
-                                                          "value",
-                                                        ],
-                                                        additionalProperties: false,
-                                                      },
-                                                      {
-                                                        type: "array",
-                                                        items: {
-                                                          type: "object",
-                                                          properties: {
-                                                            type: {
-                                                              type: "string",
-                                                              enum: [
-                                                                "exact",
-                                                              ],
-                                                              description: "Selects the filter or filter-value variant.",
-                                                            },
-                                                            value: {
-                                                              type: "string",
-                                                              enum: [
-                                                                "verified",
-                                                                "expired",
-                                                                "none",
-                                                              ],
-                                                              description: "Literal or relative value used by the filter.",
-                                                            },
-                                                          },
-                                                          required: [
-                                                            "type",
-                                                            "value",
-                                                          ],
-                                                          additionalProperties: false,
-                                                        },
-                                                      },
-                                                    ],
-                                                    description: "Literal or relative value used by the filter.",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                  "property",
-                                                  "propertyType",
-                                                  "operator",
-                                                  "value",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Property filter for page verification state.",
-                                              },
-                                            ],
-                                            description: "Filter on the formula's result. The propertyType in the resultFilter should be the resultType of the formula.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "property",
-                                          "propertyType",
-                                          "resultFilter",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "Filter applied to a formula property.",
-                                      },
-                                    ],
-                                    description: "Filter applied to a single property.",
+                                    $ref: "#/$defs/workflowPropertyFilter",
                                   },
                                   description: "Child filters combined by the Boolean group operator.",
                                 },
@@ -7081,8 +2326,1370 @@ export const NOTION_ENTRY: HostedMcpEntry = {
         required: [
           "data",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
+        $defs: {
+          workflowPropertyFilter: {
+            anyOf: [
+              {
+                $ref: "#/$defs/EmptyPropertyFilter",
+              },
+              {
+                $ref: "#/$defs/TextFilter",
+              },
+              {
+                $ref: "#/$defs/NumberFilter",
+              },
+              {
+                $ref: "#/$defs/DateFilter",
+              },
+              {
+                $ref: "#/$defs/SelectFilter",
+              },
+              {
+                $ref: "#/$defs/MultiSelectFilter",
+              },
+              {
+                $ref: "#/$defs/CheckboxFilter",
+              },
+              {
+                $ref: "#/$defs/RelationFilter",
+              },
+              {
+                $ref: "#/$defs/StatusFilter",
+              },
+              {
+                $ref: "#/$defs/PersonFilter",
+              },
+              {
+                $ref: "#/$defs/VerificationFilter",
+              },
+              {
+                $ref: "#/$defs/FormulaFilter",
+              },
+              {
+                $ref: "#/$defs/RollupFilter",
+              },
+            ],
+            description: "Filter applied to a single property.",
+          },
+          EmptyPropertyFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "is_empty",
+                  "is_not_empty",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+            ],
+            additionalProperties: false,
+            description: "Checks whether a property has any value.",
+          },
+          TextFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "title",
+                  "text",
+                  "url",
+                  "email",
+                  "phone_number",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "string_is",
+                  "string_is_not",
+                  "string_contains",
+                  "string_does_not_contain",
+                  "string_starts_with",
+                  "string_ends_with",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+              value: {
+                type: "object",
+                properties: {
+                  type: {
+                    type: "string",
+                    enum: [
+                      "exact",
+                    ],
+                    description: "Selects the filter or filter-value variant.",
+                  },
+                  value: {
+                    type: "string",
+                    description: "Literal or relative value used by the filter.",
+                  },
+                },
+                required: [
+                  "type",
+                  "value",
+                ],
+                additionalProperties: false,
+                description: "Literal or relative value used by the filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+              "value",
+            ],
+            additionalProperties: false,
+            description: "Property filter for text-like properties.",
+          },
+          NumberFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "number",
+                  "auto_increment_id",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "number_equals",
+                  "number_does_not_equal",
+                  "number_greater_than",
+                  "number_less_than",
+                  "number_greater_than_or_equal_to",
+                  "number_less_than_or_equal_to",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+              value: {
+                type: "object",
+                properties: {
+                  type: {
+                    type: "string",
+                    enum: [
+                      "exact",
+                    ],
+                    description: "Selects the filter or filter-value variant.",
+                  },
+                  value: {
+                    type: "number",
+                    description: "Literal or relative value used by the filter.",
+                  },
+                },
+                required: [
+                  "type",
+                  "value",
+                ],
+                additionalProperties: false,
+                description: "Literal or relative value used by the filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+              "value",
+            ],
+            additionalProperties: false,
+            description: "Property filter for number properties.",
+          },
+          DateFilter: {
+            anyOf: [
+              {
+                type: "object",
+                properties: {
+                  type: {
+                    type: "string",
+                    enum: [
+                      "property",
+                    ],
+                    description: "Selects the filter or filter-value variant.",
+                  },
+                  property: {
+                    type: "string",
+                    description: "Exact data source property name to filter.",
+                  },
+                  propertyType: {
+                    type: "string",
+                    enum: [
+                      "date",
+                      "created_time",
+                      "last_edited_time",
+                      "last_visited_time",
+                    ],
+                    description: "Notion property type used to select valid operators and value shapes.",
+                  },
+                  operator: {
+                    type: "string",
+                    enum: [
+                      "date_is",
+                      "date_is_before",
+                      "date_is_after",
+                      "date_is_on_or_before",
+                      "date_is_on_or_after",
+                    ],
+                    description: "Comparison or Boolean operation applied by this filter.",
+                  },
+                  value: {
+                    anyOf: [
+                      {
+                        type: "object",
+                        properties: {
+                          type: {
+                            type: "string",
+                            enum: [
+                              "exact",
+                            ],
+                            description: "Selects the filter or filter-value variant.",
+                          },
+                          value: {
+                            type: "string",
+                            description: "Literal or relative value used by the filter.",
+                          },
+                        },
+                        required: [
+                          "type",
+                          "value",
+                        ],
+                        additionalProperties: false,
+                      },
+                      {
+                        type: "object",
+                        properties: {
+                          type: {
+                            type: "string",
+                            enum: [
+                              "relative",
+                            ],
+                            description: "Selects the filter or filter-value variant.",
+                          },
+                          value: {
+                            type: "string",
+                            enum: [
+                              "today",
+                              "tomorrow",
+                              "yesterday",
+                              "one_week_ago",
+                              "one_week_from_now",
+                              "one_month_ago",
+                              "one_month_from_now",
+                            ],
+                            description: "Literal or relative value used by the filter.",
+                          },
+                        },
+                        required: [
+                          "type",
+                          "value",
+                        ],
+                        additionalProperties: false,
+                      },
+                    ],
+                    description: "Literal or relative value used by the filter.",
+                  },
+                  use_end: {
+                    description: "For a date property, compare its end date instead of its start date.",
+                    type: "boolean",
+                  },
+                },
+                required: [
+                  "type",
+                  "property",
+                  "propertyType",
+                  "operator",
+                  "value",
+                ],
+                additionalProperties: false,
+              },
+              {
+                type: "object",
+                properties: {
+                  type: {
+                    type: "string",
+                    enum: [
+                      "property",
+                    ],
+                    description: "Selects the filter or filter-value variant.",
+                  },
+                  property: {
+                    type: "string",
+                    description: "Exact data source property name to filter.",
+                  },
+                  propertyType: {
+                    type: "string",
+                    enum: [
+                      "date",
+                      "created_time",
+                      "last_edited_time",
+                      "last_visited_time",
+                    ],
+                    description: "Notion property type used to select valid operators and value shapes.",
+                  },
+                  operator: {
+                    type: "string",
+                    enum: [
+                      "date_is_within",
+                      "date_is_relative_to",
+                    ],
+                    description: "Comparison or Boolean operation applied by this filter.",
+                  },
+                  value: {
+                    anyOf: [
+                      {
+                        type: "object",
+                        properties: {
+                          type: {
+                            type: "string",
+                            enum: [
+                              "exact",
+                            ],
+                            description: "Selects the filter or filter-value variant.",
+                          },
+                          value: {
+                            type: "object",
+                            properties: {
+                              type: {
+                                type: "string",
+                                enum: [
+                                  "daterange",
+                                ],
+                                description: "Selects the filter or filter-value variant.",
+                              },
+                              start_date: {
+                                description: "ISO 8601 date or date-time at the start of the range.",
+                                type: "string",
+                              },
+                              end_date: {
+                                description: "ISO 8601 date or date-time at the end of the range.",
+                                type: "string",
+                              },
+                            },
+                            required: [
+                              "type",
+                            ],
+                            additionalProperties: false,
+                            description: "Literal or relative value used by the filter.",
+                          },
+                        },
+                        required: [
+                          "type",
+                          "value",
+                        ],
+                        additionalProperties: false,
+                      },
+                      {
+                        type: "object",
+                        properties: {
+                          type: {
+                            type: "string",
+                            enum: [
+                              "relative",
+                            ],
+                            description: "Selects the filter or filter-value variant.",
+                          },
+                          value: {
+                            type: "string",
+                            enum: [
+                              "custom",
+                            ],
+                            description: "Literal or relative value used by the filter.",
+                          },
+                          direction: {
+                            type: "string",
+                            enum: [
+                              "past",
+                              "future",
+                            ],
+                            description: "Whether the custom range extends into the past or future.",
+                          },
+                          unit: {
+                            type: "string",
+                            enum: [
+                              "year",
+                              "month",
+                              "week",
+                              "day",
+                            ],
+                            description: "Time unit used to measure a relative date range.",
+                          },
+                          count: {
+                            type: "number",
+                            description: "Number of units in the custom relative range.",
+                          },
+                        },
+                        required: [
+                          "type",
+                          "value",
+                          "direction",
+                          "unit",
+                          "count",
+                        ],
+                        additionalProperties: false,
+                      },
+                      {
+                        type: "object",
+                        properties: {
+                          type: {
+                            type: "string",
+                            enum: [
+                              "relative",
+                            ],
+                            description: "Selects the filter or filter-value variant.",
+                          },
+                          value: {
+                            type: "string",
+                            enum: [
+                              "surrounding",
+                            ],
+                            description: "Literal or relative value used by the filter.",
+                          },
+                          unit: {
+                            type: "string",
+                            enum: [
+                              "year",
+                              "month",
+                              "week",
+                              "day",
+                            ],
+                            description: "Time unit used to measure a relative date range.",
+                          },
+                        },
+                        required: [
+                          "type",
+                          "value",
+                          "unit",
+                        ],
+                        additionalProperties: false,
+                      },
+                      {
+                        type: "object",
+                        properties: {
+                          type: {
+                            type: "string",
+                            enum: [
+                              "relative",
+                            ],
+                            description: "Selects the filter or filter-value variant.",
+                          },
+                          value: {
+                            type: "string",
+                            enum: [
+                              "this_week",
+                              "the_past_week",
+                              "the_past_month",
+                              "the_past_year",
+                              "the_next_week",
+                              "the_next_month",
+                              "the_next_year",
+                            ],
+                            description: "Literal or relative value used by the filter.",
+                          },
+                        },
+                        required: [
+                          "type",
+                          "value",
+                        ],
+                        additionalProperties: false,
+                      },
+                    ],
+                    description: "Literal or relative value used by the filter.",
+                  },
+                  use_end: {
+                    description: "For a date property, compare its end date instead of its start date.",
+                    type: "boolean",
+                  },
+                },
+                required: [
+                  "type",
+                  "property",
+                  "propertyType",
+                  "operator",
+                  "value",
+                ],
+                additionalProperties: false,
+              },
+            ],
+            description: "Property filter for date properties.",
+          },
+          SelectFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "select",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "enum_is",
+                  "enum_is_not",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+              value: {
+                anyOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      type: {
+                        type: "string",
+                        enum: [
+                          "exact",
+                        ],
+                        description: "Selects the filter or filter-value variant.",
+                      },
+                      value: {
+                        type: "string",
+                        description: "Literal or relative value used by the filter.",
+                      },
+                    },
+                    required: [
+                      "type",
+                      "value",
+                    ],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        type: {
+                          type: "string",
+                          enum: [
+                            "exact",
+                          ],
+                          description: "Selects the filter or filter-value variant.",
+                        },
+                        value: {
+                          type: "string",
+                          description: "Literal or relative value used by the filter.",
+                        },
+                      },
+                      required: [
+                        "type",
+                        "value",
+                      ],
+                      additionalProperties: false,
+                    },
+                  },
+                ],
+                description: "Literal or relative value used by the filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+              "value",
+            ],
+            additionalProperties: false,
+            description: "Property filter for select properties by option name.",
+          },
+          MultiSelectFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "multi_select",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "enum_contains",
+                  "enum_does_not_contain",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+              value: {
+                anyOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      type: {
+                        type: "string",
+                        enum: [
+                          "exact",
+                        ],
+                        description: "Selects the filter or filter-value variant.",
+                      },
+                      value: {
+                        type: "string",
+                        description: "Literal or relative value used by the filter.",
+                      },
+                    },
+                    required: [
+                      "type",
+                      "value",
+                    ],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        type: {
+                          type: "string",
+                          enum: [
+                            "exact",
+                          ],
+                          description: "Selects the filter or filter-value variant.",
+                        },
+                        value: {
+                          type: "string",
+                          description: "Literal or relative value used by the filter.",
+                        },
+                      },
+                      required: [
+                        "type",
+                        "value",
+                      ],
+                      additionalProperties: false,
+                    },
+                  },
+                ],
+                description: "Literal or relative value used by the filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+              "value",
+            ],
+            additionalProperties: false,
+            description: "Property filter for multi-select properties.",
+          },
+          CheckboxFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "checkbox",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "checkbox_is",
+                  "checkbox_is_not",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+              value: {
+                type: "object",
+                properties: {
+                  type: {
+                    type: "string",
+                    enum: [
+                      "exact",
+                    ],
+                    description: "Selects the filter or filter-value variant.",
+                  },
+                  value: {
+                    type: "boolean",
+                    description: "Literal or relative value used by the filter.",
+                  },
+                },
+                required: [
+                  "type",
+                  "value",
+                ],
+                additionalProperties: false,
+                description: "Literal or relative value used by the filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+              "value",
+            ],
+            additionalProperties: false,
+            description: "Property filter for checkbox properties.",
+          },
+          RelationFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "relation",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "relation_contains",
+                  "relation_does_not_contain",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+              value: {
+                anyOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      type: {
+                        type: "string",
+                        enum: [
+                          "exact",
+                        ],
+                        description: "Selects the filter or filter-value variant.",
+                      },
+                      value: {
+                        type: "string",
+                        description: "Literal or relative value used by the filter.",
+                      },
+                    },
+                    required: [
+                      "type",
+                      "value",
+                    ],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        type: {
+                          type: "string",
+                          enum: [
+                            "exact",
+                          ],
+                          description: "Selects the filter or filter-value variant.",
+                        },
+                        value: {
+                          type: "string",
+                          description: "Literal or relative value used by the filter.",
+                        },
+                      },
+                      required: [
+                        "type",
+                        "value",
+                      ],
+                      additionalProperties: false,
+                    },
+                  },
+                ],
+                description: "Literal or relative value used by the filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+              "value",
+            ],
+            additionalProperties: false,
+            description: "Property filter for relation properties.",
+          },
+          StatusFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "status",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "status_is",
+                  "status_is_not",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+              value: {
+                anyOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      type: {
+                        type: "string",
+                        enum: [
+                          "is_group",
+                          "is_option",
+                        ],
+                        description: "Selects the filter or filter-value variant.",
+                      },
+                      value: {
+                        type: "string",
+                        description: "Literal or relative value used by the filter.",
+                      },
+                    },
+                    required: [
+                      "type",
+                      "value",
+                    ],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        type: {
+                          type: "string",
+                          enum: [
+                            "is_group",
+                            "is_option",
+                          ],
+                          description: "Selects the filter or filter-value variant.",
+                        },
+                        value: {
+                          type: "string",
+                          description: "Literal or relative value used by the filter.",
+                        },
+                      },
+                      required: [
+                        "type",
+                        "value",
+                      ],
+                      additionalProperties: false,
+                    },
+                  },
+                ],
+                description: "Literal or relative value used by the filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+              "value",
+            ],
+            additionalProperties: false,
+            description: "Property filter for status properties by option name.",
+          },
+          PersonFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "person",
+                  "created_by",
+                  "last_edited_by",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "person_contains",
+                  "person_does_not_contain",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+              value: {
+                anyOf: [
+                  {
+                    anyOf: [
+                      {
+                        type: "object",
+                        properties: {
+                          type: {
+                            type: "string",
+                            enum: [
+                              "exact",
+                            ],
+                            description: "Selects the filter or filter-value variant.",
+                          },
+                          value: {
+                            type: "string",
+                            description: "Literal or relative value used by the filter.",
+                          },
+                        },
+                        required: [
+                          "type",
+                          "value",
+                        ],
+                        additionalProperties: false,
+                      },
+                      {
+                        type: "object",
+                        properties: {
+                          type: {
+                            type: "string",
+                            enum: [
+                              "relative",
+                            ],
+                            description: "Selects the filter or filter-value variant.",
+                          },
+                          value: {
+                            type: "string",
+                            enum: [
+                              "me",
+                            ],
+                            description: "Literal or relative value used by the filter.",
+                          },
+                        },
+                        required: [
+                          "type",
+                          "value",
+                        ],
+                        additionalProperties: false,
+                      },
+                    ],
+                  },
+                  {
+                    type: "array",
+                    items: {
+                      anyOf: [
+                        {
+                          type: "object",
+                          properties: {
+                            type: {
+                              type: "string",
+                              enum: [
+                                "exact",
+                              ],
+                              description: "Selects the filter or filter-value variant.",
+                            },
+                            value: {
+                              type: "string",
+                              description: "Literal or relative value used by the filter.",
+                            },
+                          },
+                          required: [
+                            "type",
+                            "value",
+                          ],
+                          additionalProperties: false,
+                        },
+                        {
+                          type: "object",
+                          properties: {
+                            type: {
+                              type: "string",
+                              enum: [
+                                "relative",
+                              ],
+                              description: "Selects the filter or filter-value variant.",
+                            },
+                            value: {
+                              type: "string",
+                              enum: [
+                                "me",
+                              ],
+                              description: "Literal or relative value used by the filter.",
+                            },
+                          },
+                          required: [
+                            "type",
+                            "value",
+                          ],
+                          additionalProperties: false,
+                        },
+                      ],
+                    },
+                  },
+                ],
+                description: "Literal or relative value used by the filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+              "value",
+            ],
+            additionalProperties: false,
+            description: "Property filter for person-like properties. Exact values use user://, bot://, organization_bot://, or space_permission_group:// URIs; relative values use me.",
+          },
+          VerificationFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "verification",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                type: "string",
+                enum: [
+                  "verification_is",
+                  "verification_is_not",
+                ],
+                description: "Comparison or Boolean operation applied by this filter.",
+              },
+              value: {
+                anyOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      type: {
+                        type: "string",
+                        enum: [
+                          "exact",
+                        ],
+                        description: "Selects the filter or filter-value variant.",
+                      },
+                      value: {
+                        type: "string",
+                        enum: [
+                          "verified",
+                          "expired",
+                          "none",
+                        ],
+                        description: "Literal or relative value used by the filter.",
+                      },
+                    },
+                    required: [
+                      "type",
+                      "value",
+                    ],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        type: {
+                          type: "string",
+                          enum: [
+                            "exact",
+                          ],
+                          description: "Selects the filter or filter-value variant.",
+                        },
+                        value: {
+                          type: "string",
+                          enum: [
+                            "verified",
+                            "expired",
+                            "none",
+                          ],
+                          description: "Literal or relative value used by the filter.",
+                        },
+                      },
+                      required: [
+                        "type",
+                        "value",
+                      ],
+                      additionalProperties: false,
+                    },
+                  },
+                ],
+                description: "Literal or relative value used by the filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "operator",
+              "value",
+            ],
+            additionalProperties: false,
+            description: "Property filter for page verification state.",
+          },
+          FormulaFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "formula",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                description: "Comparison or Boolean operation applied by this filter.",
+                type: "string",
+                enum: [
+                  "any",
+                  "none",
+                  "every",
+                ],
+              },
+              resultFilter: {
+                anyOf: [
+                  {
+                    $ref: "#/$defs/EmptyPropertyFilter",
+                  },
+                  {
+                    $ref: "#/$defs/TextFilter",
+                  },
+                  {
+                    $ref: "#/$defs/NumberFilter",
+                  },
+                  {
+                    $ref: "#/$defs/DateFilter",
+                  },
+                  {
+                    $ref: "#/$defs/SelectFilter",
+                  },
+                  {
+                    $ref: "#/$defs/MultiSelectFilter",
+                  },
+                  {
+                    $ref: "#/$defs/CheckboxFilter",
+                  },
+                  {
+                    $ref: "#/$defs/RelationFilter",
+                  },
+                  {
+                    $ref: "#/$defs/StatusFilter",
+                  },
+                  {
+                    $ref: "#/$defs/PersonFilter",
+                  },
+                  {
+                    $ref: "#/$defs/VerificationFilter",
+                  },
+                ],
+                description: "Filter on the formula's result. The propertyType in the resultFilter should be the resultType of the formula.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "resultFilter",
+            ],
+            additionalProperties: false,
+            description: "Filter applied to a formula property.",
+          },
+          RollupFilter: {
+            type: "object",
+            properties: {
+              type: {
+                type: "string",
+                enum: [
+                  "property",
+                ],
+                description: "Selects the filter or filter-value variant.",
+              },
+              property: {
+                type: "string",
+                description: "Exact data source property name to filter.",
+              },
+              propertyType: {
+                type: "string",
+                enum: [
+                  "rollup",
+                ],
+                description: "Notion property type used to select valid operators and value shapes.",
+              },
+              operator: {
+                description: "Required for original or unique values. Omit for aggregated values.",
+                type: "string",
+                enum: [
+                  "any",
+                  "none",
+                  "every",
+                ],
+              },
+              resultFilter: {
+                anyOf: [
+                  {
+                    $ref: "#/$defs/EmptyPropertyFilter",
+                  },
+                  {
+                    $ref: "#/$defs/TextFilter",
+                  },
+                  {
+                    $ref: "#/$defs/NumberFilter",
+                  },
+                  {
+                    $ref: "#/$defs/DateFilter",
+                  },
+                  {
+                    $ref: "#/$defs/SelectFilter",
+                  },
+                  {
+                    $ref: "#/$defs/MultiSelectFilter",
+                  },
+                  {
+                    $ref: "#/$defs/CheckboxFilter",
+                  },
+                  {
+                    $ref: "#/$defs/RelationFilter",
+                  },
+                  {
+                    $ref: "#/$defs/StatusFilter",
+                  },
+                  {
+                    $ref: "#/$defs/PersonFilter",
+                  },
+                  {
+                    $ref: "#/$defs/VerificationFilter",
+                  },
+                ],
+                description: "Filter on the rollup result. Use the same property name as the outer filter.",
+              },
+            },
+            required: [
+              "type",
+              "property",
+              "propertyType",
+              "resultFilter",
+            ],
+            additionalProperties: false,
+          },
+        },
       },
       { readOnlyHint: true, destructiveHint: false },
       false,
@@ -7152,6 +3759,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'read',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           filter: {
             description: "Meeting note filter reference.\n\nTitle keyword searching uses a filter on property \"title\" (for example, string_contains). Returns up to 50 rows of matching meeting notes.\n\nFilterable properties:\n- \"title\" (text) — meeting title\n- \"attendees\" (person) — meeting attendees\n- \"created_time\" (date) — when the meeting note was created\n- \"created_by\" (person) — who created the meeting note\n- \"last_edited_time\" (date) — when the meeting note was last edited\n- \"last_edited_by\" (person) — who last edited the meeting note\n\n\nCombinator filters use \"filters\" (not \"operands\"): { \"operator\": \"and\" | \"or\", \"filters\": [ ... ] }\n\nDate filtering (recommended default: date_is_within):\n- Prefer \"date_is_within\" for relative windows like \"past N days/weeks/months\".\n- Relative (common): { type: \"relative\", value: \"the_past_week\" | \"the_past_month\" | \"this_week\" }\n- Relative (custom): { type: \"relative\", value: \"custom\", direction: \"past\" | \"future\", unit: \"day\" | \"week\" | \"month\" | \"year\", count: <number> }\n- Exact range: { type: \"exact\", value: { type: \"daterange\", start_date: \"YYYY-MM-DD\", end_date: \"YYYY-MM-DD\" } }\n- Single-date operators (\"date_is\", \"date_is_before\", \"date_is_after\", \"date_is_on_or_before\", \"date_is_on_or_after\"):\n- Exact: { type: \"exact\", value: { type: \"date\", start_date: \"YYYY-MM-DD\" } }\n- Relative shortcuts: today | tomorrow | yesterday | one_week_ago | one_week_from_now | one_month_ago | one_month_from_now\n\n\nTitle keyword filtering (OR vs AND):\n- Use OR (\"operator\": \"or\") when unsure or for broad discovery.\n- Use AND (\"operator\": \"and\") when the user is specific and you want to narrow results.\n- Break multi-word phrases into individual terms and filter on each term separately.\n\n\nExamples:\n- Past week: <example>{\"operator\":\"and\",\"filters\":[{\"property\":\"created_time\",\"filter\":{\"operator\":\"date_is_within\",\"value\":{\"type\":\"relative\",\"value\":\"the_past_week\"}}}]}</example>\n- Past 3 days: <example>{\"operator\":\"and\",\"filters\":[{\"property\":\"created_time\",\"filter\":{\"operator\":\"date_is_within\",\"value\":{\"type\":\"relative\",\"value\":\"custom\",\"direction\":\"past\",\"unit\":\"day\",\"count\":3}}}]}</example>\n- Exact date range: <example>{\"operator\":\"and\",\"filters\":[{\"property\":\"created_time\",\"filter\":{\"operator\":\"date_is_within\",\"value\":{\"type\":\"exact\",\"value\":{\"type\":\"daterange\",\"start_date\":\"2025-01-01\",\"end_date\":\"2025-12-31\"}}}}]}</example>\n- Created after a date: <example>{\"operator\":\"and\",\"filters\":[{\"property\":\"created_time\",\"filter\":{\"operator\":\"date_is_after\",\"value\":{\"type\":\"exact\",\"value\":{\"type\":\"date\",\"start_date\":\"2025-06-01\"}}}}]}</example>\n- Specific attendee: <example>{\"operator\":\"and\",\"filters\":[{\"property\":\"attendees\",\"filter\":{\"operator\":\"person_contains\",\"value\":[{\"type\":\"exact\",\"value\":{\"table\":\"notion_user\",\"id\":\"<user-id>\"}}]}}]}</example>\n- Attendee since a date: <example>{\"operator\":\"and\",\"filters\":[{\"property\":\"created_time\",\"filter\":{\"operator\":\"date_is_on_or_after\",\"value\":{\"type\":\"exact\",\"value\":{\"type\":\"date\",\"start_date\":\"2025-01-01\"}}}},{\"property\":\"attendees\",\"filter\":{\"operator\":\"person_contains\",\"value\":[{\"type\":\"exact\",\"value\":{\"table\":\"notion_user\",\"id\":\"<user-id>\"}}]}}]}</example>\n- Title contains both terms: <example>{\"operator\":\"and\",\"filters\":[{\"property\":\"title\",\"filter\":{\"operator\":\"string_contains\",\"value\":{\"type\":\"exact\",\"value\":\"design\"}}},{\"property\":\"title\",\"filter\":{\"operator\":\"string_contains\",\"value\":{\"type\":\"exact\",\"value\":\"review\"}}}]}</example>\n- Title contains either term: <example>{\"operator\":\"or\",\"filters\":[{\"property\":\"title\",\"filter\":{\"operator\":\"string_contains\",\"value\":{\"type\":\"exact\",\"value\":\"standup\"}}},{\"property\":\"title\",\"filter\":{\"operator\":\"string_contains\",\"value\":{\"type\":\"exact\",\"value\":\"sync\"}}}]}</example>",
@@ -7172,510 +3780,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                 items: {
                   anyOf: [
                     {
-                      type: "object",
-                      properties: {
-                        property: {
-                          type: "string",
-                          enum: [
-                            "title",
-                            "attendees",
-                            "created_time",
-                            "created_by",
-                            "last_edited_time",
-                            "last_edited_by",
-                            "notion://meeting_notes/attendees",
-                          ],
-                          description: "Which meeting-note property to filter on. Prefer the short names; the schema URI form is accepted for compatibility.",
-                        },
-                        filter: {
-                          anyOf: [
-                            {
-                              type: "object",
-                              properties: {
-                                operator: {
-                                  type: "string",
-                                  enum: [
-                                    "string_is",
-                                    "string_is_not",
-                                    "string_contains",
-                                    "string_does_not_contain",
-                                    "string_starts_with",
-                                    "string_ends_with",
-                                  ],
-                                  description: "How to compare the text.",
-                                },
-                                value: {
-                                  type: "object",
-                                  properties: {
-                                    type: {
-                                      type: "string",
-                                      enum: [
-                                        "exact",
-                                      ],
-                                      description: "Always `exact`",
-                                    },
-                                    value: {
-                                      type: "string",
-                                      description: "The literal text the operator compares against.",
-                                    },
-                                  },
-                                  required: [
-                                    "type",
-                                    "value",
-                                  ],
-                                  additionalProperties: false,
-                                  description: "The text to compare against.",
-                                },
-                              },
-                              required: [
-                                "operator",
-                                "value",
-                              ],
-                              additionalProperties: false,
-                            },
-                            {
-                              type: "object",
-                              properties: {
-                                operator: {
-                                  type: "string",
-                                  enum: [
-                                    "person_contains",
-                                    "person_does_not_contain",
-                                  ],
-                                  description: "Whether the property must contain the people listed.",
-                                },
-                                value: {
-                                  maxItems: 100,
-                                  type: "array",
-                                  items: {
-                                    anyOf: [
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "exact",
-                                            ],
-                                            description: "Always `exact`",
-                                          },
-                                          value: {
-                                            type: "object",
-                                            properties: {
-                                              table: {
-                                                type: "string",
-                                                enum: [
-                                                  "notion_user",
-                                                ],
-                                                description: "Always `notion_user`",
-                                              },
-                                              id: {
-                                                type: "string",
-                                                description: "The user's ID, as a UUID or the `user://<uuid>` form returned by user search.",
-                                              },
-                                            },
-                                            required: [
-                                              "table",
-                                              "id",
-                                            ],
-                                            additionalProperties: false,
-                                            description: "Pointer to the Notion user to match.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                      },
-                                      {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "relative",
-                                            ],
-                                            description: "Always `relative`",
-                                          },
-                                          value: {
-                                            type: "string",
-                                            enum: [
-                                              "me",
-                                            ],
-                                            description: "Always `me`",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                      },
-                                    ],
-                                  },
-                                  description: "The people to compare against.",
-                                },
-                              },
-                              required: [
-                                "operator",
-                                "value",
-                              ],
-                              additionalProperties: false,
-                            },
-                            {
-                              type: "object",
-                              properties: {
-                                operator: {
-                                  type: "string",
-                                  enum: [
-                                    "date_is",
-                                    "date_is_before",
-                                    "date_is_after",
-                                    "date_is_on_or_before",
-                                    "date_is_on_or_after",
-                                  ],
-                                  description: "How to compare the date.",
-                                },
-                                value: {
-                                  anyOf: [
-                                    {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "relative",
-                                          ],
-                                          description: "Always `relative`",
-                                        },
-                                        value: {
-                                          type: "string",
-                                          enum: [
-                                            "today",
-                                            "tomorrow",
-                                            "yesterday",
-                                            "one_week_ago",
-                                            "one_week_from_now",
-                                            "one_month_ago",
-                                            "one_month_from_now",
-                                          ],
-                                          description: "One of: `today`, `tomorrow`, `yesterday`, `one_week_ago`, `one_week_from_now`, `one_month_ago`, `one_month_from_now`",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "value",
-                                      ],
-                                      additionalProperties: false,
-                                    },
-                                    {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "exact",
-                                          ],
-                                          description: "Always `exact`",
-                                        },
-                                        value: {
-                                          anyOf: [
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "date",
-                                                  ],
-                                                  description: "Always `date`",
-                                                },
-                                                start_date: {
-                                                  type: "string",
-                                                  format: "date",
-                                                  pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                                                  description: "The calendar date as an ISO 8601 date string.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "start_date",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "datetime",
-                                                  ],
-                                                  description: "Always `datetime`",
-                                                },
-                                                start_date: {
-                                                  type: "string",
-                                                  format: "date",
-                                                  pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                                                  description: "The calendar date as an ISO 8601 date string.",
-                                                },
-                                                start_time: {
-                                                  type: "string",
-                                                  description: "The time of day in 24-hour HH:MM format.",
-                                                },
-                                                time_zone: {
-                                                  type: "string",
-                                                  description: "The IANA time zone name the time is interpreted in.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "start_date",
-                                                "start_time",
-                                                "time_zone",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                          ],
-                                          description: "Use the is_empty operator to match an unset date.",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "value",
-                                      ],
-                                      additionalProperties: false,
-                                    },
-                                  ],
-                                  description: "The date to compare against.",
-                                },
-                                use_end: {
-                                  description: "Compare against the end of a date range rather than its start.",
-                                  type: "boolean",
-                                },
-                              },
-                              required: [
-                                "operator",
-                                "value",
-                              ],
-                              additionalProperties: false,
-                            },
-                            {
-                              type: "object",
-                              properties: {
-                                operator: {
-                                  type: "string",
-                                  enum: [
-                                    "date_is_within",
-                                    "date_is_relative_to",
-                                  ],
-                                  description: "How to compare the date against the range.",
-                                },
-                                value: {
-                                  anyOf: [
-                                    {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "relative",
-                                          ],
-                                          description: "Always `relative`",
-                                        },
-                                        value: {
-                                          type: "string",
-                                          enum: [
-                                            "custom",
-                                          ],
-                                          description: "Always `custom`",
-                                        },
-                                        direction: {
-                                          type: "string",
-                                          enum: [
-                                            "past",
-                                            "future",
-                                          ],
-                                          description: "Whether the window runs backwards or forwards from now.",
-                                        },
-                                        unit: {
-                                          type: "string",
-                                          enum: [
-                                            "year",
-                                            "month",
-                                            "week",
-                                            "day",
-                                          ],
-                                          description: "One of: `year`, `month`, `week`, `day`",
-                                        },
-                                        count: {
-                                          type: "integer",
-                                          minimum: 1,
-                                          maximum: 9007199254740991,
-                                          description: "How many units wide the window is.",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "value",
-                                        "direction",
-                                        "unit",
-                                        "count",
-                                      ],
-                                      additionalProperties: false,
-                                    },
-                                    {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "relative",
-                                          ],
-                                          description: "Always `relative`",
-                                        },
-                                        value: {
-                                          type: "string",
-                                          enum: [
-                                            "surrounding",
-                                          ],
-                                          description: "Always `surrounding`",
-                                        },
-                                        unit: {
-                                          type: "string",
-                                          enum: [
-                                            "year",
-                                            "month",
-                                            "week",
-                                            "day",
-                                          ],
-                                          description: "One of: `year`, `month`, `week`, `day`",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "value",
-                                        "unit",
-                                      ],
-                                      additionalProperties: false,
-                                    },
-                                    {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "relative",
-                                          ],
-                                          description: "Always `relative`",
-                                        },
-                                        value: {
-                                          type: "string",
-                                          enum: [
-                                            "this_week",
-                                            "the_past_week",
-                                            "the_past_month",
-                                            "the_past_year",
-                                            "the_next_week",
-                                            "the_next_month",
-                                            "the_next_year",
-                                          ],
-                                          description: "One of: `this_week`, `the_past_week`, `the_past_month`, `the_past_year`, `the_next_week`, `the_next_month`, `the_next_year`",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "value",
-                                      ],
-                                      additionalProperties: false,
-                                    },
-                                    {
-                                      type: "object",
-                                      properties: {
-                                        type: {
-                                          type: "string",
-                                          enum: [
-                                            "exact",
-                                          ],
-                                          description: "Always `exact`",
-                                        },
-                                        value: {
-                                          type: "object",
-                                          properties: {
-                                            type: {
-                                              type: "string",
-                                              enum: [
-                                                "daterange",
-                                              ],
-                                              description: "Always `daterange`",
-                                            },
-                                            start_date: {
-                                              description: "Inclusive start of the range as an ISO 8601 date string, if any.",
-                                              type: "string",
-                                              format: "date",
-                                              pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                                            },
-                                            end_date: {
-                                              description: "Inclusive end of the range as an ISO 8601 date string, if any.",
-                                              type: "string",
-                                              format: "date",
-                                              pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                                            },
-                                          },
-                                          required: [
-                                            "type",
-                                          ],
-                                          additionalProperties: false,
-                                          description: "Use the is_empty operator to match an unset date.",
-                                        },
-                                      },
-                                      required: [
-                                        "type",
-                                        "value",
-                                      ],
-                                      additionalProperties: false,
-                                    },
-                                  ],
-                                  description: "The range to compare against.",
-                                },
-                                use_end: {
-                                  description: "Compare against the end of a date range rather than its start.",
-                                  type: "boolean",
-                                },
-                              },
-                              required: [
-                                "operator",
-                                "value",
-                              ],
-                              additionalProperties: false,
-                            },
-                            {
-                              type: "object",
-                              properties: {
-                                operator: {
-                                  type: "string",
-                                  enum: [
-                                    "is_empty",
-                                    "is_not_empty",
-                                  ],
-                                  description: "Whether the property must be empty or set.",
-                                },
-                              },
-                              required: [
-                                "operator",
-                              ],
-                              additionalProperties: false,
-                            },
-                          ],
-                          description: "The comparison to apply. Use the arm matching the property's type.",
-                        },
-                      },
-                      required: [
-                        "property",
-                        "filter",
-                      ],
-                      additionalProperties: false,
+                      $ref: "#/$defs/meetingNotesPropertyFilter",
                     },
                     {
                       type: "object",
@@ -7692,510 +3797,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
                           maxItems: 100,
                           type: "array",
                           items: {
-                            type: "object",
-                            properties: {
-                              property: {
-                                type: "string",
-                                enum: [
-                                  "title",
-                                  "attendees",
-                                  "created_time",
-                                  "created_by",
-                                  "last_edited_time",
-                                  "last_edited_by",
-                                  "notion://meeting_notes/attendees",
-                                ],
-                                description: "Which meeting-note property to filter on. Prefer the short names; the schema URI form is accepted for compatibility.",
-                              },
-                              filter: {
-                                anyOf: [
-                                  {
-                                    type: "object",
-                                    properties: {
-                                      operator: {
-                                        type: "string",
-                                        enum: [
-                                          "string_is",
-                                          "string_is_not",
-                                          "string_contains",
-                                          "string_does_not_contain",
-                                          "string_starts_with",
-                                          "string_ends_with",
-                                        ],
-                                        description: "How to compare the text.",
-                                      },
-                                      value: {
-                                        type: "object",
-                                        properties: {
-                                          type: {
-                                            type: "string",
-                                            enum: [
-                                              "exact",
-                                            ],
-                                            description: "Always `exact`",
-                                          },
-                                          value: {
-                                            type: "string",
-                                            description: "The literal text the operator compares against.",
-                                          },
-                                        },
-                                        required: [
-                                          "type",
-                                          "value",
-                                        ],
-                                        additionalProperties: false,
-                                        description: "The text to compare against.",
-                                      },
-                                    },
-                                    required: [
-                                      "operator",
-                                      "value",
-                                    ],
-                                    additionalProperties: false,
-                                  },
-                                  {
-                                    type: "object",
-                                    properties: {
-                                      operator: {
-                                        type: "string",
-                                        enum: [
-                                          "person_contains",
-                                          "person_does_not_contain",
-                                        ],
-                                        description: "Whether the property must contain the people listed.",
-                                      },
-                                      value: {
-                                        maxItems: 100,
-                                        type: "array",
-                                        items: {
-                                          anyOf: [
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "exact",
-                                                  ],
-                                                  description: "Always `exact`",
-                                                },
-                                                value: {
-                                                  type: "object",
-                                                  properties: {
-                                                    table: {
-                                                      type: "string",
-                                                      enum: [
-                                                        "notion_user",
-                                                      ],
-                                                      description: "Always `notion_user`",
-                                                    },
-                                                    id: {
-                                                      type: "string",
-                                                      description: "The user's ID, as a UUID or the `user://<uuid>` form returned by user search.",
-                                                    },
-                                                  },
-                                                  required: [
-                                                    "table",
-                                                    "id",
-                                                  ],
-                                                  additionalProperties: false,
-                                                  description: "Pointer to the Notion user to match.",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                            {
-                                              type: "object",
-                                              properties: {
-                                                type: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "relative",
-                                                  ],
-                                                  description: "Always `relative`",
-                                                },
-                                                value: {
-                                                  type: "string",
-                                                  enum: [
-                                                    "me",
-                                                  ],
-                                                  description: "Always `me`",
-                                                },
-                                              },
-                                              required: [
-                                                "type",
-                                                "value",
-                                              ],
-                                              additionalProperties: false,
-                                            },
-                                          ],
-                                        },
-                                        description: "The people to compare against.",
-                                      },
-                                    },
-                                    required: [
-                                      "operator",
-                                      "value",
-                                    ],
-                                    additionalProperties: false,
-                                  },
-                                  {
-                                    type: "object",
-                                    properties: {
-                                      operator: {
-                                        type: "string",
-                                        enum: [
-                                          "date_is",
-                                          "date_is_before",
-                                          "date_is_after",
-                                          "date_is_on_or_before",
-                                          "date_is_on_or_after",
-                                        ],
-                                        description: "How to compare the date.",
-                                      },
-                                      value: {
-                                        anyOf: [
-                                          {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "relative",
-                                                ],
-                                                description: "Always `relative`",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                enum: [
-                                                  "today",
-                                                  "tomorrow",
-                                                  "yesterday",
-                                                  "one_week_ago",
-                                                  "one_week_from_now",
-                                                  "one_month_ago",
-                                                  "one_month_from_now",
-                                                ],
-                                                description: "One of: `today`, `tomorrow`, `yesterday`, `one_week_ago`, `one_week_from_now`, `one_month_ago`, `one_month_from_now`",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                          {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "exact",
-                                                ],
-                                                description: "Always `exact`",
-                                              },
-                                              value: {
-                                                anyOf: [
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "date",
-                                                        ],
-                                                        description: "Always `date`",
-                                                      },
-                                                      start_date: {
-                                                        type: "string",
-                                                        format: "date",
-                                                        pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                                                        description: "The calendar date as an ISO 8601 date string.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "start_date",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                  {
-                                                    type: "object",
-                                                    properties: {
-                                                      type: {
-                                                        type: "string",
-                                                        enum: [
-                                                          "datetime",
-                                                        ],
-                                                        description: "Always `datetime`",
-                                                      },
-                                                      start_date: {
-                                                        type: "string",
-                                                        format: "date",
-                                                        pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                                                        description: "The calendar date as an ISO 8601 date string.",
-                                                      },
-                                                      start_time: {
-                                                        type: "string",
-                                                        description: "The time of day in 24-hour HH:MM format.",
-                                                      },
-                                                      time_zone: {
-                                                        type: "string",
-                                                        description: "The IANA time zone name the time is interpreted in.",
-                                                      },
-                                                    },
-                                                    required: [
-                                                      "type",
-                                                      "start_date",
-                                                      "start_time",
-                                                      "time_zone",
-                                                    ],
-                                                    additionalProperties: false,
-                                                  },
-                                                ],
-                                                description: "Use the is_empty operator to match an unset date.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                        ],
-                                        description: "The date to compare against.",
-                                      },
-                                      use_end: {
-                                        description: "Compare against the end of a date range rather than its start.",
-                                        type: "boolean",
-                                      },
-                                    },
-                                    required: [
-                                      "operator",
-                                      "value",
-                                    ],
-                                    additionalProperties: false,
-                                  },
-                                  {
-                                    type: "object",
-                                    properties: {
-                                      operator: {
-                                        type: "string",
-                                        enum: [
-                                          "date_is_within",
-                                          "date_is_relative_to",
-                                        ],
-                                        description: "How to compare the date against the range.",
-                                      },
-                                      value: {
-                                        anyOf: [
-                                          {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "relative",
-                                                ],
-                                                description: "Always `relative`",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                enum: [
-                                                  "custom",
-                                                ],
-                                                description: "Always `custom`",
-                                              },
-                                              direction: {
-                                                type: "string",
-                                                enum: [
-                                                  "past",
-                                                  "future",
-                                                ],
-                                                description: "Whether the window runs backwards or forwards from now.",
-                                              },
-                                              unit: {
-                                                type: "string",
-                                                enum: [
-                                                  "year",
-                                                  "month",
-                                                  "week",
-                                                  "day",
-                                                ],
-                                                description: "One of: `year`, `month`, `week`, `day`",
-                                              },
-                                              count: {
-                                                type: "integer",
-                                                minimum: 1,
-                                                maximum: 9007199254740991,
-                                                description: "How many units wide the window is.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                              "direction",
-                                              "unit",
-                                              "count",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                          {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "relative",
-                                                ],
-                                                description: "Always `relative`",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                enum: [
-                                                  "surrounding",
-                                                ],
-                                                description: "Always `surrounding`",
-                                              },
-                                              unit: {
-                                                type: "string",
-                                                enum: [
-                                                  "year",
-                                                  "month",
-                                                  "week",
-                                                  "day",
-                                                ],
-                                                description: "One of: `year`, `month`, `week`, `day`",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                              "unit",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                          {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "relative",
-                                                ],
-                                                description: "Always `relative`",
-                                              },
-                                              value: {
-                                                type: "string",
-                                                enum: [
-                                                  "this_week",
-                                                  "the_past_week",
-                                                  "the_past_month",
-                                                  "the_past_year",
-                                                  "the_next_week",
-                                                  "the_next_month",
-                                                  "the_next_year",
-                                                ],
-                                                description: "One of: `this_week`, `the_past_week`, `the_past_month`, `the_past_year`, `the_next_week`, `the_next_month`, `the_next_year`",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                          {
-                                            type: "object",
-                                            properties: {
-                                              type: {
-                                                type: "string",
-                                                enum: [
-                                                  "exact",
-                                                ],
-                                                description: "Always `exact`",
-                                              },
-                                              value: {
-                                                type: "object",
-                                                properties: {
-                                                  type: {
-                                                    type: "string",
-                                                    enum: [
-                                                      "daterange",
-                                                    ],
-                                                    description: "Always `daterange`",
-                                                  },
-                                                  start_date: {
-                                                    description: "Inclusive start of the range as an ISO 8601 date string, if any.",
-                                                    type: "string",
-                                                    format: "date",
-                                                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                                                  },
-                                                  end_date: {
-                                                    description: "Inclusive end of the range as an ISO 8601 date string, if any.",
-                                                    type: "string",
-                                                    format: "date",
-                                                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
-                                                  },
-                                                },
-                                                required: [
-                                                  "type",
-                                                ],
-                                                additionalProperties: false,
-                                                description: "Use the is_empty operator to match an unset date.",
-                                              },
-                                            },
-                                            required: [
-                                              "type",
-                                              "value",
-                                            ],
-                                            additionalProperties: false,
-                                          },
-                                        ],
-                                        description: "The range to compare against.",
-                                      },
-                                      use_end: {
-                                        description: "Compare against the end of a date range rather than its start.",
-                                        type: "boolean",
-                                      },
-                                    },
-                                    required: [
-                                      "operator",
-                                      "value",
-                                    ],
-                                    additionalProperties: false,
-                                  },
-                                  {
-                                    type: "object",
-                                    properties: {
-                                      operator: {
-                                        type: "string",
-                                        enum: [
-                                          "is_empty",
-                                          "is_not_empty",
-                                        ],
-                                        description: "Whether the property must be empty or set.",
-                                      },
-                                    },
-                                    required: [
-                                      "operator",
-                                    ],
-                                    additionalProperties: false,
-                                  },
-                                ],
-                                description: "The comparison to apply. Use the arm matching the property's type.",
-                              },
-                            },
-                            required: [
-                              "property",
-                              "filter",
-                            ],
-                            additionalProperties: false,
+                            $ref: "#/$defs/meetingNotesPropertyFilter",
                           },
                           description: "The conditions in this group. A group with no conditions matches nothing, so send at least one.",
                         },
@@ -8216,8 +3818,515 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             additionalProperties: {},
           },
         },
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
+        $defs: {
+          meetingNotesPropertyFilter: {
+            type: "object",
+            properties: {
+              property: {
+                type: "string",
+                enum: [
+                  "title",
+                  "attendees",
+                  "created_time",
+                  "created_by",
+                  "last_edited_time",
+                  "last_edited_by",
+                  "notion://meeting_notes/attendees",
+                ],
+                description: "Which meeting-note property to filter on. Prefer the short names; the schema URI form is accepted for compatibility.",
+              },
+              filter: {
+                anyOf: [
+                  {
+                    type: "object",
+                    properties: {
+                      operator: {
+                        type: "string",
+                        enum: [
+                          "string_is",
+                          "string_is_not",
+                          "string_contains",
+                          "string_does_not_contain",
+                          "string_starts_with",
+                          "string_ends_with",
+                        ],
+                        description: "How to compare the text.",
+                      },
+                      value: {
+                        type: "object",
+                        properties: {
+                          type: {
+                            type: "string",
+                            enum: [
+                              "exact",
+                            ],
+                            description: "Always `exact`",
+                          },
+                          value: {
+                            type: "string",
+                            description: "The literal text the operator compares against.",
+                          },
+                        },
+                        required: [
+                          "type",
+                          "value",
+                        ],
+                        additionalProperties: false,
+                        description: "The text to compare against.",
+                      },
+                    },
+                    required: [
+                      "operator",
+                      "value",
+                    ],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      operator: {
+                        type: "string",
+                        enum: [
+                          "person_contains",
+                          "person_does_not_contain",
+                        ],
+                        description: "Whether the property must contain the people listed.",
+                      },
+                      value: {
+                        maxItems: 100,
+                        type: "array",
+                        items: {
+                          anyOf: [
+                            {
+                              type: "object",
+                              properties: {
+                                type: {
+                                  type: "string",
+                                  enum: [
+                                    "exact",
+                                  ],
+                                  description: "Always `exact`",
+                                },
+                                value: {
+                                  type: "object",
+                                  properties: {
+                                    table: {
+                                      type: "string",
+                                      enum: [
+                                        "notion_user",
+                                      ],
+                                      description: "Always `notion_user`",
+                                    },
+                                    id: {
+                                      type: "string",
+                                      description: "The user's ID, as a UUID or the `user://<uuid>` form returned by user search.",
+                                    },
+                                  },
+                                  required: [
+                                    "table",
+                                    "id",
+                                  ],
+                                  additionalProperties: false,
+                                  description: "Pointer to the Notion user to match.",
+                                },
+                              },
+                              required: [
+                                "type",
+                                "value",
+                              ],
+                              additionalProperties: false,
+                            },
+                            {
+                              type: "object",
+                              properties: {
+                                type: {
+                                  type: "string",
+                                  enum: [
+                                    "relative",
+                                  ],
+                                  description: "Always `relative`",
+                                },
+                                value: {
+                                  type: "string",
+                                  enum: [
+                                    "me",
+                                  ],
+                                  description: "Always `me`",
+                                },
+                              },
+                              required: [
+                                "type",
+                                "value",
+                              ],
+                              additionalProperties: false,
+                            },
+                          ],
+                        },
+                        description: "The people to compare against.",
+                      },
+                    },
+                    required: [
+                      "operator",
+                      "value",
+                    ],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      operator: {
+                        type: "string",
+                        enum: [
+                          "date_is",
+                          "date_is_before",
+                          "date_is_after",
+                          "date_is_on_or_before",
+                          "date_is_on_or_after",
+                        ],
+                        description: "How to compare the date.",
+                      },
+                      value: {
+                        anyOf: [
+                          {
+                            type: "object",
+                            properties: {
+                              type: {
+                                type: "string",
+                                enum: [
+                                  "relative",
+                                ],
+                                description: "Always `relative`",
+                              },
+                              value: {
+                                type: "string",
+                                enum: [
+                                  "today",
+                                  "tomorrow",
+                                  "yesterday",
+                                  "one_week_ago",
+                                  "one_week_from_now",
+                                  "one_month_ago",
+                                  "one_month_from_now",
+                                ],
+                                description: "One of: `today`, `tomorrow`, `yesterday`, `one_week_ago`, `one_week_from_now`, `one_month_ago`, `one_month_from_now`",
+                              },
+                            },
+                            required: [
+                              "type",
+                              "value",
+                            ],
+                            additionalProperties: false,
+                          },
+                          {
+                            type: "object",
+                            properties: {
+                              type: {
+                                type: "string",
+                                enum: [
+                                  "exact",
+                                ],
+                                description: "Always `exact`",
+                              },
+                              value: {
+                                anyOf: [
+                                  {
+                                    type: "object",
+                                    properties: {
+                                      type: {
+                                        type: "string",
+                                        enum: [
+                                          "date",
+                                        ],
+                                        description: "Always `date`",
+                                      },
+                                      start_date: {
+                                        type: "string",
+                                        format: "date",
+                                        pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                                        description: "The calendar date as an ISO 8601 date string.",
+                                      },
+                                    },
+                                    required: [
+                                      "type",
+                                      "start_date",
+                                    ],
+                                    additionalProperties: false,
+                                  },
+                                  {
+                                    type: "object",
+                                    properties: {
+                                      type: {
+                                        type: "string",
+                                        enum: [
+                                          "datetime",
+                                        ],
+                                        description: "Always `datetime`",
+                                      },
+                                      start_date: {
+                                        type: "string",
+                                        format: "date",
+                                        pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                                        description: "The calendar date as an ISO 8601 date string.",
+                                      },
+                                      start_time: {
+                                        type: "string",
+                                        description: "The time of day in 24-hour HH:MM format.",
+                                      },
+                                      time_zone: {
+                                        type: "string",
+                                        description: "The IANA time zone name the time is interpreted in.",
+                                      },
+                                    },
+                                    required: [
+                                      "type",
+                                      "start_date",
+                                      "start_time",
+                                      "time_zone",
+                                    ],
+                                    additionalProperties: false,
+                                  },
+                                ],
+                                description: "Use the is_empty operator to match an unset date.",
+                              },
+                            },
+                            required: [
+                              "type",
+                              "value",
+                            ],
+                            additionalProperties: false,
+                          },
+                        ],
+                        description: "The date to compare against.",
+                      },
+                      use_end: {
+                        description: "Compare against the end of a date range rather than its start.",
+                        type: "boolean",
+                      },
+                    },
+                    required: [
+                      "operator",
+                      "value",
+                    ],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      operator: {
+                        type: "string",
+                        enum: [
+                          "date_is_within",
+                          "date_is_relative_to",
+                        ],
+                        description: "How to compare the date against the range.",
+                      },
+                      value: {
+                        anyOf: [
+                          {
+                            type: "object",
+                            properties: {
+                              type: {
+                                type: "string",
+                                enum: [
+                                  "relative",
+                                ],
+                                description: "Always `relative`",
+                              },
+                              value: {
+                                type: "string",
+                                enum: [
+                                  "custom",
+                                ],
+                                description: "Always `custom`",
+                              },
+                              direction: {
+                                type: "string",
+                                enum: [
+                                  "past",
+                                  "future",
+                                ],
+                                description: "Whether the window runs backwards or forwards from now.",
+                              },
+                              unit: {
+                                type: "string",
+                                enum: [
+                                  "year",
+                                  "month",
+                                  "week",
+                                  "day",
+                                ],
+                                description: "One of: `year`, `month`, `week`, `day`",
+                              },
+                              count: {
+                                type: "integer",
+                                minimum: 1,
+                                maximum: 9007199254740991,
+                                description: "How many units wide the window is.",
+                              },
+                            },
+                            required: [
+                              "type",
+                              "value",
+                              "direction",
+                              "unit",
+                              "count",
+                            ],
+                            additionalProperties: false,
+                          },
+                          {
+                            type: "object",
+                            properties: {
+                              type: {
+                                type: "string",
+                                enum: [
+                                  "relative",
+                                ],
+                                description: "Always `relative`",
+                              },
+                              value: {
+                                type: "string",
+                                enum: [
+                                  "surrounding",
+                                ],
+                                description: "Always `surrounding`",
+                              },
+                              unit: {
+                                type: "string",
+                                enum: [
+                                  "year",
+                                  "month",
+                                  "week",
+                                  "day",
+                                ],
+                                description: "One of: `year`, `month`, `week`, `day`",
+                              },
+                            },
+                            required: [
+                              "type",
+                              "value",
+                              "unit",
+                            ],
+                            additionalProperties: false,
+                          },
+                          {
+                            type: "object",
+                            properties: {
+                              type: {
+                                type: "string",
+                                enum: [
+                                  "relative",
+                                ],
+                                description: "Always `relative`",
+                              },
+                              value: {
+                                type: "string",
+                                enum: [
+                                  "this_week",
+                                  "the_past_week",
+                                  "the_past_month",
+                                  "the_past_year",
+                                  "the_next_week",
+                                  "the_next_month",
+                                  "the_next_year",
+                                ],
+                                description: "One of: `this_week`, `the_past_week`, `the_past_month`, `the_past_year`, `the_next_week`, `the_next_month`, `the_next_year`",
+                              },
+                            },
+                            required: [
+                              "type",
+                              "value",
+                            ],
+                            additionalProperties: false,
+                          },
+                          {
+                            type: "object",
+                            properties: {
+                              type: {
+                                type: "string",
+                                enum: [
+                                  "exact",
+                                ],
+                                description: "Always `exact`",
+                              },
+                              value: {
+                                type: "object",
+                                properties: {
+                                  type: {
+                                    type: "string",
+                                    enum: [
+                                      "daterange",
+                                    ],
+                                    description: "Always `daterange`",
+                                  },
+                                  start_date: {
+                                    description: "Inclusive start of the range as an ISO 8601 date string, if any.",
+                                    type: "string",
+                                    format: "date",
+                                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                                  },
+                                  end_date: {
+                                    description: "Inclusive end of the range as an ISO 8601 date string, if any.",
+                                    type: "string",
+                                    format: "date",
+                                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+                                  },
+                                },
+                                required: [
+                                  "type",
+                                ],
+                                additionalProperties: false,
+                                description: "Use the is_empty operator to match an unset date.",
+                              },
+                            },
+                            required: [
+                              "type",
+                              "value",
+                            ],
+                            additionalProperties: false,
+                          },
+                        ],
+                        description: "The range to compare against.",
+                      },
+                      use_end: {
+                        description: "Compare against the end of a date range rather than its start.",
+                        type: "boolean",
+                      },
+                    },
+                    required: [
+                      "operator",
+                      "value",
+                    ],
+                    additionalProperties: false,
+                  },
+                  {
+                    type: "object",
+                    properties: {
+                      operator: {
+                        type: "string",
+                        enum: [
+                          "is_empty",
+                          "is_not_empty",
+                        ],
+                        description: "Whether the property must be empty or set.",
+                      },
+                    },
+                    required: [
+                      "operator",
+                    ],
+                    additionalProperties: false,
+                  },
+                ],
+                description: "The comparison to apply. Use the arm matching the property's type.",
+              },
+            },
+            required: [
+              "property",
+              "filter",
+            ],
+            additionalProperties: false,
+          },
+        },
       },
       { readOnlyHint: true, destructiveHint: false },
       false,
@@ -8316,6 +4425,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           data_source_id: {
             type: "string",
@@ -8349,8 +4459,41 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             description: "A page to create an inline linked database view on, like the UI /linked command. Accepts a Notion URL or a bare UUID. The new linked view block is appended at the end of the page and references `data_source_id`. Mutually exclusive with `database_id`; exactly one must be provided.",
             type: "string",
           },
+          show_data_source_title: {
+            description: "Whether the new linked view block shows its data source title above the view, like the Show data source title toggle in the Notion app. Defaults to true. Only valid with `parent_page_id`.",
+            type: "boolean",
+          },
           configure: {
-            description: "View configuration DSL directives and examples:\n- FILTER \"Property\" = \"value\" — filter rows. Relation values must be a page URL or UUID; person values must be a user URI (user://<user_id>), user UUID, or \"me\". Names are not supported for either.\n- QUICK FILTER \"Property\" — add a quick filter to the view's filter bar with no criteria; add a condition to preselect one (QUICK FILTER \"Status\" = \"Done\")\n- SORT BY \"Property\" ASC — sort rows\n- GROUP BY \"Property\" [BY OPTION | BY GROUP] [SHOW EMPTY | HIDE EMPTY] — group by property (required for board views)\n- SUB GROUP BY \"Property\" [BY OPTION | BY GROUP] [SHOW EMPTY | HIDE EMPTY] — add board sub-grouping\n- CARD LAYOUT default | compact — set board or gallery card layout\n- CALENDAR BY \"Property\" — date property (required for calendar views)\n- TIMELINE BY \"Start\" TO \"End\" — date range (required for timeline views)\n- MAP BY \"Property\" — location property (required for map views)\n- CHART column|bar|line|donut|number — chart type with optional AGGREGATE, COLOR, HEIGHT, SORT, STACK BY, CAPTION\n- FORM CLOSE|OPEN — close/open form submissions\n- FORM ANONYMOUS true|false — toggle anonymous submissions\n- FORM PERMISSIONS none|reader|editor — set submission permissions\n- SHOW \"Prop1\", \"Prop2\" — set visible properties\n- COVER \"Property\" — cover image property\n\n\n<example>SHOW \"Name\", \"Status\", \"Due Date\"</example>\n<example>GROUP BY \"Status\" BY GROUP SHOW EMPTY; SUB GROUP BY \"Priority\"; CARD LAYOUT compact</example>\n<example>FILTER \"Status\" = \"In Progress\"; SORT BY \"Due Date\" ASC</example>\n<example>CALENDAR BY \"Due Date\"</example>\n<example>TIMELINE BY \"Start\" TO \"End\"</example>\n<example>FILTER \"Company\" = \"Acme\"</example>",
+            description: "View configuration DSL directives and examples:\n- FILTER \"Property\" = \"value\" — filter rows. Relation values must be a page URL or UUID; person values must be a user URI (user://<user_id>), user UUID, or \"me\". Names are not supported for either.\n- QUICK FILTER \"Property\" — add a quick filter to the view's filter bar with no criteria; add a condition to preselect one (QUICK FILTER \"Status\" = \"Done\")\n- SORT BY \"Property\" ASC — sort rows\n- GROUP BY \"Property\" [BY OPTION | BY GROUP] [SHOW EMPTY | HIDE EMPTY] — group by property (required for board views)\n- SUB GROUP BY \"Property\" [BY OPTION | BY GROUP] [SHOW EMPTY | HIDE EMPTY] — add board sub-grouping BY OPTION and BY GROUP apply only to status properties and rollups that return status values (Show original or Show unique). For select and multi_select properties, omit both modifiers, even if the property is named \"Status\" (for example, GROUP BY \"Status\").\n- CARD LAYOUT default | compact — set board or gallery card layout\n- CARD SIZE small|medium|large — set gallery card size independently of its cover\n- CALENDAR BY \"Property\" — date property (required for calendar views)\n- TIMELINE BY \"Start\" TO \"End\" — date range (required for timeline views)\n- MAP BY \"Property\" — location property (required for map views)\n- CHART column|bar|line|donut|number — chart type with optional AGGREGATE, COLOR, HEIGHT, SORT, STACK BY, CAPTION\n- FORM CLOSE|OPEN — close/open form submissions\n- FORM ANONYMOUS true|false — toggle anonymous submissions\n- FORM PERMISSIONS none|reader|editor — set submission permissions\n- SHOW \"Prop1\", \"Prop2\" — set visible properties\n- WIDTH \"Prop1\" 320, \"Prop2\" 120 — set table column widths in pixels\n- COVER \"Property\" — cover image property\n- WRAP PROPERTIES true|false — wrap configured gallery property values\n- ICON \"🚀\" — view tab icon: an emoji, a Notion icon such as \"icons/rocket_blue\", or an image URL\n\n\n<example>SHOW \"Name\", \"Status\", \"Due Date\"</example>\n<example>GROUP BY \"Status\" BY GROUP SHOW EMPTY; SUB GROUP BY \"Priority\"; CARD LAYOUT compact</example>\n<example>SHOW \"Name\", \"Status\"; CARD SIZE small; WRAP PROPERTIES true</example>\n<example>FILTER \"Status\" = \"In Progress\"; SORT BY \"Due Date\" ASC</example>\n<example>CALENDAR BY \"Due Date\"</example>\n<example>TIMELINE BY \"Start\" TO \"End\"</example>\n<example>FILTER \"Company\" = \"Acme\"</example>",
+            type: "string",
+          },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
             type: "string",
           },
         },
@@ -8359,7 +4502,6 @@ export const NOTION_ENTRY: HostedMcpEntry = {
           "name",
           "type",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
@@ -8371,6 +4513,7 @@ export const NOTION_ENTRY: HostedMcpEntry = {
       'write',
       {
         type: "object",
+        $schema: "https://json-schema.org/draft/2020-12/schema",
         properties: {
           view_id: {
             type: "string",
@@ -8381,14 +4524,42 @@ export const NOTION_ENTRY: HostedMcpEntry = {
             type: "string",
           },
           configure: {
-            description: "View configuration DSL string. Supports FILTER, QUICK FILTER, SORT BY, GROUP BY, SUB GROUP BY, CARD LAYOUT, CALENDAR BY, TIMELINE BY, MAP BY, CHART, FORM, SHOW, HIDE, COVER, WRAP CELLS, FREEZE COLUMNS, and CLEAR directives.",
+            description: "View configuration DSL string. Supports FILTER, QUICK FILTER, SORT BY, GROUP BY, SUB GROUP BY, CARD LAYOUT, CARD SIZE, CALENDAR BY, TIMELINE BY, MAP BY, CHART, FORM, SHOW, HIDE, COVER, WRAP CELLS, WRAP PROPERTIES, FREEZE COLUMNS, ICON, WIDTH, and CLEAR directives. BY OPTION and BY GROUP apply only to status properties and rollups that return status values (Show original or Show unique). For select and multi_select properties, omit both modifiers, even if the property is named \"Status\" (for example, GROUP BY \"Status\").",
+            type: "string",
+          },
+          instructions_version: {
+            description: "Notion setup instructions version, such as 0.0.2. Omit if unknown.",
+            type: "string",
+          },
+          telemetry: {
+            type: "object",
+            properties: {
+              intent: {
+                description: "One sentence: the wider task and why you chose this tool. Describe it in general terms. No names, page content, argument values, or secrets. English.",
+                type: "string",
+                maxLength: 300,
+              },
+              feedback: {
+                description: "Only if an earlier Notion tool call in this task went wrong or fell short, pick the best fit: bug (a tool did the wrong thing), misleading_description (our tool text led you astray), missing_capability (our tools could not do the job), too_many_steps (you needed a workaround), opportunity (work stayed outside Notion that these tools could have handled). Otherwise omit.",
+                type: "string",
+                enum: [
+                  "bug",
+                  "misleading_description",
+                  "missing_capability",
+                  "too_many_steps",
+                  "opportunity",
+                ],
+              },
+            },
+          },
+          skill: {
+            description: "For tracking only: the name of the agent skill you are following for this task, such as notion-meeting-prep. Omit if you are not following a skill. Does not change what the tool does.",
             type: "string",
           },
         },
         required: [
           "view_id",
         ],
-        $schema: "https://json-schema.org/draft/2020-12/schema",
         additionalProperties: {},
       },
       { readOnlyHint: false, destructiveHint: false },
