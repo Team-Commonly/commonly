@@ -222,6 +222,16 @@ describe('per-installation agent settings', () => {
     }));
     const saved = await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' });
     expect(config(saved).heartbeat).toEqual({ enabled: false, everyMinutes: 45 });
+
+    // With no stored interval, nothing is invented and the default still reads back.
+    const fresh = await request(app)
+      .patch(`/api/registry/agents/settings-agent/manage-settings/pods/${podB._id}?instanceId=same`)
+      .set('Authorization', `Bearer ${token(other)}`)
+      .send({ wakeOnMessage: false, humanOnly: false, boardWake: false, heartbeatEnabled: false });
+    expect(fresh.status).toBe(200);
+    expect(fresh.body.settings.heartbeatMinutes).toBe(60);
+    const unset = await AgentInstallation.findOne({ podId: podB._id, agentName: 'settings-agent' });
+    expect(config(unset).heartbeat).toEqual({ enabled: false });
   });
 
   it('names the field a rejected wake write got wrong, and writes nothing', async () => {
