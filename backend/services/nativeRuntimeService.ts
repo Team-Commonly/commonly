@@ -42,6 +42,7 @@ import { isSearchConfigured, searchWeb } from './webSearchService';
 import { getFromPublicAddress, isOutboundUrlRefused } from './outboundUrlGuard';
 import { GivenAddresses } from './webAddressProvenance';
 import { nativeCueFromKernel } from './nativeKernelCue';
+import { HEARTBEAT_SEAT_LINES, isSchedulerHeartbeatPodLine } from './heartbeatCue';
 import { MESSAGE_KINDS } from './messageContract';
 import { askerStartCommandCue } from './askerStartCommandCue';
 import { agentComputerBroker, agentComputerEnabled } from './agentComputerBroker';
@@ -1679,25 +1680,34 @@ export function buildUserMessage(
   // ('mention', 'chat.message', 'task.assigned', 'pod.join') that the caller
   // never speaks, and omits the types it does. `require()` at the call site
   // meant TypeScript never had to reconcile them.
-  // TASK-779: a heartbeat gets the native prompt even when the scheduler sent
-  // a cue. That cue is written for seats that read a HEARTBEAT.md file and
-  // return HEARTBEAT_OK; a hosted agent has no such file, and its cycle frame
-  // names commonly_log_cycle, which native turns lack, so nativeCueFromKernel
-  // drops it and the model is left with only "Read your HEARTBEAT.md". With
-  // nothing it can follow, it narrated, and a hosted turn posts any final text
-  // that is not a silent sentinel: Triage's 22:28:01Z heartbeat called no post
-  // tool, and its prose posted ten seconds later. Asking "do nothing" is no
-  // instruction to a model whose every final text is a post, so name NO_REPLY.
+  const inlineCue = String(payload.content || payload.prompt || payload.text || '').trim();
+
+  // TASK-779: a heartbeat always ends with the native prompt, which names
+  // NO_REPLY. A hosted turn posts any final text that is not a silent
+  // sentinel, so "otherwise do nothing" was no instruction: Triage's
+  // 22:28:01Z heartbeat called no post tool, and its prose posted ten seconds
+  // later. The scheduler's cue never reached that prompt anyway, because it
+  // rides in payload.content and won as the inline cue. Its seat lines
+  // ("Read your HEARTBEAT.md", "HEARTBEAT_OK is a return value") are for
+  // agents with that file, so they are cut; its cycle frame names a tool
+  // native turns lack, and nativeCueFromKernel drops it. Everything else in
+  // the content is kept: the unread-digest heartbeat's frame, and the digest
+  // summary runWithDigest appends, which is marked read after the turn.
   if (trigger.type === 'heartbeat') {
-    return (
+    const nativeHeartbeat = (
       `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
       + 'Use commonly_read_context to see recent activity, decide if anything needs '
       + 'your attention, and call commonly_post_message if something does. '
       + 'If nothing needs a post, reply with exactly NO_REPLY: any other final text is posted to the pod.'
     );
+    const kept = inlineCue.split('\n')
+      .filter((line) => !HEARTBEAT_SEAT_LINES.includes(line.trim()) && !isSchedulerHeartbeatPodLine(line))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return kept ? `${kept}\n\n${nativeHeartbeat}` : nativeHeartbeat;
   }
 
-  const inlineCue = String(payload.content || payload.prompt || payload.text || '').trim();
   if (inlineCue) return inlineCue;
 
   // Fallbacks below are for events that carry NO content. They keep the raw

@@ -103,4 +103,31 @@ describe('a hosted heartbeat with nothing to post returns NO_REPLY', () => {
     expect(out).not.toContain('HEARTBEAT_OK');
     expect(out).not.toContain('commonly_log_cycle');
   });
+
+  // The digest rides in a heartbeat's content too: runWithDigest appends the
+  // unread summary to any native event's payload.content, and the unread-
+  // digest heartbeat is only that. Both are marked read after a successful
+  // turn, so a heartbeat prompt that drops its content hides them for good.
+  const digestSummary = '[Unread since your last turn: 3 messages in thread 129000, 1 in the main channel.]';
+
+  it('keeps the digest the scheduled heartbeat carries, and still names NO_REPLY', () => {
+    const podId = '6aeb8bc75a12e3e23872e765';
+    const content = `${buildHeartbeatContent(podId)}\n\n${digestSummary}`;
+    const out = nativeCueFromKernel(buildUserMessage({ type: 'heartbeat', payload: { content } }, POD), podId, NATIVE_TOOL_NAMES);
+    expect(out).toContain(digestSummary);
+    expect(out).toContain('If nothing needs a post, reply with exactly NO_REPLY');
+    expect(out).not.toContain('HEARTBEAT.md');
+  });
+
+  it('keeps the unread-digest heartbeat\'s own frame and its digest, and names NO_REPLY', () => {
+    const frame = '[Unread pod activity is waiting. Read the digest in this inbox batch; respond only if useful.]';
+    const out = nativeCueFromKernel(
+      buildUserMessage({ type: 'heartbeat', payload: { trigger: 'unread-digest', content: `${frame}\n\n${digestSummary}` } }, POD),
+      'p1',
+      NATIVE_TOOL_NAMES,
+    );
+    expect(out.startsWith(frame)).toBe(true);
+    expect(out).toContain(digestSummary);
+    expect(out).toContain('If nothing needs a post, reply with exactly NO_REPLY');
+  });
 });
