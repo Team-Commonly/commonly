@@ -58,6 +58,7 @@ describe('ProtectedRoute admin gate', () => {
     );
     expect(screen.getByText('sign-in page')).toBeInTheDocument();
     expect(screen.queryByText('admin page')).toBeNull();
+    expect(axios.get).not.toHaveBeenCalled();
   });
 
   let errorSpy;
