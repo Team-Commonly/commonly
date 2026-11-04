@@ -29,15 +29,12 @@ const SURFACES = [
   'settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'byo-handoff',
   'firstrun-welcome', 'firstrun-waiting', 'firstrun-connected', 'firstrun-error', 'connect', 'team',
   'chat-agents-away', 'chat-trace', 'run-trace-after', 'profile', 'firstrun-welcome-nohost',
-  // Activity: the frames Sam approved 11-03 ("Build as drawn"), built in V2ActivityPage.
-  'activity-busy', 'activity-dayzero',
+  // Activity and Artifacts: the frames Sam approved 11-03 ("Build as drawn"), built in
+  // V2ActivityPage and V2ArtifactsPage.
+  'activity-busy', 'activity-dayzero', 'artifacts-busy', 'artifacts-dayzero',
 ];
 // Base frames (no data-state) that are drawn but deliberately not scored. Each needs a reason.
 const SKIPPED = {
-  // Artifacts is being redesigned in another session; targets taken now would pin frames that
-  // are about to change. Score them once that redesign lands.
-  'artifacts-busy': 'redesign in progress elsewhere',
-  'artifacts-dayzero': 'redesign in progress elsewhere',
   // Drawings of the old page beside their "after" frames (390 only). They are what the fix moves
   // away from, so they are never a target.
   'chat-trace-before': 'before shot, not a target',
@@ -47,8 +44,9 @@ const SKIPPED = {
 // a real key. The first-run dialog is a latch-gated overlay, and the Scout welcome only exists in a
 // brand-new pod. chat-agents-away and chat-trace need a pod in that exact state, run-trace-after a
 // run id and profile a person id, none of which prod() takes yet, so they are artboard-only for now.
-// activity-dayzero needs an account with no asks and no agents, so only the busy page is checked.
-const PROD_SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'connect', 'team', 'activity-busy'];
+// activity-dayzero needs an account with no asks and no agents, and artifacts-dayzero one with no
+// shared file, so only the two busy pages are checked on prod.
+const PROD_SURFACES = ['settings', 'agent-settings', 'agent-memory', 'board', 'connectors', 'chat', 'sidebar', 'byo', 'connect', 'team', 'activity-busy', 'artifacts-busy'];
 const VIEWPORTS = ['1440', '390'];
 const EXPECTED = SURFACES.flatMap(s => VIEWPORTS.map(v => `${s}-${v}`));
 
@@ -222,6 +220,7 @@ async function prod(only) {
     ['connect', () => '/v2/connect'],
     ['team', () => '/v2/agents'],
     ['activity-busy', () => '/v2/activity'],
+    ['artifacts-busy', () => '/v2/artifacts'],
     ['chat', () => `/v2/pods/${pod}`],
     ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];

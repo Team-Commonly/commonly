@@ -174,34 +174,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone).toMatch(/\.v2-profile \.v2-profile__follow, \.v2-profile \.v2-profile__edit \{[^}]*flex: 1 0 100%/);
   });
 
-  test('/v2/artifacts: on a phone the page head is the pinned 52px bar (d215 .mtop 390)', () => {
+  test('/v2/activity and /v2/artifacts: the shared phone head bar left v2.css with both pages (d215 builds)', () => {
     const v2 = readV2Css();
-    const barSelector = '.v2-artifacts__head {';
-    const phone = mediaBlockContaining(v2, '  .v2-artifacts__head {\n    position: sticky;');
-    // The head renders inside the scrolling .v2-feature__body; sticky is what keeps it on screen.
-    const bar = selectorRuleBody(phone, barSelector);
-    expect(bar).toContain('position: sticky');
-    expect(bar).toContain('top: 0');
-    expect(bar).toContain('min-height: 52px');
-    expect(bar).toContain('align-items: center');
-    expect(bar).toContain('border-bottom: 1px solid var(--v2-border-soft)');
-    // Opaque, or rows scroll visibly under the bar.
-    expect(bar).toContain('background: var(--v2-surface)');
-    // The compact 22px title, not the desktop 32px display head.
-    expect(selectorRuleBody(phone, '.v2-artifacts__head .v2-artifacts__title {')).toContain('font: 800 22px/1');
-    // The meta sits at the bar's right edge and truncates rather than wrapping.
-    expect(selectorRuleBody(phone, '.v2-artifacts__head .v2-page-head__meta {')).toContain('margin-left: auto');
-    // Artifacts pads its column 12px; the bar bleeds back out to the pane edges.
-    // ...and the column's 16px phone top padding is dropped, so the bar starts at 0,0 before any scroll.
-    expect(phone).toContain('.v2-artifacts { padding-top: 0; }');
-    expect(phone).toContain('.v2-artifacts__head { margin: 0 -12px; }');
-    expect(v2.indexOf(phone)).toBeGreaterThan(v2.indexOf('\n.v2-artifacts__head {'));
-    // ...and after the Artifacts phone rule, whose 16px top padding would push the bar down until scrolled.
-    const artifactsPhonePad = v2.indexOf('.v2-artifacts { padding: 16px 12px 0;');
-    expect(artifactsPhonePad).toBeGreaterThan(-1);
-    expect(v2.indexOf(phone)).toBeGreaterThan(artifactsPhonePad);
-    // Activity left this shared bar for its own sheet (d215 activity build).
+    // Each page now pins its own 52px bar in its own sheet (V2ActivityPage.css, V2ArtifactsPage.css),
+    // guarded in their describes below; a copy left here would fight those rules by source order.
     expect(v2).not.toContain('v2-activity');
+    expect(v2).not.toContain('v2-artifacts');
   });
 
 
@@ -956,64 +934,74 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toContain(':not(.v2-pods-aside):not(.v2-pane--inspector)');
   });
 
-  test('Artifacts (direction C, PR 5): display head, one segment grammar, bordered ext chip, mono numbers, phone block', () => {
-    const artifactsPage = fs.readFileSync(path.join(__dirname, '../components/V2ArtifactsPage.tsx'), 'utf8');
+  test('Artifacts (d215 #s-artifacts-signal): .ph head, one .seg and one .sel, pod groups of hairline rows, hover keys, 390 block', () => {
+    const page = read('../components/V2ArtifactsPage.tsx');
+    const ac = read('../components/V2ArtifactsPage.css');
     expect(v2App).toContain("'v2-feature--artifacts'");
     expect(v2App).toContain('<V2ArtifactsPage />');
-    expect(ruleBody(v2, '.v2-artifacts__title')).toContain('32px/1.1 var(--v2-font-display)');
-    expect(ruleBody(v2, '.v2-page-head__meta')).toContain('color: var(--v2-text-muted)');
-    expect(ruleBody(v2, '.v2-artifacts__seg')).toContain('border: 1px solid var(--v2-border)');
-    expect(ruleBody(v2, '.v2-root button.v2-artifacts__seg-button--active')).toContain('background: var(--v2-surface-hover)');
-    expect(ruleBody(v2, '.v2-root button.v2-artifacts__seg-button--active')).not.toContain('var(--v2-ink)');
-    const ext = ruleBody(v2, '.v2-artifacts__ext');
-    expect(ext).toContain('border: 1px solid var(--v2-border)');
+    expect(page).toContain("import './V2ArtifactsPage.css';");
+    // The page fills the pane; its head stays put and the body scrolls under it.
+    expect(ruleBody(ac, '.v2-feature--artifacts > .v2-feature__body')).toContain('overflow: hidden');
+    expect(ruleBody(ac, '.v2a-body')).toContain('overflow-y: auto');
+    // The retired table and two pill groups are gone from the sheet and the page.
+    expect(v2).not.toMatch(/\.v2-artifacts__(table|seg|controls|zero|head)\b/);
+    expect(page).not.toMatch(/<table|v2-artifacts__/);
+    // .ph: 64px, hairline under it, the 24px display title, mono count.
+    const head = ruleBody(ac, '.v2a-head');
+    expect(head).toContain('height: 64px');
+    expect(head).toContain('border-bottom: 1px solid var(--v2-border-soft)');
+    expect(ruleBody(ac, '.v2a-title')).toContain('font: 800 24px/1 var(--v2-font-display)');
+    expect(ruleBody(ac, '.v2a-meta')).toContain('var(--v2-font-mono)');
+    // Kind is the shared segment; pod is a native select dressed as the frame's .sel.
+    expect(page).toContain('<V2Segmented');
+    expect(page).toMatch(/<label className="v2a-sel">\s*<select/);
+    expect(ruleBody(ac, '.v2a-sel')).toContain('box-shadow: inset 0 0 0 1px var(--v2-border)');
+    // Groups: mono section label over one primitive list; rows split by hairlines, no rail (D225).
+    expect(page).toContain('className="v2p-gtitle v2a-gtitle"');
+    expect(page).toContain('className="v2p-list v2a-list"');
+    const row = ruleBody(ac, '.v2a-row');
+    expect(row).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(ac).toContain('.v2a-row:first-child { border-top: 0; }');
+    expect(ruleBody(ac, '.v2a-file')).toContain('grid-template-columns: 38px minmax(0, 1fr) auto');
+    expect(ac.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/border-(left|inline-start)|inset\s+-?[1-9]\d*px\s+0\s+0/);
+    // The type badge: the extension in mono on a grey key, never a colour square.
+    const ext = ruleBody(ac, '.v2a-ext');
+    expect(ext).toContain('background: var(--v2-surface-tint)');
     expect(ext).toContain('var(--v2-font-mono)');
-    expect(ruleBody(v2, '.v2-artifacts__mono')).toContain('var(--v2-font-mono)');
-    expect(ruleBody(v2, '.v2-artifacts__table-wrap')).toContain('overflow-x: auto');
-    expect(ruleBody(v2, '.v2-root button.v2-artifacts__more')).toContain('color: var(--v2-accent-text)');
-    // page = text/html only shows no size; the ext chip is the extension, never a colour square.
-    expect(artifactsPage).toContain("item.kind === 'page' ? '—' : formatSize(item.size)");
-    expect(artifactsPage).toContain('extOf(item.name)');
-    expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__controls \{ flex-direction: column; align-items: stretch; \}/);
-    // ux-lead 66462: mono floor 11 on the chip; the table spans the content area (no centred cap);
-    // ≤760 hides pod / shared-by / size and folds the pod under the name; the head is the pinned bar.
-    expect(ext).toContain('11px/14px var(--v2-font-mono)');
-    expect(ruleBody(v2, '.v2-workspace-inspector__ext')).toContain('11px/14px var(--v2-font-mono)');
-    expect(ruleBody(v2, '.v2-artifacts')).not.toContain('1040px');
-    expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__pod-line \{ display: block; flex: 1 1 100%; \}/);
-    expect(v2).not.toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-artifacts__title \{ font-size: 28px; \}/);
+    expect(page).toContain('extOf(item.name)');
+    expect(page).toContain("item.kind === 'page' ? '—' : formatSize(item.size)");
+    // The name is the row's open target: its hit area covers the row, the keys sit above it.
+    expect(ruleBody(ac, '.v2a-name::after')).toContain('inset: 0');
+    expect(ruleBody(ac, '.v2a-ac')).toContain('z-index: 1');
+    // Memory's hover keys: hidden at rest, shown on hover or focus, where they replace the size.
+    expect(ruleBody(ac, '.v2a-hv')).toContain('display: none');
+    expect(ac).toContain('.v2a-file:hover .v2a-hv, .v2a-file:focus-within .v2a-hv { display: flex; }');
+    expect(ac).toContain('.v2a-file:hover .v2a-size, .v2a-file:focus-within .v2a-size { display: none; }');
     // An image row opens the chat lightbox; pages and docs open in a new tab (66462 overrule).
-    expect(artifactsPage).toContain("if (item.kind === 'image') { setLightbox(item); return; }");
+    expect(page).toContain("if (item.kind === 'image') { setLightbox(item); return; }");
     expect(workspaceInspector).toContain("if (file.kind === 'image') { setLightbox(file); return; }");
     // Inspector Files pane: same rows, ext chip in front, All N files as cobalt text.
+    expect(ruleBody(v2, '.v2-workspace-inspector__ext')).toContain('11px/14px var(--v2-font-mono)');
     expect(workspaceInspector).toContain("'inspector.workspace.files'");
     expect(workspaceInspector).toContain('/api/artifacts?podId=');
     expect(ruleBody(v2, '.v2-root button.v2-workspace-inspector__all-files')).toContain('color: var(--v2-accent-text)');
   });
 
-  test('Artifacts day zero (d215 s-artifacts): one bordered card, an ink key, 44px full width at ≤760', () => {
-    const zero = ruleBody(v2, '.v2-artifacts__zero');
-    // Bordered, not dashed: the dashed line is the filtered-empty state.
-    expect(zero).toContain('border: 1px solid var(--v2-border)');
-    expect(zero).toContain('border-radius: var(--v2-radius)');
-    const key = ruleBody(v2, '.v2-root a.v2-artifacts__open');
-    expect(key).toContain('background: var(--v2-ink)');
-    expect(key).toContain('color: var(--v2-on-ink)');
-    expect(key).toContain('min-height: 32px');
-    // Pod names have no length limit: the label wraps inside the card instead of running past it.
-    expect(key).toContain('overflow-wrap: anywhere');
-    expect(key).not.toContain('nowrap');
-    // The 44px rule must sit INSIDE a ≤760 block, not at top level or in a narrower query:
-    // resolve the media block that actually encloses it (the enclosingMedia pattern above).
-    const enclosingMedia = (rule: string): string | null => {
-      const at = v2.indexOf(rule);
-      expect(at).toBeGreaterThan(-1);
-      const open = v2.lastIndexOf('@media', at);
-      if (open === -1) return null;
-      const close = v2.indexOf('\n}', open);
-      return close > at ? v2.slice(open, v2.indexOf('{', open)).trim() : null;
-    };
-    expect(enclosingMedia('.v2-root a.v2-artifacts__open { display: flex; width: 100%; min-height: 44px; }')).toBe('@media (max-width: 760px)');
+  test('Artifacts 390 (d215 .app.m.sg): 52px bar, 44px controls and keys, wrapping names, no sideways scroll', () => {
+    const ac = read('../components/V2ArtifactsPage.css');
+    const phone = blockContaining(ac, '@media (max-width: 760px)', '.v2a-head');
+    expect(ruleBody(phone, '.v2a-head', { within: phone })).toContain('height: 52px');
+    expect(ruleBody(phone, '.v2a-body', { within: phone })).toContain('padding: 12px 16px 16px');
+    expect(ruleBody(phone, '.v2a .v2a-searchkey', { within: phone })).toContain('height: 44px');
+    expect(ruleBody(phone, '.v2a-ctl .v2a-sel', { within: phone })).toContain('--box-h: 44px');
+    expect(ruleBody(phone, '.v2a .v2a-hv .v2p-ib', { within: phone })).toContain('height: 44px');
+    expect(ruleBody(phone, '.v2a .v2a-keys .v2a-open', { within: phone })).toContain('height: 44px');
+    expect(ruleBody(phone, '.v2a .v2a-foot .v2a-more', { within: phone })).toContain('height: 44px');
+    // On touch the ↓ key shows at rest, without the hover card's lift.
+    expect(ruleBody(phone, '.v2a-hv', { within: phone })).toContain('display: flex');
+    // Long and CJK names wrap inside the row instead of pushing it wide.
+    expect(ruleBody(phone, '.v2a-name', { within: phone })).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(ac, '.v2a-main')).toContain('min-width: 0');
   });
 
   test('workspace inspector is the small three-card replacement, with a phone sheet rather than legacy tabs', () => {

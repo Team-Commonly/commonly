@@ -1,15 +1,18 @@
-// Artifacts — direction C, PR 5 (ScaleArtifacts.dc.html).
+// Artifacts, d215 #s-artifacts-signal (approved 11-03, D242).
 // Every file and page shared in your pods, newest first, from one query:
 // GET /api/artifacts. The inspector's Files pane is the same query with
-// podId fixed; this page is the query with podId as a filter.
+// podId fixed; this page is the query with podId as a filter. Rows group by
+// pod in the order the query returns them, so pods sort by their newest file.
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { getSignedAttachmentUrl } from '../../utils/signedAttachmentUrl';
 import V2Lightbox from './V2Lightbox';
-import V2PageHead from './V2PageHead';
+import V2Segmented from './V2Segmented';
+import { usePhone } from '../connectors/usePhone';
 import { compactAge, compactNow } from '../utils/compactTime';
+import './V2ArtifactsPage.css';
 
 export type ArtifactKind = 'image' | 'page' | 'doc';
 export interface ArtifactItem {
@@ -31,7 +34,7 @@ const KINDS: Array<{ key: '' | ArtifactKind; label: string }> = [
   { key: '', label: 'all' }, { key: 'image', label: 'images' }, { key: 'doc', label: 'docs' }, { key: 'page', label: 'pages' },
 ];
 
-// The ext chip: the file's own extension, uppercase mono, bordered — never a colour square.
+// The type badge: the file's own extension, uppercase mono on a grey key, never a colour square.
 export const extOf = (name: string | null | undefined): string => {
   const m = /\.([a-z0-9]{1,5})$/i.exec(String(name || ''));
   return m ? m[1].toUpperCase() : 'FILE';
@@ -59,22 +62,76 @@ export const whenLabel = (value: string | null | undefined): string => {
   return compactAge('month', Math.floor(days / 30));
 };
 
-// Pods carry a long descriptive title; the table names them by the short leading name.
+// Pods carry a long descriptive title; the page names them by the short leading name.
 export const shortPodName = (name: string | null | undefined): string => (
   (name || '').trim().split(/\s*[·—–:|]\s*/)[0].trim() || (name || '').trim()
 );
 
+export interface ArtifactGroup { key: string; name: string; items: ArtifactItem[] }
+// One group per pod, in first-seen order. The list arrives newest first, so each group is newest
+// first and the groups run by their newest file; a second page appends into the groups it reaches.
+export const groupByPod = (list: ArtifactItem[]): ArtifactGroup[] => {
+  const groups = new Map<string, ArtifactGroup>();
+  list.forEach((item) => {
+    const key = item.podId || '';
+    let group = groups.get(key);
+    if (!group) { group = { key, name: shortPodName(item.podName) || '—', items: [] }; groups.set(key, group); }
+    group.items.push(item);
+  });
+  return [...groups.values()];
+};
+
 const artifactsQueryKey = (podId: string, kind: string, q: string): string => JSON.stringify([podId, kind, q]);
 const UNFILTERED = artifactsQueryKey('', '', '');
+// The shell trades the rail for the tab bar at this width; the page head becomes the 52px bar.
+const PHONE_QUERY = '(max-width: 760px)';
 
 const sharedByLabel = (item: ArtifactItem): string => item.sharedBy.displayName || item.sharedBy.username || '—';
+const sizeLabel = (item: ArtifactItem): string => (item.kind === 'page' ? '—' : formatSize(item.size));
+
+// The d215 sprite glyphs this page draws, at the artboard's stroke.
+const PATHS = {
+  layers: <><path d="M12 2 2 7l10 5 10-5-10-5z" /><path d="m2 17 10 5 10-5" /><path d="m2 12 10 5 10-5" /></>,
+  file: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6M16 13H8M16 17H8" /></>,
+  search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
+  chev: <path d="m6 9 6 6 6-6" />,
+  down: <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />,
+  open: <path d="M7 17 17 7M8 7h9v9" />,
+} as const;
+const Glyph: React.FC<{ name: keyof typeof PATHS }> = ({ name }) => (
+  <svg className="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">{PATHS[name]}</svg>
+);
+
+// Saves the file under its own name (CJK included). The bytes come through the same signed URL
+// the open path mints; when the blob read fails (CORS, network), the signed URL opens instead,
+// and the server's Content-Disposition decides between showing and saving.
+const saveFile = async (item: ArtifactItem): Promise<void> => {
+  const url = await getSignedAttachmentUrl(`/api/uploads/${item.fileName}`);
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`download ${res.status}`);
+    const href = URL.createObjectURL(await res.blob());
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    anchor.download = item.name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    globalThis.window.setTimeout(() => URL.revokeObjectURL(href), 0);
+  } catch {
+    globalThis.window.open(url, '_blank', 'noopener');
+  }
+};
 
 const V2ArtifactsPage: React.FC = () => {
   const { t } = useTranslation();
+  const phone = usePhone(PHONE_QUERY);
   const [searchParams, setSearchParams] = useSearchParams();
   const podId = searchParams.get('podId') || '';
   const kind = (searchParams.get('kind') || '') as '' | ArtifactKind;
   const [q, setQ] = useState(searchParams.get('q') || '');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [pods, setPods] = useState<PodRef[]>([]);
   const [items, setItems] = useState<ArtifactItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -85,7 +142,6 @@ const V2ArtifactsPage: React.FC = () => {
   // The query the shown result answers. Until a new one lands, items and total still belong to
   // the previous filter, so day zero must not read them as the unfiltered answer.
   const [loadedQuery, setLoadedQuery] = useState<string | null>(null);
-  const [podMenuOpen, setPodMenuOpen] = useState(false);
   // ux-lead 66462: an image row opens the chat lightbox; pages and docs open in a new tab.
   const [lightbox, setLightbox] = useState<ArtifactItem | null>(null);
 
@@ -159,19 +215,21 @@ const V2ArtifactsPage: React.FC = () => {
     }
   };
 
-  // Day zero (d215 s-artifacts): nothing shared and nothing filtered, so there is nothing to
-  // filter — no controls, no count, one card. A filtered empty result keeps the controls, and so
-  // does the render between clearing a filter and its answer landing (the result is still the
-  // filtered one), or the controls unmount under the person's focus.
-  // A search typed before its debounce reaches the URL counts too, or the input unmounts mid-word.
+  // Day zero: nothing shared and nothing filtered, so there is nothing to filter — no controls,
+  // no count, one quiet row. A filtered empty result keeps the controls, and so does the render
+  // between clearing a filter and its answer landing (the result is still the filtered one), or
+  // the controls unmount under the person's focus. A search typed before its debounce reaches
+  // the URL counts too, or the input unmounts mid-word.
   const dayZero = !loading && !error && total === 0 && items.length === 0 && !q && !urlQ && !kind && !podId
     && loadedQuery === UNFILTERED;
-  // The card's key opens the account's oldest pod: signup creates My Workspace first. /api/pods
+  // The row's key opens the account's oldest pod: signup creates My Workspace first. /api/pods
   // lists by last update, so pick by createdAt rather than position.
   const workspacePod = useMemo(() => {
     const createdMs = (pod: PodRef) => (pod.createdAt ? Date.parse(pod.createdAt) : Number.POSITIVE_INFINITY);
     return pods.reduce<PodRef | null>((oldest, pod) => (!oldest || createdMs(pod) < createdMs(oldest) ? pod : oldest), null);
   }, [pods]);
+
+  const groups = useMemo(() => groupByPod(items), [items]);
 
   const openItem = async (item: ArtifactItem) => {
     if (item.kind === 'image') { setLightbox(item); return; }
@@ -179,107 +237,146 @@ const V2ArtifactsPage: React.FC = () => {
     if (url) globalThis.window.open(url, '_blank', 'noopener');
   };
 
-  const scopedPods = pods;
-  const selectedPod = scopedPods.find((pod) => pod._id === podId) || null;
+  // "14 files · 2 pods". The API counts files, not pods, so the pod count shows only once every
+  // file is loaded and the groups on screen are the whole answer.
+  const meta = loading || dayZero ? null : [
+    t('artifacts.fileCount', { count: total }),
+    !nextCursor && !error ? t('artifacts.podCount', { count: groups.length }) : null,
+  ].filter(Boolean).join(' · ');
+
+  const searchField = (
+    <label className="v2a-search">
+      <Glyph name="search" />
+      <input type="search" value={q} placeholder={t('artifacts.searchPlaceholder')} aria-label={t('artifacts.searchPlaceholder')} onChange={(event) => setQ(event.target.value)} />
+      <span className="v2a-kb" aria-hidden="true">⌘K</span>
+    </label>
+  );
+  const kindSeg = (
+    <V2Segmented<'' | ArtifactKind>
+      className="v2a-seg"
+      ariaLabel={t('artifacts.kindLabel')}
+      value={kind}
+      onChange={(value) => setParam('kind', value)}
+      options={KINDS.map((option) => ({ value: option.key, label: t(`artifacts.kinds.${option.label}`) }))}
+    />
+  );
+  // A pod id in the URL that /api/pods does not list (yet) still reads as chosen.
+  const podOptions = podId && !pods.some((pod) => pod._id === podId) ? [...pods, { _id: podId, name: podId }] : pods;
+  const podSel = (
+    <label className="v2a-sel">
+      <select value={podId} aria-label={t('artifacts.podLabel')} onChange={(event) => setParam('podId', event.target.value)}>
+        <option value="">{t('artifacts.allPods')}</option>
+        {podOptions.map((pod) => <option key={pod._id} value={pod._id}>{shortPodName(pod.name)}</option>)}
+      </select>
+      <Glyph name="chev" />
+    </label>
+  );
+  const showSearch = !phone || searchOpen || Boolean(q);
 
   return (
-    <div className="v2-artifacts">
-      <V2PageHead
-        className="v2-artifacts__head"
-        titleClassName="v2-artifacts__title"
-        title={t('artifacts.title')}
-        meta={!loading && !dayZero ? total : undefined}
-        hint={t('artifacts.meta')}
-        hintLabel={t('artifacts.about')}
-      />
-      {!dayZero && (
-        <div className="v2-artifacts__controls">
-          <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.kindLabel')}>
-            {KINDS.map((option) => (
-              <button key={option.key || 'all'} type="button" className={`v2-artifacts__seg-button${kind === option.key ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={kind === option.key} onClick={() => setParam('kind', option.key)}>
-                {t(`artifacts.kinds.${option.label}`)}
-              </button>
-            ))}
-          </div>
-          <div className="v2-artifacts__seg" role="group" aria-label={t('artifacts.podLabel')} onKeyDown={(event) => { if (event.key === 'Escape') setPodMenuOpen(false); }}>
-            <button type="button" className={`v2-artifacts__seg-button${!podId ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={!podId} onClick={() => { setParam('podId', ''); setPodMenuOpen(false); }}>{t('artifacts.allPods')}</button>
-            {scopedPods.slice(0, 2).map((pod) => (
-              <button key={pod._id} type="button" className={`v2-artifacts__seg-button${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} aria-pressed={podId === pod._id} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
-            ))}
-            {scopedPods.length > 2 && (
-              <button type="button" className={`v2-artifacts__seg-button${scopedPods.slice(2).some((pod) => pod._id === podId) ? ' v2-artifacts__seg-button--active' : ''}`} aria-expanded={podMenuOpen} onClick={() => setPodMenuOpen((open) => !open)}>
-                {selectedPod && scopedPods.slice(2).some((pod) => pod._id === podId) ? shortPodName(selectedPod.name) : t('artifacts.morePods')}
-              </button>
-            )}
-            {podMenuOpen && (
-              <div className="v2-artifacts__seg-menu" role="listbox" aria-label={t('artifacts.podLabel')}>
-                {scopedPods.slice(2).map((pod) => (
-                  <button key={pod._id} type="button" role="option" aria-selected={podId === pod._id} className={`v2-artifacts__seg-button v2-artifacts__seg-button--menu${podId === pod._id ? ' v2-artifacts__seg-button--active' : ''}`} onClick={() => { setParam('podId', pod._id); setPodMenuOpen(false); }}>{shortPodName(pod.name)}</button>
-                ))}
-              </div>
-            )}
-          </div>
-          <label className="v2-artifacts__search">
-            <input type="search" value={q} placeholder={t('artifacts.searchPlaceholder')} aria-label={t('artifacts.searchPlaceholder')} onChange={(event) => setQ(event.target.value)} />
-            <span className="v2-artifacts__search-key" aria-hidden="true">⌘K</span>
-          </label>
-        </div>
-      )}
+    <div className="v2a">
+      <header className="v2a-head">
+        <h1 className="v2a-title">{t('artifacts.title')}</h1>
+        {meta && <span className="v2a-meta">{meta}</span>}
+        <span className="v2a-sp" />
+        {!dayZero && !phone && (
+          <>
+            {searchField}
+            {kindSeg}
+            {podSel}
+          </>
+        )}
+        {!dayZero && phone && (
+          <button
+            type="button"
+            className="v2p-b v2p-b-g v2p-ib v2a-searchkey"
+            aria-label={t('artifacts.searchPlaceholder')}
+            aria-expanded={showSearch}
+            onClick={() => setSearchOpen((open) => !open)}
+          >
+            <Glyph name="search" />
+          </button>
+        )}
+      </header>
 
-      {error && <div className="v2-artifacts__error" role="alert">{error}</div>}
-      {loading && !error && <div className="v2-artifacts__loading"><span className="v2-spinner" /></div>}
-      {dayZero && (
-        <section className="v2-artifacts__zero" aria-labelledby="v2-artifacts-zero-title">
-          <h2 id="v2-artifacts-zero-title">{t('artifacts.dayZero.title')}</h2>
-          <p>{t('artifacts.dayZero.body')}</p>
-          {workspacePod && <Link className="v2-artifacts__open" to={`/v2/pods/${workspacePod._id}`}>{t('artifacts.dayZero.open', { pod: workspacePod.name })}</Link>}
-        </section>
-      )}
-      {!loading && !error && items.length === 0 && (urlQ || kind || podId) && (
-        <div className="v2-artifacts__empty">{t('artifacts.emptyFiltered')}</div>
-      )}
-      {!loading && items.length > 0 && (
-        <div className="v2-artifacts__table-wrap">
-          <table className="v2-artifacts__table">
-            <thead>
-              <tr>
-                <th scope="col">{t('artifacts.columns.file')}</th>
-                <th scope="col">{t('artifacts.columns.kind')}</th>
-                <th scope="col">{t('artifacts.columns.pod')}</th>
-                <th scope="col">{t('artifacts.columns.sharedBy')}</th>
-                <th scope="col">{t('artifacts.columns.when')}</th>
-                <th scope="col">{t('artifacts.columns.size')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="v2-artifacts__row">
-                  <td>
-                    <div className="v2-artifacts__file">
-                      <span className="v2-artifacts__ext" aria-hidden="true">{extOf(item.name)}</span>
-                      <button type="button" className="v2-artifacts__name" onClick={() => { void openItem(item); }}>{item.name}</button>
-                      {/* ≤760 (66462 miss 2): the pod folds under the name as a mono line; the pod column hides. */}
-                      <span className="v2-artifacts__pod-line">{shortPodName(item.podName)}</span>
+      <div className="v2a-body">
+        <div className="v2a-col">
+          {!dayZero && phone && (
+            <>
+              {showSearch && searchField}
+              <div className="v2a-ctl">{kindSeg}{podSel}</div>
+            </>
+          )}
+
+          {error && <div className="v2p-list"><div className="v2a-row v2a-row--one" role="alert"><Glyph name="file" /><div className="v2a-tx v2a-tx--plain">{error}</div></div></div>}
+          {loading && !error && <div className="v2a-loading"><span className="v2-spinner" /></div>}
+          {dayZero && (
+            <div className="v2p-list">
+              <div className={`v2a-row ${phone ? 'v2a-row--open' : 'v2a-row--one'}`}>
+                <Glyph name="file" />
+                <div>
+                  <p className="v2a-tx v2a-tx--plain">{t('artifacts.dayZero.body')}</p>
+                  {phone && workspacePod && (
+                    <div className="v2a-keys">
+                      <Link className="v2p-b v2p-b-s v2a-open" to={`/v2/pods/${workspacePod._id}`}>{t('artifacts.dayZero.open', { pod: workspacePod.name })}</Link>
                     </div>
-                  </td>
-                  <td className="v2-artifacts__mono">{t(`artifacts.kindNames.${item.kind}`)}</td>
-                  <td>{shortPodName(item.podName)}</td>
-                  <td>{sharedByLabel(item)}</td>
-                  <td className="v2-artifacts__mono">{whenLabel(item.createdAt)}</td>
-                  <td className="v2-artifacts__mono">{item.kind === 'page' ? '—' : formatSize(item.size)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  )}
+                </div>
+                {!phone && workspacePod && (
+                  <span className="v2a-ac">
+                    <Link className="v2p-b v2p-b-s v2p-b-sm v2a-open" to={`/v2/pods/${workspacePod._id}`}>{t('artifacts.dayZero.open', { pod: workspacePod.name })}</Link>
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          {!loading && !error && items.length === 0 && (urlQ || kind || podId) && (
+            <div className="v2p-list"><p className="v2a-empty">{t('artifacts.emptyFiltered')}</p></div>
+          )}
+          {!loading && groups.map((group) => (
+            <section key={group.key} className="v2a-group" aria-label={group.name}>
+              <h2 className="v2p-gtitle v2a-gtitle"><Glyph name="layers" />{group.name}</h2>
+              <ul className="v2p-list v2a-list">
+                {group.items.map((item) => {
+                  const size = sizeLabel(item);
+                  return (
+                    <li key={item.id} className="v2a-row v2a-file">
+                      <span className="v2a-ext" aria-hidden="true">{extOf(item.name)}</span>
+                      <div className="v2a-main">
+                        <button type="button" className="v2a-name" onClick={() => { void openItem(item); }}>{item.name}</button>
+                        <div className="v2a-sn">
+                          {sharedByLabel(item)} · {whenLabel(item.createdAt)}
+                          {phone && size !== '—' && <> · <span className="v2a-mo">{size}</span></>}
+                        </div>
+                      </div>
+                      <span className="v2a-ac">
+                        <span className="v2a-hv">
+                          {!phone && (
+                            <button type="button" className="v2p-b v2p-b-g v2p-ib v2p-b-sm" title={t('artifacts.open')} aria-label={t('artifacts.openFile', { name: item.name })} onClick={() => { void openItem(item); }}>
+                              <Glyph name="open" />
+                            </button>
+                          )}
+                          <button type="button" className={`v2p-b v2p-b-g v2p-ib${phone ? '' : ' v2p-b-sm'}`} title={t('artifacts.download')} aria-label={t('artifacts.downloadFile', { name: item.name })} onClick={() => { void saveFile(item); }}>
+                            <Glyph name="down" />
+                          </button>
+                        </span>
+                        {!phone && <span className="v2a-mo v2a-size">{size}</span>}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
+          {!loading && items.length > 0 && (
+            <div className="v2a-foot">
+              <span className="v2a-mo">{t('artifacts.foot', { shown: items.length, total })}</span>
+              {nextCursor && <button type="button" className="v2p-b v2p-b-g v2p-b-sm v2a-more" onClick={() => { void loadMore(); }} disabled={loadingMore}>{loadingMore ? t('artifacts.loadingMore') : t('artifacts.more', { count: Math.max(total - items.length, 0) })}</button>}
+            </div>
+          )}
         </div>
-      )}
+      </div>
       {lightbox && <V2Lightbox images={[{ src: `/api/uploads/${lightbox.fileName}`, name: lightbox.name }]} index={0} onClose={() => setLightbox(null)} />}
-      {!loading && items.length > 0 && (
-        <div className="v2-artifacts__foot">
-          <span className="v2-artifacts__mono">{t('artifacts.foot', { shown: items.length, total })}</span>
-          {nextCursor && <button type="button" className="v2-artifacts__more" onClick={() => { void loadMore(); }} disabled={loadingMore}>{loadingMore ? t('artifacts.loadingMore') : t('artifacts.more', { count: Math.max(total - items.length, 0) })}</button>}
-        </div>
-      )}
     </div>
   );
 };
