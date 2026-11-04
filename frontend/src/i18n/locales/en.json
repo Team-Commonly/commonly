@@ -2859,7 +2859,31 @@
       },
       "agentsUnavailable": "couldn't read your agents just now · reload to try again"
     },
-    "chooseKey": "Choose a key"
+    "chooseKey": "Choose a key",
+    "byo": {
+      "consent": "{{agent}} runs on your computer, outside Commonly. Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.",
+      "consentNoSandbox": "{{agent}} runs on your computer, outside Commonly, with no sandbox. Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.",
+      "readOnlyHint": "An agent on your computer can only read.",
+      "reasonUnconfinedHost": "Runs on native Windows, where no grant can be used.",
+      "reasonAdapterUnsupported": "Only Claude Code or Codex agents can be named.",
+      "namedHeading": "on your computer",
+      "named": "{{agent}} runs outside Commonly",
+      "namedNoSandbox": "{{agent}} runs outside Commonly, with no sandbox",
+      "remove": "Remove",
+      "removeLabel": "Remove {{agent}} from this grant",
+      "removeError": "Could not remove {{agent}}.",
+      "removeHint": "While an agent is still in this Pod, removing it pauses the whole grant. Take the agent out of the Pod to resume it.",
+      "errors": {
+        "readOnly": "An agent that runs on your computer can be named only on a read-only grant.",
+        "consentRequired": "Tick the box to confirm that what this agent reads can leave through it.",
+        "limitedUse": "This connector is used only by Commonly-hosted agents.",
+        "notAudience": "Name an agent that this grant reaches.",
+        "notAgent": "Only an agent can be named on a grant.",
+        "notOwned": "You can name only an agent you installed, and that no one else installed.",
+        "unconfinedHost": "This agent runs on native Windows, where no grant can be used.",
+        "adapterUnsupported": "Only a Claude Code or Codex agent can be named on a grant."
+      }
+    }
   },
   "agentManage": {
     "runtime": {

@@ -15,12 +15,15 @@ import {
   PER_ENTRY_REVOKE_COPY,
 } from './toolModel';
 import type {
+  ByoCandidate,
+  ByoSandbox,
   GrantWriteMode,
   ToolGrant,
   ToolOutcome,
   ToolCatalogEntry,
   HiddenToolConnection,
   ToolConnection,
+  PodSeat,
 } from './toolModel';
 import type { ToolConnectorsModel } from './useToolConnectors';
 import OperatorKeyForm from './OperatorKeyForm';
@@ -103,6 +106,11 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     draftBoundAgent,
     startingAudience,
     selectedAgentIds,
+    draftByoCandidates,
+    draftByoNamed,
+    draftByoKey,
+    draftByoConsented,
+    removeByoAgent,
     submitDraft,
     fixJoinPolicy,
     connectHostedMcp,
@@ -523,11 +531,30 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
     );
   };
 
+  // F94: the disclosure for one agent that runs outside Commonly. The server
+  // records 'confined' only on evidence, so anything else reads as no sandbox.
+  const byoAgentLabel = (agent: ByoCandidate) => agentNameById(agent.userId) || agent.agentName;
+  const byoConsentLine = (agent: ByoCandidate) => (agent.sandbox !== 'confined'
+    ? t('tools.byo.consentNoSandbox', { agent: byoAgentLabel(agent) })
+    : t('tools.byo.consent', { agent: byoAgentLabel(agent) }));
+  const byoReason = (agent: ByoCandidate) => (agent.reason === 'unconfined_host'
+    ? t('tools.byo.reasonUnconfinedHost')
+    : t('tools.byo.reasonAdapterUnsupported'));
+  const byoNamedLine = (name: string, sandbox: ByoSandbox | undefined) => (sandbox !== 'confined'
+    ? t('tools.byo.namedNoSandbox', { agent: name })
+    : t('tools.byo.named', { agent: name }));
+
   const renderDraft = () => {
     if (!draft || !draftEntry) return null;
     const podSeats = seats[draft.podId] || [];
     // A key connection offers only its own agent: the route refuses any other.
-    const offeredSeats = draftBoundAgent ? podSeats.filter((seat) => seat.userId === draftBoundAgent) : podSeats;
+    // The viewer's agents that run outside Commonly join the roster when it hid them.
+    const byoOnly: PodSeat[] = draftByoCandidates
+      .filter((agent) => !podSeats.some((seat) => seat.userId === agent.userId))
+      .map((agent) => ({ userId: agent.userId, name: agent.agentName, instanceId: agent.instanceId }));
+    const allSeats = [...podSeats, ...byoOnly];
+    const offeredSeats = draftBoundAgent ? allSeats.filter((seat) => seat.userId === draftBoundAgent) : allSeats;
+    const naming = draftByoNamed.length > 0;
     const boundAbsent = Boolean(draftBoundAgent) && offeredSeats.length === 0;
     const boundName = draftBoundAgent ? (agentNameById(draftBoundAgent) || memberName(draftBoundAgent)) : null;
     // A key grant whose key was removed opens with no key chosen (openDraft):
@@ -590,18 +617,19 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
               <span>{t('tools.mode', { defaultValue: 'what it may do' })}</span>
               <div className="v2-connector-aside__mode" role="group" aria-label={t('tools.mode', { defaultValue: 'what it may do' })}>
                 {entryGrantModes(draftEntry).map((mode) => (
-                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
+                  <button key={mode} type="button" aria-pressed={draft.writeMode === mode} disabled={naming && mode !== 'read'} className={draft.writeMode === mode ? 'v2-connector-aside__mode-opt v2-connector-aside__mode-opt--on' : 'v2-connector-aside__mode-opt'} onClick={() => setDraft({ ...draft, writeMode: mode })}>
                     {modeLabel(mode)}
                   </button>
                 ))}
               </div>
+              {naming && entryGrantModes(draftEntry).length > 1 && <span className="v2-tools__hint">{t('tools.byo.readOnlyHint')}</span>}
               <span className="v2-tools__hint">{tools.length ? tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</span>
               <span className="v2-tools__hint">{asks}</span>
             </div>
             {!keyPending && (
             <fieldset className="v2-tools__field v2-tools__agents">
               <legend>{t('tools.agents', { defaultValue: 'agents' })}</legend>
-              {!draftBoundAgent && podSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
+              {!draftBoundAgent && allSeats.length === 0 && <span className="v2-tools__hint">{t('tools.noSeats', { defaultValue: 'no agent in this pod yet' })}</span>}
               {boundAbsent && (
                 <span className="v2-tools__hint" role="status">
                   {boundName
@@ -609,12 +637,20 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                     : t('tools.keyAgentNotInPodUnnamed', { defaultValue: "This key's agent isn't in this pod." })}
                 </span>
               )}
-              {offeredSeats.map((seat) => seat.userId && (
-                <label key={seat.userId} className="v2-connector-aside__relay">
-                  <input type="checkbox" checked={draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
-                  {seat.displayName || seat.name}
-                </label>
-              ))}
+              {offeredSeats.map((seat) => {
+                if (!seat.userId) return null;
+                const byo = draftByoCandidates.find((agent) => agent.userId === seat.userId);
+                const unnameable = Boolean(byo && !byo.nameable);
+                return (
+                  <React.Fragment key={seat.userId}>
+                    <label className="v2-connector-aside__relay">
+                      <input type="checkbox" disabled={unnameable} checked={!unnameable && draft.audience.includes(seat.userId)} onChange={(event) => setDraft({ ...draft, audience: event.target.checked ? [...draft.audience, seat.userId as string] : draft.audience.filter((id) => id !== seat.userId) })} />
+                      {seat.displayName || seat.name}
+                    </label>
+                    {byo && unnameable && <span className="v2-tools__hint">{byoReason(byo)}</span>}
+                  </React.Fragment>
+                );
+              })}
               {draftBoundAgent && !boundAbsent && (
                 <span className="v2-tools__hint">{t('tools.keyOnlyAgent', { defaultValue: 'Only {{agent}} can use this key.', agent: boundName || t('tools.aSeat', { defaultValue: 'an agent' }) })}</span>
               )}
@@ -633,9 +669,16 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
                 <option value={90}>{t('tools.days', { defaultValue: 'in {{count}} days', count: 90 })}</option>
               </select>
             </label>
+            {/* F94: one consent for the agents this grant names, each with its sandbox state. */}
+            {naming && (
+              <label className="v2-connector-aside__relay">
+                <input type="checkbox" checked={draftByoConsented} onChange={(event) => setDraft({ ...draft, byoConsentFor: event.target.checked ? draftByoKey : null })} />
+                <span>{draftByoNamed.map((agent) => byoConsentLine(agent)).join(t('tools.sentenceSeparator', { defaultValue: ' ' }))}</span>
+              </label>
+            )}
           </div>
           <div className="v2-connector-aside__actions">
-            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || selectedAgentIds.length === 0 || tools.length === 0} onClick={() => { void submitDraft(); }}>
+            <button type="button" className="v2-connector-aside__primary" disabled={busy || !draft.connectionId || !draft.podId || selectedAgentIds.length === 0 || tools.length === 0 || (naming && !draftByoConsented)} onClick={() => { void submitDraft(); }}>
               {busy ? t('tools.granting', { defaultValue: 'Granting…' }) : t('tools.grantAct', { defaultValue: 'Grant' })}
             </button>
             <button type="button" className="v2-connector-aside__secondary" disabled={busy} onClick={() => setDraft(null)}>
@@ -688,6 +731,28 @@ export const useToolPanels = (m: ToolConnectorsModel) => {
             <dd>{grant.tools.length ? grant.tools.map((tool) => <code key={tool}>{tool}</code>) : t('tools.noTools', { defaultValue: 'no tools on the allow-list' })}</dd>
             <dt>{t('tools.asksFirst', { defaultValue: 'asks a person first' })}</dt>
             <dd>{asksFirst(grant)}</dd>
+            {(grant.byoAgents || []).length > 0 && (
+              <>
+                <dt>{t('tools.byo.namedHeading')}</dt>
+                <dd>
+                  {(grant.byoAgents || []).map((agentId) => {
+                    const name = seatLabel(podId, agentId);
+                    const sandbox = grant.byoConsent?.agents.find((agent) => agent.userId === agentId)?.sandbox;
+                    return (
+                      <span key={agentId} className="v2-connector-aside__actions">
+                        <span className="v2-connector-aside__conn">{byoNamedLine(name, sandbox)}</span>
+                        {!dead && isGranter(grant) && !grant.parentGrantId && (
+                          <button type="button" className="v2-connector-aside__secondary" disabled={busy} aria-label={t('tools.byo.removeLabel', { agent: name })} onClick={() => { void removeByoAgent(grant, agentId, name); }}>
+                            {t('tools.byo.remove')}
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                  {!dead && isGranter(grant) && !grant.parentGrantId && <span className="v2-tools__hint">{t('tools.byo.removeHint')}</span>}
+                </dd>
+              </>
+            )}
             {grant.budget?.calls !== undefined && (
               <>
                 <dt>{t('tools.budget', { defaultValue: 'budget' })}</dt>

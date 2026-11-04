@@ -159,7 +159,8 @@ describe('POST /api/grants', () => {
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ error: `outsider_grant_${reason}` });
     expect(res.body.message).toMatch(/separate pod/);
-    expect(outsiderGrantPodRefusal).toHaveBeenCalledWith(target, 'read');
+    // A grant naming no BYO agent exempts nobody from the pod gate (F94).
+    expect(outsiderGrantPodRefusal).toHaveBeenCalledWith(target, 'read', { exemptAgentIds: [] });
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 
@@ -170,7 +171,7 @@ describe('POST /api/grants', () => {
     expect(res.body).toMatchObject({ error: 'outsider_grant_pod_joinable' });
     expect(res.body.message).toMatch(/Agents can self-install into this pod/);
     expect(outsiderGrantPodRefusal).toHaveBeenLastCalledWith(
-      { kind: 'pod', id: POD }, 'read', { assumeInviteOnly: true },
+      { kind: 'pod', id: POD }, 'read', { assumeInviteOnly: true, exemptAgentIds: [] },
     );
   });
 

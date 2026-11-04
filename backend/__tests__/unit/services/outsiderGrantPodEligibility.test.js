@@ -163,3 +163,49 @@ test('each pod change after an eligible attach is seen by the next check', async
   bridges.push({ type: 'slack', scope: 'pod', podId: POD, status: 'connected', isActive: true });
   expect(await outsiderGrantPodRefusal(target)).toBe('pod_bridged');
 });
+
+describe('F94: an agent the grant names may run outside the narrowed runtime', () => {
+  const BYO = 'dddddddddddddddddddddddd';
+  const OTHER_BYO = 'eeeeeeeeeeeeeeeeeeeeeeee';
+  const byoUser = (id, agentName) => ({
+    _id: id, isBot: true, botType: 'agent', botMetadata: { agentName, instanceId: 'default' },
+  });
+  const byoInstall = (agentName) => ({
+    agentName, instanceId: 'default', config: { runtime: { runtimeType: 'local-cli' } },
+  });
+
+  beforeEach(() => {
+    pod.members.push(BYO);
+    users.push(byoUser(BYO, 'lily-claude'));
+    installations.push(byoInstall('lily-claude'));
+  });
+
+  test('a named BYO agent no longer refuses the pod; unnamed it still does', async () => {
+    expect(await outsiderGrantPodRefusal(target, 'read')).toBe('non_native_agent');
+    expect(await outsiderGrantPodRefusal(target, 'read', { exemptAgentIds: [BYO] })).toBeNull();
+  });
+
+  test('naming one BYO agent does not admit another BYO member', async () => {
+    pod.members.push(OTHER_BYO);
+    users.push(byoUser(OTHER_BYO, 'someone-codex'));
+    installations.push(byoInstall('someone-codex'));
+    expect(await outsiderGrantPodRefusal(target, 'read', { exemptAgentIds: [BYO] })).toBe('non_native_agent');
+  });
+
+  test('the exemption lifts only the runtime check, never the pod checks', async () => {
+    const exempt = { exemptAgentIds: [BYO] };
+    pod.publicRead = true;
+    expect(await outsiderGrantPodRefusal(target, 'read', exempt)).toBe('pod_not_private');
+    pod.publicRead = false;
+    pod.joinPolicy = 'open';
+    expect(await outsiderGrantPodRefusal(target, 'read', exempt)).toBe('pod_joinable');
+    pod.joinPolicy = 'invite-only';
+    bridges.push({ type: 'slack', scope: 'pod', podId: POD, status: 'connected', isActive: true });
+    expect(await outsiderGrantPodRefusal(target, 'read', exempt)).toBe('pod_bridged');
+  });
+
+  test('a named member that is not an agent row still refuses', async () => {
+    users[users.length - 1] = { _id: BYO, isBot: true, botType: 'bridge-bot', botMetadata: { agentName: 'lily-claude' } };
+    expect(await outsiderGrantPodRefusal(target, 'read', { exemptAgentIds: [BYO] })).toBe('non_native_agent');
+  });
+});

@@ -94,7 +94,7 @@ const trailRow = (over = {}) => ({
 // liveness either.
 const FIELDS = ['grantId', 'installationId', 'target', 'tools', 'writeMode', 'budget', 'effectiveAudience',
   'expiresAt', 'revokedAt', 'revokedBy', 'parentGrantId', 'rootGrantId', 'createdAt', 'grantedBy',
-  'grantBrokerRefusal', 'grantBrokerRefusalScope', 'connector'];
+  'grantBrokerRefusal', 'grantBrokerRefusalScope', 'connector', 'byoAgents'];
 
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();

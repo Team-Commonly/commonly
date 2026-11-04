@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
 import { GrantBrokerRefusal, grantBrokerRefusal } from '../services/grantBrokerConfinement';
+import { namingLiftsFor, namingLiftsRefusal } from '../services/byoGrantNaming';
 import { KERNEL_RUN_RUNTIME_TYPES } from '../services/configWriteGuard';
 import {
   grantBrokerServer,
@@ -126,7 +127,11 @@ const grantServersForIdentities = async (
     for (const grant of grants) {
       const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
       if (!grantId) continue;
-      if (refusal) {
+      // F94: a grant that names this seat (its owner's own agent, with consent)
+      // rides even when the seat cannot confine it.
+      // eslint-disable-next-line no-await-in-loop
+      const byoNamed = namingLiftsRefusal(refusal) && await namingLiftsFor(grant, identityId);
+      if (refusal && !byoNamed) {
         // The grant is live and applies to this seat; the seat cannot be held
         // to it, so it is withheld rather than projected unenforced.
         refused = true;
@@ -136,7 +141,7 @@ const grantServersForIdentities = async (
       let serverName = GRANT_BROKER_ID;
       if (usedNames.has(serverName)) serverName = `${GRANT_BROKER_ID}-${grantId}`;
       usedNames.add(serverName);
-      servers.push(grantBrokerServer(grantId, serverName));
+      servers.push(grantBrokerServer(grantId, serverName, { byoNamed }));
     }
     if (servers.length || refused) {
       output.set(identityId, { servers, refusal: refused ? refusal : null });

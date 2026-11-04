@@ -134,6 +134,64 @@ describe('GET /assigned — grant broker confinement', () => {
     expect(row.environment.sandbox).toEqual({ mode: 'workspace', trust: 'private' });
   });
 
+  describe('F94: a grant that names the seat', () => {
+    const nameSeat = async (consent = true) => {
+      const bot = await User.findOne({ 'botMetadata.agentName': AGENT_NAME }).lean();
+      await User.updateOne({ _id: bot._id }, { $set: { botType: 'agent' } });
+      await RoomGrant.updateMany({}, {
+        $set: {
+          ownerId: global.__CALLER_ID,
+          byoAgents: [String(bot._id)],
+          ...(consent ? {
+            byoConsent: {
+              by: global.__CALLER_ID, at: new Date(), version: 'byo-v1',
+              agents: [{ userId: String(bot._id), sandbox: 'unconfined' }],
+            },
+          } : {}),
+        },
+      });
+    };
+
+    it('reaches a seat the server cannot confine, flagged as named', async () => {
+      await seed({ mode: 'workspace', trust: 'private' });
+      await nameSeat();
+      const row = await assigned();
+      const broker = row.environment.mcp.find((server) => server.name === GRANT_BROKER_ID);
+      expect(broker).toMatchObject({ transport: 'http', byoNamed: true });
+      expect(row.grantBrokerRefusal).toBeUndefined();
+    });
+
+    it('stays withheld once someone else also installs the seat\'s identity', async () => {
+      await seed({ mode: 'workspace', trust: 'private' });
+      await nameSeat();
+      const other = await User.create({ username: `x${Date.now() % 1e6}`, email: `x${Date.now()}@x.com`, password: 'x'.repeat(12) });
+      const otherPod = await Pod.create({ name: `q${Date.now()}`, createdBy: other._id, members: [other._id] });
+      await AgentInstallation.create({
+        agentName: AGENT_NAME, instanceId: 'default', podId: otherPod._id,
+        version: '1.0.0', status: 'active', installedBy: other._id, config: {},
+      });
+      const row = await assigned();
+      expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
+    });
+
+    it('stays withheld when the grant carries no consent record', async () => {
+      await seed({ mode: 'workspace', trust: 'private' });
+      await nameSeat(false);
+      const row = await assigned();
+      expect(mcpNames(row)).not.toContain(GRANT_BROKER_ID);
+      expect(row.grantBrokerRefusal).toMatchObject({ reason: 'sandbox_trust_not_public' });
+    });
+
+    it('is not flagged on a seat the server can confine', async () => {
+      await seed({ mode: 'workspace', trust: 'public' });
+      await nameSeat();
+      const row = await assigned();
+      const broker = row.environment.mcp.find((server) => server.name === GRANT_BROKER_ID);
+      expect(broker).toBeDefined();
+      expect(broker.byoNamed).toBeUndefined();
+    });
+  });
+
   it('withholds the broker when the declared mode is none', async () => {
     await seed({ mode: 'none', trust: 'public' });
     const row = await assigned();

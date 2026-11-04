@@ -3,7 +3,8 @@ const { createHash } = require('crypto');
 const mockRoomGrant = { findOne: jest.fn() };
 const mockPod = { findById: jest.fn() };
 const mockIntegration = { findOne: jest.fn(), findById: jest.fn() };
-const mockUser = { findById: jest.fn() };
+const mockUser = { findById: jest.fn(), find: jest.fn() };
+const mockOwnsRuntimeIdentity = jest.fn();
 const mockToolCall = { create: jest.fn() };
 const mockGithub = {
   listOpenIssues: jest.fn(),
@@ -22,6 +23,9 @@ jest.mock('../../../models/RoomGrant', () => ({ __esModule: true, default: mockR
 jest.mock('../../../models/Pod', () => ({ __esModule: true, default: mockPod }));
 jest.mock('../../../models/Integration', () => ({ __esModule: true, default: mockIntegration }));
 jest.mock('../../../models/User', () => ({ __esModule: true, default: mockUser }));
+jest.mock('../../../services/runtimeIdentityOwnership', () => ({
+  ownsRuntimeIdentity: (...args) => mockOwnsRuntimeIdentity(...args),
+}));
 jest.mock('../../../models/ToolCall', () => ({
   __esModule: true,
   default: mockToolCall,
@@ -90,6 +94,7 @@ const {
 } = require('../../../services/toolBrokerService');
 // eslint-disable-next-line import/no-unresolved, import/extensions
 const { assertGrantUsable, getGrantLineage, RoomGrantError } = require('../../../services/roomGrantService');
+const { outsiderGrantPodRefusal } = require('../../../services/outsiderGrantPodEligibility');
 
 // The row a grant was minted for always predates the grant; the guard compares
 // these two, so both fixtures carry the field the models always write.
@@ -192,6 +197,139 @@ describe('tool broker guard rails', () => {
       outcome: 'refused',
       reason: 'grant_broker_unconfined',
     }));
+  });
+
+  describe('F94: an agent the grant names, outside Commonly', () => {
+    const unconfined = {
+      refusal: {
+        code: 'grant_broker_unconfined', decidedBy: 'server', reason: 'sandbox_trust_not_public', detail: 'workspace trust',
+      },
+      scope: 'seat',
+    };
+    beforeEach(() => {
+      mockUser.find.mockReturnValue({
+        select: () => ({ lean: async () => [{ _id: 'agent-a', botMetadata: { agentName: 'lily-claude', instanceId: 'default' } }] }),
+      });
+      mockOwnsRuntimeIdentity.mockResolvedValue({ owned: true });
+    });
+    const named = (over = {}) => seatGrant({
+      ownerId: 'owner-1',
+      tools: ['github.list_issues'],
+      byoAgents: ['agent-a'],
+      byoConsent: { by: 'owner-1', at: new Date(), version: 'byo-v1', agents: [{ userId: 'agent-a', sandbox: 'unconfined' }] },
+      ...over,
+    });
+    const call = () => callTool({
+      grantId: 'grant-1', agentUserId: 'agent-a', agentName: 'lily-claude', instanceId: 'default',
+      tool: 'github.list_issues', args: {},
+    });
+
+    it('runs the call for a named agent the server cannot confine, and records that it ran unconfined', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named());
+      mockSeatConfinement.mockResolvedValue(unconfined);
+      await expect(call()).resolves.toMatchObject({ outcome: 'ok' });
+      expect(mockGithub.listOpenIssues).toHaveBeenCalled();
+      expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+        outcome: 'ok', agentUserId: 'agent-a', callerConfinement: 'named_unconfined',
+      }));
+    });
+
+    it('passes only the named agents to the pod gate', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named());
+      mockSeatConfinement.mockResolvedValue(unconfined);
+      await call();
+      expect(outsiderGrantPodRefusal).toHaveBeenCalledWith(
+        { kind: 'seat', id: 'agent-a' }, 'read', { exemptAgentIds: ['agent-a'] },
+      );
+    });
+
+    it('stops naming the agent once someone else also installs it, from the next call', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named());
+      mockSeatConfinement.mockResolvedValue(unconfined);
+      mockOwnsRuntimeIdentity.mockResolvedValue({ owned: false, failure: 'another_installer' });
+      await expect(call()).rejects.toMatchObject({ code: 'grant_broker_unconfined' });
+      expect(mockOwnsRuntimeIdentity).toHaveBeenCalledWith('owner-1', 'lily-claude', 'default');
+      expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+    });
+
+    it('drops an agent that is no longer solely owned from the pod-gate exemption', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named());
+      mockSeatConfinement.mockResolvedValue({ refusal: null, scope: 'seat' });
+      mockOwnsRuntimeIdentity.mockResolvedValue({ owned: false, failure: 'another_installer' });
+      await call().catch(() => {});
+      expect(outsiderGrantPodRefusal).toHaveBeenCalledWith(
+        { kind: 'seat', id: 'agent-a' }, 'read', { exemptAgentIds: [] },
+      );
+    });
+
+    it('exempts the consented agent at the pod gate for a child grant scoped away from it', async () => {
+      // A hosted member attenuated a child for itself: the child names nobody,
+      // but the named agent still shares the pod under the lineage's consent.
+      mockRoomGrant.findOne.mockResolvedValue(named({ byoAgents: [], audience: ['hosted-h'] }));
+      mockSeatConfinement.mockResolvedValue({ refusal: null, scope: 'seat' });
+      await call().catch(() => {});
+      expect(outsiderGrantPodRefusal).toHaveBeenCalledWith(
+        { kind: 'seat', id: 'agent-a' }, 'read', { exemptAgentIds: ['agent-a'] },
+      );
+    });
+
+    it('does not lift for an agent the child grant no longer names', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named({ byoAgents: [] }));
+      mockSeatConfinement.mockResolvedValue(unconfined);
+      await expect(call()).rejects.toMatchObject({ code: 'grant_broker_unconfined' });
+    });
+
+    it('never lifts for an agent the consent recorded as confined, whose seat no longer confines', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named({
+        byoConsent: { by: 'owner-1', at: new Date(), version: 'byo-v1', agents: [{ userId: 'agent-a', sandbox: 'confined' }] },
+      }));
+      mockSeatConfinement.mockResolvedValue(unconfined);
+      await expect(call()).rejects.toMatchObject({ code: 'grant_broker_unconfined' });
+    });
+
+    it('names nobody when the consent was not the granter\'s', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named({
+        byoConsent: { by: 'someone-else', at: new Date(), version: 'byo-v1', agents: [{ userId: 'agent-a', sandbox: 'unconfined' }] },
+      }));
+      mockSeatConfinement.mockResolvedValue(unconfined);
+      await expect(call()).rejects.toMatchObject({ code: 'grant_broker_unconfined' });
+    });
+
+    it('names nobody without the consent record, so the agent is refused as before', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named({ byoConsent: undefined }));
+      mockSeatConfinement.mockResolvedValue(unconfined);
+      await expect(call()).rejects.toMatchObject({ code: 'grant_broker_unconfined' });
+      expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+      expect(outsiderGrantPodRefusal).not.toHaveBeenCalled();
+    });
+
+    it('does not lift the refusal for an agent the grant does not name', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named({ byoAgents: ['agent-b'], audience: ['agent-a', 'agent-b'] }));
+      mockSeatConfinement.mockResolvedValue(unconfined);
+      await expect(call()).rejects.toMatchObject({ code: 'grant_broker_unconfined' });
+      expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+    });
+
+    it('never lifts the refusal of a machine with no enforceable sandbox', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named());
+      mockSeatConfinement.mockResolvedValue({ ...unconfined, hostUnconfined: true });
+      await expect(call()).rejects.toMatchObject({ code: 'grant_broker_unconfined' });
+      expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+    });
+
+    it('never lifts the refusal of an adapter not approved for the broker', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(named());
+      mockSeatConfinement.mockResolvedValue({ refusal: { ...unconfined.refusal, reason: 'adapter_cannot_confine' }, scope: 'seat' });
+      await expect(call()).rejects.toMatchObject({ code: 'grant_broker_unconfined' });
+      expect(mockGithub.listOpenIssues).not.toHaveBeenCalled();
+    });
+
+    it('records a confined caller as confined', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(seatGrant({ tools: ['github.list_issues'] }));
+      mockSeatConfinement.mockResolvedValue({ refusal: null, scope: 'seat' });
+      await call();
+      expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ callerConfinement: 'confined' }));
+    });
   });
 
   it('refuses a grant whose connection is not a connected GitHub App row', async () => {
