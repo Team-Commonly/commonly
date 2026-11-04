@@ -46,7 +46,14 @@ const turn = (over = {}) => {
     _commandResolution: windows(),
     _platform: 'win32',
     _home: 'C:\\Users\\ada',
-    env: { PATH: 'x', OPENROUTER_API_KEY: 'sk-or-secret', COMMONLY_LITELLM_KEY: 'vk-secret' },
+    env: {
+      Path: 'C:\\Windows\\System32;C:\\Program Files\\nodejs',
+      SystemRoot: 'C:\\Windows',
+      USERPROFILE: 'C:\\Users\\ada',
+      APPDATA: 'C:\\Users\\ada\\AppData\\Roaming',
+      OPENROUTER_API_KEY: 'sk-or-secret',
+      COMMONLY_LITELLM_KEY: 'vk-secret',
+    },
     ...over,
   });
   return { run, calls };
@@ -76,6 +83,18 @@ describe('claude on native Windows with the user\'s --unsandboxed', () => {
     const childEnv = calls[0].opts.env;
     expect(childEnv.OPENROUTER_API_KEY).toBeUndefined();
     expect(childEnv.COMMONLY_LITELLM_KEY).toBeUndefined();
+  });
+
+  test('the child keeps what Windows needs to run and find its login, under one Path key', async () => {
+    const { run, calls } = turn({ hostUnconfined: true });
+    await run;
+    const childEnv = calls[0].opts.env;
+    expect(childEnv.SystemRoot).toBe('C:\\Windows');
+    expect(childEnv.USERPROFILE).toBe('C:\\Users\\ada');
+    expect(childEnv.APPDATA).toBe('C:\\Users\\ada\\AppData\\Roaming');
+    const pathKeys = Object.keys(childEnv).filter((k) => k.toUpperCase() === 'PATH');
+    expect(pathKeys).toEqual(['Path']);
+    expect(childEnv.Path).toContain('C:\\Windows\\System32');
   });
 
   test('the home denies are written in the POSIX form Claude Code matches on Windows', async () => {

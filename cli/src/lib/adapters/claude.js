@@ -211,6 +211,10 @@ const withWorkspaceGit = (ctx) => {
   };
 };
 const PUBLIC_SAFE_ENV = /^(?:PATH|LANG|LC_[A-Z_]+|TERM|USER|LOGNAME|NO_COLOR|CI|SSL_CERT_FILE|SSL_CERT_DIR)$/;
+// D245: what a Windows process needs to start at all, find its own login and
+// open a socket. Windows keys are case-insensitive (Path, SystemRoot), so this
+// one is matched without case. None of these carries a secret.
+const PUBLIC_SAFE_ENV_WIN32 = /^(?:PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|COMSPEC|TEMP|TMP|USERPROFILE|USERNAME|USERDOMAIN|HOMEDRIVE|HOMEPATH|APPDATA|LOCALAPPDATA|PROGRAMDATA|PROGRAMFILES|PROGRAMFILES\(X86\)|COMMONPROGRAMFILES|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE|OS)$/i;
 
 const statOrNull = async (path) => {
   try {
@@ -380,12 +384,13 @@ const prepareWorkspaceBwrapClaudeState = async (ctx) => {
   return { statePath, tmpPath, configPath, loginPath };
 };
 
-const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, publicSeat = false) => {
+const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, publicSeat = false, platform = process.platform) => {
   const source = input || process.env;
   const output = state || publicSeat ? {} : { ...source };
   if (state || publicSeat) {
+    const safe = platform === 'win32' ? PUBLIC_SAFE_ENV_WIN32 : PUBLIC_SAFE_ENV;
     for (const [key, value] of Object.entries(source)) {
-      if (PUBLIC_SAFE_ENV.test(key)) output[key] = value;
+      if (safe.test(key) || PUBLIC_SAFE_ENV.test(key)) output[key] = value;
     }
   }
   if (state) {
@@ -985,11 +990,14 @@ const createMcpConfig = async (mcpServers, ctx = {}) => {
 const withClaudePath = (input) => {
   const output = { ...(input || process.env) };
   const localBin = join(homedir(), '.local', 'bin');
-  const entries = String(output.PATH || '')
+  // Windows keys are case-insensitive, and a child given both `Path` and a
+  // new `PATH` keeps only one of them, so update the key that is already there.
+  const key = Object.keys(output).find((k) => k.toUpperCase() === 'PATH') || 'PATH';
+  const entries = String(output[key] || '')
     .split(delimiter)
     .filter(Boolean);
   if (!entries.includes(localBin)) entries.push(localBin);
-  output.PATH = entries.join(delimiter);
+  output[key] = entries.join(delimiter);
   return output;
 };
 
@@ -1453,6 +1461,7 @@ export default {
         mcpConfig?.expansionEnv,
         mcpConfig?.credential?.path || null,
         publicTrust,
+        ctx._platform || process.platform,
       );
       if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
         Object.assign(claudeEnv, ctx.commitAttributionEnv);
@@ -1534,6 +1543,7 @@ export default {
             mcpConfig?.expansionEnv,
             mcpConfig?.credential?.path || null,
             publicTrust,
+            ctx._platform || process.platform,
           ),
         };
         if ((publicNativeSandbox || publicBwrapSandbox) && ctx.commitAttributionEnv) {
