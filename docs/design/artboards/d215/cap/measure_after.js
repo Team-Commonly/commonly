@@ -190,6 +190,16 @@ async function checkSurface(p, [name, route, opt = {}], vp, targets) {
     if (!(await p.locator(opt.list390.list).first().isVisible())) throw new Error(`${name}-${vp}: pods list ${opt.list390.list} is not visible`);
   }
   assertLanded(url, p.url());
+  if (opt.busy) {
+    const B = opt.busy;
+    if (await p.locator(B.refuse).first().isVisible()) throw new Error(`${name}-${vp}: the list did not load (${B.refuse} on screen in place of rows)`);
+    const n = await p.locator(B.rows).count();
+    if (n < B.keep) throw new Error(`${name}-${vp}: ${n} ${B.rows} rows on the page; the busy frame draws ${B.keep}, so this is not the busy state`);
+    await p.evaluate(([rows, group, keep]) => {
+      document.querySelectorAll(rows).forEach((el, i) => { if (i >= keep) el.remove(); });
+      document.querySelectorAll(group).forEach(g => { if (!g.querySelector(rows)) g.remove(); });
+    }, [B.rows, B.group, B.keep]);
+  }
   const m = await p.evaluate(METRICS);
   const key = `${name}-${vp}`, t = targets[key];
   return { key, m, t, ok: m.helperWords <= t.helperWords && m.innerRatio <= t.innerRatio };
@@ -202,6 +212,17 @@ const SIDEBAR_390 = {
   back: '.v2-thread__back',
   list: '.v2-shell--list .v2-pods__list',
   failed: '.v2-shell--list .v2-pods__empty:not(.v2-pods__list .v2-pods__empty)',
+};
+
+// Artifacts' busy frame draws six file rows; prod returns a page of up to 50. The scorer refuses
+// the error line and the spinner, refuses a list shorter than the frame (an empty account or the
+// day-zero page), and then measures the first six rows only, the way chat's scroll target is
+// measured with its fold applied. Groups left with no rows go too.
+const ARTIFACTS_BUSY = {
+  rows: '.v2a-file',
+  group: '.v2a-group',
+  refuse: '.v2a-state, .v2a-loading',
+  keep: 6,
 };
 
 async function prod(only) {
@@ -220,7 +241,7 @@ async function prod(only) {
     ['connect', () => '/v2/connect'],
     ['team', () => '/v2/agents'],
     ['activity-busy', () => '/v2/activity'],
-    ['artifacts-busy', () => '/v2/artifacts'],
+    ['artifacts-busy', () => '/v2/artifacts', { busy: ARTIFACTS_BUSY }],
     ['chat', () => `/v2/pods/${pod}`],
     ['sidebar', vp => (vp === '1440' ? `/v2/pods/${side}` : '/v2'), { list390: SIDEBAR_390 }],
   ];
@@ -240,7 +261,7 @@ async function prod(only) {
   process.exit(miss ? 1 : 0);
 }
 
-module.exports = { parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
+module.exports = { ARTIFACTS_BUSY, parseArgs, validateTargets, unknownFrameError, keyFrames, checkSurface, EXPECTED, SURFACES, SKIPPED, PROD_SURFACES, SIDEBAR_390 };
 
 if (require.main === module) {
   let args;

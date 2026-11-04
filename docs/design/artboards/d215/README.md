@@ -11,7 +11,7 @@ The spec for D215 (artboard v2). Open `index.html` in a browser. The toggle at t
 - `before/` holds prod captures from 2026-10-31, blurred so they show layout and density only.
 - `targets.json` holds the helper-word and scroll targets per frame. `cap/measure_after.js` writes it from `index.html`.
 - `cap/` holds the measuring scripts. See the header of `measure_after.js` for its env.
-- Every frame without `data-state` must be listed in `measure_after.js`, either in `SURFACES` (scored) or in `SKIPPED` (not scored, with a reason). The two trace "before" frames, `run-trace-before` and `chat-trace-before`, draw the old pages and are skipped: they are never a target. On prod, `activity-busy` is measured at `/v2/activity` and `artifacts-busy` at `/v2/artifacts`; the two day-zero frames need an account with nothing in it, so they are artboard-only. `node --test cap/measure_after.test.js` fails on any frame that is in neither list.
+- Every frame without `data-state` must be listed in `measure_after.js`, either in `SURFACES` (scored) or in `SKIPPED` (not scored, with a reason). The two trace "before" frames, `run-trace-before` and `chat-trace-before`, draw the old pages and are skipped: they are never a target. On prod, `activity-busy` is measured at `/v2/activity` and `artifacts-busy` at `/v2/artifacts`; the two day-zero frames need an account with nothing in it, so they are artboard-only. The Artifacts prod check refuses the error line, the spinner and any list shorter than the frame's six rows. It then measures the first six rows, because prod returns up to 50 and the frame draws six. `node --test cap/measure_after.test.js` fails on any frame that is in neither list.
 
 ## Where each frame came from
 
