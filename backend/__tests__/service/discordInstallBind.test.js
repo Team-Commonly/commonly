@@ -130,7 +130,9 @@ test('the install link sends Discord back to the callback with a code', async ()
   expect(url.searchParams.get('client_id')).toBe('1111111111');
   expect(url.searchParams.get('response_type')).toBe('code');
   expect(url.searchParams.get('redirect_uri')).toBe(CALLBACK);
-  expect(url.searchParams.get('state')).toBe(`pod_${POD_ID}`);
+  // A signed state, not the bare pod id a crafted link could carry.
+  expect(url.searchParams.get('state')).not.toBe(`pod_${POD_ID}`);
+  expect(url.searchParams.get('state')).not.toContain(POD_ID);
   expect(url.searchParams.get('scope')).toBe('bot applications.commands');
 });
 
@@ -202,3 +204,54 @@ test('a pod member who did not create the pod gets no install link', async () =>
   const res = await request(app).get(`/api/discord/install-link/${POD_ID}`).set('Authorization', 'Bearer member-token');
   expect(res.status).toBe(403);
 });
+
+// The callback has no session, so the state is the only thing tying a code to
+// the person who asked for the install. Unsigned, a crafted link carrying an
+// attacker's code and a victim's pod would mint a proof the victim's browser then
+// spends binding their pod to the attacker's guild (CodeRabbit on this change).
+describe('the install state and proof are bound to the person who asked', () => {
+  const callback = (state) => request(app).get(`/api/discord/callback?code=the-code&state=${encodeURIComponent(state)}&guild_id=${GUILD}`);
+  const errorOf = (res) => new URL(res.headers.location).pathname;
+
+  test('a bare pod_<id> state is refused before the code is exchanged', async () => {
+    const res = await callback(`pod_${POD_ID}`);
+    expect(res.status).toBe(302);
+    expect(errorOf(res)).toBe('/discord/error');
+    expect(axios.post.mock.calls.find(([url]) => url === 'https://discord.com/api/oauth2/token')).toBeUndefined();
+  });
+
+  test('an expired state is refused', async () => {
+    const jwt = require('jsonwebtoken');
+    const stale = jwt.sign({ pur: 'discord-install-state', pod: POD_ID, uid: OWNER }, process.env.JWT_SECRET, { expiresIn: -10 });
+    const res = await callback(stale);
+    expect(errorOf(res)).toBe('/discord/error');
+  });
+
+  test("a proof minted for one person is refused for another member of the same pod", async () => {
+    const link = await request(app).get(`/api/discord/install-link/${POD_ID}`).set('Authorization', 'Bearer owner-token');
+    const state = new URL(link.body.installUrl).searchParams.get('state');
+    const cb = await callback(state);
+    const proof = new URL(cb.headers.location).searchParams.get('install');
+    expect(proof).toBeTruthy();
+
+    const channels = await request(app)
+      .get(`/api/discord/channels/${GUILD}?install=${encodeURIComponent(proof)}`)
+      .set('Authorization', 'Bearer member-token');
+    expect(channels.status).toBe(404);
+
+    const bind = await request(app)
+      .post('/api/integrations')
+      .set('Authorization', 'Bearer member-token')
+      .send({
+        podId: POD_ID,
+        type: 'discord',
+        config: {
+          serverId: GUILD, serverName: 'Commonly Dev', channelId: CHANNEL, channelName: 'general', webhookUrl: '', botToken: '',
+        },
+        install: proof,
+      });
+    expect(bind.status).toBe(404);
+    expect(await Integration.findOne({ podId: POD_ID, type: 'discord' })).toBeNull();
+  });
+});
+

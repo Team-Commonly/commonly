@@ -87,6 +87,7 @@ const hasDiscordGuildAuthority = async (
     })) return true;
   const proof = readDiscordInstallProof(install);
   return !!proof && proof.guildId === guildId && proof.podId === podId
+    && proof.userId === String(userId)
     && podIds.some((id: unknown) => String(id) === podId);
 };
 

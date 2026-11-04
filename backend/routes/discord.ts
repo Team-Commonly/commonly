@@ -25,7 +25,9 @@ const { runDiscordCommandForIntegrations } = require('../services/discordMultiCo
 import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { invalidDiscordIdError, isDiscordSnowflake, isSupplied } from '../utils/discordBinding';
-import { mintDiscordInstallProof, readDiscordInstallProof } from '../utils/discordInstallProof';
+import {
+  mintDiscordInstallProof, mintDiscordInstallState, readDiscordInstallProof, readDiscordInstallState,
+} from '../utils/discordInstallProof';
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -131,6 +133,7 @@ router.get('/channels/:guildId', listIntegrationsRateLimit, auth, async (req: Au
     // stands in for one: same guild, and a pod the caller belongs to (F89).
     const proof = binding ? null : readDiscordInstallProof(req.query?.install);
     const provenInstall = !!proof && proof.guildId === guildId
+      && proof.userId === String(req.user?.id)
       && podIds.some((podId: unknown) => String(podId) === proof.podId);
     // One answer for a guild that is bound elsewhere and one that does not
     // exist: the route must not become an oracle for either.
@@ -235,7 +238,7 @@ router.get('/install-link/:podId', auth, async (req: AuthReq, res: Res) => {
     installUrl.searchParams.set('permissions', DISCORD_BOT_PERMISSIONS);
     installUrl.searchParams.set('response_type', 'code');
     installUrl.searchParams.set('redirect_uri', discordRedirectUri());
-    installUrl.searchParams.set('state', `pod_${podId}`);
+    installUrl.searchParams.set('state', mintDiscordInstallState({ podId: String(podId), userId: String(req.user?.id) }));
     res.json({ installUrl: installUrl.toString(), podId, status: 'ready' });
   } catch {
     console.error('Error generating installation link');
@@ -348,8 +351,11 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
   try {
     const { code, state, guild_id: guildId } = req.query || {};
     if (!code) return res.redirect(`${frontend}/discord/error?error=No authorization code received`);
-    const podId = state?.replace('pod_', '');
-    if (!podId) return res.redirect(`${frontend}/discord/error?error=Invalid state parameter`);
+    // A signed state from install-link, never a bare pod id (see
+    // utils/discordInstallProof.ts). Refused before the code is exchanged.
+    const installState = readDiscordInstallState(state);
+    if (!installState) return res.redirect(`${frontend}/discord/error?error=Invalid state parameter`);
+    const { podId, userId: installerId } = installState;
     // Unauthenticated route, so `guild_id` here is request-tainted input on a URL
     // built with the instance bot token. Refused before the code exchange: a
     // malformed id must not reach Discord at all, and the same value is forwarded
@@ -383,7 +389,7 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
     successUrl.searchParams.append('pod_id', podId);
     successUrl.searchParams.append('guild_id', installedGuildId || '');
     successUrl.searchParams.append('server_name', serverName);
-    if (provenGuildId) successUrl.searchParams.append('install', mintDiscordInstallProof({ podId, guildId: provenGuildId }));
+    if (provenGuildId) successUrl.searchParams.append('install', mintDiscordInstallProof({ podId, guildId: provenGuildId, userId: installerId }));
     res.redirect(successUrl.toString());
   } catch {
     console.error('Discord OAuth callback error');
