@@ -2523,6 +2523,7 @@
     "availableTelegram": "one message",
     "availableDiscord": "add the bot to your server",
     "linkInstallCreatorOnly": "Only the person who created this pod can add the {{connector}} bot to it.",
+    "sharedSurfaceCreatorOnly": "Only the pod creator can connect a shared channel to this pod.",
     "cancel": "Cancel",
     "channelDetails": "Channel details",
     "closeDetails": "Close",

@@ -19,12 +19,13 @@ const User = require('../models/User');
 // eslint-disable-next-line global-require
 const DiscordService = require('../services/discordService');
 // eslint-disable-next-line global-require
-const { runDiscordCommandForIntegrations } = require('../services/discordMultiCommandService');
+const { runDiscordCommandForIntegrations, combinedReplyIsPublic } = require('../services/discordMultiCommandService');
 // Static import keeps the destructive route visible to CodeQL's rate-limit
 // query while sharing the connector write bucket with its sibling routes.
 import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { invalidDiscordIdError, isDiscordSnowflake, isSupplied } from '../utils/discordBinding';
+import { assertCanBindSurface, SurfaceBindRefusedError } from '../services/chatRelay/bindSurface';
 import {
   mintDiscordInstallProof, mintDiscordInstallState, readDiscordInstallProof, readDiscordInstallState,
 } from '../utils/discordInstallProof';
@@ -200,13 +201,13 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
         return res.json({ type: 4, data: { content: '❌ Command not recognized.', flags: 64 } });
       }
 
-      const commandResults = await runDiscordCommandForIntegrations({ commandName: data.name, integrations, guildId, channelId }) as Array<{ integration: typeof integrations[0]; result: { content: string; success: boolean } }>;
+      const commandResults = await runDiscordCommandForIntegrations({ commandName: data.name, integrations, guildId, channelId }) as Array<{ integration: typeof integrations[0]; result: { content: string; success: boolean; refused?: boolean } }>;
       const header = `🔗 ${integrations.length} pods linked to this Discord channel`;
       const blocks = commandResults.map(({ integration, result }) => {
         const podName = (integration.podId as { name?: string })?.name || integration.config?.channelName || `Pod ${integration.podId || integration._id}`;
         return `**${podName}**\n${result.content}`;
       });
-      const response: Record<string, unknown> = { type: 4, data: { content: [header, ...blocks].join('\n\n'), flags: commandResults.every(({ result }) => result.success) ? 0 : 64 } };
+      const response: Record<string, unknown> = { type: 4, data: { content: [header, ...blocks].join('\n\n'), flags: combinedReplyIsPublic(commandResults) ? 0 : 64 } };
       response.interactionToken = interactionToken;
       response.interactionId = interactionId;
       return res.json(response);
@@ -219,14 +220,25 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
   return res.json({ type: 4, data: { content: 'This interaction type is not supported.', flags: 64 } });
 });
 
-router.get('/install-link/:podId', auth, async (req: AuthReq, res: Res) => {
+router.get('/install-link/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     const { podId } = req.params || {};
     // The instance's own application only. A caller-chosen client id would send
     // the bot add to an app whose callback is not ours.
     const clientId = process.env.DISCORD_CLIENT_ID;
-    const canManage = await canManagePod(podId || '', req.user?.id || '');
-    if (!canManage) return res.status(403).json({ error: 'Access denied' });
+    // The link starts a Discord bind, so it asks the rule the bind itself runs
+    // (F143, services/chatRelay/bindSurface): a guild channel is a shared
+    // surface, which takes the pod's creator or an instance admin.
+    const pod = podId ? await Pod.findById(podId) : null;
+    if (!pod) return res.status(403).json({ error: 'Access denied' });
+    try {
+      await assertCanBindSurface({
+        userId: req.user?.id, pod, type: 'discord', config: {},
+      });
+    } catch (error) {
+      if (error instanceof SurfaceBindRefusedError) return res.status(403).json({ error: 'Access denied' });
+      throw error;
+    }
     if (!clientId) return res.status(400).json({ error: 'Discord client ID is required' });
     // A code grant with our callback as the redirect. Without `response_type`
     // and `redirect_uri`, Discord adds the bot and stops on its own page, so the

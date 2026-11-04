@@ -6,6 +6,7 @@ const express = require('express');
 
 jest.mock('../../../models/Integration');
 jest.mock('../../../models/Pod');
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Summary', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/integrationSummaryService', () => ({ createSummary: jest.fn() }));
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }));
@@ -37,6 +38,7 @@ jest.mock('../../../services/telegramConnectCode', () => {
 
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
+const User = require('../../../models/User');
 const WebhookDelivery = require('../../../models/WebhookDelivery');
 const telegramService = require('../../../services/telegramService');
 const {
@@ -136,10 +138,18 @@ describe('/commonly-enable hardening', () => {
     expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/private chat/i);
   });
 
-  it('still binds a legacy (buffer) integration from a group', async () => {
+  // F143 (Cofounder, 11-04) narrowed this arm: a legacy (buffer) row still
+  // binds a group, when the pod's creator minted it.
+  it('still binds a legacy (buffer) integration from a group, minted by the pod creator', async () => {
     Integration.findOne = jest.fn()
-      .mockResolvedValueOnce({ _id: 'i1', podId: 'p1', config: freshCode() })
+      .mockResolvedValueOnce({
+        _id: 'i1', podId: 'p1', createdBy: 'creator-1', config: freshCode(),
+      })
       .mockResolvedValueOnce(null);
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ name: 'Test Pod', createdBy: 'creator-1', members: ['creator-1'] }),
+    });
+    User.findById.mockResolvedValue({ _id: 'creator-1', role: 'user' });
     await enable('c'.repeat(32), { id: -100, type: 'group', title: 'Crew' });
     expect(Integration.findByIdAndUpdate).toHaveBeenCalled();
   });
@@ -234,5 +244,86 @@ describe('/commonly-enable hardening', () => {
       expect.objectContaining({ 'config.connectCode': JOINED_CODE }),
     );
     expect(Integration.findByIdAndUpdate).toHaveBeenCalled();
+  });
+});
+
+// F143 (Cofounder, 11-04): a Telegram group, supergroup or channel is read by
+// people outside the pod, so binding one takes authority over the POD. The chat
+// type is only known here, at redemption, so the rule runs here, against the
+// row's creator — the person whose code it is (connect-code re-mints keep it).
+describe('/commonly-enable in a shared chat needs authority over the pod', () => {
+  const CREATOR = 'creator-1';
+  const MEMBER = 'member-1';
+  const ADMIN = 'admin-1';
+  const users = {
+    [CREATOR]: { _id: CREATOR, role: 'user' },
+    [MEMBER]: { _id: MEMBER, role: 'user' },
+    [ADMIN]: { _id: ADMIN, role: 'admin' },
+  };
+  const rowMintedBy = (createdBy) => ({
+    _id: 'i1', podId: 'p1', createdBy, config: freshCode(),
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetEnableAttempts();
+    process.env.TELEGRAM_BOT_TOKEN = 'bot-token';
+    process.env.TELEGRAM_SECRET_TOKEN = SECRET;
+    WebhookDelivery.create.mockResolvedValue({});
+    WebhookDelivery.deleteOne.mockResolvedValue({});
+    Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({});
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        name: 'Test Pod', createdBy: CREATOR, members: [CREATOR, MEMBER, ADMIN],
+      }),
+    });
+    User.findById.mockImplementation(async (id) => users[String(id)] || null);
+  });
+
+  it.each(['group', 'supergroup', 'channel'])(
+    'refuses a plain member\'s code redeemed in a %s, binds nothing, and keeps the code',
+    async (type) => {
+      Integration.findOne = jest.fn().mockResolvedValueOnce(rowMintedBy(MEMBER)).mockResolvedValueOnce(null);
+      await enable('c'.repeat(32), { id: -100, type, title: 'Crew' });
+      expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(Integration.updateOne).not.toHaveBeenCalled();
+      expect(telegramService.sendMessage.mock.calls[0][2]).toMatch(/made by someone who can't connect a group/i);
+    },
+  );
+
+  it('tells a pod creator redeeming a member\'s code that the code is the problem, not them', async () => {
+    Integration.findOne = jest.fn().mockResolvedValueOnce(rowMintedBy(MEMBER)).mockResolvedValueOnce(null);
+    await enable('c'.repeat(32), { id: -100, type: 'group', title: 'Crew' });
+    const text = telegramService.sendMessage.mock.calls[0][2];
+    expect(text).toBe(
+      "⚠️ This code was made by someone who can't connect a group. "
+      + "The pod's creator or an admin needs to set up the Telegram connection. "
+      + 'This code still works in a private chat with this bot.',
+    );
+    expect(text).not.toMatch(/^⚠️ Only the pod's creator/);
+  });
+
+  it('fails closed on a chat with no type', async () => {
+    Integration.findOne = jest.fn().mockResolvedValueOnce(rowMintedBy(MEMBER)).mockResolvedValueOnce(null);
+    await enable('c'.repeat(32), { id: -100, title: 'Crew' });
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the pod creator', CREATOR],
+    ['an instance admin who did not create the pod', ADMIN],
+  ])('binds a group on a code minted by %s', async (_label, minter) => {
+    Integration.findOne = jest.fn().mockResolvedValueOnce(rowMintedBy(minter)).mockResolvedValueOnce(null);
+    await enable('c'.repeat(32), { id: -100, type: 'supergroup', title: 'Crew' });
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update.$set['config.chatType']).toBe('supergroup');
+  });
+
+  it('still binds a plain member\'s code in a private chat, without a role lookup', async () => {
+    Integration.findOne = jest.fn().mockResolvedValueOnce(rowMintedBy(MEMBER)).mockResolvedValueOnce(null);
+    await enable('c'.repeat(32));
+    const [, update] = Integration.findByIdAndUpdate.mock.calls[0];
+    expect(update.$set['config.chatType']).toBe('private');
+    expect(User.findById).not.toHaveBeenCalled();
   });
 });

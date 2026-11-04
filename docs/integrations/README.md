@@ -11,6 +11,7 @@ Contents:
 - Code scaffold lives in `packages/integration-sdk/` for open-sourcing the contract and registry.
 - Integration catalog API: `GET /api/integrations/catalog` (manifest-driven metadata + per-user stats).
 - Integration create/update routes (`POST /api/integrations`, `PATCH /api/integrations/:id`) enforce manifest-required fields when marking an integration as connected; drafts remain pending until required config is present.
+- Binding a pod to a shared chat (a Slack or Discord channel, a Telegram or GroupMe group) takes the pod's creator or an instance admin; a private 1:1 chat with the bot stays member-level. See "Who may bind a pod to a chat" in `INTEGRATION_CONTRACT.md`.
 - Integration summarization persists indexed pod memory via `PodAsset` so `/api/pods/:id/context` and LLM skill synthesis can reuse integration activity as structured context.
 - External provider services should forward to `POST /api/integrations/ingest` with `{ provider, integrationId, event | messages }`.
 - Issue ingest tokens via `POST /api/integrations/:id/ingest-tokens` and use them as `Authorization: Bearer cm_int_...`.

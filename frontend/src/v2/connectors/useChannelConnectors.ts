@@ -20,6 +20,7 @@ import {
   TRANSIENT_STATUSES,
   installableLifecyclePath,
   installErrorResponse,
+  sharedSurfaceRefusal,
   SLACK_REFUSALS,
   connectorPodId,
   defaultPodForChannel,
@@ -475,8 +476,9 @@ export const useChannelConnectors = () => {
     try {
       await api.patch(`/api/integrations/${connector._id}`, body);
       await load();
-    } catch {
-      setError(t(errorKey, { defaultValue: errorDefault }));
+    } catch (requestError) {
+      setError(sharedSurfaceRefusal(t, installErrorResponse(requestError).data)
+        || t(errorKey, { defaultValue: errorDefault }));
     } finally {
       setBusyId(null);
     }

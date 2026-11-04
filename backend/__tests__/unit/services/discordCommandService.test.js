@@ -3,6 +3,8 @@ jest.mock('../../../models/DiscordSummaryHistory', () => jest.fn());
 jest.mock('../../../models/Summary', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/discordService');
 jest.mock('../../../services/summarizerService');
+jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 
 const Integration = require('../../../models/Integration');
 const DiscordCommandService = require('../../../services/discordCommandService');
@@ -112,3 +114,51 @@ describe('DiscordCommandService', () => {
     expect(summary.content).toBe('⚠️ AI summary is temporarily unavailable. Please try again shortly.');
   });
 });
+
+// F143: /commonly-summary posts the pod's latest summary into the guild channel
+// for everyone in it — the Discord twin of Telegram /tldr and GroupMe !pod.
+// Rows plain members bound before #3436 get a refusal and no summary.
+describe('DiscordCommandService /commonly-summary on a shared channel', () => {
+  const Pod = require('../../../models/Pod');
+  const User = require('../../../models/User');
+  const Summary = require('../../../models/Summary');
+  const row = (createdBy) => ({
+    _id: 'integration123', podId: 'pod-1', createdBy, config: { serverId: 'g', channelId: 'c' },
+  });
+  const summarize = async (createdBy) => {
+    Integration.findOne.mockResolvedValue(row(createdBy));
+    const service = new DiscordCommandService({ integrationId: 'integration123' });
+    await service.initialize();
+    return service.handleSummaryCommand();
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'creator-1', members: ['creator-1', 'member-1'] }),
+    });
+    User.findById.mockImplementation(async (id) => ({ _id: String(id), role: String(id) === 'admin-1' ? 'admin' : 'user' }));
+    Summary.findOne.mockReturnValue({
+      sort: jest.fn().mockResolvedValue({ title: 'T', content: 'pod secrets', type: 'chats' }),
+    });
+  });
+
+  it('withholds the summary from a channel a plain member bound', async () => {
+    const result = await summarize('member-1');
+    expect(Summary.findOne).not.toHaveBeenCalled();
+    expect(result.content).not.toContain('pod secrets');
+    expect(result.content).toMatch(/only the pod's creator/i);
+    // Marked as a refusal, not an error: the multi-pod reply reads it.
+    expect(result).toMatchObject({ success: false, refused: true });
+  });
+
+  it.each([['the pod creator', 'creator-1'], ['an instance admin', 'admin-1']])(
+    'posts the summary to a channel %s bound',
+    async (_label, createdBy) => {
+      const result = await summarize(createdBy);
+      expect(result.success).toBe(true);
+      expect(result.content).toContain('pod secrets');
+    },
+  );
+});
+

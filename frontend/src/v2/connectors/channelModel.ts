@@ -228,6 +228,24 @@ export const installErrorResponse = (error: unknown): { status?: number; data?: 
   (error as { response?: { status?: number; data?: InstallErrorResponse } })?.response || {}
 );
 
+// F143: binding a pod to a chat people outside it can read (a Slack or Discord
+// channel, a Telegram or GroupMe group) takes the pod's creator or an admin.
+// The server refuses with this code from POST and PATCH /api/integrations
+// (backend/services/chatRelay/bindSurface.ts); the page says it in the reader's
+// language. Null for any other refusal, so each caller keeps its own fallback.
+export const SHARED_SURFACE_REFUSAL_CODE = 'shared_surface_needs_pod_authority';
+
+export const sharedSurfaceRefusal = (
+  t: (key: string, options: { defaultValue: string }) => string,
+  data: { code?: unknown } | null | undefined,
+): string | null => (
+  data?.code === SHARED_SURFACE_REFUSAL_CODE
+    ? t('connectors.sharedSurfaceCreatorOnly', {
+      defaultValue: 'Only the pod creator can connect a shared channel to this pod.',
+    })
+    : null
+);
+
 // Row C: the Slack authorize and bind verbs refuse with a `code` the server
 // already sends (`slackError` in backend/routes/installables.ts), so the row
 // can say which refusal it was rather than one generic apology. An unlisted
