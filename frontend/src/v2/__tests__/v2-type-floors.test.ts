@@ -168,44 +168,11 @@ const ALLOWLIST: string[] = [
   '.v2-root button.v2-invite-manage__action, .v2-invite-manage__action', // 11.0px — no-mono-family
   '.v2-syscard__time', // 11.5px — no-mono-family
   // Glob widening (2026-11-03): the scan widened from 11 hand-listed sheets to
-  // every v2 stylesheet. These are what the 18 newly scanned sheets carried on
-  // the day; same burn-down rule — removed, never added.
-  '.v2m-mnav .mo', // 11.0px — no-mono-family
-  '.v2-aprofile .v2-aprofile__avatar-hint', // 10.5px — no-mono-family
-  '.v2-aprofile .v2-aprofile__badge', // 11.0px — no-mono-family
-  '.v2-agent-settings-page .ahead .st', // 11.5px — no-mono-family
-  '.v2-agent-settings-page .gtitle', // 11.5px — no-mono-family
-  '.v2-agent-settings-page .wt th', // 11.0px — no-mono-family
-  '.v2-agent-settings-page .v2-agent-wake-pods__hint', // 11.5px — no-mono-family
-  '.v2-agent-settings-page .v2-agent-wake-pods__cap', // 11.5px — no-mono-family
-  '.v2-agent-settings-page .v2-agent-wake-pods__mode', // 11.5px — no-mono-family
-  '.v2-agent-settings-page .wt td[data-label]::before', // 11.0px — no-mono-family
-  '.v2-agent-settings-page__grantname .mo', // 11.5px — no-mono-family
-  '.v2-agent-settings-page__phonestatus .st', // 11.5px — no-mono-family
-  '.v2-ui-card .ui-meta', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-src', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-steps .st', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-diff .n', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-task .id', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-kv dt', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-tb th', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-tb th.num', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-more', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-rec .c', // 11.0px — no-mono-family
-  '.v2-ui-card .bd', // 11.0px — no-mono-family
-  '.v2-ui-card .lk-h', // 11.0px — no-mono-family
-  '.v2-ui-card .ub .h', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-rt .rh b', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-rt .rh .lk', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-rt .t', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-rt .s', // 11.0px — no-mono-family
-  '.v2-ui-card .ui-rt .d', // 11.0px — no-mono-family
-  '.v2-ui-card ol.ui-ls li::before', // 11.0px — no-mono-family
-  '.v2-cx-tile__beta', // 9.5px — mono-below-floor
-  '.v2-cx-pop__beta', // 10.5px — mono-below-floor
-  '.v2-demo__card .v2-decision-card__agent', // 11.0px — no-mono-family
-  '.v2p-seg button .mo', // 11.0px — no-mono-family
-  '.v2p-badge', // 9.5px — mono-below-floor
+  // every v2 stylesheet. Every entry it surfaced left the list in the next
+  // day's burn-down. Most were mono at 11–11.5px behind a sheet-local alias
+  // (`--mono`, `--f-mono`) or an inherited family, and now name
+  // `--v2-font-mono`; the badges and beta tags rose to mono 11, and the two
+  // sans pills on the agent profile to 12.
 ];
 
 describe('v2 type floors (ruling h)', () => {
