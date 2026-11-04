@@ -5,7 +5,7 @@
 // a package npm cannot install must fail the PR, not warn.
 
 import {
-  INSTALL_GUARD, installExitFrom, pasteScript, publishedOutcome,
+  INSTALL_GUARD, installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, publishedOutcome, redact,
 } from '../scripts/windows-byo-verdict.mjs';
 
 const PAGE = [
@@ -75,5 +75,86 @@ describe('dispatched, or this tree\'s leg', () => {
   test('a failed install names its exit code first', () => {
     const out = publishedOutcome({ problems: ['the agent never polled for its @mention'], installExit: 1, delivered: false });
     expect(out.fail[0]).toMatch(/install line exited 1/);
+  });
+});
+
+// The prod mode (target=prod): the page's lines against the live API with a
+// real model, and a person in the pod posts the @mention. The walk reads the
+// pod with the agent's token and the CLI's own acks, and nothing it logs may
+// carry either secret.
+describe('the prod walk', () => {
+  const READY = Date.parse('2026-11-04T23:00:00Z');
+  const at = (s) => new Date(READY + s * 1000).toISOString();
+  const mention = { id: '200', self: false, username: 'lily-shen', createdAt: at(20), content: '@win-walk-1104 reply with the word windows-ok' };
+  const reply = { id: '201', self: true, username: 'win-walk-1104', createdAt: at(45), content: 'windows-ok' };
+  const event = { kind: 'event', eventId: 'e1', type: 'chat.mention', podId: 'p1', messageId: '200' };
+  const ack = { kind: 'ack', eventId: 'e1', status: 200 };
+
+  test('takes only well-formed dispatch inputs', () => {
+    expect(prodInputs({
+      COMMONLY_BYO_PROD_AGENT: 'win-walk-1104', COMMONLY_BYO_PROD_INSTANCE: 'windows-walk', COMMONLY_BYO_PROD_POD: '6aebaf42ced9d6e454902f66',
+      COMMONLY_BYO_PROD_AGENT_TOKEN: 'cm_agent_t', COMMONLY_BYO_PROD_LLM_KEY: 'sk-k',
+    })).toEqual({
+      agentName: 'win-walk-1104', instanceId: 'windows-walk', podId: '6aebaf42ced9d6e454902f66', token: 'cm_agent_t', llmKey: 'sk-k',
+    });
+    const good = {
+      COMMONLY_BYO_PROD_AGENT: 'a', COMMONLY_BYO_PROD_INSTANCE: 'b', COMMONLY_BYO_PROD_POD: '6aebaf42ced9d6e454902f66',
+      COMMONLY_BYO_PROD_AGENT_TOKEN: 't', COMMONLY_BYO_PROD_LLM_KEY: 'k',
+    };
+    // The agent name is pasted into PowerShell, so nothing but a plain name.
+    expect(() => prodInputs({ ...good, COMMONLY_BYO_PROD_AGENT: 'a; Remove-Item x' })).toThrow(/agentName/);
+    expect(() => prodInputs({ ...good, COMMONLY_BYO_PROD_POD: 'not-a-pod' })).toThrow(/podId/);
+    expect(() => prodInputs({ ...good, COMMONLY_BYO_PROD_INSTANCE: '' })).toThrow(/instanceId/);
+    expect(() => prodInputs({ ...good, COMMONLY_BYO_PROD_AGENT_TOKEN: '' })).toThrow(/BYO_WIN_PROD_AGENT_TOKEN/);
+    expect(() => prodInputs({ ...good, COMMONLY_BYO_PROD_LLM_KEY: '' })).toThrow(/BYO_WIN_PROD_LLM_KEY/);
+  });
+
+  test('redacts every secret from what it logs', () => {
+    expect(redact('$env:COMMONLY_AGENT_TOKEN="cm_agent_t" and sk-k twice sk-k', ['cm_agent_t', 'sk-k', '']))
+      .toBe('$env:COMMONLY_AGENT_TOKEN="***" and *** twice ***');
+  });
+
+  test('reads the recorder\'s lines and skips a torn one', () => {
+    const text = `${JSON.stringify(event)}\n${JSON.stringify(ack)}\n{"kind":"ack","eve`;
+    expect(parseRecorderLog(text)).toEqual({ events: [event], acks: [ack] });
+  });
+
+  test('passes on the person\'s @mention, the agent\'s reply after it, and that mention\'s ack', () => {
+    const outcome = prodOutcome({
+      messages: [reply, mention], agentName: 'win-walk-1104', readyAt: READY, events: [event], acks: [ack],
+    });
+    expect(outcome.passed).toBe(true);
+    expect(outcome.mention.id).toBe('200');
+    expect(outcome.reply.id).toBe('201');
+    expect(outcome.answerSeconds).toBe(25);
+    expect(outcome.problems).toEqual([]);
+  });
+
+  test('a reply without the ack, or an ack that failed, is not a pass', () => {
+    const base = { messages: [mention, reply], agentName: 'win-walk-1104', readyAt: READY, events: [event] };
+    expect(prodOutcome({ ...base, acks: [] }).problems).toEqual(['the @mention was never acknowledged']);
+    expect(prodOutcome({ ...base, acks: [{ ...ack, status: 500 }] }).passed).toBe(false);
+    // An ack for some other event does not acknowledge this mention.
+    expect(prodOutcome({ ...base, acks: [{ ...ack, eventId: 'e9' }] }).passed).toBe(false);
+  });
+
+  test('an @mention from before the agent was listening, or the agent\'s own message, is not the mention', () => {
+    const early = { ...mention, createdAt: at(-60) };
+    expect(prodOutcome({
+      messages: [early, reply], agentName: 'win-walk-1104', readyAt: READY, events: [event], acks: [ack],
+    }).problems).toContain('no @win-walk-1104 mention from a person yet');
+    const own = { ...mention, self: true };
+    expect(prodOutcome({
+      messages: [own], agentName: 'win-walk-1104', readyAt: READY, events: [], acks: [],
+    }).mention).toBeNull();
+  });
+
+  test('a reply posted before the mention does not answer it', () => {
+    const before = { ...reply, createdAt: at(10) };
+    const outcome = prodOutcome({
+      messages: [before, mention], agentName: 'win-walk-1104', readyAt: READY, events: [event], acks: [ack],
+    });
+    expect(outcome.reply).toBeNull();
+    expect(outcome.problems).toContain('no reply from the agent after the @mention');
   });
 });
