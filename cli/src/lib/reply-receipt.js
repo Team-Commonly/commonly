@@ -39,7 +39,10 @@ export const claudeRunStats = (stdout) => {
 export const buildReplyReceipt = ({ adapterName, stats = {}, durationMs } = {}) => {
   if (!isName(adapterName)) return null;
   const receipt = { adapter: adapterName };
-  if (isName(stats?.model)) receipt.model = stats.model;
+  // A cloud-hosted model can be named by an ARN or a resource path that
+  // carries the account or project it runs in; that is not this reply's to
+  // publish, so such a model id is left out.
+  if (isName(stats?.model) && !/^arn:|(^|\/)projects\//i.test(stats.model)) receipt.model = stats.model;
   if (isCount(stats?.turns)) receipt.turns = stats.turns;
   if (Array.isArray(stats?.tools)) {
     const tools = stats.tools.filter(isName);

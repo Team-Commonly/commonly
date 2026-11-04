@@ -43,6 +43,13 @@ describe('buildReplyReceipt', () => {
     })).toEqual({ adapter: 'claude' });
   });
 
+  test('leaves out a model id that names a cloud account or project', () => {
+    ['arn:aws:bedrock:us-east-1:123456789012:inference-profile/x', 'projects/acme-prod/locations/us/publishers/anthropic/models/claude']
+      .forEach((model) => expect(buildReplyReceipt({ adapterName: 'claude', stats: { model } })).toEqual({ adapter: 'claude' }));
+    expect(buildReplyReceipt({ adapterName: 'claude', stats: { model: 'us.anthropic.claude-opus-5-5' } }).model)
+      .toBe('us.anthropic.claude-opus-5-5');
+  });
+
   test('no adapter name means no receipt', () => {
     expect(buildReplyReceipt({ durationMs: 5 })).toBeNull();
   });
