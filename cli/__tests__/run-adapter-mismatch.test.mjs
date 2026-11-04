@@ -34,6 +34,7 @@ await jest.unstable_mockModule('../src/lib/adapters/index.js', () => ({
     ? { name, detect: async () => true }
     : null),
   listAdapterNames: () => ['claude', 'codex', 'pi', 'opencode', 'stub'],
+  listPublicAdapterNames: () => ['claude', 'codex', 'pi', 'opencode'],
 }));
 
 const {

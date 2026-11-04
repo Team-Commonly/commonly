@@ -37,7 +37,7 @@ import { getToken, resolveInstanceUrl } from '../lib/config.js';
 import { startPoller, terminalDeliveryAckError } from '../lib/poller.js';
 import { formatDigestFrame } from '../lib/digest-frame.js';
 import { startWebhookServer, forwardToLocalWebhook, logOnlyHandler } from '../lib/webhook-server.js';
-import { getAdapter, listAdapterNames } from '../lib/adapters/index.js';
+import { getAdapter, listAdapterNames, listPublicAdapterNames } from '../lib/adapters/index.js';
 import {
   getSession,
   getSessionEntry,
@@ -386,7 +386,7 @@ export const bootstrapAgentRecordFromEnv = async ({
   name,
   env = process.env,
   clientFactory = createClient,
-  adapterRegistry = { getAdapter, listAdapterNames },
+  adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
   adapterOverride = null,
   log = () => {},
   startDir = process.cwd(),
@@ -422,7 +422,7 @@ export const bootstrapAgentRecordFromEnv = async ({
   if (adapterOverride) {
     const adapter = adapterRegistry.getAdapter(adapterOverride);
     if (!adapter) {
-      throw new Error(`Unknown adapter '${adapterOverride}'. Known: ${adapterRegistry.listAdapterNames().join(', ')}`);
+      throw new Error(`Unknown adapter '${adapterOverride}'. Known: ${(adapterRegistry.listPublicAdapterNames || adapterRegistry.listAdapterNames)().join(', ')}`);
     }
     if (!await adapter.detect()) {
       throw new Error(`Adapter '${adapterOverride}' not found on PATH.`);
@@ -975,7 +975,7 @@ export const updateAgentConfiguration = async ({
   envPath = null,
   runtimeKey = false,
   parseEnv = parseEnvironmentFile,
-  adapterRegistry = { getAdapter, listAdapterNames },
+  adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
 }) => {
   if (!record?.agentName) {
     throw new Error('token record is missing agentName — re-attach the agent');
@@ -1005,7 +1005,7 @@ export const updateAgentConfiguration = async ({
     const selectedAdapter = adapterRegistry.getAdapter(normalizedAdapter);
     if (!selectedAdapter || !knownAdapters.includes(normalizedAdapter)) {
       throw new Error(
-        `Unknown adapter '${normalizedAdapter}'. Known: ${knownAdapters.join(', ')}`,
+        `Unknown adapter '${normalizedAdapter}'. Known: ${(adapterRegistry.listPublicAdapterNames || adapterRegistry.listAdapterNames)().join(', ')}`,
       );
     }
     if (!await selectedAdapter.detect()) {
@@ -1174,7 +1174,7 @@ export const performAttach = async ({
   memoryFrom = null,
   memoryInstance = 'default',
   log = () => {},
-  adapterRegistry = { getAdapter, listAdapterNames },
+  adapterRegistry = { getAdapter, listAdapterNames, listPublicAdapterNames },
   seatbelt: probeSeatbelt = detectSeatbelt,
   bwrap: probeBwrap = detectBwrap,
   platform = process.platform,
@@ -1182,7 +1182,7 @@ export const performAttach = async ({
   const adapter = adapterRegistry.getAdapter(adapterName);
   if (!adapter) {
     throw new Error(
-      `Unknown adapter "${adapterName}". Known: ${adapterRegistry.listAdapterNames().join(', ')}`,
+      `Unknown adapter "${adapterName}". Known: ${(adapterRegistry.listPublicAdapterNames || adapterRegistry.listAdapterNames)().join(', ')}`,
     );
   }
 
@@ -4082,7 +4082,7 @@ Docs:
   // ── attach (ADR-005, ADR-008) ─────────────────────────────────────────────
   agent
     .command('attach <adapter>')
-    .description('Wrap a local CLI as a Commonly agent (stub|claude|codex|opencode|qwen|dsh|…)')
+    .description(`Wrap a local CLI as a Commonly agent (${listPublicAdapterNames().join('|')})`)
     .requiredOption('--pod <podId>', 'Pod ID to install into')
     .requiredOption('--name <name>', 'Agent name (e.g. my-claude)')
     .option('--memory-from <agent>', 'Copy long-term memory from a hosted agent you own')
@@ -4268,7 +4268,7 @@ Docs:
     .command('run <name>')
     .description('Run the local-CLI wrapper loop for an attached agent')
     .option('--interval <ms>', 'Poll interval in ms', '5000')
-    .option('--adapter <name>', 'CLI to wrap on first-run bootstrap (claude|codex|pi|opencode|qwen); an existing token file bound to a different adapter stops the run')
+    .option('--adapter <name>', `CLI to wrap on first-run bootstrap (${listPublicAdapterNames().join('|')}); an existing token file bound to a different adapter stops the run`)
     .option('--cascade-cap <n>', `Consecutive agent-triggered turns allowed per pod (env ${CASCADE_ENV_VARS.cap}, default ${CASCADE_DEFAULTS.cap})`)
     .option('--cascade-grace <n>', `Extra turns allowed when this seat was directly addressed; 0 disables the grace (env ${CASCADE_ENV_VARS.addressedGrace}, default ${CASCADE_DEFAULTS.addressedGrace})`)
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
@@ -4367,7 +4367,7 @@ Docs:
 
       const adapter = getAdapter(record.adapter);
       if (!adapter) {
-        console.error(`Unknown adapter '${record.adapter}' in token file. Known: ${listAdapterNames().join(', ')}`);
+        console.error(`Unknown adapter '${record.adapter}' in token file. Known: ${listPublicAdapterNames().join(', ')}`);
         process.exit(1);
       }
 
