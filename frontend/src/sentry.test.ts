@@ -118,6 +118,25 @@ describe('Sentry frontend instrumentation', () => {
     expect(ordinaryFragmentEvent.request.url).toBe('https://commonly.me/v2/register#section');
   });
 
+  // F89: the Discord success page carries a 30-minute install proof in `install`
+  // and sends it on the channel request, so it must not reach Sentry either.
+  it('scrubs the Discord install proof from breadcrumbs and request URLs', () => {
+    process.env.REACT_APP_SENTRY_DSN = 'https://public@example.ingest.sentry.io/456';
+    loadSentryModule();
+    const options = mockSentryInit.mock.calls[0][0];
+
+    const breadcrumb = options.beforeBreadcrumb({
+      category: 'xhr',
+      data: { url: '/api/discord/channels/123456789012345678?install=PROOF-SECRET' },
+    });
+    expect(breadcrumb.data.url).toBe('/api/discord/channels/123456789012345678');
+
+    const event = options.beforeSend({
+      request: { url: 'https://commonly.me/discord/success?pod_id=p1&guild_id=123456789012345678&install=PROOF-SECRET' },
+    });
+    expect(event.request.url).toBe('https://commonly.me/discord/success?pod_id=p1&guild_id=123456789012345678');
+  });
+
   it('loads the SDK only through the DSN-gated dynamic import', () => {
     const indexSource = fs.readFileSync(path.join(__dirname, 'index.tsx'), 'utf8');
     const viteSource = fs.readFileSync(path.join(__dirname, '../vite.config.ts'), 'utf8');
