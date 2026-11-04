@@ -133,11 +133,35 @@ export const hostedRunsNative = (installation: any): boolean => (
 
 /**
  * The event types a hosted agent answers: the two the Durable Object handled
- * (workers/agent-runtime agent-do.ts). Any other event a hosted install
- * receives is acked without a model call, as the Durable Object did, so it
- * never waits in a queue nothing polls.
+ * (workers/agent-runtime agent-do.ts), plus `heartbeat` (D244 dogfood: a
+ * self-serve user could not have a scheduled agent). Any other event a hosted
+ * install receives is acked without a model call, as the Durable Object did,
+ * so it never waits in a queue nothing polls.
  */
-export const HOSTED_NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set(['chat.mention', 'first_contact']);
+export const HOSTED_NATIVE_EVENT_TYPES: ReadonlySet<string> = new Set(['chat.mention', 'first_contact', 'heartbeat']);
+
+/**
+ * A hosted heartbeat's own bounds, on top of the plan line and the per-user
+ * ceiling it also counts against. The floor is one heartbeat run per install
+ * an hour, whatever `config.heartbeat.everyMinutes` says (the scheduler allows
+ * 1). The window it checks is 5 minutes short of the hour, so dispatch jitter
+ * on an hourly schedule doesn't skip every other tick.
+ */
+export const HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES = 60;
+export const HOSTED_HEARTBEAT_FLOOR_SLACK_MINUTES = 5;
+
+/**
+ * Heartbeat runs a day across one owner's hosted installs. 6 is a 4-hourly
+ * agent, or an hourly one for a working morning. `HOSTED_HEARTBEAT_RUNS_PER_DAY`
+ * overrides it, and 0 switches hosted heartbeats off.
+ */
+export const DEFAULT_HOSTED_HEARTBEAT_RUNS_PER_DAY = 6;
+
+export const hostedHeartbeatRunsPerDay = (): number => {
+  const raw = String(process.env.HOSTED_HEARTBEAT_RUNS_PER_DAY ?? '').trim();
+  const parsed = raw === '' ? NaN : Number(raw);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_HOSTED_HEARTBEAT_RUNS_PER_DAY;
+};
 
 /**
  * Why a hosted-native turn is declined before any model work, or null to run.

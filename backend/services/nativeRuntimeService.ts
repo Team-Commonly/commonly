@@ -49,7 +49,8 @@ import { parseAssignee, toSingleLineTitle } from '../utils/taskFieldNormalizatio
 import { canonicalAssignee } from './taskAssigneeService';
 import { untrustedConnectorMarker } from './brokerResultMarker';
 import {
-  engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline, hostedNativeRunConfig, hostedRunsNative,
+  engineForNewHostedInstall, HOSTED_ENGINE_NATIVE, hostedNativeDecline,
+  HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES, HOSTED_HEARTBEAT_FLOOR_SLACK_MINUTES, hostedHeartbeatRunsPerDay, hostedNativeRunConfig, hostedRunsNative,
 } from './hostedEngine';
 import {
   hostedCaps, hostedCapsForOwner, isConfigured as hostedWorkerConfigured, listHostedInstallationsForUser,
@@ -1907,6 +1908,57 @@ export function formatRecentMessagesBlock(
     + `are answering follows):\n${lines.join('\n')}`;
 }
 
+/**
+ * Why a hosted heartbeat doesn't run now, or null to run (D244). Both counts
+ * are spend bounds, so a failed count fails closed, as the per-user ceiling
+ * does. A hold is acked with no AgentRun, like any other hosted decline.
+ */
+async function hostedHeartbeatHold(installation: any): Promise<NativeRunResult | null> {
+  const silent: NativeRunResult = {
+    runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
+  };
+  const agentName = String(installation.agentName || '').toLowerCase();
+  const instanceId = String(installation.instanceId || 'default');
+  const perDay = hostedHeartbeatRunsPerDay();
+  if (perDay <= 0) return silent;
+  const installedBy = installation.installedBy ? String(installation.installedBy) : '';
+  if (!installedBy) return silent;
+  try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+    const AgentRunModel = require('../models/AgentRun');
+    const floorWindowMs = (HOSTED_HEARTBEAT_MIN_INTERVAL_MINUTES - HOSTED_HEARTBEAT_FLOOR_SLACK_MINUTES) * 60_000;
+    const inLastHour = await AgentRunModel.countDocuments({
+      podId: installation.podId,
+      agentName,
+      instanceId,
+      trigger: 'heartbeat',
+      startedAt: { $gte: new Date(Date.now() - floorWindowMs) },
+    });
+    if (inLastHour > 0) return silent;
+    const dayStart = new Date();
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const ownerToday = await AgentRunModel.countDocuments({
+      userId: installedBy,
+      trigger: 'heartbeat',
+      startedAt: { $gte: dayStart },
+    });
+    if (ownerToday >= perDay) {
+      console.warn(
+        `[native-runtime] user ${installedBy} hit the hosted heartbeat cap (${perDay}) — `
+        + `holding ${agentName}:${instanceId} until UTC midnight`,
+      );
+      return silent;
+    }
+  } catch (err) {
+    return failedResult(
+      '',
+      'heartbeat_cap_check_failed',
+      `hosted heartbeat count failed (failing closed): ${(err as Error).message}`,
+    );
+  }
+  return null;
+}
+
 export async function runAgent(
   installation: any,
   trigger: NativeRunTrigger,
@@ -1948,6 +2000,10 @@ export async function runAgent(
         runId: '', status: 'succeeded', totalTurns: 0, totalTokens: 0,
       };
     }
+  }
+  if (hostedNative && String(trigger?.type || '') === 'heartbeat') {
+    const heldHeartbeat = await hostedHeartbeatHold(installation);
+    if (heldHeartbeat) return heldHeartbeat;
   }
   const cfg = hostedNative
     ? normalizeConfig(hostedNativeRunConfig(installation, hostedTurnsPerDay, {
