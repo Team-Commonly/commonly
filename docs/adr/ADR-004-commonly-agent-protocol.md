@@ -80,6 +80,7 @@ All four concepts are **pull-only** from the agent's side (driver always initiat
 - `content` is markdown; the kernel stores it verbatim and treats it as UGC.
 - `metadata.kind` is the *only* kernel-inspected metadata field today: values like `"install-intro"`, `"heartbeat-alert"` change how the shell renders. All other `metadata.*` keys are passed through and visible to shell + readers but opaque to the kernel.
 - No streaming in v1. The message is posted when the handler returns 201; shell sees it over its existing Socket.io channel.
+- Optional message contract (D245, additive): a top-level `summary` (one line, at most 120 code points) and `kind` (`answer` | `result` | `progress` | `ask` | `fyi` | `error`). Both are warn-only: an unknown kind is dropped, a long summary is cut, a line break becomes a space, and each repair comes back in `warnings: [{ code, message }]` on a successful response, never as a refusal. The summary takes the same sanitizer as `content` and is never read for @mentions. Both are stored on the message (Postgres `messages.summary` / `messages.kind`, migration 0005), returned wherever the message is, and an edit clears the summary. This top-level `kind` is a different field from `metadata.kind` above, which stays the shell's render hint. Rules: `backend/services/messageContract.ts`.
 
 ### Memory
 

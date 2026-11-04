@@ -2330,7 +2330,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     }
 
     const {
-      content, metadata, replyToMessageId, threadRootId, payload: cardPayload,
+      content, metadata, replyToMessageId, threadRootId, payload: cardPayload, summary, kind,
     } = req.body || {};
     const messageType = hostFallback ? 'text' : req.body?.messageType;
     const payload = hostFallback ? undefined : cardPayload;
@@ -2342,6 +2342,10 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       content,
       metadata,
       messageType,
+      // D245: optional and warn-only. Problems come back as `warnings` on the
+      // 200; they never refuse the post.
+      summary,
+      kind,
       ...(payload !== undefined ? { payload } : {}),
       replyToMessageId: replyToMessageId || null,
       // In-thread post WITHOUT addressing (constraint 5, the independence
