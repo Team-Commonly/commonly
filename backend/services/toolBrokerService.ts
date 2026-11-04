@@ -15,6 +15,7 @@ import { SessionAccountRefusal, loadSessionAccount, sessionRefusal } from './ses
 import { judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
+import { assertPinnedArgValues } from './hostedMcpArgValues';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from './outsiderGrantPodEligibility';
 import { recordBrokerCall } from './brokerRecordService';
 import { parseSeatPushArgs, pushSeatBranch, SeatPushError } from './seatGithubPush';
@@ -1505,6 +1506,8 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       const allowed = properties && typeof properties === 'object' && !Array.isArray(properties)
         ? Object.keys(properties) : [];
       assertNoUnknown(parsedArgs, allowed);
+      // And for a read pin, the values (F100): a read runs unapproved.
+      assertPinnedArgValues(definition, parsedArgs);
     }
 
     const irreversible = typeof definition.irreversible === 'function'

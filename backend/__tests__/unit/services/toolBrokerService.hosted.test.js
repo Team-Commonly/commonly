@@ -783,6 +783,18 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(refusedRow().reason).toBe('invalid_tool_args');
   });
 
+  // F100: a read pin's values are checked against the pin, as its names are,
+  // before a budget slot or a tools/call (only the tools/list assessment runs).
+  it('refuses a read value the pin does not allow, before budget or a tools/call', async () => {
+    mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
+    await expect(callTool({
+      grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.list_issues', args: { limit: 'every-issue' },
+    })).rejects.toMatchObject({ code: 'invalid_tool_args', message: expect.stringContaining('limit') });
+    expect(mockReserveBudgetLineage).not.toHaveBeenCalled();
+    expect(toolCalls()).toHaveLength(0);
+    expect(refusedRow().reason).toBe('invalid_tool_args');
+  });
+
   it('refuses when the row names another entry, and never reaches the vendor', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
     const wrong = hostedRow({ config: { entryId: 'sentry', credentialRef: 'cred-1' } });
