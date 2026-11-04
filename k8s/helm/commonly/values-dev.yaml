@@ -332,7 +332,9 @@ agents:
         storage: 1Gi
         tokenSecret: cloud-codex-cody-token
         # Parked 2026-08-12.
-        # Identity, PVC, and token secret stay; flip to 1 to revive.
+        # Identity, PVC, and token secret stay; flip to 1 to revive. First add
+        # litellm.agentDefaultModel to its hand-minted LiteLLM key's allowlist
+        # (F103; docs/development/LITELLM.md), or every call 403s.
         replicas: 0
 
 rbac:

@@ -823,3 +823,58 @@ describe('F103: LiteLLM key allowlists follow the configured model', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 });
+
+// F103 review: a dev agent's primary is now `openrouter/<default>` on LiteLLM,
+// so it needs an `openrouter:default` key like a community agent does. In
+// Codex-bypass mode (the chart's base default) no Codex virtual key is minted,
+// and when issuance fails the master key is the fallback, as for community.
+describe('F103: a dev agent gets an openrouter:default key on every path', () => {
+  const axios = require('axios');
+  let saved;
+  const KEYS = ['LITELLM_BASE_URL', 'LITELLM_MASTER_KEY', 'CODEX_BYPASS_LITELLM', 'AGENT_DEFAULT_MODEL'];
+  beforeEach(() => {
+    saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.LITELLM_MASTER_KEY = 'sk-master-for-test';
+    k8s.__mock.execCommands.length = 0;
+    k8s.__mock.execStdout = '';
+    jest.spyOn(axios, 'get').mockRejectedValue(new Error('not found'));
+    jest.spyOn(axios, 'delete').mockResolvedValue({});
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  });
+  const openRouterKeyWritten = () => k8s.__mock.execCommands
+    .filter((cmd) => cmd.includes("store.profiles['openrouter:default']"))
+    .map((cmd) => (cmd.match(/'openrouter:default'\] = Object\.assign\([^;]*?key: '([^']*)'/) || [])[1]);
+  const provisionTheo = () => provisionAgentRuntime({
+    runtimeType: 'moltbot',
+    agentName: 'openclaw',
+    instanceId: 'theo',
+    runtimeToken: 'cm_agent_test',
+    userToken: 'cm_user_test',
+    baseUrl: 'http://backend',
+    displayName: 'Theo',
+  });
+
+  it('in Codex-bypass mode, gets a minted LiteLLM key', async () => {
+    process.env.CODEX_BYPASS_LITELLM = 'true';
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+
+    await provisionTheo();
+
+    expect(openRouterKeyWritten()).toEqual(['sk-freshly-issued']);
+  });
+
+  it('when key issuance fails, falls back to the master key', async () => {
+    process.env.CODEX_BYPASS_LITELLM = 'false';
+    jest.spyOn(axios, 'post').mockRejectedValue(new Error('LiteLLM DB down'));
+
+    await provisionTheo();
+
+    expect(openRouterKeyWritten()).toEqual(['sk-master-for-test']);
+  });
+});

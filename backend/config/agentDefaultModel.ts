@@ -10,8 +10,9 @@
  * Before F103 these defaults named other vendors' models (nemotron, gpt-5.4*,
  * openai-codex/*, codex-cli/gpt-5.4) that LiteLLM quietly served with DeepSeek.
  *
- * The fallback is for a run with no chart (docker compose, a local backend);
- * it matches base.
+ * The fallback is for a run with no chart (a local backend); it matches base.
+ * The docker-compose LiteLLM (external/litellm/config.yaml) has its own model
+ * list, so a compose run sets AGENT_DEFAULT_MODEL to one of its names.
  */
 export const AGENT_DEFAULT_MODEL_FALLBACK = 'deepseek-v4-flash';
 

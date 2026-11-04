@@ -98,7 +98,7 @@ data:
       # Google rejects the key). F98 (D243, 11-04): with Gemini off these names
       # used to be served by DeepSeek, which gives a caller another vendor's model
       # with no signal. That stand-in now renders only under litellm.legacyAliases
-      # (off on dev, on in base until F103; see values.yaml), so with Gemini off on
+      # (off on dev, on in base until F105; see values.yaml), so with Gemini off on
       # dev a caller gets an unknown-model error.
       {{- if .Values.aiProviders.gemini.enabled }}
       - model_name: google/gemini-2.5-flash
@@ -201,12 +201,10 @@ data:
       # (writes /chatgpt-auth/rotate-now → sidecar polls and swaps auth.json).
       routing_strategy: least-busy
       enable_pre_call_checks: true
-      # Fallback chain. Since 2026-10-27 the gpt-5.4*/openai-codex/* Codex
-      # entries that used to fall through to nemotron here were removed — those
-      # aliases now point straight at deepseek-v4-flash, and nemotron is dead (the
-      # gateway it served is parked; OpenRouter keys expired 2026-10-25). The only
-      # fallback entries below are inbound gemini/nemotron alias names that callers
-      # still request; they fall through to deepseek-v4-flash.
+      # Fallback chain. The only fallback entries below are the four Gemini names,
+      # which fall through to deepseek-v4-flash. The gpt-5.4*/openai-codex/*
+      # aliases and the nemotron pair, with their fallbacks, were deleted in F103
+      # (11-04); the history below is kept for why each went.
       # Earlier removals from this chain:
       #   - Gemini removed 2026-05-03: GEMINI_API_KEY belongs to a project that
       #     doesn't have generativelanguage.googleapis.com enabled (403). Until
@@ -225,9 +223,9 @@ data:
       # chat route from the backend pod found exactly two answering:
       # deepseek-v4-flash and the since-removed Workers AI route. Every Gemini name 401s
       # (Google: ACCESS_TOKEN_TYPE_UNSUPPORTED for GEMINI_API_KEY) and both
-      # nemotron names 401 at OpenRouter. Callers still ask for those names:
-      # the commonly-bot client defaults to gemini-2.5-flash; pod-welcomer,
-      # task-clerk and pod-summarizer run on nemotron. With no fallback each
+      # nemotron names 401 at OpenRouter. Callers then still asked for those
+      # names: the commonly-bot client defaulted to gemini-2.5-flash; pod-welcomer,
+      # task-clerk and pod-summarizer ran on nemotron. With no fallback each
       # call died and the feature fell back to a template or to silence; 154
       # Gemini 401s in 24h, unnoticed. A fallback keeps the feature answering;
       # the "LiteLLM is failing its callers" alert covers deepseek itself

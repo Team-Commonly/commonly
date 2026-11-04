@@ -572,7 +572,9 @@ jobs:
       - name: Verify agent default model routes
         run: |
           # F103: every agent driver default names a model LiteLLM serves under
-          # its own name; on dev (Claude-only, D243) none resolves to DeepSeek.
+          # its own name; on dev (Claude-only, D243) none resolves to DeepSeek,
+          # directly, through a shared name, or through a fallback.
+          node --test scripts/verify-agent-default-model.test.mjs
           node scripts/verify-agent-default-model.js --no-deepseek < /tmp/dev-rendered.yaml
           node scripts/verify-agent-default-model.js --no-deepseek < /tmp/dev-worker-rendered.yaml
           helm template commonly-staging k8s/helm/commonly \

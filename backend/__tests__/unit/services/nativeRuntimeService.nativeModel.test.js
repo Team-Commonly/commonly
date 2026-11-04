@@ -271,3 +271,32 @@ describe('a refusal', () => {
     expect(result.status).toBe('failed');
   });
 });
+
+// F103 proof for the DeepSeek delete (Cofounder's condition 1): every
+// first-party native agent (Scout, Recorder, pod-welcomer, task-clerk,
+// pod-summarizer) still pins deepseek-v4-flash in its config, and the seed
+// installs it as a native agent with that pin. On a deployment with a native
+// model, each one's turn runs on that model, not on its pin.
+describe('every first-party native agent answers on the native model', () => {
+  const { FIRST_PARTY_APPS } = require('../../../config/native-agents/apps');
+  const { buildInstallationConfig } = require('../../../scripts/seed-native-agents');
+
+  test('the list covers Scout and Recorder', () => {
+    expect(FIRST_PARTY_APPS.map((app) => app.agentName)).toEqual(expect.arrayContaining(['scout', 'recorder']));
+  });
+
+  test.each(FIRST_PARTY_APPS.map((app) => [app.agentName, app]))('%s, installed as seeded', async (_name, app) => {
+    const seeded = buildInstallationConfig(app);
+    expect(seeded.runtime).toEqual({ runtimeType: 'native' });
+    expect(seeded.model).toBe(app.model);
+    mockAxiosPost.mockResolvedValueOnce(reply('Hi.'));
+
+    await runAgent({
+      ...installation(seeded.model),
+      agentName: app.agentName,
+      displayName: app.displayName || app.agentName,
+    }, TRIGGER);
+
+    expect(mockAxiosPost.mock.calls[0][1].model).toBe(NATIVE);
+  });
+});

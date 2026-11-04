@@ -194,16 +194,18 @@ issued by the backend provisioner (`issueLiteLLMVirtualKey` / `issueLiteLLMOpenR
 `backend/services/agentProvisionerServiceK8s.ts`, which set `metadata.agent_id`). **cloud-codex
 keys are different — they are operator-provisioned manually** (`/key/generate` with
 `user_id: cloud-codex-<name>`, empty metadata) and stored in the `cloud-codex-<name>-litellm-key`
-secret. When you add a model alias that a cloud-codex / codex-CLI agent must call (e.g.
-`codex-cli/gpt-5.4`), you MUST add it to that agent's key allowlist or the call 403s:
+secret. A cloud-codex agent's codex CLI calls `litellm.agentDefaultModel` (F103; it was
+`codex-cli/gpt-5.4`), so that model MUST be in the agent's key allowlist or every call 403s.
+**Before scaling a cloud-codex agent back up after F103, add the default model** (on dev,
+`claude-haiku-5-5`) to its key, and again whenever `agentDefaultModel` changes:
 
 ```bash
 # inspect:  GET  /key/info?key=<sk-...>                                  (master-key auth)
-# update:   POST /key/update  {"key":"<sk-...>","models":[...,"codex-cli/gpt-5.4"]}
+# update:   POST /key/update  {"key":"<sk-...>","models":[...,"<agentDefaultModel>"]}
 ```
 
 This allowlist lives only in LiteLLM's Postgres (`LiteLLM_VerificationToken`), **not in IaC** —
-if a cloud-codex key is ever regenerated, re-add `codex-cli/*`. (Verified gap, 2026-06-08, PR #472.)
+if a cloud-codex key is ever regenerated, re-add the default model. (Verified gap, 2026-06-08, PR #472.)
 
 ---
 

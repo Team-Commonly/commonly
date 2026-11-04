@@ -2439,15 +2439,16 @@ const provisionOpenClawAccount = async ({
   }
 
   // Route OpenRouter calls through LiteLLM when available (everything-via-LiteLLM
-  // mode). Dev agents reuse their Codex virtual key (already grants OpenRouter
-  // model access); community agents get a separate OR-only key. If virtual-key
-  // issuance fails (e.g. LiteLLM DB down), fall back to LITELLM_MASTER_KEY so
-  // the agent still routes through LiteLLM rather than burning raw keys direct.
+  // mode). Every agent's primary is `openrouter/<default>` (F103), so every
+  // agent needs this key. A dev agent reuses its Codex virtual key when one was
+  // minted (not in Codex-bypass mode); otherwise it gets an OR-only key like a
+  // community agent. If issuance fails (e.g. LiteLLM DB down), fall back to
+  // LITELLM_MASTER_KEY so the agent still routes through LiteLLM rather than
+  // burning raw keys direct.
   if (process.env.LITELLM_BASE_URL) {
     const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
-    const openRouterKey = isDevAgent
-      ? codexVirtualKey
-      : (await issueLiteLLMOpenRouterKey(accountId)) || masterKey || null;
+    const openRouterKey = (isDevAgent && codexVirtualKey)
+      || (await issueLiteLLMOpenRouterKey(accountId)) || masterKey || null;
     if (openRouterKey) {
       await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
     }

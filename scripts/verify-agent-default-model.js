@@ -9,9 +9,13 @@
 //   - the gateway seed config's default primary and fallbacks, and every model
 //     registered under a provider that points at LiteLLM;
 //   - each cloud-codex agent's codex CLI model.
+// A name resolves to every model_list entry that carries it (LiteLLM balances
+// across them), and through every fallback LiteLLM would take from it:
+// fallbacks, context_window_fallbacks and content_policy_fallbacks, plus
+// default_fallbacks, in router_settings or litellm_settings.
 // `google/*` gateway fallbacks go straight to Google, not through LiteLLM, so
-// they are listed but not resolved (F105 moves them).
-// --no-deepseek (dev, Claude-only under D243): no default may resolve to a
+// they are listed but not resolved (F105 moves them); a google/* primary fails.
+// --no-deepseek (dev, Claude-only under D243): no default may reach a
 // deepseek/* upstream.
 const fs = require('fs');
 const yaml = require('js-yaml');
@@ -26,20 +30,52 @@ if (!litellmMap) {
   console.error('agent default model check: litellm-config not rendered (is litellm.enabled set?)');
   process.exit(1);
 }
-const upstreamOf = new Map(
-  (yaml.load(litellmMap.data['config.yaml']).model_list || [])
-    .map((entry) => [String(entry.model_name), String(entry.litellm_params?.model || '')]),
-);
+const litellmConfig = yaml.load(litellmMap.data['config.yaml']) || {};
+const upstreamsOf = new Map();
+for (const entry of litellmConfig.model_list || []) {
+  const name = String(entry.model_name);
+  if (!upstreamsOf.has(name)) upstreamsOf.set(name, []);
+  upstreamsOf.get(name).push(String(entry.litellm_params?.model || ''));
+}
+const fallbacksOf = new Map();
+const defaultFallbacks = [];
+for (const section of [litellmConfig.router_settings, litellmConfig.litellm_settings]) {
+  if (!section) continue;
+  for (const key of ['fallbacks', 'context_window_fallbacks', 'content_policy_fallbacks']) {
+    for (const rule of section[key] || []) {
+      for (const [from, to] of Object.entries(rule || {})) {
+        if (!fallbacksOf.has(from)) fallbacksOf.set(from, []);
+        fallbacksOf.get(from).push(...[].concat(to).map(String));
+      }
+    }
+  }
+  defaultFallbacks.push(...[].concat(section.default_fallbacks || []).map(String));
+}
+// Every model name a call to `name` can end up on.
+const reachable = (name) => {
+  const seen = new Set([name]);
+  const queue = [name];
+  while (queue.length) {
+    const next = [...(fallbacksOf.get(queue.shift()) || []), ...defaultFallbacks];
+    for (const target of next) if (!seen.has(target)) { seen.add(target); queue.push(target); }
+  }
+  return [...seen];
+};
 
 const resolve = (where, name) => {
   checked.push(`${where}: ${name}`);
-  if (!upstreamOf.has(name)) {
+  if (!upstreamsOf.has(name)) {
     failures.push(`${where}: "${name}" is not a LiteLLM model_name`);
     return;
   }
-  const upstream = upstreamOf.get(name);
-  if (noDeepseek && upstream.startsWith('deepseek/')) {
-    failures.push(`${where}: "${name}" resolves to ${upstream}`);
+  if (!noDeepseek) return;
+  for (const reached of reachable(name)) {
+    for (const upstream of upstreamsOf.get(reached) || []) {
+      if (upstream.startsWith('deepseek/')) {
+        const via = reached === name ? '' : ` through the fallback to "${reached}"`;
+        failures.push(`${where}: "${name}" reaches ${upstream}${via}`);
+      }
+    }
   }
 };
 
@@ -62,11 +98,15 @@ if (gateway) {
   const config = JSON.parse(gateway.data['moltbot.json']);
   const providers = config.models?.providers || {};
   const viaLitellm = (provider) => /litellm/.test(String(providers[provider]?.baseUrl || ''));
-  const resolveRef = (where, ref) => {
+  const resolveRef = (where, ref, { directGoogleOk = false } = {}) => {
     const slash = ref.indexOf('/');
     const provider = ref.slice(0, slash);
     const id = ref.slice(slash + 1);
     if (provider === 'google') {
+      if (!directGoogleOk) {
+        failures.push(`${where}: "${ref}" goes straight to Google, not through LiteLLM`);
+        return;
+      }
       checked.push(`${where}: ${ref} (direct to Google, not resolved)`);
       return;
     }
@@ -81,7 +121,7 @@ if (gateway) {
   };
   const model = config.agents?.defaults?.model || {};
   resolveRef('gateway default primary', String(model.primary || ''));
-  for (const ref of model.fallbacks || []) resolveRef('gateway default fallback', String(ref));
+  for (const ref of model.fallbacks || []) resolveRef('gateway default fallback', String(ref), { directGoogleOk: true });
   for (const [provider, def] of Object.entries(providers)) {
     if (!def || !viaLitellm(provider)) continue;
     for (const m of def.models || []) resolve(`gateway registry ${provider}`, String(m.id));
