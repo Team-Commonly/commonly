@@ -275,10 +275,23 @@ const normalizeTypeSpelling = (schema: unknown): unknown => {
 
 const isNameList = (value: unknown): value is string[] => Array.isArray(value) && value.every(isTypeName);
 
+// Positions where a schema only has to hold for an instance to pass, so
+// requiring less there accepts a superset. Under `not`, `if`, `oneOf` and
+// `contains` (with its counts), and in `$defs` a `$ref` may use from any of
+// those, requiring less can admit or refuse other calls, so their `required`
+// lists compare exactly.
+const LOOSENING_MAP_KEYWORDS = new Set(['properties', 'patternProperties', 'dependentSchemas', 'dependencies']);
+const LOOSENING_ARRAY_KEYWORDS = new Set(['allOf', 'anyOf', 'prefixItems']);
+const LOOSENING_KEYWORDS = new Set([
+  'additionalProperties', 'additionalItems', 'unevaluatedProperties', 'unevaluatedItems', 'then', 'else',
+]);
+
 /**
  * The pin with each `required` list replaced by the live one wherever the live
- * one only drops names, walking the two schemas together at schema positions.
- * A call the pin allowed still validates when the vendor requires less.
+ * one only drops names, walking the two schemas together and only through
+ * positions where requiring less can only accept more. A call the pin allowed
+ * still validates when the vendor requires less there, and no call the pin
+ * refused starts to pass except by leaving a property out.
  */
 const relaxRequired = (pinned: unknown, current: unknown): unknown => {
   if (!isRecord(pinned) || !isRecord(current)) return pinned;
@@ -291,14 +304,16 @@ const relaxRequired = (pinned: unknown, current: unknown): unknown => {
   }
   for (const [key, value] of Object.entries(pinned)) {
     const live = current[key];
-    if ((SCHEMA_MAP_KEYWORDS.has(key) || key === 'dependencies') && isRecord(value) && isRecord(live)) {
+    if (LOOSENING_MAP_KEYWORDS.has(key) && isRecord(value) && isRecord(live)) {
+      // A dependencies entry that is a list of names is data; relaxRequired
+      // returns a non-schema unchanged.
       result[key] = Object.fromEntries(Object.entries(value).map(([name, child]) => [
         name, Object.prototype.hasOwnProperty.call(live, name) ? relaxRequired(child, live[name]) : child,
       ]));
-    } else if ((SCHEMA_ARRAY_KEYWORDS.has(key) || key === 'items') && Array.isArray(value)
+    } else if ((LOOSENING_ARRAY_KEYWORDS.has(key) || key === 'items') && Array.isArray(value)
       && Array.isArray(live) && live.length === value.length) {
       result[key] = value.map((child, index) => relaxRequired(child, live[index]));
-    } else if (key === 'items' || SCHEMA_KEYWORDS.has(key)) {
+    } else if (key === 'items' || LOOSENING_KEYWORDS.has(key)) {
       result[key] = relaxRequired(value, live);
     }
   }
@@ -307,8 +322,9 @@ const relaxRequired = (pinned: unknown, current: unknown): unknown => {
 
 /**
  * After descriptions are stripped, a read pin accepts three loosenings: new
- * optional top-level properties, a property leaving `required`, and a nullable
- * type respelled. Values (enum, pattern, default, const) still compare
+ * optional top-level properties, a property leaving `required` at a position
+ * where that can only accept more (relaxRequired), and a nullable type
+ * respelled. Values (enum, pattern, default, const) still compare
  * exactly: an added enum value widens what can be read, so it waits until the
  * broker checks argument values against the pin (CTO ruling 11-04, F100).
  */

@@ -352,9 +352,10 @@ describe('drift is a named refusal', () => {
 
   // Two loosenings a read pin accepts (CTO ruling 11-04): a nullable type
   // respelled between `anyOf` of bare types and a `type` array, and a property
-  // leaving `required`. Neither lets an agent send anything the pin did not
-  // already allow. An added enum value still drifts until the broker checks
-  // values against the pin (F100).
+  // leaving `required` where requiring less can only accept more. Neither
+  // lets a call the pin refused start to pass, except by leaving a property
+  // out. An added enum value still drifts until the broker checks values
+  // against the pin (F100).
   const readPin = (inputSchema) => linear({ tools: [pinned({ inputSchema })] });
   const assessRead = (pinSchema, liveSchema) => {
     const upstream = upstreamOk();
@@ -404,7 +405,7 @@ describe('drift is a named refusal', () => {
     }).verdict).toBe('tool_drift');
   });
 
-  test('a property leaving required is compatible, at the top level and nested, in any order', () => {
+  test('a property leaving required is compatible, at the top level and in a property, in any order', () => {
     const pin = {
       type: 'object',
       properties: {
@@ -434,9 +435,84 @@ describe('drift is a named refusal', () => {
     expect(assessRead(pin, { ...pin, required: ['team', 'limit'] }).verdict).toBe('tool_drift');
     expect(assessRead(pin, { ...pin, required: ['limit'] }).verdict).toBe('tool_drift');
     expect(assessRead({ ...pin, required: undefined }, pin).verdict).toBe('tool_drift');
-    // A property named `required` is a property, not the keyword.
-    const named = { type: 'object', properties: { required: { type: 'array', items: { type: 'string' } } } };
-    expect(assessRead(named, { type: 'object', properties: { required: { type: 'array' } } }).verdict).toBe('tool_drift');
+  });
+
+  const TEAM_SCOPE = { team: { type: 'string' }, scope: { type: 'string' } };
+  test.each([
+    // The pin refuses { scope: 'all' } (it falls to else); with less in `if`,
+    // the live schema takes it.
+    ['if', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      if: { required: ['team', 'scope'] },
+      then: {},
+      else: { properties: { scope: { const: 'mine' } } },
+    }, (pin) => ({ ...pin, if: { required: ['scope'] } })],
+    // The pin takes { team: 'x' }; the live schema refuses it.
+    ['not', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      not: { required: ['team', 'scope'] },
+    }, (pin) => ({ ...pin, not: { required: ['team'] } })],
+    // The pin takes { scope: 'y' }; live, it matches both branches and fails.
+    ['oneOf', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      oneOf: [{ required: ['team'] }, { required: ['scope'] }],
+    }, (pin) => ({ ...pin, oneOf: [{}, { required: ['scope'] }] })],
+    // A $def can be used from any position, a negative one included.
+    ['$defs', {
+      type: 'object',
+      properties: { team: { $ref: '#/$defs/t' } },
+      $defs: { t: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+    }, (pin) => ({ ...pin, $defs: { t: { ...pin.$defs.t, required: [] } } })],
+  ])('requiring less under %s still drifts', (_position, pin, loosen) => {
+    expect(assessRead(pin, loosen(pin)).verdict).toBe('tool_drift');
+  });
+
+  test('requiring less under then, else, allOf and anyOf is compatible', () => {
+    const pin = {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      if: { properties: { team: { const: 'ENG' } } },
+      then: { required: ['team', 'scope'] },
+      else: { required: ['team'] },
+      allOf: [{ required: ['team'] }],
+      anyOf: [{ required: ['team', 'scope'] }, { required: ['scope'] }],
+    };
+    const live = {
+      ...pin,
+      then: { required: ['team'] },
+      else: {},
+      allOf: [{}],
+      anyOf: [{ required: ['scope'] }, { required: ['scope'] }],
+    };
+    expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+  });
+
+  test('properties named required, anyOf and type are properties, not keywords', () => {
+    const pin = {
+      type: 'object',
+      properties: {
+        required: { type: 'array', items: { type: 'string' } },
+        anyOf: { type: 'string' },
+        type: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+      },
+      required: ['required'],
+    };
+    // A loosening beside them is still accepted, and the property named
+    // `type` is a schema position whose nullable respell is accepted too.
+    expect(assessRead(pin, {
+      ...pin, required: [], properties: { ...pin.properties, type: { type: ['null', 'string'] } },
+    }).verdict).toBe('ok');
+    // Their own schemas still compare exactly.
+    [
+      { required: { type: 'array', items: { type: 'number' } } },
+      { anyOf: { type: 'number' } },
+      { type: { anyOf: [{ type: 'string' }, { type: 'number' }] } },
+    ].forEach((changed) => {
+      expect(assessRead(pin, { ...pin, properties: { ...pin.properties, ...changed } }).verdict).toBe('tool_drift');
+    });
   });
 
   test('a loosening and an optional addition together are compatible; a widened enum beside them still drifts', () => {
