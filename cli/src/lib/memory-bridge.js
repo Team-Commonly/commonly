@@ -65,11 +65,15 @@ export const BACKGROUND_PROCESS_CUE = 'Background processes: anything you start 
  * the memory cues and under the same once-per-session rule. An adapter passes
  * only the habits its CLI can act on; passing none leaves the preamble as it
  * was.
+ *
+ * `memoryReadOnly` is a public seat (F118): it reads its memory and is shown
+ * the long_term it read, but it is not offered the save tool, so no cue names
+ * one. `memoryWithheld` wins over it: that turn reads nothing either.
  */
 export const buildMemoryPreamble = (
   prompt,
   memoryLongTerm,
-  { freshSession = false, workCues = [], memoryWithheld = false } = {},
+  { freshSession = false, workCues = [], memoryWithheld = false, memoryReadOnly = false } = {},
 ) => {
   // `null` is the UNREADABLE signal, and it is deliberately not the same value
   // as `''`. Telling a seat whose token was revoked that "nothing has ever been
@@ -91,6 +95,11 @@ export const buildMemoryPreamble = (
       + `state you may already hold.)`;
   } else if (memoryLongTerm) {
     context = `=== Context (your persistent memory) ===\n${memoryLongTerm}`;
+  } else if (memoryReadOnly) {
+    // F118: a public seat is not offered the save tool, so the cue that
+    // teaches it would name a tool the seat cannot call.
+    context = `=== Context (your persistent memory) ===\n`
+      + `(empty — nothing has ever been saved here)`;
   } else {
     context = `=== Context (your persistent memory) ===\n`
       + `(empty — nothing has ever been saved here)\n`
@@ -114,6 +123,8 @@ export const buildMemoryPreamble = (
   let sessionEndCue = '=== Before this session ends ===\n';
   if (memoryWithheld) {
     sessionEndCue += 'Memory is withheld this turn, so there is nothing to save.';
+  } else if (memoryReadOnly) {
+    sessionEndCue += 'Memory is read-only on this public seat, so there is nothing to save.';
   } else if (memoryLongTerm === null) {
     sessionEndCue += 'Memory was unreadable on this fresh session. Do not treat it as empty or '
       + 'write a replacement based on this cue.';

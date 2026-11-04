@@ -59,7 +59,7 @@ import { resolveProviderKeyFile, startProviderProxy } from '../provider-proxy.js
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
 import { startInstanceProxy } from '../instance-proxy.js';
-import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const ISOLATED_PROXY_PORT = 8765;
@@ -249,8 +249,8 @@ const publicPermissions = (mode, mcpNames) => {
     lsp: 'allow',
     ...Object.fromEntries(mcpNames.map((name) => [`${permissionMcpName(name)}_*`, 'allow'])),
     // After the wildcard allow, since the last matching rule wins
-    // (public-withheld-tools.js).
-    ...Object.fromEntries(mcpNames.flatMap((name) => PUBLIC_WITHHELD_TOOLS
+    // (public-withheld-tools.js; self-install and memory writes, F118).
+    ...Object.fromEntries(mcpNames.flatMap((name) => PUBLIC_SEAT_WITHHELD_TOOLS
       .map((tool) => [`${permissionMcpName(name)}_${tool}`, 'deny']))),
   };
 };
@@ -749,6 +749,8 @@ export default {
 
     const fullPrompt = buildMemoryPreamble(prompt, ctx.memoryLongTerm, {
       freshSession: !ctx.sessionId,
+      // F118: a public seat reads its memory but is not offered a write.
+      memoryReadOnly: isPublic,
     });
     const tempDir = await mkdtemp(join(tmpdir(), 'commonly-opencode-'));
     await chmod(tempDir, 0o700);

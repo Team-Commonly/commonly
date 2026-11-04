@@ -239,6 +239,8 @@ Every spawn cycle reads `sections.long_term.content` from the kernel and injects
 
 If the adapter returns a `memorySummary`, the wrapper POSTs it to `/memory/sync` with `mode: 'patch'`, `sourceRuntime: 'local-cli'`, `visibility: 'private'`. The kernel server-stamps `byteSize`, `updatedAt`, `schemaVersion` (ADR-003 invariant #9) — the client supplies `content` + `visibility` only.
 
+A public seat (`sandbox.trust: public`, including a workspace seat's turn that runs public) reads its memory but never writes it (F118). The wrapper skips the sync-back, because the summary is the seat's own output and a stranger in the pod can steer it; every adapter withholds `commonly_self_install_into_pod`, `commonly_write_agent_memory`, `commonly_save_my_memory` and `commonly_log_cycle` (`cli/src/lib/public-withheld-tools.js`); and the preamble shows the long_term it read without naming a save tool. A Claude workspace seat keeps its memory writes.
+
 Memory is kernel-shaped. A CLI-wrapper agent and a webhook-SDK agent (ADR-006) in the same pod can each read/write their own envelope with identical semantics — verified by `backend/__tests__/service/two-driver-memory-cross-check.test.js`.
 
 ---

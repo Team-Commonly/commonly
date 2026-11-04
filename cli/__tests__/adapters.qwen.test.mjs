@@ -106,7 +106,16 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
         'agent', 'workflow', 'advisor', 'replace', 'task', 'search_file_content',
         'commonly_attach_file', 'mcp__commonly__commonly_attach_file',
         'commonly_catch_up', 'mcp__commonly__commonly_catch_up',
+        // F118: nor self-install or any memory write, on public trust.
+        'commonly_self_install_into_pod', 'mcp__commonly__commonly_self_install_into_pod',
+        'commonly_write_agent_memory', 'mcp__commonly__commonly_write_agent_memory',
+        'commonly_save_my_memory', 'mcp__commonly__commonly_save_my_memory',
+        'commonly_log_cycle', 'mcp__commonly__commonly_log_cycle',
       ]));
+    expect(args[args.indexOf('--exclude-tools') + 1]).not.toContain('commonly_read_agent_memory');
+    // The public prompt names no save tool the seat is not offered.
+    expect(args[args.indexOf('-p') + 1]).toContain('(empty');
+    expect(args[args.indexOf('-p') + 1]).not.toContain('commonly_save_my_memory');
     expect(options.env.HOME).toBe(options.env.QWEN_HOME);
     expect(options.env.HOME).toContain('commonly-qwen-home-');
     expect(profiles[0].options.statePath).toBe(options.env.HOME);
@@ -312,6 +321,11 @@ test('private Qwen approves only declared Commonly MCP tools in the non-interact
     expect(observed.args).toContain('--safe-mode');
     expect(observed.args).not.toContain('--approval-mode');
     expect(observed.args).not.toContain('--yolo');
+    // F118 withholds these on public trust only; a private seat keeps them.
+    const excluded = observed.args[observed.args.indexOf('--exclude-tools') + 1];
+    expect(excluded).not.toContain('commonly_save_my_memory');
+    expect(excluded).not.toContain('commonly_self_install_into_pod');
+    expect(observed.args[observed.args.indexOf('-p') + 1]).toContain('commonly_save_my_memory');
   });
 });
 

@@ -441,6 +441,7 @@ describe('codex adapter — spawn()', () => {
           sandbox: { trust: 'public', mode: 'workspace' },
           mcp: [{ name: 'commonly', transport: 'stdio', command: ['npx', '-y', '@commonlyai/mcp@latest'] }],
         },
+        memoryLongTerm: '',
         _publicCodexHome: publicHome,
         _spawnImpl: impl,
       });
@@ -449,7 +450,14 @@ describe('codex adapter — spawn()', () => {
       // TASK-287: a public seat is never offered attach_file. (The private
       // spawn's exact -c list above proves the private seat keeps it.)
       // F45: nor catch_up, which moves the read cursor past history unread.
-      expect(args).toContain('mcp_servers.commonly.disabled_tools=["commonly_attach_file","commonly_catch_up"]');
+      // F118: nor self-install or any memory write (log_cycle included); the
+      // memory read stays offered.
+      expect(args).toContain('mcp_servers.commonly.disabled_tools=["commonly_attach_file","commonly_catch_up",'
+        + '"commonly_self_install_into_pod","commonly_write_agent_memory","commonly_save_my_memory","commonly_log_cycle"]');
+      expect(args.join(' ')).not.toContain('commonly_read_agent_memory');
+      // Its prompt shows no save tool it is not offered.
+      expect(args[args.length - 1]).toContain('(empty');
+      expect(args[args.length - 1]).not.toContain('commonly_save_my_memory');
       const permissionConfig = args.find((arg) => arg.startsWith('permissions.commonly_public.filesystem='));
       expect(permissionConfig).toContain(`${JSON.stringify(versionDir)}="read"`);
       expect(permissionConfig).not.toContain(`${JSON.stringify(home)}="read"`);

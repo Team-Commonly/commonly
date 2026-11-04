@@ -236,6 +236,14 @@ describe('opencode MCP config', () => {
     expect(permission.commonly_commonly_attach_file).toBe('deny');
     expect(permission.commonly_commonly_catch_up).toBe('deny');
     expect(keys.indexOf('commonly_commonly_attach_file')).toBeGreaterThan(keys.indexOf('commonly_*'));
+    // F118: nor self-install or any memory write; the memory read stays.
+    for (const tool of ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
+      'commonly_save_my_memory', 'commonly_log_cycle']) {
+      expect(permission[`commonly_${tool}`]).toBe('deny');
+      expect(keys.indexOf(`commonly_${tool}`)).toBeGreaterThan(keys.indexOf('commonly_*'));
+      expect(permission[`room_grants_${tool}`]).toBe('deny');
+    }
+    expect(permission.commonly_commonly_read_agent_memory).toBeUndefined();
     expect(permission.edit['*']).toBe('allow');
     expect(permission.edit['**/.npmrc']).toBe('deny');
     expect(permission.edit['**/.yarnrc*']).toBe('deny');
@@ -852,7 +860,10 @@ describe('opencode external provider config', () => {
       const realAuthPath = realpathSync(authPath);
       const seatRoot = join(root, 'seat-state');
       const spawn = makeSpawnImpl({
-        onCall: (_cmd, _args, options) => {
+        onCall: (_cmd, callArgs, options) => {
+          // F118: the public prompt names no save tool the seat is not offered.
+          expect(callArgs[callArgs.length - 1]).toContain('(empty');
+          expect(callArgs[callArgs.length - 1]).not.toContain('commonly_save_my_memory');
           expect(options.stdio).toEqual(['ignore', 'pipe', 'pipe']);
           const config = JSON.parse(readFileSync(options.env.OPENCODE_CONFIG, 'utf8'));
           expect(existsSync(options.env.OPENCODE_CONFIG_DIR)).toBe(true);

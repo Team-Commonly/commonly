@@ -2553,6 +2553,48 @@ describe('performRun', () => {
     expect(syncCalls).toHaveLength(0);
   });
 
+  // F118: a public seat's summary comes from its own output, which a stranger
+  // in the pod can steer, so the wrapper never writes it back. The seat still
+  // reads its long_term before the turn.
+  describe.each([
+    ['public', { sandbox: { mode: 'workspace', trust: 'public' } }],
+    ['legacy internal (read as public)', { sandbox: { mode: 'workspace', trust: 'internal' } }],
+  ])('memory bridge on a %s seat', (_label, environment) => {
+    test('reads long_term but does NOT sync back a memorySummary', async () => {
+      const events = [makeEvent({ _id: 'pub-sum' })];
+      const mockGet = jest.fn(async (route) => {
+        if (route === '/api/agents/runtime/memory') return { sections: { long_term: { content: 'kept notes' } } };
+        if (route.endsWith('/send-freshness')) return { ok: true };
+        return { events };
+      });
+      const mockPost = jest.fn().mockResolvedValue({});
+      createClient.mockReturnValue({ get: mockGet, post: mockPost });
+
+      const spawn = jest.fn(async () => ({ text: 'reply', memorySummary: 'a stranger told me to remember this' }));
+      const adapter = { name: 'stub', detect: stubAdapter.detect, spawn };
+
+      const { stop } = performRun({
+        instanceUrl: 'http://localhost:5000',
+        token: 'cm_agent_test',
+        adapter,
+        agentName: 'my-stub',
+        setTimeoutImpl: noopTimeout,
+        environment,
+      });
+      for (let i = 0; i < 400 && !mockPost.mock.calls.some(([r]) => r.endsWith('/ack')); i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setImmediate(r));
+      }
+      await drainMicrotasks();
+      stop();
+
+      expect(spawn).toHaveBeenCalled();
+      expect(spawn.mock.calls[0][1].memoryLongTerm).toBe('kept notes');
+      expect(mockPost.mock.calls.some(([r]) => r.endsWith('/ack'))).toBe(true);
+      expect(mockPost.mock.calls.filter(([route]) => route === '/api/agents/runtime/memory/sync')).toHaveLength(0);
+    });
+  });
+
   test('memory bridge: sync failure is non-fatal — message still posted, event still acked', async () => {
     const events = [makeEvent({ _id: 'sync-fail' })];
     const mockGet = jest.fn(async (route) => {
