@@ -35,11 +35,14 @@ const V2Hint: React.FC<V2HintProps> = ({ children, label }) => {
         aria-expanded={open}
         onPointerDown={() => { pointerFocus.current = true; }}
         onFocus={() => { if (!pointerFocus.current) setOpen(true); }}
-        onClick={() => {
+        onClick={(event) => {
           if (hoverOpened.current) {
             // Pinned: leaving no longer closes it. Blur or a second click does.
+            // Safari and Firefox on macOS do not focus a button on click, and a
+            // button that never had focus never blurs, so take focus here.
             hoverOpened.current = false;
             pointerFocus.current = true;
+            event.currentTarget.focus();
             setOpen(true);
             return;
           }

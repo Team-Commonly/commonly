@@ -49,14 +49,21 @@ const V2Lightbox: React.FC<V2LightboxProps> = ({ images, index, onClose }) => {
     setResolved(null);
     setFailed(false);
     if (!image || !/\/api\/uploads\//.test(image.src)) return undefined;
-    void getSignedAttachmentUrl(image.src).then((signed) => {
+    getSignedAttachmentUrl(image.src).then((signed) => {
       if (!active) return;
       const safeSigned = messageImageUrl(signed);
       if (safeSigned) setResolved(safeSigned);
       else setFailed(true);
+    }).catch(() => {
+      // A mint that throws (offline, CORS, a dropped connection) is a failure
+      // too, not a blank overlay.
+      if (active) setFailed(true);
     });
     return () => { active = false; };
-  }, [image]);
+    // Keyed on the src: callers pass a fresh image object on every render, and
+    // re-minting on each one blanked the image.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [image?.src]);
 
   if (!image) return null;
 

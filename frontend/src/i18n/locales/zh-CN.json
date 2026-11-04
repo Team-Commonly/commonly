@@ -856,7 +856,7 @@
       "close": "关闭",
       "previous": "上一张",
       "next": "下一张",
-      "failed": "这张图片没能加载出来。"
+      "failed": "无法加载这张图片。"
     },
     "attachment": {
       "open": "打开 {{name}}",

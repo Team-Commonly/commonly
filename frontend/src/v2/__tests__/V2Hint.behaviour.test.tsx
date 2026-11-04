@@ -61,3 +61,16 @@ it('a tap with no hover opens it, and keyboard focus opens it until Escape', () 
   fireEvent.keyDown(trigger, { key: 'Escape' });
   expect(isOpen(trigger)).toBe(false);
 });
+
+it('in Safari, where a click does not focus the button, a pinned hint takes focus so blur can close it', () => {
+  const { trigger, wrap } = setup();
+  fireEvent.mouseEnter(wrap);
+  fireEvent.pointerDown(trigger);
+  fireEvent.click(trigger); // no focus event, as Safari and Firefox on macOS
+  expect(isOpen(trigger)).toBe(true);
+  expect(document.activeElement).toBe(trigger);
+  fireEvent.mouseLeave(wrap);
+  expect(isOpen(trigger)).toBe(true);
+  fireEvent.blur(wrap, { relatedTarget: document.body });
+  expect(isOpen(trigger)).toBe(false);
+});

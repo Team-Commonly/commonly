@@ -46,6 +46,24 @@ it('says the image could not load when signing fails, and never falls back to th
   expect(screen.getByText('sheet.png')).toBeInTheDocument();
 });
 
+it('says the image could not load when the mint request itself throws', async () => {
+  getSignedAttachmentUrl.mockRejectedValue(new TypeError('Failed to fetch'));
+  open(UPLOAD);
+
+  expect(await screen.findByText("Couldn't load this image.")).toBeInTheDocument();
+  expect(screen.queryByRole('img')).toBeNull();
+});
+
+it('does not mint again when the caller re-renders with an equal image', async () => {
+  getSignedAttachmentUrl.mockResolvedValue(SIGNED);
+  const onClose = jest.fn();
+  const { rerender } = render(<V2Lightbox images={[{ src: UPLOAD, name: 'sheet.png' }]} index={0} onClose={onClose} />);
+  expect(await screen.findByRole('img', { name: 'sheet.png' })).toHaveAttribute('src', SIGNED);
+  rerender(<V2Lightbox images={[{ src: UPLOAD, name: 'sheet.png' }]} index={0} onClose={onClose} />);
+  expect(screen.getByRole('img', { name: 'sheet.png' })).toHaveAttribute('src', SIGNED);
+  expect(getSignedAttachmentUrl).toHaveBeenCalledTimes(1);
+});
+
 it('draws a legacy /uploads/ image at once from the API origin, without minting', () => {
   open('/uploads/picture.png');
   expect(getSignedAttachmentUrl).not.toHaveBeenCalled();
