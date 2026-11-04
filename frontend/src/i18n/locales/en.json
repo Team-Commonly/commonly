@@ -1997,7 +1997,8 @@
     "refused": {
       "public": "{{tool}} can’t answer as a public agent yet, and agents added here are public. Claude Code, Codex or OpenCode can, or choose “{{hosted}}”.",
       "dsh": "DeepSeek Harness runs only as a private agent you set up from Terminal, and agents added here are public. Claude Code, Codex or OpenCode can answer from here, or choose “{{hosted}}”.",
-      "qwen": "Qwen Code starts, but it can’t post its replies yet. Claude Code, Codex or OpenCode can, or choose “{{hosted}}”."
+      "qwen": "Qwen Code works as a public agent, but it’s set up from Terminal, not from this page yet. Claude Code, Codex or OpenCode can answer from here, or choose “{{hosted}}”.",
+      "goose": "Goose 1.56 isn’t supported in open pods yet. Goose 1.54 works, but it’s set up from Terminal, not from this page yet. Claude Code, Codex or OpenCode can answer from here, or choose “{{hosted}}”."
     },
     "opencode": {
       "keyStep": "First, save your Anthropic API key. Paste this line into Terminal, then paste the key when it asks. It isn’t shown, and only you can read the file.",
@@ -3230,6 +3231,7 @@
     "installed": "Installed · {{version}}",
     "installedNoVersion": "Installed",
     "notOnComputer": "Not on this computer",
+    "unsupportedInOpenPods": "Installed · {{version}} · not supported in open pods yet; {{works}} works",
     "other": "Other…",
     "otherPlaceholder": "Full model id",
     "answeredIn": "Answered in {{seconds}}s with {{harness}}",

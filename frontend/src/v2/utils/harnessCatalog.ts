@@ -35,6 +35,12 @@ export const orderHarnessIds = (catalog: HarnessCatalogEntry[], inventory: Harne
   return [...ids.filter(installed), ...ids.filter((id) => !installed(id))];
 };
 
+// An installed version the CLI refuses in open pods, and the one that works
+// (Goose 1.56 adds a load_skill tool a public seat can't strip; #3430).
+const UNSUPPORTED_IN_OPEN_PODS: Record<string, { version: RegExp; works: string }> = {
+  goose: { version: /^1\.56(?:\.|$)/, works: 'Goose 1.54' },
+};
+
 /** "Installed · 2.1", "Not on this computer", or nothing when the computer said nothing about it. */
 export const harnessDeviceNote = (
   inventory: HarnessDeviceRow[] = [], id: string, t: (key: string, values?: Record<string, string>) => string,
@@ -42,6 +48,10 @@ export const harnessDeviceNote = (
   const row = inventory.find((entry) => entry.harness === id);
   if (!row) return '';
   if (!row.installed) return t('harness.notOnComputer');
+  const unsupported = UNSUPPORTED_IN_OPEN_PODS[id];
+  if (row.version && unsupported?.version.test(row.version)) {
+    return t('harness.unsupportedInOpenPods', { version: row.version, works: unsupported.works });
+  }
   return row.version ? t('harness.installed', { version: row.version }) : t('harness.installedNoVersion');
 };
 

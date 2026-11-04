@@ -115,10 +115,11 @@ export const opencodeSnippet = ({ agentName, podId, model }: { agentName: string
 };
 // Harnesses that can't answer from this page today, and why in plain words.
 // Every agent added here is a public one. dsh, pi and Hermes refuse a public
-// seat outright; Goose refuses on attach unless every public requirement is
-// met; Qwen Code runs but its replies don't post yet (Growth walk 2026-11-04).
-const REFUSED_HERE: Record<string, 'dsh' | 'qwen' | 'public'> = {
-  dsh: 'dsh', qwen: 'qwen', pi: 'public', goose: 'public', hermes: 'public',
+// seat outright. Qwen Code 0.26.2 and Goose 1.54.0 pass as public agents on
+// CLI 0.1.242 (Growth walk 2026-11-04) but are set up from Terminal, not from
+// this page yet; Goose 1.56 stays refused in open pods (#3430).
+const REFUSED_HERE: Record<string, 'dsh' | 'qwen' | 'goose' | 'public'> = {
+  dsh: 'dsh', qwen: 'qwen', pi: 'public', goose: 'goose', hermes: 'public',
 };
 const AGENT_KIND = 'agent' as const;
 const HOSTED_STATUS_POLL_MS = 4000;
@@ -1296,6 +1297,7 @@ const V2AgentBYO: React.FC = () => {
     const values = { tool: harnessLabel(harnessCatalog, harness), hosted: hostedName };
     if (reason === 'dsh') return t('agentByo.refused.dsh', values);
     if (reason === 'qwen') return t('agentByo.refused.qwen', values);
+    if (reason === 'goose') return t('agentByo.refused.goose', values);
     return t('agentByo.refused.public', values);
   };
   const opencodeName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;

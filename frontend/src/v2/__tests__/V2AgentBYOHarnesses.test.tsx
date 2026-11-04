@@ -110,10 +110,10 @@ describe('every harness on the add page', () => {
   });
 
   test.each([
-    ['qwen', 'Qwen Code starts, but it can’t post its replies yet. Claude Code, Codex or OpenCode can, or choose “Run it here”.'],
+    ['qwen', 'Qwen Code works as a public agent, but it’s set up from Terminal, not from this page yet. Claude Code, Codex or OpenCode can answer from here, or choose “Run it here”.'],
     ['dsh', 'DeepSeek Harness runs only as a private agent you set up from Terminal, and agents added here are public. Claude Code, Codex or OpenCode can answer from here, or choose “Run it here”.'],
     ['pi', 'pi can’t answer as a public agent yet, and agents added here are public. Claude Code, Codex or OpenCode can, or choose “Run it here”.'],
-    ['goose', 'Goose can’t answer as a public agent yet, and agents added here are public. Claude Code, Codex or OpenCode can, or choose “Run it here”.'],
+    ['goose', 'Goose 1.56 isn’t supported in open pods yet. Goose 1.54 works, but it’s set up from Terminal, not from this page yet. Claude Code, Codex or OpenCode can answer from here, or choose “Run it here”.'],
   ])('%s says in plain words what works instead, with no install button', async (runner, line) => {
     await renderPage();
     fireEvent.click(screen.getByTestId(`byo-runner-${runner}`));

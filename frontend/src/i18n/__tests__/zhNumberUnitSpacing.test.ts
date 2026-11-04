@@ -50,6 +50,8 @@ const OPAQUE_PLACEHOLDERS = [
   'dep',
   // Runtime ownership names the visible blocking Pods and installers.
   'blockers', 'harness', 'effort', 'model',
+  // harness.unsupportedInOpenPods names the version that works ("Goose 1.54").
+  'works',
   // runTrace.served names the requested and the answering model groups.
   'requested', 'served',
   // runTrace.call inserts the opaque PG call ID, not a number.
