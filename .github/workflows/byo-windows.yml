@@ -49,4 +49,7 @@ jobs:
       - name: Walk the page's Windows lines
         env:
           COMMONLY_BYO_TREE_TARBALL: ${{ steps.pack.outputs.tarball }}
+          # A CLI fix reaches npm only after merge, so on a PR the published
+          # leg is reported and this tree's leg decides. Dispatched, both do.
+          COMMONLY_BYO_PUBLISHED_REPORT_ONLY: ${{ github.event_name == 'pull_request' && '1' || '' }}
         run: node cli/scripts/windows-byo-smoke.mjs

@@ -80,7 +80,7 @@ if (!process.env.CI) {
 
 const log = (line) => console.log(`${new Date().toISOString()} ${line}`);
 let failed = false;
-const fail = (line) => { console.error(`FAIL: ${line}`); failed = true; };
+const fail = (line) => { console.log(`::error::${line}`); failed = true; };
 const listen = (server) => new Promise((r) => { server.listen(0, '127.0.0.1', () => r(server.address().port)); });
 const readBody = (req) => new Promise((r) => {
   let raw = '';
@@ -253,37 +253,52 @@ const walk = async (label, installLine) => {
 
   const start = Date.now();
   const replied = () => leg.posts.some((p) => String(p.content || '').includes(REPLY));
-  while (Date.now() - start < LEG_TIMEOUT_MS && exited === null && !(replied() && leg.acked)) {
+  // After three refused turns the CLI opens its circuit and hands the event
+  // back for a requeue 10 to 20 minutes out; nothing more happens in a leg.
+  const gaveUp = () => /circuit open; releasing/.test(out);
+  while (Date.now() - start < LEG_TIMEOUT_MS && exited === null && !gaveUp() && !(replied() && leg.acked)) {
     // eslint-disable-next-line no-await-in-loop
     await new Promise((r) => { setTimeout(r, 1000); });
   }
   const seconds = Math.round((Date.now() - start) / 1000);
   if (exited === null) killTree(child.pid);
 
-  const legFailed = !replied() || !leg.acked || leg.badAuth.length > 0;
-  if (!leg.delivered) fail(`${label}: the agent never polled for its @mention`);
-  else if (model.paths.length === modelBefore) fail(`${label}: Claude Code never reached the model`);
-  if (!replied()) fail(`${label}: no reply came back to the pod within ${seconds} s`);
-  if (!leg.acked) fail(`${label}: the @mention was never acknowledged`);
-  if (leg.badAuth.length) fail(`${label}: calls without the page's token: ${leg.badAuth.join(', ')}`);
-  if (exited !== null && legFailed) fail(`${label}: PowerShell exited ${exited} before the walk finished`);
+  const problems = [];
+  if (!leg.delivered) problems.push('the agent never polled for its @mention');
+  else if (model.paths.length === modelBefore) problems.push('Claude Code never reached the model');
+  if (!replied()) problems.push(`no reply came back to the pod within ${seconds} s`);
+  if (!leg.acked) problems.push('the @mention was never acknowledged');
+  if (leg.badAuth.length) problems.push(`calls without the page's token: ${leg.badAuth.join(', ')}`);
+  if (exited !== null && problems.length) problems.push(`PowerShell exited ${exited} before the walk finished`);
 
-  if (legFailed) {
-    console.error(`${label}: the stub Commonly API saw:\n  ${counts(api.calls.slice(apiBefore)) || '(nothing)'}`);
-    console.error(`${label}: the stub model saw:\n  ${counts(model.paths.slice(modelBefore)) || '(nothing)'}`);
-    console.error(`${label}: posts to the pod: ${JSON.stringify(leg.posts).slice(0, 2000)}`);
-    console.error(`${label}: PowerShell output (last 6000 chars):\n${out.slice(-6000)}`);
+  if (problems.length) {
+    // One stream, so the runner's log keeps this in order.
+    log(`${label}: the stub Commonly API saw:\n  ${counts(api.calls.slice(apiBefore)) || '(nothing)'}`);
+    log(`${label}: the stub model saw:\n  ${counts(model.paths.slice(modelBefore)) || '(nothing)'}`);
+    log(`${label}: posts to the pod: ${JSON.stringify(leg.posts).slice(0, 2000)}`);
+    log(`${label}: PowerShell output (last 6000 chars):\n${out.slice(-6000)}`);
   } else {
     log(`${label}: reply posted and @mention acknowledged after ${seconds} s`);
   }
+  return problems;
 };
 
-await walk('published');
+// The published leg is what a person gets today. On a pull request it is
+// reported, not failed: a fix to the CLI reaches npm only after it merges, so
+// the published leg cannot pass on the PR that fixes it. This tree's leg is
+// the PR's proof. Dispatched, both legs must pass.
+const publishedReportsOnly = process.env.COMMONLY_BYO_PUBLISHED_REPORT_ONLY === '1';
+for (const problem of await walk('published')) {
+  if (publishedReportsOnly) console.log(`::warning::published CLI on Windows: ${problem}`);
+  else fail(`published: ${problem}`);
+}
 const tarball = process.env.COMMONLY_BYO_TREE_TARBALL;
-if (tarball) await walk('this tree', `npm i -g ${tarball}`);
+if (tarball) (await walk('this tree', `npm i -g ${tarball}`)).forEach((problem) => fail(`this tree: ${problem}`));
 else fail('this tree: COMMONLY_BYO_TREE_TARBALL is not set, so this checkout was not walked');
 
 apiServer.close();
 modelServer.close();
 if (failed) process.exit(1);
-log('the page\'s Windows lines answered an @mention, published and from this tree');
+log(publishedReportsOnly
+  ? 'this tree\'s CLI answered an @mention from the page\'s Windows lines'
+  : 'the page\'s Windows lines answered an @mention, published and from this tree');
