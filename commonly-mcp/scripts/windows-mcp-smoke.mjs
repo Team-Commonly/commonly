@@ -5,26 +5,49 @@
  * Windows user to run, in PowerShell:
  *
  *   npm i -g @commonlyai/mcp
- *   claude mcp add commonly -e COMMONLY_API_URL=... -e COMMONLY_AGENT_TOKEN=... -- cmd /c commonly-mcp
+ *   claude mcp add commonly cmd /c commonly-mcp -e COMMONLY_API_URL=... -e COMMONLY_AGENT_TOKEN=...
  *
  * Claude Code then starts `cmd /c commonly-mcp` with those two variables and
  * speaks MCP over its stdio. This script does the same thing Claude Code does:
  * it installs the package globally, starts `cmd /c commonly-mcp` against a stub
  * Commonly API, sends initialize and tools/list, and checks the server's
- * start-up call reached the API with the token. It runs twice:
- *   published  - `npm i -g @commonlyai/mcp`, exactly the page's line
- *   this tree  - this checkout's commonly-mcp, so a PR that breaks Windows fails
+ * start-up call reached the API with the token. It runs three times:
+ *   published   - `npm i -g @commonlyai/mcp`, exactly the page's line
+ *   this tree   - this checkout's commonly-mcp, so a PR that breaks Windows fails
+ *   Claude Code - the page's own `claude mcp add` line, run in PowerShell, then
+ *                 `claude mcp list`, which launches the server the way a
+ *                 session does and prints Connected or Failed (F106)
+ *
+ * The two lines are read from V2AgentBYO.tsx, not copied here, so a change to
+ * the page's Windows snippet re-runs this job and is what gets tested.
  *
  * It installs global packages into the runner's profile. Never run it on a
  * machine you use.
  */
 import { spawn, spawnSync } from 'child_process';
+import { mkdtempSync, readFileSync } from 'fs';
 import { createServer } from 'http';
-import { dirname, resolve } from 'path';
+import { tmpdir } from 'os';
+import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOKEN = 'cm_agent_windows_mcp_smoke';
+const CLAUDE_CODE = '@anthropic-ai/claude-code@2.1.318';
+
+// The page's Windows snippet, from the component that renders it. The source
+// holds `\n` escapes inside a template literal, so the lines split on those.
+const pageSource = readFileSync(resolve(HERE, '../../frontend/src/v2/components/V2AgentBYO.tsx'), 'utf8');
+const snippet = /const claudeSnippetWindows = issued\s*\?\s*`([^`]*)`/.exec(pageSource);
+if (!snippet) {
+  console.error('windows-mcp-smoke: claudeSnippetWindows not found in V2AgentBYO.tsx');
+  process.exit(1);
+}
+const [installLine, addLine, ...rest] = snippet[1].split('\\n');
+if (rest.length || !/^npm i -g \S+$/.test(installLine || '') || !/^claude mcp add /.test(addLine || '')) {
+  console.error(`windows-mcp-smoke: the page's Windows snippet changed shape: ${JSON.stringify(snippet[1])}`);
+  process.exit(1);
+}
 
 if (process.platform !== 'win32') {
   console.error('windows-mcp-smoke: Windows only.');
@@ -54,6 +77,11 @@ const server = createServer((req, res) => {
 await new Promise((r) => { server.listen(0, '127.0.0.1', r); });
 const API = `http://127.0.0.1:${server.address().port}`;
 log(`stub API on ${API}`);
+const pageAdd = addLine.replace('${apiUrl}', API).replace('${issued.token}', TOKEN);
+if (pageAdd.includes('${')) {
+  console.error(`windows-mcp-smoke: unfilled placeholder in the page's line: ${addLine}`);
+  process.exit(1);
+}
 
 // npm is itself a .cmd on Windows; a fixed command line through cmd is how a
 // PowerShell user runs it too.
@@ -139,19 +167,70 @@ const session = (label) => new Promise((done) => {
   })();
 });
 
+// PowerShell, where the page tells a Windows user to paste its lines. Async,
+// so the stub API in this process can answer the server's check-in while
+// Claude Code is running it (a spawnSync would hold the event loop).
+const powershell = (line, cwd) => new Promise((done) => {
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', line], {
+    cwd,
+    env: { ...process.env, DISABLE_AUTOUPDATER: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (c) => { stdout += c.toString('utf8'); });
+  child.stderr.on('data', (c) => { stderr += c.toString('utf8'); });
+  const timer = setTimeout(() => {
+    stderr += '\n(timed out after 120 s)';
+    spawnSync('taskkill', ['/F', '/T', '/PID', String(child.pid)]);
+  }, 120_000);
+  child.on('close', (status) => { clearTimeout(timer); done({ status, stdout, stderr }); });
+});
+
+// Claude Code itself starts the server from the page's line (the npm .cmd shim
+// class, #2141): `claude mcp list` launches each server, initializes it, and
+// prints Connected or Failed. The check-in must also reach the API.
+const claudeCode = async (label) => {
+  const cwd = mkdtempSync(join(tmpdir(), 'mcp-smoke-'));
+  const before = seen.length;
+  log(`Claude Code (${label}): ${addLine}`);
+  const add = await powershell(pageAdd, cwd);
+  if (add.status !== 0) {
+    fail(`Claude Code (${label}): the page's claude mcp add line exited ${add.status}: ${(add.stderr || add.stdout || '').slice(-1500)}`);
+    return;
+  }
+  const list = await powershell('claude mcp list', cwd);
+  const out = `${list.stdout || ''}${list.stderr || ''}`;
+  if (list.status !== 0) fail(`Claude Code (${label}): claude mcp list exited ${list.status}: ${out.slice(-1500)}`);
+  const row = out.split(/\r?\n/).find((l) => /^commonly:/.test(l.trim()));
+  log(`Claude Code (${label}): claude mcp list -> ${row ? row.trim() : '(no commonly row)'}`);
+  if (!row) fail(`Claude Code (${label}): claude mcp list has no commonly server: ${out.slice(-1500)}`);
+  else if (!/Connected/.test(row)) fail(`Claude Code (${label}) could not start the page's server: ${row.trim()}`);
+  const call = seen.slice(before).find((s) => s.url.startsWith('/api/agents/runtime/installations'));
+  if (!call) fail(`Claude Code (${label}): the server Claude Code started never called Commonly`);
+  else if (call.auth !== `Bearer ${TOKEN}`) fail(`Claude Code (${label}): the start-up call did not carry the page's token`);
+  else log(`Claude Code (${label}): start-up call reached the API with the token`);
+};
+
 try {
-  log('published: npm i -g @commonlyai/mcp');
-  npm('i -g @commonlyai/mcp');
+  log(`Claude Code: npm i -g ${CLAUDE_CODE}`);
+  npm(`i -g ${CLAUDE_CODE}`);
+
+  log(`published: ${installLine}`);
+  npm(installLine.replace(/^npm /, ''));
   await session('published');
+  await claudeCode('published');
 
   const tree = resolve(HERE, '..');
   log(`this tree: npm i -g --install-links ${tree}`);
   npm(`i -g --install-links "${tree}"`);
   await session('this tree');
+  await claudeCode('this tree');
 } catch (error) {
   fail(error.message);
 } finally {
-  try { npm('rm -g @commonlyai/mcp'); } catch { /* best effort */ }
+  try { npm(`rm -g @commonlyai/mcp ${CLAUDE_CODE.replace(/@[^@]+$/, '')}`); } catch { /* best effort */ }
   server.close();
 }
 if (!failed) log('PASS');

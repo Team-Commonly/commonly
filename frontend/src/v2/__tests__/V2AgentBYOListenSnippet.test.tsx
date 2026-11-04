@@ -341,8 +341,11 @@ describe('BYO listener snippet', () => {
       expect(screen.queryByTestId('byo-repo-choice')).toBeNull();
       expect(mcpBox().split('\n')).toEqual([
         'npm i -g @commonlyai/mcp',
-        expect.stringMatching(/^claude mcp add commonly -e COMMONLY_API_URL=\S+ -e COMMONLY_AGENT_TOKEN=cm_agent_test_token -- cmd \/c commonly-mcp$/),
+        expect.stringMatching(/^claude mcp add commonly cmd \/c commonly-mcp -e COMMONLY_API_URL=\S+ -e COMMONLY_AGENT_TOKEN=cm_agent_test_token$/),
       ]);
+      // PowerShell drops a bare `--` through npm's claude.ps1 shim, and the line
+      // then fails with "missing required argument 'commandOrUrl'" (F106).
+      expect(mcpBox()).not.toMatch(/(^|\s)--(\s|$)/);
       expect(screen.getByTestId('byo-mcp-claude')).toHaveTextContent(/Paste both lines in PowerShell/);
     });
 
