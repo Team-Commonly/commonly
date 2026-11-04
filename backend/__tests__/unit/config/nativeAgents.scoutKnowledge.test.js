@@ -124,8 +124,9 @@ describe('Scout onboarding knowledge', () => {
   // native Windows today; Codex off a Mac is untested; the daemon is unverified.
   test('says where an agent answers @mentions exactly as the support matrix does', () => {
     expect(prompt).toMatch(/@mentions: Claude Code and Codex on a Mac, with `commonly agent run`\./);
-    expect(prompt).toMatch(/The "Add a computer" daemon is not verified yet; say so if asked\./);
-    expect(prompt).toMatch(/Claude Code on Linux \(WSL included\) or native Windows does not answer @mentions today; fixes are in flight, give no date\./);
+    expect(prompt).toMatch(/with no terminal\. This daemon path is not verified yet\./);
+    expect(prompt).toMatch(/Claude Code on Linux \(WSL included\) or native Windows is not verified to answer @mentions today; fixes are in flight, give no date\./);
+    expect(prompt).toMatch(/with the MCP command on the connect page \(not yet walked on Linux or Windows; there it is two PowerShell lines\)/);
     expect(prompt).toMatch(/Codex off a Mac is not tested\./);
     expect(prompt).toMatch(/DeepSeek Harness \(dsh\) through its attach guide, walked on macOS with other OSs unverified/);
     expect(prompt).toMatch(/For Claude Code on Linux, WSL or native Windows, do not propose a connect card/);
@@ -140,11 +141,14 @@ describe('Scout onboarding knowledge', () => {
       /on Linux \(WSL included\) in an invite-only pod/,
       /answers only while every pod it is in is invite-only/,
       /Claude Code on macOS, Linux or WSL/,
-      /Codex on (Linux|WSL|Windows)\b(?! or WSL, or any tool)/,
-      /daemon (works|is verified)/,
+      /Codex (on|runs on|works on) (native )?(Linux|WSL|Windows)\b(?! or WSL, or any tool)/,
+      /daemon (works|is working|is verified)/,
       /Claude Code (runs|works) on (native )?Windows/,
+      /Claude Code on (native )?Windows (works|answers)/,
+      /does not answer @mentions today/,
+      /MCP command on the connect page \((on|on native) Windows/,
       /--unsandboxed/,
-      /(Qwen|pi|Goose)[^.]*\b(works|connects|is supported)/,
+      /\b(Qwen Code|Goose|pi)\b (now )?(works|runs|connects|is supported)\b/,
     ].forEach((claim) => expect(prompt).not.toMatch(claim));
   });
 
@@ -193,10 +197,10 @@ describe('Scout onboarding knowledge', () => {
   // The answer matches what the Connect page itself offers on that OS
   // (agentByo.listen.windowsNote / unavailableCodex).
   test('never proposes the card for a tool or OS it cannot set up, and offers what the Connect page does', () => {
-    expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode, Hermes and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet only for a tool with no path above, or an OS its path does not cover\./);
+    expect(prompt).toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text\. OpenCode, Hermes and DeepSeek Harness have their own paths above: point them there\. Say plainly that it does not run there yet, or is not tested there, as above, only for a tool with no path above, or an OS its path does not cover\./);
     // CodeRabbit on #2765: the no-card rule must not deny tools that do connect.
     expect(prompt).not.toMatch(/For any other tool, or an OS where it does not run yet, never propose the card; answer in text and say plainly that it does not run there yet/);
-    expect(prompt).toMatch(/For Claude Code on Linux, WSL or native Windows, do not propose a connect card: offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page \(on Windows the page gives it as two PowerShell lines\)/);
+    expect(prompt).toMatch(/For Claude Code on Linux, WSL or native Windows, do not propose a connect card: offer "Run it here" with commonly_offer_hosted_agent, and also say they can use the pod from their own Claude Code sessions with the MCP command on the connect page/);
     expect(prompt).toMatch(/For Codex off a Mac, do not propose a connect card either: offer "Run it here", or running Codex on a Mac\. Say plainly why/);
     const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/en.json'), 'utf8'));
     // D245: the page no longer says Claude Code can't run on Windows. Its note
@@ -213,7 +217,7 @@ describe('Scout onboarding knowledge', () => {
   // "Want me to open that page?" instead of proposing, and no card came.
   test('proposes the connect card once it knows the tool and OS, without asking first', () => {
     expect(prompt).toMatch(
-      /Propose the connect card in the same turn you learn both what they run and an OS where it can be connected/,
+      /Propose the connect card in the same turn you learn both what they run and an OS on the card list above \(macOS\)/,
     );
     expect(prompt).toMatch(/Do not ask whether to: the card is the question/);
     expect(prompt).toMatch(/Do not write the Terminal steps in chat instead of the card/);

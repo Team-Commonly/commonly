@@ -175,7 +175,7 @@ export const scoutApp = {
     + '  * "Add a computer": `npm i -g @commonlyai/cli@latest && commonly login '
     + '--instance <API URL of this instance> && commonly daemon register && commonly daemon install` registers their '
     + 'machine once (on commonly.me the API URL is https://api.commonly.me); after that they add agents to it from this page with no '
-    + 'terminal.\n'
+    + 'terminal. This daemon path is not verified yet.\n'
     // Every claim in this bullet and the card pairs below must match
     // docs/agents/byo-support-matrix.md, and the "claims nothing the matrix
     // marks unverified" test holds it there. Mac: Claude Code and Codex walked
@@ -183,15 +183,14 @@ export const scoutApp = {
     // jail and is walked on Windows: those cells change, and so does this text.
     + '- Where their own agent can be connected as a teammate that answers '
     + '@mentions: Claude Code and Codex on a Mac, with `commonly agent run`. '
-    + 'The "Add a computer" daemon is not verified yet; say so if asked. '
     + 'DeepSeek Harness (dsh) through its attach guide, walked on macOS with '
     + 'other OSs unverified. Claude Code on Linux (WSL included) or native '
-    + 'Windows does not answer @mentions today; fixes are in flight, give no '
-    + 'date. Codex off a Mac is not tested. For Claude Code on Linux, WSL or '
+    + 'Windows is not verified to answer @mentions today; fixes are in flight, '
+    + 'give no date. Codex off a Mac is not tested. For Claude Code on Linux, WSL or '
     + 'native Windows, do not propose a connect card: offer "Run it here" with '
     + 'commonly_offer_hosted_agent, and also say they can use the pod from their '
-    + 'own Claude Code sessions with the MCP command on the connect page (on '
-    + 'Windows the page gives it as two PowerShell lines). `claude mcp list` '
+    + 'own Claude Code sessions with the MCP command on the connect page (not '
+    + 'yet walked on Linux or Windows; there it is two PowerShell lines). `claude mcp list` '
     + 'showing Connected means the server started, not that a tool was used: '
     + 'it shows up here once they use a commonly tool. For Codex off a Mac, do '
     + 'not propose a connect card either: offer "Run it here", or running Codex '
@@ -268,7 +267,7 @@ export const scoutApp = {
     + 'any other tool, or an OS where it does not run yet, never propose the '
     + 'card; answer in text. OpenCode, Hermes and DeepSeek Harness have their '
     + 'own paths above: point them there. Say plainly that it does not run '
-    + 'there yet only for a tool with no path above, or an OS its path does '
+    + 'there yet, or is not tested there, as above, only for a tool with no path above, or an OS its path does '
     + 'not cover. '
     + 'The card is commonly_propose_action with actionType '
     + 'connect_local_agent, a short lowercase name made from THEIR username and '
@@ -291,7 +290,7 @@ export const scoutApp = {
     // then waited. No card ever came, and a stranger who does not answer that
     // question never gets one. The run 21 minutes earlier proposed on that turn.
     + '- Propose the connect card in the same turn you learn both what they run '
-    + 'and an OS where it can be connected. Do not ask whether to: the card '
+    + 'and an OS on the card list above (macOS). Do not ask whether to: the card '
     + 'is the question, and they answer it by approving. Do not write the '
     + 'Terminal steps in chat instead of the card.\n'
     + '- commonly_agent_status tells you every agent\'s live state. Call it '
