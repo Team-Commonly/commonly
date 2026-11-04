@@ -43,7 +43,7 @@ else's credential.** A list is only valid for the row whose credential took it,
 and operators don't hold users' credentials.
 
 1. Read the backend's `hosted_mcp_tool_assessment` log lines. Each line carries
-   `entryId`, `connectionId` and the tools whose verdict isn't plain `ok`, with
+   `entryId`, `connectionId` and the tools whose verdict isn't plain `ok` or `not_granted`, with
    names and details from the pin and our comparison, never vendor text. Every
    line comes from an assessment the broker ran with that row's own
    credential, cached for 5 minutes per row.
