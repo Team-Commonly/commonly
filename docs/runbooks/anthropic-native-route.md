@@ -28,6 +28,13 @@ digests, pod skills, avatar descriptions) and the commonly-bot.
   native turn runs on it when its installation names no model, or names the
   old platform default `deepseek-v4-flash` (145 Scout installs stored that).
   Another pinned model is kept.
+- **Which models `nativeModel` may name.** It must be a `claude-*` model that
+  accepts `thinking: { type: 'disabled' }` (Haiku 5.5 does). Native turns,
+  llmService and the bot all send that, and the native tool loop needs it: it
+  replays an assistant turn without its thinking blocks. A model that always
+  thinks (Opus, Sonnet 5.5, Fable) returns 400 on every call, so moving to one
+  needs a code change first. A non-Claude value is not the no-training route,
+  and Calendar tools are then never offered (`isNoTrainingModel`).
 - **llmService.** The same workloads get `LLM_SERVICE_MODEL`, also set to
   `nativeModel`. Set, it decides every llmService call's model, over the
   caller's, `LITELLM_CHAT_MODEL` and the global model config, and a failure is
@@ -36,8 +43,10 @@ digests, pod skills, avatar descriptions) and the commonly-bot.
   longer handed `OPENROUTER_API_KEY`. Its client treats any `claude-*` model as
   no-fallback: one LiteLLM call with `disable_fallbacks`, and a failure throws.
 
-What still reaches DeepSeek: every other chat model name LiteLLM serves (the
-nemotron, `gpt-5.4*`, `codex-cli` and Gemini names) is `deepseek-v4-flash`. So a
+What still reaches DeepSeek: with `aiProviders.gemini` and `.openai` off (dev
+since F85), every other chat model name LiteLLM serves (the nemotron,
+`gpt-5.4*`, `codex-cli` and Gemini names) is `deepseek-v4-flash`. Turning Gemini
+on routes the Gemini names to Google instead, and /privacy must then name it. So a
 native install whose owner pinned another model, and any OpenClaw or cloud-codex
 agent, run on DeepSeek. On 11-04 no OpenClaw gateway ran and `cloud-codex-cody`
 was scaled to 0, so only an owner's own choice does; /privacy says so. Bringing
@@ -57,7 +66,11 @@ and never calls another provider.
   DeepSeek call.
 - **Limited-Use tools.** `services/limitedUseConnectors.ts` lists the
   connectors under Google's Limited Use (`google-calendar`). A native run is
-  offered their tools only when `NATIVE_RUNTIME_MODEL` is set. The MCP grant
+  offered their tools only when `NATIVE_RUNTIME_MODEL` is a `claude-*` model.
+  Once it is offered one, its requests carry only guardrails that call no other
+  provider (`injection-guard`; `guardrailsForRun`), because the tool's result
+  stays in the transcript. The broker refuses a Limited-Use call unless the
+  caller is that run. The MCP grant
   endpoint (`routes/mcpGrants.ts`) serves runtimes whose model Commonly cannot
   know, so it never lists them and refuses a call with
   `limited_use_native_only` before the broker runs.

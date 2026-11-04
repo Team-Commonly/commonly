@@ -34,7 +34,7 @@ import {
   hostedBrokerToolsForRun,
   HostedBrokerProjection,
 } from './grantBrokerProjectionService';
-import { isNoTrainingModel } from './limitedUseConnectors';
+import { isLimitedUseTool, isNoTrainingModel } from './limitedUseConnectors';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
 import { podIsBridged } from './outsiderGrantPodEligibility';
 import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
@@ -148,6 +148,17 @@ const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_0
 const NATIVE_RUNTIME_GUARDRAILS = (
   process.env.NATIVE_RUNTIME_GUARDRAILS ?? 'openai-moderation-enforce,injection-guard'
 ).split(',').map((s) => s.trim()).filter(Boolean);
+// Guardrails that run inside LiteLLM and call no other provider. Once a run is
+// offered a Limited-Use tool (Calendar), its tool results sit in every later
+// request, so only these stay on (F92): openai-moderation-enforce would send
+// them to OpenAI's moderation API.
+const LOCAL_GUARDRAILS: ReadonlySet<string> = new Set(['injection-guard']);
+export const guardrailsForRun = (names: string[], limitedUseOffered: boolean): string[] => (
+  limitedUseOffered ? names.filter((name) => LOCAL_GUARDRAILS.has(name)) : names
+);
+const hasLimitedUseTool = (projection: HostedBrokerProjection): boolean => (
+  [...projection.dispatch.values()].some((mapped) => isLimitedUseTool(mapped.tool))
+);
 // How a guardrail rejection reads in a chat call's error body.
 const GUARDRAIL_REJECTION = /guardrail|moderation|prompt-injection/i;
 const GUARD_CHECK_TIMEOUT_MS = 10_000;
@@ -2305,6 +2316,8 @@ export async function runAgent(
     }
   };
   let broker: HostedBrokerProjection = await assembleBroker();
+  // Sticky: a Limited-Use result stays in the transcript after the tool is gone.
+  let limitedUseOffered = false;
 
   // A guard stop after the turn read the web is most often a page, not the
   // person. So the turn keeps where each web result sits (its tool-call round
@@ -2395,6 +2408,8 @@ export async function runAgent(
       // A grant's tools go only to the native model, and once offered the turn
       // stays on it: later rounds carry what those tools returned.
       if (offeredBroker.tools.length > 0) model = modelFor(true);
+      limitedUseOffered = limitedUseOffered || hasLimitedUseTool(broker);
+      const roundGuardrails = guardrailsForRun(NATIVE_RUNTIME_GUARDRAILS, limitedUseOffered);
       const offeredTools = [
         ...toolsForConfig(cfg, inPodOnly, {
           webTainted,
@@ -2426,7 +2441,7 @@ export async function runAgent(
             // Guard the untrusted-user / untrusted-pod-content surface (see the
             // NATIVE_RUNTIME_GUARDRAILS note above). Omitted entirely when empty
             // so an operator can disable via env without a redeploy.
-            ...(NATIVE_RUNTIME_GUARDRAILS.length ? { guardrails: NATIVE_RUNTIME_GUARDRAILS } : {}),
+            ...(roundGuardrails.length ? { guardrails: roundGuardrails } : {}),
           },
           {
             headers: {
