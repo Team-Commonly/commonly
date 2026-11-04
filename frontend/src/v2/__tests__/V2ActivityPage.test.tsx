@@ -1706,6 +1706,9 @@ describe('V2ActivityPage', () => {
     // The shape agent posts arrive in: whitespace already folded by the recap.
     expect(plainLine('Done: - a - b - c ## Shipped **ok**')).toBe('Done: a - b - c Shipped ok');
     expect(plainLine('```\nlog line\n```')).toBe('log line');
+    // Folded, as agent posts arrive: the fence ends where its closing marks are, not at the end.
+    expect(plainLine('Before ```js code ``` after')).toBe('Before after');
+    expect(plainLine('```sh npm test```')).toBe('npm test');
     expect(plainLine('中_文_字 and __init__.py stay')).toBe('中_文_字 and __init__.py stay');
     const link = `${'y'.repeat(160)} see [the doc](https://example.com/aaaaaaaaaaaa`.slice(0, 180);
     expect(plainLine(link)).toMatch(/ see the doc…$/);

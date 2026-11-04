@@ -167,7 +167,8 @@ const RECAP_CLIP = 180;
 export const plainLine = (value: string): string => {
   const clipped = value.length >= RECAP_CLIP;
   const fold = (text: string) => text.replace(/\s+/g, ' ').trim();
-  const fence = /```[^\n]*\n?([\s\S]*?)(?:```|$)/g;
+  // The info string is a bare word (js, ts, sh), so a folded post's fence keeps the text after it.
+  const fence = /```[\w+-]*[ \t]*\n?([\s\S]*?)(?:```|$)/g;
   const prose = value.replace(fence, ' ');
   let text = (fold(prose) ? prose : value.replace(fence, ' $1 '))
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1');
