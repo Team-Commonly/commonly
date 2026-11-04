@@ -8,6 +8,8 @@ const scrubInviteFromUrl = (raw: string): string => {
     const isProtocolRelative = raw.startsWith('//');
     const url = new URL(raw, 'https://commonly.invalid');
     url.searchParams.delete('invite');
+    // The Discord first-install proof (F89): a signed 30-minute credential.
+    url.searchParams.delete('install');
     if (url.hash) {
       const hashParams = new URLSearchParams(url.hash.slice(1));
       if (hashParams.has('invite')) {
