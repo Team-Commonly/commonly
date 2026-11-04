@@ -11,17 +11,19 @@ never get the address (agentComputerBroker.ts).
 {{- if $users }}
 {{- $ns := include "commonly.namespace" . -}}
 {{- $steel := .Values.agentComputer.steel -}}
-{{- /* Chrome's navigation allowlist is the broker's, from the same value: the
-broker allows a host exactly and over https, so each entry is https://.host
-(the leading dot excludes subdomains). */ -}}
+{{- /* Chrome's navigation allowlist is the broker's, from the same value. The
+broker allows a host exactly, over https, on the default port, so each entry
+is https://.host:443: the leading dot excludes subdomains, and the port keeps
+Chrome from matching any other. A host must be a name whose last label starts
+with a letter, so no IP literal can be allowed. */ -}}
 {{- $allow := list -}}
 {{- range (splitList "," (.Values.backend.env.agentComputerAllowedHosts | default "")) }}
 {{- $host := . | trim | lower }}
 {{- if $host }}
-{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$" $host) }}
+{{- if not (regexMatch "^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]([a-z0-9-]*[a-z0-9])?$" $host) }}
 {{- fail (printf "backend.env.agentComputerAllowedHosts: %q is not a plain host name" $host) }}
 {{- end }}
-{{- $allow = append $allow (printf "https://.%s" $host) }}
+{{- $allow = append $allow (printf "https://.%s:443" $host) }}
 {{- end }}
 {{- end }}
 {{- $chromePolicy := dict "URLBlocklist" (list "*") "URLAllowlist" $allow "LocalNetworkAccessBlockedForUrls" (list "*") | toPrettyJson }}

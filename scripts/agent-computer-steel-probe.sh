@@ -10,30 +10,36 @@
 #     witness, or the probe can't tell a block from a broken attack.
 # The page attacks run from https://example.com, a public page like every
 # allowed host (asserted). Under the image's policy they also run from a page
-# the runner serves on a private address (recorded); the chart's allowlist
-# refuses that page outright. The private page and the rebind name are marked
-# trustworthy, so mixed-content blocking can't pass for a policy block.
-# CI only: it needs docker, sudo, helm and yq, and mounts no secrets.
+# the runner serves over http on a private address (recorded); the chart's
+# allowlist refuses that page outright. The private page and the rebind name
+# are marked trustworthy, so mixed-content blocking can't pass for a policy
+# block.
+# The runner also serves https://page.probe.test/ with a throwaway certificate
+# that Chrome is told to accept by its key alone. The chart is rendered with
+# it as an allowed host, so a redirect from an allowed host can be tested.
+# CI only: it needs docker, sudo, openssl, helm and yq, and mounts no secrets.
 set -euo pipefail
 
 chart=k8s/helm/commonly
 user=aaaaaaaaaaaaaaaaaaaaaaaa
 page_port=8080
 page_origin="http://page.probe.test:$page_port"
+secure_page="https://page.probe.test/"
 tmp=$(mktemp -d)
 page_pid=""
 cleanup() {
   docker rm -f steel-probe-enforce steel-probe-report > /dev/null 2>&1 || true
-  if [ -n "$page_pid" ]; then kill "$page_pid" 2> /dev/null || true; fi
+  if [ -n "$page_pid" ]; then sudo kill "$page_pid" 2> /dev/null || true; fi
   sudo rm -rf "$tmp"
 }
 trap cleanup EXIT
 
 q() { yq -N "$1" "$tmp/on.yaml"; }
-# The public attacking page's host is the only allowed host, so the policy is
-# the one the chart renders for any allowlist, and every other host is refused.
+# The allowed hosts are the public attacking page's and the runner's https
+# page, so the policy is the one the chart renders for any allowlist, and every
+# other host is refused.
 helm template commonly-dev "$chart" -f "$chart/values.yaml" -f "$chart/values-dev.yaml" \
-  --set "agentComputer.users[0]=$user" --set-string backend.env.agentComputerAllowedHosts=example.com > "$tmp/on.yaml"
+  --set "agentComputer.users[0]=$user" --set-string 'backend.env.agentComputerAllowedHosts=example.com\,page.probe.test' > "$tmp/on.yaml"
 browser="select(.kind == \"Deployment\" and .metadata.name == \"steel-$user\") | .spec.template.spec.containers[] | select(.name == \"steel\")"
 
 image=$(q "$browser | .image")
@@ -59,13 +65,28 @@ printf '%s\n' "${env_args[@]}" | grep -qx 'DISABLE_CHROME_SANDBOX=true'
 printf '%s\n' "${env_args[@]}" | grep -qx "CHROME_USER_DATA_DIR=$profile_dir"
 mapfile -t steel_args < <(q "$browser | .args[]")
 
-# The attacking page: a page, a text file, and a redirect to any URL.
+# The attacking pages: a page, a text file, and a redirect to any URL, over
+# http on :$page_port and https on :443, with a log of every path served at
+# http://page.probe.test:$page_port/hits.
 mkdir -p "$tmp/page"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=page.probe.test" \
+  -addext "subjectAltName=DNS:page.probe.test" \
+  -keyout "$tmp/page/key.pem" -out "$tmp/page/cert.pem" 2> /dev/null
+spki=$(openssl x509 -in "$tmp/page/cert.pem" -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64)
 cat > "$tmp/page/server.py" << 'EOF'
-import http.server, sys, urllib.parse
+import http.server, json, ssl, sys, threading, urllib.parse
+served = []
 class Page(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
+        if url.path == "/hits":
+            body = json.dumps(served).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        served.append(self.path)
         if url.path == "/redir":
             self.send_response(302)
             self.send_header("Location", urllib.parse.parse_qs(url.query)["to"][0])
@@ -78,10 +99,21 @@ class Page(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
     def log_message(self, *args):
         pass
-http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), Page).serve_forever()
+plain = http.server.ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), Page)
+secure = http.server.ThreadingHTTPServer(("0.0.0.0", 443), Page)
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.load_cert_chain(sys.argv[2], sys.argv[3])
+secure.socket = context.wrap_socket(secure.socket, server_side=True)
+threading.Thread(target=secure.serve_forever, daemon=True).start()
+plain.serve_forever()
 EOF
-python3 "$tmp/page/server.py" "$page_port" &
+sudo python3 "$tmp/page/server.py" "$page_port" "$tmp/page/cert.pem" "$tmp/page/key.pem" &
 page_pid=$!
+for _ in $(seq 1 30); do
+  curl -sf "http://127.0.0.1:$page_port/hits" > /dev/null && curl -sfk https://127.0.0.1/ > /dev/null && break
+  sleep 1
+done
+curl -sf "http://127.0.0.1:$page_port/hits" > /dev/null
 
 docker pull -q "$image" > /dev/null
 
@@ -94,7 +126,7 @@ start() {
     --user "$run_uid:$run_gid" --cap-drop ALL --security-opt no-new-privileges \
     --shm-size 1g \
     "${env_args[@]}" \
-    -e "CHROME_ARGS=--unsafely-treat-insecure-origin-as-secure=$page_origin,http://loop.probe.test:3999" \
+    -e "CHROME_ARGS=--unsafely-treat-insecure-origin-as-secure=$page_origin,http://loop.probe.test:3999 --ignore-certificate-errors-spki-list=$spki" \
     -v "$tmp/$mode/profile:$profile_dir" -v "$tmp/$mode/files:$files_dir" \
     -v "$PWD/scripts/agent-computer-steel-probe.mjs:/probe/probe.mjs:ro" \
     --add-host "page.probe.test:host-gateway" --add-host "loop.probe.test:127.0.0.1" \
@@ -104,6 +136,7 @@ start() {
 probe() {
   local mode=$1
   if docker exec -e "PROBE_MODE=$mode" -e "PROBE_PAGE=$page_origin/" -e "PROBE_LOOP_NAME=loop.probe.test" \
+    -e "PROBE_SECURE_PAGE=$secure_page" -e "PROBE_PAGE_HITS=$page_origin/hits" \
     "steel-probe-$mode" node /probe/probe.mjs > "$tmp/$mode.json"; then
     echo 0 > "$tmp/$mode.rc"
   else
@@ -132,18 +165,26 @@ def word(x):
         return "not loaded"
     if x["kind"] == "control":
         return "ok" if x["reached"] else "FAILED"
+    if x["counted"] == "policy":
+        return "not refused" if x["reached"] else "refused"
     return "reached" if x["reached"] else "blocked"
 print(f"Browser: {enforce['browser']}")
-print(f"{'attack':36} {'kind':9} {'chart policy':14} {'image policy':14}")
+print(f"{'attack':38} {'kind':9} {'counted':8} {'chart policy':14} {'image policy':14}")
 for test in order:
     r = mine.get(test) or other[test]
-    print(f"{test:36} {r['kind']:9} {word(mine.get(test)):14} {word(other.get(test)):14} {r['detail'][:60]}")
+    print(f"{test:38} {r['kind']:9} {r['counted']:8} {word(mine.get(test)):14} {word(other.get(test)):14} {r['detail'][:70]}")
 EOF
 
 enforce_rc=$(cat "$tmp/enforce.rc")
 report_rc=$(cat "$tmp/report.rc")
 test "$report_rc" = 0 || { echo "report run: a control failed"; exit 1; }
+reached_in_report() { python3 -c 'import json,sys; r={x["test"]: x for x in json.load(open(sys.argv[1]))["results"]}; print("yes" if r.get(sys.argv[2], {}).get("reached") else "no")' "$tmp/report.json" "$1"; }
 seen=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["results"]; print(sum(1 for x in r if x["test"].startswith("page-private-") and x["reached"]))' "$tmp/report.json")
 test "$seen" -gt 0 || { echo "report run: no page attack reached the witness, so the probe can't tell a block from a broken attack"; exit 1; }
+# Each of these blocked rows means something only if the same attack gets
+# through under the image's policy.
+for row in cdp-nav-redirect-hop page-public-granted-fetch-loopback; do
+  test "$(reached_in_report "$row")" = yes || { echo "report run: $row did not reach the witness, so its block under the chart's policy proves nothing"; exit 1; }
+done
 test "$enforce_rc" = 0 || { echo "enforce run: $(python3 -c 'import json,sys; print(", ".join(json.load(open(sys.argv[1]))["failures"]))' "$tmp/enforce.json") got through the chart's policy"; exit 1; }
 echo "agent computer browser probe: ok"

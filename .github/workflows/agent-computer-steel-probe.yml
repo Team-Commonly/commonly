@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 20
     env:
       YQ_VERSION: v4.44.3
+      # From the release's own checksums file.
+      YQ_SHA256: a2c097180dd884a8d50c956ee16a9cec070f30a7947cf4ebf87d5f36213e9ed7
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,6 +42,7 @@ jobs:
       - name: Install yq
         run: |
           curl -sSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o yq
+          echo "${YQ_SHA256}  yq" | sha256sum -c -
           chmod +x yq
           sudo mv yq /usr/local/bin/yq
           yq --version

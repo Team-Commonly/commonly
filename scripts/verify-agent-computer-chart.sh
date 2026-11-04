@@ -73,9 +73,9 @@ q 'select(.kind == "ConfigMap" and .metadata.name == "agent-computer-chrome-poli
 # over https, and no page reaches a loopback or private address.
 pj() { "$yq_bin" -N -p json "$1" "$tmp_dir/policy.json" 2> /dev/null || echo "__yq_error__"; }
 test "$(pj '.URLBlocklist | join(",")')" = '*'
-test "$(pj '.URLAllowlist | join(",")')" = 'https://.commonly.me'
+test "$(pj '.URLAllowlist | join(",")')" = 'https://.commonly.me:443'
 test "$(pj '.LocalNetworkAccessBlockedForUrls | join(",")')" = '*'
-for bad in '*' 'commonly.me/x' 'localhost' '.commonly.me'; do
+for bad in '*' 'commonly.me/x' 'commonly.me:8443' 'localhost' '.commonly.me' '127.0.0.1' '10.0.0.5' '[::1]'; do
   if helm template commonly-dev "$chart" "${dev[@]}" --set "agentComputer.users[0]=$user" \
     --set-string "backend.env.agentComputerAllowedHosts=$bad" > "$tmp_dir/bad-host.yaml" 2> "$tmp_dir/bad-host.err"; then
     echo "agent computer chart accepted allowed host: $bad"

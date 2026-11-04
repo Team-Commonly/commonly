@@ -3,13 +3,19 @@
 // hostile page would and counts what reaches loopback.
 //
 // A witness server on 127.0.0.1:3999 records every request and WebSocket
-// upgrade that arrives. "Blocked" means the witness saw nothing, not that the
-// page saw an error. It answers like a permissive service (any origin, private
-// network allowed), so nothing on the server side hides a reach.
+// upgrade that arrives. For an attack aimed at it, "blocked" means the witness
+// saw nothing, not that the page saw an error. It answers like a permissive
+// service (any origin, private network allowed), so nothing on the server side
+// hides a reach. Each result says how it was counted: at the witness, by
+// Chrome's policy error, or by the page's own outcome, where only a refusal
+// counts as blocked and a timeout counts as reached.
+//
+// The browser is first started the way the broker starts it (POST
+// /v1/sessions), so every attack runs against the product's launch.
 //
 // PROBE_MODE=enforce fails on any reach the chart's Chrome policy should stop.
-// The chart is rendered with the public page's host as the only allowed host,
-// so the private page is itself a host the policy must refuse.
+// The chart is rendered with two allowed hosts: the public page's, and the
+// runner's https page (PROBE_SECURE_PAGE), which can redirect anywhere.
 // PROBE_MODE=report records the same attacks against the image's own policy,
 // the control showing the probe can see a reach at all.
 import fs from 'node:fs';
@@ -21,13 +27,20 @@ const PAGE = process.env.PROBE_PAGE; // a page on a private address, e.g. http:/
 // from a private one, and every allowlisted host (commonly.me) is public.
 const PUBLIC_PAGE = process.env.PROBE_PUBLIC_PAGE || 'https://example.com/';
 const LOOP_NAME = process.env.PROBE_LOOP_NAME; // a name that resolves to 127.0.0.1
+// An allowed https page the runner serves, and its log of the paths it served.
+const SECURE_PAGE = process.env.PROBE_SECURE_PAGE;
+const PAGE_HITS = process.env.PROBE_PAGE_HITS;
+// A public host other than the public page's, for the cross-host control.
+const OTHER_PUBLIC = process.env.PROBE_OTHER_PUBLIC || 'https://example.org/';
 const CDP = 'http://127.0.0.1:9222';
 const STEEL = 'http://127.0.0.1:3001';
 const W = 'http://127.0.0.1:3999';
 const WN = `http://${LOOP_NAME}:3999`;
 const BLOCKED = 'net::ERR_BLOCKED_BY_ADMINISTRATOR';
 
-if (!PAGE || !LOOP_NAME) throw new Error('PROBE_PAGE and PROBE_LOOP_NAME are required');
+if (!PAGE || !LOOP_NAME || !SECURE_PAGE || !PAGE_HITS) {
+  throw new Error('PROBE_PAGE, PROBE_LOOP_NAME, PROBE_SECURE_PAGE and PROBE_PAGE_HITS are required');
+}
 
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 const withTimeout = (promise, ms, value) => Promise.race([promise, sleep(ms).then(() => value)]);
@@ -111,6 +124,20 @@ const until = async (what, ms, fn) => {
   throw new Error(`timed out waiting for ${what}${last ? `: ${last.message}` : ''}`);
 };
 
+const results = [];
+// kind: assert (the chart's policy must stop it), residual (the policy is not
+// expected to stop it; the runbook names it), control (must succeed).
+// counted: witness, policy (Chrome's policy error), page (the page's outcome),
+// or check (a control's own test).
+const record = (test, kind, isReached, detail, counted = 'witness') => results.push({ test, kind, reached: isReached, detail, counted });
+
+// 0. Start the browser the way the broker does: one persistent session.
+await until('Steel API', 90000, async () => (await fetch(`${STEEL}/v1/sessions`)).ok);
+const started = await fetch(`${STEEL}/v1/sessions`, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ persist: true }),
+}).then(async (r) => ({ ok: r.ok, status: r.status, session: r.ok ? await r.json() : null }), (e) => ({ ok: false, status: e.message }));
+record('steel-session-start', 'control', started.ok && ['idle', 'live'].includes(started.session?.status),
+  `POST /v1/sessions ${started.status} ${started.session?.status || ''}`, 'check');
 const version = await until('Chrome DevTools', 90000, async () => (await fetch(`${CDP}/json/version`)).json());
 const target = await (await fetch(`${CDP}/json/new?about:blank`, { method: 'PUT' })).json();
 const cdp = new Cdp(target.webSocketDebuggerUrl);
@@ -140,11 +167,6 @@ const navigate = async (url) => {
   }
 };
 
-const results = [];
-// kind: assert (the chart's policy must stop it), residual (the policy is not
-// expected to stop it; the runbook names it), control (must succeed).
-const record = (test, kind, isReached, detail) => results.push({ test, kind, reached: isReached, detail });
-
 const loadPage = async (url = PAGE) => {
   const outcome = await navigate(url);
   const title = await evaluate('document.title');
@@ -165,16 +187,24 @@ const cdpNavigations = [
   ['cdp-nav-metadata-name', 'http://metadata.google.internal/computeMetadata/v1/', false],
   ['cdp-nav-cluster-name', 'http://kubernetes.default.svc.cluster.local/', false],
   ['cdp-nav-file', 'file:///etc/passwd', false],
-  ['cdp-nav-redirect-hop', `${PAGE}redir?to=${encodeURIComponent(`${W}/cdp-nav-redirect-hop`)}`, true],
+  // The hop starts on an allowed host, so only a check of the redirect stops it.
+  ['cdp-nav-redirect-hop', `${SECURE_PAGE}redir?to=${encodeURIComponent(`${W}/cdp-nav-redirect-hop`)}`, true],
   ['cdp-nav-rebind-name', `${WN}/cdp-nav-rebind-name`, true],
   ['cdp-nav-not-allowed-host', 'https://www.iana.org/', false],
   ['cdp-nav-private-page', PAGE, false],
 ];
+const secureLoad = await navigate(SECURE_PAGE);
+record('cdp-nav-allowed-secure-page', 'control', secureLoad === 'loaded', secureLoad, 'check');
 for (const [test, url, witnessed] of cdpNavigations) {
   const outcome = await navigate(url);
   // A witnessed target counts what arrived; the others count only a policy refusal.
-  record(test, 'assert', witnessed ? reached(test) : outcome !== BLOCKED, outcome);
+  record(test, 'assert', witnessed ? reached(test) : outcome !== BLOCKED, outcome, witnessed ? 'witness' : 'policy');
 }
+// The redirect's first leg must have reached the allowed page, or the hop row
+// proves nothing.
+const pageHits = await fetch(PAGE_HITS).then((r) => r.json(), () => []);
+record('cdp-nav-redirect-first-leg', 'control', pageHits.some((path) => path.startsWith('/redir') && path.includes('cdp-nav-redirect-hop')),
+  `${pageHits.length} paths served`, 'check');
 
 // 2. Requests a page makes on its own, the path no broker guard sees when the
 // broker isn't connected, and the one a socket or worker takes even when it is.
@@ -237,17 +267,53 @@ const pageAttacks = async (from, kind) => {
     record(`page-${test}`, kind, reached(test), outcome);
   }
   // The real targets: Steel's API, which answers any origin, and Chrome's own
-  // DevTools socket, which accepts any origin.
+  // DevTools socket, which accepts any origin. Counted by the page's outcome:
+  // only a refusal is a block.
   const steelRead = await evaluate(pageFetch(`${STEEL}/v1/sessions`, 'cors'));
-  record(`page-${from}-read-steel-api`, kind, steelRead.startsWith('answered'), steelRead);
+  record(`page-${from}-read-steel-api`, kind, !steelRead.startsWith('refused'), steelRead, 'page');
   const devtoolsSocket = await evaluate(pageSocket(version.webSocketDebuggerUrl));
-  record(`page-${from}-socket-devtools`, kind, devtoolsSocket === 'open', devtoolsSocket);
+  record(`page-${from}-socket-devtools`, kind, devtoolsSocket !== 'error', devtoolsSocket, 'page');
+};
+
+// Local Network Access asks a person before a public page reaches loopback,
+// and headless Chrome answers no by itself. A grant stands in for a person
+// saying yes during a takeover: under the image's policy the page then gets
+// through, and the chart's policy must still refuse it. That pair is what
+// shows the policy entry takes effect, apart from Chrome's default.
+const browserCdp = new Cdp(version.webSocketDebuggerUrl);
+await browserCdp.open();
+const protocol = await fetch(`${CDP}/json/protocol`).then((r) => r.json(), () => ({ domains: [] }));
+const permissionTypes = protocol.domains.find((d) => d.domain === 'Browser')?.types
+  ?.find((t) => t.id === 'PermissionType')?.enum || [];
+const networkPermissions = permissionTypes.filter((name) => /local|loopback/i.test(name));
+const grantLocalNetwork = async (origin) => {
+  const granted = [];
+  for (const name of networkPermissions) {
+    try {
+      await browserCdp.send('Browser.grantPermissions', { origin, permissions: [name] });
+      granted.push(name);
+    } catch { /* not grantable on this build */ }
+  }
+  return granted;
 };
 
 await loadPage(PUBLIC_PAGE);
 const sameOrigin = await evaluate(`fetch(location.href).then((r) => 'answered ' + r.status, (e) => 'refused ' + e.message)`);
-record('page-fetch-same-origin', 'control', sameOrigin === 'answered 200', sameOrigin);
+record('page-fetch-same-origin', 'control', sameOrigin === 'answered 200', sameOrigin, 'check');
+// commonly.me's pages fetch api.commonly.me: a public cross-host request still works.
+const crossHost = await evaluate(pageFetch(OTHER_PUBLIC, 'no-cors'));
+record('page-fetch-cross-host-public', 'control', crossHost.startsWith('answered'), crossHost, 'check');
 await pageAttacks('public', 'assert');
+const granted = await grantLocalNetwork(new URL(PUBLIC_PAGE).origin);
+await loadPage(PUBLIC_PAGE);
+for (const [test, expression] of [
+  ['public-granted-fetch-loopback', pageFetch(`${W}/public-granted-fetch-loopback`, 'no-cors')],
+  ['public-granted-socket-loopback', pageSocket(`ws://127.0.0.1:3999/public-granted-socket-loopback`)],
+]) {
+  const outcome = await evaluate(expression);
+  record(`page-${test}`, 'assert', reached(test), `${outcome} (granted: ${granted.join(',') || 'none'})`);
+}
+await browserCdp.send('Browser.resetPermissions').catch(() => {});
 // 3. The public page moves its own main frame: to a loopback address, and to
 // a name that resolves to loopback (rebinding). Only allowed hosts load.
 for (const test of ['page-nav-loopback-ip', 'page-nav-rebind-name']) {
@@ -274,10 +340,11 @@ const processes = fs.readdirSync('/proc').filter((pid) => /^\d+$/.test(pid)).fla
 const uid = String(process.getuid());
 record('browser-processes-non-root', 'control',
   processes.length > 0 && processes.every((p) => p.uid === uid && uid !== '0' && /^0+$/.test(p.capEff)),
-  `${processes.length} processes, uids ${[...new Set(processes.map((p) => p.uid))].join(',')}, CapEff ${[...new Set(processes.map((p) => p.capEff))].join(',')}`);
+  `${processes.length} processes, uids ${[...new Set(processes.map((p) => p.uid))].join(',')}, CapEff ${[...new Set(processes.map((p) => p.capEff))].join(',')}`, 'check');
 
 const failures = results.filter((r) => (r.kind === 'control' && !r.reached) || (MODE === 'enforce' && r.kind === 'assert' && r.reached));
 console.log(JSON.stringify({ mode: MODE, browser: version.Browser, results, failures: failures.map((f) => f.test) }));
 witness.close();
 cdp.ws.close();
+browserCdp.ws.close();
 process.exit(failures.length ? 1 : 0);
