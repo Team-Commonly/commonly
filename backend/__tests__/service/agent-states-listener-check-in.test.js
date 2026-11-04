@@ -40,8 +40,18 @@ describe('GET /api/pods/:podId/agent-states reads listener check-ins', () => {
     expect(res.status).toBe(200);
     return Object.fromEntries(res.body.agents.map((a) => [a.agentName, a]));
   };
-  // The check-in writes are fire-and-forget, so wait for them to land.
-  const settle = () => new Promise((resolve) => { setTimeout(resolve, 150); });
+  // The check-in writes are fire-and-forget, so wait until the stamp is in the
+  // database, then read the route once. A fixed 150 ms wait failed in the
+  // merge queue under load (two of five runs on 11-04, the file's first test,
+  // while a new AgentEvent index built). Polling the route instead runs into
+  // its rate limit. A write that never lands still fails the route assertion.
+  const landed = async (model, filter) => {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      if (await model.exists(filter)) return;
+      await new Promise((resolve) => { setTimeout(resolve, 25); });
+    }
+  };
 
   beforeAll(async () => {
     process.env.JWT_SECRET = SECRET;
@@ -66,7 +76,7 @@ describe('GET /api/pods/:podId/agent-states reads listener check-ins', () => {
     expect((await states())['mcp-only'].state).toBe('never-connected');
 
     recordListenerCheckIn((await User.findOne({ username: 'mcp-only' }))._id, 'h-user');
-    await settle();
+    await landed(User, { username: 'mcp-only', 'agentRuntimeTokens.lastListenedAt': { $ne: null } });
     expect((await states())['mcp-only'].state).toBe('listening');
   });
 
@@ -75,7 +85,7 @@ describe('GET /api/pods/:podId/agent-states reads listener check-ins', () => {
     expect((await states())['install-only'].state).toBe('never-connected');
 
     recordListenerCheckIn(null, 'h-install');
-    await settle();
+    await landed(AgentInstallation, { agentName: 'install-only', 'runtimeTokens.lastListenedAt': { $ne: null } });
     expect((await states())['install-only'].state).toBe('listening');
   });
 });
