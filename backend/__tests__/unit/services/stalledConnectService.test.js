@@ -182,7 +182,7 @@ describe('stalledConnectService.scan', () => {
   });
 
   it.each([['linux', 'Linux'], ['windows', 'Windows']])(
-    'from a %s browser, says the listener is tested on a Mac and not verified there yet',
+    'from a %s browser, says the listener is tested on a Mac and may not answer there yet',
     async (os, label) => {
       setup();
       copiedListenerOn(os);
@@ -190,7 +190,7 @@ describe('stalledConnectService.scan', () => {
       const { content } = mockPost.mock.calls[0][0];
       // Conditional: the page shows this command only on its Mac tab, so the
       // browser's OS is not proof of where it ran.
-      expect(content).toContain(`If you ran it on ${label}, that may be why. The listener is tested on a Mac. On Linux and Windows it isn't verified yet, and fixes are on the way.`);
+      expect(content).toContain(`If you ran it on ${label}, that may be why: the listener is tested on a Mac. On Linux and Windows it may not answer @mentions yet, and we're working on that.`);
       // The server cannot tell Claude Code from Codex, so no adapter-specific cause.
       expect(content).not.toContain('sandbox');
       expect(content).toContain('Run `commonly agent run ai1-agent` on a Mac');
@@ -357,8 +357,8 @@ describe('stalledConnectService.scan', () => {
     },
   );
 
-  // docs/agents/byo-support-matrix.md: Linux and Windows are unverified, not
-  // impossible, so no nudge may say the listener runs only on a Mac, and none
+  // The BYO support matrix (#3399): Linux and Windows differ by adapter, never
+  // Mac-only for both, so no nudge may say the listener runs only on a Mac, and none
   // may suggest --unsandboxed before a real Windows walk exists.
   it.each([
     ['cli', 'linux'], ['cli', 'windows'], ['mcp', 'linux'], ['mcp', 'windows'],
@@ -372,7 +372,7 @@ describe('stalledConnectService.scan', () => {
     });
     await scan({ now: NOW });
     const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain("isn't verified yet");
+    expect(content).toContain('may not answer @mentions yet');
     expect(content).not.toMatch(/only (from|on) a Mac|Mac only|--unsandboxed/i);
   });
 
@@ -787,17 +787,30 @@ describe('keeping the forward promise', () => {
     );
   });
 
-  it('counts an MCP call recorded only on the bot row, and points a Windows installer at Run it here', async () => {
+  it.each(['windows', 'linux'])('counts an MCP call recorded only on the bot row, and points a %s installer at Run it here', async (os) => {
     setup({ installs: [], open: [mcpEpisode], userTokens: [mcpTokenOfThisEpisode] });
-    installer({ byoOpenedOs: 'windows' });
+    installer({ byoOpenedOs: os });
     withInstallTokens([]);
 
     const r = await scan({ now: NOW });
 
     expect(r.resolved).toHaveLength(1);
     const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain("The listener is tested on a Mac. On Linux and Windows it isn't verified yet");
+    expect(content).toContain('`commonly agent run ai1-agent`, which is tested on a Mac. On Linux and Windows it may not answer @mentions yet');
+    expect(content).not.toMatch(/only (from|on) a Mac|Mac only|--unsandboxed/i);
     expect(content).toContain('Run it here');
+  });
+
+  it.each(['mac', undefined])('the MCP close from a %s browser carries no platform note', async (os) => {
+    setup({ installs: [], open: [mcpEpisode], userTokens: [mcpTokenOfThisEpisode] });
+    installer(os ? { byoOpenedOs: os } : {});
+    withInstallTokens([]);
+
+    await scan({ now: NOW });
+
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).not.toContain('may not answer @mentions yet');
+    expect(content).toContain('in a Terminal on the machine where I should live');
   });
 
   it('keeps waiting on a token used by something other than the MCP client (attach, memory import)', async () => {
