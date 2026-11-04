@@ -1140,7 +1140,7 @@ const V2AgentBYO: React.FC = () => {
   // The -e flags come after the command, with no `--`: PowerShell drops a bare
   // `--` on its way through npm's claude.ps1 shim, and -e then took the command
   // as one more value ("missing required argument 'commandOrUrl'",
-  // windows-latest, 2026-11-05). mcp-windows.yml runs this exact line.
+  // windows-latest, 2026-11-04). mcp-windows.yml runs this exact line.
   const claudeSnippetWindows = issued
     ? `npm i -g @commonlyai/mcp\nclaude mcp add commonly cmd /c commonly-mcp -e COMMONLY_API_URL=${apiUrl} -e COMMONLY_AGENT_TOKEN=${issued.token}`
     : '';
