@@ -168,6 +168,7 @@ describe('Discord binding containment (TASK-123 a)', () => {
     process.env.DISCORD_BOT_TOKEN = 'bot-secret';
     process.env.DISCORD_CLIENT_ID = 'client-id';
     process.env.DISCORD_CLIENT_SECRET = 'client-secret';
+    process.env.JWT_SECRET = 'test-jwt-secret';
     // The create path encrypts the webhook URL (TASK-124 part 2), so a connector
     // secret ring is part of the deployment this route runs against.
     process.env.CONNECTOR_SECRET_KEYS = `k1:${Buffer.alloc(32, 1).toString('base64')}`;
@@ -277,6 +278,53 @@ describe('Discord binding containment (TASK-123 a)', () => {
     });
   });
 
+  // F89: on a first install no binding exists yet, so the channel picker reads
+  // through the proof the OAuth callback minted. It is scoped to one pod and one
+  // guild, the guild taken from Discord's token response, and the caller must
+  // still belong to that pod.
+  describe('GET /api/discord/channels/:guildId on a first install', () => {
+    const { mintDiscordInstallProof } = require('../../../utils/discordInstallProof');
+    const firstInstall = (proof) => {
+      Integration.findOne.mockResolvedValue(null);
+      return request(app)
+        .get(`/api/discord/channels/${GUILD}${proof === undefined ? '' : `?install=${encodeURIComponent(proof)}`}`)
+        .set('Authorization', 'Bearer user-token');
+    };
+
+    it('lists channels for a member of the pod the proof names', async () => {
+      const res = await firstInstall(mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD }));
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([{ id: CHANNEL, name: 'general', topic: undefined }]);
+    });
+
+    it('still answers 404 with no proof', async () => {
+      const res = await firstInstall(undefined);
+
+      expect(res.status).toBe(404);
+      expect(outboundCalls()).toBe(0);
+    });
+
+    it.each([
+      ['a proof for another guild', () => mintDiscordInstallProof({ podId: 'pod-1', guildId: OTHER_GUILD })],
+      ['a proof for a pod the caller is not in', () => mintDiscordInstallProof({ podId: 'pod-9', guildId: GUILD })],
+      ['an expired proof', () => mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD }, -60)],
+      ['a token that is not a proof', () => require('jsonwebtoken').sign({ id: MEMBER }, process.env.JWT_SECRET)],
+      ['a forged proof', () => require('jsonwebtoken').sign({ pur: 'discord-install', pod: 'pod-1', gid: GUILD }, 'not-the-secret')],
+    ])('refuses %s, without an outbound call', async (_label, makeProof) => {
+      const res = await firstInstall(makeProof());
+
+      expect(res.status).toBe(404);
+      expect(outboundCalls()).toBe(0);
+    });
+
+    it('does not authenticate a request on its own', async () => {
+      const proof = mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD });
+      expect(require('jsonwebtoken').decode(proof)).not.toHaveProperty('id');
+      expect(require('jsonwebtoken').decode(proof)).not.toHaveProperty('user');
+    });
+  });
+
   describe('GET /api/discord/callback', () => {
     it('refuses a malformed guild_id before the code exchange', async () => {
       const res = await request(app)
@@ -295,6 +343,38 @@ describe('Discord binding containment (TASK-123 a)', () => {
       expect(res.status).toBe(302);
       expect(res.headers.location).toContain('/discord/success');
       expect(axios.post.mock.calls[0][0]).toBe('https://discord.com/api/oauth2/token');
+    });
+
+    it('hands the success page a proof for the guild Discord names in the token response', async () => {
+      axios.post.mockResolvedValueOnce({ data: { token_type: 'Bearer', guild: { id: GUILD, name: 'Guild' } } });
+      const { readDiscordInstallProof } = require('../../../utils/discordInstallProof');
+
+      const res = await request(app)
+        .get(`/api/discord/callback?code=abc&state=pod_pod-1&guild_id=${GUILD}`);
+
+      expect(res.status).toBe(302);
+      const location = new URL(res.headers.location);
+      expect(location.pathname).toBe('/discord/success');
+      expect(readDiscordInstallProof(location.searchParams.get('install'))).toEqual({ podId: 'pod-1', guildId: GUILD });
+    });
+
+    it('refuses a guild_id that differs from the guild in the token response', async () => {
+      axios.post.mockResolvedValueOnce({ data: { token_type: 'Bearer', guild: { id: OTHER_GUILD } } });
+
+      const res = await request(app)
+        .get(`/api/discord/callback?code=abc&state=pod_pod-1&guild_id=${GUILD}`);
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('/discord/error');
+      expect(axios.get).not.toHaveBeenCalled();
+    });
+
+    it('mints no proof when the token response names no guild', async () => {
+      const res = await request(app)
+        .get(`/api/discord/callback?code=abc&state=pod_pod-1&guild_id=${GUILD}`);
+
+      expect(res.status).toBe(302);
+      expect(new URL(res.headers.location).searchParams.has('install')).toBe(false);
     });
 
     it('redirects a post-exchange guild failure without logging provider data', async () => {

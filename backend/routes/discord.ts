@@ -25,6 +25,7 @@ const { runDiscordCommandForIntegrations } = require('../services/discordMultiCo
 import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { invalidDiscordIdError, isDiscordSnowflake, isSupplied } from '../utils/discordBinding';
+import { mintDiscordInstallProof, readDiscordInstallProof } from '../utils/discordInstallProof';
 
 interface AuthReq {
   user?: { id: string; role?: string };
@@ -116,9 +117,14 @@ router.get('/channels/:guildId', listIntegrationsRateLimit, auth, async (req: Au
     const binding = podIds.length
       ? await Integration.findOne({ type: 'discord', 'config.serverId': guildId, podId: { $in: podIds } })
       : null;
+    // A first install has no binding yet. The proof the OAuth callback minted
+    // stands in for one: same guild, and a pod the caller belongs to (F89).
+    const proof = binding ? null : readDiscordInstallProof(req.query?.install);
+    const provenInstall = !!proof && proof.guildId === guildId
+      && podIds.some((podId: unknown) => String(podId) === proof.podId);
     // One answer for a guild that is bound elsewhere and one that does not
     // exist: the route must not become an oracle for either.
-    if (!binding) return res.status(404).json({ message: 'Guild not found' });
+    if (!binding && !provenInstall) return res.status(404).json({ message: 'Guild not found' });
     const response = await axios.get(`https://discord.com/api/guilds/${guildId}/channels`, { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` } });
     const textChannels = (response.data as Array<{ type: number; id: string; name: string; topic?: string }>)
       .filter((channel) => channel.type === 0)
@@ -330,11 +336,20 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
     if (isSupplied(guildId) && !isDiscordSnowflake(guildId)) {
       return res.redirect(`${frontend}/discord/error?error=Invalid guild id`);
     }
-    await axios.post('https://discord.com/api/oauth2/token', { client_id: process.env.DISCORD_CLIENT_ID, client_secret: process.env.DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/discord/callback` }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', { client_id: process.env.DISCORD_CLIENT_ID, client_secret: process.env.DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: `${process.env.BACKEND_URL || 'http://localhost:5000'}/api/discord/callback` }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    // The token response names the guild the bot was added to. `guild_id` in the
+    // query is only Discord's hint and anyone can edit it, so a disagreement is a
+    // refusal, and only the token response's guild earns an install proof (F89).
+    const tokenGuildId = (tokenResponse?.data as { guild?: { id?: unknown } } | undefined)?.guild?.id;
+    const provenGuildId = isDiscordSnowflake(tokenGuildId) ? String(tokenGuildId) : null;
+    if (provenGuildId && isSupplied(guildId) && guildId !== provenGuildId) {
+      return res.redirect(`${frontend}/discord/error?error=OAuth%20authorization%20failed`);
+    }
+    const installedGuildId = provenGuildId || guildId;
     let serverName = 'Unknown Server';
-    if (guildId) {
+    if (isDiscordSnowflake(installedGuildId)) {
       try {
-        const guildResponse = await axios.get(`https://discord.com/api/guilds/${guildId}`, { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` } });
+        const guildResponse = await axios.get(`https://discord.com/api/guilds/${installedGuildId}`, { headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` } });
         serverName = (guildResponse.data as { name?: string }).name || serverName;
       } catch {
         // Discord may echo request credentials in its error body. A failed
@@ -345,8 +360,9 @@ router.get('/callback', discordCallbackLimit, async (req: AuthReq, res: Res) => 
     }
     const successUrl = new URL(`${frontend}/discord/success`);
     successUrl.searchParams.append('pod_id', podId);
-    successUrl.searchParams.append('guild_id', guildId || '');
+    successUrl.searchParams.append('guild_id', installedGuildId || '');
     successUrl.searchParams.append('server_name', serverName);
+    if (provenGuildId) successUrl.searchParams.append('install', mintDiscordInstallProof({ podId, guildId: provenGuildId }));
     res.redirect(successUrl.toString());
   } catch {
     console.error('Discord OAuth callback error');

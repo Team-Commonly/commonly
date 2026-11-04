@@ -47,6 +47,9 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
   const guildId = urlParams.get('guild_id');
   const serverName = urlParams.get('server_name');
   const errorMessage = urlParams.get('error');
+  // The callback's first-install proof: the channel list answers on it before a
+  // binding exists (F89).
+  const installProof = urlParams.get('install');
 
   useEffect(() => {
     if (type === 'success' && guildId) {
@@ -64,6 +67,7 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
       const token = localStorage.getItem('token');
       const response = await axios.get<Channel[]>(`/api/discord/channels/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
+        ...(installProof ? { params: { install: installProof } } : {}),
       });
       setChannels(response.data);
     } catch (err) {

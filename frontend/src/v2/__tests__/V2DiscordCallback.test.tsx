@@ -149,6 +149,31 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     expect(route('error')?.trim()).toBe('type="error"');
   });
 
+  // F89: on a first install the channel list only answers on the callback's
+  // install proof, so the page must forward it, and send nothing extra without one.
+  test('forwards the install proof to the channel list', async () => {
+    // Production-shaped: the callback mints a three-part JWT, and the whole of it
+    // must arrive, not a value cut at a dot or a URL-decoding boundary. Joined at
+    // runtime so the secret scanner does not read a fixture as a token.
+    const proof = ['eyJhbGciOiJIUzI1NiJ9', 'eyJwdXIiOiJkaXNjb3JkLWluc3RhbGwifQ', 'c2lnbmF0dXJlLV8'].join('.');
+    localStorage.setItem('token', 't');
+    axios.get.mockResolvedValue({ data: [] });
+    renderAt(`/discord/success?pod_id=pod-1&guild_id=123456789012345678&server_name=Guild&install=${encodeURIComponent(proof)}`);
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    expect(axios.get).toHaveBeenCalledWith('/api/discord/channels/123456789012345678', {
+      headers: { Authorization: 'Bearer t' },
+      params: { install: proof },
+    });
+  });
+
+  test('sends no params to the channel list without a proof', async () => {
+    localStorage.setItem('token', 't');
+    axios.get.mockResolvedValue({ data: [] });
+    renderAt('/discord/success?pod_id=pod-1&guild_id=123456789012345678&server_name=Guild');
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    expect(axios.get.mock.calls[0][1]).toEqual({ headers: { Authorization: 'Bearer t' } });
+  });
+
   test('reads in Chinese under zh-CN', async () => {
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     renderAt('/discord/error');
