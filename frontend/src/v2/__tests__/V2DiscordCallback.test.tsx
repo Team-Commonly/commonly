@@ -78,7 +78,7 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     localStorage.setItem('token', 'jwt');
     axios.get.mockImplementation((url) => (url === '/api/discord/channels/g1'
       ? Promise.resolve({ data: [{ id: 'c1', name: 'general', topic: 'chat' }, { id: 'c2', name: 'ops' }] })
-      : Promise.resolve({ data: { type: 'chat' } })));
+      : Promise.resolve({ data: { type: 'study' } })));
     const { container } = renderAt('/discord/success?pod_id=p1&guild_id=g1&server_name=Northwind%20HQ');
 
     expect(screen.getByRole('heading', { name: 'Pick a channel' })).toBeInTheDocument();
@@ -87,6 +87,9 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     expect(axios.get).toHaveBeenCalledWith('/api/discord/channels/g1', { headers: { Authorization: 'Bearer jwt' } });
     const select = await screen.findByRole('combobox', { name: 'Channel' });
     await screen.findByRole('option', { name: '#general - chat' });
+    // Starts on the placeholder, not on the first channel.
+    expect(select).toHaveValue('');
+    expect(screen.getByRole('option', { name: 'Choose a channel' })).toBeDisabled();
     const connect = screen.getByRole('button', { name: 'Connect' });
     expect(connect).toBeDisabled();
 
@@ -111,7 +114,7 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Discord integration created successfully!'));
     expect(screen.queryByRole('combobox')).toBeNull();
     act(() => { jest.advanceTimersByTime(2000); });
-    expect(screen.getByText('at /pods/chat/p1')).toBeInTheDocument();
+    expect(screen.getByText('at /pods/study/p1')).toBeInTheDocument();
   });
 
   test('a failed channel fetch and a failed create each land in the alert row', async () => {
