@@ -11,7 +11,7 @@ Code: `backend/services/hostedMcpEntryService.ts` (`assessEntryTools`) and
 ## How drift shows up
 
 **A refusal.** The broker assesses each pinned tool against the row's own
-`tools/list` and returns one of three verdicts:
+`tools/list` and returns one of four verdicts:
 - `ok`: the tool matches, or a read changed compatibly. "Changed compatibly;
   using the pin" is logged and the pin stays.
 - `tool_drift`: a read's schema changed incompatibly, a write's schema changed
@@ -20,6 +20,10 @@ Code: `backend/services/hostedMcpEntryService.ts` (`assessEntryTools`) and
 - `tool_unavailable`: this row's list doesn't include the tool. That usually
   reflects what the row's owner consented to (Sentry without Triage, a
   read-only Linear scope), **not** a vendor change. Don't re-pin for it.
+- `not_granted`: a write pin the list leaves out because the row's recorded
+  scope lacks the entry's write scope. It isn't logged as a change, files no
+  card, and a call refuses with `write_scope_required`. The row's owner can
+  reconnect with write consent. Nothing here is drift.
 
 **Connectors v2.** The tool row shows "the provider changed this tool since
 Commonly checked it" (`frontend/src/v2/connectors/useToolConnectors.ts`).
