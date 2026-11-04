@@ -91,4 +91,13 @@ describe('collectPodAgentActivity reads the newest run in this pod', () => {
     expect(map.get('guide:default').toISOString()).toBe('2026-11-02T00:00:00.000Z');
     expect(map.get('guide:second').toISOString()).toBe('2026-11-03T00:00:00.000Z');
   });
+
+  test('a run stored with an empty instanceId counts for default too', async () => {
+    await AgentRun.collection.insertMany([
+      run('guide', 'default', at('2026-11-01T00:00:00Z')),
+      run('guide', '', at('2026-11-02T06:00:00Z')),
+    ]);
+    const map = await collectPodAgentActivity(String(POD), [{ agentName: 'guide' }]);
+    expect(map.get('guide:default').toISOString()).toBe('2026-11-02T06:00:00.000Z');
+  });
 });

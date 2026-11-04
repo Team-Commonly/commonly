@@ -30,7 +30,7 @@ export const installKey = (agentName: string, instanceId?: string | null): strin
 
 interface AggregatableModel {
   aggregate: (pipeline: Record<string, unknown>[]) => PromiseLike<unknown[]>;
-  collection: { collectionName: string };
+  collection?: { collectionName?: string };
 }
 
 /**
@@ -64,7 +64,7 @@ export const newestPerInstall = async (
     const rows = await model.aggregate([
       ...branch(first),
       ...rest.map((entry) => ({
-        $unionWith: { coll: model.collection.collectionName, pipeline: branch(entry) },
+        $unionWith: { coll: model.collection?.collectionName, pipeline: branch(entry) },
       })),
     ]) as Array<{ key: string; at?: Date | null }>;
     for (const row of rows) {

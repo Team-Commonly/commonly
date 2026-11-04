@@ -178,12 +178,6 @@ interface ActivityInstallationLike {
 }
 
 /**
- * Batch: max(last heartbeat, last run, last token use) per (agentName,
- * instanceId) for one pod — heartbeats cover gateway moltbots, AgentRuns
- * cover native agents, token lastUsedAt covers BYO/MCP wrappers. Shared by
- * the pod-agents roster route and commonly_agent_status.
- */
-/**
  * Newest delivered heartbeat per install, keyed `agentName:instanceId`
  * (TASK-774: one index seek per install, not a read of the seat's events).
  */
@@ -198,6 +192,12 @@ export const lastHeartbeatPerInstall = (
   });
 };
 
+/**
+ * Batch: max(last heartbeat, last run, last token use) per (agentName,
+ * instanceId) for one pod — heartbeats cover gateway moltbots, AgentRuns
+ * cover native agents, token lastUsedAt covers BYO/MCP wrappers. Shared by
+ * the pod-agents roster route and commonly_agent_status.
+ */
 export const collectPodAgentActivity = async (
   podId: string,
   installations: ActivityInstallationLike[],
@@ -214,7 +214,7 @@ export const collectPodAgentActivity = async (
   // proof of life is AgentRun rows. Aggregation $match does not cast, so
   // podId must be an ObjectId (#915). One seek per install on
   // { podId, agentName, instanceId, startedAt }; a run with no instanceId
-  // counts for `default`, as it always has.
+  // (missing, null or '') counts for `default`, as it always has.
   let runMap = new Map<string, Date>();
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -224,7 +224,7 @@ export const collectPodAgentActivity = async (
       match: ({ agentName, instanceId }) => ({
         podId: pod,
         agentName,
-        instanceId: instanceId === 'default' ? { $in: ['default', null] } : instanceId,
+        instanceId: instanceId === 'default' ? { $in: ['default', null, ''] } : instanceId,
       }),
       field: 'startedAt',
     });

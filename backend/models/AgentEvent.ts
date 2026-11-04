@@ -164,9 +164,14 @@ AgentEventSchema.index({ agentName: 1, instanceId: 1, podId: 1, status: 1, deliv
 // work in every other pod for the same agent installation.
 AgentEventSchema.index({ agentName: 1, instanceId: 1, status: 1, podId: 1, createdAt: 1 });
 // The roster's last heartbeat per seat (TASK-774): one seek per install for
-// the newest delivered heartbeat. Without `type` here that read fetched every
-// delivered event of the seat, of every type, to find its heartbeats.
-AgentEventSchema.index({ agentName: 1, instanceId: 1, type: 1, status: 1, createdAt: -1 });
+// the newest delivered heartbeat. With no index on `type`, that read fetched
+// every delivered event of the seat, of every type, to find its heartbeats.
+// Partial on heartbeats, so mentions, messages and board events never write
+// to it; a query naming type 'heartbeat' implies the filter, so it is used.
+AgentEventSchema.index(
+  { agentName: 1, instanceId: 1, status: 1, createdAt: -1 },
+  { partialFilterExpression: { type: 'heartbeat' }, name: 'heartbeat_newest_per_install' },
+);
 
 export const AgentEvent: Model<IAgentEvent> = mongoose.model<IAgentEvent>(
   'AgentEvent',
