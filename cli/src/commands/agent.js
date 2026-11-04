@@ -1625,6 +1625,8 @@ export const performRun = ({
   setTimeoutImpl = setTimeout,
   setIntervalImpl = setInterval,
   clearIntervalImpl = clearInterval,
+  // The host's bubblewrap probe, for a turn placed public; tests pin it.
+  detectBwrapImpl,
   setDeadlineTimeoutImpl = setTimeout,
   clearDeadlineTimeoutImpl = clearTimeout,
   turnTimeoutMs,
@@ -2139,14 +2141,19 @@ export const performRun = ({
     const placement = await placeTurn();
     // A workspace turn placed public (its pod turned public, or its pods could
     // not be read) is confined as a public seat, which this host may not be
-    // able to do: Claude Code on Linux has only the workspace jail. Refuse it
-    // as the run start would, before anything is read or spawned. The model
+    // able to do (a Linux host without bubblewrap). Refuse it as the run start
+    // would, before anything is read or spawned. The model
     // never runs and nothing is posted. A public pod is a settled answer, so a
     // human's message is handed to another listener (claim-outcome.js). A
     // failed read is not: it throws, so the event stays unacked and comes back
     // through the spawn-retry backoff instead of being refused for good.
     if (placement.reason) {
-      const turnRefusal = hostSandboxRefusal({ environment: placement.environment, adapterName: adapter.name, hostUnconfined });
+      const turnRefusal = hostSandboxRefusal({
+        environment: placement.environment,
+        adapterName: adapter.name,
+        hostUnconfined,
+        ...(detectBwrapImpl ? { detectBwrap: detectBwrapImpl } : {}),
+      });
       if (turnRefusal && placement.readError) {
         throw Object.assign(
           new Error(`turn deferred, because its pods could not be read: ${placement.readError.message}`, {

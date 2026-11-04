@@ -180,14 +180,14 @@ describe('no seat on native Windows carries the grant broker', () => {
 });
 
 describe('what a Windows user is told', () => {
-  test('the refusal names Windows and the flag, and still offers no WSL route', () => {
+  test('the refusal names Windows and the flag, and offers WSL, which runs Claude Code in the Linux sandbox since F96', () => {
     const message = windowsSandboxMessage('claude');
     expect(message).toContain('no sandbox for Windows yet');
     expect(message).toContain(`commonly agent run <name> ${UNSANDBOXED_FLAG}`);
     expect(message).toContain(`commonly daemon install ${UNSANDBOXED_FLAG}`);
     expect(message).toContain('no connector grants');
     expect(message).toContain("Commonly's restricted tool settings");
-    expect(message).not.toContain('WSL');
+    expect(message).toContain('WSL 2 (Ubuntu): install Node and Claude Code inside WSL');
     // The flag is offered only where it does something.
     expect(windowsSandboxMessage('opencode')).not.toContain(UNSANDBOXED_FLAG);
   });

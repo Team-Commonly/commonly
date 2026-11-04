@@ -24,7 +24,8 @@ await jest.unstable_mockModule('child_process', () => ({
   spawn: jest.fn(),
 }));
 
-const claude = (await import('../src/lib/adapters/claude.js')).default;
+const claudeModule = await import('../src/lib/adapters/claude.js');
+const claude = claudeModule.default;
 const { spawnSync } = await import('child_process');
 
 const fakeChild = ({ stdout = '', code = 0 } = {}) => {
@@ -37,6 +38,29 @@ const fakeChild = ({ stdout = '', code = 0 } = {}) => {
     proc.emit('close', code);
   }, 0);
   return proc;
+};
+
+// F96: a public Linux seat runs in the workspace tier's jail, which needs
+// Claude Code installed and a way to the model. This gives a test a fake
+// install on PATH, a state folder, and an API key behind a stub proxy.
+const publicLinuxClaude = () => {
+  const install = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-install-'));
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-public-state-'));
+  fs.writeFileSync(path.join(install, 'claude'), '#!/bin/sh\n', { mode: 0o755 });
+  spawnSync.mockImplementation((cmd) => (cmd === 'which'
+    ? { status: 0, stdout: `${path.join(install, 'claude')}\n` } : undefined));
+  return {
+    state,
+    env: { ANTHROPIC_API_KEY: 'sk-host-only' },
+    ctx: {
+      _publicClaudeState: state,
+      _startProviderProxy: async () => ({ baseURL: 'http://127.0.0.1:41234/', token: 'per-turn-token', close: async () => {} }),
+    },
+    cleanup: () => {
+      spawnSync.mockReset();
+      for (const dir of [install, state]) fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
 };
 
 const makeSpawnImpl = ({ code = 0, stdout = 'ok' } = {}) => {
@@ -580,21 +604,24 @@ describe('claude adapter — ctx.environment', () => {
   ])('a public Linux seat %s refuses a cold MCP before Claude runs', async (_label, sandbox) => {
     const originalPlatform = process.platform;
     const { impl, calls } = makeSpawnImpl();
+    const linux = publicLinuxClaude();
     try {
       Object.defineProperty(process, 'platform', { value: 'linux' });
       await withColdMcpHome(async () => {
         await expect(claude.spawn('hi', {
           sessionId: null,
           cwd,
-          env: { PATH: process.env.PATH },
+          env: { PATH: process.env.PATH, ...linux.env },
           environment: { model: 'test-model', sandbox, mcp: COLD_MCP },
           _spawnImpl: impl,
           _detectBwrap: () => ({ available: true, path: 'bwrap' }),
+          ...linux.ctx,
         })).rejects.toMatchObject({ code: 'public_mcp_unavailable' });
       });
       expect(calls).toHaveLength(0);
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
+      linux.cleanup();
     }
   });
 
@@ -726,6 +753,7 @@ describe('claude adapter — ctx.environment', () => {
   test('public trust with NO mode resolves to bwrap off darwin, with the same tool policy macOS gets', async () => {
     const originalPlatform = process.platform;
     const { impl, calls } = makeSpawnImpl();
+    const linux = publicLinuxClaude();
     try {
       Object.defineProperty(process, 'platform', { value: 'linux' });
       await claude.spawn('hi', {
@@ -735,11 +763,13 @@ describe('claude adapter — ctx.environment', () => {
           PATH: process.env.PATH,
           COMMONLY_HOST_SECRET: 'must-not-reach-public-seat',
           AWS_SECRET_ACCESS_KEY: 'must-not-reach-public-seat',
+          ...linux.env,
         },
         commitAttributionEnv: { COMMONLY_AGENT_SEAT_NAME: 'Public Linux Seat' },
         environment: { model: 'test-model', sandbox: { trust: 'public' } },
         _spawnImpl: impl,
         _detectBwrap: () => ({ available: true, path: 'bwrap' }),
+        ...linux.ctx,
       });
       expect(calls).toHaveLength(1);
       expect(calls[0].cmd).toBe('bwrap');
@@ -749,11 +779,20 @@ describe('claude adapter — ctx.environment', () => {
       // environment; values are not serialized into bwrap argv.
       expect(calls[0].args).not.toContain('--clearenv');
       expect(calls[0].args).not.toContain('must-not-reach-public-seat');
-      // Plus the turn's marker (turn-processes), which carries nothing from the host.
+      // Plus the turn's marker (turn-processes), which carries nothing from the
+      // host, the private HOME (F96), and the proxy in place of the host's key.
       expect(calls[0].opts.env).toEqual({
         PATH: process.env.PATH,
         COMMONLY_AGENT_SEAT_NAME: 'Public Linux Seat',
         COMMONLY_TURN_ID: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        HOME: linux.state,
+        TMPDIR: path.join(linux.state, 'tmp'),
+        CLAUDE_CODE_TMPDIR: path.join(linux.state, 'tmp'),
+        XDG_CACHE_HOME: path.join(linux.state, '.cache'),
+        XDG_CONFIG_HOME: path.join(linux.state, '.config'),
+        XDG_DATA_HOME: path.join(linux.state, '.local', 'share'),
+        ANTHROPIC_BASE_URL: 'http://127.0.0.1:41234/',
+        ANTHROPIC_API_KEY: 'per-turn-token',
       });
       // The inner claude argv rides after `--`, inside the namespace.
       const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
@@ -771,6 +810,7 @@ describe('claude adapter — ctx.environment', () => {
       expect(inner.join(' ')).toContain('Read(./.env)');
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform });
+      linux.cleanup();
     }
   });
 
@@ -1182,15 +1222,21 @@ describe('claude adapter — a public seat gets its declared skills as prompt te
   test('a public Linux (bwrap) seat carries the skill text inside the namespace', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux' });
     const { impl, calls } = makeSpawnImpl();
-    await claude.spawn('hi', {
-      agentName: 'public-skill-test',
-      sessionId: null,
-      cwd,
-      env: { PATH: process.env.PATH },
-      environment: { model: 'test-model', sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } },
-      _spawnImpl: impl,
-      _detectBwrap: () => ({ available: true, path: 'bwrap' }),
-    });
+    const linux = publicLinuxClaude();
+    try {
+      await claude.spawn('hi', {
+        agentName: 'public-skill-test',
+        sessionId: null,
+        cwd,
+        env: { PATH: process.env.PATH, ...linux.env },
+        environment: { model: 'test-model', sandbox: { trust: 'public' }, skills: { claude: [skillSrc] } },
+        _spawnImpl: impl,
+        _detectBwrap: () => ({ available: true, path: 'bwrap' }),
+        ...linux.ctx,
+      });
+    } finally {
+      linux.cleanup();
+    }
 
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd).toBe('bwrap');
@@ -1512,7 +1558,7 @@ describe('claude adapter — a workspace seat on Linux', () => {
 
   // Plays the child: it looks for its login under the HOME it was given and
   // writes its transcript there, as claude does.
-  const childImpl = () => {
+  const childImpl = ({ stdout = 'ok', code = 0 } = {}) => {
     const calls = [];
     const impl = (cmd, args, opts) => {
       // bwrap sets the child's HOME with --setenv; that is the one it sees.
@@ -1527,12 +1573,12 @@ describe('claude adapter — a workspace seat on Linux', () => {
         message: { usage: { input_tokens: 1, cache_creation_input_tokens: 2, cache_read_input_tokens: 40 } },
       })}\n`);
       calls.push({ cmd, args, opts, foundLogin });
-      return fakeChild({ stdout: 'ok' });
+      return fakeChild({ stdout, code });
     };
     return { impl, calls };
   };
 
-  const linuxSpawn = (impl, sandbox = { trust: 'workspace' }, env = {}) => claude.spawn('hi', {
+  const linuxSpawn = (impl, sandbox = { trust: 'workspace' }, env = {}, extra = {}) => claude.spawn('hi', {
     agentName: 'linux-workspace-test',
     sessionId: null,
     cwd,
@@ -1542,6 +1588,7 @@ describe('claude adapter — a workspace seat on Linux', () => {
     _publicClaudeState: state,
     _detectBwrap: () => ({ available: true, path: 'bwrap' }),
     _spawnImpl: impl,
+    ...extra,
   });
 
   const flagTriples = (args, flag) => args.flatMap((arg, i) => (
@@ -1706,15 +1753,256 @@ describe('claude adapter — a workspace seat on Linux', () => {
     expect(fs.readdirSync(state)).toEqual([]);
   });
 
-  test('a public Linux seat keeps its old jail: the project is its HOME and nothing else is writable', async () => {
-    const { impl, calls } = childImpl();
-    await linuxSpawn(impl, { trust: 'public' });
+  // F96: a public Linux seat runs Claude Code in the jail the workspace tier
+  // built, with a HOME outside the project, and reaches the model one of two
+  // ways. Neither leaves a credential the jail can rotate or keep.
+  describe('a public seat (F96)', () => {
+    const hour = 3600 * 1000;
 
-    const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
-    expect(outer.slice(outer.indexOf('HOME') - 1, outer.indexOf('HOME') + 2))
-      .toEqual(['--setenv', 'HOME', cwd]);
-    expect(flagTriples(outer, '--bind')).toEqual([[cwd, cwd]]);
-    expect(fs.readdirSync(state)).toEqual([]);
+    // CodeRabbit on #3395: the workspace seat's folder holds private-pod
+    // transcripts, and the same agent can run both kinds of turn at
+    // once. A public turn's HOME is never that folder.
+    test('a public turn gets its own state folder, never the workspace seat\'s', () => {
+      const { bwrapClaudeStatePath } = claudeModule;
+      const workspace = bwrapClaudeStatePath({ agentName: 'scout' });
+      const publicHome = bwrapClaudeStatePath({ agentName: 'scout' }, 'public');
+      expect(publicHome).not.toBe(workspace);
+      expect(publicHome.startsWith(`${workspace}${path.sep}`)).toBe(false);
+      expect(path.dirname(publicHome)).toBe(path.dirname(workspace));
+      expect(bwrapClaudeStatePath({ agentName: 'scout' }, 'public')).toBe(publicHome);
+      expect(bwrapClaudeStatePath({ agentName: 'other' }, 'public')).not.toBe(publicHome);
+    });
+    const subscription = (fields = {}) => `${JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'test-access', refreshToken: 'test-refresh', expiresAt: Date.now() + 8 * hour, scopes: ['user:inference'], ...fields,
+      },
+    })}\n`;
+
+    test('with no API key, it runs on a fresh copy of the login without its refresh token, deleted after the turn', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      await linuxSpawn(impl, { trust: 'public' });
+
+      expect(calls).toHaveLength(1);
+      const { args, opts, foundLogin } = calls[0];
+      const outer = args.slice(0, args.indexOf('--'));
+      expect(outer.slice(outer.indexOf('HOME') - 1, outer.indexOf('HOME') + 2))
+        .toEqual(['--setenv', 'HOME', state]);
+      // The state folder is the only writable bind; the project is read-only.
+      expect(flagTriples(outer, '--bind')).toEqual([[state, state]]);
+      expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
+      const readOnly = outer.flatMap((arg, i) => (/^--ro-bind/.test(arg) ? [outer[i + 1]] : []));
+      expect(readOnly).toContain(fs.realpathSync(claudeInstall));
+
+      const carried = JSON.parse(foundLogin).claudeAiOauth;
+      expect(carried.accessToken).toBe('test-access');
+      expect(carried).not.toHaveProperty('refreshToken');
+      expect(opts.env).not.toHaveProperty('ANTHROPIC_API_KEY');
+      expect(opts.env).not.toHaveProperty('ANTHROPIC_BASE_URL');
+      // Gone once the turn ends, and the host's login is untouched.
+      expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
+      expect(fs.readFileSync(path.join(operatorClaude, '.credentials.json'), 'utf8')).toContain('test-refresh');
+      expect(fs.readdirSync(cwd)).toEqual([]);
+    });
+
+    // A workspace seat's jail rewrites its copy when its session check fails
+    // (CI, 11-04), so it carries no refresh token either: refreshing in the
+    // jail would spend the host's and sign the person out.
+    test('a workspace seat also carries the login without its refresh token', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      await linuxSpawn(impl, { trust: 'workspace' });
+      expect(calls).toHaveLength(1);
+      const carried = JSON.parse(calls[0].foundLogin).claudeAiOauth;
+      expect(carried.accessToken).toBe('test-access');
+      expect(carried).not.toHaveProperty('refreshToken');
+      expect(fs.readFileSync(path.join(operatorClaude, '.credentials.json'), 'utf8')).toContain('test-refresh');
+    });
+
+    test('a workspace seat whose login would expire mid-turn is refused, without the API-key advice', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription({ expiresAt: Date.now() + 60_000 }), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      await expect(linuxSpawn(impl, { trust: 'workspace' })).rejects.toThrow(/expires in 0 min/);
+      await expect(linuxSpawn(impl, { trust: 'workspace' })).rejects.not.toThrow(/ANTHROPIC_API_KEY/);
+      expect(calls).toHaveLength(0);
+    });
+
+    test('a login seat uses the host\'s own Anthropic base URL when one is set, and no key', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      await linuxSpawn(impl, { trust: 'public' }, { ANTHROPIC_BASE_URL: 'https://gateway.example/anthropic' });
+      expect(calls[0].opts.env.ANTHROPIC_BASE_URL).toBe('https://gateway.example/anthropic');
+      expect(calls[0].opts.env).not.toHaveProperty('ANTHROPIC_API_KEY');
+    });
+
+    // Review of #3395 (D1): a base URL beside a gateway credential is that
+    // credential's gateway. The jail never gets the credential, so forwarding
+    // the URL would send the person's subscription token there instead.
+    test.each([
+      ['public', { ANTHROPIC_AUTH_TOKEN: 'gateway-token' }],
+      ['workspace', { ANTHROPIC_AUTH_TOKEN: 'gateway-token' }],
+      ['workspace', { ANTHROPIC_API_KEY: 'gateway-key' }],
+    ])('a %s login seat keeps a gateway\'s base URL out of the jail', async (trust, credential) => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      await linuxSpawn(impl, { trust }, { ANTHROPIC_BASE_URL: 'https://gateway.example/anthropic', ...credential });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].opts.env).not.toHaveProperty('ANTHROPIC_BASE_URL');
+      expect(calls[0].opts.env).not.toHaveProperty('ANTHROPIC_AUTH_TOKEN');
+    });
+
+    test('a base URL carrying a user or password is not forwarded', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      await linuxSpawn(impl, { trust: 'public' }, { ANTHROPIC_BASE_URL: 'https://user:pw@gateway.example/' });
+      expect(calls[0].opts.env).not.toHaveProperty('ANTHROPIC_BASE_URL');
+    });
+
+    // Review of #3395 (D2): the server's environment cannot widen a public jail.
+    test.each(['read-outside', 'write-outside'])('a public seat refuses sandbox.filesystem.%s before anything is copied', async (key) => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      await expect(linuxSpawn(impl, { trust: 'public', filesystem: { [key]: ['~'] } }))
+        .rejects.toThrow(`do not allow sandbox.filesystem.${key}`);
+      expect(calls).toHaveLength(0);
+      expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
+    });
+
+    // Review of #3395 (D3): another live turn of the agent keeps the copy; a
+    // marker left by a process that has exited does not.
+    test('the login copy outlives a turn while another turn of the agent is live', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const turns = `${state}.login-turns`;
+      fs.mkdirSync(turns, { recursive: true });
+      const live = path.join(turns, `${process.ppid}-other-turn`);
+      fs.writeFileSync(live, '');
+      fs.writeFileSync(path.join(turns, '999999999-exited-turn'), '');
+      await linuxSpawn(childImpl().impl, { trust: 'public' });
+      expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(true);
+      expect(fs.existsSync(path.join(turns, '999999999-exited-turn'))).toBe(false);
+      fs.rmSync(live);
+      await linuxSpawn(childImpl().impl, { trust: 'public' });
+      expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
+      expect(fs.existsSync(turns)).toBe(false);
+    });
+
+    test('the login copy is deleted when the turn fails too', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const impl = () => fakeChild({ code: 1, stderr: 'boom' });
+      await expect(linuxSpawn(impl, { trust: 'public' })).rejects.toThrow();
+      expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
+    });
+
+    test('a login that expires before the turn could end refuses before anything is copied', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription({ expiresAt: Date.now() + 60 * 1000 }), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      await expect(linuxSpawn(impl, { trust: 'public' })).rejects.toThrow(/Claude login on this machine expires/);
+      expect(calls).toHaveLength(0);
+      expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
+    });
+
+    test('with no API key and no login, it refuses with both ways to fix it', async () => {
+      fs.rmSync(path.join(operatorClaude, '.credentials.json'));
+      const { impl, calls } = childImpl();
+      await expect(linuxSpawn(impl, { trust: 'public' })).rejects.toThrow(/ANTHROPIC_API_KEY.*or sign in/s);
+      expect(calls).toHaveLength(0);
+    });
+
+    test('with an API key, the key stays on the host behind a per-turn proxy and no login is copied', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      const started = [];
+      const closed = [];
+      await linuxSpawn(impl, { trust: 'public' }, { ANTHROPIC_API_KEY: 'sk-host-only' }, {
+        _startProviderProxy: async (opts) => {
+          started.push(opts);
+          return { baseURL: 'http://127.0.0.1:41234/', token: 'per-turn-token', close: async () => { closed.push(true); } };
+        },
+      });
+
+      expect(started).toHaveLength(1);
+      expect(started[0]).toEqual(expect.objectContaining({
+        keyMaterial: 'sk-host-only', wire: 'anthropic-messages', provider: { baseURL: 'https://api.anthropic.com' },
+      }));
+      const { args, opts, foundLogin } = calls[0];
+      expect(opts.env.ANTHROPIC_BASE_URL).toBe('http://127.0.0.1:41234/');
+      expect(opts.env.ANTHROPIC_API_KEY).toBe('per-turn-token');
+      expect(args.join(' ')).not.toContain('sk-host-only');
+      expect(JSON.stringify(opts.env)).not.toContain('sk-host-only');
+      expect(foundLogin).toBeNull();
+      expect(closed).toHaveLength(1);
+    });
+
+    // CodeRabbit on #3395: the copy is built from an allowlist, so a field the
+    // host's record carries beyond the token never reaches the seat.
+    test('the access-only copy keeps the token and account metadata, and nothing else', async () => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription({
+        rateLimitTier: 'default', idToken: 'host-id-token-secret', clientSecret: 'host-client-secret',
+      }), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      await linuxSpawn(impl, { trust: 'public' });
+      const copy = JSON.parse(calls[0].foundLogin).claudeAiOauth;
+      expect(Object.keys(copy).sort()).toEqual(['accessToken', 'expiresAt', 'rateLimitTier', 'scopes']);
+      expect(calls[0].foundLogin).not.toMatch(/host-id-token-secret|host-client-secret|test-refresh/);
+    });
+
+    test('a successful reply that echoes the per-turn proxy token is redacted', async () => {
+      const { impl } = childImpl({ stdout: 'my key is per-turn-token-echo' });
+      const res = await linuxSpawn(impl, { trust: 'public' }, { ANTHROPIC_API_KEY: 'sk-host-only' }, {
+        _startProviderProxy: async () => ({ baseURL: 'http://127.0.0.1:1/', token: 'per-turn-token-echo', close: async () => {} }),
+      });
+      expect(res.text).not.toContain('per-turn-token-echo');
+      expect(res.text).toContain('[redacted]');
+    });
+
+    test('a failure that echoes the per-turn proxy token is redacted', async () => {
+      const { impl } = childImpl({ stdout: 'upstream said: bad key per-turn-token-echo', code: 1 });
+      const failure = await linuxSpawn(impl, { trust: 'public' }, { ANTHROPIC_API_KEY: 'sk-host-only' }, {
+        _startProviderProxy: async () => ({ baseURL: 'http://127.0.0.1:1/', token: 'per-turn-token-echo', close: async () => {} }),
+      }).then(() => null, (error) => error);
+      expect(failure).toBeTruthy();
+      expect(JSON.stringify({ message: failure.message, ...failure })).not.toContain('per-turn-token-echo');
+    });
+
+    // CodeRabbit on #3395: --unshare-net cuts the seat off from the host proxy
+    // and the vendor alike, so the combination is refused before either path
+    // starts a proxy or copies a login.
+    test.each([
+      ['an API key', { ANTHROPIC_API_KEY: 'sk-host-only' }],
+      ['a login', {}],
+    ])('restricted networking is refused on %s, before a proxy starts or a login is copied', async (_label, env) => {
+      fs.writeFileSync(path.join(operatorClaude, '.credentials.json'), subscription(), { mode: 0o600 });
+      const { impl, calls } = childImpl();
+      const started = [];
+      await expect(linuxSpawn(impl, { trust: 'public', network: { policy: 'restricted' } }, env, {
+        _startProviderProxy: async (opts) => { started.push(opts); return { baseURL: 'http://127.0.0.1:1/', token: 't', close: async () => {} }; },
+      })).rejects.toThrow(/shared bwrap networking/);
+      expect(started).toHaveLength(0);
+      expect(calls).toHaveLength(0);
+      expect(fs.existsSync(path.join(state, '.claude', '.credentials.json'))).toBe(false);
+    });
+
+    test('the proxy forwards to the host\'s own Anthropic base URL when one is set', async () => {
+      const { impl } = childImpl();
+      const started = [];
+      await linuxSpawn(impl, { trust: 'public' }, { ANTHROPIC_API_KEY: 'sk-host-only', ANTHROPIC_BASE_URL: 'https://gateway.example/anthropic' }, {
+        _startProviderProxy: async (opts) => { started.push(opts); return { baseURL: 'http://127.0.0.1:1/', token: 't', close: async () => {} }; },
+      });
+      expect(started[0].provider).toEqual({ baseURL: 'https://gateway.example/anthropic' });
+    });
+
+    test('it gets the public tool policy, the same flags a macOS public seat gets', async () => {
+      const { impl, calls } = childImpl();
+      await linuxSpawn(impl, { trust: 'public' });
+      const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
+      const policy = inner.slice(inner.indexOf('--setting-sources'));
+      expect(policy).toEqual(expect.arrayContaining(['--permission-mode', 'dontAsk', '--strict-mcp-config', '--no-chrome']));
+      const denied = policy.slice(policy.indexOf('--disallowedTools') + 1);
+      for (const tool of ['WebFetch', 'WebSearch', 'Bash', 'Write', 'Edit']) expect(denied).toContain(tool);
+      expect(denied).toContain(`Read(/${path.join(os.homedir(), '.commonly')}/**)`);
+      // The workspace tier's extra denies are not the public seat's.
+      expect(denied).not.toContain('Read(./.git/**)');
+    });
   });
 });
 

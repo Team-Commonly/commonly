@@ -37,7 +37,7 @@ const drain = async () => {
 
 let eventCount = 0;
 const runOneTurn = async ({
-  environment, installations, newSessionId, adapterName = 'stub', spawns = 1,
+  environment, installations, newSessionId, adapterName = 'stub', spawns = 1, detectBwrapImpl,
 }) => {
   eventCount += 1;
   const eventId = `ws-event-${eventCount}`;
@@ -72,6 +72,7 @@ const runOneTurn = async ({
     workspacePath: workspaceDir,
     log: (line) => logs.push(line),
     setTimeoutImpl: noopTimeout,
+    detectBwrapImpl,
   });
   await drain();
   stop();
@@ -163,9 +164,10 @@ describe('performRun workspace turn placement', () => {
   });
 });
 
-// TASK-027: Claude Code on Linux has only the workspace jail, so a workspace
-// turn placed public is refused before anything is read or spawned, never
-// run in the public jail that cannot carry Claude's install or login.
+// TASK-027, then F96: a workspace turn placed public runs as a public seat,
+// which on Linux needs bubblewrap. Since F96 the public jail carries Claude
+// Code too, so the turn runs where bubblewrap does, and is refused before
+// anything is read or spawned where it does not.
 describe('performRun workspace turn placement for Claude Code on Linux', () => {
   const originalPlatform = process.platform;
   beforeEach(() => {
@@ -185,19 +187,34 @@ describe('performRun workspace turn placement for Claude Code on Linux', () => {
     expect(ctx.environment.sandbox.trust).toBe('workspace');
   });
 
+  const noBwrap = () => ({ available: false, error: 'bwrap not found on PATH.' });
+  const bwrap = () => ({ available: true, path: 'bwrap' });
+
   test.each([
     ['its pod turned public', [privatePod, { podId: 'pod-open', publicRead: true, communityListed: false }],
       /because a pod it answers in is publicly readable/],
     ['a pod reports no visibility', [privatePod, { podId: 'pod-unknown', joinPolicy: 'invite-only' }],
       /did not report whether it is/],
-  ])('a turn is refused when %s, with nothing read, spawned or posted', async (_label, installations, why) => {
+  ])('on a host without bubblewrap, a turn is refused when %s, with nothing read, spawned or posted', async (_label, installations, why) => {
     const { get, post, logs } = await runOneTurn({
-      environment: { sandbox: { trust: 'workspace' } }, installations, adapterName: 'claude', spawns: 0,
+      environment: { sandbox: { trust: 'workspace' } }, installations, adapterName: 'claude', spawns: 0, detectBwrapImpl: noBwrap,
     });
     expect(logs.some((line) => /^turn refused, because /.test(line) && why.test(line)
-      && /pods are all invite-only/.test(line))).toBe(true);
+      && /bubblewrap sandbox, which is not available here/.test(line))).toBe(true);
     expect(get.mock.calls.some(([route]) => route === '/api/agents/runtime/memory')).toBe(false);
     expect(posted(post)).toHaveLength(0);
+  });
+
+  test('with bubblewrap, a turn whose pod turned public runs as a public seat', async () => {
+    const { ctx, logs } = await runOneTurn({
+      environment: { sandbox: { trust: 'workspace' } },
+      installations: [privatePod, { podId: 'pod-open', publicRead: true, communityListed: false }],
+      adapterName: 'claude',
+      detectBwrapImpl: bwrap,
+    });
+    expect(ctx.environment.sandbox.trust).toBe('public');
+    expect(ctx.cwd).not.toBe(workspaceDir);
+    expect(logs.some((line) => /^turn refused, because /.test(line))).toBe(false);
   });
 
   test('a failed read of its pods defers the turn for a retry instead of refusing it', async () => {
@@ -206,6 +223,7 @@ describe('performRun workspace turn placement for Claude Code on Linux', () => {
       installations: Object.assign(new Error('boom'), { status: 503 }),
       adapterName: 'claude',
       spawns: 0,
+      detectBwrapImpl: noBwrap,
     });
     expect(logs.some((line) => /turn deferred, because its pods could not be read: boom/.test(line)
       && /retrying 1 held event/.test(line))).toBe(true);

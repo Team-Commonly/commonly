@@ -169,10 +169,14 @@ const readProviderKey = async (keyFile, adapterLabel) => {
 
 // The routes a CLI on each wire may call, relative to the configured base
 // path, and the header the real key goes out in. Anything else is refused.
+// `search` lists the exact query strings a wire's client sends, forwarded as
+// sent: Claude Code calls `/v1/messages?beta=true` (F96). Any other query is
+// refused.
 const WIRES = Object.freeze({
   'openai-chat': { routes: [['POST', 'chat/completions'], ['GET', 'models']], auth: 'bearer' },
   'anthropic-messages': {
     routes: [['POST', 'v1/messages'], ['POST', 'v1/messages/count_tokens'], ['GET', 'v1/models']],
+    search: ['?beta=true'],
     auth: 'x-api-key',
   },
   'openai-responses': { routes: [['POST', 'responses'], ['GET', 'models']], auth: 'bearer' },
@@ -276,7 +280,8 @@ export const startProviderProxy = async ({
       // This keeps a CLI request from turning the proxy into an arbitrary
       // path/URL fetcher (including paths on a local provider host).
       const requested = new URL(requestPath, 'http://127.0.0.1');
-      if (requested.origin !== 'http://127.0.0.1' || requested.search || requested.hash) {
+      if (requested.origin !== 'http://127.0.0.1' || requested.hash
+        || (requested.search && !(wireSpec.search || []).includes(requested.search))) {
         rejectRoute(requested.pathname);
         return;
       }
@@ -289,7 +294,7 @@ export const startProviderProxy = async ({
       }
       const endpoint = route[1];
       target = {
-        path: `${configuredPath}/${endpoint}`,
+        path: `${configuredPath}/${endpoint}${requested.search}`,
         protocol: upstream.protocol,
         hostname: upstream.hostname,
         port: upstream.port || undefined,

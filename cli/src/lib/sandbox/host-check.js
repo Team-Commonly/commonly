@@ -35,11 +35,13 @@ const HOSTED_LINE = '  - A hosted agent: choose "Run it here" on the Connect pag
 /** What a person on native Windows can do instead. */
 export const windowsSandboxMessage = (adapterName) => {
   const label = ADAPTER_LABELS[adapterName] || adapterName;
-  // WSL is offered only where the Linux sandbox can run the CLI: not Claude
-  // Code (see linuxClaudeMessage).
+  // WSL runs the Linux sandbox, which carries every adapter, Claude Code
+  // included (F96). Claude Code also has the MCP command, which needs none.
   return [
     `Commonly runs a connected ${label} inside a sandbox, and has no sandbox for Windows yet,`,
     'so by default this agent cannot listen for @mentions from native Windows. You can:',
+    `  - WSL 2 (Ubuntu): install Node and ${label} inside WSL, run \`sudo apt install bubblewrap\`,`
+      + ' then run these same commands there.',
     // D245: the user's own choice, never a default (sandbox/windows-unsandboxed.js).
     ...(adapterName === 'claude'
       ? [`  - Run it without an OS sandbox: add ${UNSANDBOXED_FLAG}`
@@ -48,27 +50,10 @@ export const windowsSandboxMessage = (adapterName) => {
       : []),
     ...(adapterName === 'claude'
       ? ['  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.']
-      : [`  - WSL 2 (Ubuntu): install Node and ${label} inside WSL, run \`sudo apt install bubblewrap\`,`
-        + ' then run these same commands there.']),
+      : []),
     HOSTED_LINE,
   ].join('\n');
 };
-
-/**
- * Claude Code on Linux (WSL included) for any seat but a workspace one. Only
- * the workspace jail (#2784) carries what Claude needs: its install, a HOME
- * of its own and a copy of the login. The public jail binds the system binary
- * folders only, so a confined spawn could not even start Claude (Ubuntu run,
- * 2026-10-16), and giving it the login would hand strangers a jail that holds
- * it. A workspace seat needs every pod it answers in to be invite-only.
- */
-export const linuxClaudeMessage = () => [
-  'Commonly runs a connected Claude Code inside a sandbox. On Linux (WSL included) it does that only',
-  'for an agent whose pods are all invite-only, and this one is not, so it cannot listen for @mentions here. Instead:',
-  '  - From an invite-only pod: run the commands its Connect page shows, from your project\'s folder.',
-  '  - Use Commonly from your own Claude Code sessions: the Connect page shows a `claude mcp add` command.',
-  HOSTED_LINE,
-].join('\n');
 
 /** Why this host cannot confine the seat, or null when it can (or the seat declares no sandbox). */
 export const hostSandboxRefusal = ({
@@ -92,11 +77,6 @@ export const hostSandboxRefusal = ({
   if (platform === 'win32') {
     return hostUnconfined === true && adapterName === 'claude' ? null : windowsSandboxMessage(adapterName);
   }
-  // A workspace claude seat falls through to the bubblewrap probe below; the
-  // probe failing, for any reason, is a refusal like any other adapter's.
-  if (mode === 'bwrap' && adapterName === 'claude' && sandbox.trust !== 'workspace') {
-    return linuxClaudeMessage();
-  }
   if (mode === 'bwrap') {
     const bwrap = detectBwrap();
     return bwrap.available ? null : `This seat runs in a bubblewrap sandbox, which is not available here. ${bwrap.error}`;
@@ -107,4 +87,4 @@ export const hostSandboxRefusal = ({
     : `This seat runs in a macOS Seatbelt sandbox (sandbox.mode=${mode}), which is not available here. ${seatbelt.error}`;
 };
 
-export default { hostSandboxRefusal, linuxClaudeMessage, windowsSandboxMessage };
+export default { hostSandboxRefusal, windowsSandboxMessage };

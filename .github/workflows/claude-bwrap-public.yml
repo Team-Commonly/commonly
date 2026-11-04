@@ -1,0 +1,43 @@
+name: Claude public bwrap
+
+# F96: a public Claude Code seat on Linux, run for real. Claude Code (pinned)
+# runs in the bwrap jail against a stub Anthropic API, once per credential
+# path, and the token-print attack must fail at its permission layer.
+on:
+  pull_request:
+    paths:
+      - 'cli/src/lib/adapters/claude.js'
+      - 'cli/src/lib/sandbox/**'
+      - 'cli/src/lib/provider-proxy.js'
+      - 'cli/src/lib/public-withheld-tools.js'
+      - 'packages/seats/**'   # claude.js loads the proxy from it (cli depends on file:../packages/seats)
+      - 'cli/__tests__/claude.bwrap-public.smoke.test.mjs'
+      - '.github/workflows/claude-bwrap-public.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  public-claude:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run public Claude turns and the attacks in a disposable namespace
+        run: |
+          docker run --rm --privileged --security-opt apparmor=unconfined \
+            --mount "type=bind,src=$PWD,dst=/source,readonly" node:22 bash -lc '
+              set -euo pipefail
+              apt-get update -qq
+              apt-get install -y -qq bubblewrap >/dev/null
+              npm install -g --silent @anthropic-ai/claude-code@2.1.318
+              mkdir -p /work/packages
+              cp -R /source/cli /work/
+              # cli links file:../packages/seats, so npm ci needs the link target.
+              cp -R /source/packages/seats /work/packages/
+              rm -rf /work/cli/node_modules
+              npm ci --prefix /work/cli --silent
+              chown -R node:node /work
+              su node -s /bin/bash -c "cd /work/cli && DISABLE_AUTOUPDATER=1 COMMONLY_REQUIRE_BWRAP_SMOKE=1 node --experimental-vm-modules node_modules/.bin/jest __tests__/claude.bwrap-public.smoke.test.mjs --runInBand"
+            '

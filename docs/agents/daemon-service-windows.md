@@ -84,8 +84,8 @@ Rules the code enforces:
 - If the 77/78 park cannot disable the task, the launcher sleeps instead of exiting, so the watchdog
   doesn't restart a daemon that asked to stay down.
 
-WSL 2 is not a sandboxed route for Claude Code: on Linux a public Claude Code seat is refused too
-(`linuxClaudeMessage` in `cli/src/lib/sandbox/host-check.js`).
+WSL 2 is the sandboxed route for every adapter, Claude Code included since F96: inside WSL a public
+Claude Code seat runs under bubblewrap, as on any Linux host (`cli/src/lib/sandbox/host-check.js`).
 
 ## Launching Claude Code and Codex without a shell
 

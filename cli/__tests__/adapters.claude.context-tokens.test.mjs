@@ -107,15 +107,22 @@ describe('claude adapter reports the turn context from the child HOME', () => {
 const jailTest = process.platform === 'linux' ? test : test.skip;
 
 describe('claude adapter reads the transcript inside a bwrap jail', () => {
-  jailTest('bwrap sets the child HOME to the workspace, and the count is read there', async () => {
+  // F96: a public seat's HOME is a private folder outside the project; the
+  // child writes its transcript under the HOME bwrap gives it.
+  jailTest('bwrap sets the child HOME to the seat\'s private folder, and the count is read there', async () => {
     const hostHome = mkdtempSync(join(tmpdir(), 'claude-host-'));
     const cwd = join(hostHome, 'workspace');
+    const state = join(hostHome, 'state');
+    const bin = join(hostHome, 'bin');
     mkdirSync(cwd, { recursive: true });
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'claude'), '#!/bin/sh\n', { mode: 0o755 });
     try {
       const impl = (cmd, args) => {
         const flag = args.includes('--resume') ? '--resume' : '--session-id';
         const sid = args[args.indexOf(flag) + 1];
-        const dir = join(cwd, '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+        const home = args[args.indexOf('HOME') + 1];
+        const dir = join(home, '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, `${sid}.jsonl`), `${JSON.stringify({
           type: 'assistant',
@@ -126,11 +133,13 @@ describe('claude adapter reads the transcript inside a bwrap jail', () => {
       const res = await claude.spawn('hi', {
         sessionId: 'sid-jail',
         cwd,
-        env: { PATH: process.env.PATH, HOME: hostHome },
+        env: { PATH: `${bin}:${process.env.PATH}`, HOME: hostHome, ANTHROPIC_API_KEY: 'sk-host-only' },
         environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'bwrap' } },
         memoryLongTerm: '',
         _spawnImpl: impl,
         _detectBwrap: () => ({ available: true, path: 'bwrap' }),
+        _publicClaudeState: state,
+        _startProviderProxy: async () => ({ baseURL: 'http://127.0.0.1:1/', token: 't', close: async () => {} }),
       });
       expect(res.newSessionId).toBe('sid-jail');
       expect(res.contextTokens).toBe(150003);
