@@ -134,6 +134,7 @@ import {
   peerHoldsFrame,
   resolveCascadeSettings,
 } from '../lib/enforcement.js';
+import { buildReplyReceipt } from '../lib/reply-receipt.js';
 
 const isPodFocusDiagnostic = (error) => (
   typeof error?.code === 'string'
@@ -2296,6 +2297,8 @@ export const performRun = ({
       ? { mounted: serverSkills.mounted, conflicted: serverSkills.conflicted, ...(skillReadUnavailable ? { status: 'unavailable' } : {}) }
       : null;
     let spawnCompleted = false;
+    // D245 item 4: how long the runtime ran, for the reply receipt.
+    let spawnDurationMs;
     let observedSpawn = false;
     let commitAttribution = null;
     try {
@@ -2364,7 +2367,9 @@ export const performRun = ({
       };
       // Supervised or plain, a failure is thrown exactly as the adapter's own
       // would be, so the run loop's classification and retry apply unchanged.
+      const spawnStartedAt = Date.now();
       result = await turn.run(adapter, spawnPrompt, spawnCtx);
+      spawnDurationMs = Date.now() - spawnStartedAt;
       spawnCompleted = true;
     } finally {
       try {
@@ -2551,6 +2556,12 @@ export const performRun = ({
           maxChunks: maxChatChunks,
           uploadName: `${agentName}-reply-${event._id}.md`,
           log: (line) => log(`[${event.type}] ${line}`),
+          // D245 item 4: the wrapper's own account of this turn.
+          receipt: buildReplyReceipt({
+            adapterName: adapter.name,
+            stats: result.stats,
+            durationMs: spawnDurationMs,
+          }),
         });
       } catch (deliveryError) {
         // TASK-535: every rung threw, so the reply reached nobody. The throw

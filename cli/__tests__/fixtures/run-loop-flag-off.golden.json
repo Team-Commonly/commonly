@@ -35,7 +35,11 @@
     ],
     "posts": [
       {
-        "content": "docs gate: PASS"
+        "content": "docs gate: PASS",
+        "receipt": {
+          "adapter": "stub",
+          "durationMs": "<ms>"
+        }
       }
     ],
     "releases": [
@@ -158,7 +162,11 @@
     ],
     "posts": [
       {
-        "content": "docs gate: PASS"
+        "content": "docs gate: PASS",
+        "receipt": {
+          "adapter": "stub",
+          "durationMs": "<ms>"
+        }
       },
       {
         "content": "The model provider refused the content of #0049 (no head named) (message 2 from growth-ops), so I could not read it and will not retry it. It needs another reader."
