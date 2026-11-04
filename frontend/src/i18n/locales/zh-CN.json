@@ -855,7 +855,8 @@
     "lightbox": {
       "close": "关闭",
       "previous": "上一张",
-      "next": "下一张"
+      "next": "下一张",
+      "failed": "这张图片没能加载出来。"
     },
     "attachment": {
       "open": "打开 {{name}}",

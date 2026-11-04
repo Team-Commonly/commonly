@@ -858,7 +858,8 @@
     "lightbox": {
       "close": "Close",
       "previous": "Previous image",
-      "next": "Next image"
+      "next": "Next image",
+      "failed": "Couldn't load this image."
     },
     "attachment": {
       "open": "Open {{name}}",
