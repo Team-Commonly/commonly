@@ -25,6 +25,12 @@
  */
 import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
 
+// Notion's writers offer optional fields its own descriptions call "for
+// tracking only": the skill being followed, an instructions version, and a
+// telemetry intent line. The pin must offer them to match; our agents never
+// send them (F101), so the model does not see them and a call drops them.
+const TRACKING_ONLY_ARGS = ['skill', 'instructions_version', 'telemetry'];
+
 const pin = (
   upstreamName: string,
   description: string,
@@ -32,15 +38,20 @@ const pin = (
   inputSchema: Record<string, unknown>,
   annotations: { readOnlyHint: boolean; destructiveHint: boolean },
   irreversible = false,
-): HostedMcpPinnedTool => ({
-  name: upstreamName.replace(/-/g, '_'),
-  upstreamName,
-  description,
-  class: toolClass,
-  inputSchema,
-  annotations,
-  ...(irreversible ? { irreversible: true } : {}),
-});
+): HostedMcpPinnedTool => {
+  const declared = Object.keys((inputSchema.properties as Record<string, unknown>) || {});
+  const withheldArgs = TRACKING_ONLY_ARGS.filter((name) => declared.includes(name));
+  return {
+    name: upstreamName.replace(/-/g, '_'),
+    upstreamName,
+    description,
+    class: toolClass,
+    inputSchema,
+    annotations,
+    ...(irreversible ? { irreversible: true } : {}),
+    ...(withheldArgs.length ? { withheldArgs } : {}),
+  };
+};
 
 export const NOTION_ENTRY: HostedMcpEntry = {
   id: 'notion',

@@ -61,6 +61,13 @@ export interface HostedMcpPinnedTool {
   /** The schema the owner approves args under, pinned. */
   inputSchema: Record<string, unknown>;
   annotations?: HostedMcpAnnotations;
+  /**
+   * Optional properties the vendor offers that our agents never send (F101).
+   * The pin keeps them, because it must match the vendor's schema exactly; the
+   * model's schema leaves them out, and a call drops any value sent for them.
+   * Top-level properties only; a nested field needs its own mechanism.
+   */
+  withheldArgs?: readonly string[];
 }
 
 /** Fields every hosted entry carries, whatever its credential. */
@@ -296,6 +303,29 @@ const movedTowardWrite = (
   return null;
 };
 
+/** The pinned schema as the model sees it: withheld properties left out. */
+export const modelInputSchema = (tool: HostedMcpPinnedTool): Record<string, unknown> => {
+  const withheld = new Set(tool.withheldArgs || []);
+  const properties = tool.inputSchema.properties;
+  if (!withheld.size || !properties || typeof properties !== 'object' || Array.isArray(properties)) {
+    return tool.inputSchema;
+  }
+  return {
+    ...tool.inputSchema,
+    properties: Object.fromEntries(Object.entries(properties).filter(([name]) => !withheld.has(name))),
+  };
+};
+
+/** The call's arguments with any withheld value dropped. */
+export const withoutWithheldArgs = (
+  tool: HostedMcpPinnedTool,
+  args: Record<string, unknown>,
+): Record<string, unknown> => {
+  if (!tool.withheldArgs?.length) return args;
+  const withheld = new Set(tool.withheldArgs);
+  return Object.fromEntries(Object.entries(args).filter(([name]) => !withheld.has(name)));
+};
+
 export const entryToolProjections = (entry: HostedMcpEntry): HostedMcpToolProjection[] =>
   entry.tools.map((tool) => ({
     name: hostedMcpToolName(entry, tool),
@@ -306,7 +336,7 @@ export const entryToolProjections = (entry: HostedMcpEntry): HostedMcpToolProjec
     definitionDigest: digestPinnedDefinition(entry.id, tool),
     entryTitle: entry.title,
     irreversible: tool.irreversible,
-    inputSchema: tool.inputSchema,
+    inputSchema: modelInputSchema(tool),
   }));
 
 /**

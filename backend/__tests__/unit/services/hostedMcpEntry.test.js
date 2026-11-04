@@ -1618,3 +1618,35 @@ describe('a read pin has to claim the class, not just avoid denying it', () => {
     });
   });
 });
+
+describe('a withheld argument has to be one the pin offers and does not require (F101)', () => {
+  const withSchema = (withheldArgs) => linear({ tools: [pinned({
+    name: 'create_issue',
+    class: 'write',
+    inputSchema: { type: 'object', properties: { title: { type: 'string' }, telemetry: { type: 'object' } }, required: ['title'] },
+    withheldArgs,
+  })] });
+
+  test('an optional declared property can be withheld', () => {
+    expect(() => assertHostedMcpEntries([withSchema(['telemetry'])])).not.toThrow();
+  });
+
+  test('a name the pin does not declare is refused', () => {
+    expect(refusal([withSchema(['intent'])])).toContain('withholds an argument it does not declare: linear.create_issue intent');
+  });
+
+  test('a required property is refused, since dropping it would break every call', () => {
+    expect(refusal([withSchema(['title'])])).toContain('withholds a required argument: linear.create_issue title');
+  });
+
+  test('every shipped Notion pin withholds each tracking-only field it declares', () => {
+    const notion = HOSTED_MCP_ENTRIES.find((entry) => entry.id === 'notion');
+    // Not vacuous: Notion's writers declare the fields since the 11-04 re-pin.
+    expect(notion.tools.filter((tool) => tool.withheldArgs?.length === 3).length).toBeGreaterThanOrEqual(11);
+    for (const tool of notion.tools) {
+      const declared = Object.keys(tool.inputSchema.properties || {});
+      const tracking = ['skill', 'instructions_version', 'telemetry'].filter((name) => declared.includes(name));
+      expect([tool.name, [...(tool.withheldArgs || [])].sort()]).toEqual([tool.name, tracking.sort()]);
+    }
+  });
+});
