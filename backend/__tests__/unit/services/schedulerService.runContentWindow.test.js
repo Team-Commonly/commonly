@@ -2,17 +2,22 @@
 // register it once the deployment opts in with exactly AGENT_RUN_CONTENT_WINDOW=true
 // (after a dry run has counted what it would redact).
 jest.mock('node-cron', () => ({
-  schedule: jest.fn((expression) => ({ expression, start: jest.fn(), stop: jest.fn() })),
+  schedule: jest.fn((expression, task, options) => ({
+    expression, task, options, start: jest.fn(), stop: jest.fn(),
+  })),
+}));
+jest.mock('../../../services/agentRunContentWindow', () => ({
+  redactExpiredRunContent: jest.fn(async () => ({ cutoff: new Date(0), matched: 0, redacted: 0 })),
 }));
 
 const cron = require('node-cron');
 const scheduler = require('../../../services/schedulerService');
 
 const WINDOW_SCHEDULE = '23 4 * * *';
-const windowJobStarted = () => cron.schedule.mock.results
+const windowJobs = () => cron.schedule.mock.results
   .map((r) => r.value)
-  .filter((job) => job.expression === WINDOW_SCHEDULE)
-  .some((job) => job.start.mock.calls.length > 0);
+  .filter((job) => job.expression === WINDOW_SCHEDULE);
+const windowJobStarted = () => windowJobs().some((job) => job.start.mock.calls.length > 0);
 
 describe('scheduler: run content window opt-in', () => {
   const original = process.env.AGENT_RUN_CONTENT_WINDOW;
@@ -34,5 +39,27 @@ describe('scheduler: run content window opt-in', () => {
     process.env.AGENT_RUN_CONTENT_WINDOW = 'true';
     scheduler.start();
     expect(windowJobStarted()).toBe(true);
+  });
+
+  // node-cron starts a task at creation unless it is told not to, which would
+  // run the job with the flag unset no matter what start() registers.
+  it('creates the window job stopped', () => {
+    delete process.env.AGENT_RUN_CONTENT_WINDOW;
+    scheduler.start();
+    expect(windowJobs()).toHaveLength(1);
+    expect(windowJobs()[0].options).toMatchObject({ scheduled: false });
+  });
+
+  it('the job applies the redaction, not a dry run', async () => {
+    const { redactExpiredRunContent } = require('../../../services/agentRunContentWindow');
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      process.env.AGENT_RUN_CONTENT_WINDOW = 'true';
+      scheduler.start();
+      await windowJobs()[0].task();
+      expect(redactExpiredRunContent).toHaveBeenCalledWith({ apply: true });
+    } finally {
+      log.mockRestore();
+    }
   });
 });
