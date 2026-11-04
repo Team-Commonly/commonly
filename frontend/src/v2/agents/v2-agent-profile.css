@@ -156,6 +156,9 @@
   .v2-aprofile .v2-aprofile__bar .v2-aprofile__btn { position: relative; }
   .v2-aprofile .v2-aprofile__navlink::before,
   .v2-aprofile .v2-aprofile__bar .v2-aprofile__btn::before { content: ''; position: absolute; inset: -5px -6px; }
+  /* The bar key draws at the v2p small key's 28 with a 1px border, and an absolute overlay
+     measures from inside the border (26), so it reaches 9px each way: 26 + 18 = 44. */
+  .v2-aprofile .v2-aprofile__bar .v2-aprofile__btn::before { inset: -9px -6px; }
   .v2-aprofile .v2-aprofile__navlink::before { inset: -14px -7px; }
   .v2-aprofile .v2-agent-settings__tabs > * { box-sizing: border-box; min-height: 44px; display: inline-flex; align-items: center; }
   .v2-aprofile .v2-aprofile__pod-remove { height: 44px; line-height: 44px; }

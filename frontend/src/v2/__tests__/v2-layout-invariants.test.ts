@@ -6138,6 +6138,19 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
     expect(css.lastIndexOf('@media (max-width: 760px)')).toBeLessThan(css.indexOf('.v2-feature--aprofile .v2-aprofile__avatar-button::after'));
   });
 
+  test('the public bar\'s keys (Sign up) reach 44px to touch on a phone', () => {
+    const css = read('../agents/v2-agent-profile.css');
+    expect(ruleBody(css, '.v2-aprofile .v2-aprofile__btn')).toContain('height: 28px');
+    // Both bar keys carry a 1px border, and an absolute ::before measures from the padding box,
+    // so the overlay starts from 26, not 28 (measured in Chromium: -8px gave 42).
+    expect(ruleBody(css, '.v2-aprofile .v2-aprofile__btn--primary')).toContain('border: 1px solid');
+    const phone = css.slice(css.lastIndexOf('@media (max-width: 760px)'));
+    const hits = [...phone.matchAll(/\.v2-aprofile \.v2-aprofile__bar \.v2-aprofile__btn::before \{([^}]*)\}/g)].map((m) => m[1]);
+    // The last inset wins: its vertical reach must make 44 from the 26px padding box.
+    const inset = hits.map((body) => body.match(/inset:\s*(-?\d+)px/)).filter(Boolean).pop();
+    expect(28 - 2 - 2 * Number(inset?.[1])).toBeGreaterThanOrEqual(44);
+  });
+
   test('finding 6: the board header icon keys never shrink on a phone', () => {
     const phone = mediaBlockContaining(boardCss, '.v2-feature--board .v2-board__key--icon { flex: none; }');
     expect(ruleBody(boardCss, '.v2-feature--board .v2-board__key--icon', { within: phone })).toContain('flex: none');
@@ -6202,6 +6215,7 @@ describe('Activity built to the d215 signal frames (#s-activity-signal)', () => 
     const text = rule('.v2-activity__moved-text');
     expect(text).toContain('-webkit-line-clamp: 2');
     expect(text).toContain('display: -webkit-box');
+    expect(text).toContain('-webkit-box-orient: vertical');
     expect(text).toContain('overflow: hidden');
   });
 
