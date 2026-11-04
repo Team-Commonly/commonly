@@ -27,6 +27,17 @@ describe('catalog model names', () => {
     expect(offenders).toEqual([]);
   });
 
+  // F98 review: preset readiness checks each apiRequirement against the
+  // backend's env, so a stale Gemini "Default model provider" made a preset whose
+  // model is Claude (served through LiteLLM, whose key the backend never holds)
+  // read as not ready wherever Gemini is off.
+  it('no preset requires a model-provider key for its default model', () => {
+    const offenders = PRESET_DEFINITIONS.flatMap((p) => (p.apiRequirements || [])
+      .filter((r) => /model provider/i.test(r.purpose || ''))
+      .map((r) => `${p.id}: ${r.key}`));
+    expect(offenders).toEqual([]);
+  });
+
   it('every published manifest supports and recommends only the hosted model', () => {
     const src = fs.readFileSync(path.join(__dirname, '../../../routes/registry/publish.ts'), 'utf8');
     const blocks = [...src.matchAll(/models:\s*\{[\s\S]*?supported:\s*\[([^\]]*)\][\s\S]*?recommended:\s*'([^']*)'/g)];

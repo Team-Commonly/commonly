@@ -23,11 +23,6 @@ const PRESET_DEFINITIONS = [
     ],
     apiRequirements: [
       {
-        key: 'GEMINI_API_KEY',
-        purpose: 'Default model provider',
-        envAny: ['GEMINI_API_KEY'],
-      },
-      {
         key: 'TAVILY_API_KEY',
         purpose: 'Web research retrieval',
         envAny: ['TAVILY_API_KEY'],
@@ -82,11 +77,6 @@ You are **Research Analyst** — a deep-research specialist who turns raw inform
       },
     ],
     apiRequirements: [
-      {
-        key: 'GEMINI_API_KEY',
-        purpose: 'Default model provider',
-        envAny: ['GEMINI_API_KEY'],
-      },
       {
         key: 'OPENAI_API_KEY',
         purpose: 'Optional alternative coding model',

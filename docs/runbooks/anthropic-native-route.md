@@ -60,15 +60,18 @@ is in the F98 pull request). Base keeps the flag on, rendering exactly as
 before, because the chart's own driver defaults still name them: the K8s
 provisioner's community and dev-agent models, `globalModelConfigService`'s
 default policy and cloud-codex's `codex-cli/gpt-5.4`. F103 moves those defaults,
-then turns the flag off in base and deletes the gated block. With every native
+then turns the flag off in base and deletes the gated block. Where Gemini is on
+(base), the four Gemini names also fall back to `deepseek-v4-flash`, so a failed
+Gemini call reaches DeepSeek without its caller naming it. With every native
 pin mapped to Claude, /privacy names no DeepSeek.
 The DeepSeek routes themselves go once post-deploy spend logs show zero.
 **Staging depends on them until then:** staging renders with Anthropic off, so
 its Scout and chat run on `deepseek-v4-flash` (`LITELLM_CHAT_MODEL`).
 `staging-smoke` does not: staging runs no stranger-journey CronJob, so the gate
-is a health probe plus the Tier-1 UI smoke, which skips the hosted reply. Before
-the deletion, staging needs its own Claude key (never the dev key) and
-`aiProviders.anthropic` on.
+is a health probe plus the Tier-1 UI smoke, which skips the hosted reply.
+Before the deletion, staging needs its own Claude key (never the dev key) and
+`aiProviders.anthropic` on, and the Gemini fallbacks to `deepseek-v4-flash` go
+or move to another target.
 
 `LITELLM_DISABLED` does not apply to the pinned path: with `LLM_SERVICE_MODEL`
 set, llmService calls LiteLLM, or throws when no LiteLLM URL is configured,

@@ -102,3 +102,14 @@ test('a saved Gemini llmService provider shows as current, and Gemini is not off
   expect(await optionsOf('Backend LLM Provider'))
     .toEqual(['gemini (current) [disabled]', 'Auto (LiteLLM then Gemini)', 'LiteLLM', 'OpenRouter']);
 });
+
+test('a saved Claude model the gateway no longer offers shows as current in the model select', async () => {
+  const policy = serverDefaults();
+  policy.openclaw.provider = 'anthropic';
+  policy.openclaw.model = 'anthropic/claude-opus-4-6';
+  mockGet.mockResolvedValue(response(policy));
+  renderPage();
+  expect(await optionsOf('Dev Agent Provider')).toEqual(['Anthropic']);
+  expect(await optionsOf('Dev Agent Primary Model'))
+    .toEqual(['anthropic/claude-opus-4-6 (current) [disabled]', 'Claude Haiku 5.5']);
+});
