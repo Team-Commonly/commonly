@@ -84,6 +84,7 @@ import {
 } from '../environment.js';
 import { detectBwrap, wrapArgvWithBwrap } from '../sandbox/bwrap.js';
 import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from '../sandbox/mode.js';
+import { UNSANDBOXED_FLAG } from '../sandbox/host-check.js';
 import {
   publicClaudeStateRoot,
   wrapArgvWithSeatbelt,
@@ -1154,6 +1155,16 @@ const prepareArgv = async (innerArgv, ctx) => {
   // unconfined seat with a public record, which is how a record can claim
   // confinement it never applies.
   if (isConfinedTrust(sandboxTrust) && !publicNativeSandbox && sandboxMode !== 'bwrap') {
+    // D245: on native Windows, name Windows and the user's own opt-in, never
+    // macOS or bwrap advice (host-check passes an unrecognised mode through).
+    if ((ctx._platform || process.platform) === 'win32') {
+      throw new Error(
+        `${sandboxTrust} Claude agents run inside a sandbox, and Commonly has no sandbox it can enforce on Windows `
+        + `(got sandbox.mode=${JSON.stringify(sandboxMode)}). To run this agent without one, which is your choice, `
+        + `run commonly agent run <name> ${UNSANDBOXED_FLAG} (or commonly daemon install ${UNSANDBOXED_FLAG} for the agents `
+        + 'this computer\'s daemon runs), or choose "Run it here" on the Connect page for a hosted agent.',
+      );
+    }
     throw new Error(
       `${sandboxTrust} Claude agents require an enforced sandbox mode `
       + `(workspace or read-only on macOS, bwrap elsewhere), got ${JSON.stringify(sandboxMode)}`,

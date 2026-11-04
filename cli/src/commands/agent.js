@@ -89,7 +89,7 @@ import { createClaimedWorkGate } from '../lib/claimed-work-gate.js';
 import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
-import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
+import { UNSANDBOXED_FLAG, hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import {
   UNSANDBOXED_NOTICE, hostUnconfinedForRun, runOptedInUnsandboxed, unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
@@ -1176,6 +1176,8 @@ export const performAttach = async ({
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames },
   seatbelt: probeSeatbelt = detectSeatbelt,
+  bwrap: probeBwrap = detectBwrap,
+  platform = process.platform,
 }) => {
   const adapter = adapterRegistry.getAdapter(adapterName);
   if (!adapter) {
@@ -1210,10 +1212,37 @@ export const performAttach = async ({
     }
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter });
+    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter, platform });
+    // D245: native Windows has neither sandbox, so its refusal names Windows
+    // and the user's own opt-in, never Seatbelt or bwrap advice. Attach still
+    // refuses there, as before; only the words differ.
+    const windowsRefusal = () => new Error(adapterName === 'dsh'
+      ? `confined dsh sandbox.mode=${sandboxMode} needs a sandbox, and Commonly has no sandbox for Windows yet, `
+        + 'so dsh cannot run confined on native Windows. Choose "Run it here" on the Connect page for a hosted agent.'
+      : `This environment file asks for sandbox.mode=${sandboxMode}, which Commonly cannot enforce on Windows, `
+        + 'so attach stops here.\n'
+        // This attach made no agent, so Claude's options name the path that works on
+        // Windows: the Connect page's commands, which set the two env vars and run with
+        // the flag, keeping the public trust and policy (#3407 review B1). Other
+        // adapters keep the shared Windows text.
+        + (adapterName === 'claude' ? [
+          'Instead:',
+          '  - Run it without an OS sandbox, which is your choice: use the commands on the Connect page.'
+            + ' They set COMMONLY_API_URL and COMMONLY_AGENT_TOKEN, then run'
+            + ` commonly agent run <name> --adapter claude ${UNSANDBOXED_FLAG}.`
+            + " It keeps Commonly's restricted tool settings and gets no shell, but nothing at the OS level"
+            + ' confines it, and it gets no connector grants.'
+            // agent run prefers a saved record over the page's env vars, so an
+            // older record of that name would run with its own settings (#3407).
+            + ' If this computer already has an agent saved under that name, the run uses that one and its'
+            + ' settings instead: remove it first with commonly agent detach <name> --force.',
+          '  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.',
+          '  - A hosted agent: choose "Run it here" on the Connect page. Nothing runs on this machine.',
+        ].join('\n') : windowsSandboxMessage(adapterName)));
     if (sandboxMode === 'bwrap') {
-      const bwrap = detectBwrap();
+      const bwrap = probeBwrap();
       if (!bwrap.available) {
+        if (platform === 'win32') throw windowsRefusal();
         throw new Error(`sandbox.mode=bwrap requested but unavailable: ${bwrap.error}`);
       }
       if (environment.sandbox?.network?.policy === 'restricted') {
@@ -1239,6 +1268,7 @@ export const performAttach = async ({
           || adapterName;
         const seatbelt = probeSeatbelt();
         if (!seatbelt.available) {
+          if (platform === 'win32') throw windowsRefusal();
           // dsh refuses bwrap, so it gets no Linux hint that leads to a second refusal.
           throw new Error(adapterName === 'dsh'
             ? `confined dsh sandbox.mode=${sandboxMode} requires macOS Seatbelt: ${seatbelt.error}.`

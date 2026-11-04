@@ -114,6 +114,15 @@ describe('which runs skip the OS jail', () => {
     }
   });
 
+  test('a legacy `internal` seat reads as public, so an opted-in one gets the policy-only spawn, not a refusal', () => {
+    const environment = { sandbox: { trust: 'internal', mode: 'workspace' } };
+    expect(hostUnconfinedForRun({ optedIn: true, adapterName: 'claude', environment, platform: 'win32' })).toBe(true);
+    // host-check reads it the same way: confined, so refused without the flag and admitted with it.
+    expect(hostSandboxRefusal({ environment, adapterName: 'claude', platform: 'win32' })).toContain(UNSANDBOXED_FLAG);
+    expect(hostSandboxRefusal({ environment, adapterName: 'claude', platform: 'win32', hostUnconfined: true })).toBeNull();
+    expect(hostUnconfinedForRun({ optedIn: false, adapterName: 'claude', environment, platform: 'win32' })).toBe(false);
+  });
+
   test('a seat with no confined trust is not affected, so it is not told it gets the policy', () => {
     for (const environment of [null, undefined, {}, { sandbox: { mode: 'none' } }, { sandbox: { trust: 'trusted' } }]) {
       expect(hostUnconfinedForRun({ optedIn: true, adapterName: 'claude', environment, platform: 'win32' })).toBe(false);

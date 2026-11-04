@@ -41,6 +41,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 
 import { writeServiceFile } from '../daemon-service.js';
+import { effectiveSandboxTrust } from '../environment.js';
 import { UNSANDBOXED_FLAG } from './host-check.js';
 
 export { UNSANDBOXED_FLAG };
@@ -100,7 +101,9 @@ export const POLICY_ONLY_ADAPTERS = new Set(['claude']);
 export const hostUnconfinedForRun = ({
   optedIn, adapterName, environment, platform = process.platform,
 }) => {
-  const trust = environment?.sandbox?.trust;
+  // The effective trust, as host-check.js and the claude adapter read it: a
+  // legacy `internal` record means `public`, so it gets the same opt-in.
+  const trust = effectiveSandboxTrust(environment?.sandbox?.trust);
   return platform === 'win32' && optedIn === true && POLICY_ONLY_ADAPTERS.has(adapterName)
     && (trust === 'public' || trust === 'workspace');
 };

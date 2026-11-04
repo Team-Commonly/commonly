@@ -300,6 +300,34 @@ export const resolveAdapterForRuntime = async (runtime, registry = { getAdapter 
   return null;
 };
 
+/**
+ * The daemon's first poll and heartbeat, with the Windows launcher watch armed
+ * BEFORE them (D245). Arming first puts the EPIPE guard on stdout and stderr
+ * before any supervision log line, and a launcher that is already gone stops
+ * the daemon here instead of after a tick logged into a dead pipe. Returns
+ * false when the daemon should not go on to its timers.
+ */
+export const firstSupervisionPass = async ({
+  supervisor,
+  onLauncherGone,
+  isEnded = () => false,
+  armLauncherWatch = watchWindowsLauncher,
+}) => {
+  let launcherGone = false;
+  armLauncherWatch({
+    onGone: (pid) => {
+      launcherGone = true;
+      onLauncherGone(pid);
+    },
+  });
+  const stopped = () => launcherGone || isEnded();
+  if (stopped()) return false;
+  await supervisor.tick();
+  if (stopped()) return false;
+  await supervisor.heartbeat();
+  return !stopped();
+};
+
 export const registerDaemon = (program) => {
   const daemon = program.command('daemon').description('Manage the local Commonly daemon');
 
@@ -654,10 +682,26 @@ Examples:
         });
 
         stampLog(`daemon supervising for ${record.machineName} — poll ${opts.poll}ms, heartbeat ${opts.heartbeat}ms (ctrl+c to stop)`);
-        await supervisor.tick();
-        if (terminalEnded) return;
-        await supervisor.heartbeat();
-        if (terminalEnded) return;
+        const shutdown = () => {
+          stampLog('daemon stopping — terminating supervised agents');
+          clearInterval(pollTimer);
+          clearInterval(heartbeatTimer);
+          supervisor.stop();
+          process.exit(0);
+        };
+        // D245: under the Windows launcher, the launcher's exit is the stop
+        // signal. Armed before the first tick, so the EPIPE guard covers its
+        // log lines and a launcher already gone stops the daemon at once.
+        const started = await firstSupervisionPass({
+          supervisor,
+          onLauncherGone: (pid) => {
+            // stdout and stderr already swallow EPIPE (armed with the watch).
+            try { stampLog(`launcher ${pid} has exited`); } catch { /* stdout is gone */ }
+            shutdown();
+          },
+          isEnded: () => terminalEnded,
+        });
+        if (!started) return;
         const runtimeFailure = (error) => {
           if (terminalEnded) return;
           terminalEnded = true;
@@ -669,23 +713,8 @@ Examples:
         };
         pollTimer = setInterval(() => { void supervisor.tick().catch(runtimeFailure); }, Number(opts.poll) || DEFAULT_POLL_MS);
         heartbeatTimer = setInterval(() => { void supervisor.heartbeat().catch(runtimeFailure); }, Number(opts.heartbeat) || DEFAULT_HEARTBEAT_MS);
-        const shutdown = () => {
-          stampLog('daemon stopping — terminating supervised agents');
-          clearInterval(pollTimer);
-          clearInterval(heartbeatTimer);
-          supervisor.stop();
-          process.exit(0);
-        };
         process.on('SIGINT', shutdown);
         process.on('SIGTERM', shutdown);
-        // D245: under the Windows launcher, the launcher's exit is the stop signal.
-        watchWindowsLauncher({
-          onGone: (pid) => {
-            // stdout and stderr already swallow EPIPE (armed with the watch).
-            try { stampLog(`launcher ${pid} has exited`); } catch { /* stdout is gone */ }
-            shutdown();
-          },
-        });
       } catch (error) {
         console.error(`Daemon run failed: ${error.message}`);
         const badConfig = !record || error.message.startsWith('Daemon credential file');

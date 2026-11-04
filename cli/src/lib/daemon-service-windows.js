@@ -201,7 +201,8 @@ const pidAlive = (pid) => {
  * keep running, unsupervised and invisible to the task (seen on windows-latest,
  * 11-04: a stopped task left its daemon checking in). A daemon started by the
  * launcher therefore polls the launcher's pid and calls `onGone` once it has
- * exited. Returns a stop function; does nothing outside the launcher.
+ * exited, at once if it is already gone when the watch is armed. Returns a
+ * stop function; does nothing outside the launcher.
  */
 export const watchWindowsLauncher = ({
   env = process.env,
@@ -221,6 +222,12 @@ export const watchWindowsLauncher = ({
   // swallow errors from the moment the watch is armed, not only after the
   // launcher's exit is noticed up to two seconds later.
   for (const stream of streams) stream?.on?.('error', () => {});
+  // Already gone when armed (the daemon is armed before its first tick): say
+  // so now, rather than after a poll and a heartbeat logged into a dead pipe.
+  if (!isAlive(pid)) {
+    onGone(pid);
+    return () => {};
+  }
   const timer = setIntervalFn(() => {
     if (isAlive(pid)) return;
     clearIntervalFn(timer);

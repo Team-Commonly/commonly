@@ -32,6 +32,7 @@ const {
   heartbeatDaemonMachine,
   registerDaemonMachine,
   unregisterDaemonMachine,
+  firstSupervisionPass,
   formatSeatLine,
   resolveAdapterForRuntime,
 } = await import('../src/commands/daemon.js');
@@ -406,5 +407,45 @@ describe('formatSeatLine', () => {
     const line = formatSeatLine({ agentName: 'old-seat', state: 'running' });
     expect(line).toContain('instance=-');
     expect(line).toContain('restarts=-');
+  });
+});
+
+describe('firstSupervisionPass (D245: the launcher watch is armed before the first tick)', () => {
+  const fakeSupervisor = (order) => ({
+    tick: jest.fn(async () => { order.push('tick'); }),
+    heartbeat: jest.fn(async () => { order.push('heartbeat'); }),
+  });
+
+  test('arms the launcher watch before the first tick and heartbeat', async () => {
+    const order = [];
+    const supervisor = fakeSupervisor(order);
+    const armLauncherWatch = jest.fn(() => { order.push('watch'); });
+    const onLauncherGone = jest.fn();
+    expect(await firstSupervisionPass({ supervisor, armLauncherWatch, onLauncherGone })).toBe(true);
+    expect(order).toEqual(['watch', 'tick', 'heartbeat']);
+    expect(onLauncherGone).not.toHaveBeenCalled();
+  });
+
+  test('a launcher already gone shuts the daemon down before it ticks into a dead pipe', async () => {
+    const order = [];
+    const supervisor = fakeSupervisor(order);
+    const onLauncherGone = jest.fn();
+    const armLauncherWatch = ({ onGone }) => { order.push('watch'); onGone(4242); };
+    expect(await firstSupervisionPass({ supervisor, armLauncherWatch, onLauncherGone })).toBe(false);
+    expect(onLauncherGone).toHaveBeenCalledWith(4242);
+    expect(order).toEqual(['watch']);
+  });
+
+  test('a terminal stop during the first tick skips the heartbeat', async () => {
+    let ended = false;
+    const order = [];
+    const supervisor = {
+      tick: jest.fn(async () => { order.push('tick'); ended = true; }),
+      heartbeat: jest.fn(async () => { order.push('heartbeat'); }),
+    };
+    expect(await firstSupervisionPass({
+      supervisor, armLauncherWatch: () => {}, onLauncherGone: () => {}, isEnded: () => ended,
+    })).toBe(false);
+    expect(order).toEqual(['tick']);
   });
 });
