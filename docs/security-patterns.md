@@ -18,6 +18,7 @@ shape. Sources at the bottom.
 | Regex capture from message content             | Mongoose filter scalar OR `$in`          | [Avoid putting it in the query at all](#dont-put-user-tainted-strings-in-mongoose-filters-period) |
 | `req.params.id` already validated by middleware| Mongoose `_id` filter                    | [Still cast](#objectidisvalid--cast-the-canonical-objectid-sanitizer) — CodeQL won't trust the middleware |
 | A URL from a request, or one a user stored     | Server-side `fetch` / axios              | [Named hosts, or public addresses only](#outbound-fetch-of-a-url-from-a-request) |
+| An OAuth callback with no session              | Anything it writes or mints for a resource | [Signed state that names the user](#an-oauth-callback-with-no-session-trusts-only-its-state) |
 
 ---
 
@@ -140,6 +141,37 @@ Perf is acceptable as long as the scan-side dataset is bounded —
 `.limit(N)` is the lever. For pod-scoped reads, N=500 covers typical
 pod-file counts well above the 99th percentile.
 
+## An OAuth callback with no session trusts only its state
+
+A provider redirect like `/api/discord/callback` arrives with no session. The
+browser that lands there may not be the person who started the install. Its
+query string (`code`, `state`, any ids) is whatever the link said, and anyone
+can build that link. They authorize your app with their own account, then send
+the resulting `code` together with *your* resource id.
+
+So the `state` must say who asked and for what, in a form only the server could
+have produced:
+
+- **Mint it server-side** at the endpoint that already checked the caller's
+  authority over the resource (for Discord, `install-link`, creator or admin).
+  Sign it with a purpose claim, the resource id, the user id and a short expiry.
+- **Refuse any other state before the code exchange.** A bare `pod_<id>` is not
+  a state; it is a resource id anyone can type.
+- **Carry the user into whatever the callback hands back** (an install proof, a
+  one-time token), and have every consumer accept it only from that user.
+- **The final write still checks authority over the resource.** Guild or
+  account authority proves the far side, not the pod. A pod-level setting such
+  as a channel bridge takes the pod's own authority (creator or admin).
+- Give each signed token its own `pur` claim. Readers check it, so a state can't
+  be read as a proof, and neither can be read as a session.
+
+Reference implementation: `backend/utils/discordInstallProof.ts`
+(`mintDiscordInstallState` / `readDiscordInstallState`, and the user-bound
+install proof), with the walk-through test in
+`backend/__tests__/service/discordInstallBind.test.js`. Until #3436 the Discord
+state was `pod_<id>`. One click from a signed-in member on a crafted link could
+bind their pod to an outside server, which could then read the pod's summary.
+
 ## Anti-patterns
 
 ### Don't: `$in` with a user-tainted array
@@ -172,6 +204,9 @@ through `String()` and bound length when logging user content.
 ---
 
 ## Sources
+
+- PR #3436 — a signed, user-bound OAuth state for the Discord install, and
+  pod authority on the bind.
 
 - PR #408 — first `String + replace + roundtrip` shape in the
   install endpoint, set the pattern.
