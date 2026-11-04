@@ -72,6 +72,13 @@ const fakeFs = (files) => {
 // node.exe). Hand-written by npm, not a cmd-shim.
 const NPM_NPX_CMD = ":: Created by npm, please don't edit manually.\r\n@ECHO OFF\r\n\r\nSETLOCAL\r\n\r\nSET \"NODE_EXE=%~dp0\\node.exe\"\r\nIF NOT EXIST \"%NODE_EXE%\" (\r\n  SET \"NODE_EXE=node\"\r\n)\r\n\r\nSET \"NPM_PREFIX_JS=%~dp0\\node_modules\\npm\\bin\\npm-prefix.js\"\r\nSET \"NPX_CLI_JS=%~dp0\\node_modules\\npm\\bin\\npx-cli.js\"\r\nFOR /F \"delims=\" %%F IN ('CALL \"%NODE_EXE%\" \"%NPM_PREFIX_JS%\"') DO (\r\n  SET \"NPM_PREFIX_NPX_CLI_JS=%%F\\node_modules\\npm\\bin\\npx-cli.js\"\r\n)\r\nIF EXIST \"%NPM_PREFIX_NPX_CLI_JS%\" (\r\n  SET \"NPX_CLI_JS=%NPM_PREFIX_NPX_CLI_JS%\"\r\n)\r\n\r\n\"%NODE_EXE%\" \"%NPX_CLI_JS%\" %*\r\n";
 
+// npm's bin/npm.cmd is the same hand-written launcher with npm in place of
+// npx (npm 11). The real file is exercised on windows-latest by
+// .github/workflows/byo-windows.yml, through the warm.
+const NPM_NPM_CMD = NPM_NPX_CMD
+  .replace(/NPX_CLI_JS/g, 'NPM_CLI_JS')
+  .replace(/npx-cli\.js/g, 'npm-cli.js');
+
 module.exports = {
   currentJsShim,
   currentExeShim,
@@ -79,4 +86,5 @@ module.exports = {
   legacyJsShim,
   fakeFs,
   NPM_NPX_CMD,
+  NPM_NPM_CMD,
 };
