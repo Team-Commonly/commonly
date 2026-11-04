@@ -138,6 +138,7 @@ import {
   resolveCascadeSettings,
 } from '../lib/enforcement.js';
 import { buildReplyReceipt } from '../lib/reply-receipt.js';
+import { savedRuntimeControls, withSavedRuntimeControls, effortRefusedByDevice } from '../lib/seat-runtime-controls.js';
 
 const isPodFocusDiagnostic = (error) => (
   typeof error?.code === 'string'
@@ -1662,6 +1663,10 @@ export const performRun = ({
   // The agent to @mention when the model provider refuses a request's content
   // (lib/content-refusal.js). Null: the refusal notice names no one.
   reportRuntime = false,
+  // D247: a listener seat (no daemon) reads the model and effort its owner
+  // saved on the server before each turn. Off for daemon seats, whose daemon
+  // projects the same values into `environment`.
+  readSavedControls = false,
   resolveOwnProviderKey = null,
   runtimeReportClient = null,
   refusalHandoff = null,
@@ -1765,6 +1770,7 @@ export const performRun = ({
   const runtimeInventoryPromise = reportRuntime ? Promise.resolve(adapter.inventory?.()).then((value) => value || { models: null, efforts: [] })
     .catch(() => ({ models: null, efforts: [] })) : Promise.resolve(null);
   let seatEnvironment = requestedSeatEnvironment;
+  let lastSavedControls = null;
   // OpenCode retains tool-call IDs in its resumed history. A Gemini proxy
   // marks those IDs with signature references, so changing providers must
   // start a fresh session before another upstream can receive them.
@@ -1848,7 +1854,43 @@ export const performRun = ({
   // a conversation that read the workspace, whatever claude's resume would
   // find from another folder.
   let lastPlacementReason = null;
+  // D247: the model and effort this turn spawns with. A listener seat reads
+  // its saved controls first; then an effort is dropped only when the device
+  // listed its levels and this one is not among them.
+  let savedControlsNoticeShown = false;
+  const refreshSeatEnvironment = async () => {
+    const inventory = await runtimeInventoryPromise;
+    let desiredEnvironment = requestedSeatEnvironment;
+    if (readSavedControls) {
+      try {
+        const identity = await client.get('/api/agents/runtime/installations', {}, {
+          signal: AbortSignal.timeout(5000),
+        });
+        lastSavedControls = savedRuntimeControls({
+          installations: identity?.installations, podId, instanceId,
+          ...(identity && 'runtimeSourcePodId' in identity ? { runtimeSourcePodId: identity.runtimeSourcePodId } : {}),
+        });
+      } catch { /* keep the last controls read; a failed read changes nothing */ }
+      desiredEnvironment = withSavedRuntimeControls(requestedSeatEnvironment, lastSavedControls);
+      // A record with no environment (from before attach wrote one) isn't
+      // given one silently. `agent config` writes one to the record, and from
+      // then on saved controls apply. Say so once, with the command.
+      if (!requestedSeatEnvironment && lastSavedControls && !savedControlsNoticeShown) {
+        savedControlsNoticeShown = true;
+        const flag = (name, value) => (value && /^[A-Za-z0-9._:/-]+$/.test(value) ? ` --${name} ${value}` : '');
+        const flags = `${flag('model', lastSavedControls.model)}${flag('effort', lastSavedControls.effort)}` || ' --model <model>';
+        log(`${agentName} has no saved environment on this computer, so the model and effort saved in Commonly `
+          + `don't apply to it yet. Run once: commonly agent config ${agentName}${flags}`);
+      }
+    }
+    // Dropped only when the device listed its levels and this one is not
+    // among them; with nothing reported the harness decides (D247).
+    seatEnvironment = reportRuntime && desiredEnvironment
+      && effortRefusedByDevice(inventory, desiredEnvironment.effort)
+      ? { ...desiredEnvironment, effort: undefined } : desiredEnvironment;
+  };
   const placeTurn = async () => {
+    await refreshSeatEnvironment();
     if (seatEnvironment?.sandbox?.trust !== 'workspace') {
       return { environment: seatEnvironment, cwd: agentCwd, binding: sessionBinding };
     }
@@ -1879,10 +1921,6 @@ export const performRun = ({
   const batchLimit = Math.min(50, Math.max(1, Number(inboxBatchLimit) || 10));
 
   const processEvent = async (event) => {
-    const inventory = await runtimeInventoryPromise;
-    if (reportRuntime && requestedSeatEnvironment && !inventory?.efforts.includes(requestedSeatEnvironment.effort)) {
-      seatEnvironment = { ...requestedSeatEnvironment, effort: undefined };
-    }
     const eventPodId = event.podId || podId;
     const prompt = extractPrompt(event);
     if (!prompt || !eventPodId) {
@@ -4451,6 +4489,7 @@ Docs:
         resolveOwnProviderKey: createOwnKeyResolver({ instanceUrl: record.instanceUrl,
           machineId: record.machineId, agentName: record.agentName, instanceId: record.instanceId }),
         reportRuntime: Boolean(record.machineId || process.env.COMMONLY_MANAGED_RUNNER === '1'),
+        readSavedControls: !record.machineId && process.env.COMMONLY_MANAGED_RUNNER !== '1',
         spawnCredentialTtlSeconds: resolveSpawnTtlSeconds(process.env),
         refusalHandoff: opts.refusalHandoff || null,
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),

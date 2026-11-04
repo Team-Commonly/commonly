@@ -15,6 +15,7 @@
 export const RECEIPT_LIMITS = Object.freeze({
   adapter: 40,
   model: 100,
+  effort: 20,
   toolName: 80,
   tools: 50,
   turns: 1000,
@@ -26,6 +27,7 @@ export type ReceiptWarningCode =
   | 'receipt_unknown_field'
   | 'receipt_invalid_adapter'
   | 'receipt_invalid_model'
+  | 'receipt_invalid_effort'
   | 'receipt_invalid_turns'
   | 'receipt_invalid_duration'
   | 'receipt_invalid_tools'
@@ -41,13 +43,14 @@ export interface ReceiptWarning {
 export interface ByoReceipt {
   adapter?: string;
   model?: string;
+  effort?: string;
   turns?: number;
   tools?: string[];
   durationMs?: number;
   source: 'self-reported';
 }
 
-const KNOWN_FIELDS = new Set(['adapter', 'model', 'turns', 'tools', 'durationMs']);
+const KNOWN_FIELDS = new Set(['adapter', 'model', 'effort', 'turns', 'tools', 'durationMs']);
 const ADAPTER = /^[a-z0-9][a-z0-9._-]*$/i;
 // Model ids and tool names: letters, digits and the separators real ones use
 // (claude-opus-5-5, openai/gpt-5.6-sol, mcp__commonly__post, us.anthropic.x:0).
@@ -78,7 +81,7 @@ export const normalizeReceipt = (raw: unknown): { receipt: ByoReceipt | null; wa
   if (unknown.length) {
     warnings.push({
       code: 'receipt_unknown_field',
-      message: `receipt fields ${unknown.join(', ')} are not recorded; it keeps adapter, model, turns, tools and durationMs.`,
+      message: `receipt fields ${unknown.join(', ')} are not recorded; it keeps adapter, model, effort, turns, tools and durationMs.`,
     });
   }
 
@@ -89,6 +92,11 @@ export const normalizeReceipt = (raw: unknown): { receipt: ByoReceipt | null; wa
   if (input.model !== undefined) {
     if (isName(input.model, NAME, RECEIPT_LIMITS.model)) receipt.model = input.model;
     else warnings.push({ code: 'receipt_invalid_model', message: 'receipt.model must be a model id; it was not stored.' });
+  }
+  // D247: the effort level the wrapper passed to its harness, as a level name.
+  if (input.effort !== undefined) {
+    if (isName(input.effort, ADAPTER, RECEIPT_LIMITS.effort)) receipt.effort = input.effort;
+    else warnings.push({ code: 'receipt_invalid_effort', message: 'receipt.effort must be an effort level name; it was not stored.' });
   }
   if (input.turns !== undefined) {
     if (isBoundedInt(input.turns, RECEIPT_LIMITS.turns)) receipt.turns = input.turns;

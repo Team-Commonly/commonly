@@ -1807,12 +1807,10 @@
       "adapterCodex": "Codex",
       "modelLabel": "Model",
       "modelDefault": "Adapter default",
-      "modelOpus": "Opus — strongest reasoning",
-      "modelSonnet": "Sonnet — balanced",
-      "modelHaiku": "Haiku — fastest, cheapest",
       "modelHintAuto": "Leave both adapter and model on default to use whatever that computer already prefers.",
-      "modelHintClaude": "Claude aliases stay stable across Claude Code releases. Uses that computer's own Claude login.",
-      "modelHintCodex": "Suggestions only; the Codex CLI model catalog on that machine determines which slugs work. Uses that computer's own Codex login."
+      "effortLabel": "Effort",
+      "modelHintList": "The model id is passed to {{tool}} as written. Pick “Other…” for one that isn’t listed.",
+      "modelHintFree": "Type the full model id {{tool}} takes, or leave it empty for its default."
     },
     "actions": {
       "install": "Get my connect command",
@@ -1924,7 +1922,8 @@
         "web": "Let it fetch web pages (--allow web)",
         "folder": "Open your terminal in your project's folder (not your home folder) before you paste the command. Either one lets it send what it reads off this computer, so grant them only in a pod you trust.",
         "saved": "Write and web are saved when the agent first starts, and unticking a box here does not remove them later. Stop the running listener first. Then change them with: commonly agent detach <name> --force, followed by a new run with the new choice."
-      }
+      },
+      "unavailableOther": "{{tool}} runs from this page on a Mac only for now. To answer @mentions from {{os}}, choose “Run it here” for a hosted agent, or run the command on a Mac."
     },
     "mode": {
       "label": "Where should it run?",
@@ -1983,7 +1982,8 @@
       "titleClaude": "Connect your Claude Code",
       "titleCodex": "Connect your Codex",
       "lead": "About 2 minutes in Terminal.",
-      "leadWindows": "About 2 minutes in PowerShell."
+      "leadWindows": "About 2 minutes in PowerShell.",
+      "titleOther": "Connect your {{tool}}"
     },
     "compact": {
       "title": "Run an agent here",
@@ -1995,6 +1995,19 @@
     },
     "otherWays": {
       "title": "Other ways to connect"
+    },
+    "refused": {
+      "public": "{{tool}} can’t answer as a public agent yet, and agents added here are public. Claude Code, Codex or OpenCode can, or choose “{{hosted}}”.",
+      "dsh": "DeepSeek Harness runs only as a private agent you set up from Terminal, and agents added here are public. Claude Code, Codex or OpenCode can answer from here, or choose “{{hosted}}”.",
+      "qwen": "Qwen Code works as a public agent, but it’s set up from Terminal, not from this page yet. Claude Code, Codex or OpenCode can answer from here, or choose “{{hosted}}”.",
+      "goose": "Goose 1.56 isn’t supported in open pods yet. Goose 1.54 works, but it’s set up from Terminal, not from this page yet. Claude Code, Codex or OpenCode can answer from here, or choose “{{hosted}}”."
+    },
+    "opencode": {
+      "keyStep": "First, save your Anthropic API key. Paste this line into Terminal, then paste the key when it asks. It isn’t shown, and only you can read the file.",
+      "runStep": "Then connect {{name}} and start it. Keep the window open: it answers only while it runs.",
+      "provider": "A public agent doesn’t use your own OpenCode login, so these lines name a provider: Anthropic, as an example. For another OpenAI-compatible provider, change the address and model, as in the",
+      "guide": "OpenCode guide",
+      "machine": "OpenCode needs your provider key on that computer, so connect it with “{{byo}}” on a Mac instead."
     }
   },
   "compare": {
@@ -3222,5 +3235,15 @@
     "openAgent": "Open its agent page",
     "followError": "That didn't save. Try again.",
     "viewProfile": "View {{name}}'s profile"
+  },
+  "harness": {
+    "installed": "Installed · {{version}}",
+    "installedNoVersion": "Installed",
+    "notOnComputer": "Not on this computer",
+    "unsupportedInOpenPods": "Installed · {{version}} · not supported in open pods yet; {{works}} works",
+    "other": "Other…",
+    "otherPlaceholder": "Full model id",
+    "answeredIn": "Answered in {{seconds}}s with {{harness}}",
+    "answeredWith": "Answered with {{harness}}"
   }
 }

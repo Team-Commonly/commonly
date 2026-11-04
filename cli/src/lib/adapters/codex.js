@@ -968,7 +968,13 @@ export default {
       // came in with > null. The wrapper persists whichever non-null value
       // we return so subsequent turns hit `codex exec resume <id>`.
       const newSessionId = threadId || ctx.sessionId || null;
-      return { text, newSessionId };
+      // D247: the reply receipt names the model and effort this spawn passed
+      // (`--model`, `model_reasoning_effort`); codex's own stream does not
+      // restate them.
+      const effort = ctx.environment?.effort;
+      const stats = { ...(seatModel ? { model: String(seatModel) } : {}),
+        ...(typeof effort === 'string' && effort ? { effort } : {}) };
+      return { text, newSessionId, ...(Object.keys(stats).length ? { stats } : {}) };
     } finally {
       try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     }

@@ -203,9 +203,9 @@
 .v2-agent-settings-page .field:focus-within, .v2-agent-settings-page .sel:focus-within { box-shadow: inset 0 0 0 1px var(--b), var(--v2-focus-ring); }
 .v2-agent-settings-page .field svg.i { width: 14px; height: 14px; color: var(--mu); pointer-events: none; }
 /* A read-only runtime keeps disabled controls, drawn as values: no ring, no chevron (as before the lift). */
-.v2-agent-settings-page .sel:has(:disabled) { background: var(--t); box-shadow: none; }
-.v2-agent-settings-page .sel:has(:disabled) svg.i { display: none; }
-.v2-agent-settings-page .sel:has(:disabled) select { cursor: default; }
+.v2-agent-settings-page .sel:has(select:disabled, input:disabled) { background: var(--t); box-shadow: none; }
+.v2-agent-settings-page .sel:has(select:disabled, input:disabled) svg.i { display: none; }
+.v2-agent-settings-page .sel:has(select:disabled, input:disabled) select { cursor: default; }
 .v2-agent-settings-page .sel:has(.is-unsupported) { box-shadow: inset 0 0 0 2px var(--ink); }
 .v2-agent-settings-page .v2-runtime-controls__control { min-width: 220px; justify-content: space-between; }
 .v2-agent-settings-page__name { flex: 1; max-width: 360px; }

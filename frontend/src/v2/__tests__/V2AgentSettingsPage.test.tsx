@@ -547,6 +547,7 @@ test('standalone CLI settings label the saved preference without claiming a runt
       writablePodId: 'pod-1', runtimeSourcePodId: null, runtimeManaged: false,
       runtimeEditable: false, runtimeControls: { runtimeType: 'wrapper', adapter: 'claude', model: '', effort: '' },
       runtimeSavedControls: { runtimeType: 'wrapper', adapter: 'claude', model: 'opus', effort: 'max' },
+      harnessCatalog: [{ id: 'claude', label: 'Claude Code', models: null, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }],
       installations: [{ podId: 'pod-1', podName: 'Work', status: 'active' }],
     } });
     if (url.startsWith('/api/registry/pods/')) return Promise.resolve({ data: { agent: {
@@ -952,6 +953,10 @@ describe('one Identity & access list (d215 frame)', () => {
     for (const control of controls) {
       if (control.tagName === 'A') {
         expect(control.getAttribute('href')).toMatch(/^\/v2\//);
+      } else if (control.getAttribute('aria-label') === 'Save runtime') {
+        // D247: an owned agent's runtime is editable, and its Save is an
+        // action, not a panel toggle. It waits until something changes.
+        expect(control).toBeDisabled();
       } else {
         expect(control).toHaveAttribute('aria-controls');
         expect(control).toHaveAttribute('aria-expanded', 'false');

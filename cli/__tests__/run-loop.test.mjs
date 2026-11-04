@@ -155,6 +155,71 @@ describe('performRun', () => {
     })]]));
   });
 
+  // D247: an empty device effort list says nothing about the level, so the
+  // saved effort reaches the harness. Only a non-empty list that leaves it out
+  // drops it.
+  test.each([
+    [[], 'xhigh'],
+    [['low', 'xhigh'], 'xhigh'],
+    [['low', 'high'], undefined],
+  ])('a device reporting efforts %j spawns with effort %s', async (efforts, expected) => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    createClient.mockReturnValue({ get: jest.fn().mockResolvedValue({ events: [makeEvent()] }), post: mockPost });
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', reportRuntime: true,
+      adapter: { name: 'codex', detect: stubAdapter.detect, spawn, inventory: async () => ({ models: null, efforts }) },
+      environment: { model: 'gpt-6-sol', effort: 'xhigh' }, setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][1].environment.effort).toBe(expected);
+  });
+
+  // D247: a listener seat (no daemon) spawns with the model and effort its
+  // owner saved on the server, read before the turn; the reply receipt names them.
+  test('a listener seat spawns with the model and effort saved on the server', async () => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    const mockGet = jest.fn(async (url) => (url === '/api/agents/runtime/installations'
+      ? { installations: [{ type: 'installation', podId: 'pod-abc', instanceId: 'default',
+        runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
+      : { events: [makeEvent()] }));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const spawn = jest.fn(async (_prompt, ctx) => ({ text: 'ok',
+      stats: { model: ctx.environment.model, effort: ctx.environment.effort } }));
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', podId: 'pod-abc', readSavedControls: true,
+      adapter: { name: 'codex', detect: stubAdapter.detect, spawn },
+      environment: { model: 'gpt-6-sol' }, setTimeoutImpl: noopTimeout });
+    await drainMicrotasks(); stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][1].environment).toEqual(expect.objectContaining({ model: 'gpt-6.1-sol', effort: 'max' }));
+    expect(replyPosts(mockPost)[0][1].receipt).toEqual(expect.objectContaining({
+      adapter: 'codex', model: 'gpt-6.1-sol', effort: 'max' }));
+  });
+
+  // A record with no environment keeps running as it did, and says once why
+  // the saved model and effort don't reach it.
+  test('a listener with no saved environment says once that saved controls cannot apply', async () => {
+    const mockPost = jest.fn().mockResolvedValue({});
+    const mockGet = jest.fn(async (url) => (url === '/api/agents/runtime/installations'
+      ? { installations: [{ type: 'installation', podId: 'pod-abc', instanceId: 'default',
+        runtimeAdapter: 'codex', runtimeControls: { model: 'gpt-6.1-sol', effort: 'max' } }] }
+      : { events: [makeEvent()] }));
+    createClient.mockReturnValue({ get: mockGet, post: mockPost });
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const logs = [];
+    const { stop } = performRun({ instanceUrl: 'http://localhost:5000', token: 'cm_agent_test',
+      agentName: 'my-stub', instanceId: 'default', podId: 'pod-abc', readSavedControls: true,
+      adapter: { name: 'codex', detect: stubAdapter.detect, spawn },
+      environment: null, setTimeoutImpl: noopTimeout, log: (line) => logs.push(line) });
+    await drainMicrotasks(); stop();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][1].environment).toBeNull();
+    expect(logs.filter((line) => line.includes("don't apply to it"))).toHaveLength(1);
+    expect(logs.join('\n')).toContain('Run once: commonly agent config my-stub --model gpt-6.1-sol --effort max');
+    expect(logs.join('\n')).not.toContain('--force');
+  });
+
   test('event with content → adapter.spawn receives sandboxed attribution → reply posted → acked', async () => {
     // Make the full attribution env differ from sandboxEnv at the adapter seam.
     process.env.GIT_CONFIG_COUNT = '1';

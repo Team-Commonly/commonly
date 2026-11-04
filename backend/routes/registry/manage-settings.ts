@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../../middleware/ipRateLimit';
 import { hostedCapsForOwner, userRunCeilingForOwner } from '../../services/hostedRuntimeService';
 import { projectSeatEnvironments, seatEnvironmentKey } from '../../services/seatEnvironmentProjection';
+import { HARNESS_CATALOG } from '../../config/harnessCatalog';
 const { ownKeyCapability } = require('../../services/agentProviderKey');
 const Machine = require('../../models/Machine');
 const AgentCredential = require('../../models/AgentCredential');
@@ -64,6 +65,13 @@ const settings = (installation: any, podName: string) => {
   };
 };
 
+// D247: the harnesses, models and effort levels an agent can be set to. The
+// add-agent page reads it before any agent exists; Settings gets the same list
+// on manage-settings.
+router.get('/harness-catalog', settingsRateLimit, auth, (_req: any, res: any) => (
+  res.json({ harnesses: HARNESS_CATALOG })
+));
+
 router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req: any, res: any) => {
   try {
     const userId = getUserId(req);
@@ -122,6 +130,14 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       .select('tokenHash status lastUsedAt expiresAt').lean() : [];
     const runtimeManaged = Boolean(binding?.botMetadata?.machineId);
     if (runtimeManaged && !runtimeControls.runtimeType) runtimeControls.runtimeType = 'wrapper';
+    // D247: hosted and native turns read their own run config, so only they
+    // stay read-only here. Every other agent the person owns is editable on
+    // add and after: a daemon seat reads the projection, and a listener
+    // (`agent run` with no machine binding) reads its installation's controls
+    // from GET /api/agents/runtime/installations before each turn.
+    const sourceRuntime = (normalizeConfigMap((source || writable)?.config) || {}).runtime || {};
+    const hosted = runtime.host === 'cloud' || sourceRuntime.host === 'cloud'
+      || ['hosted', 'internal', 'native'].includes(String(runtime.runtimeType || sourceRuntime.runtimeType || ''));
     const runtimeSavedControls = { ...runtimeControls };
     // A standalone `agent run` reads its local token record. Hosted/native
     // turns read their own run config (installation.config.model or the service
@@ -137,7 +153,7 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
     return res.json({ turnCap: turnsPerDay, userRunCeiling, podCount: installations.length,
       activePodCount: installations.filter((entry: any) => entry.status === 'active').length,
       writablePodId: writable ? String(writable.podId) : null,
-      runtimeSourcePodId: !runtimeManaged ? null
+      runtimeSourcePodId: hosted ? null
         : source ? String(source.podId)
           : (!seat?.sourcePodId && writable ? String(writable.podId) : null),
       runtimeControls,
@@ -150,7 +166,8 @@ router.get('/agents/:name/manage-settings', settingsRateLimit, auth, async (req:
       runtimeInventoryAt: machine?.inventoryAt || null,
       machineLastSeenAt: machine?.lastSeenAt || null,
       runtimeManaged,
-      runtimeEditable: runtimeManaged && (!seat?.sourcePodId || Boolean(source)),
+      runtimeEditable: !hosted && Boolean(writable) && (!seat?.sourcePodId || Boolean(source)),
+      harnessCatalog: HARNESS_CATALOG,
       installations: visible
       .map((entry: any) => settings(entry, names.get(String(entry.podId)) || 'Pod')) });
   } catch (error) {

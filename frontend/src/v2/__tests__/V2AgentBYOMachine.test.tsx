@@ -45,8 +45,22 @@ const machineRow = {
   id: 'm1', machineId: 'mach-a', name: 'Sam’s MacBook', status: 'online', agentStates: [],
 };
 
-const mockGet = ({ machines = [machineRow] } = {}) => {
+// D247: the server's harness list, as GET /api/registry/harness-catalog serves it.
+const ladder = ['low', 'medium', 'high', 'xhigh', 'max'];
+const CATALOG = [
+  { id: 'claude', label: 'Claude Code', models: ['claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'], efforts: ladder },
+  { id: 'codex', label: 'Codex', models: ['gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'], efforts: ladder },
+  { id: 'opencode', label: 'OpenCode', models: null, efforts: [] },
+  { id: 'qwen', label: 'Qwen Code', models: null, efforts: [] },
+  { id: 'goose', label: 'Goose', models: null, efforts: [] },
+  { id: 'hermes', label: 'Hermes', models: null, efforts: [] },
+  { id: 'pi', label: 'pi', models: null, efforts: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'dsh', label: 'DeepSeek Harness', models: null, efforts: ladder },
+];
+
+const mockGet = ({ machines = [machineRow], catalog = null } = {}) => {
   axios.get.mockImplementation((url) => {
+    if (url === '/api/registry/harness-catalog') return Promise.resolve({ data: catalog ? { harnesses: catalog } : {} });
     if (url.startsWith('/api/registry/agents/next-free-name?')) return Promise.resolve({ data: { name: new URLSearchParams(url.split('?')[1]).get('base') } });
     if (url.startsWith('/api/hosted/availability')) {
       return Promise.resolve({ data: { configured: false, caps: { agentsPerUser: 1, turnsPerDay: 200 } } });
@@ -208,33 +222,62 @@ describe('BYO on-my-computer mode', () => {
     window.history.pushState({}, '', '/');
   });
 
-  test('Codex suggests four plain catalog slugs and submits a chosen model', async () => {
-    mockGet();
+  test('Codex lists full model ids and Other…, and submits the chosen model and effort', async () => {
+    mockGet({ catalog: CATALOG });
     axios.post.mockResolvedValue({ data: {} });
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
-
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option')).toHaveLength(9));
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
-    const modelInput = screen.getByTestId('byo-model-select');
-    expect(modelInput).toHaveAttribute('type', 'text');
-    expect(modelInput).toHaveAttribute('list', 'byo-codex-models');
-    const suggestions = Array.from(document.querySelectorAll('#byo-codex-models option'));
-    expect(suggestions.map((option) => option.getAttribute('value'))).toEqual([
-      'gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra',
+    const modelSelect = screen.getByTestId('byo-model-select');
+    expect(Array.from(modelSelect.querySelectorAll('option')).map((option) => option.textContent)).toEqual([
+      'Adapter default', 'gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna',
+      'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'Other…',
     ]);
-    expect(suggestions.map((option) => option.getAttribute('label'))).toEqual([
-      'gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra',
-    ]);
-    expect(screen.getByText(/suggestions only.*catalog on that machine/i)).toBeInTheDocument();
-    fireEvent.change(modelInput, { target: { value: 'gpt-6-sol' } });
+    fireEvent.change(modelSelect, { target: { value: 'gpt-6.1-sol' } });
+    fireEvent.change(screen.getByTestId('byo-effort-select'), { target: { value: 'xhigh' } });
     await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
     expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
-      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', adapter: 'codex', model: 'gpt-6-sol' } }),
+      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', adapter: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh' } }),
     }), expect.anything());
+  });
+
+  test('every harness is listed; a reported computer marks each one and puts what it has first', async () => {
+    mockGet({ catalog: CATALOG, machines: [{ ...machineRow, runtimeInventory: [
+      { harness: 'claude', installed: false, version: null, models: null, efforts: [] },
+      { harness: 'codex', installed: true, version: '0.162.1', models: null, efforts: [] },
+      { harness: 'opencode', installed: true, version: '1.19.4', models: null, efforts: [] },
+    ] }] });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option')).toHaveLength(9));
+    const options = Array.from(screen.getByTestId('byo-adapter-select').querySelectorAll('option'));
+    expect(options.map((option) => option.textContent)).toEqual([
+      'Auto-detect on that computer', 'Codex · Installed · 0.162.1', 'OpenCode · Installed · 1.19.4',
+      'Claude Code · Not on this computer', 'Qwen Code', 'Goose', 'Hermes', 'pi', 'DeepSeek Harness',
+    ]);
+    // Not on this computer stays selectable: it may be installed next.
+    expect(options.every((option) => !option.disabled)).toBe(true);
+    expect(document.body.textContent).not.toMatch(/Tested on a Mac|Not tested yet/);
+  });
+
+  test('a harness that can\'t answer here says what can instead, and the add button waits', async () => {
+    mockGet({ catalog: CATALOG });
+    renderPage();
+    await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option')).toHaveLength(9));
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'hermes' } });
+    expect(screen.getByTestId('byo-machine-refused')).toHaveTextContent(
+      'Hermes can’t answer as a public agent yet, and agents added here are public. Claude Code, Codex or OpenCode can, or choose “Run it here”.');
+    expect(screen.getByText('Add to this computer')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'codex' } });
+    expect(screen.queryByTestId('byo-machine-refused')).toBeNull();
   });
 
   test('Codex accepts a catalog slug beyond the suggestions', async () => {
@@ -254,25 +297,26 @@ describe('BYO on-my-computer mode', () => {
     }), expect.anything());
   });
 
-  test('Claude offers stable aliases and submits the selected model', async () => {
-    mockGet();
+  test('Claude lists full model ids, never aliases, and submits the selected one', async () => {
+    mockGet({ catalog: CATALOG });
     axios.post.mockResolvedValue({ data: {} });
     renderPage();
     await waitFor(() => expect(screen.getByTestId('byo-mode-machine')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('byo-mode-machine'));
+    await waitFor(() => expect(screen.getByTestId('byo-adapter-select').querySelectorAll('option')).toHaveLength(9));
     fireEvent.change(screen.getByTestId('byo-adapter-select'), { target: { value: 'claude' } });
     const modelSelect = screen.getByTestId('byo-model-select');
     expect(modelSelect.tagName).toBe('SELECT');
     expect(Array.from(modelSelect.querySelectorAll('option')).map((option) => option.value)).toEqual([
-      '', 'opus', 'sonnet', 'haiku',
+      '', 'claude-fable-5-1', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', '__other__',
     ]);
-    fireEvent.change(modelSelect, { target: { value: 'sonnet' } });
+    fireEvent.change(modelSelect, { target: { value: 'claude-sonnet-5-5' } });
     await waitFor(() => expect(screen.getByText('Add to this computer')).toBeEnabled());
     fireEvent.click(screen.getByText('Add to this computer'));
 
     await waitFor(() => expect(screen.getByTestId('byo-machine-result')).toBeInTheDocument());
     expect(axios.post).toHaveBeenCalledWith('/api/registry/install', expect.objectContaining({
-      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', adapter: 'claude', model: 'sonnet' } }),
+      config: expect.objectContaining({ runtime: { runtimeType: 'wrapper', adapter: 'claude', model: 'claude-sonnet-5-5' } }),
     }), expect.anything());
   });
 

@@ -25,6 +25,14 @@ describe('self-reported BYO receipt (D245 item 4, warn-only)', () => {
     });
   });
 
+  it('keeps the effort level a wrapper passed, and drops one that is not a level name (D247)', () => {
+    expect(normalizeReceipt({ adapter: 'codex', model: 'gpt-6-sol', effort: 'xhigh' }).receipt)
+      .toEqual({ adapter: 'codex', model: 'gpt-6-sol', effort: 'xhigh', source: 'self-reported' });
+    const bad = normalizeReceipt({ adapter: 'codex', effort: 'very high <b>' });
+    expect(bad.receipt).toEqual({ adapter: 'codex', source: 'self-reported' });
+    expect(codes(bad)).toEqual(['receipt_invalid_effort']);
+  });
+
   it('a caller cannot claim another source', () => {
     const result = normalizeReceipt({ adapter: 'codex', source: 'server' });
     expect(result.receipt.source).toBe('self-reported');

@@ -5280,8 +5280,8 @@ describe('agent settings sections lifted from #s-agent-states', () => {
     expect(ruleBody(css, '.v2-agent-settings-page .field')).toContain('--box-h: 34px; height: var(--box-h)');
   });
   test('a read-only runtime draws its disabled selects as values, without the box ring or chevron', () => {
-    expect(ruleBody(css, '.v2-agent-settings-page .sel:has(:disabled)')).toContain('box-shadow: none');
-    expect(ruleBody(css, '.v2-agent-settings-page .sel:has(:disabled) svg.i')).toContain('display: none');
+    expect(ruleBody(css, '.v2-agent-settings-page .sel:has(select:disabled, input:disabled)')).toContain('box-shadow: none');
+    expect(ruleBody(css, '.v2-agent-settings-page .sel:has(select:disabled, input:disabled) svg.i')).toContain('display: none');
   });
   test('the identity form does not add a box between the list and its rows', () => {
     expect(ruleBody(css, '.v2-agent-settings-page__form')).toContain('display: contents');
@@ -6466,6 +6466,15 @@ describe('G11 polish: what the d215 frames draw that the scorer cannot see', () 
     expect(hint).toContain('font-size: 0');
     expect(ruleBody(byoCss, '.v2-root .v2-feature--byo button.v2-hint__trigger::before', { within: phone })).toContain('width: 15px; height: 15px');
     expect(byoCss).not.toContain('button.v2-hint__trigger::after { content: \'\'; position: absolute; inset: -9px; }');
+  });
+
+  // D247: a select with a disabled OPTION (a harness not on this computer) is
+  // still editable. The read-only look keys on a disabled select or input only;
+  // a bare :has(:disabled) also matched the option and greyed the control.
+  test('agent settings: only a disabled select or input draws the read-only control', () => {
+    const settingsCss = read('../agents/v2-agent-settings-surface.css');
+    expect(settingsCss).toContain('.v2-agent-settings-page .sel:has(select:disabled, input:disabled) { background: var(--t); box-shadow: none; }');
+    expect(settingsCss).not.toMatch(/\.sel:has\(:disabled\)/);
   });
 
   test('run trace: headings balance their lines and "Back to pod" is underlined, as the frame draws', () => {

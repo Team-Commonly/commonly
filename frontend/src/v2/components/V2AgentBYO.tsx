@@ -35,6 +35,11 @@ import { hostedCapNotice } from './hostedCapNotice';
 import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
+import {
+  FALLBACK_HARNESSES, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, harnessDeviceNote, harnessLabel,
+  orderHarnessIds,
+} from '../utils/harnessCatalog';
+import V2HarnessChoice from './V2HarnessChoice';
 import './V2AgentBYO.css';
 
 const DEFAULT_AGENT_NAME = 'my-mcp-agent';
@@ -70,7 +75,7 @@ export const connectSnippet = ({
   apiUrl: string;
   token: string;
   agentName: string;
-  adapter: 'claude' | 'codex';
+  adapter: string;
   allow?: string;
 }): string => {
   const env = os === 'windows'
@@ -81,6 +86,40 @@ export const connectSnippet = ({
     ...env,
     `commonly agent run ${agentName} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' && adapter !== 'codex' ? ' --unsandboxed' : ''}`,
   ].join('\n');
+};
+// D247: OpenCode can't start from the page's key: a public OpenCode seat needs
+// a provider and a key file on that Mac (adapters/opencode.js), so it is
+// connected with `agent attach --env`, as docs/cli/opencode.md walks. The key
+// is typed into its own line first, because a pasted block would feed its own
+// next line to the prompt. A public seat never uses the person's own OpenCode
+// login (adapters/opencode.js), so a provider is named: Anthropic's
+// OpenAI-compatible endpoint is the example, and any OpenAI-compatible
+// provider works by changing baseURL and model.
+export const OPENCODE_DEFAULT_MODEL = 'claude-haiku-5-5';
+export const opencodeKeySnippet = (): string => (
+  '(umask 077; mkdir -p ~/.config/commonly; printf \'Anthropic API key: \'; stty -echo; IFS= read -r KEY; stty echo; echo;'
+  + ' printf \'%s\' "$KEY" > ~/.config/commonly/anthropic-key)'
+);
+export const opencodeSnippet = ({ agentName, podId, model }: { agentName: string; podId: string; model?: string }): string => {
+  const safeModel = model && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(model) ? model : OPENCODE_DEFAULT_MODEL;
+  const envFile = `~/.config/commonly/${agentName}.json`;
+  return [
+    'npm i -g @commonlyai/cli@latest opencode-ai',
+    'commonly login',
+    `cat > ${envFile} <<EOF`,
+    `{"provider":{"id":"anthropic-compat","baseURL":"https://api.anthropic.com/v1","keyFile":"$HOME/.config/commonly/anthropic-key"},"model":"${safeModel}","sandbox":{"trust":"public"}}`,
+    'EOF',
+    `commonly agent attach opencode --pod ${podId} --name ${agentName} --env ${envFile}`,
+    `commonly agent run ${agentName}`,
+  ].join('\n');
+};
+// Harnesses that can't answer from this page today, and why in plain words.
+// Every agent added here is a public one. dsh, pi and Hermes refuse a public
+// seat outright. Qwen Code 0.26.2 and Goose 1.54.0 pass as public agents on
+// CLI 0.1.242 (Growth walk 2026-11-04) but are set up from Terminal, not from
+// this page yet; Goose 1.56 stays refused in open pods (#3430).
+const REFUSED_HERE: Record<string, 'dsh' | 'qwen' | 'goose' | 'public'> = {
+  dsh: 'dsh', qwen: 'qwen', pi: 'public', goose: 'goose', hermes: 'public',
 };
 const AGENT_KIND = 'agent' as const;
 const HOSTED_STATUS_POLL_MS = 4000;
@@ -101,6 +140,8 @@ type MachineRow = {
   createdAt?: string | null;
   status: 'online' | 'offline';
   agentStates?: { agentName: string; instanceId: string; state: string }[];
+  // What the daemon found installed there (D247): marks and sorts the adapter list.
+  runtimeInventory?: HarnessDeviceRow[];
 };
 const MACHINE_STATUS_POLL_MS = 4000;
 const MACHINE_STATUS_MAX_TICKS = 30;
@@ -108,7 +149,8 @@ const MACHINE_STATUS_MAX_TICKS = 30;
 // act — this page's job is to make it ONE paste (daemonSetupCommand), after
 // which "On my computer" appears here.
 const CLAUDE_FILE_NAME = 'CLAUDE.md';
-type MachineAdapter = '' | 'claude' | 'codex';
+// '' is auto-detect on that computer; anything else is a catalogue harness.
+type MachineAdapter = string;
 
 // Where the listener runs (cli 0.1.106 stops elsewhere, with directions):
 // Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac.
@@ -167,18 +209,16 @@ const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
 // the page names the command they missed.
 const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 
-const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex', pod?: V2Pod): boolean => (
-  os === 'mac' || os === 'windows' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod))
-);
-type ModelOption = { value: string; labelKey: string };
-const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
-  { value: 'opus', labelKey: 'agentByo.form.modelOpus' },
-  { value: 'sonnet', labelKey: 'agentByo.form.modelSonnet' },
-  { value: 'haiku', labelKey: 'agentByo.form.modelHaiku' },
-];
-// Suggestions only: the installed Codex CLI catalog decides which slugs work.
-const LISTEN_RUNNERS = ['claude', 'codex'] as const;
-const CODEX_MODEL_SUGGESTIONS = ['gpt-6-sol', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'];
+// Claude Code and Codex keep the OS rules above. No other harness answers from
+// the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
+// line saying what works instead.
+const listenerRunsOn = (os: SetupOs, adapter: string, pod?: V2Pod): boolean => {
+  if (adapter === 'claude' || adapter === 'codex') {
+    return os === 'mac' || os === 'windows' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod));
+  }
+  // OpenCode has its own lines (opencodeSnippet); the rest can't answer here.
+  return false;
+};
 
 const sanitizeAgentName = (raw: string): string => raw
   .toLowerCase()
@@ -211,7 +251,7 @@ const V2AgentBYO: React.FC = () => {
       fromCard: params.get('from') === 'card',
       reconnect: params.get('reconnect') === '1',
       machine: params.get('mode') === 'machine',
-      adapter: ((a): 'claude' | 'codex' | null => (a === 'claude' || a === 'codex' ? a : null))(params.get('adapter')),
+      adapter: ((a): string | null => (a && KNOWN_HARNESS_IDS.includes(a) ? a : null))(params.get('adapter')),
     };
   })();
   // 2026-09-01: persona deep links carry context into this otherwise
@@ -263,7 +303,13 @@ const V2AgentBYO: React.FC = () => {
   // Which CLI the listener runs. Pinned in the command (`--adapter`), so a Mac
   // without Claude Code says so instead of quietly starting Codex (QA BYO
   // walk 1, 2026-10-16). Claude Code by default: it is what most people use.
-  const [listenAdapter, setListenAdapter] = useState<'claude' | 'codex'>(prefill.adapter || 'claude');
+  const [listenAdapter, setListenAdapter] = useState<string>(prefill.adapter || 'claude');
+  // D247: every harness `agent run --adapter` accepts, from the server. The
+  // two the page always offered stand in until it arrives.
+  // Read fourth in the mount sequence below, once.
+  const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogEntry[]>(FALLBACK_HARNESSES);
+  const catalogRequested = useRef(false);
+  const listenTool = harnessLabel(harnessCatalog, listenAdapter);
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
@@ -383,6 +429,10 @@ const V2AgentBYO: React.FC = () => {
   // back to Claude or auto-detect, and vice versa.
   const [adapter, setAdapter] = useState<MachineAdapter>('');
   const [model, setModel] = useState<string>('');
+  const [effort, setEffort] = useState<string>('');
+  // A model or effort belongs to the harness it was picked for.
+  useEffect(() => { setModel(''); setEffort(''); }, [mode, listenAdapter]);
+  const machineInventory = selectedMachine?.runtimeInventory || [];
   const canReconnect = Boolean(existingConnection
     && (['revoked', 'stale'].includes(existingConnection.connection.state)
       || (prefill.reconnect && existingConnection.runtimeType === 'wrapper'))
@@ -650,6 +700,19 @@ const V2AgentBYO: React.FC = () => {
       } catch {
         // No daemon machines — the "on my computer" card simply doesn't show.
       }
+      // Fourth, and once: the page works on the two-harness fallback until
+      // the full list arrives (D247).
+      if (!catalogRequested.current) {
+        catalogRequested.current = true;
+        try {
+          const catalog = await api.get<{ harnesses?: HarnessCatalogEntry[] }>('/api/registry/harness-catalog');
+          const rows = Array.isArray(catalog?.harnesses)
+            ? catalog.harnesses.filter((row) => row && typeof row.id === 'string') : [];
+          if (rows.length) setHarnessCatalog(rows);
+        } catch {
+          catalogRequested.current = false;
+        }
+      }
       if (!cancelled) setChoicesKnown(true);
     })();
     return () => { cancelled = true; };
@@ -763,7 +826,8 @@ const V2AgentBYO: React.FC = () => {
             runtime: {
               runtimeType: 'wrapper',
               ...(adapter ? { adapter } : {}),
-              ...(model ? { model } : {}),
+              ...(adapter && model.trim() ? { model: model.trim() } : {}),
+              ...(adapter && effort ? { effort } : {}),
             },
             ...(personaCard ? { persona: personaCard.key } : {}),
           },
@@ -851,7 +915,13 @@ const V2AgentBYO: React.FC = () => {
           agentName: cleanName,
           podId,
           scopes: DEFAULT_INSTALL_SCOPES,
-          config: { runtime: { runtimeType: 'webhook' }, ...(personaCard ? { persona: personaCard.key } : {}) },
+          // D247: the runner, model and effort travel with the agent, so
+          // Settings shows them and the listener reads them before each turn.
+          // Any adapter besides Claude Code and Codex must be declared here, or
+          // `agent run` refuses to start it.
+          config: { runtime: { runtimeType: 'webhook', adapter: listenAdapter,
+            ...(model.trim() ? { model: model.trim() } : {}), ...(effort ? { effort } : {}) },
+          ...(personaCard ? { persona: personaCard.key } : {}) },
           displayName: personaCard?.name || cleanName,
           // #1649: the seat carries the persona's own sentence, so Your Team never shows a placeholder.
           ...(personaCard ? { description: personaCard.card } : {}),
@@ -1218,13 +1288,62 @@ const V2AgentBYO: React.FC = () => {
       <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
     </div>
   ) : null;
+  // D247: a runner other than Claude Code and Codex takes the place of the
+  // install button with what works for it. OpenCode gets its own Mac lines;
+  // the rest a plain line naming what can answer instead.
+  const hostedName = t('agentByo.mode.hosted');
+  const refusedLine = (harness: string) => {
+    const reason = REFUSED_HERE[harness] || 'public';
+    const values = { tool: harnessLabel(harnessCatalog, harness), hosted: hostedName };
+    if (reason === 'dsh') return t('agentByo.refused.dsh', values);
+    if (reason === 'qwen') return t('agentByo.refused.qwen', values);
+    if (reason === 'goose') return t('agentByo.refused.goose', values);
+    return t('agentByo.refused.public', values);
+  };
+  const opencodeName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;
+  const opencodeLines = podId ? opencodeSnippet({ agentName: opencodeName, podId, model: model.trim() }) : '';
+  const byoAlternative = mode === 'byo' && listenAdapter !== 'claude' && listenAdapter !== 'codex' ? (
+    listenAdapter !== 'opencode' ? (
+      <p className="v2-byo__needs" data-testid="byo-runner-refused">{refusedLine(listenAdapter)}</p>
+    ) : setupOs !== 'mac' ? (
+      <p className="v2-byo__needs" data-testid="byo-opencode-unavailable">
+        {t('agentByo.listen.unavailableOther', {
+          tool: listenTool, os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
+        })}
+      </p>
+    ) : (
+      <div className="v2-byo__opencode" data-testid="byo-opencode">
+        <p className="v2-byo__needs">{t('agentByo.opencode.keyStep')}</p>
+        <div className="v2-byo__command">
+          <pre className="v2-byo__pre" data-testid="byo-opencode-key">{opencodeKeySnippet()}</pre>
+          <button type="button" className="v2-byo__copy" onClick={() => copy('opencode-key', opencodeKeySnippet())}>
+            {copied === 'opencode-key' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+          </button>
+        </div>
+        <p className="v2-byo__needs">{t('agentByo.opencode.runStep', { name: opencodeName })}</p>
+        {opencodeLines && (
+          <div className="v2-byo__command">
+            <pre className="v2-byo__pre" data-testid="byo-opencode-lines">{opencodeLines}</pre>
+            <button type="button" className="v2-byo__copy" onClick={() => copy('opencode', opencodeLines)}>
+              {copied === 'opencode' ? t('agentByo.actions.copied') : t('agentByo.actions.copy')}
+            </button>
+          </div>
+        )}
+        <p className="v2-byo__hint">
+          {t('agentByo.opencode.provider')}{' '}
+          <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/cli/opencode.md" target="_blank" rel="noopener noreferrer">{t('agentByo.opencode.guide')}</a>
+        </p>
+      </div>
+    )
+  ) : null;
+  const machineBlocked = mode === 'machine' && (Boolean(REFUSED_HERE[adapter]) || adapter === 'opencode');
   const runnerPicker = mode === 'byo' && !issued && !onCardStart ? (
     // A segment (d215 frame) under a visible label: the frame doesn't draw this
     // picker, so it keeps the "Adapter" label the page always showed.
     <>
     <p className="v2-byo__modes-question" id="byo-runner-label">{t('agentByo.form.adapterLabel')}</p>
     <p className="v2-byo__os" data-testid="byo-runner" role="group" aria-labelledby="byo-runner-label">
-      {LISTEN_RUNNERS.map((runner) => (
+      {orderHarnessIds(harnessCatalog).map((runner) => (
         <button
           key={runner}
           type="button"
@@ -1235,10 +1354,19 @@ const V2AgentBYO: React.FC = () => {
           // The name follows the runner, so a key prompt for the old name is stale.
           onClick={() => { setPendingReplacement(null); setListenAdapter(runner); }}
         >
-          {t(runner === 'claude' ? 'agentByo.form.adapterClaude' : 'agentByo.form.adapterCodex')}
+          {harnessLabel(harnessCatalog, runner)}
         </button>
       ))}
     </p>
+    <V2HarnessChoice
+      key={`byo:${listenAdapter}`}
+      catalog={harnessCatalog}
+      harness={listenAdapter}
+      model={model}
+      effort={effort}
+      onModel={setModel}
+      onEffort={setEffort}
+    />
     </>
   ) : null;
 
@@ -1250,7 +1378,9 @@ const V2AgentBYO: React.FC = () => {
         // "Bring your own agent" after the click). A persona hire keeps the
         // page's own title: what it names is the persona, not the tool.
         if ((showCompactByo || issued) && !personaCard) {
-          return listenAdapter === 'codex' ? t('agentByo.compactByo.titleCodex') : t('agentByo.compactByo.titleClaude');
+          if (listenAdapter === 'codex') return t('agentByo.compactByo.titleCodex');
+          if (listenAdapter === 'claude') return t('agentByo.compactByo.titleClaude');
+          return t('agentByo.compactByo.titleOther', { tool: listenTool });
         }
         return t('agentByo.title');
       })()}
@@ -1455,55 +1585,39 @@ const V2AgentBYO: React.FC = () => {
                 onChange={(e) => {
                   setAdapter(e.target.value as MachineAdapter);
                   setModel('');
+                  setEffort('');
                 }}
                 className="v2-byo__input"
                 data-testid="byo-adapter-select"
               >
                 <option value="">{t('agentByo.form.adapterDefault')}</option>
-                <option value="claude">{t('agentByo.form.adapterClaude')}</option>
-                <option value="codex">{t('agentByo.form.adapterCodex')}</option>
+                {/* What the computer reported decides the order and the note;
+                    one it lacks stays selectable, since it may be installed next. */}
+                {orderHarnessIds(harnessCatalog, machineInventory).map((id) => {
+                  const note = harnessDeviceNote(machineInventory, id, t);
+                  return <option key={id} value={id}>{harnessLabel(harnessCatalog, id)}{note ? ` · ${note}` : ''}</option>;
+                })}
               </select>
             </label>
           )}
+          {machineBlocked && (
+            <p className="v2-byo__needs" data-testid="byo-machine-refused">
+              {adapter === 'opencode'
+                ? t('agentByo.opencode.machine', { byo: t('agentByo.mode.byo') })
+                : refusedLine(adapter)}
+            </p>
+          )}
           {mode === 'machine' && (
-            <label className="v2-byo__field">
-              <span className="v2-byo__label">{t('agentByo.form.modelLabel')}</span>
-              {adapter === 'codex' ? (
-                <>
-                  <input
-                    type="text"
-                    list="byo-codex-models"
-                    value={model}
-                    onChange={(e) => { setModel(e.target.value); }}
-                    placeholder={t('agentByo.form.modelDefault')}
-                    className="v2-byo__input"
-                    data-testid="byo-model-select"
-                  />
-                  <datalist id="byo-codex-models">
-                    {CODEX_MODEL_SUGGESTIONS.map((slug) => (
-                      <option key={slug} value={slug} label={slug} />
-                    ))}
-                  </datalist>
-                </>
-              ) : (
-                <select
-                  value={model}
-                  onChange={(e) => { setModel(e.target.value); }}
-                  className="v2-byo__input"
-                  data-testid="byo-model-select"
-                >
-                  <option value="">{t('agentByo.form.modelDefault')}</option>
-                  {adapter === 'claude' && CLAUDE_MODEL_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{t(option.labelKey)}</option>
-                  ))}
-                </select>
-              )}
-              <span className="v2-byo__hint">
-                {adapter === 'codex'
-                  ? t('agentByo.form.modelHintCodex')
-                  : (adapter === 'claude' ? t('agentByo.form.modelHintClaude') : t('agentByo.form.modelHintAuto'))}
-              </span>
-            </label>
+            <V2HarnessChoice
+              key={`machine:${adapter}`}
+              catalog={harnessCatalog}
+              harness={adapter}
+              device={machineInventory.find((row) => row.harness === adapter) || null}
+              model={model}
+              effort={effort}
+              onModel={setModel}
+              onEffort={setEffort}
+            />
           )}
           {runnerPicker}
           <label className={`v2-byo__field${errorField === 'name' || nameLookupError ? ' v2-byo__field--error' : ''}`}>
@@ -1561,14 +1675,14 @@ const V2AgentBYO: React.FC = () => {
               }}>
                 {t('agentConnection.reconnect')}
               </button>
-            ) : isOtherOwner ? null : (
+            ) : isOtherOwner ? null : byoAlternative || (
             <button
               type="button"
               // Keep the focused field's hint visible through the press. If blur
               // hides it on mousedown, this button can move before mouseup.
               onMouseDown={(event) => event.preventDefault()}
               onClick={submit}
-              disabled={submitting || (mode === 'byo' && !namesReady) || !podId}
+              disabled={submitting || (mode === 'byo' && !namesReady) || !podId || machineBlocked}
               className="v2-byo__submit"
             >
               {(() => {
@@ -1767,12 +1881,15 @@ const V2AgentBYO: React.FC = () => {
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
               {listenerAvailable
                 ? `${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
-                  tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
+                  tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
+                : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool,
                 })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxFolder')}` : ''}`
                 : t(listenAdapter === 'claude'
                   ? 'agentByo.listen.unavailableClaudeLinux'
-                  : 'agentByo.listen.unavailableCodex', {
+                  : listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
+                    : listenAdapter === 'dsh' ? 'agentByo.listen.unavailableDsh' : 'agentByo.listen.unavailableOther', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
+                  tool: listenTool,
                 })}{' '}
               <button
                 type="button"
