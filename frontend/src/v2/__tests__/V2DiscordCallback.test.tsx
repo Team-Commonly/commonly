@@ -76,15 +76,15 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
   test('success asks for the channel, posts the same integration and moves to the pod after 2s', async () => {
     jest.useFakeTimers();
     localStorage.setItem('token', 'jwt');
-    axios.get.mockImplementation((url) => (url === '/api/discord/channels/g1'
-      ? Promise.resolve({ data: [{ id: 'c1', name: 'general', topic: 'chat' }, { id: 'c2', name: 'ops' }] })
+    axios.get.mockImplementation((url) => (url === '/api/discord/channels/112233445566778899'
+      ? Promise.resolve({ data: [{ id: '112233445566778801', name: 'general', topic: 'chat' }, { id: '112233445566778802', name: 'ops' }] })
       : Promise.resolve({ data: { type: 'study' } })));
-    const { container } = renderAt('/discord/success?pod_id=p1&guild_id=g1&server_name=Northwind%20HQ');
+    const { container } = renderAt('/discord/success?pod_id=p1&guild_id=112233445566778899&server_name=Northwind%20HQ');
 
     expect(screen.getByRole('heading', { name: 'Pick a channel' })).toBeInTheDocument();
     expect(wire(container)).toHaveClass('v2-handoff__wire--done');
     expect(container.querySelector('.v2-handoff__facts')).toHaveTextContent('ServerNorthwind HQ');
-    expect(axios.get).toHaveBeenCalledWith('/api/discord/channels/g1', { headers: { Authorization: 'Bearer jwt' } });
+    expect(axios.get).toHaveBeenCalledWith('/api/discord/channels/112233445566778899', { headers: { Authorization: 'Bearer jwt' } });
     const select = await screen.findByRole('combobox', { name: 'Channel' });
     await screen.findByRole('option', { name: '#general - chat' });
     // Starts on the placeholder, not on the first channel.
@@ -93,7 +93,7 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     const connect = screen.getByRole('button', { name: 'Connect' });
     expect(connect).toBeDisabled();
 
-    fireEvent.change(select, { target: { value: 'c2' } });
+    fireEvent.change(select, { target: { value: '112233445566778802' } });
     expect(connect).toBeEnabled();
     await act(async () => { fireEvent.click(connect); });
 
@@ -101,9 +101,9 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
       podId: 'p1',
       type: 'discord',
       config: {
-        serverId: 'g1',
+        serverId: '112233445566778899',
         serverName: 'Northwind HQ',
-        channelId: 'c2',
+        channelId: '112233445566778802',
         channelName: 'ops',
         webhookUrl: '',
         botToken: '',
@@ -135,6 +135,18 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
     expect(screen.getByRole('alert')).toHaveTextContent('Integration exists');
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+  });
+
+  // The pages are reached through the route tables, which pick the view by prop.
+  // A swapped success/error mapping would render the wrong page for the backend's
+  // redirect, so both tables are read and their mapping pinned.
+  test.each([['App.tsx', '../../App.tsx', '/discord/'], ['V2App.tsx', '../V2App.tsx', 'discord/']])('%s maps each Discord return path to its view', (_name, rel, prefix) => {
+    // eslint-disable-next-line global-require
+    const src = require('fs').readFileSync(require('path').resolve(__dirname, rel), 'utf8');
+    const route = (path) => (src.match(new RegExp(`<Route path="${prefix}${path}" element={<V2DiscordCallback([^/]*)/>}`)) || [])[1];
+    expect(route('callback')?.trim()).toBe('');
+    expect(route('success')?.trim()).toBe('type="success"');
+    expect(route('error')?.trim()).toBe('type="error"');
   });
 
   test('reads in Chinese under zh-CN', async () => {
