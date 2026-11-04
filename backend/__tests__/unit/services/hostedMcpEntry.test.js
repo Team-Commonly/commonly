@@ -25,11 +25,14 @@ const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const AIRTABLE_AS_CAPTURE = require('../../fixtures/hostedMcp/airtable-authorization-server-2026-10-28.json');
-// Two Sentry captures, from rows consented with different skills. The 10-19 row
-// had Triage, so its list carries update_issue. The 11-01 row has neither Triage
-// nor Seer, and its list carries the seven search reads as Sentry now spells them.
+// Three Sentry captures, from rows consented with different skills. The 10-19 row
+// had Triage, so its list carries update_issue. The 11-01 and 11-04 lists come
+// from one row with neither Triage nor Seer. 11-01 backs find_organizations and
+// get_sentry_resource; 11-04 backs the project and search reads as Sentry now
+// spells them.
 const SENTRY_TRIAGE_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-10-19.json');
-const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-11-01.json');
+const SENTRY_1101_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-11-01.json');
+const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-11-04.json');
 const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
 const GITLAB_CAPTURE = require('../../fixtures/hostedMcp/gitlab-tools-list-2026-10-19.json');
 const SUPABASE_CAPTURE = require('../../fixtures/hostedMcp/supabase-tools-list-2026-10-19.json');
@@ -909,9 +912,75 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect([...entry.scopes].every((scope) => metadata.scopes_supported.includes(scope))).toBe(true);
   });
 
-  test('the Sentry pin follows the 11-01 list, keeps the Triage writer, and restricts resource lookup to type and ID', () => {
+  test('the Sentry pin follows the 11-04 list, pins none of its new tools, and keeps the Triage writer', () => {
     const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
     const capture = SENTRY_CAPTURE;
+    expect(capture.server).toBe(entry.resource);
+    expect(capture.tools).toHaveLength(49);
+    const listed = new Set(capture.tools.map((tool) => tool.name));
+    // The same row as 11-01: no Triage writer, no Seer, and the by-name
+    // dispatcher is gone from every list.
+    ['update_issue', 'analyze_issue_with_seer', 'search_sentry_tools', 'execute_sentry_tool']
+      .forEach((name) => expect(listed.has(name)).toBe(false));
+    // The pin set is reviewed by hand, so a tool Sentry adds is never pinned by
+    // a re-capture: this list changes only with a review.
+    expect(entry.tools.map((tool) => tool.upstreamName)).toEqual([
+      'find_organizations', 'find_projects', 'update_issue', 'search_errors', 'search_logs',
+      'search_traces', 'search_metrics', 'search_profiles', 'search_replays', 'search_issues',
+      'get_sentry_resource',
+    ]);
+    entry.tools.filter((tool) => tool.name !== 'update_issue')
+      .forEach((tool) => expect(listed.has(tool.upstreamName)).toBe(true));
+    // Which capture backs each pin's schema.
+    const backedBy = (name) => {
+      if (name === 'update_issue') return SENTRY_TRIAGE_CAPTURE;
+      if (name === 'find_organizations' || name === 'get_sentry_resource') return SENTRY_1101_CAPTURE;
+      return capture;
+    };
+    entry.tools.forEach((tool) => {
+      const found = backedBy(tool.upstreamName).tools.find((t) => t.name === tool.upstreamName);
+      expect(found).toBeDefined();
+      if (tool.name !== 'get_sentry_resource') {
+        expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
+      }
+      // Every pin's annotations match its own capture, the writer's included,
+      // and every read pin's still match the live 11-04 list.
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
+      const live = capture.tools.find((t) => t.name === tool.upstreamName);
+      if (live) {
+        expect(tool.annotations?.readOnlyHint).toBe(live.annotations.readOnlyHint);
+        expect(tool.annotations?.destructiveHint).toBe(live.annotations.destructiveHint);
+      }
+    });
+    // On the 11-04 row every read assesses ok, the two older pins as compatible
+    // additions; the writer is unavailable to a row without Triage.
+    const assessed = assessEntryTools(entry, capture.tools);
+    expect(assessed.filter((tool) => tool.verdict !== 'ok'))
+      .toEqual([expect.objectContaining({ name: 'update_issue', verdict: 'tool_unavailable' })]);
+    ['find_organizations', 'get_sentry_resource'].forEach((name) => expect(assessed.find((tool) => tool.name === name))
+      .toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatibly') }));
+  });
+
+  test('the 11-01 Sentry pins drift on the 11-04 list, which is why they were re-pinned', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
+    const reads = ['find_projects', 'search_errors', 'search_logs', 'search_traces', 'search_metrics',
+      'search_profiles', 'search_replays', 'search_issues'];
+    const old = {
+      ...entry,
+      tools: entry.tools.map((tool) => {
+        if (!reads.includes(tool.upstreamName)) return tool;
+        const captured = SENTRY_1101_CAPTURE.tools.find((t) => t.name === tool.upstreamName);
+        return { ...tool, inputSchema: captured.inputSchema };
+      }),
+    };
+    const drifted = assessEntryTools(old, SENTRY_CAPTURE.tools)
+      .filter((tool) => tool.verdict === 'tool_drift').map((tool) => tool.name);
+    expect(drifted).toEqual(reads);
+  });
+
+  test('the Sentry entry keeps its scopes, restricts resource lookup to type and ID, and parks the writer', () => {
+    const entry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'sentry');
     expect(entry).toMatchObject({
       resource: 'https://mcp.sentry.dev/mcp',
       issuer: 'https://mcp.sentry.dev',
@@ -921,44 +990,23 @@ describe('the shipped catalogue cannot land half-wired', () => {
         endpoint: 'https://mcp.sentry.dev/oauth/token',
       },
     });
-    expect(capture.server).toBe(entry.resource);
     expect(SENTRY_TRIAGE_CAPTURE.scopeRequested.split(' ').sort()).toEqual([...entry.scopes].sort());
-    const excluded = new Set(['analyze_issue_with_seer', 'search_sentry_tools', 'execute_sentry_tool']);
-    // update_issue needs the Triage skill, so only the 10-19 list carries it.
-    expect(entry.tools.map((tool) => tool.upstreamName).filter((name) => name !== 'update_issue')).toEqual(
-      capture.tools.filter((tool) => !excluded.has(tool.name)).map((tool) => tool.name),
-    );
-    expect(capture.tools).toHaveLength(12);
-    expect(capture.tools.some((tool) => tool.name === 'update_issue')).toBe(false);
-    // find_dropped_events is no longer top-level for any row, so it is not pinned.
+    // find_dropped_events is top-level again on 11-04, but unreviewed, so it is not pinned.
     expect(entry.tools.some((tool) => tool.name === 'find_dropped_events')).toBe(false);
-    const measured = new Map([
-      ...SENTRY_TRIAGE_CAPTURE.tools.filter((tool) => tool.name === 'update_issue').map((tool) => [tool.name, tool]),
-      ...capture.tools.map((tool) => [tool.name, tool]),
-    ]);
     const resource = entry.tools.find((tool) => tool.name === 'get_sentry_resource');
-    expect(resource.inputSchema.properties.url).toBeUndefined();
-    expect(measured.get('get_sentry_resource').inputSchema.properties.url).toBeDefined();
+    // None of the vendor's URL-shaped routes is offered: `url` (11-01), and
+    // `resourceUrl` and `issueUrl` (added by 11-04).
+    ['url', 'resourceUrl', 'issueUrl'].forEach((name) => expect(resource.inputSchema.properties[name]).toBeUndefined());
+    const live = SENTRY_CAPTURE.tools.find((tool) => tool.name === 'get_sentry_resource').inputSchema.properties;
+    ['url', 'resourceUrl', 'issueUrl'].forEach((name) => expect(live[name]).toBeDefined());
+    expect(SENTRY_1101_CAPTURE.tools.find((tool) => tool.name === 'get_sentry_resource').inputSchema.properties.url)
+      .toBeDefined();
     expect(resource.inputSchema.properties.resourceType.enum).toEqual([
       'issue', 'event', 'trace', 'ai_conversation', 'replay', 'monitor', 'snapshot', 'dashboard',
     ]);
     expect(resource.description).toContain('by type and ID');
-    expect(assessEntryTools(entry, capture.tools).find((tool) => tool.name === 'get_sentry_resource'))
-      .toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatibly') });
     expect(entry.tools.find((tool) => tool.name === 'update_issue').irreversible).toBe(true);
-    // On the 11-01 row every read assesses ok; the writer is unavailable to it.
-    expect(assessEntryTools(entry, capture.tools).filter((tool) => tool.verdict !== 'ok'))
-      .toEqual([expect.objectContaining({ name: 'update_issue', verdict: 'tool_unavailable' })]);
-    for (const tool of entry.tools) {
-      const found = measured.get(tool.upstreamName);
-      expect(found).toBeDefined();
-      if (tool.name !== 'get_sentry_resource') {
-        expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
-      }
-      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
-      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
-      expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read');
-    }
+    entry.tools.forEach((tool) => expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read'));
   });
 
   test('the Supabase pin follows the capture and excludes spend, code, and credential tools', () => {
