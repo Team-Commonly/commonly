@@ -36,18 +36,34 @@ const V2Lightbox: React.FC<V2LightboxProps> = ({ images, index, onClose }) => {
     return () => document.removeEventListener('keydown', onKey);
   }, [count, onClose]);
 
-  // Same signed-URL bridge as the thumbnails: the full image needs it too.
+  // Same signed-URL bridge as the thumbnails: the full image needs it too. An
+  // upload renders only from its signed URL. The raw `/api/uploads/...` path is
+  // relative to the app's origin, not the API's, and uploads need a token, so
+  // drawing it while the mint is in flight (or after it failed) requested a 404
+  // and flashed a broken image (D215 crawl, 2026-11-04).
   const [resolved, setResolved] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const isUpload = Boolean(image && /\/api\/uploads\//.test(image.src));
   useEffect(() => {
     let active = true;
     setResolved(null);
+    setFailed(false);
     if (!image || !/\/api\/uploads\//.test(image.src)) return undefined;
-    void getSignedAttachmentUrl(image.src).then((signed) => {
+    getSignedAttachmentUrl(image.src).then((signed) => {
+      if (!active) return;
       const safeSigned = messageImageUrl(signed);
-      if (active && safeSigned) setResolved(safeSigned);
+      if (safeSigned) setResolved(safeSigned);
+      else setFailed(true);
+    }).catch(() => {
+      // A mint that throws (offline, CORS, a dropped connection) is a failure
+      // too, not a blank overlay.
+      if (active) setFailed(true);
     });
     return () => { active = false; };
-  }, [image]);
+    // Keyed on the src: callers pass a fresh image object on every render, and
+    // re-minting on each one blanked the image.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [image?.src]);
 
   if (!image) return null;
 
@@ -61,9 +77,12 @@ const V2Lightbox: React.FC<V2LightboxProps> = ({ images, index, onClose }) => {
           <button type="button" className="v2-lightbox__nav v2-lightbox__nav--next" aria-label={t('podChat.lightbox.next')} onClick={(event) => { event.stopPropagation(); setCurrent((i) => (i + 1) % count); }}><ShellGlyph name="chevron-right" /></button>
         </>
       )}
-      {messageImageUrl(resolved || image.src) && (
-        <img className="v2-lightbox__image" src={resolved || image.src} alt={image.name} onClick={(event) => event.stopPropagation()} />
-      )}
+      {(() => {
+        const src = isUpload ? resolved : messageImageUrl(image.src);
+        if (src) return <img className="v2-lightbox__image" src={src} alt={image.name} onClick={(event) => event.stopPropagation()} />;
+        if (failed) return <p className="v2-lightbox__failed">{t('podChat.lightbox.failed')}</p>;
+        return null;
+      })()}
     </div>
   );
 };

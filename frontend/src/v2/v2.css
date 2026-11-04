@@ -4799,6 +4799,13 @@ body.modern-ui.v2-canvas {
   cursor: default;
 }
 
+.v2-lightbox__failed {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font: 500 13px/20px var(--v2-font);
+  cursor: default;
+}
+
 .v2-lightbox__name {
   position: absolute;
   top: 14px;
