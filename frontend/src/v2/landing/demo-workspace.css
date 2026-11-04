@@ -96,7 +96,7 @@
   place-items: center;
   border-radius: var(--v2-radius-sm);
   background: var(--v2-accent-fill, var(--v2-accent));
-  color: var(--v2-on-accent, #ffffff);
+  color: var(--v2-on-accent);
   font-family: var(--v2-font-display);
   font-weight: 800;
   font-size: 18px;
@@ -340,7 +340,7 @@
 .v2-root .v2-demo__card button.v2-decision-card__choice--primary {
   border-color: var(--v2-accent-fill-b);
   background: linear-gradient(180deg, var(--v2-accent-fill-a), var(--v2-accent-fill-b));
-  color: var(--v2-on-accent, #ffffff);
+  color: var(--v2-on-accent);
 }
 
 .v2-demo__pulse--dot {

@@ -47,7 +47,6 @@
    it carries the page measure like every band does, so the demo does not drift
    to the viewport edge once it stops being a child of the hero. */
 .v2-landing__hero-art,
-.v2-landing__trusted,
 .v2-landing__section,
 .v2-landing__wedge,
 .v2-landing__proof,
@@ -471,6 +470,9 @@
      why the ≤680 `padding: 24px 0` below can no longer eat the 48. Row B owns
      this rule and drops the grey here. */
   margin-top: 94px;
+  /* Full-bleed at every width: the hairlines run edge to edge and the marquee fades
+     out at both edges, so the strip takes no page gutter and is not in the gutter
+     lists above (it used to be listed, but this rule always won except at 681-760). */
   /* 22 above and below, and a floor rather than the board's spacing: with the
      min-height and `justify-content: center` doing the centring, this is what
      the reduced-motion wrap falls back to when the logos need a second line. */
@@ -1331,7 +1333,6 @@
   .v2-landing__bar,
   .v2-landing__hero,
   .v2-landing__hero-art,
-  .v2-landing__trusted,
   .v2-landing__section,
   .v2-landing__wedge,
   .v2-landing__proof,
