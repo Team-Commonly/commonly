@@ -1055,7 +1055,9 @@ class AgentMessageService {
     // in `warnings`; it never stops the post.
     const contract = normalizeMessageContract(
       { summary: options.summary, kind: options.kind },
-      (text: string) => AgentMessageService.sanitizeAgentContent(text, { agentName, instanceId, podId }),
+      // No `observe`: its log lines describe the reply, and a silenced summary
+      // is not a silenced reply.
+      (text: string) => AgentMessageService.sanitizeAgentContent(text),
     );
 
     // Suppress runtime model-failure errors. When a runtime's model chain is
@@ -2387,6 +2389,9 @@ class AgentMessageService {
         username,
         isBot: userId?.isBot === true,
         author_kind: msg.authorKind === 'kernel' || msg.author_kind === 'kernel' ? 'kernel' : null,
+        // D245: same as the PG read above.
+        ...(msg.summary ? { summary: msg.summary as string } : {}),
+        ...(msg.kind ? { kind: msg.kind as string } : {}),
         ...withSelf(userId?._id),
         createdAt: msg.createdAt as Date,
       };

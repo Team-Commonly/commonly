@@ -42,6 +42,9 @@ export interface LegacyMessageDoc {
   content: string;
   messageType?: string;
   authorKind?: 'kernel' | null;
+  // D245: the optional message contract; copied as stored.
+  summary?: string | null;
+  kind?: string | null;
   payload?: unknown;
   createdAt: Date;
 }
@@ -89,8 +92,9 @@ export async function ensureLegacyIdIndex(): Promise<boolean> {
 export async function copyOne(doc: LegacyMessageDoc): Promise<'moved' | 'present'> {
   const id = doc._id.toString();
   const inserted = await pool.query(
-    `INSERT INTO messages (pod_id, user_id, content, message_type, created_at, legacy_mongo_id, author_kind, payload)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO messages (pod_id, user_id, content, message_type, created_at, legacy_mongo_id, author_kind, payload,
+       summary, kind)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (legacy_mongo_id) DO NOTHING
      RETURNING id`,
     [
@@ -102,6 +106,8 @@ export async function copyOne(doc: LegacyMessageDoc): Promise<'moved' | 'present
       id,
       doc.authorKind === 'kernel' ? 'kernel' : null,
       doc.payload == null ? null : JSON.stringify(doc.payload),
+      doc.summary || null,
+      doc.kind || null,
     ],
   );
   let pgId = inserted.rows[0]?.id;

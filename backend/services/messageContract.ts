@@ -56,6 +56,9 @@ export const normalizeMessageContract = (
       if (!text) {
         warnings.push({ code: 'summary_empty', message: 'summary was empty after cleanup; it was not stored.' });
       } else {
+        // The cut runs after the sanitizer, so it can split a backticked
+        // span. That is safe only because a stored summary is never sanitized
+        // again; re-sanitizing it on read would need the cut to move first.
         const points = Array.from(text);
         if (points.length > SUMMARY_MAX_CHARS) {
           text = points.slice(0, SUMMARY_MAX_CHARS).join('').trimEnd();

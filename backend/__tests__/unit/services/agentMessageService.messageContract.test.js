@@ -9,6 +9,7 @@ const AgentIdentityService = require('../../../services/agentIdentityService');
 const socketConfig = require('../../../config/socket');
 const DMService = require('../../../services/dmService');
 const PGMessage = require('../../../models/pg/Message');
+const Message = require('../../../models/Message');
 const File = require('../../../models/File');
 const threadRootResolver = require('../../../services/threadRootResolver');
 
@@ -179,6 +180,45 @@ describe('message contract on an agent post (D245)', () => {
     expect(PGMessage.create).toHaveBeenCalledWith(POD, 'agent-user-1', 'Fixed the redirect.', 'text', null, null, null, undefined);
     const msg = emitted.find((e) => e.event === 'newMessage');
     expect(msg.payload).not.toHaveProperty('summary');
+  });
+
+  it('with no Postgres, the Mongo document and the broadcast carry the contract', async () => {
+    delete process.env.PG_HOST;
+    let constructed;
+    Message.mockImplementation((data) => {
+      constructed = data;
+      return {
+        ...data,
+        _id: 'mongo-message-1',
+        createdAt: new Date(),
+        save: jest.fn().mockResolvedValue(undefined),
+        populate: jest.fn().mockResolvedValue(undefined),
+      };
+    });
+
+    const result = await post({ summary: 'Fixed it', kind: 'result' });
+
+    expect(result.success).toBe(true);
+    expect(PGMessage.create).not.toHaveBeenCalled();
+    expect(constructed).toMatchObject({ summary: 'Fixed it', kind: 'result' });
+    const msg = emitted.find((e) => e.event === 'newMessage');
+    expect(msg.payload).toMatchObject({ summary: 'Fixed it', kind: 'result' });
+  });
+
+  it('with no Postgres, a post without the contract writes neither field', async () => {
+    delete process.env.PG_HOST;
+    let constructed;
+    Message.mockImplementation((data) => {
+      constructed = data;
+      return {
+        ...data, _id: 'mongo-message-2', createdAt: new Date(), save: jest.fn(), populate: jest.fn(),
+      };
+    });
+
+    await post({});
+
+    expect(constructed).not.toHaveProperty('summary');
+    expect(constructed).not.toHaveProperty('kind');
   });
 
   it('a summary that is only a sentinel is dropped, and the content still posts', async () => {
