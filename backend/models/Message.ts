@@ -15,6 +15,7 @@ export interface IMessage extends Document {
   authorKind?: MessageAuthorKind;
   // D245: the optional message contract (services/messageContract.ts).
   summary?: string | null;
+  receipt?: unknown;
   kind?: string | null;
   // Structured component payload (approval cards). Mixed like
   // AgentEvent.payload; null/absent for ordinary messages.
@@ -54,6 +55,8 @@ const MessageSchema = new Schema<IMessage>({
   // Ordinary human and agent posts remain null.
   authorKind: { type: String, enum: ['kernel', null], default: null },
   summary: { type: String },
+  // D245 item 4: self-reported BYO receipt (services/byoReceipt.ts).
+  receipt: { type: Object },
   kind: { type: String },
   payload: { type: Schema.Types.Mixed },
   metadata: { type: Schema.Types.Mixed },

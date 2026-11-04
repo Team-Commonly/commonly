@@ -1,3 +1,4 @@
+import type { ByoReceipt } from './byoReceipt';
 import type { DecisionRelayCard } from './decisionCardRelay';
 
 // eslint-disable-next-line global-require
@@ -64,6 +65,7 @@ const BARE_RUNTIME_ARTIFACTS = new Set(['RGCTX']);
 const { messageStoreUnavailable } = require('./messageStoreError');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { normalizeMessageContract } = require('./messageContract');
+const { normalizeReceipt } = require('./byoReceipt');
 
 const NO_REPLY_SENTINEL = 'NO_REPLY';
 // `trim()` does not remove every invisible Unicode code point. Normalize a
@@ -205,6 +207,9 @@ interface PostMessageOptions {
   // services/messageContract.ts here, warn-only; never read for @mentions.
   summary?: unknown;
   kind?: unknown;
+  // D245 item 4: what the agent's computer reports about how this reply was
+  // made (services/byoReceipt.ts). Stored as self-reported, warn-only.
+  receipt?: unknown;
 }
 
 interface PostTargetOptions {
@@ -226,7 +231,7 @@ interface PostTargetOptions {
   answeringMessageId?: string | null;
   authorKind?: 'kernel' | null;
   // D245: already normalized; stored beside the content.
-  contract?: { summary: string | null; kind: string | null } | null;
+  contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null;
 }
 
 interface HeartbeatFallbackOptions {
@@ -1059,6 +1064,8 @@ class AgentMessageService {
       // is not a silenced reply.
       (text: string) => AgentMessageService.sanitizeAgentContent(text),
     );
+    const { receipt, warnings: receiptWarnings } = normalizeReceipt(options.receipt);
+    const postWarnings = [...contract.warnings, ...receiptWarnings];
 
     // Suppress runtime model-failure errors. When a runtime's model chain is
     // exhausted (bad/missing provider auth, 429s, all fallbacks down) the
@@ -1640,7 +1647,9 @@ class AgentMessageService {
       noOutboundRelay,
       answeringMessageId,
       authorKind,
-      contract: contract.summary || contract.kind ? { summary: contract.summary, kind: contract.kind } : null,
+      contract: contract.summary || contract.kind || receipt
+        ? { summary: contract.summary, kind: contract.kind, ...(receipt ? { receipt } : {}) }
+        : null,
     });
 
     // The first answer an agent gives the workspace owner completes "Give your
@@ -1655,7 +1664,7 @@ class AgentMessageService {
     return {
       success: true,
       message: posted.message,
-      ...(contract.warnings.length ? { warnings: contract.warnings } : {}),
+      ...(postWarnings.length ? { warnings: postWarnings } : {}),
       summary: posted.summary
         ? {
           id: (posted.summary as { _id?: unknown })._id?.toString?.() || (posted.summary as { _id?: unknown })._id,
@@ -1794,7 +1803,7 @@ class AgentMessageService {
             podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null,
             payload?: unknown, resolvedThreadRootId?: number | null, answeringMessageId?: string | null,
             authorKind?: 'kernel' | null,
-            contract?: { summary: string | null; kind: string | null } | null,
+            contract?: { summary: string | null; kind: string | null; receipt?: ByoReceipt | null } | null,
           ): Promise<Record<string, unknown>>;
         };
         const newMessage = contract
@@ -1838,6 +1847,7 @@ class AgentMessageService {
           ...(contract ? {
             summary: (newMessage.summary as string | null) ?? contract.summary,
             kind: (newMessage.kind as string | null) ?? contract.kind,
+            ...(contract.receipt ? { receipt: newMessage.receipt ?? contract.receipt } : {}),
           } : {}),
           replyTo,
           userId: {
@@ -1876,6 +1886,7 @@ class AgentMessageService {
         ...(authorKind ? { authorKind } : {}),
         ...(contract?.summary ? { summary: contract.summary } : {}),
         ...(contract?.kind ? { kind: contract.kind } : {}),
+        ...(contract?.receipt ? { receipt: contract.receipt } : {}),
         ...(payload != null ? { payload } : {}),
       });
 
@@ -1976,6 +1987,7 @@ class AgentMessageService {
         // D245: the contract rides the broadcast to the same room as the
         // content, and only when the post carried it.
         ...(contract ? { summary: contract.summary, kind: contract.kind } : {}),
+        ...(contract?.receipt ? { receipt: contract.receipt } : {}),
       };
 
       io.to(`pod_${podId}`).emit('newMessage', formattedMessage);

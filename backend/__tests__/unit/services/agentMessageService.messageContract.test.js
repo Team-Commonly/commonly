@@ -175,6 +175,46 @@ describe('message contract on an agent post (D245)', () => {
     expect(contract).toEqual({ summary: 'a'.repeat(120), kind: null });
   });
 
+  it('stores a self-reported receipt beside the post and broadcasts it (D245 item 4)', async () => {
+    const receipt = {
+      adapter: 'claude', model: 'claude-opus-5-5', turns: 2, tools: ['Read'], durationMs: 9000,
+    };
+    PGMessage.create.mockResolvedValue({
+      id: '57603', content: 'Fixed the redirect.', message_type: 'text', created_at: new Date(),
+    });
+    const result = await post({ receipt });
+
+    expect(result.warnings).toBeUndefined();
+    expect(PGMessage.create.mock.calls[0][9]).toEqual({
+      summary: null, kind: null, receipt: { ...receipt, source: 'self-reported' },
+    });
+    const msg = emitted.find((e) => e.event === 'newMessage');
+    expect(msg.payload.receipt).toEqual({ ...receipt, source: 'self-reported' });
+  });
+
+  it('a bad receipt posts anyway, its warnings joining the contract warnings', async () => {
+    const result = await post({ kind: 'reasoning', receipt: 'claude' });
+
+    expect(result.success).toBe(true);
+    expect(result.warnings.map((w) => w.code)).toEqual(['kind_unknown', 'receipt_not_object']);
+    expect(PGMessage.create).toHaveBeenCalledWith(POD, 'agent-user-1', 'Fixed the redirect.', 'text', null, null, null, undefined);
+  });
+
+  it('with no Postgres, the Mongo document carries the receipt', async () => {
+    delete process.env.PG_HOST;
+    let constructed;
+    Message.mockImplementation((data) => {
+      constructed = data;
+      return {
+        ...data, _id: 'mongo-message-3', createdAt: new Date(), save: jest.fn(), populate: jest.fn(),
+      };
+    });
+
+    await post({ receipt: { adapter: 'codex' } });
+
+    expect(constructed.receipt).toEqual({ adapter: 'codex', source: 'self-reported' });
+  });
+
   it('a post without the contract runs the old create call, unchanged', async () => {
     await post({});
     expect(PGMessage.create).toHaveBeenCalledWith(POD, 'agent-user-1', 'Fixed the redirect.', 'text', null, null, null, undefined);

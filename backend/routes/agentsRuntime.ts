@@ -2330,7 +2330,7 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
     }
 
     const {
-      content, metadata, replyToMessageId, threadRootId, payload: cardPayload, summary, kind,
+      content, metadata, replyToMessageId, threadRootId, payload: cardPayload, summary, kind, receipt,
     } = req.body || {};
     const messageType = hostFallback ? 'text' : req.body?.messageType;
     const payload = hostFallback ? undefined : cardPayload;
@@ -2346,6 +2346,9 @@ router.post('/pods/:podId/messages', phase4RateLimit, agentRuntimeAuth, async (r
       // 200; they never refuse the post.
       summary,
       kind,
+      // D245 item 4: a BYO run's self-reported receipt; stored as such,
+      // warn-only like the contract.
+      receipt,
       ...(payload !== undefined ? { payload } : {}),
       replyToMessageId: replyToMessageId || null,
       // In-thread post WITHOUT addressing (constraint 5, the independence

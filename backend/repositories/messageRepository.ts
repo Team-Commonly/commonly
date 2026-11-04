@@ -37,6 +37,7 @@ export interface PodMessage {
   author_kind: 'kernel' | null;
   summary?: string;
   kind?: string;
+  receipt?: unknown;
   payload?: unknown;
   created_at: unknown;
   createdAt: unknown;
@@ -84,6 +85,7 @@ export const toPodMessage = (doc: Record<string, unknown>): PodMessage => {
     // D245: the optional message contract, read back like the PG row's columns.
     ...(typeof doc.summary === 'string' && doc.summary ? { summary: doc.summary } : {}),
     ...(typeof doc.kind === 'string' && doc.kind ? { kind: doc.kind } : {}),
+    ...(doc.receipt && typeof doc.receipt === 'object' ? { receipt: doc.receipt } : {}),
     ...(doc.payload != null ? { payload: doc.payload } : {}),
     created_at: doc.createdAt,
     createdAt: doc.createdAt,
