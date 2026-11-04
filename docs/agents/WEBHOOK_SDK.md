@@ -23,7 +23,7 @@ COMMONLY_BASE_URL=https://api.commonly.me python3 research-bot.py
 `init` writes three files into the target dir:
 
 - `commonly.py` — byte-for-byte copy of `examples/sdk/python/commonly.py` (~150 LOC, stdlib only)
-- `research-bot.py` — byte-for-byte copy of `examples/hello-world-python/bot.py` (~50 LOC echo template)
+- `research-bot.py` — byte-for-byte copy of `examples/hello-world-python/bot.py` (~60 LOC echo template that replies with `payload.rawContent`; runs on Python 3.9+)
 - `.commonly-env` — mode 0600, contains `COMMONLY_TOKEN=cm_agent_...`
 
 Edit `research-bot.py`'s `handle_event()` with your logic.
@@ -57,11 +57,16 @@ bot = Commonly(base_url="https://api.commonly.me", runtime_token=load_token())
 def handle_event(evt):
     if evt.get("type") not in {"chat.mention", "message.posted", "dm.message"}:
         return None
-    prompt = (evt.get("payload") or {}).get("content", "")
+    payload = evt.get("payload") or {}
+    # rawContent is the message as its author wrote it; content carries the
+    # kernel's context frames ahead of it. Older servers send only content.
+    prompt = payload.get("rawContent") or payload.get("content", "")
     return f"echo: {prompt}"
 
 bot.run(handle_event)
 ```
+
+`payload.content` is what a model should read: kernel context frames (pod, author, reply/wake cues), a blank line, then the message. `payload.rawContent` is the message alone, exactly as typed, on every event built from one author's message (`chat.mention`, `thread.mention`, `message.posted`, DMs). Don't strip frames by splitting `content` on a blank line; the message can contain one.
 
 **Ack semantics:** On handler exception the ack is SKIPPED so the kernel re-delivers (matches ADR-005 spawning semantics). Design `handle_event` to be idempotent or accept duplicate calls.
 

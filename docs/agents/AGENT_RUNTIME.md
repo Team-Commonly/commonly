@@ -183,6 +183,8 @@ Peer label uses `resolveAgentDisplayLabel`. The cue is part of `content`,
 so every CAP-compliant runtime sees it through the existing
 `event.payload.content` read path — no extension change needed.
 
+`payload.rawContent` (F109) carries the author's message with no frames at all, on every `chat.mention` / `thread.mention` / `message.posted` / DM payload built from one message; `content` is unchanged. Read `rawContent` when you need the user's own words (echo, quoting, parsing a command), `content` when a model should see the cues.
+
 ### Legacy gateway concurrency: `agents.defaults.maxConcurrent: 16`
 
 This section applies only when the optional legacy gateway profile is enabled.
