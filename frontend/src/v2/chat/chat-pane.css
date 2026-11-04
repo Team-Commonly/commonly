@@ -553,6 +553,10 @@
   .v2-root button.v2-thread__back,
   .v2-root button.v2-pod-header__invite,
   .v2-root button.v2-thread__inspector-toggle { position: relative; z-index: 1; }
+  /* D223 standing rule: these keys draw at 32x32 and take touches at 44 through
+     the ::after below, so they opt out of the primitives' 44px phone size. */
+  .v2-root button.v2-thread__back,
+  .v2-root button.v2-thread__inspector-toggle { width: 32px; height: 32px; }
   .v2-root button.v2-thread__back::after,
   .v2-root button.v2-pod-header__invite::after,
   .v2-root button.v2-thread__inspector-toggle::after {

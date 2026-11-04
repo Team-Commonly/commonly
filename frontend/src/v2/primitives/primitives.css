@@ -356,3 +356,12 @@ details.v2p-disc > summary .vl { font-size: 13.5px; color: var(--v2-ink-2); min-
   .v2p-cols { grid-template-columns: minmax(0, 1fr); }
   .v2p-tile { height: 104px; }
 }
+
+/* ---- phones (≤760, rulings 11-04): every key and segment is 44px tall, the
+   touch floor, so a page never sizes its own phone keys. Icon keys stay
+   square. Desktop keeps 32 icon / 28 small / 28 segment. ---- */
+@media (max-width: 760px) {
+  .v2p-b, .v2p-b-sm { height: 44px; }
+  .v2p-ib, .v2p-ib.v2p-b-sm { width: 44px; height: 44px; }
+  .v2p-seg button, .v2p-seg--sm button { height: 44px; }
+}

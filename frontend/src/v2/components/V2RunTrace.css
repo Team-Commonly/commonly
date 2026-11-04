@@ -1,12 +1,21 @@
-.v2-run-trace { max-width: 880px; min-width: 0; color: var(--v2-text-primary); }
-.v2-run-trace h1 { font-family: var(--v2-font-display); font-size: 32px; line-height: 1.1; letter-spacing: -0.03em; margin: 16px 0; overflow-wrap: anywhere; }
-.v2-run-trace h2 { font-family: var(--v2-font-display); font-size: 20px; margin: 0; }
-.v2-run-trace__back { color: var(--v2-text-primary); min-height: 32px; display: inline-flex; align-items: center; }
+/* Run trace (/v2/pods/:podId/runs/:runId), on the reference grammar (rulings
+   11-04): the shared page head bar (.v2-feature__header, the route's
+   v2-feature--bar) with back as its lead key, the body scrolling under it in a
+   760 column (.v2-feature__scroll, 12px phone gutter), cards on the D215 ring,
+   turn labels in mono 11.5. */
+.v2-run-trace { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; min-width: 0; color: var(--v2-text-primary); }
+.v2-run-trace .v2-run-trace__body { --v2-feature-col: 760px; }
+.v2-run-trace__head .v2-run-trace__back { flex: none; color: var(--v2-text-secondary); text-decoration: none; }
+/* A turn's label is Settings' section label, not a display heading. */
+.v2-run-trace h2 { margin: 0; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
 /* Under an agent reply: as quiet as a timestamp (d215 s-chat, trace link). */
 .v2-run-trace-link a { color: var(--v2-text-secondary); font-size: 12.5px; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
 .v2-run-trace-link a:hover { color: var(--v2-text-primary); text-decoration: underline; }
-.v2-run-trace__summary, .v2-run-trace__call { display: grid; gap: 8px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-lg); padding: 16px; margin: 12px 0; min-width: 0; }
-.v2-run-trace__meta, .v2-run-trace code, .v2-run-trace dd { font-family: var(--v2-font-mono); font-size: 12px; }
+/* A card is the D215 ring and soft shadow at r9, not a 1px border at r6. */
+.v2-run-trace__summary, .v2-run-trace__call { display: grid; gap: 8px; border-radius: var(--v2-r-9); background: var(--v2-surface); box-shadow: var(--v2-ring-card); padding: 16px; margin: 12px 0; min-width: 0; }
+.v2-run-trace__summary { margin-top: 0; }
+.v2-run-trace__meta { font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-run-trace code, .v2-run-trace dd { font-family: var(--v2-font-mono); font-size: 12px; }
 .v2-run-trace code, .v2-run-trace dd, .v2-run-trace__call strong { overflow-wrap: anywhere; }
 .v2-run-trace__turns { list-style: none; margin: 24px 0; padding: 0; }
 .v2-run-trace__foot { display: grid; gap: 4px; border-top: 1px solid var(--v2-border-soft); padding-top: 12px; margin-top: 24px; color: var(--v2-text-muted); font-size: 12px; line-height: 16px; }
@@ -15,22 +24,19 @@
 .v2-run-trace__turns > li { border-top: 1px solid var(--v2-border-soft); padding-top: 16px; margin-top: 16px; }
 .v2-run-trace dl { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 8px; margin: 8px 0; }
 .v2-run-trace dd { margin: 0; }
-.v2-run-trace button { min-height: 32px; padding: 0 12px; border: 1px solid var(--v2-border); border-radius: var(--v2-radius-sm); background: var(--v2-surface); color: var(--v2-text-primary); cursor: pointer; }
-.v2-run-trace button:focus-visible, .v2-run-trace a:focus-visible, .v2-run-trace-link a:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
+.v2-run-trace__body a:focus-visible, .v2-run-trace-link a:focus-visible { outline: 2px solid var(--v2-accent); outline-offset: 2px; }
 .v2-run-trace-link { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 @media (max-width: 760px) {
-  .v2-run-trace__back, .v2-run-trace-link a, .v2-run-trace button { min-height: 44px; }
+  .v2-run-trace-link a { min-height: 44px; }
   .v2-run-trace dl { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .v2-run-trace dd { margin-bottom: 8px; }
   .v2-run-trace-link { display: grid; gap: 0; }
 }
-/* d215 run-trace-after 390 (.mbody2--trace): 16px side gutters and no top
-   padding, so "Back to pod" is the first 44px row; replaces the shared 12px
-   feature body for this route only. The frame's tighter rhythm (paragraphs
-   flush, a turn's parts 8px apart) keeps the foot clear of the tab bar,
-   whose 58px .v2-feature already reserves. Desktop is unchanged. */
+/* d215 run-trace-after 390: a tighter rhythm (paragraphs flush, a turn's parts
+   8px apart) keeps the foot clear of the tab bar, whose 58px .v2-feature
+   already reserves. The gutter is the shared 12px of .v2-feature__scroll
+   (rulings 11-04); the back row moved into the head bar. Desktop is unchanged. */
 @media (max-width: 760px) {
-  .v2-feature--run-trace > .v2-feature__body { padding: 0 16px 16px; }
   .v2-feature--run-trace .v2-run-trace p { margin: 0; }
   .v2-feature--run-trace .v2-run-trace__turns > li { display: grid; gap: 8px; }
 }
