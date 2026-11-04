@@ -1012,6 +1012,48 @@ describe('a hosted-MCP grant through the broker', () => {
     expect(toolCalls()).toHaveLength(0);
   });
 
+  // F102: a write pin on a row whose recorded consent lacks the entry's
+  // writeScope. The mint refuses write-with-confirm on such a row; a grant
+  // minted before the scope was required meets the same refusal at the call.
+  describe('a write pin on a row that never consented to write', () => {
+    const bothTools = () => hostedGrant({
+      tools: ['linear.list_issues', 'linear.create_issue'], writeMode: 'write-with-confirm',
+    });
+    beforeEach(() => {
+      ENTRY.writeScope = 'write';
+      const row = hostedRow({ config: { entryId: 'linear', credentialRef: 'cred-1', grantedScope: 'read' } });
+      mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
+      upstreamTools = upstreamTools.filter((tool) => tool.name !== 'createIssue');
+    });
+    afterEach(() => { delete ENTRY.writeScope; });
+
+    it('refuses the call write_scope_required before parking an approval or calling the vendor', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(bothTools());
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue', args: { title: 'x' },
+      })).rejects.toMatchObject({ code: 'write_scope_required' });
+      expect(mockProposeAction).not.toHaveBeenCalled();
+      expect(toolCalls()).toHaveLength(0);
+      expect(refusedRow()).toMatchObject({ outcome: 'refused', reason: 'write_scope_required' });
+    });
+
+    it('leaves the write out of the listing and keeps the read', async () => {
+      mockRoomGrant.findOne.mockResolvedValue(bothTools());
+      const listed = await listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' });
+      expect(listed.map((definition) => definition.name)).toEqual(['linear.list_issues']);
+    });
+
+    it('reverse: on a row that consented to write, the same missing write is tool_unavailable', async () => {
+      const row = hostedRow({ config: { entryId: 'linear', credentialRef: 'cred-1', grantedScope: 'read write' } });
+      mockIntegration.findById.mockReturnValue({ ...row, lean: async () => row });
+      mockRoomGrant.findOne.mockResolvedValue(bothTools());
+      await expect(callTool({
+        grantId: 'grant-hosted', agentUserId: 'agent-a', tool: 'linear.create_issue', args: { title: 'x' },
+      })).rejects.toMatchObject({ code: 'tool_unavailable' });
+      expect(toolCalls()).toHaveLength(0);
+    });
+  });
+
   it('offers the hosted tool to the grant that names it, in both listing surfaces', async () => {
     mockRoomGrant.findOne.mockResolvedValue(hostedGrant());
     const listed = await listToolsForGrant({ grantId: 'grant-hosted', agentUserId: 'agent-a' });

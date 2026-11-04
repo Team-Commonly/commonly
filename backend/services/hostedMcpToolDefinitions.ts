@@ -28,6 +28,7 @@ import {
   type HostedMcpDriftCache,
   type HostedMcpDriftOutcome,
   type HostedMcpPinnedTool,
+  type HostedMcpUpstreamListing,
   type HostedMcpUpstreamTool,
   withoutWithheldArgs,
 } from './hostedMcpEntryService';
@@ -421,13 +422,22 @@ const listUpstreamTools = async (
   connectionId: string,
   deps: Pick<HostedMcpToolDeps, 'loadRow' | 'credentialFor' | 'fetcher'>,
   entries: HostedMcpEntry[],
-): Promise<HostedMcpUpstreamTool[]> => {
+): Promise<HostedMcpUpstreamListing> => {
   const row = await deps.loadRow(connectionId);
   if (!row) throw new RoomGrantError('connection_mismatch', 'hosted-MCP connection row no longer exists', 403);
   const entry = findHostedMcpEntry(entries, String(row.config?.entryId || ''));
   if (!entry) throw new RoomGrantError('connection_mismatch', 'hosted-MCP entry is unavailable', 403);
   const { token } = await deps.credentialFor(row);
-  return listHostedMcpTools(entry, token, deps.fetcher);
+  // The consent is read again after credentialFor, so a refresh it ran is the
+  // consent this list is taken under: the refresh commit records the scope its
+  // token came with (scopeAfterRefresh), which can add one to a legacy row with
+  // none recorded, or drop write. This runs once per drift-cache miss, not per call.
+  const consented = (await deps.loadRow(connectionId)) ?? row;
+  const grantedScope = consented.config?.grantedScope;
+  return {
+    tools: await listHostedMcpTools(entry, token, deps.fetcher),
+    grantedScope: typeof grantedScope === 'string' ? grantedScope : null,
+  };
 };
 
 /**
@@ -546,6 +556,11 @@ export const assertHostedToolUnchanged = async (
     );
   }
   const assessed = outcome.tools.find((candidate) => candidate.name === tool.name);
+  // The grant mint's own refusal, at the call: a grant minted before the row
+  // needed writeScope meets the same reconnect instruction (F102).
+  if (assessed?.verdict === 'not_granted') {
+    throw new RoomGrantError('write_scope_required', `${entry.id}.${tool.name}: ${assessed.detail}`, 403);
+  }
   if (!assessed || assessed.verdict !== 'ok') {
     const code = assessed?.verdict || 'tool_unavailable';
     throw new RoomGrantError(code, `${entry.id}.${tool.name}: ${assessed?.detail || 'tool is unavailable'}`, 403);

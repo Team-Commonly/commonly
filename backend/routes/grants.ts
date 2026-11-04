@@ -8,6 +8,7 @@ import Integration from '../models/Integration';
 import { isHostedMcpEntryHidden } from '../integrations/hostedMcp/visibility';
 import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
 import { operatorKeyAudienceRefusal } from '../services/hostedMcpOperatorKey';
+import { consentHoldsWriteScope } from '../services/hostedMcpEntryService';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 import ToolCall from '../models/ToolCall';
@@ -393,9 +394,8 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
     // made before its entry gained writes must reconnect before this mode.
     if (hosted && body.writeMode === 'write-with-confirm') {
       const scopedEntry = findHostedMcpEntry(HOSTED_MCP_ENTRIES, String(connection.config?.entryId || ''));
-      const writeScope = scopedEntry && 'writeScope' in scopedEntry ? scopedEntry.writeScope : undefined;
-      const grantedScope = connection.config?.grantedScope;
-      if (writeScope && !(typeof grantedScope === 'string' ? grantedScope : '').split(/\s+/).includes(writeScope)) {
+      // The same read the drift assessment uses for `not_granted` (F102).
+      if (scopedEntry && !consentHoldsWriteScope(scopedEntry, connection.config?.grantedScope)) {
         return res.status(403).json({
           error: 'write_scope_required',
           message: `reconnect ${scopedEntry?.title || 'this connection'} to enable writes before granting write-with-confirm`,

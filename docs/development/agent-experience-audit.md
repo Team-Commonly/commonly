@@ -4293,3 +4293,13 @@ When a pinned hosted-MCP tool was missing from a connection's `tools/list`, the 
 **Repair:** #3287. The four types only Commonly runs (`moltbot`, `internal`, `native`, `managed-agents`) are cloud whatever `host` says. `host: 'byo'` still makes a codex install BYO; webhook, claude-code and unknown types are BYO either way.
 
 **Lesson:** a gate must decide on the field the enforcing path reads. A label the caller supplies may narrow a decision, never override it. Before trusting a field in a gate, read what the consumer, here dispatch, actually reads.
+
+## 93. `tool_unavailable` called 26 writes missing when the row had never consented to them (2026-11-04, stack)
+
+*Origin: the post-deploy assessment of #3396 on 11-04. Sam's Linear row assessed 26 of 62 pins `tool_unavailable`.*
+
+Linear's entry gained `write` in #3235 on 11-01. Sam's row was connected before that, so it holds `read openid`, and Linear lists only the reads to that token. Every fresh assessment called the 26 write pins `tool_unavailable` and logged them as changed, which reads as the vendor having withdrawn half the catalogue. Nothing was withdrawn, and nothing was broken: the grant mint already refused write-with-confirm on that row with `write_scope_required`.
+
+**Repair:** F102. A write pin missing from the list, on a row whose recorded `grantedScope` lacks the entry's `writeScope`, assesses `not_granted`. It is not logged as a change, files no card, is hidden from listings, and a call refuses `write_scope_required`. The scope read is one helper (`consentHoldsWriteScope`) that the mint and the assessment share.
+
+**Lesson:** when a check's input depends on the caller's own consent, a verdict that says "missing" has to say whose doing it was. Read what the row consented to before calling a vendor's list short.

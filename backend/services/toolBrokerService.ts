@@ -1093,11 +1093,13 @@ export const listToolsForGrant = async (input: {
       try {
         await definition.assess(asHostedConnection(connections.get('hosted-mcp')!));
       } catch (error) {
-        // Drift and withdrawal hide that pin. A failed vendor list is not a
+        // Drift and withdrawal hide that pin, and so does a write the row
+        // never consented to (F102). A failed vendor list is not a
         // comparison (§3): leave the pins visible and let a call name the
         // provider failure. Do not retry once per pin during one listing.
         if (error instanceof RoomGrantError
-          && (error.code === 'tool_drift' || error.code === 'tool_unavailable')) continue;
+          && (error.code === 'tool_drift' || error.code === 'tool_unavailable'
+            || error.code === 'write_scope_required')) continue;
         if (error instanceof HostedMcpCredentialError
           || (error instanceof RoomGrantError
             && (error.code === 'provider_error'
