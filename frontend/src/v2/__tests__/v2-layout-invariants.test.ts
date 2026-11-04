@@ -167,11 +167,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const phone = css.slice(css.lastIndexOf('@media (max-width: 760px)'));
     expect(phone).toMatch(/\.v2-aprofile__cta-row \.v2-aprofile__btn \{[^}]*height: 44px/);
   });
-  test('/v2/profile: on a phone the header wraps and its one key takes the full row (d215 s-profile 390)', () => {
-    const profile = read('../components/V2PersonProfile.css');
-    const phone = profile.slice(profile.indexOf('@media (max-width: 760px)'));
-    expect(phone).toMatch(/\.v2-profile \.v2-profile__head \{[^}]*flex-wrap: wrap/);
-    expect(phone).toMatch(/\.v2-profile \.v2-profile__follow, \.v2-profile \.v2-profile__edit \{[^}]*flex: 1 0 100%/);
+  test('/v2/profile: the head is the shared bar, and on a phone its one key takes the full row (rulings 11-04)', () => {
+    // The page draws V2PageHead with the shared bar class and the wrap variant;
+    // the full-row key on a phone is the shared rule in v2.css, not a page copy.
+    expect(read('../components/V2PersonProfile.tsx')).toContain('className="v2-feature__header v2-page-head--wrap v2-profile__head"');
+    const v2 = readV2Css();
+    const phone = mediaBlockContaining(v2, '.v2-feature__header.v2-page-head--wrap > .v2-page-head__actions');
+    expect(ruleBody(v2, '.v2-feature__header.v2-page-head--wrap', { within: phone })).toContain('flex-wrap: wrap');
+    expect(ruleBody(v2, '.v2-feature__header.v2-page-head--wrap > .v2-page-head__actions', { within: phone })).toContain('flex: 1 0 100%');
   });
 
   test('/v2/activity and /v2/artifacts: the shared phone head bar left v2.css with both pages (d215 builds)', () => {
@@ -1730,19 +1733,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     const grid = ruleBody(teamCss, '.v2-team .v2-team__grid');
     expect(grid).toContain('grid-template-columns: repeat(3, minmax(0, 1fr))');
     expect(grid).toContain('gap: 12px');
-    expect(ruleBody(teamCss, '.v2-team .v2-team-card--needsYou')).toContain('border: 2px solid var(--v2-accent)');
+    // Rulings 11-04: the needs-you card is the 2px cobalt ring (.v2p-tc.picked), not a border.
+    expect(ruleBody(teamCss, '.v2-team .v2-team-card--needsYou')).toContain('box-shadow: 0 0 0 2px var(--v2-accent)');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark--needsYou')).toContain('var(--v2-accent)');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark--working')).toContain('var(--v2-text-primary)');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark--idle')).toContain('var(--v2-border-soft)');
-    // R06: Hire and Answer share the frame's ink key, the fill gradient
-    // (--v2-fill-*) with on-fill text, the same key as BYO's submit and
-    // Connect's CTA; Talk (and Bring your own) is the bordered plain key.
-    const ink = selectorRuleBody(teamCss, '\n.v2-team .v2-team__hire, .v2-team .v2-team-card__answer {');
-    expect(ink).toContain('background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
-    expect(ink).toContain('color: var(--v2-on-fill)');
-    const plain = selectorRuleBody(teamCss, '\n.v2-team .v2-team__byo, .v2-team .v2-team-card__talk {');
-    expect(plain).toContain('border: 1px solid var(--v2-key-edge)');
-    expect(plain).not.toContain('var(--v2-fill-');
+    // Rulings 11-04: Hire and Answer are the v2p ink key (.v2p-b-p), Talk and
+    // Bring your own the plain key (.v2p-b-s), both at the small size; the page
+    // sheet no longer draws its own keys.
+    expect(yourTeamPage).toContain('className="v2p-b v2p-b-p v2p-b-sm v2-team__hire"');
+    expect(yourTeamPage).toContain('className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer"');
+    expect(yourTeamPage).toContain('className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk"');
+    expect(yourTeamPage).toContain('className="v2p-b v2p-b-s v2p-b-sm v2-team__byo"');
+    expect(teamCss).not.toMatch(/\.v2-team__hire, \.v2-team \.v2-team-card__answer \{/);
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__status')).toContain('var(--v2-font-mono)');
     // ux-lead 66246: the ask wraps, the command wraps at mono 14, the name is display-18,
     // the mark is 600, and the title stacks over its meta on a phone.
@@ -1758,7 +1761,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // Read the rule inside the team's phone block — a `[\s\S]*?` regex across
     // the sheet passed with the rule deleted (sprint-review at 58fb4147).
     const teamPhone = teamPhoneBlock(teamCss);
-    expect(ruleBody(teamCss, '.v2-team .v2-team__heading', { within: teamPhone })).toContain('flex-direction: column');
+    expect(ruleBody(teamCss, '.v2-team .v2-team__head > .v2-page-head__identity', { within: teamPhone })).toContain('flex-direction: column');
     expect(ruleBody(teamCss, '.v2-team .v2-team__grid', { within: teamPhone })).toContain('repeat(1, minmax(0, 1fr))');
     // The retired surfaces: feature rows, standard cards with icon buttons, quiet rows, green dot.
     for (const css of [v2, teamCss]) {
@@ -3377,13 +3380,14 @@ describe('Bring your own agent onto Signal (TASK-166)', () => {
     expect(ruleBody(byoCss, '.v2-feature--byo .v2-byo__copy:hover')).toContain('var(--v2-surface-hover)');
     expect(ruleBody(byoCss, '.v2-feature--byo select.v2-byo__input:focus-visible')).toContain('var(--v2-focus-ring)');
   });
-  test('the submit button is the ink key, at radius 10 (item 1)', () => {
+  test('the submit button is the ink key, at the small key r8 (item 1, rulings 11-04)', () => {
     const submit = cssDeclarations(ruleBody(byoCss, '.v2-feature--byo .v2-byo__submit'));
     expect(submit.background).toBe('linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
     expect(submit.color).toBe('var(--v2-on-fill)');
     expect(submit.border).toBe('1px solid var(--v2-fill-edge)');
     const shared = cssDeclarations(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary'));
-    expect(shared['border-radius']).toBe('10px');
+    expect(shared['border-radius']).toBe('var(--v2-r-8)');
+    expect(shared.height).toBe('28px');
     expect(shared.cursor).toBe('pointer');
     // The old rules left v2.css with the lift.
     expect(v2).not.toContain('button.v2-byo__submit');
@@ -3625,9 +3629,9 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
     expect(decls(ruleBody(byoCss, '.v2-byo__stat-label')).font).toBe('500 11px/16px var(--v2-font-mono)');
   });
 
-  test('item 3: the secondary button is a control, at the frame key radius', () => {
+  test('item 3: the secondary button is a control, at the small key radius', () => {
     expect(decls(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__submit, .v2-feature--byo .v2-byo__secondary'))['border-radius'])
-      .toBe('10px');
+      .toBe('var(--v2-r-8)');
     expect(decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__secondary')).color).toBe('var(--v2-text-secondary)');
   });
 
@@ -3663,7 +3667,10 @@ describe('the BYO after-submit surfaces onto Signal (TASK-169)', () => {
     expect(decls(ruleBody(byoCss, '.v2-byo__add-computer-row')).background).toBe('var(--v2-ink)');
     expect(decls(ruleBody(byoCss, '.v2-feature--byo .v2-byo__add-computer-row .v2-byo__copy')).position).toBe('static');
     const addComputer = decls(ruleBody(byoCss, '.v2-byo__add-computer'));
-    expect(addComputer['border-radius']).toBe('var(--v2-radius-lg)');
+    // Rulings 11-04: a card is the D215 ring and soft shadow at r9, no 1px border.
+    expect(addComputer['border-radius']).toBe('var(--v2-r-9)');
+    expect(addComputer.border).toBeUndefined();
+    expect(addComputer['box-shadow']).toContain('0 0 0 1px var(--v2-border-soft)');
     expect(addComputer.background).toBe('var(--v2-bg-subtle)');
     // Each snippet is a flat section, not a card.
     const snippet = decls(selectorRuleBody(byoCss, '.v2-feature--byo .v2-byo__form, .v2-feature--byo .v2-byo__result, .v2-feature--byo .v2-byo__snippet'));
@@ -5754,7 +5761,8 @@ describe('Connect lifted from the d215 frame (R05)', () => {
     const negative = [...connectCss.matchAll(/\n([^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)]
       .flatMap((m) => m[1].split(',').map((sel) => sel.trim()))
       .filter(Boolean);
-    expect(negative).toEqual(['.v2-connect .v2-connect__lane h2']);
+    // The lane label is mono at 0 tracking now (rulings 11-04), so nothing needs a reset.
+    expect(negative).toEqual([]);
     for (const sel of negative) {
       expect(ruleBody(connectCss, `.v2-root:lang(zh) ${sel}`)).toContain('letter-spacing: 0');
     }
@@ -5779,12 +5787,14 @@ describe('Your team lifted from the d215 frame (R06)', () => {
   // erase the ring.
   test('the keyed controls stay class-only so the shared focus ring outranks their shadow', () => {
     expect(teamCss).not.toMatch(/button\.v2-team(__byo|__hire|-card__answer|-card__talk|-card__mark)/);
-    expect(selectorRuleBody(teamCss, '\n.v2-team .v2-team__byo, .v2-team .v2-team-card__talk {')).toContain('box-shadow: var(--v2-key-inset)');
+    // The keys are the v2p primitives, whose own :focus-visible ring outranks the key shadow.
+    expect(team).toContain('v2p-b v2p-b-s v2p-b-sm v2-team__byo');
   });
 
   test('on a phone, every drawn act and the avatar mark are 44px', () => {
+    // The acts are v2p keys: the primitives' phone rule sizes them (see the 44 phone-key test).
+    expect(team).not.toMatch(/className="v2-team(__byo|__hire|-card__answer|-card__talk)"/);
     const phone = mediaBlockContaining(teamCss, '.v2-team .v2-team__grid');
-    expect(selectorRuleBody(phone, '.v2-team .v2-team__byo, .v2-team .v2-team__hire, ')).toContain('height: 44px');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark', { within: phone })).toContain('width: 44px');
     expect(ruleBody(teamCss, '.v2-team .v2-team-card__mark', { within: phone })).toContain('height: 44px');
   });
@@ -5820,12 +5830,12 @@ describe('Your team lifted from the d215 frame (R06)', () => {
     const negative = [...teamCss.matchAll(/\n([^\n{}]+) \{[^}]*letter-spacing:\s*-[^;]+;/g)]
       .flatMap((m) => m[1].split(',').map((sel) => sel.trim()))
       .filter(Boolean);
+    // The page title is the shared bar's .v2-feature__title, reset in v2.css.
     expect(negative).toEqual([
-      '.v2-team .v2-team__title',
       '.v2-team .v2-team-card__name',
       '.v2-team .v2-team__empty-title',
     ]);
-    const start = teamCss.indexOf('.v2-root:lang(zh) .v2-team .v2-team__title');
+    const start = teamCss.indexOf('.v2-root:lang(zh) .v2-team .v2-team-card__name');
     expect(start).toBeGreaterThan(-1);
     const reset = teamCss.slice(start, teamCss.indexOf('}', start));
     expect(reset).toContain('letter-spacing: 0');
@@ -6008,6 +6018,93 @@ describe('sign-in handoff drawn from the d215 s-handoff frames', () => {
     // The backend redirects to /discord/*; without this mapping the card renders outside .v2-root, unstyled.
     expect(read('../../utils/legacyV2Path.ts')).toContain("if (pathname.startsWith('/discord/')) return `/v2${pathname}${search}`;");
     expect(read('../../index.tsx')).toContain('/^\\/discord\\/(?:callback|success|error)\\/?$/.test(bootPath)');
+
+// ui-audit-1104 findings 2–8, rulings 11-04: the secondary pages take the
+// reference surfaces' head bar, keys, edges and labels. jsdom cannot see any of
+// this; the browser check measured it, and these pin the rules it rests on.
+describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8)', () => {
+  const v2 = readV2Css();
+  const primitives = read('../primitives/primitives.css');
+  const app = read('../V2App.tsx');
+
+  test('finding 2: the head bar title is Bricolage 24/800 on desktop, not the Plex fallback', () => {
+    // The desktop rule (line start, outside any media query) names the display face.
+    const title = ruleBody(v2, '.v2-feature__title');
+    expect(title).toContain('font: 800 24px/1 var(--v2-font-display)');
+    expect(title).toContain('letter-spacing: -0.03em');
+    expect(v2.indexOf('\n.v2-feature__title {')).toBeLessThan(v2.indexOf('@media (max-width: 760px) {\n  .v2-feature__header {'));
+    // The bar: 64px, the title 28px in from the pane's 1px edge, a divider, the count in mono 11.5.
+    const bar = ruleBody(v2, '.v2-feature__header');
+    expect(bar).toContain('min-height: 64px');
+    expect(bar).toContain('padding: 0 20px 0 28px');
+    expect(bar).toContain('border-bottom: 1px solid var(--v2-border-soft)');
+    expect(ruleBody(v2, '.v2-feature__header .v2-page-head__meta')).toContain('font: 500 11.5px/16px var(--v2-font-mono)');
+  });
+
+  test('finding 3: Your team and both profiles draw the shared bar, and no head carries the "i" hint', () => {
+    expect(read('../components/V2YourTeamPage.tsx')).toContain('className="v2-feature__header v2-page-head--wrap v2-team__head"');
+    expect(read('../components/V2PersonProfile.tsx')).toContain('className="v2-feature__header v2-page-head--wrap v2-profile__head"');
+    expect(read('../agents/V2AgentProfile.tsx')).toContain("'v2-aprofile__hero v2-page-head v2-feature__header v2-page-head--wrap'");
+    // Each of those routes opts the pane out of the body inset so the bar meets the pane edge.
+    expect(app).toMatch(/'Your Team',[\s\S]{0,300}'v2-feature--bar'/);
+    expect(app).toContain("'v2-feature--bar v2-feature--profile'");
+    expect(app).toContain("'v2-feature--bar v2-feature--aprofile'");
+    expect(ruleBody(v2, '.v2-feature--bar > .v2-feature__body')).toContain('padding: 0');
+    expect(ruleBody(v2, '.v2-feature__scroll')).toContain('overflow-y: auto');
+    // BYO and Connect moved the hint to an intro line.
+    expect(app).not.toMatch(/<V2FeaturePage title="Connect" hint=/);
+    expect(read('../components/V2AgentBYO.tsx')).not.toMatch(/\n\s*hint=\{/);
+    expect(read('../components/V2ConnectPage.tsx')).toContain("<p className=\"v2-connect__intro\">{t('connect.intro')}</p>");
+  });
+
+  test('finding 5: every v2p key and segment is 44px tall on a phone', () => {
+    const phone = mediaBlockContaining(primitives, '.v2p-b, .v2p-b-sm {');
+    expect(ruleBody(primitives, '.v2p-b, .v2p-b-sm', { within: phone })).toContain('height: 44px');
+    const icon = ruleBody(primitives, '.v2p-ib, .v2p-ib.v2p-b-sm', { within: phone });
+    expect(icon).toContain('width: 44px');
+    expect(icon).toContain('height: 44px');
+    expect(ruleBody(primitives, '.v2p-seg button, .v2p-seg--sm button', { within: phone })).toContain('height: 44px');
+    // After the desktop sizes, so the phone rule wins at equal specificity.
+    for (const desktop of ['\n.v2p-b-sm {', '\n.v2p-ib.v2p-b-sm {', '\n.v2p-seg--sm button {']) {
+      expect(primitives.indexOf(phone)).toBeGreaterThan(primitives.indexOf(desktop));
+    }
+  });
+
+  test('finding 6: the board header icon keys never shrink on a phone', () => {
+    const phone = mediaBlockContaining(boardCss, '.v2-feature--board .v2-board__key--icon { flex: none; }');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__key--icon', { within: phone })).toContain('flex: none');
+  });
+
+  test('finding 4: the in-app text keys are the 28px small key at r8', () => {
+    const board = ruleBody(boardCss, '.v2-feature--board .v2-board__key');
+    expect(board).toContain('height: 28px');
+    expect(board).toContain('border-radius: var(--v2-r-8)');
+    const connect = selectorRuleBody(read('../components/V2ConnectPage.css'), '.v2-connect .v2-connect__cta, .v2-connect .v2-connect__secondary {');
+    expect(connect).toContain('height: 28px');
+    expect(connect).toContain('border-radius: var(--v2-r-8)');
+    const aprofile = ruleBody(read('../agents/v2-agent-profile.css'), '.v2-aprofile .v2-aprofile__btn');
+    expect(aprofile).toContain('height: 28px');
+    expect(aprofile).toContain('border-radius: var(--v2-r-8)');
+  });
+
+  test('finding 7: cards are the D215 ring at r9 and lanes are r12, never a 1px border', () => {
+    const card = ruleBody(read('../components/V2YourTeamPage.css'), '.v2-team .v2-team-card');
+    expect(card).toContain('border-radius: var(--v2-r-9)');
+    expect(card).toContain('box-shadow: 0 0 0 1px var(--v2-border-soft)');
+    expect(card).not.toMatch(/(^|[\s;{])border:/);
+    expect(ruleBody(read('../components/V2ConnectPage.css'), '.v2-connect .v2-connect__lane')).toContain('border-radius: var(--v2-r-12)');
+    expect(ruleBody(read('../components/V2PersonProfile.css'), '.v2-profile .v2-profile__list')).toContain('border-radius: var(--v2-r-12)');
+    expect(ruleBody(read('../agents/v2-agent-profile.css'), '.v2-aprofile .v2-aprofile__card')).toContain('border-radius: var(--v2-r-12)');
+  });
+
+  test('finding 8: section labels are Settings\' mono 11.5/500 muted, and counts are 11.5', () => {
+    const mono = 'font: 500 11.5px/16px var(--v2-font-mono)';
+    expect(ruleBody(read('../components/V2PersonProfile.css'), '.v2-profile .v2-profile__lane h2')).toContain(mono);
+    expect(ruleBody(read('../agents/v2-agent-profile.css'), '.v2-aprofile .v2-aprofile__card-title')).toContain(mono);
+    expect(ruleBody(read('../components/V2ConnectPage.css'), '.v2-connect .v2-connect__lane h2')).toContain(mono);
+    expect(ruleBody(read('../components/V2PersonProfile.css'), '.v2-profile .v2-profile__meta')).toContain(mono);
+    expect(ruleBody(read('../agents/v2-agent-profile.css'), '.v2-aprofile .v2-aprofile__meta')).toContain('11.5px');
+    expect(ruleBody(boardCss, '.v2-feature--board .v2-board__subtitle')).toContain('500 11.5px/1 var(--v2-font-mono)');
   });
 });
 

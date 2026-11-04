@@ -5,10 +5,13 @@
    together) and the frame's `.app.m` phone rules sit in the page's 760px phone
    query. Scoped to .v2-connect, the page's root. */
 .v2-connect { display: flex; flex-direction: column; gap: 16px; max-width: 960px; margin: 0 auto; }
-.v2-connect .v2-connect__lane { display: flex; flex-direction: column; gap: 14px; padding: 20px; border-radius: 14px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-connect .v2-connect__intro { margin: 0 4px; font-size: 13.5px; line-height: 20px; color: var(--v2-text-secondary); }
+/* A lane is a list surface: the D215 ring at r12 (rulings 11-04), not a pane's r14. */
+.v2-connect .v2-connect__lane { display: flex; flex-direction: column; gap: 14px; padding: 20px; border-radius: var(--v2-r-12); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
 .v2-connect .v2-connect__lane-heading { display: flex; align-items: baseline; gap: 10px; }
 .v2-connect .v2-connect__number { flex: none; font: 500 11.5px/1 var(--v2-font-mono); color: var(--v2-accent-text); }
-.v2-connect .v2-connect__lane h2 { margin: 0; font: 800 16px/1.25 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); }
+/* Section labels are Settings' mono 11.5/500 muted (rulings 11-04), not a display heading. */
+.v2-connect .v2-connect__lane h2 { margin: 0; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-connect .v2-connect__code-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .v2-connect .v2-connect__code-card { min-width: 0; overflow: hidden; border-radius: 12px; background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
 .v2-connect .v2-connect__code-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--v2-border-soft); font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
@@ -20,7 +23,8 @@
 .v2-connect .v2-connect__link { display: inline-flex; align-items: center; min-height: 32px; font: 600 13px/20px var(--v2-font); color: var(--v2-accent-text); text-decoration: none; }
 .v2-connect .v2-connect__lane > .v2-connect__link, .v2-connect .v2-connect__lane > .v2-connect__secondary { align-self: flex-start; }
 .v2-connect .v2-connect__actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.v2-connect .v2-connect__cta, .v2-connect .v2-connect__secondary { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 13px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; text-decoration: none; cursor: pointer; }
+/* The v2p small key's size (.v2p-b-sm, 28 at r8); 44 on phones below. */
+.v2-connect .v2-connect__cta, .v2-connect .v2-connect__secondary { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 10px; border-radius: var(--v2-r-8); font: 600 12.5px/1 var(--v2-font); white-space: nowrap; text-decoration: none; cursor: pointer; }
 .v2-connect .v2-connect__cta { color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
 .v2-connect .v2-connect__secondary { color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
 @media (max-width: 760px) {
@@ -47,6 +51,3 @@
   background: var(--v2-ink-hover);
 }
 .v2-connect .v2-connect__link:hover { text-decoration: underline; }
-/* CJK never takes negative letter-spacing (TASK-055); this entry left the
-   v2.css :lang(zh) reset list with the rest of the page. */
-.v2-root:lang(zh) .v2-connect .v2-connect__lane h2 { letter-spacing: 0; }

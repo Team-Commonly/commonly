@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { useV2Api } from '../hooks/useV2Api';
 import V2Avatar from './V2Avatar';
+import V2PageHead from './V2PageHead';
 import './V2PersonProfile.css';
 
 /*
@@ -116,10 +117,12 @@ const V2PersonProfile: React.FC = () => {
   if (state !== 'ready' || !profile) {
     return (
       <div className="v2-profile">
-        <p className="v2-profile__note">
-          {state === 'notFound' ? t('profile.notFound') : t('profile.loadError')}{' '}
-          <Link to="/v2">{t('profile.backHome')}</Link>
-        </p>
+        <div className="v2-feature__scroll v2-profile__body">
+          <p className="v2-profile__note">
+            {state === 'notFound' ? t('profile.notFound') : t('profile.loadError')}{' '}
+            <Link to="/v2">{t('profile.backHome')}</Link>
+          </p>
+        </div>
       </div>
     );
   }
@@ -162,12 +165,12 @@ const V2PersonProfile: React.FC = () => {
 
   let action: React.ReactNode = null;
   if (isSelf) {
-    action = <Link className="v2-profile__edit" to="/v2/settings">{t('profile.editProfile')}</Link>;
+    action = <Link className="v2p-b v2p-b-s v2p-b-sm v2-profile__edit" to="/v2/settings">{t('profile.editProfile')}</Link>;
   } else if (!profile.isBot) {
     action = (
       <button
         type="button"
-        className={`v2-profile__follow${following ? ' v2-profile__follow--on' : ''}`}
+        className={`v2p-b ${following ? 'v2p-b-s' : 'v2p-b-p'} v2p-b-sm v2-profile__follow${following ? ' v2-profile__follow--on' : ''}`}
         aria-pressed={following}
         disabled={followBusy}
         onClick={toggleFollow}
@@ -179,33 +182,41 @@ const V2PersonProfile: React.FC = () => {
 
   return (
     <div className="v2-profile">
-      <header className="v2-profile__head">
-        <span className="v2-profile__avatar">
-          <V2Avatar
-            name={name}
-            src={profile.profilePicture || undefined}
-            size="lg"
-            kind={avatarKind}
-            seed={profile._id}
-          />
-        </span>
-        <div className="v2-profile__id">
-          <h1 className="v2-profile__name">{name}</h1>
-          <span className="v2-profile__meta">
+      {/* The shared page head bar (.v2-feature__header): avatar, name and handle, the act at the end. */}
+      <V2PageHead
+        className="v2-feature__header v2-page-head--wrap v2-profile__head"
+        titleClassName="v2-feature__title v2-profile__name"
+        lead={(
+          <span className="v2-profile__avatar">
+            <V2Avatar
+              name={name}
+              src={profile.profilePicture || undefined}
+              size="lg"
+              kind={avatarKind}
+              seed={profile._id}
+            />
+          </span>
+        )}
+        title={name}
+        metaClassName="v2-profile__meta"
+        meta={(
+          <>
             {profile.username ? `@${profile.username}` : null}
             {profile.username && joined ? ' · ' : null}
             {joined ? t('profile.joined', { date: joined }) : null}
-          </span>
-          {!profile.isBot && (
-            <span className="v2-profile__counts" data-testid="profile-counts">
-              {t('profile.followers', { count: profile.followersCount || 0 })}
-              {' · '}
-              {t('profile.followingCount', { count: profile.followingCount || 0 })}
-            </span>
-          )}
-        </div>
-        {action}
-      </header>
+          </>
+        )}
+        actions={action ?? undefined}
+      />
+      <div className="v2-feature__scroll v2-profile__body">
+      {/* The follow counts are the page's intro line, under the bar. */}
+      {!profile.isBot && (
+        <p className="v2-profile__counts" data-testid="profile-counts">
+          {t('profile.followers', { count: profile.followersCount || 0 })}
+          {' · '}
+          {t('profile.followingCount', { count: profile.followingCount || 0 })}
+        </p>
+      )}
       {followError && <p className="v2-profile__note" role="alert">{t('profile.followError')}</p>}
 
       {profile.isBot ? (
@@ -249,6 +260,7 @@ const V2PersonProfile: React.FC = () => {
           )}
         </>
       )}
+      </div>
     </div>
   );
 };

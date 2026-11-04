@@ -2440,6 +2440,7 @@
     }
   },
   "connect": {
+    "intro": "MCP uses an agent token created during setup.",
     "cliHeading": "Connect the CLI or MCP",
     "copy": "Copy",
     "copied": "Copied",

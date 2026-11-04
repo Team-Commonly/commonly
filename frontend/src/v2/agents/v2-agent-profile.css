@@ -20,22 +20,26 @@
 .v2-aprofile .v2-aprofile__brand .v2-rail__brand-icon svg { width: 16px; height: 16px; }
 .v2-aprofile .v2-aprofile__nav { display: flex; align-items: center; gap: 18px; }
 .v2-aprofile .v2-aprofile__navlink { font-size: 13.5px; font-weight: 500; color: var(--v2-text-secondary); text-decoration: none; }
-.v2-aprofile .v2-aprofile__btn { box-sizing: border-box; cursor: pointer; flex: none; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 14px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; text-decoration: none; }
+/* The v2p small key's size (.v2p-b-sm: 28 at r8, rulings 11-04); 44 on phones below. */
+.v2-aprofile .v2-aprofile__btn { box-sizing: border-box; cursor: pointer; flex: none; display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 10px; border-radius: var(--v2-r-8); font: 600 12.5px/1 var(--v2-font); white-space: nowrap; text-decoration: none; }
 .v2-aprofile .v2-aprofile__btn--primary { color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
 .v2-aprofile .v2-aprofile__btn--ghost { color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
 .v2-aprofile .v2-aprofile__hero { display: flex; align-items: flex-start; gap: 16px; }
 .v2-aprofile .v2-aprofile__avatar { flex: none; display: inline-flex; position: relative; }
 .v2-aprofile .v2-aprofile__avatar-button { all: unset; cursor: pointer; flex: none; display: inline-flex; position: relative; border-radius: 14px; }
-.v2-aprofile .v2-aprofile__avatar .v2-avatar,
-.v2-aprofile .v2-aprofile__avatar-button .v2-avatar { width: 56px; height: 56px; border-radius: 14px; font-size: 18px; }
+/* The public hero's 56px face; in the app shell the bar draws memory's 34 (below). */
+.v2-aprofile--public .v2-aprofile__avatar .v2-avatar,
+.v2-aprofile--public .v2-aprofile__avatar-button .v2-avatar { width: 56px; height: 56px; border-radius: 14px; font-size: 18px; }
 .v2-aprofile .v2-aprofile__avatar-hint { position: absolute; right: -4px; bottom: -4px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); font: 600 12px/18px var(--v2-font); color: var(--v2-text-secondary); }
 .v2-aprofile .v2-aprofile__hero-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .v2-aprofile .v2-aprofile__name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
-.v2-aprofile .v2-aprofile__name { margin: 0; font: 800 24px/1.15 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); overflow-wrap: anywhere; }
+.v2-aprofile .v2-aprofile__name { margin: 0; color: var(--v2-text-primary); overflow-wrap: anywhere; }
+/* Signed out the hero sets its own title; in the shell it is the bar's .v2-feature__title. */
+.v2-aprofile--public .v2-aprofile__name { font: 800 24px/1.15 var(--v2-font-display); letter-spacing: -0.03em; }
 .v2-aprofile .v2-aprofile__runtime { font: 600 11px/18px var(--v2-font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--v2-text-secondary); background: var(--v2-surface-tint); padding: 0 7px; border-radius: 5px; }
 .v2-aprofile .v2-aprofile__badge { font: 600 12px/18px var(--v2-font); color: var(--v2-accent-text); background: var(--v2-accent-soft); padding: 0 8px; border-radius: 9px; }
 .v2-aprofile .v2-aprofile__desc { margin: 2px 0 0; font-size: 14px; line-height: 20px; color: var(--v2-text-secondary); }
-.v2-aprofile .v2-aprofile__meta { margin: 2px 0 0; font: 500 12px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-aprofile .v2-aprofile__meta { margin: 2px 0 0; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-aprofile .v2-aprofile__keys { flex: none; display: flex; gap: 8px; }
 /* A long agent name truncates inside its key instead of overflowing it. */
 .v2-aprofile .v2-aprofile__keys .v2-aprofile__btn { min-width: 0; max-width: 100%; }
@@ -43,9 +47,10 @@
 .v2-aprofile .v2-agent-settings__tabs { display: flex; gap: 24px; margin: 0; border-bottom: 0; box-shadow: inset 0 -1px 0 var(--v2-border-soft); }
 .v2-aprofile .v2-agent-settings__tabs > * { padding: 10px 2px; font-size: 14px; color: var(--v2-text-secondary); text-decoration: none; }
 .v2-aprofile .v2-agent-settings__tabs [aria-current="page"] { color: var(--v2-text-primary); font-weight: 600; border-bottom: 0; box-shadow: inset 0 -2px 0 var(--v2-accent); }
-.v2-aprofile .v2-aprofile__card { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px; border-radius: 14px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
-.v2-aprofile .v2-aprofile__card-title { display: flex; align-items: baseline; gap: 8px; margin: 0; font: 800 16px/1.25 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); }
-.v2-aprofile .v2-aprofile__count { font: 500 12px/16px var(--v2-font-mono); letter-spacing: 0; color: var(--v2-text-muted); }
+/* A section is a ringed list at r12 with Settings' mono 11.5 label (rulings 11-04). */
+.v2-aprofile .v2-aprofile__card { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px; border-radius: var(--v2-r-12); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-aprofile .v2-aprofile__card-title { display: flex; align-items: baseline; gap: 8px; margin: 0; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-aprofile .v2-aprofile__count { font: 500 11.5px/16px var(--v2-font-mono); letter-spacing: 0; color: var(--v2-text-muted); }
 .v2-aprofile .v2-aprofile__owner-tag { margin-left: auto; font: 500 11.5px/16px var(--v2-font-mono); letter-spacing: 0; color: var(--v2-text-muted); }
 .v2-aprofile .v2-aprofile__list { list-style: none; margin: 0; padding: 0; }
 .v2-aprofile .v2-aprofile__list li + li { border-top: 1px solid var(--v2-border-soft); }
@@ -106,8 +111,8 @@
 
 /* The avatar picker opens in the page flow under the header it edits, so it
    never covers the profile and fits a phone without a sideways scroll. */
-.v2-aprofile .v2-aprofile__avatar-picker { padding: 16px 20px; border-radius: 14px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
-.v2-aprofile .v2-aprofile__avatar-title { margin: 0 0 12px; font: 800 16px/1.25 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); }
+.v2-aprofile .v2-aprofile__avatar-picker { padding: 16px 20px; border-radius: var(--v2-r-12); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
+.v2-aprofile .v2-aprofile__avatar-title { margin: 0 0 12px; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-aprofile .v2-aprofile__avatar-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 8px; max-width: 560px; }
 .v2-aprofile .v2-aprofile__avatar-choice { all: unset; box-sizing: border-box; cursor: pointer; aspect-ratio: 1; padding: 2px; border: 2px solid transparent; border-radius: 50%; line-height: 0; }
 .v2-aprofile .v2-aprofile__avatar-choice img { width: 100%; height: 100%; border-radius: 50%; }
@@ -120,9 +125,26 @@
 .v2-aprofile .v2-aprofile__avatar-cancel { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; margin: 12px 0 0; height: 34px; padding: 0 14px; border-radius: 10px; font: 600 13px/1 var(--v2-font); color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
 /* CJK never takes negative letter-spacing (TASK-055). */
 .v2-root:lang(zh) .v2-aprofile .v2-aprofile__name,
-.v2-root:lang(zh) .v2-aprofile .v2-aprofile__card-title,
 .v2-root:lang(zh) .v2-aprofile .v2-aprofile__empty-title,
 .v2-root:lang(zh) .v2-aprofile .v2-aprofile__brand { letter-spacing: 0; }
+
+/* In the app shell (the route passes v2-feature--bar v2-feature--aprofile) the
+   hero is the shared page head bar, .v2-feature__header: avatar, name and one
+   meta line, the keys at the end, as agent memory draws it. The rest scrolls
+   under it in a centred 760 column. Signed out, the public layout above stands. */
+.v2-feature--aprofile .v2-aprofile { flex: 1 1 auto; }
+.v2-feature--aprofile .v2-aprofile__main { max-width: none; flex: 1 1 auto; min-height: 0; gap: 0; }
+.v2-feature--aprofile .v2-aprofile__hero { min-height: 76px; align-items: center; gap: 12px; }
+.v2-feature--aprofile .v2-aprofile__hero-text { gap: 5px; }
+.v2-feature--aprofile .v2-aprofile__body { --v2-feature-col: 760px; display: flex; flex-direction: column; gap: 16px; }
+.v2-aprofile--public .v2-aprofile__body { display: contents; }
+.v2-aprofile .v2-aprofile__intro { margin: 0 4px; font-size: 13.5px; }
+@media (max-width: 760px) {
+  .v2-feature--aprofile .v2-aprofile__hero { min-height: 52px; gap: 0 10px; }
+  .v2-feature--aprofile .v2-aprofile__hero .v2-avatar { width: 24px; height: 24px; }
+  .v2-feature--aprofile .v2-aprofile__hero-text { gap: 3px; padding: 8px 0; }
+  .v2-feature--aprofile .v2-aprofile__body { gap: 10px; }
+}
 
 /* At 390 every control is at least 44px to touch, including the ones the
    frame draws smaller. Last in the file so it outranks the resets above. */

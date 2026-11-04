@@ -7,6 +7,7 @@ import V2Avatar from './V2Avatar';
 import './V2YourTeamPage.css';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import V2Fold from './V2Fold';
+import V2PageHead from './V2PageHead';
 
 /**
  * Your Team — direction C, built to `YourTeam.dc.html` (canvas: Workspace in C)
@@ -477,18 +478,18 @@ const V2YourTeamPage: React.FC = () => {
         )}
         <div className="v2-team-card__actions">
           {needsReconnect && (a.installedBy === String(user?._id) || user?.role === 'admin') ? (
-            <button type="button" className="v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
+            <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer" onClick={() => navigate(`/v2/agents/byo?pod=${encodeURIComponent(a.podId || '')}&name=${encodeURIComponent(a.name)}&instanceId=${encodeURIComponent(a.instanceId || 'default')}&reconnect=1${a.runtime?.runtimeType === 'wrapper' ? '&mode=machine' : ''}`)}>
               {t('agentConnection.reconnect')}
             </button>
           ) : null}
           {!needsReconnect && state === 'needsYou' && (
-            <button type="button" className="v2-team-card__answer" onClick={() => handleAnswer(a)}>
+            <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team-card__answer" onClick={() => handleAnswer(a)}>
               {t('yourTeam.card.answer')}
             </button>
           )}
           {!needsReconnect && <button
             type="button"
-            className="v2-team-card__talk"
+            className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk"
             onClick={(e) => handleTalk(a, e)}
             disabled={opening === key}
             aria-label={t('yourTeam.card.talkToAria', { name: display })}
@@ -502,24 +503,27 @@ const V2YourTeamPage: React.FC = () => {
 
   return (
     <div className="v2-team">
-      <header className="v2-team__head">
-        <div className="v2-team__heading">
-          <h1 className="v2-team__title">{t('yourTeam.title')}</h1>
-          <span className="v2-team__meta">
-            {loading
-              ? t('yourTeam.loading')
-              : t('yourTeam.head.meta', { count: counts.agents, agents: counts.agents, working: counts.working, needsYou: counts.needsYou })}
-          </span>
-        </div>
-        <div className="v2-team__actions">
-          <button type="button" className="v2-team__byo" onClick={() => navigate('/v2/agents/byo')}>
-            {t('yourTeam.actions.bringYourOwn')}
-          </button>
-          <button type="button" className="v2-team__hire" onClick={handleHire}>
-            {t('yourTeam.actions.hire')}
-          </button>
-        </div>
-      </header>
+      {/* The shared page head bar (.v2-feature__header), as Settings and Connectors draw it. */}
+      <V2PageHead
+        className="v2-feature__header v2-page-head--wrap v2-team__head"
+        titleClassName="v2-feature__title v2-team__title"
+        title={t('yourTeam.title')}
+        metaClassName="v2-team__meta"
+        meta={loading
+          ? t('yourTeam.loading')
+          : t('yourTeam.head.meta', { count: counts.agents, agents: counts.agents, working: counts.working, needsYou: counts.needsYou })}
+        actions={(
+          <>
+            <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team__byo" onClick={() => navigate('/v2/agents/byo')}>
+              {t('yourTeam.actions.bringYourOwn')}
+            </button>
+            <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-team__hire" onClick={handleHire}>
+              {t('yourTeam.actions.hire')}
+            </button>
+          </>
+        )}
+      />
+      <div className="v2-feature__scroll v2-team__body">
 
       {!isEntitled && (
         <div className="v2-team__notice">
@@ -533,10 +537,10 @@ const V2YourTeamPage: React.FC = () => {
                 onChange={(e) => setRedeemCode(e.target.value)}
                 autoFocus
               />
-              <button type="submit" className="v2-team__hire" disabled={redeeming || !redeemCode.trim()}>
+              <button type="submit" className="v2p-b v2p-b-p v2p-b-sm v2-team__hire" disabled={redeeming || !redeemCode.trim()}>
                 {redeeming ? t('yourTeam.redeem.unlocking') : t('yourTeam.redeem.unlock')}
               </button>
-              <button type="button" className="v2-team__byo" onClick={() => { setRedeemOpen(false); setRedeemError(null); }}>
+              <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team__byo" onClick={() => { setRedeemOpen(false); setRedeemError(null); }}>
                 {t('yourTeam.actions.cancel')}
               </button>
               {redeemError && <span className="v2-team__redeem-error" role="alert">{redeemError}</span>}
@@ -576,7 +580,7 @@ const V2YourTeamPage: React.FC = () => {
           <p className="v2-team-card__desc">{t('yourTeam.own.text')}</p>
           <code className="v2-team-card__command">{t('yourTeam.own.command')}</code>
           <div className="v2-team-card__actions">
-            <button type="button" className="v2-team-card__talk" onClick={() => navigate('/v2/agents/byo')}>
+            <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-team-card__talk" onClick={() => navigate('/v2/agents/byo')}>
               {t('yourTeam.own.setup')}
             </button>
           </div>
@@ -601,6 +605,7 @@ const V2YourTeamPage: React.FC = () => {
           </V2Fold>
         </section>
       )}
+      </div>
     </div>
   );
 };

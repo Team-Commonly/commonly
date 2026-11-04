@@ -4,37 +4,42 @@
    translated to --v2-* (so light, dark and auto switch together) and the
    frame's `.app.m` phone rules sit in the 760px phone query. Scoped to
    .v2-profile, the page's root. */
-.v2-profile { display: flex; flex-direction: column; gap: 16px; max-width: 760px; margin: 0 auto; }
-.v2-profile .v2-profile__head { display: flex; align-items: center; gap: 16px; }
+/* The head is the shared bar (V2PageHead, .v2-feature__header, the route's
+   v2-feature--bar) with the avatar as its lead, as agent memory draws it; the
+   body scrolls under it in a centred 760 column. Keys are the v2p small keys
+   (28 at r8, 44 on phones). Rulings 11-04. */
+.v2-profile { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.v2-profile .v2-profile__head { min-height: 76px; }
+.v2-profile .v2-profile__head > .v2-page-head__identity { flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; }
+.v2-profile .v2-profile__head .v2-profile__name { max-width: 100%; overflow-wrap: anywhere; }
+.v2-profile .v2-profile__body { --v2-feature-col: 760px; display: flex; flex-direction: column; gap: 16px; }
 .v2-profile .v2-profile__avatar { flex: none; display: inline-flex; }
-.v2-profile .v2-profile__avatar .v2-avatar { width: 56px; height: 56px; border-radius: 14px; font-size: 18px; }
-.v2-profile .v2-profile__id { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
-.v2-profile .v2-profile__name { margin: 0; font: 800 24px/1.15 var(--v2-font-display); letter-spacing: -0.03em; color: var(--v2-text-primary); overflow-wrap: anywhere; }
-.v2-profile .v2-profile__meta { font: 500 12px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
-.v2-profile .v2-profile__counts { font-size: 13px; line-height: 18px; color: var(--v2-text-secondary); }
-.v2-profile .v2-profile__follow, .v2-profile .v2-profile__edit { all: unset; box-sizing: border-box; cursor: pointer; flex: none; display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 14px; border-radius: 10px; font: 600 13px/1 var(--v2-font); white-space: nowrap; text-decoration: none; }
-.v2-profile .v2-profile__follow { color: var(--v2-on-fill); background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b)); border: 1px solid var(--v2-fill-edge); }
-.v2-profile .v2-profile__follow--on, .v2-profile .v2-profile__edit { color: var(--v2-text-primary); background: linear-gradient(180deg, var(--v2-key-a), var(--v2-key-b)); border: 1px solid var(--v2-key-edge); box-shadow: var(--v2-key-inset); }
-.v2-profile .v2-profile__lane { display: flex; flex-direction: column; gap: 10px; padding: 18px 20px; border-radius: 14px; background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
-.v2-profile .v2-profile__lane h2 { margin: 0; font: 800 16px/1.25 var(--v2-font-display); letter-spacing: -0.02em; color: var(--v2-text-primary); }
-.v2-profile .v2-profile__list { list-style: none; margin: 0; padding: 0; }
+.v2-profile .v2-profile__meta { font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-profile .v2-profile__counts { margin: 0 4px; font-size: 13.5px; line-height: 20px; color: var(--v2-text-secondary); }
+.v2-profile .v2-profile__follow, .v2-profile .v2-profile__edit { flex: none; text-decoration: none; }
+/* A section is Settings' grammar: a mono label over a ringed r12 list (rulings 11-04). */
+.v2-profile .v2-profile__lane { display: flex; flex-direction: column; min-width: 0; }
+.v2-profile .v2-profile__lane h2 { margin: 0 4px 8px; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
+.v2-profile .v2-profile__list { list-style: none; margin: 0; padding: 0 16px; border-radius: var(--v2-r-12); background: var(--v2-surface); box-shadow: inset 0 0 0 1px var(--v2-border-soft); }
 .v2-profile .v2-profile__list li + li { border-top: 1px solid var(--v2-border-soft); }
-.v2-profile .v2-profile__row { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 44px; padding: 6px 0; color: var(--v2-text-primary); text-decoration: none; }
+.v2-profile .v2-profile__row { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 48px; padding: 6px 0; color: var(--v2-text-primary); text-decoration: none; }
 .v2-profile .v2-profile__row-title { font-size: 14px; font-weight: 600; color: var(--v2-text-primary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2-profile .v2-profile__row-text { font-size: 13.5px; line-height: 19px; color: var(--v2-ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v2-profile .v2-profile__row-meta { flex: none; font: 500 11.5px/16px var(--v2-font-mono); color: var(--v2-text-muted); }
 .v2-profile .v2-profile__note { margin: 0; font-size: 13.5px; line-height: 20px; color: var(--v2-text-secondary); }
 .v2-profile .v2-profile__note a { color: var(--v2-accent-text); font-weight: 600; text-decoration: none; }
 @media (max-width: 760px) {
-  .v2-profile { gap: 10px; }
-  .v2-profile .v2-profile__head { flex-wrap: wrap; gap: 12px 14px; }
-  .v2-profile .v2-profile__follow, .v2-profile .v2-profile__edit { flex: 1 0 100%; height: 44px; font-size: 14px; }
-  .v2-profile .v2-profile__lane { padding: 14px 16px; }
+  .v2-profile .v2-profile__body { gap: 10px; }
+  /* The bar's 52px row: 24px avatar, the name, the handle; the act takes the row under it. */
+  .v2-profile .v2-profile__head { min-height: 52px; gap: 0 10px; }
+  .v2-profile .v2-profile__head .v2-avatar { width: 24px; height: 24px; }
+  .v2-profile .v2-profile__head > .v2-page-head__identity { gap: 3px; padding: 8px 0; }
+  .v2-profile .v2-profile__list { padding: 0 12px; }
   .v2-profile .v2-profile__row-text { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 
 /* Live behaviour the frame does not draw. */
-.v2-profile .v2-profile__follow:hover:not(:disabled) { border-color: var(--v2-ink-hover); background: var(--v2-ink-hover); }
+.v2-profile .v2-profile__follow:not(.v2-profile__follow--on):hover:not(:disabled) { border-color: var(--v2-ink-hover); background: var(--v2-ink-hover); }
 .v2-profile .v2-profile__follow--on:hover:not(:disabled),
 .v2-profile .v2-profile__edit:hover { border-color: var(--v2-border-strong); background: var(--v2-surface-hover); color: var(--v2-text-primary); }
 .v2-profile .v2-profile__follow:disabled { cursor: default; opacity: 0.7; }
@@ -44,5 +49,4 @@
 .v2-profile a.v2-profile__row:hover .v2-profile__row-title { color: var(--v2-accent-text); }
 .v2-profile .v2-profile__note a:hover { text-decoration: underline; }
 /* CJK never takes negative letter-spacing (TASK-055). */
-.v2-root:lang(zh) .v2-profile .v2-profile__name,
-.v2-root:lang(zh) .v2-profile .v2-profile__lane h2 { letter-spacing: 0; }
+.v2-root:lang(zh) .v2-profile .v2-profile__name { letter-spacing: 0; }

@@ -201,7 +201,7 @@ const V2AgentProfileRoute: React.FC = () => {
   return (
     <V2AgentProfile
       shell={isAuthenticated
-        ? (page) => <V2AuthenticatedShell>{feature(t('common.pageTitle.agentProfile'), page, false, false)}</V2AuthenticatedShell>
+        ? (page) => <V2AuthenticatedShell>{feature(t('common.pageTitle.agentProfile'), page, false, false, 'v2-feature--bar v2-feature--aprofile')}</V2AuthenticatedShell>
         : undefined}
     />
   );
@@ -346,6 +346,7 @@ const V2App: React.FC = () => {
                     /* V2YourTeamPage owns its own header — suppress the
                        generic V2FeaturePage chrome to avoid stacked titles. */
                     false,
+                    'v2-feature--bar',
                   )}
                 />
                 <Route
@@ -366,7 +367,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="connect"
-                  element={<V2FeaturePage title="Connect" hint="MCP uses an agent token created during setup."><V2ConnectPage /></V2FeaturePage>}
+                  element={<V2FeaturePage title="Connect"><V2ConnectPage /></V2FeaturePage>}
                 />
                 <Route
                   path="connectors"
@@ -409,7 +410,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="profile/:id"
-                  element={feature(t('common.pageTitle.profile'), <V2PersonProfile />, false, false, 'v2-feature--profile')}
+                  element={feature(t('common.pageTitle.profile'), <V2PersonProfile />, false, false, 'v2-feature--bar v2-feature--profile')}
                 />
                 <Route
                   path="admin/integrations/global"
