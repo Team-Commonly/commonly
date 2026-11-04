@@ -114,7 +114,8 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Discord integration created successfully!'));
     expect(screen.queryByRole('combobox')).toBeNull();
     act(() => { jest.advanceTimersByTime(2000); });
-    expect(screen.getByText('at /pods/study/p1')).toBeInTheDocument();
+    expect(screen.getByText('at /v2/pods/p1')).toBeInTheDocument();
+    expect(axios.get).not.toHaveBeenCalledWith('/api/pods/p1', expect.anything());
   });
 
   test('a failed channel fetch and a failed create each land in the alert row', async () => {

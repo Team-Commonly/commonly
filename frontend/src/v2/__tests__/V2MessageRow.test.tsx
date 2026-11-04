@@ -58,7 +58,7 @@ describe('V2MessageRow', () => {
         pods: [{ id: 'reviews-pod', name: 'Reviews' }] }],
     }} /></MemoryRouter>);
     expect(screen.getByRole('status')).toHaveTextContent("rhea isn't in this pod. Ask in:");
-    expect(screen.getByRole('link', { name: 'Reviews' })).toHaveAttribute('href', '/v2/pods/chat/reviews-pod');
+    expect(screen.getByRole('link', { name: 'Reviews' })).toHaveAttribute('href', '/v2/pods/reviews-pod');
   });
 
   it('keeps the runtime beside the agent name before its timestamp', () => {
