@@ -46,6 +46,12 @@ describe('GET /api/health services', () => {
     expect(res.body.checks.services.smtp2go).toEqual({ configured: false });
   });
 
+  it('reports SMTP2GO as not configured without its API key, even with a sender', async () => {
+    process.env.SMTP2GO_FROM_EMAIL = 'noreply@example.test';
+    const res = await request(buildApp()).get('/api/health');
+    expect(res.body.checks.services.smtp2go).toEqual({ configured: false });
+  });
+
   it('no longer reports a SendGrid row', async () => {
     process.env.SENDGRID_API_KEY = 'unused';
     const res = await request(buildApp()).get('/api/health');
