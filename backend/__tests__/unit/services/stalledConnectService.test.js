@@ -182,7 +182,7 @@ describe('stalledConnectService.scan', () => {
   });
 
   it.each([['linux', 'Linux'], ['windows', 'Windows']])(
-    'from a %s browser, says the listener answers @mentions only on a Mac, if it ran there',
+    'from a %s browser, says the listener is tested on a Mac and not verified there yet',
     async (os, label) => {
       setup();
       copiedListenerOn(os);
@@ -190,7 +190,7 @@ describe('stalledConnectService.scan', () => {
       const { content } = mockPost.mock.calls[0][0];
       // Conditional: the page shows this command only on its Mac tab, so the
       // browser's OS is not proof of where it ran.
-      expect(content).toContain(`If you ran it on ${label}, that's likely why: the listener answers @mentions only from a Mac for now.`);
+      expect(content).toContain(`If you ran it on ${label}, that may be why. The listener is tested on a Mac. On Linux and Windows it isn't verified yet, and fixes are on the way.`);
       // The server cannot tell Claude Code from Codex, so no adapter-specific cause.
       expect(content).not.toContain('sandbox');
       expect(content).toContain('Run `commonly agent run ai1-agent` on a Mac');
@@ -351,11 +351,30 @@ describe('stalledConnectService.scan', () => {
       });
       await scan({ now: NOW });
       const { content } = mockPost.mock.calls[0][0];
-      expect(content).toContain(`you first opened this page on ${label}`);
+      expect(content).toContain(`You first opened this page on ${label}.`);
       expect(content).toContain('in a Terminal on a Mac');
       expect(content).not.toContain('but not the listener command');
     },
   );
+
+  // docs/agents/byo-support-matrix.md: Linux and Windows are unverified, not
+  // impossible, so no nudge may say the listener runs only on a Mac, and none
+  // may suggest --unsandboxed before a real Windows walk exists.
+  it.each([
+    ['cli', 'linux'], ['cli', 'windows'], ['mcp', 'linux'], ['mcp', 'windows'],
+  ])('a %s copy from a %s browser claims no Mac-only listener and offers no --unsandboxed', async (kind, os) => {
+    setup();
+    copiedKinds({
+      byoCommandCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE),
+      byoCommandType: kind,
+      ...(kind === 'mcp' ? { byoMcpCopiedAt: new Date(OLD_TOKEN.getTime() + 8 * MINUTE) } : {}),
+      byoOpenedOs: os,
+    });
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain("isn't verified yet");
+    expect(content).not.toMatch(/only (from|on) a Mac|Mac only|--unsandboxed/i);
+  });
 
   it('holds fire inside the patience window', async () => {
     setup({ installs: [install({ runtimeTokens: [{ createdAt: FRESH_TOKEN }] })] });
@@ -777,7 +796,7 @@ describe('keeping the forward promise', () => {
 
     expect(r.resolved).toHaveLength(1);
     const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('runs only from a Mac for now');
+    expect(content).toContain("The listener is tested on a Mac. On Linux and Windows it isn't verified yet");
     expect(content).toContain('Run it here');
   });
 
