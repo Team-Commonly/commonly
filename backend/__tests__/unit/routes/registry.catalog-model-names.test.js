@@ -34,8 +34,12 @@ describe('catalog model names', () => {
   // model is Claude (served through LiteLLM, whose key the backend never holds)
   // read as not ready wherever Gemini is off.
   it('no preset requires a model-provider key for its default model', () => {
+    const isModelProviderKey = (r) => /model provider/i.test(r.purpose || '');
+    // Positive control: the requirement this replaced still matches.
+    expect(isModelProviderKey({ key: 'GEMINI_API_KEY', purpose: 'Default model provider' })).toBe(true);
+    expect(isModelProviderKey({ key: 'TAVILY_API_KEY', purpose: 'Web research retrieval' })).toBe(false);
     const offenders = PRESET_DEFINITIONS.flatMap((p) => (p.apiRequirements || [])
-      .filter((r) => /model provider/i.test(r.purpose || ''))
+      .filter(isModelProviderKey)
       .map((r) => `${p.id}: ${r.key}`));
     expect(offenders).toEqual([]);
   });
