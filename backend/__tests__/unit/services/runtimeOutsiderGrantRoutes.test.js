@@ -115,6 +115,18 @@ test('claim release uses the stored message pod, not a forged body pod', async (
     .toEqual({ routeClass: 'pod_write', podId: 'pod-a' });
 });
 
+test('an agent message delete is a pod write in the stored message pod (F141)', async () => {
+  const Message = require('../../../models/pg/Message');
+  Message.findById.mockResolvedValueOnce({ pod_id: 'pod-b' });
+  const req = {
+    baseUrl: '/api/messages', method: 'DELETE', route: { path: '/:id' },
+    params: { id: 'message-b' }, body: { podId: 'pod-a' },
+  };
+  expect(await classifyRuntimeOutsiderGrantRoute(req))
+    .toEqual({ routeClass: 'pod_write', podId: 'pod-b' });
+  expect(Message.findById).toHaveBeenLastCalledWith('message-b');
+});
+
 test('unscoped posts resolve no pod and broker calls retain their own gate', async () => {
   const classify = (baseUrl, method, routePath, body = {}) =>
     classifyRuntimeOutsiderGrantRoute({ baseUrl, method, route: { path: routePath }, body, params: {} });

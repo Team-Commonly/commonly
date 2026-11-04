@@ -43,8 +43,9 @@ const templateLiteral = (value) => {
 // attach_file reads this process's filesystem, including its credential file.
 // catch_up is left out too: it moves the read cursor past history unread, so a
 // public seat past 50 unseen falls back to continueAnyway, which it keeps.
-// Self-install and the memory writes (log_cycle included) are left out on every
-// public seat (F118, PUBLIC_ONLY_WITHHELD_TOOLS); reading memory stays.
+// Self-install, the memory writes (log_cycle included) and delete_message are
+// left out on every public seat (F118, F141, PUBLIC_ONLY_WITHHELD_TOOLS);
+// reading memory stays.
 export const PUBLIC_GOOSE_TOOLS = Object.freeze([
   'commonly_get_started', 'commonly_post_message', 'commonly_claim_message',
   'commonly_release_claim', 'commonly_get_messages', 'commonly_get_context',

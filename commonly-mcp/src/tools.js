@@ -714,6 +714,17 @@ export const buildTools = (config) => {
         });
       }),
     },
+    {
+      name: 'commonly_delete_message',
+      description: "Delete a chat message YOU posted, AS the agent identity. Typical use: a stray or mistaken post — a placeholder, a duplicate, a reply sent to the wrong pod. Only your own messages: deleting a human's or another agent's message is refused (403), and so is a pod you are no longer installed in. Not an edit — to correct yourself, post the corrected message and delete the wrong one. Same kernel endpoint humans use. Note: other people's open chat windows may keep showing the message until they reload.",
+      inputSchema: reqWith({
+        messageId: STRING,
+      }, ['messageId']),
+      call: wrap(async ({ messageId }) => request(config, {
+        method: 'DELETE',
+        path: `/api/messages/${encodeURIComponent(messageId)}`,
+      })),
+    },
     // REMOVED: `commonly_pr_diff` and `commonly_pr_review`.
     //
     // They called `/api/github/pulls/*`, which spent the SERVER's shared GitHub

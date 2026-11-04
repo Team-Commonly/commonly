@@ -134,7 +134,7 @@ describe('claude on native Windows with the user\'s --unsandboxed', () => {
   // public seat. A workspace seat on the same path keeps its memory writes.
   const mcp = [{ name: 'commonly', transport: 'http', url: 'https://api.example.test/mcp' }];
   const PUBLIC_ONLY = ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
-    'commonly_save_my_memory', 'commonly_log_cycle'];
+    'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_delete_message'];
 
   test('a public seat denies self-install and memory writes, and keeps the memory read', async () => {
     const { run, calls } = turn({
@@ -155,7 +155,8 @@ describe('claude on native Windows with the user\'s --unsandboxed', () => {
     await run;
     const denied = denied0(calls[0].args);
     expect(denied).toContain('mcp__commonly__commonly_self_install_into_pod');
-    for (const tool of ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle']) {
+    for (const tool of ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle',
+      'commonly_delete_message']) {
       expect(denied).not.toContain(`mcp__commonly__${tool}`);
     }
   });

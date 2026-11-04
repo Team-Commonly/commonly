@@ -117,6 +117,8 @@ test('public launch isolates HOME and config, strips shadows, and never serializ
         'commonly_write_agent_memory', 'mcp__commonly__commonly_write_agent_memory',
         'commonly_save_my_memory', 'mcp__commonly__commonly_save_my_memory',
         'commonly_log_cycle', 'mcp__commonly__commonly_log_cycle',
+        // F141: nor delete_message, which could erase its replies to an injection.
+        'commonly_delete_message', 'mcp__commonly__commonly_delete_message',
       ]));
     expect(args[args.indexOf('--exclude-tools') + 1]).not.toContain('commonly_read_agent_memory');
     // The public prompt names no save tool the seat is not offered.

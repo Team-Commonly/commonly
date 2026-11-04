@@ -68,5 +68,29 @@ export async function callerHasPodWriteAccess(
   return isListedPodMember(pod, userId);
 }
 
-module.exports = { getCallerId, callerHasPodWriteAccess };
+/**
+ * Does an agent caller hold an ACTIVE AgentInstallation in this pod?
+ *
+ * `callerHasPodWriteAccess` answers "may it write here" and, for agents, falls
+ * back to `Pod.members` — a membership row that an uninstall can leave behind.
+ * A destructive agent write (deleting its own message, F141) must not ride that
+ * fallback, so it asks this as well. Reads the installations agentRuntimeAuth
+ * resolved for this request (`status: 'active'`, the token's agent identity),
+ * so it is a lookup on the request, not a second query shape.
+ *
+ * False for a human caller: humans have no installations. Callers branch on
+ * `req.agentUser` before asking.
+ */
+export function agentHoldsActiveInstallationInPod(
+  podId: string,
+  req: PodAccessReq & { agentInstallations?: Array<{ podId?: unknown; status?: unknown }> },
+): boolean {
+  if (!req.agentUser?._id) return false;
+  return (req.agentInstallations || []).some((installation) => (
+    String(installation?.podId || '') === String(podId)
+    && (installation?.status === undefined || installation.status === 'active')
+  ));
+}
+
+module.exports = { getCallerId, callerHasPodWriteAccess, agentHoldsActiveInstallationInPod };
 Object.assign(module.exports, exports);

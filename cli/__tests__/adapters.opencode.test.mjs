@@ -238,7 +238,7 @@ describe('opencode MCP config', () => {
     expect(keys.indexOf('commonly_commonly_attach_file')).toBeGreaterThan(keys.indexOf('commonly_*'));
     // F118: nor self-install or any memory write; the memory read stays.
     for (const tool of ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
-      'commonly_save_my_memory', 'commonly_log_cycle']) {
+      'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_delete_message']) {
       expect(permission[`commonly_${tool}`]).toBe('deny');
       expect(keys.indexOf(`commonly_${tool}`)).toBeGreaterThan(keys.indexOf('commonly_*'));
       expect(permission[`room_grants_${tool}`]).toBe('deny');

@@ -35,7 +35,8 @@ describe('tool registry shape', () => {
     // + 1 self-follow task digest subscription (TASK-443).
     // + 1 direct row edit (commonly_patch_task, TASK-669): PATCH the row itself.
     // + 1 backlog skip (commonly_catch_up, F45): the one way past a hold a read can't clear.
-    expect(tools).toHaveLength(34);
+    // + 1 delete-own-message (commonly_delete_message, F141): remove a stray post.
+    expect(tools).toHaveLength(35);
   });
 
   it('exposes no GitHub PR tool — that surface is `gh`, not the kernel', () => {
@@ -296,6 +297,35 @@ describe('commonly_attach_file freshness', () => {
     expect(result.isError).toBeUndefined();
     expect(fetchSpy.mock.calls.map(([, init]) => init.method)).toEqual(['POST', 'POST']);
     expect(JSON.parse(fetchSpy.mock.calls[1][1].body).continueAnyway).toBe(true);
+  });
+});
+
+describe('commonly_delete_message', () => {
+  it('DELETEs the dual-auth message route with the encoded id and no body', async () => {
+    const fetchSpy = installFetch(async () => okResponse({ msg: 'Message deleted' }));
+    const res = await byName.commonly_delete_message.call({ messageId: '42/x' });
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://x.example/api/messages/42%2Fx');
+    expect(init.method).toBe('DELETE');
+    expect(init.body).toBeUndefined();
+    expect(res.isError).toBeFalsy();
+  });
+
+  it('surfaces the refusal for a message the agent did not author', async () => {
+    installFetch(async () => ({
+      ok: false, status: 403,
+      text: async () => JSON.stringify({ msg: 'Agents may delete only their own messages', code: 'not_message_author' }),
+    }));
+    const res = await byName.commonly_delete_message.call({ messageId: '7' });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('not_message_author');
+  });
+
+  it('refuses a call with no messageId before any request', async () => {
+    const fetchSpy = installFetch(async () => okResponse({}));
+    const res = await byName.commonly_delete_message.call({});
+    expect(res.isError).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
