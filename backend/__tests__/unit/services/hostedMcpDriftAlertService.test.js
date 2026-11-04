@@ -19,6 +19,12 @@ const unavailable = (name) => ({
   detail: `this connection's tools/list does not include ${name}`,
 });
 const ok = (name) => ({ name, namespacedName: `sentry.${name}`, verdict: 'ok' });
+const notGranted = (name) => ({
+  name,
+  namespacedName: `sentry.${name}`,
+  verdict: 'not_granted',
+  detail: "this connection's consent does not include write; reconnect Sentry to enable writes",
+});
 
 const setup = (over = {}) => {
   const readConfig = jest.fn(async () => config);
@@ -132,6 +138,18 @@ describe('a drifted pin becomes one card for the operator', () => {
     await alert(row, sentry, [unavailable('update_issue'), ok('search_issues')]);
     expect(record).not.toHaveBeenCalled();
     expect(readConfig).not.toHaveBeenCalled();
+  });
+
+  // F102: a write pin the row never consented to is the row's consent, not a
+  // vendor change, and files nothing beside a real drift either.
+  test('a not-granted write files nothing, and is left out of a drift card', async () => {
+    const { alert, record, readConfig } = setup();
+    await alert(row, sentry, [notGranted('update_issue'), ok('search_issues')]);
+    expect(record).not.toHaveBeenCalled();
+    expect(readConfig).not.toHaveBeenCalled();
+    await alert(row, sentry, [notGranted('update_issue'), drifted('search_issues')]);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record.mock.calls[0][0].detail).not.toContain('update_issue');
   });
 });
 

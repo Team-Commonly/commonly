@@ -24,7 +24,8 @@
  *   a schedule rather than on every `tools/list` or `tools/call`.
  *
  * Drift is a named refusal, never a silent change: a pinned tool absent from
- * this row's list is `tool_unavailable`, and one whose schema or annotations
+ * this row's list is `tool_unavailable` (or `not_granted`, for a write pin the
+ * row never consented to: F102), and one whose schema or annotations
  * moved incompatibly is `tool_drift` until a PR re-pins it. A compatible
  * read-schema change keeps the pin and emits a fresh-assessment signal. Only
  * `tool_drift` reaches an operator (hostedMcpDriftAlertService): absence can
@@ -154,7 +155,30 @@ export interface HostedMcpUpstreamTool {
  */
 export type HostedMcpToolProjection = Omit<HostedToolDefinition, 'call' | 'assess'>;
 
-export type HostedMcpToolVerdict = 'ok' | 'tool_unavailable' | 'tool_drift';
+/**
+ * `not_granted` (F102): a write pin this row's list omits because the row's
+ * recorded consent lacks the entry's writeScope. It is the row's consent, not
+ * the vendor, so it files no drift card and logs no assessment line; a call
+ * refuses `write_scope_required`, which tells the owner to reconnect.
+ */
+export type HostedMcpToolVerdict = 'ok' | 'tool_unavailable' | 'tool_drift' | 'not_granted';
+
+/** What the row consented to, as recorded at connect and narrowed on refresh. */
+export interface HostedMcpRowConsent {
+  grantedScope?: string | null;
+}
+
+/**
+ * True when a row's recorded consent includes the entry's writeScope, or the
+ * entry names none. Parsed exactly as the grant mint reads it (routes/grants.ts
+ * calls this), so the mint's refusal and the assessment cannot disagree: a row
+ * with no recorded scope holds none.
+ */
+export const consentHoldsWriteScope = (entry: HostedMcpEntry, grantedScope: unknown): boolean => {
+  const writeScope = 'writeScope' in entry ? entry.writeScope : undefined;
+  if (!writeScope) return true;
+  return (typeof grantedScope === 'string' ? grantedScope : '').split(/\s+/).includes(writeScope);
+};
 
 export interface HostedMcpToolAssessment {
   /** The entry-local name, so a refusal can be read against the pin. */
@@ -494,6 +518,7 @@ export const entryToolProjections = (entry: HostedMcpEntry): HostedMcpToolProjec
 export const assessEntryTools = (
   entry: HostedMcpEntry,
   upstream: HostedMcpUpstreamTool[],
+  consent?: HostedMcpRowConsent,
 ): HostedMcpToolAssessment[] => {
   const byUpstreamName = new Map<string, HostedMcpUpstreamTool>();
   for (const tool of upstream) {
@@ -504,6 +529,17 @@ export const assessEntryTools = (
   return entry.tools.map((tool) => {
     const namespacedName = hostedMcpToolName(entry, tool);
     const live = byUpstreamName.get(tool.upstreamName);
+    // Only a caller that knows the row passes its consent. A listed write is
+    // assessed like any pin; only an absent one can be the consent's doing.
+    if (!live && tool.class === 'write' && consent && !consentHoldsWriteScope(entry, consent.grantedScope)) {
+      const writeScope = 'writeScope' in entry ? entry.writeScope : undefined;
+      return {
+        name: tool.name,
+        namespacedName,
+        verdict: 'not_granted' as const,
+        detail: `this connection's consent does not include ${writeScope}; reconnect ${entry.title} to enable writes`,
+      };
+    }
     if (!live) {
       return {
         name: tool.name,
@@ -567,12 +603,19 @@ export type HostedMcpDriftOutcome =
   | { state: 'assessed'; entryId: string; at: number; cached: boolean; tools: HostedMcpToolAssessment[] }
   | { state: 'provider_unavailable'; entryId: string; detail: string; reason?: string; cause?: unknown };
 
+/** A row's list, with the consent read from the same row the list was taken with. */
+export interface HostedMcpUpstreamListing extends HostedMcpRowConsent {
+  tools: HostedMcpUpstreamTool[];
+}
+
 export interface HostedMcpDriftCacheOptions {
   /**
    * Takes the list with THIS row's credential. Throwing means the vendor could
-   * not be reached; the caller must not read that as a clean comparison.
+   * not be reached; the caller must not read that as a clean comparison. A
+   * listing that carries the row's consent lets a write pin the row never
+   * consented to read as `not_granted`; a bare array assesses without it.
    */
-  listUpstreamTools: (row: HostedMcpDriftRow) => Promise<HostedMcpUpstreamTool[]>;
+  listUpstreamTools: (row: HostedMcpDriftRow) => Promise<HostedMcpUpstreamTool[] | HostedMcpUpstreamListing>;
   /**
    * Sees each fresh assessment, clean or not; never a cached one or an outage.
    * It runs detached: what it throws is logged and cannot change the outcome.
@@ -629,9 +672,9 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
         if (requests.size === 0) pending.delete(key);
         return true;
       };
-      let upstream: HostedMcpUpstreamTool[];
+      let listing: HostedMcpUpstreamTool[] | HostedMcpUpstreamListing;
       try {
-        upstream = await options.listUpstreamTools(row);
+        listing = await options.listUpstreamTools(row);
       } catch (error) {
         finish();
         // A row whose credential requires reconnect is an authority refusal,
@@ -652,8 +695,12 @@ export const createHostedMcpDriftCache = (options: HostedMcpDriftCacheOptions): 
           reason: 'provider_error',
         };
       }
-      const tools = assessEntryTools(entry, upstream);
-      const changed = tools.filter((tool) => tool.verdict !== 'ok' || tool.detail);
+      const tools = Array.isArray(listing)
+        ? assessEntryTools(entry, listing)
+        : assessEntryTools(entry, listing.tools, { grantedScope: listing.grantedScope });
+      // A not-granted pin is the row's consent, the same on every assessment,
+      // so it is not logged as a change (F102).
+      const changed = tools.filter((tool) => tool.verdict !== 'not_granted' && (tool.verdict !== 'ok' || tool.detail));
       if (changed.length > 0) {
         // These names and details come from the pin and our comparison, never
         // from the vendor's live descriptions or schema values.
