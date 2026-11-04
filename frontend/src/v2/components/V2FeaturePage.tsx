@@ -45,6 +45,8 @@ export const V2_COLORS = {
   accentStrong: '#1633a8',
   accentSoft: '#e9edfb',
   onAccent: '#ffffff',
+  accentFill: '#1d3fd1',
+  accentFillHover: '#1633a8',
   success: '#10b981',
   warning: '#f4a23a',
   danger: '#ef4444',
@@ -68,6 +70,9 @@ export const V2_DARK_COLORS: typeof V2_COLORS = {
   accentStrong: '#3d5ef2',
   accentSoft: '#1b2546',
   onAccent: '#ffffff',
+  // White text needs the deeper fill in dark: #6680ff under white is about 3.4:1.
+  accentFill: '#3d5ef2',
+  accentFillHover: '#2948d8',
   success: '#10b981',
   warning: '#f4a23a',
   danger: '#ef4444',
@@ -161,9 +166,9 @@ const buildV2FeatureTheme = (c: V2Palette, mode: 'light' | 'dark') => createThem
           minHeight: 34,
         },
         containedPrimary: {
-          background: c.accent,
+          background: c.accentFill,
           '&:hover': {
-            background: c.accentStrong,
+            background: c.accentFillHover,
             boxShadow: 'none',
           },
         },

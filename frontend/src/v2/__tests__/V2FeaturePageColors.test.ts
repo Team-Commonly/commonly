@@ -23,6 +23,8 @@ const TOKEN_FOR: Record<keyof typeof V2_COLORS, string> = {
   accentStrong: 'accent-strong',
   accentSoft: 'accent-soft',
   onAccent: 'on-accent',
+  accentFill: 'accent-fill',
+  accentFillHover: 'accent-strong',
   success: 'success',
   warning: 'warning',
   danger: 'danger',
@@ -47,6 +49,14 @@ const blockOf = (selector: string): string => {
 const darkBlock = blockOf(':root[data-v2-theme="dark"] .v2-root {');
 const darkTwinBlock = blockOf(':root:not([data-v2-theme="light"]) .v2-root {');
 
+// Where a role takes a different token in dark. The filled button's hover is
+// accent-strong in light, but dark's accent-strong is the fill itself, so dark
+// hovers on accent-deep.
+const DARK_TOKEN_FOR: Partial<Record<keyof typeof V2_COLORS, string>> = {
+  accentFillHover: 'accent-deep',
+};
+const darkTokenFor = (key: keyof typeof V2_COLORS): string => DARK_TOKEN_FOR[key] ?? TOKEN_FOR[key];
+
 // First declaration wins: the light block sits above the dark scopes.
 const lightTokenValue = (name: string): string | null => valueIn(css, name);
 
@@ -64,15 +74,35 @@ describe('V2FeaturePage MUI palette matches the --v2-* tokens', () => {
   });
 
   test.each(colourKeys)('dark %s equals its dark token, or the light one where dark inherits it', (key) => {
-    expect(V2_DARK_COLORS[key].toLowerCase()).toBe(darkTokenValue(TOKEN_FOR[key]));
+    expect(V2_DARK_COLORS[key].toLowerCase()).toBe(darkTokenValue(darkTokenFor(key)));
   });
 
   test('the dark block and its prefers-color-scheme twin agree', () => {
     // The twin paints when no attribute is set, so a drift between the two would
     // show dark on one path and not the other.
     colourKeys.forEach((key) => {
-      expect(valueIn(darkTwinBlock, TOKEN_FOR[key])).toBe(valueIn(darkBlock, TOKEN_FOR[key]));
+      expect(valueIn(darkTwinBlock, darkTokenFor(key))).toBe(valueIn(darkBlock, darkTokenFor(key)));
     });
+  });
+});
+
+const luminance = (hex: string): number => {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const v = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const contrast = (a: string, b: string): number => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
+describe('a filled primary button keeps its text readable', () => {
+  test.each([['light', V2_COLORS], ['dark', V2_DARK_COLORS]] as const)('%s fill and hover give onAccent at least 4.5:1, and the hover differs', (_mode, c) => {
+    expect(contrast(c.onAccent, c.accentFill)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(c.onAccent, c.accentFillHover)).toBeGreaterThanOrEqual(4.5);
+    expect(c.accentFillHover).not.toBe(c.accentFill);
   });
 });
 
