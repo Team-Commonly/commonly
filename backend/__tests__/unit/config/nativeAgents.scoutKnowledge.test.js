@@ -153,6 +153,20 @@ describe('Scout onboarding knowledge', () => {
     ].forEach((claim) => expect(prompt).not.toMatch(claim));
   });
 
+  // D164: the published CLI answered an @mention from the page's Windows
+  // lines on prod (byo-windows.yml run 41926949969). The public content a
+  // visitor reads must say what the matrix and Scout say, not the old
+  // "doesn't answer @mentions" on Windows.
+  test('the public guides and FAQ say Claude Code answers on Windows, as the matrix does', () => {
+    const content = ['guides.json', 'landing-faq.json']
+      .map((file) => fs.readFileSync(path.resolve(__dirname, `../../../../frontend/src/content/${file}`), 'utf8'))
+      .join('\n');
+    expect(content).not.toMatch(/On Windows,? (Claude Code |it )?connects over MCP (for the pod's tools )?but doesn't answer @mentions/);
+    expect(content).not.toMatch(/Both have been tested only on a Mac/);
+    expect(content).toMatch(/On native Windows it answers @mentions with CLI 0\.1\.243 or newer/);
+    expect(content).toMatch(/On native Windows, Claude Code answers @mentions with CLI 0\.1\.243 or newer/);
+  });
+
   test('asks the OS before any command, and never hands out the listener without install and token', () => {
     expect(prompt).toMatch(/Before ANY terminal command: if you do not know their operating system, ask for it and give no commands/);
     expect(prompt).toMatch(/Never give `commonly agent run` on its own/);
@@ -223,7 +237,7 @@ describe('Scout onboarding knowledge', () => {
   // "Want me to open that page?" instead of proposing, and no card came.
   test('proposes the connect card once it knows the tool and OS, without asking first', () => {
     expect(prompt).toMatch(
-      /Propose the connect card in the same turn you learn both what they run and an OS on the card list above \(macOS\)/,
+      /Propose the connect card in the same turn you learn both what they run and an OS on the card list above \(macOS, or native Windows for Claude Code\)/,
     );
     expect(prompt).toMatch(/Do not ask whether to: the card is the question/);
     expect(prompt).toMatch(/Do not write the Terminal steps in chat instead of the card/);

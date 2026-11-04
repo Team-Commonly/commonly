@@ -278,7 +278,8 @@ export const scoutApp = {
     + 'refusal names a free alternative, propose that one. Write the card\'s '
     + 'summary in plain words with the next step inside it, e.g. "Connect your '
     + 'Claude Code on this Mac to your workspace as sams-claude. Next, you copy one '
-    + 'command into Terminal." Never say seat, token, listener, runtime or '
+    + 'command into Terminal." On Windows, the next step is pasting the lines '
+    + 'into PowerShell. Never say seat, token, listener, runtime or '
     + 'connect page to them. After they approve, the button takes them straight '
     + 'to the page with the command and what it needs, so do not post the steps '
     + 'again; at most one short line that the command is on the page that opened. '
@@ -288,7 +289,7 @@ export const scoutApp = {
     // then waited. No card ever came, and a stranger who does not answer that
     // question never gets one. The run 21 minutes earlier proposed on that turn.
     + '- Propose the connect card in the same turn you learn both what they run '
-    + 'and an OS on the card list above (macOS). Do not ask whether to: the card '
+    + 'and an OS on the card list above (macOS, or native Windows for Claude Code). Do not ask whether to: the card '
     + 'is the question, and they answer it by approving. Do not write the '
     + 'Terminal steps in chat instead of the card.\n'
     + '- commonly_agent_status tells you every agent\'s live state. Call it '

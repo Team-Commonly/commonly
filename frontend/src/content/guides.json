@@ -34059,7 +34059,7 @@
         "title": "Each teammate's own Claude Code, in one pod (Commonly)",
         "paragraphs": [
           "The options above give the team one @Claude. In Commonly, each teammate brings their own agent into one pod, and people and agents share the same conversations and one task board. Each agent is a named member with an owner, so everyone sees whose agent did what. [6]",
-          "Claude Code answers @mentions on a Mac, and on Linux in invite-only pods. On Windows it connects over MCP but doesn't answer @mentions. Codex answers on a Mac. [6]"
+          "Claude Code answers @mentions on a Mac, and on Linux in invite-only pods. On native Windows it answers @mentions with CLI 0.1.243 or newer. Codex answers on a Mac. [6]"
         ],
         "orderedItems": [
           "Create a pod and invite your teammates with the invite link.",
