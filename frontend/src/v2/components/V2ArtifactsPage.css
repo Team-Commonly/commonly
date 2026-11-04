@@ -12,11 +12,11 @@
 
 /* Mono never sits under the 11px type floor (ruling h), so the frame's 10.5px key cap and 9.5px
    badge are set at 11px. */
-/* ---- head (.ph): title, mono count, then search, kind segment and pod select at the right ---- */
-.v2a-head { flex: none; height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 20px 0 28px; border-bottom: 1px solid var(--v2-border-soft); box-sizing: border-box; min-width: 0; }
-.v2a-title { margin: 0; font: 800 24px/1 var(--v2-font-display); letter-spacing: -0.03em; white-space: nowrap; }
-.v2a-meta { font: 500 12px/1 var(--v2-font-mono); color: var(--v2-text-muted); white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.v2a-sp { flex: 1; }
+/* ---- head: the shared .v2p-ph bar Activity uses (64px, hairline under it, Bricolage 24/800 at
+   -0.03em, 28px in from the pane), then search, kind segment and pod select at the right ---- */
+.v2a-head.v2p-ph { min-width: 0; }
+.v2a-head.v2p-ph .meta { min-width: 0; font: 500 11.5px/1 var(--v2-font-mono); overflow: hidden; text-overflow: ellipsis; }
+.v2-root:lang(zh) .v2a-title { letter-spacing: 0; }
 .v2a-search { flex: none; width: 240px; height: 32px; box-sizing: border-box; display: flex; align-items: center; gap: 7px; padding: 0 8px 0 10px; border-radius: var(--v2-r-10); background: var(--v2-bg-subtle); box-shadow: inset 0 0 0 1px var(--v2-border-soft); color: var(--v2-text-placeholder); font-size: 13px; min-width: 0; }
 .v2a-search svg.i { flex: none; width: 15px; height: 15px; }
 .v2a-search input { all: unset; flex: 1; min-width: 0; font-size: 13px; color: var(--v2-text-primary); }
@@ -72,19 +72,20 @@
 .v2a .v2a-more:disabled { cursor: default; color: var(--v2-text-muted); }
 
 /* ---- 390 (.app.m.sg): the head is the 52px top bar with the search key; one 44px control
-   row; rows and keys at the 44px touch floor; the size folds into the secondary line ---- */
+   row; rows and keys at the 44px touch floor; the 12px side gutter of the picked pages; the
+   size folds into the secondary line ---- */
 @media (max-width: 760px) {
-  .v2a-head { height: 52px; padding: 0 10px 0 16px; gap: 8px; }
-  .v2a-title { font-size: 21px; flex-shrink: 0; }
-  .v2a-meta { font: 500 11.5px/1 var(--v2-font-mono); }
+  .v2a-head.v2p-ph { height: 52px; gap: 8px; padding: 0 10px 0 12px; }
+  .v2a-head.v2p-ph h1 { font-size: 21px; min-width: 0; flex: none; }
   .v2a .v2a-searchkey { width: 44px; height: 44px; margin-right: -4px; }
   .v2a .v2a-searchkey svg.i { width: 18px; height: 18px; }
-  .v2a-body { padding: 12px 16px 16px; }
+  .v2a-body { padding: 12px 12px 16px; }
   .v2a-col { gap: 10px; }
   .v2a-search { width: auto; height: 44px; }
   .v2a-kb { display: none; }
   .v2a-ctl { display: flex; gap: 8px; }
   .v2a-ctl .v2a-seg { flex: 1; display: flex; min-width: 0; }
+  /* 40px items in the segment's 2px track: the segment is 44 tall, level with the select. */
   .v2a-ctl .v2a-seg button { flex: 1; justify-content: center; height: 40px; min-width: 0; }
   .v2a-ctl .v2a-sel { --box-h: 44px; }
   .v2a-ctl .v2a-sel select { max-width: 120px; }

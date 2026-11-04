@@ -946,12 +946,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // The retired table and two pill groups are gone from the sheet and the page.
     expect(v2).not.toMatch(/\.v2-artifacts__(table|seg|controls|zero|head)\b/);
     expect(page).not.toMatch(/<table|v2-artifacts__/);
-    // .ph: 64px, hairline under it, the 24px display title, mono count.
-    const head = ruleBody(ac, '.v2a-head');
-    expect(head).toContain('height: 64px');
-    expect(head).toContain('border-bottom: 1px solid var(--v2-border-soft)');
-    expect(ruleBody(ac, '.v2a-title')).toContain('font: 800 24px/1 var(--v2-font-display)');
-    expect(ruleBody(ac, '.v2a-meta')).toContain('var(--v2-font-mono)');
+    // The head is the shared .v2p-ph bar, as on Activity (consistency ruling 11-04): 64px, hairline
+    // under it, Bricolage 24/800 at -0.03em (-0.72px), 28px in, and the count in mono 11.5/500.
+    expect(page).toContain('<header className="v2p-ph v2a-head">');
+    expect(page).toContain('<span className="meta v2a-meta">');
+    expect(ac).not.toMatch(/^\.v2a-(head|title) \{/m);
+    const ph = ruleBody(read('../primitives/primitives.css'), '.v2p-ph');
+    expect(ph).toContain('height: 64px');
+    expect(ph).toContain('padding: 0 20px 0 28px');
+    expect(ph).toContain('border-bottom: 1px solid var(--v2-border-soft)');
+    expect(selectorRuleBody(read('../primitives/primitives.css'), '.v2p-ph h1 {')).toContain('font: 800 24px/1 var(--v2-font-display)');
+    expect(selectorRuleBody(ac, '\n.v2a-head.v2p-ph .meta {')).toContain('font: 500 11.5px/1 var(--v2-font-mono)');
+    expect(ac).toContain('.v2-root:lang(zh) .v2a-title { letter-spacing: 0; }');
     // Kind is the shared segment; pod is a native select dressed as the frame's .sel.
     expect(page).toContain('<V2Segmented');
     expect(page).toMatch(/<label className="v2a-sel">\s*<select/);
@@ -987,11 +993,18 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-root button.v2-workspace-inspector__all-files')).toContain('color: var(--v2-accent-text)');
   });
 
-  test('Artifacts 390 (d215 .app.m.sg): 52px bar, 44px controls and keys, wrapping names, no sideways scroll', () => {
+  test('Artifacts 390 (d215 .app.m.sg): 52px bar, 12px gutter, 44px controls and keys, wrapping names, no sideways scroll', () => {
     const ac = read('../components/V2ArtifactsPage.css');
     const phone = blockContaining(ac, '@media (max-width: 760px)', '.v2a-head');
-    expect(ruleBody(phone, '.v2a-head', { within: phone })).toContain('height: 52px');
-    expect(ruleBody(phone, '.v2a-body', { within: phone })).toContain('padding: 12px 16px 16px');
+    // Activity's phone bar: 52px, 12px in from the pane, the title at 21px.
+    expect(selectorRuleBody(phone, '.v2a-head.v2p-ph {')).toContain('height: 52px');
+    expect(selectorRuleBody(phone, '.v2a-head.v2p-ph {')).toContain('padding: 0 10px 0 12px');
+    expect(selectorRuleBody(phone, '.v2a-head.v2p-ph h1 {')).toContain('font-size: 21px');
+    // The 12px side gutter of the picked pages (consistency ruling 11-04).
+    expect(ruleBody(phone, '.v2a-body', { within: phone })).toContain('padding: 12px 12px 16px');
+    // The segment is 44 tall: 40px items in its 2px track.
+    expect(ruleBody(phone, '.v2a-ctl .v2a-seg button', { within: phone })).toContain('height: 40px');
+    expect(ruleBody(read('../primitives/primitives.css'), '.v2p-seg')).toContain('padding: 2px');
     expect(ruleBody(phone, '.v2a .v2a-searchkey', { within: phone })).toContain('height: 44px');
     expect(ruleBody(phone, '.v2a-ctl .v2a-sel', { within: phone })).toContain('--box-h: 44px');
     expect(ruleBody(phone, '.v2a .v2a-hv .v2p-ib', { within: phone })).toContain('height: 44px');

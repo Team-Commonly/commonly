@@ -109,7 +109,8 @@ const saveFile = async (item: ArtifactItem): Promise<void> => {
   const url = await getSignedAttachmentUrl(`/api/uploads/${item.fileName}`);
   if (!url) return;
   try {
-    const res = await fetch(url);
+    // A plain GET: the signed URL is a read, and a download never writes anything back.
+    const res = await fetch(url, { method: 'GET' });
     if (!res.ok) throw new Error(`download ${res.status}`);
     const href = URL.createObjectURL(await res.blob());
     const anchor = document.createElement('a');
@@ -275,10 +276,10 @@ const V2ArtifactsPage: React.FC = () => {
 
   return (
     <div className="v2a">
-      <header className="v2a-head">
+      <header className="v2p-ph v2a-head">
         <h1 className="v2a-title">{t('artifacts.title')}</h1>
-        {meta && <span className="v2a-meta">{meta}</span>}
-        <span className="v2a-sp" />
+        {meta && <span className="meta v2a-meta">{meta}</span>}
+        <span className="sp" />
         {!dayZero && !phone && (
           <>
             {searchField}

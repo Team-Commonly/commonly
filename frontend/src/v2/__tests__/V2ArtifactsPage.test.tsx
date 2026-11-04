@@ -200,7 +200,9 @@ describe('V2ArtifactsPage (d215 signal)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Download plan.md' }));
     await waitFor(() => expect(clicked).toEqual([{ href: 'blob:artifact', download: 'plan.md' }]));
     expect(mockSigned).toHaveBeenCalledWith('/api/uploads/x3.md');
-    expect(global.fetch).toHaveBeenCalledWith('/api/uploads/x3.md?t=signed');
+    expect(global.fetch).toHaveBeenCalledWith('/api/uploads/x3.md?t=signed', { method: 'GET' });
+    // Download is a read: every request it makes is a GET.
+    expect(global.fetch.mock.calls.every(([, init]) => init?.method === 'GET')).toBe(true);
     expect(open).not.toHaveBeenCalled();
     // When the bytes can't be read, the signed URL opens and the server decides.
     global.fetch = jest.fn().mockRejectedValue(new TypeError('cors'));
