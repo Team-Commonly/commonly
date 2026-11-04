@@ -1190,18 +1190,18 @@ describe('Connectors page: channels', () => {
     });
 
     it('offers a rostered provider with Add, and an unmapped one inherits no onboarding sentence', async () => {
-      // Slack's line is in the map; Discord's is not. The point of the map is that
-      // Discord renders NO sentence rather than Slack's.
+      // Slack's line is in the map; GroupMe's is not. The point of the map is that
+      // GroupMe renders NO sentence rather than Slack's.
       mockCatalog([
-        entry({ installableId: 'discord', label: 'Discord', available: true, offered: true }),
+        entry({ installableId: 'groupme', label: 'GroupMe', available: true, offered: true }),
         entry({ installableId: 'slack', label: 'Slack', available: true, offered: true }),
       ]);
       renderPage();
 
-      const discord = await openPopover('Discord');
-      expect(discord.textContent).not.toContain('one click in your workspace');
-      expect(discord.textContent).not.toContain('one message');
-      expect(within(discord).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+      const groupme = await openPopover('GroupMe');
+      expect(groupme.textContent).not.toContain('one click in your workspace');
+      expect(groupme.textContent).not.toContain('one message');
+      expect(within(groupme).getByRole('button', { name: 'Add' })).toBeInTheDocument();
 
       const slack = await openPopover('Slack');
       expect(slack.textContent).toContain('one click in your workspace');
@@ -1210,19 +1210,20 @@ describe('Connectors page: channels', () => {
     });
 
     it('does not list a provider this instance does not offer (D215)', async () => {
-      // Discord on commonly.me: usable keys, no builtin Installable row, never
-      // walked. A stranger must not see it, not even behind "+N off".
+      // Usable keys, no builtin Installable row, and no install link of its own.
+      // A stranger must not see it, not even behind "+N off". (Discord was this
+      // example until it got a link install; see the Discord block below.)
       mockCatalog([
         entry(),
-        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false }),
+        entry({ installableId: 'groupme', label: 'GroupMe', available: true, offered: false }),
       ]);
       renderPage();
 
       await findTile('Telegram');
       // The off button only exists when a dead tile does, so its absence is the
-      // assertion; a collapsed group would hide a listed Discord from the query.
+      // assertion; a collapsed group would hide a listed GroupMe from the query.
       expect(screen.queryByRole('button', { name: /^\+\d+ off$/ })).toBeNull();
-      expect(tileNode('Discord')).toBeNull();
+      expect(tileNode('GroupMe')).toBeNull();
     });
 
     it('keeps an installed but no-longer-offered provider as not connectable, with no Add anywhere', async () => {
@@ -1230,17 +1231,17 @@ describe('Connectors page: channels', () => {
       // the roster row went away: it states the state and offers no action. Before
       // #1826 the row rendered an Add whose click ended in 404 installable_not_found.
       mockCatalog([
-        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false, installation: { status: 'active', boundPodId: 'p1' } }),
+        entry({ installableId: 'groupme', label: 'GroupMe', available: true, offered: false, installation: { status: 'active', boundPodId: 'p1' } }),
       ]);
       renderPage();
 
       await pageReady();
       await expandOff('Channels');
-      const tile = await findTile('Discord');
+      const tile = await findTile('GroupMe');
       expect(tile).toHaveClass('v2-cx-tile--dim');
       expect(tile.querySelector('svg')).not.toBeNull();
       fireEvent.click(tile);
-      const drawer = await findDrawer('Discord');
+      const drawer = await findDrawer('GroupMe');
       expect(within(drawer).getByText('Unavailable here.')).toBeInTheDocument();
       // No Add and no connect verb: an offered provider is the only thing that may
       // produce them, and there is none in this catalog.
@@ -1255,14 +1256,95 @@ describe('Connectors page: channels', () => {
       // went away can leave an integration with no installation. Dropping it from
       // the list would hide a live connection from its owner.
       mockCatalog([
-        entry({ installableId: 'discord', label: 'Discord', available: true, offered: false, integration: liveIntegration() }),
+        entry({ installableId: 'groupme', label: 'GroupMe', available: true, offered: false, integration: liveIntegration() }),
       ]);
       renderPage();
 
       await pageReady();
       await expandOff('Channels');
-      expect(await findTile('Discord')).toHaveClass('v2-cx-tile--dim');
+      expect(await findTile('GroupMe')).toHaveClass('v2-cx-tile--dim');
     });
+
+    describe('Discord: a link install, offered on its keys alone', () => {
+      // Discord has no builtin Installable row (the catalog says offered: false),
+      // but its install is the bot-add link plus Discord's callback, so it is
+      // offered wherever the instance holds its keys (available). Connect sends
+      // the browser to the link the server builds for the chosen pod; it never
+      // calls the Installable lifecycle, which would 422 provider_not_offered.
+      const realLocation = window.location;
+      let assign;
+      beforeEach(() => {
+        assign = jest.fn();
+        Object.defineProperty(window, 'location', { configurable: true, value: { ...realLocation, assign } });
+      });
+      afterEach(() => {
+        Object.defineProperty(window, 'location', { configurable: true, value: realLocation });
+      });
+
+      const discordEntry = entry({ installableId: 'discord', label: 'Discord', description: '', available: true, offered: false });
+      const INSTALL_URL = 'https://discord.com/api/oauth2/authorize?client_id=1&response_type=code';
+
+      it('lists Discord with Add and its own onboarding line', async () => {
+        mockCatalog([entry(), discordEntry]);
+        renderPage();
+
+        const popover = await openPopover('Discord');
+        expect(popover.textContent).toContain('add the bot to your server');
+        expect(popover.textContent).not.toContain('Unavailable here.');
+        expect(within(popover).getByRole('button', { name: 'Add' })).toBeInTheDocument();
+      });
+
+      it('offers Discord beside Telegram and Slack in Connect a channel, and Connect leaves for its install link', async () => {
+        mockApi({
+          installables: [entry(), entry({ installableId: 'slack', label: 'Slack', offered: true }), discordEntry],
+          pods: [{ _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [] }],
+          route: (url) => (url === '/api/discord/install-link/p1'
+            ? Promise.resolve({ data: { installUrl: INSTALL_URL, podId: 'p1', status: 'ready' } })
+            : undefined),
+        });
+        renderPage();
+
+        fireEvent.click(await findTile('Channel'));
+        const drawer = await findDrawer('Connect a channel');
+        const providers = within(drawer).getByRole('group', { name: 'Channel provider' });
+        expect(within(providers).getAllByRole('button').map((b) => b.textContent)).toEqual(['Telegram', 'Slack', 'Discord']);
+        fireEvent.click(within(providers).getByRole('button', { name: 'Discord' }));
+        fireEvent.click(within(drawer).getByRole('button', { name: 'Connect' }));
+
+        await waitFor(() => expect(assign).toHaveBeenCalledWith(INSTALL_URL));
+        expect(axios.get).toHaveBeenCalledWith('/api/discord/install-link/p1', expect.anything());
+        expect(axios.post).not.toHaveBeenCalledWith('/api/installables/discord/install', expect.anything(), expect.anything());
+      });
+
+      it('does not list Discord on an instance without its keys', async () => {
+        mockCatalog([entry(), entry({ installableId: 'discord', label: 'Discord', available: false, offered: false })]);
+        renderPage();
+
+        await findTile('Telegram');
+        expect(screen.queryByRole('button', { name: /^\+\d+ off$/ })).toBeNull();
+        expect(tileNode('Discord')).toBeNull();
+      });
+
+      it('says who may add the bot when the server refuses the link', async () => {
+        mockApi({
+          installables: [discordEntry],
+          pods: [{ _id: 'p1', name: 'Rewire Live Demo', type: 'chat', members: [] }],
+          route: (url) => (url === '/api/discord/install-link/p1'
+            ? Promise.reject(Object.assign(new Error('403'), { response: { status: 403, data: { error: 'Access denied' } } }))
+            : undefined),
+        });
+        renderPage();
+
+        const popover = await openPopover('Discord');
+        fireEvent.click(within(popover).getByRole('button', { name: 'Add' }));
+        const drawer = await findDrawer('Connect a channel');
+        fireEvent.click(within(drawer).getByRole('button', { name: 'Connect' }));
+
+        expect(await screen.findByText('Only the person who created this pod can add the Discord bot to it.')).toBeInTheDocument();
+        expect(assign).not.toHaveBeenCalled();
+      });
+    });
+
 
     it('renders an unavailable provider with its blocker and an available one with Add', async () => {
       mockCatalog([

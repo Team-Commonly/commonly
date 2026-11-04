@@ -27,6 +27,8 @@ import {
   codeExpiresInMinutes,
   claimIsStale,
   projectionMissing,
+  LINK_INSTALL_PROVIDERS,
+  entryOffered,
 } from './channelModel';
 import type {
   ConnectorGate,
@@ -378,11 +380,37 @@ export const useChannelConnectors = () => {
     }
   };
 
+  // A link-install provider's Connect: the server builds the provider's install
+  // URL for this pod, and the browser leaves for it. The provider sends the
+  // person back to its callback, which lands on the success page that binds the
+  // channel. Only the pod's creator (or an admin) may add a bot to a pod.
+  const linkInstall = async (type: string, podId: string): Promise<boolean> => {
+    try {
+      const result = await api.get<{ installUrl?: string }>(`/api/${type}/install-link/${encodeURIComponent(podId)}`);
+      if (!result?.installUrl) throw new Error('no install link');
+      window.location.assign(result.installUrl);
+      return true;
+    } catch (requestError) {
+      const response = installErrorResponse(requestError);
+      setError(response.status === 403
+        ? t('connectors.linkInstallCreatorOnly', {
+          defaultValue: 'Only the person who created this pod can add the {{connector}} bot to it.',
+          connector: TYPE_LABELS[type] || type,
+        })
+        : t('connectors.createError', { defaultValue: 'Could not create the connector.' }));
+      return false;
+    }
+  };
+
   const createConnector = async () => {
     if (!newPodId || !addingType || creating) return;
     setCreating(true);
     setError(null);
     try {
+      if (LINK_INSTALL_PROVIDERS.has(addingType)) {
+        await linkInstall(addingType, newPodId);
+        return;
+      }
       const installed = await install(addingType, newPodId);
       if (installed) setAddingType(null);
     } finally {
@@ -765,7 +793,7 @@ export const useChannelConnectors = () => {
     // about this instance's keys, not about whether a row exists to install.
     // Showing the Add anyway is what produced a lowercase `discord` row whose
     // click ended in 404 installable_not_found.
-    if (entry.offered === false) {
+    if (!entryOffered(entry)) {
       return {
         action: null,
         detail: '',
@@ -910,7 +938,7 @@ export const useChannelConnectors = () => {
   // offerability contract), and someone who already installed it keeps their
   // row, which renders in the not-connectable state below.
   const listedCatalog = (catalog || []).filter((entry) => (
-    entry.offered !== false || Boolean(entry.installation) || Boolean(entry.integration)
+    entryOffered(entry) || Boolean(entry.installation) || Boolean(entry.integration)
   ));
   const allItems: ListItem[] = [
     ...listedCatalog.map((entry): ListItem => ({

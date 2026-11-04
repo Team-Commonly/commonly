@@ -2520,6 +2520,8 @@
     "availableLine": "Connect {{label}} to a pod.",
     "availableSlack": "one click in your workspace",
     "availableTelegram": "one message",
+    "availableDiscord": "add the bot to your server",
+    "linkInstallCreatorOnly": "Only the person who created this pod can add the {{connector}} bot to it.",
     "cancel": "Cancel",
     "channelDetails": "Channel details",
     "closeDetails": "Close",
