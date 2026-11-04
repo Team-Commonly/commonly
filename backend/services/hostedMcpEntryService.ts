@@ -277,21 +277,46 @@ const isNameList = (value: unknown): value is string[] => Array.isArray(value) &
 
 // Positions where a schema only has to hold for an instance to pass, so
 // requiring less there accepts a superset. Under `not`, `if`, `oneOf` and
-// `contains` (with its counts), and in `$defs` a `$ref` may use from any of
-// those, requiring less can admit or refuse other calls, so their `required`
-// lists compare exactly.
+// `contains` (with its counts), requiring less can admit or refuse other
+// calls, so their `required` lists compare exactly, as do those in `$defs`.
+// A `$ref` can carry a schema from any position into any other, so the walk
+// runs only when every reference stays inside the root `$defs` or
+// `definitions` (refsStayInDefs).
 const LOOSENING_MAP_KEYWORDS = new Set(['properties', 'patternProperties', 'dependentSchemas', 'dependencies']);
 const LOOSENING_ARRAY_KEYWORDS = new Set(['allOf', 'anyOf', 'prefixItems']);
 const LOOSENING_KEYWORDS = new Set([
   'additionalProperties', 'additionalItems', 'unevaluatedProperties', 'unevaluatedItems', 'then', 'else',
 ]);
 
+const REFERENCE_KEYWORDS = new Set([
+  '$id', '$anchor', '$dynamicAnchor', '$recursiveAnchor', '$dynamicRef', '$recursiveRef',
+]);
+const DEFS_POINTER = /^#\/(\$defs|definitions)\//;
+
+/**
+ * True when no schema can be reached from another position than where it is
+ * written, except inside the root `$defs`/`definitions`, which are never
+ * relaxed: every `$ref` points there, and nothing declares an id, an anchor or
+ * a dynamic reference. Every key is scanned, data included, so a stray `$ref`
+ * can only make the comparison exact.
+ */
+const refsStayInDefs = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.every(refsStayInDefs);
+  if (!isRecord(value)) return true;
+  return Object.entries(value).every(([key, child]) => {
+    if (REFERENCE_KEYWORDS.has(key)) return false;
+    if (key === '$ref') return typeof child === 'string' && DEFS_POINTER.test(child);
+    return refsStayInDefs(child);
+  });
+};
+
 /**
  * The pin with each `required` list replaced by the live one wherever the live
  * one only drops names, walking the two schemas together and only through
- * positions where requiring less can only accept more. A call the pin allowed
- * still validates when the vendor requires less there, and no call the pin
- * refused starts to pass except by leaving a property out.
+ * positions where requiring less can only accept more. With references kept
+ * inside `$defs` (the caller checks), a call the pin allowed still validates
+ * when the vendor requires less there, and no call the pin refused starts to
+ * pass except by leaving a property out.
  */
 const relaxRequired = (pinned: unknown, current: unknown): unknown => {
   if (!isRecord(pinned) || !isRecord(current)) return pinned;
@@ -323,8 +348,8 @@ const relaxRequired = (pinned: unknown, current: unknown): unknown => {
 /**
  * After descriptions are stripped, a read pin accepts three loosenings: new
  * optional top-level properties, a property leaving `required` at a position
- * where that can only accept more (relaxRequired), and a nullable type
- * respelled. Values (enum, pattern, default, const) still compare
+ * where that can only accept more (relaxRequired, when every `$ref` stays in
+ * `$defs`), and a nullable type respelled. Values (enum, pattern, default, const) still compare
  * exactly: an added enum value widens what can be read, so it waits until the
  * broker checks argument values against the pin (CTO ruling 11-04, F100).
  */
@@ -334,7 +359,9 @@ const readSchemaChange = (
 ): 'unchanged' | 'compatible' | 'drift' => {
   if (canonicalJson(live ?? null) === canonicalJson(pin)) return 'unchanged';
   const current = normalizeTypeSpelling(stripSchemaDescriptions(live ?? null));
-  const pinned = relaxRequired(normalizeTypeSpelling(stripSchemaDescriptions(pin)), current);
+  const normalizedPin = normalizeTypeSpelling(stripSchemaDescriptions(pin));
+  const pinned = refsStayInDefs(pin) && refsStayInDefs(live ?? null)
+    ? relaxRequired(normalizedPin, current) : normalizedPin;
   if (canonicalJson(current) === canonicalJson(pinned)) return 'compatible';
   if (!isRecord(pinned) || !isRecord(current)) return 'drift';
   const pinnedProperties = pinned.properties;

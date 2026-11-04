@@ -466,8 +466,46 @@ describe('drift is a named refusal', () => {
       properties: { team: { $ref: '#/$defs/t' } },
       $defs: { t: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
     }, (pin) => ({ ...pin, $defs: { t: { ...pin.$defs.t, required: [] } } })],
+    // A $ref from `if` into a relaxed position: the pin refuses
+    // { scope: 'all' }, the live schema takes it.
+    ['if, through a $ref into anyOf', {
+      type: 'object',
+      properties: TEAM_SCOPE,
+      anyOf: [{ required: ['team', 'scope'] }, {}],
+      if: { $ref: '#/anyOf/0' },
+      then: {},
+      else: { properties: { scope: { const: 'mine' } } },
+    }, (pin) => ({ ...pin, anyOf: [{ required: ['scope'] }, {}] })],
+    // A $ref from `not` into a property: the pin takes { team: {} }, the live
+    // schema refuses it.
+    ['not, through a $ref into properties', {
+      type: 'object',
+      properties: { team: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+      not: { properties: { team: { $ref: '#/properties/team' } }, required: ['team'] },
+    }, (pin) => ({ ...pin, properties: { team: { ...pin.properties.team, required: [] } } })],
+    // An anchor makes any position a reference target.
+    ['a schema carrying an $anchor', {
+      type: 'object',
+      properties: {
+        team: {
+          $anchor: 'team', type: 'object', properties: { id: { type: 'string' } }, required: ['id'],
+        },
+      },
+    }, (pin) => ({ ...pin, properties: { team: { ...pin.properties.team, required: [] } } })],
   ])('requiring less under %s still drifts', (_position, pin, loosen) => {
     expect(assessRead(pin, loosen(pin)).verdict).toBe('tool_drift');
+  });
+
+  test('a $ref that stays in $defs leaves the rest of the schema relaxable', () => {
+    const pin = {
+      type: 'object',
+      properties: { team: { $ref: '#/$defs/t' }, limit: { type: 'number' } },
+      required: ['team', 'limit'],
+      $defs: { t: { type: 'object', properties: { id: { type: 'string' } } } },
+    };
+    expect(assessRead(pin, { ...pin, required: ['team'] })).toMatchObject({
+      verdict: 'ok', detail: expect.stringContaining('compatib'),
+    });
   });
 
   test('requiring less under then, else, allOf and anyOf is compatible', () => {
