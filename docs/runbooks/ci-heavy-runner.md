@@ -113,7 +113,15 @@ variables explicitly at the re-enable, below.
 `LATCHKEY_HEAVY` is off until the free allowance resets (around 2026-12-01).
 After the reset, set the budget for one job and turn it back on:
 
+Check `LATCHKEY_BUDGET_START` first. Unset or unparseable, every run stays on
+GitHub-hosted however the other variables are set; later than now, the same
+until it arrives. Any past time works, because the period never starts before
+the current month.
+
 ```bash
+gh variable get LATCHKEY_BUDGET_START --repo Team-Commonly/commonly
+# only if it is missing or later than now:
+gh variable set LATCHKEY_BUDGET_START --body "$(date -u +%Y-%m-01T00:00:00Z)" --repo Team-Commonly/commonly
 gh variable set LATCHKEY_BUDGET_EQMIN --body 4000 --repo Team-Commonly/commonly
 gh variable set LATCHKEY_EQ_PER_RUN --body 13 --repo Team-Commonly/commonly
 gh variable set LATCHKEY_HEAVY --body on --repo Team-Commonly/commonly
