@@ -4303,3 +4303,37 @@ Linear's entry gained `write` in #3235 on 11-01. Sam's row was connected before 
 **Repair:** F102. A write pin missing from the list, on a row whose recorded `grantedScope` lacks the entry's `writeScope`, assesses `not_granted`. It is not logged as a change, files no card, is hidden from listings, and a call refuses `write_scope_required`. The scope read is one helper (`consentHoldsWriteScope`) that the mint and the assessment share.
 
 **Lesson:** when a check's input depends on the caller's own consent, a verdict that says "missing" has to say whose doing it was. Read what the row consented to before calling a vendor's list short.
+
+## 94. `claude mcp list` said "Connected" for an install our side never saw (2026-11-04, growth)
+
+*Origin: Growth's macOS walk of the copied `claude mcp add` line, on 2026-11-04, while explaining why outside openers showed as never connected.*
+
+`claude mcp list` starts each MCP server, does a handshake and reports Connected. Our side marks an agent token used only when a `commonly_*` tool calls the API. So a correct install, listed as Connected, stays "never connected" on our side until the person's own session uses a commonly tool. We had read "never connected" as "never added the server". It only meant "never used a tool", and whether those openers added the server can't be known from our data.
+
+**Repair:** #3335 makes the MCP server check in once at start, and closes an MCP-only connection's nudge honestly. In Growth's walk, `claude mcp list` still showed Connected with no use recorded on our side, so a fix for that is queued. Until it lands, `docs/agents/byo-support-matrix.md` states the gap, and so does Scout (#3403).
+
+**Lesson:** "Connected" in a client means the client reached the server, not that the server reached us. Before you read our "never connected", check which event sets it.
+
+## 95. A closed issue's title taught that the Windows MCP snippet was bash-only (2026-11-04, cofounder)
+
+*Origin: several sessions, Cofounder's included, told people on 11-03 and 11-04 that Windows had no MCP line. It has had one since 10-17.*
+
+Issue #2141, "Attach path has never run on Windows: bash-only snippet, and adapters can't launch npm .cmd shims", stayed open from 10-14 until 2026-11-04. On 10-17, #2289 shipped the PowerShell `claude mcp add` lines on the Bring your own page, but nothing closed or edited #2141. Anyone checking the open Windows issues read its title as the current state.
+
+**Repair:** #2141 is closed. The matrix records the PowerShell snippet as shipped and still not walked.
+
+**Lesson:** an open issue's title is a claim about now. When a PR fixes part of one, close it or change the title in the same change. Before you repeat an issue title as fact, read the code it names.
+
+## 96. Model names in LiteLLM said Gemini and GPT and served DeepSeek (2026-11-04, cofounder)
+
+*Origin: the provider question behind the 11-04 move of hosted agents to Claude, which first had to work out which provider was answering calls made to `gemini-*` and `gpt-*`.*
+
+`k8s/helm/commonly/templates/configmaps/litellm-config.yaml` keeps its callers' model names and repoints what they serve:
+- `gemini-2.5-flash` routes to `deepseek/deepseek-v4-flash` unless the Gemini provider is on, and every Gemini name also falls back to it.
+- Since GPT access was revoked on 10-27, every `gpt-5.4*` and `openai-codex/*` alias points straight at it.
+
+The comments say so, but a caller, a log line or a cost report only shows the name asked for. Anyone reasoning from model names about where data goes, what it costs or which model answered got the wrong provider.
+
+**Repair:** #3383 and #3384 move summaries, the connected-chat bot and Calendar turns onto Claude, and keep Calendar data off any non-Claude route.
+
+**Lesson:** an alias that keeps a provider's name while it serves another provider is the most misleading way to repoint a name. Name an alias for what it serves, or log the backend model next to the requested one. Before you cite a model name as a data or cost fact, read the route it resolves to.
