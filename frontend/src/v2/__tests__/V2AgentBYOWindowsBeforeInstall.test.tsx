@@ -134,7 +134,7 @@ describe('V2AgentBYO on Windows', () => {
     expect(listen).toHaveTextContent(/^在 PowerShell 里运行这段命令/);
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent('四行都要在同一个 PowerShell 窗口里运行，换了窗口 $env 设置就失效。');
     const note = screen.getByTestId('byo-listen-windows');
-    expect(note).toHaveTextContent(/^Claude Code 在 Windows 上可以回复 @提及（需要 CLI 0\.1\.243 或更高版本）。Windows 上没有能给 \S+ 用的沙箱，/);
+    expect(note).toHaveTextContent(/^Claude Code 在 Windows 上可以回复 @提及（需要 CLI 0\.1\.243或更高版本）。Windows 上没有能给 \S+ 用的沙箱，/);
     expect(note).not.toHaveTextContent('测试过');
     expect(note).toHaveTextContent('--unsandboxed');
     expect(note).toHaveTextContent('--allow write');
