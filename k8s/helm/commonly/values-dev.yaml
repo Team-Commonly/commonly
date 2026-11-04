@@ -506,9 +506,9 @@ hostedMcp:
     - latchkey
     # Airtable passed a live prod walk on 10-31 (TASK-307: connect, a list_bases call,
     # grant revoke, disconnect), so it is offered. Its allowlist key left the overlay secret too.
-    # Hidden until a fresh non-admin account walks connect, grant, call and
-    # refusal end to end (TASK-290). That account joins the runner-only allowlist overlay (#2950).
-    - github-mcp
+    # GitHub (github-mcp) passed TASK-290's non-admin walk on 11-04 as growth-ops
+    # (connect, grant, a read call, a refused call), so it is offered (D248). Its
+    # allowlist key leaves the overlay secret with this change.
   # Both commonly-dev-google-calendar-client-* secrets carry an enabled version
   # holding the Web client made 2026-11-03 for this callback (checked by hash).
   googleCalendar:
