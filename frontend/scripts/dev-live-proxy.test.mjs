@@ -129,9 +129,9 @@ test('each target listens on its own port, so localStorage cannot cross targets'
 test('DEV_LIVE_PORT moves the port and the API base together', async () => {
   const stub = await startStub();
   try {
-    await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod', DEV_LIVE_UPSTREAM: stub.url, DEV_LIVE_PORT: '3131' }, async (base, port, apiBase) => {
-      assert.equal(port, 3131);
-      assert.equal(apiBase, JSON.stringify('http://localhost:3131'), 'the app must call its own origin, not 3101');
+    await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod', DEV_LIVE_UPSTREAM: stub.url, DEV_LIVE_PORT: '3113' }, async (base, port, apiBase) => {
+      assert.equal(port, 3113);
+      assert.equal(apiBase, JSON.stringify('http://localhost:3113'), 'the app must call its own origin, not 3101');
       const res = await fetch(`${base}/api/health`);
       assert.equal(res.status, 200);
     });
@@ -144,13 +144,28 @@ test('DEV_LIVE_PORT moves the port and the API base together', async () => {
   }
 });
 
-test('DEV_LIVE_PORT refuses another target\'s port and junk', async () => {
-  for (const [target, port] of [['prod', '3102'], ['staging', '3101'], ['prod', 'abc'], ['prod', '80']]) {
+test('DEV_LIVE_PORT takes only its own target\'s range, so no origin serves both targets', async () => {
+  const cases = [
+    ['prod', '3102'], ['staging', '3101'], // the other target's default
+    ['prod', '3121'], ['staging', '3113'], // the other target's range
+    ['prod', '3000'], // plain npm start's origin
+    ['prod', 'abc'], ['prod', '3113.5'], ['prod', ' 3113'], ['prod', '0xC29'],
+  ];
+  for (const [target, port] of cases) {
     await assert.rejects(
       withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: target, DEV_LIVE_PORT: port }, async () => {}),
-      /DEV_LIVE_PORT must be a free port/,
-      `${target} on ${port}`,
+      new RegExp(`DEV_LIVE_PORT for ${target} must be a port from`),
+      `${target} on '${port}'`,
     );
+  }
+  const stub = await startStub();
+  try {
+    await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'staging', DEV_LIVE_UPSTREAM: stub.url, DEV_LIVE_PORT: '3124' }, async (_base, port, apiBase) => {
+      assert.equal(port, 3124);
+      assert.equal(apiBase, JSON.stringify('http://localhost:3124'));
+    });
+  } finally {
+    await stub.close();
   }
 });
 

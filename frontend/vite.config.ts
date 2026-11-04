@@ -11,9 +11,11 @@ import react from '@vitejs/plugin-react';
 // DEV_LIVE_UPSTREAM replaces the target URL; the proxy tests use it to stand
 // in a local stub backend, so no test request leaves the machine.
 const DEV_LIVE = process.env.DEV_LIVE === '1';
-const LIVE_TARGETS: Record<string, { url: string; port: number }> = {
-  staging: { url: 'https://api-staging.commonly.me', port: 3102 },
-  prod: { url: 'https://api.commonly.me', port: 3101 },
+// Each target owns its default port and a range for DEV_LIVE_PORT. The ranges never overlap,
+// so one origin never serves two targets and a prod token never reaches a staging run.
+const LIVE_TARGETS: Record<string, { url: string; port: number; range: [number, number] }> = {
+  staging: { url: 'https://api-staging.commonly.me', port: 3102, range: [3120, 3129] },
+  prod: { url: 'https://api.commonly.me', port: 3101, range: [3110, 3119] },
 };
 const liveName = process.env.DEV_LIVE_TARGET || 'staging';
 const liveEntry = LIVE_TARGETS[liveName];
@@ -21,14 +23,14 @@ if (DEV_LIVE && !liveEntry) {
   throw new Error(`DEV_LIVE_TARGET must be one of: ${Object.keys(LIVE_TARGETS).join(', ')}`);
 }
 // DEV_LIVE_PORT moves a run off its target's default port, so several sessions can run
-// dev:live at once. It moves the API base with it (below), which `--port` does not.
-// A port another target owns is refused, so a prod token never lands on staging's origin.
+// dev:live at once. It moves the API base with it (below), which `--port` does not. Only
+// the target's own range is accepted (see LIVE_TARGETS).
 const portOverride = DEV_LIVE ? process.env.DEV_LIVE_PORT : undefined;
 if (portOverride !== undefined && portOverride !== '') {
-  const n = Number(portOverride);
-  const owned = Object.entries(LIVE_TARGETS).find(([name, t]) => name !== liveName && t.port === n);
-  if (!Number.isInteger(n) || n < 1024 || n > 65535 || owned) {
-    throw new Error(`DEV_LIVE_PORT must be a free port from 1024 to 65535, not another target's (${owned ? owned[0] : portOverride})`);
+  const [lo, hi] = liveEntry.range;
+  const n = /^\d+$/.test(portOverride) ? Number(portOverride) : NaN;
+  if (!(n >= lo && n <= hi)) {
+    throw new Error(`DEV_LIVE_PORT for ${liveName} must be a port from ${lo} to ${hi}, got '${portOverride}'`);
   }
 }
 const livePort = DEV_LIVE ? Number(portOverride) || liveEntry.port : 3000;
