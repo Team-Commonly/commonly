@@ -158,8 +158,6 @@ describe('POST /api/uploads/urls — batch signed-URL mint', () => {
     await mint(token, []).expect(400);
     await mint(token, 'own-0.png').expect(400);
     await mint(token, ['own-0.png', 7]).expect(400);
-    await mint(token, ['../etc/passwd']).expect(400);
-    await mint(token, ['a'.repeat(300)]).expect(400);
     await request(app).post('/api/uploads/urls').send({ fileNames: ['own-0.png'] }).expect(401);
   });
 
@@ -170,5 +168,16 @@ describe('POST /api/uploads/urls — batch signed-URL mint', () => {
 
     const res = await mint(token, [name, name, name]).expect(200);
     expect(Object.keys(res.body.urls)).toEqual([name]);
+  });
+
+  it('refuses a name that is not a plain upload name on its own, and still mints the rest', async () => {
+    const owner = await makeUser();
+    const token = generateTestToken(owner._id);
+    const [name] = await ownFiles(owner, 1);
+    const odd = ['../etc/passwd', 'a/b.png', 'a\\b.png', 'nul\u0000.png', 'a'.repeat(300)];
+
+    const res = await mint(token, [name, ...odd]).expect(200);
+    expect(Object.keys(res.body.urls)).toEqual([name]);
+    expect(res.body.refused.sort()).toEqual([...odd].sort());
   });
 });

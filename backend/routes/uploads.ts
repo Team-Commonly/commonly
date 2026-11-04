@@ -380,10 +380,11 @@ router.post('/', uploadCredentialRateLimit, auth, uploadRateLimit, uploadSingle(
 //   single 403 the single route answers for both.
 // - Each minted name gets its own token (bound to that file) and its own audit row.
 export const BATCH_MINT_MAX = 50;
+const BATCH_MINT_CONCURRENCY = 8;
 // A plain upload file name: no path separator, no `..`, no control characters,
 // at most 200 characters. Uploads are named `<user>-<time>-<rand>.<ext>`.
-const isBatchMintName = (name: unknown): name is string => typeof name === 'string'
-  && name.length > 0 && name.length <= 200
+const isBatchMintName = (name: string): boolean => name.length > 0
+  && name.length <= 200
   && !/[/\\]/.test(name) && !name.includes('..')
   && ![...name].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f);
 
@@ -391,15 +392,28 @@ router.post('/urls', mintRateLimit, auth, async (req: AuthReq, res: Res) => {
   try {
     if (!req.userId) return res.status(401).json({ msg: 'auth required' });
     const fileNames = (req.body as { fileNames?: unknown } | undefined)?.fileNames;
-    if (!Array.isArray(fileNames) || fileNames.length === 0 || fileNames.length > BATCH_MINT_MAX) {
+    if (!Array.isArray(fileNames) || fileNames.length === 0 || fileNames.length > BATCH_MINT_MAX
+      || fileNames.some((name) => typeof name !== 'string')) {
       return res.status(400).json({ msg: `fileNames must be an array of 1 to ${BATCH_MINT_MAX} names` });
-    }
-    if (!fileNames.every(isBatchMintName)) {
-      return res.status(400).json({ msg: 'fileNames must be plain upload file names' });
     }
     const unique = [...new Set(fileNames as string[])];
     const userId = req.userId;
-    const allowed = await Promise.all(unique.map((fileName) => canReadAttachment(fileName, userId).catch(() => false)));
+    // A name that is not a plain upload name is refused on its own, like a
+    // name the caller cannot read. The checks run a few at a time: a name that
+    // is neither the caller's file nor in their pods falls through to the slow
+    // profile/post/message scans, and 50 at once would multiply that per request.
+    const allowed: boolean[] = new Array(unique.length).fill(false);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < unique.length) {
+        const index = next;
+        next += 1;
+        const fileName = unique[index];
+        // eslint-disable-next-line no-await-in-loop
+        allowed[index] = isBatchMintName(fileName) && await canReadAttachment(fileName, userId).catch(() => false);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(BATCH_MINT_CONCURRENCY, unique.length) }, worker));
     const urls: Record<string, { url: string; expiresIn: number }> = {};
     const refused: string[] = [];
     unique.forEach((fileName, index) => {

@@ -101,7 +101,7 @@ function decodeName(fileName: string): string {
   try { return decodeURIComponent(fileName); } catch { return fileName; }
 }
 
-async function mintBatch(batch: Map<string, Waiter>): Promise<void> {
+async function mintBatchUnguarded(batch: Map<string, Waiter>): Promise<void> {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
   if (!token) {
     batch.forEach((w) => w.resolve(null));
@@ -128,7 +128,7 @@ async function mintBatch(batch: Map<string, Waiter>): Promise<void> {
     batch.forEach((w) => w.resolve(null));
     return;
   }
-  let data: { urls?: Record<string, { url?: string; expiresIn?: number }> };
+  let data: { urls?: Record<string, { url?: string; expiresIn?: number }> } | null;
   try {
     data = await res.json();
   } catch (err) {
@@ -136,9 +136,20 @@ async function mintBatch(batch: Map<string, Waiter>): Promise<void> {
     return;
   }
   batch.forEach((w, fileName) => {
-    const minted = data.urls?.[decodeName(fileName)];
+    const minted = data?.urls?.[decodeName(fileName)];
     w.resolve(storeMinted(fileName, minted?.url, minted?.expiresIn, apiBase));
   });
+}
+
+// Every waiter settles, whatever the batch hits: a waiter left pending keeps its
+// `inflight` entry, and that file would never mint again this session. A second
+// settle on a promise is a no-op, so rejecting all after a partial pass is safe.
+async function mintBatch(batch: Map<string, Waiter>): Promise<void> {
+  try {
+    await mintBatchUnguarded(batch);
+  } catch (err) {
+    batch.forEach((w) => w.reject(err));
+  }
 }
 
 function flushQueued(): void {

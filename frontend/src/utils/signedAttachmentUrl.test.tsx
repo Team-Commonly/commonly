@@ -218,5 +218,15 @@ describe('getSignedAttachmentUrl', () => {
       const results = await Promise.allSettled([getSignedAttachmentUrl('/api/uploads/a.png'), getSignedAttachmentUrl('/api/uploads/b.png')]);
       expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected']);
     });
+
+    it('settles every caller when the batch answer is not usable, so the file can mint again later', async () => {
+      (fetch as jest.Mock).mockResolvedValue({ ok: true, status: 200, json: async () => null });
+      const first = await Promise.allSettled([getSignedAttachmentUrl('/api/uploads/a.png'), getSignedAttachmentUrl('/api/uploads/b.png')]);
+      expect(first.map((r) => r.status === 'fulfilled' && r.value)).toEqual([null, null]);
+
+      (fetch as jest.Mock).mockImplementation((url, init) => Promise.resolve(batchResponse(JSON.parse(init.body).fileNames)));
+      const again = await Promise.all([getSignedAttachmentUrl('/api/uploads/a.png'), getSignedAttachmentUrl('/api/uploads/b.png')]);
+      expect(again).toEqual(['https://api.example/api/uploads/a.png?t=tok-a.png', 'https://api.example/api/uploads/b.png?t=tok-b.png']);
+    });
   });
 });
