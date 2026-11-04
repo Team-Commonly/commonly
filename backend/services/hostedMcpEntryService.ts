@@ -345,11 +345,35 @@ const relaxRequired = (pinned: unknown, current: unknown): unknown => {
   return result;
 };
 
+const POINTER_KEYWORDS = new Set(['$ref', '$dynamicRef', '$recursiveRef']);
+
+/**
+ * True when no reference can name an `anyOf` branch, so sorting and folding
+ * the branches (normalizeTypeSpelling) cannot change what a reference resolves
+ * to. A folded branch holds only `type`, so no anchor or id can sit on it; a
+ * pointer is the only way in. A reference that is not a string, or that names
+ * `anyOf` anywhere once percent-decoded, keeps both spellings as written.
+ */
+const refsAvoidAnyOf = (value: unknown): boolean => {
+  if (Array.isArray(value)) return value.every(refsAvoidAnyOf);
+  if (!isRecord(value)) return true;
+  return Object.entries(value).every(([key, child]) => {
+    if (!POINTER_KEYWORDS.has(key)) return refsAvoidAnyOf(child);
+    if (typeof child !== 'string') return false;
+    try {
+      return !decodeURIComponent(child).toLowerCase().includes('anyof');
+    } catch {
+      return false;
+    }
+  });
+};
+
 /**
  * After descriptions are stripped, a read pin accepts three loosenings: new
  * optional top-level properties, a property leaving `required` at a position
  * where that can only accept more (relaxRequired, when every `$ref` stays in
- * `$defs`), and a nullable type respelled. Values (enum, pattern, default, const) still compare
+ * `$defs`), and a nullable type respelled (when no reference names an `anyOf`
+ * branch). Values (enum, pattern, default, const) still compare
  * exactly: an added enum value widens what can be read, so it waits until the
  * broker checks argument values against the pin (CTO ruling 11-04, F100).
  */
@@ -358,8 +382,10 @@ const readSchemaChange = (
   live: Record<string, unknown> | undefined,
 ): 'unchanged' | 'compatible' | 'drift' => {
   if (canonicalJson(live ?? null) === canonicalJson(pin)) return 'unchanged';
-  const current = normalizeTypeSpelling(stripSchemaDescriptions(live ?? null));
-  const normalizedPin = normalizeTypeSpelling(stripSchemaDescriptions(pin));
+  const respell = refsAvoidAnyOf(pin) && refsAvoidAnyOf(live ?? null);
+  const spell = (schema: unknown): unknown => (respell ? normalizeTypeSpelling(schema) : schema);
+  const current = spell(stripSchemaDescriptions(live ?? null));
+  const normalizedPin = spell(stripSchemaDescriptions(pin));
   const pinned = refsStayInDefs(pin) && refsStayInDefs(live ?? null)
     ? relaxRequired(normalizedPin, current) : normalizedPin;
   if (canonicalJson(current) === canonicalJson(pinned)) return 'compatible';

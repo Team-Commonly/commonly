@@ -405,6 +405,35 @@ describe('drift is a named refusal', () => {
     }).verdict).toBe('tool_drift');
   });
 
+  // A pointer into anyOf names a branch by its index, so reordering or folding
+  // the branches changes what the reference resolves to.
+  const REF_INTO_ANYOF = (ref, branches) => ({
+    type: 'object',
+    properties: { team: { $ref: ref } },
+    $defs: { entry: { anyOf: branches } },
+  });
+  test.each([
+    ['a pointer', '#/$defs/entry/anyOf/0'],
+    ['a percent-encoded pointer', '#/$defs/entry/%61nyOf/0'],
+  ])('a respell is not applied when %s names an anyOf branch', (_form, ref) => {
+    const pin = REF_INTO_ANYOF(ref, [{ type: 'string' }, { type: 'null' }]);
+    // Reordered: the reference now resolves to { type: 'null' }.
+    expect(assessRead(pin, REF_INTO_ANYOF(ref, [{ type: 'null' }, { type: 'string' }])).verdict).toBe('tool_drift');
+    // Folded: the reference no longer resolves at all.
+    const folded = { ...pin, $defs: { entry: { type: ['string', 'null'] } } };
+    expect(assessRead(pin, folded).verdict).toBe('tool_drift');
+  });
+
+  test('a respell beside references into $defs that avoid anyOf is compatible', () => {
+    const pin = {
+      ...NULLABLE_PIN,
+      properties: { ...NULLABLE_PIN.properties, when: { $ref: '#/$defs/DateOrDateTime' } },
+      $defs: { DateOrDateTime: { type: 'string' } },
+    };
+    const live = { ...pin, properties: { ...pin.properties, sort: { type: ['string', 'null'] } } };
+    expect(assessRead(pin, live)).toMatchObject({ verdict: 'ok', detail: expect.stringContaining('compatib') });
+  });
+
   test('a property leaving required is compatible, at the top level and in a property, in any order', () => {
     const pin = {
       type: 'object',
