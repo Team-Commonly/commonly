@@ -352,7 +352,7 @@ export const ATLASSIAN_ENTRY: HostedMcpEntry = {
     writeTool(
       "update_confluence_content",
       "updateConfluenceContent",
-      "Update a Confluence page, live doc, blog post, whiteboard or database by id or URL; ownerId can hand a page to another account.",
+      "Update a Confluence page, live doc, blog post, whiteboard or database by id or URL; ownerId can hand a page to another account. To edit a classic page (type=page), first read it with get_confluence_content(draft=true, detail=full) and pass that read's snapshotToken.",
       {
         type: "object",
         properties: {

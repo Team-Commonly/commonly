@@ -815,6 +815,12 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entryToolProjections(entry).filter((tool) => tool.requiredWriteMode === 'write-with-confirm'))
       .toHaveLength(5);
     expect(entry.tools.find((tool) => tool.upstreamName === 'addOrEditJiraIssueComment').irreversible).toBe(true);
+    // Since 11-04 a classic-page edit needs a token from a draft read, which
+    // the get_confluence_content pin already allows.
+    expect(entry.tools.find((tool) => tool.upstreamName === 'updateConfluenceContent').description)
+      .toContain('get_confluence_content(draft=true, detail=full)');
+    expect(Object.keys(entry.tools.find((tool) => tool.upstreamName === 'getConfluenceContent').inputSchema.properties))
+      .toEqual(expect.arrayContaining(['draft', 'detail']));
     expect(entryToolProjections(entry).find((tool) => tool.name === 'atlassian.add_or_edit_jira_issue_comment'))
       .toMatchObject({ irreversible: true, requiredWriteMode: 'write-with-confirm' });
     expect(capture.tools).toHaveLength(16);
