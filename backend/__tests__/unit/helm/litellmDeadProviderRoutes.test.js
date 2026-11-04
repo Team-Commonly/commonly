@@ -92,7 +92,9 @@ describe('no other vendor\'s name is served by DeepSeek unless legacyAliases is 
       .filter(({ i }) => /model:\s*deepseek\//.test(blockOf(i)))
       .filter(({ name }) => !name.startsWith('deepseek-'));
     expect(standIns.length).toBeGreaterThanOrEqual(LEGACY_NAMES.length);
-    standIns.forEach(({ name, i }) => expect([name, gateAbove(i)]).toEqual([name, expect.stringContaining('.Values.litellm.legacyAliases')]));
+    // The flag itself, or a provider-off gate ANDed with it; never `not` the flag.
+    const gate = /^\{\{- if (and \(not \.Values\.aiProviders\.\w+\.enabled\) )?\.Values\.litellm\.legacyAliases \}\}$/;
+    standIns.forEach(({ name, i }) => expect([name, gateAbove(i)]).toEqual([name, expect.stringMatching(gate)]));
   });
 
   test.each(LEGACY_NAMES)('%s exists, and is a fallback, only under the legacyAliases flag', (name) => {
