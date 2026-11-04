@@ -236,8 +236,20 @@ class GlobalModelConfigService {
     if (!forceRefresh && cachedConfig && (Date.now() - cachedAt) < CACHE_TTL_MS) {
       return JSON.parse(JSON.stringify(cachedConfig));
     }
+    const merged = GlobalModelConfigService.resolve(await GlobalModelConfigService.readStored());
+    cachedConfig = merged;
+    cachedAt = Date.now();
+
+    return JSON.parse(JSON.stringify(merged));
+  }
+
+  // The saved row as written, before defaults are merged in.
+  private static async readStored(): Promise<Partial<GlobalModelConfig>> {
     const setting = await SystemSetting.findOne({ key: MODEL_CONFIG_KEY }).lean() as Record<string, unknown> | null;
-    const stored = setting?.value && typeof setting.value === 'object' ? setting.value as Partial<GlobalModelConfig> : {};
+    return setting?.value && typeof setting.value === 'object' ? setting.value as Partial<GlobalModelConfig> : {};
+  }
+
+  private static resolve(stored: Partial<GlobalModelConfig>): GlobalModelConfig {
     const defaults = GlobalModelConfigService.defaults();
     const storedLlm = (stored.llmService || {}) as Partial<LlmServiceConfig> & { defaultModel?: string };
     const merged = sanitize(
@@ -260,10 +272,7 @@ class GlobalModelConfigService {
         },
       },
     );
-    cachedConfig = merged;
-    cachedAt = Date.now();
-
-    return JSON.parse(JSON.stringify(merged));
+    return merged;
   }
 
   static async setConfig(patch: Partial<GlobalModelConfig> = {}, userId: string | null = null): Promise<GlobalModelConfig> {
@@ -272,7 +281,8 @@ class GlobalModelConfigService {
     )) {
       throw new Error('Unsupported backend LLM provider. Use auto, gemini, litellm, or openrouter.');
     }
-    const current = await GlobalModelConfigService.getConfig({ includeSecrets: true, forceRefresh: true });
+    const storedBefore = await GlobalModelConfigService.readStored();
+    const current = GlobalModelConfigService.resolve(storedBefore);
     const mergedCandidate: GlobalModelConfig = {
       ...current,
       ...(patch || {}),
@@ -292,12 +302,16 @@ class GlobalModelConfigService {
 
     const sanitized = sanitize(mergedCandidate);
     // The community model follows AGENT_DEFAULT_MODEL until an admin picks
-    // another one (F103). The merge above carries the resolved default into
-    // every save, so a value equal to it is not stored as a choice.
+    // one (F103). The merge above carries the resolved default into every
+    // save, so a value equal to it is stored only when the row already held
+    // an admin's pick (the retired default slug is not one); otherwise it is
+    // the inherited default and stays unstored.
     const stored = JSON.parse(JSON.stringify(sanitized));
     const communityDefault = DEFAULT_CONFIG.openclaw.communityAgentModel;
     const community = sanitized.openclaw.communityAgentModel;
-    if (community.primary === communityDefault.primary && community.fallbacks.length === 0) {
+    const savedPrimary = String(storedBefore.openclaw?.communityAgentModel?.primary || '').trim();
+    const rowHeldAPick = Boolean(savedPrimary) && savedPrimary !== RETIRED_COMMUNITY_PRIMARY;
+    if (!rowHeldAPick && community.primary === communityDefault.primary && community.fallbacks.length === 0) {
       delete stored.openclaw.communityAgentModel;
     }
 

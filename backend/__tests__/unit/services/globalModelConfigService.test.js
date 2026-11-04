@@ -211,6 +211,34 @@ describe('globalModelConfigService', () => {
       expect(savedValue().openclaw.communityAgentModel).toEqual({ primary: 'openrouter/some-admin-pick', fallbacks: [] });
     });
 
+    // CodeRabbit on #3421: an admin's saved pick that later equals the
+    // default is still their pick, so it survives saves and default changes.
+    it.each([
+      ['an unrelated save', { llmService: { provider: 'auto' } }],
+      ['a save that posts the model back unchanged', { openclaw: { communityAgentModel: { primary: 'openrouter/claude-haiku-5-5', fallbacks: [] } } }],
+    ])('an admin\'s pick that equals the default survives %s, and a later default change', async (_label, patch) => {
+      const pick = { primary: 'openrouter/claude-haiku-5-5', fallbacks: [] };
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { communityAgentModel: pick } });
+
+      await GlobalModelConfigService.setConfig(patch);
+      expect(savedValue().openclaw.communityAgentModel).toEqual(pick);
+
+      process.env.AGENT_DEFAULT_MODEL = 'claude-sonnet-5-5';
+      stored(savedValue());
+      const result = await GlobalModelConfigService.getConfig({ forceRefresh: true });
+      expect(result.openclaw.communityAgentModel).toEqual(pick);
+    });
+
+    it('a save over the stored retired slug does not pin today\'s default', async () => {
+      process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+      stored({ openclaw: { communityAgentModel: { primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', fallbacks: [] } } });
+
+      await GlobalModelConfigService.setConfig({ llmService: { provider: 'auto' } });
+
+      expect(savedValue().openclaw).not.toHaveProperty('communityAgentModel');
+    });
+
     it('an admin\'s other nemotron pick is kept; only the retired default slug is mapped', async () => {
       process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
       stored({ openclaw: { communityAgentModel: { primary: 'openrouter/nvidia/nemotron-ultra-253b', fallbacks: [] } } });
