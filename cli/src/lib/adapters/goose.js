@@ -1,5 +1,6 @@
 /** Goose 1.54.0 wrapper. Public seats expose only the Commonly MCP extension. */
 import { requireSeatModel } from './seat-model.js';
+import { probeVersion } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -278,9 +279,12 @@ export default {
       : 'goose');
     if (isPublic && !isAbsolute(binary)) throw new Error('goose adapter: public seats require an absolute Goose executable');
     // A cold first launch can take several seconds while macOS scans the binary.
-    const version = ctx._version || versionOf(spawnSync(binary, ['--version'], {
-      encoding: 'utf8', timeout: 30000, env: safeEnv(sourceEnv),
-    }).stdout);
+    // Async and cached per binary (tested-version.js probeVersion): a
+    // synchronous probe stalled every other seat's provider proxy on the
+    // daemon's loop for as long as this cold start took.
+    const version = ctx._version || await probeVersion(binary, {
+      env: safeEnv(sourceEnv), timeoutMs: 30000, parse: versionOf,
+    });
     if (!TESTED_GOOSE_VERSIONS.includes(version)) {
       if (isPublic) throw new Error(`goose adapter: public seats refuse untested version ${version || 'unknown'}`);
       // eslint-disable-next-line no-console

@@ -42,6 +42,7 @@
  */
 
 import { requireSeatModel } from './seat-model.js';
+import { probeVersion } from './tested-version.js';
 import { spawn as childSpawn, spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { accessSync, constants as fsConstants, existsSync, readFileSync, realpathSync } from 'fs';
@@ -572,9 +573,11 @@ export default {
       if (!packageRoot) {
         throw new Error(`pi adapter: no ${PI_PACKAGE} package found behind ${binary}, so the sandbox cannot admit pi's code`);
       }
-      const version = ctx._version || versionOf(spawnSync(binary, ['--version'], {
-        encoding: 'utf8', timeout: 30000, env: safeEnv(baseEnv),
-      })?.stdout);
+      // Async and cached per binary (tested-version.js): a synchronous probe
+      // stalled every other seat's proxy on the daemon's loop.
+      const version = ctx._version || await probeVersion(binary, {
+        env: safeEnv(baseEnv), timeoutMs: 30000, parse: versionOf,
+      });
       if (!TESTED_PI_VERSIONS.includes(version)) {
         throw new Error(`pi adapter: public seats refuse untested pi version ${version || 'unknown'}; smoke-tested: ${TESTED_PI_VERSIONS.join(', ')}`);
       }

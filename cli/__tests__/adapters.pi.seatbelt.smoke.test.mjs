@@ -14,7 +14,7 @@ import {
 } from 'fs/promises';
 import { homedir } from 'os';
 import { dirname, join } from 'path';
-import pi, { TESTED_PI_VERSIONS } from '../src/lib/adapters/pi.js';
+import pi from '../src/lib/adapters/pi.js';
 import { detectSeatbelt } from '../src/lib/sandbox/seatbelt.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../src/lib/public-withheld-tools.js';
 
@@ -81,7 +81,7 @@ realSeatbeltTest('the jailed pi, the MCP server it starts and its shell all stay
         mcp: [{ name: 'commonly', transport: 'stdio', command: ['node', serverPath] }],
       },
       _piHome: piHome,
-      _version: TESTED_PI_VERSIONS[0],
+      // No _version: the real probe asks the fake pi on PATH, which says 0.84.1.
       timeoutMs: 20_000,
     });
     const report = JSON.parse(result.text);
