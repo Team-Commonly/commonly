@@ -55,6 +55,12 @@ jest.mock('../../../services/outboundUrlGuard', () => ({
   ...jest.requireActual('../../../services/outboundUrlGuard'),
   getFromPublicAddress: (...args) => mockGetPage(...args),
 }));
+// The run's broker projection; real unless a test hands it a Calendar tool.
+const mockHostedBroker = jest.fn();
+jest.mock('../../../services/grantBrokerProjectionService', () => {
+  const actual = jest.requireActual('../../../services/grantBrokerProjectionService');
+  return { ...actual, hostedBrokerToolsForRun: (...args) => mockHostedBroker(actual, ...args) };
+});
 jest.mock('../../../models/Message', () => {
   const chain = {
     sort: () => chain, limit: () => chain, select: () => chain, populate: () => chain, lean: () => Promise.resolve([]),
@@ -128,6 +134,7 @@ describe('a hosted turn the guard stops, or that fails', () => {
     jest.clearAllMocks();
     process.env.LITELLM_BASE_URL = 'http://litellm.test';
     process.env.LITELLM_MASTER_KEY = 'test-key';
+    mockHostedBroker.mockImplementation((actual, ...args) => actual.hostedBrokerToolsForRun(...args));
     chatReplies = [];
     chatBodies = [];
     checkUnavailable = false;
@@ -153,6 +160,40 @@ describe('a hosted turn the guard stops, or that fails', () => {
       if (!next) throw new Error('unexpected model call');
       return next;
     });
+  });
+
+  // CodeRabbit on #3384: once a run is offered a Limited-Use tool (Calendar),
+  // the standalone check that finds the stopped web result sends only the
+  // local guardrails, like the chat request; without it, every guardrail.
+  test.each([
+    // The check stops at the first guardrail that refuses, so without Calendar
+    // it reaches OpenAI moderation first and goes no further.
+    ['offered Calendar', true, ['injection-guard'], ['injection-guard']],
+    ['without Calendar', false, ['openai-moderation-enforce', 'injection-guard'], ['openai-moderation-enforce']],
+  ])('a turn %s checks a stopped web result with only its own guardrails', async (_label, calendar, requested, checked) => {
+    const SEAT = '507f1f77bcf86cd799439013';
+    const User = require('../../../models/User');
+    const Pod = require('../../../models/Pod');
+    User.findOne.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve({ _id: SEAT }) }) }));
+    Pod.findById.mockImplementation(() => {
+      const row = { name: 'Research', members: [SEAT] };
+      return { select: () => ({ lean: async () => row }), lean: async () => row };
+    });
+    mockHostedBroker.mockImplementation(async () => ({
+      tools: calendar ? [{ type: 'function', function: { name: 'google-calendar_list_events', description: 'List events', parameters: { type: 'object', properties: {} } } }] : [],
+      dispatch: calendar ? new Map([['google-calendar_list_events', { grantId: 'grant-calendar', tool: 'google-calendar.list_events' }]]) : new Map(),
+      limitedUse: calendar,
+    }));
+    chatReplies = [toolCalls(fetchCall('c1', STOPPED_URL)), guardStop, reply('I could not use that page.')];
+    try {
+      await runAgent(hostedInstall(), mention);
+      expect(guardChecks().length).toBeGreaterThan(0);
+      expect([...new Set(guardChecks().map(([, body]) => body.guardrail_name))]).toEqual(checked);
+      expect(chatBodies[0].guardrails).toEqual(requested);
+    } finally {
+      User.findOne.mockImplementation(() => ({ select: () => ({ lean: () => Promise.resolve(null) }) }));
+      Pod.findById.mockImplementation(() => ({ lean: jest.fn().mockResolvedValue({ name: 'Research' }) }));
+    }
   });
 
   test('sets aside the page the guard stops alone, keeps the clean one, and answers in one more round', async () => {
