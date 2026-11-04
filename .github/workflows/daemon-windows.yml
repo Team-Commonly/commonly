@@ -1,0 +1,56 @@
+name: Windows daemon
+
+# D245: the Commonly daemon on native Windows. The unit tests for the Windows
+# paths run on a Windows host (path handling, the real 0600 writer, the shim
+# resolver), then a smoke installs the daemon as the per-user scheduled task,
+# kills it twice and sees it come back, and checks stop and uninstall.
+
+on:
+  pull_request:
+    paths:
+      - 'cli/src/lib/daemon-service.js'
+      - 'cli/src/lib/daemon-service-windows.js'
+      - 'cli/src/lib/daemon-store.js'
+      - 'cli/src/lib/daemon-supervisor.js'
+      - 'cli/src/lib/windows-command.js'
+      - 'cli/src/lib/sandbox/**'
+      - 'cli/src/lib/adapters/claude.js'
+      - 'cli/src/lib/adapters/codex.js'
+      - 'cli/src/commands/daemon.js'
+      - 'cli/src/commands/agent.js'
+      - 'cli/scripts/windows-daemon-smoke.mjs'
+      - 'cli/__tests__/daemon-service.windows.test.mjs'
+      - 'cli/__tests__/windows-*.test.mjs'
+      - 'cli/__tests__/adapters.windows-launch.test.mjs'
+      - '.github/workflows/daemon-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  daemon:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci --prefix cli
+      - name: Windows unit tests
+        working-directory: cli
+        run: >-
+          node --experimental-vm-modules node_modules/jest/bin/jest.js
+          __tests__/daemon-service.windows.test.mjs
+          __tests__/windows-unsandboxed.test.mjs
+          __tests__/windows-command.test.mjs
+          __tests__/adapters.windows-launch.test.mjs
+          --runInBand
+      - name: Install, kill, come back, stop, uninstall
+        working-directory: cli
+        run: node scripts/windows-daemon-smoke.mjs

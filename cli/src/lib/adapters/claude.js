@@ -100,6 +100,7 @@ import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_WITHHELD_TOOLS } from '../public-withheld-tools.js';
 import { isShippedCommonlyMcpCommand } from '../declared-mcp-guard.js';
 import { isAnswerableToolError, PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from '../public-tool-error.js';
+import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 
 // See codex.js for the rationale on bumping the default + env override.
 // Keeping both adapters in lockstep so any wrapper agent runtime has the
@@ -638,11 +639,15 @@ const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
   processTable = readProcessTable, survivorIo, modelStream = true, turnReap = turnReapEnabled(),
+  commandResolution = {},
 }) => new Promise((resolve, reject) => {
   // Every process the turn starts inherits this marker however it detaches,
   // so what it leaves running is stopped once the turn has closed.
   const turn = markTurn(env ?? process.env, { enabled: turnReap });
-  const proc = spawnInOwnGroup(spawnImpl, cmd, args, {
+  // On Windows an npm `claude.cmd` is read, not run through cmd.exe: the
+  // prompt in `args` is pod content (#2141). Off Windows this is identity.
+  const launch = resolveLaunch(cmd, args, { env: turn.env, ...commandResolution });
+  const proc = spawnInOwnGroup(spawnImpl, launch.command, launch.args, {
     cwd,
     env: turn.env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -871,7 +876,11 @@ const buildMcpConfig = (mcpServers, ctx = {}) => {
     const entry = { type: server.transport || 'stdio' };
     if (server.url) entry.url = server.url;
     if (spawnCommand) {
-      const [command, ...args] = spawnCommand;
+      // Win32 only: claude spawns this without a shell, so an `npx.cmd` is
+      // resolved to its target here (#2141). Identity on every other platform.
+      const [command, ...args] = resolveMcpCommand(spawnCommand, ctx.commandResolution, {
+        label: 'claude', name: server.name,
+      });
       entry.command = command;
       if (args.length) entry.args = args;
     }
@@ -980,6 +989,10 @@ const withClaudePath = (input) => {
 // PATH but cannot reach the user's `~/.local/bin` without an absolute path
 // argv[0], even when that directory is bound read-only into the sandbox.
 const resolveClaudePath = (env = process.env) => {
+  // Windows has no `which`; the shim-aware resolver finds the same file.
+  if (process.platform === 'win32') {
+    return resolveWindowsCommandWithReason('claude', { env: withClaudePath(env) }).source || 'claude';
+  }
   // Defensive: spawnSync can return undefined under aggressive mocks (the
   // adapters.claude.environment.test.mjs suite stubs child_process so no real
   // process runs). Treat any failure mode as "use the bare command name."
@@ -1230,10 +1243,19 @@ export default {
 
   inventory: () => claudeRuntimeInventory({ env: withClaudePath(process.env) }),
 
-  async detect() {
+  // `opts` is a test seam only: `_commandResolution` overrides the Windows
+  // resolver's platform/env/fs. Production calls detect() with no argument.
+  async detect(opts = {}) {
     try {
       const claudeEnv = withClaudePath(process.env);
-      const res = spawnSync('claude', ['--version'], {
+      const resolution = { env: claudeEnv, ...opts._commandResolution };
+      const located = resolveWindowsCommandWithReason('claude', resolution);
+      if (!located.command) {
+        // Windows only: a `claude.cmd` this CLI cannot read safely, or none.
+        process.stderr.write(`claude adapter: ${located.reason}\n`);
+        return null;
+      }
+      const res = spawnSync(located.command, [...located.args, '--version'], {
         encoding: 'utf8', timeout: 5000,
         env: claudeEnv,
       });
@@ -1242,7 +1264,8 @@ export default {
       const version = (res.stdout || '').trim().split(/\s+/)[0] || 'unknown';
       // Best-effort resolve of the binary path for clearer UX ("claude detected
       // at /usr/local/bin/claude"). Falls back to the bare command name on
-      // platforms without `which` (e.g. Windows).
+      // platforms without `which`. On Windows the resolver already found it.
+      if (located.source) return { path: located.source, version };
       const where = spawnSync('which', ['claude'], {
         encoding: 'utf8',
         env: claudeEnv,
@@ -1383,6 +1406,7 @@ export default {
           instanceUrl: ctx.instanceUrl,
           agentName: ctx.agentName,
           publicSeat: publicTrust,
+          commandResolution: { env: withClaudePath(ctx.env), ...ctx._commandResolution },
         });
       }
       if (mcpConfig?.unavailableMcp.length) throw publicMcpUnavailableError(mcpConfig.unavailableMcp);
@@ -1427,6 +1451,7 @@ export default {
         processTable: ctx._processTable,
         survivorIo: ctx._survivorIo,
         turnReap: ctx._turnReap,
+        commandResolution: ctx._commandResolution, // test seam only
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -1496,6 +1521,7 @@ export default {
           processTable: ctx._processTable,
           survivorIo: ctx._survivorIo,
           turnReap: ctx._turnReap,
+          commandResolution: ctx._commandResolution, // test seam only
         });
         const contextTokens = claudeContextTokens({
           cwd: physicalPath(ctx.cwd), sessionId: freshId,

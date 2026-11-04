@@ -104,6 +104,14 @@ describe('daemon credential storage', () => {
     expect(() => loadDaemonRecord()).toThrow(/permissions are insecure/i);
   });
 
+  test('D245: on Windows the mode bits are not a permission (Node reports 0o666 whatever the ACL), so they are not checked', () => {
+    saveDaemonRecord(daemonRecord);
+    fs.chmodSync(daemonRecordPath(), 0o644);
+    fs.chmodSync(path.dirname(daemonRecordPath()), 0o755);
+    expect(loadDaemonRecord({ platform: 'win32' })).toEqual(daemonRecord);
+    expect(() => loadDaemonRecord({ platform: 'linux' })).toThrow(/permissions are insecure/i);
+  });
+
   test('refuses a writable credential directory even when the file is 0600', () => {
     saveDaemonRecord(daemonRecord);
     fs.chmodSync(path.dirname(daemonRecordPath()), 0o755);

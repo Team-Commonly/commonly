@@ -40,7 +40,7 @@ const boundRow = (over = {}) => ({
   ...over,
 });
 
-const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = async () => 'claude', persistState = jest.fn(), log = () => {} } = {}) => {
+const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = async () => 'claude', persistState = jest.fn(), log = () => {}, machineReport } = {}) => {
   const children = [];
   const timers = [];
   const client = {
@@ -68,6 +68,7 @@ const makeHarness = ({ rows, tokens = {}, mintResponses = [], resolveAdapter = a
     resolveAdapter: jest.fn(resolveAdapter),
     persistState,
     log,
+    ...(machineReport ? { machineReport } : {}),
     setTimeoutFn: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
     clearTimeoutFn: jest.fn(),
   });
@@ -1105,5 +1106,18 @@ describe('heartbeat', () => {
     expect(client.post).toHaveBeenCalledWith(`/api/machines/${record.machineDbId}/heartbeat`, {
       agents: [expect.objectContaining({ agentName: 'wren-test', state: 'running' })],
     });
+  });
+
+  test('D245: carries the local machine report (the Windows unsandboxed opt-in), re-read on every beat', async () => {
+    let optedIn = true;
+    const { supervisor, client } = makeHarness({
+      rows: () => [],
+      machineReport: () => (optedIn ? { sandbox: 'unsandboxed-opted-in' } : {}),
+    });
+    await supervisor.heartbeat();
+    expect(client.post).toHaveBeenLastCalledWith(`/api/machines/${record.machineDbId}/heartbeat`, expect.objectContaining({ sandbox: 'unsandboxed-opted-in', agents: [] }));
+    optedIn = false;
+    await supervisor.heartbeat();
+    expect(client.post.mock.calls.at(-1)[1]).not.toHaveProperty('sandbox');
   });
 });

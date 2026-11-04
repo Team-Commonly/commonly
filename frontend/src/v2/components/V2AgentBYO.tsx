@@ -17,7 +17,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import axios from '../../utils/axiosConfig';
 import { recordByoStep, type ByoCopyType, type ByoStep } from '../utils/byoTelemetry';
 import getApiBaseUrl from '../../utils/apiBaseUrl';
@@ -47,6 +47,39 @@ const DEFAULT_POD_TYPE = 'chat';
 // line because the binary already resolves.
 const CLI_INSTALL_COMMAND = 'npm i -g @commonlyai/cli@latest';
 const MEMORY_FILE_NAME = 'MEMORY.md';
+
+// A PowerShell double-quoted string treats ` as its escape and expands $, and
+// it ends at " and at the typographic quotes (U+201C, U+201D, U+201E), which
+// it reads as the same character. Each one gets a backtick. The key is opaque,
+// so the escape assumes nothing about its alphabet.
+const POWERSHELL_SPECIAL = /[`"$\u201C\u201D\u201E]/g;
+export const powerShellQuote = (value: string): string => '"' + value.replace(POWERSHELL_SPECIAL, (ch) => '`' + ch) + '"';
+
+export type ConnectSnippetOs = 'unix' | 'windows';
+// The command that makes the agent LISTEN, for bash/zsh or for PowerShell.
+// PowerShell has no `export`; its form is `$env:NAME="value"`, which also lasts
+// only in that window. Install line and run line are the same on both, except
+// that on native Windows `agent run` refuses without --unsandboxed: there is no
+// sandbox there, and the flag is the person choosing to run without one.
+export const connectSnippet = ({
+  os, apiUrl, token, agentName, adapter, allow = '',
+}: {
+  os: ConnectSnippetOs;
+  apiUrl: string;
+  token: string;
+  agentName: string;
+  adapter: 'claude' | 'codex';
+  allow?: string;
+}): string => {
+  const env = os === 'windows'
+    ? [`$env:COMMONLY_API_URL=${powerShellQuote(apiUrl)}`, `$env:COMMONLY_AGENT_TOKEN=${powerShellQuote(token)}`]
+    : [`export COMMONLY_API_URL=${apiUrl}`, `export COMMONLY_AGENT_TOKEN=${token}`];
+  return [
+    CLI_INSTALL_COMMAND,
+    ...env,
+    `commonly agent run ${agentName} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
+  ].join('\n');
+};
 const AGENT_KIND = 'agent' as const;
 const HOSTED_STATUS_POLL_MS = 4000;
 const HOSTED_STATUS_MAX_TICKS = 15;
@@ -80,9 +113,9 @@ type MachineAdapter = '' | 'claude' | 'codex';
 // On Linux (WSL included) bubblewrap runs Codex, and Claude Code only as a
 // workspace seat, which the CLI allows only while every pod it answers in is
 // invite-only (TASK-027); a public Claude Code seat there is refused. Native
-// Windows has no sandbox for either.
-// PowerShell also has no `export`, so a Windows visitor gets PowerShell lines
-// for the MCP connection instead (windows-latest, 2026-10-16).
+// Windows has no sandbox for either, so there the listener runs unconfined and
+// the page says so (D245). PowerShell has no `export`, so a Windows visitor
+// gets PowerShell lines for both commands (windows-latest, 2026-10-16).
 type SetupOs = 'mac' | 'linux' | 'windows';
 const browserOs = (): SetupOs => {
   if (typeof navigator === 'undefined') return 'mac';
@@ -91,7 +124,8 @@ const browserOs = (): SetupOs => {
   // Browser spellings only, case-sensitive: jsdom's user agent carries the
   // host's process.platform in lower case ("(linux)"), which must not flip the
   // page on a Linux CI host.
-  if (/Windows/.test(platform)) return 'windows';
+  // navigator.platform reads "Win32" on every Windows browser, 64-bit included.
+  if (/Windows/.test(platform) || /^Win/.test(nav.platform || '')) return 'windows';
   if (/X11|CrOS|Linux (x86_64|aarch64|armv|i686)|^Linux$/.test(platform) && !/Android/.test(platform)) return 'linux';
   return 'mac';
 };
@@ -113,12 +147,10 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
   { os: 'linux', labelKey: 'agentByo.listen.osLinux' },
   { os: 'windows', labelKey: 'agentByo.listen.osWindows' },
 ];
-// Windows with Codex is stricter here than in the CLI on purpose: the CLI's
-// host check leaves Codex alone (it confines with its own profiles, not
-// Seatbelt or bubblewrap), but this page's command is bash `export` lines,
-// which PowerShell cannot run, and Codex on native Windows is unmeasured.
-// Not drift: the page only offers what it has seen work. Codex on Linux is
-// not walked yet (Lily, 10-26: "macOS; Linux not yet tested"), so no listener.
+// Windows runs either CLI without a sandbox (D245): the command is PowerShell
+// lines, and the page says beside it that nothing confines the agent there.
+// Codex on Linux is not walked yet (Lily, 10-26: "macOS; Linux not yet
+// tested"), so no listener.
 // Claude Code on Linux runs only in a pod that passes the CLI's own test
 // (workspace-trust.js podIsConfirmedPrivate): both flags reported and false,
 // and invite-only. A pod that omits a flag is not private.
@@ -134,7 +166,7 @@ const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
 const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 
 const listenerRunsOn = (os: SetupOs, adapter: 'claude' | 'codex', pod?: V2Pod): boolean => (
-  os === 'mac' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod))
+  os === 'mac' || os === 'windows' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod))
 );
 type ModelOption = { value: string; labelKey: string };
 const CLAUDE_MODEL_OPTIONS: ModelOption[] = [
@@ -339,7 +371,6 @@ const V2AgentBYO: React.FC = () => {
   // Compact only where the command exists (#2289): "One command in Terminal"
   // must not open onto a page that shows no command. Elsewhere the full page
   // says why and what works instead.
-  const wontAnswerBeforeInstall = mode === 'byo' && !issued && !listenerAvailable && setupOs === 'windows';
   const showCompactByo = compactByo && listenerAvailable && !showCompactHosted && !personaCard && mode === 'byo';
   const selectedMachine = machines.find((m) => m.machineId === machineId);
   const selectedMachineName = selectedMachine
@@ -1090,7 +1121,12 @@ const V2AgentBYO: React.FC = () => {
   };
 
   const apiUrl = getApiBaseUrl().replace(/\/+$/, '');
-  const daemonCommand = daemonSetupCommand(apiUrl);
+  // Windows PowerShell 5.1, the one every Windows ships, has no `&&`: the same
+  // steps go one per line there, and each runs after the one before. The
+  // install takes --unsandboxed there, as `agent run` does.
+  const daemonCommand = setupOs === 'windows'
+    ? `${daemonSetupCommand(apiUrl).split(' && ').join('\n')} --unsandboxed`
+    : daemonSetupCommand(apiUrl);
 
   const claudeSnippet = issued
     ? `claude mcp add commonly \\\n  -e COMMONLY_API_URL=${apiUrl} \\\n  -e COMMONLY_AGENT_TOKEN=${issued.token} \\\n  -- npx -y @commonlyai/mcp`
@@ -1116,7 +1152,14 @@ const V2AgentBYO: React.FC = () => {
   // EINVALIDTAGNAME "#" and installs nothing (ux-lead on #2104). The command
   // names itself; the body above the box says where to run it.
   const listenSnippet = issued
-    ? `${CLI_INSTALL_COMMAND}\nexport COMMONLY_API_URL=${apiUrl}\nexport COMMONLY_AGENT_TOKEN=${issued.token}\ncommonly agent run ${issued.agentName} --adapter ${listenAdapter}${allowFlag ? ` --allow ${allowFlag}` : ''}`
+    ? connectSnippet({
+      os: setupOs === 'windows' ? 'windows' : 'unix',
+      apiUrl,
+      token: issued.token,
+      agentName: issued.agentName,
+      adapter: listenAdapter,
+      allow: allowFlag,
+    })
     : '';
 
   const cursorSnippet = issued
@@ -1146,13 +1189,13 @@ const V2AgentBYO: React.FC = () => {
   };
   // The daemon block lives in Other ways to connect on both the start form and
   // the result page, so the stop-on-close line can point to it from the result.
-  // Windows has no daemon install (systemd), so there is no block to offer.
-  const addComputerBlock = machines.length === 0 && setupOs !== 'windows' ? (
+  // On Windows `daemon install` registers a logon task (D245).
+  const addComputerBlock = machines.length === 0 ? (
     <div className="v2-byo__add-computer" data-testid="byo-add-computer">
       <span className="v2-byo__label">{t('agentByo.addComputer.title')}</span>
       <p className="v2-byo__hint" data-testid="byo-add-computer-recommended">{t('agentByo.addComputer.recommended')}</p>
       <div className="v2-byo__add-computer-row">
-        <code>{daemonCommand}</code>
+        <code className={setupOs === 'windows' ? 'v2-byo__add-computer-lines' : undefined}>{daemonCommand}</code>
         <button
           type="button"
           className="v2-byo__copy"
@@ -1480,32 +1523,6 @@ const V2AgentBYO: React.FC = () => {
             </div>
           )}
           {nameLookupError && mode === 'byo' && <div className="v2-byo__error">{t('agentByo.errors.nameLookupFailed')} <button type="button" className="v2-byo__link" onClick={() => setNameLookupRetry((n) => n + 1)}>{t('agentByo.actions.retry')}</button></div>}
-          {/* Said before the agent exists, not after (11-02: four agents made on
-              Windows, none ever answered, because the only warning came after
-              install). Mac always runs the listener; Linux is the pod's call. */}
-          {wontAnswerBeforeInstall && (
-            <div className="v2-byo__needs" role="status" data-testid="byo-wont-answer-before-install">
-              {t(hosting?.configured ? 'agentByo.form.wontAnswerBeforeInstall' : 'agentByo.form.wontAnswerBeforeInstallNoHosted', {
-                os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osWindows'),
-                tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
-                hosted: t('agentByo.mode.hosted'),
-              })}
-              {hosting?.configured && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    className="v2-byo__submit"
-                    data-testid="byo-wont-answer-run-here"
-                    disabled={submitting}
-                    onClick={() => chooseMode('hosted')}
-                  >
-                    {t('agentByo.mode.hosted')}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
           {mode === null ? (
             // Signal §3 not yet: a muted line where the act will be, until a
             // place to run it is chosen. Plain text, not a box, so it can't
@@ -1529,7 +1546,7 @@ const V2AgentBYO: React.FC = () => {
               onMouseDown={(event) => event.preventDefault()}
               onClick={submit}
               disabled={submitting || (mode === 'byo' && !namesReady) || !podId}
-              className={wontAnswerBeforeInstall && hosting?.configured ? 'v2-byo__submit v2-byo__submit--quiet' : 'v2-byo__submit'}
+              className="v2-byo__submit"
             >
               {(() => {
                 if (mode === 'hosted') return submitting ? t('agentByo.actions.starting') : t('agentByo.actions.runHere');
@@ -1554,8 +1571,9 @@ const V2AgentBYO: React.FC = () => {
             {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
+              // Only Linux has no listener now: Claude Code outside an invite-only pod, or Codex.
               : listenAdapter === 'claude'
-                ? (setupOs === 'linux' ? 'agentByo.footnote.cliRouteClaudeLinuxUnavailable' : 'agentByo.footnote.cliRouteClaudeUnavailable')
+                ? 'agentByo.footnote.cliRouteClaudeLinuxUnavailable'
                 : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
@@ -1684,7 +1702,7 @@ const V2AgentBYO: React.FC = () => {
           */}
           <div className="v2-byo__snippet v2-byo__snippet--listen" data-testid="byo-listen">
             <div className="v2-byo__snippet-head">
-              <span>{t('agentByo.listen.title')}</span>
+              <span>{t(setupOs === 'windows' ? 'agentByo.listen.titleWindows' : 'agentByo.listen.title')}</span>
             </div>
             {/* Everything a stranger needs BEFORE the paste, in one place (QA
                 BYO walk 1 found none of it on the page). One block, so other
@@ -1725,11 +1743,11 @@ const V2AgentBYO: React.FC = () => {
             )}
             <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
               {listenerAvailable
-                ? `${t('agentByo.listen.needs', {
+                ? `${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
                   tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex') : t('agentByo.listen.toolClaude'),
                 })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxFolder')}` : ''}`
                 : t(listenAdapter === 'claude'
-                  ? (setupOs === 'linux' ? 'agentByo.listen.unavailableClaudeLinux' : 'agentByo.listen.unavailableClaude')
+                  ? 'agentByo.listen.unavailableClaudeLinux'
                   : 'agentByo.listen.unavailableCodex', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
                 })}{' '}
@@ -1742,6 +1760,17 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
+            {/* Directly above the lines it explains: the last one carries --unsandboxed. */}
+            {listenerAvailable && setupOs === 'windows' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
+                <Trans
+                  i18nKey="agentByo.listen.windowsNote"
+                  values={{ name: issued.agentName }}
+                  components={{ cmd: <code /> }}
+                />
+                {listenAdapter === 'codex' && <>{' '}{t('agentByo.listen.windowsCodex')}</>}
+              </p>
+            )}
             {listenerAvailable && (
               <div className="v2-byo__command" onCopy={() => { copiedIssuedContent(); markCopiedKind('listen'); }}>
                 <pre className="v2-byo__pre">{listenSnippet}</pre>
@@ -1756,7 +1785,7 @@ const V2AgentBYO: React.FC = () => {
             )}
             {listenerAvailable && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-npm-hint">
-                {t('agentByo.listen.npmPermission')}
+                {t(setupOs === 'windows' ? 'agentByo.listen.scriptsDisabled' : 'agentByo.listen.npmPermission')}
               </p>
             )}
             {listenerAvailable && (
@@ -1784,7 +1813,9 @@ const V2AgentBYO: React.FC = () => {
                 </p>
               </>
             )}
-            {listenerAvailable && listenAdapter === 'claude' && (
+            {/* Both reach notes describe a confinement Windows doesn't have; the
+                Windows note above says what holds there instead. */}
+            {listenerAvailable && listenAdapter === 'claude' && setupOs !== 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach">
                 {t(setupOs === 'linux' ? 'agentByo.listen.reachClaudeLinux' : 'agentByo.listen.reachClaude', { name: issued.agentName })}
               </p>
@@ -1827,7 +1858,7 @@ const V2AgentBYO: React.FC = () => {
                 )}
               </div>
             )}
-            {listenerAvailable && listenAdapter === 'codex' && (
+            {listenerAvailable && listenAdapter === 'codex' && setupOs !== 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-reach-codex">
                 {t('agentByo.listen.reachCodex')}
               </p>

@@ -21,6 +21,9 @@ import { PUBLIC_SANDBOX_MODES, resolvePublicSandboxMode } from './mode.js';
 import { detectBwrap as defaultDetectBwrap } from './bwrap.js';
 import { detectSeatbelt as defaultDetectSeatbelt } from './seatbelt.js';
 
+// D245: the Windows opt-in (windows-unsandboxed.js re-exports it; defined here to avoid an import cycle).
+export const UNSANDBOXED_FLAG = '--unsandboxed';
+
 // The Seatbelt modes come from mode.js, as grant-broker-guard's do, so a mode
 // added there is not silently missing here.
 const SEATBELT_MODES = PUBLIC_SANDBOX_MODES;
@@ -36,7 +39,10 @@ export const windowsSandboxMessage = (adapterName) => {
   // Code (see linuxClaudeMessage).
   return [
     `Commonly runs a connected ${label} inside a sandbox, and has no sandbox for Windows yet,`,
-    'so this agent cannot listen for @mentions from native Windows. Instead:',
+    'so by default this agent cannot listen for @mentions from native Windows. You can:',
+    // D245: the user's own choice, never a default (sandbox/windows-unsandboxed.js).
+    `  - Run it without a sandbox, with your own access to files and commands: add ${UNSANDBOXED_FLAG}`
+      + ` (commonly agent run <name> ${UNSANDBOXED_FLAG}, or commonly daemon install ${UNSANDBOXED_FLAG}). It then gets no connector grants.`,
     ...(adapterName === 'claude'
       ? ['  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.']
       : [`  - WSL 2 (Ubuntu): install Node and ${label} inside WSL, run \`sudo apt install bubblewrap\`,`

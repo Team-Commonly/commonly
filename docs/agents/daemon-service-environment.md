@@ -14,6 +14,7 @@ that installed it, and that has cost a fleet of seats at least once.
 |---|---|---|
 | macOS | `~/Library/LaunchAgents/me.commonly.daemon.plist` | `launchctl`, `KeepAlive` |
 | Linux | `~/.config/systemd/user/commonly-daemon.service` | `systemctl --user`, `Restart=always` |
+| Windows | `%USERPROFILE%\.commonly\daemon\service\` (task XML, launcher, `service-env.json`) | Task Scheduler task `CommonlyDaemon`; keep-alive in the launcher. See [daemon-service-windows.md](daemon-service-windows.md) |
 
 Both run the exact interpreter and CLI entry that performed the install
 (resolved at install time), then `daemon run --foreground`.

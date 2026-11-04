@@ -118,12 +118,13 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(screen.queryByText(/your connect command for/i)).toBeNull();
   });
 
-  test('run path on Windows: no listener command, so no stop-on-close line', async () => {
+  test('run path on Windows: the listener command, so the stop-on-close line points to the daemon block', async () => {
     setUserAgent(WINDOWS);
     mockPage({ machines: [] });
     renderPage();
     await issueRun();
-    expect(screen.queryByTestId('byo-listen-stops-on-close')).toBeNull();
+    expect(screen.getByTestId('byo-listen-stops-on-close')).toHaveTextContent(/Other ways to connect/);
+    expect(screen.getByTestId('byo-result-more-ways')).toContainElement(screen.getByTestId('byo-add-computer'));
   });
 
   test('daemon path with no computer: marked recommended, and Reload says the computer appears by name, online', async () => {
@@ -136,24 +137,24 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
     expect(add).toHaveTextContent('commonly daemon register && commonly daemon install');
   });
 
-  test('on Windows: no quick-try line, and the daemon is not marked recommended (systemd cannot install there)', async () => {
+  // D245: `commonly daemon install --unsandboxed` registers a logon task on
+  // Windows. PowerShell 5.1 has no `&&`, so the same steps go one per line.
+  test('on Windows: the quick-try line, and the daemon block one step per line, marked recommended', async () => {
     setUserAgent(WINDOWS);
     mockPage({ machines: [] });
     renderPage();
     await waitFor(() => expect(axios.get).toHaveBeenCalledWith('/api/machines', expect.anything()));
-    expect(screen.queryByTestId('byo-quick-try')).toBeNull();
-    expect(screen.queryByTestId('byo-add-computer-recommended')).toBeNull();
-    // Windows gets no daemon block at all: systemd cannot install there, so
-    // there is nothing to run and nothing to offer.
-    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
-  });
-
-  test('on Windows, the result page offers no daemon block either', async () => {
-    setUserAgent(WINDOWS);
-    mockPage({ machines: [] });
-    renderPage();
-    await issueRun();
-    expect(screen.queryByTestId('byo-add-computer')).toBeNull();
+    // No hosting here, so the page is already on Bring your own.
+    expect(await screen.findByTestId('byo-quick-try')).toBeInTheDocument();
+    expect(screen.getByTestId('byo-add-computer-recommended')).toHaveTextContent(/Recommended for an agent that keeps running/);
+    const command = screen.getByTestId('byo-add-computer').querySelector('code');
+    expect(command.textContent).not.toContain('&&');
+    expect(command.textContent.split('\n')).toEqual([
+      'npm i -g @commonlyai/cli@latest',
+      expect.stringMatching(/^commonly login --instance \S+$/),
+      'commonly daemon register',
+      'commonly daemon install --unsandboxed',
+    ]);
   });
 
   test('with a computer already added, the quick-try line and the daemon block are both gone', async () => {

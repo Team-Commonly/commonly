@@ -65,6 +65,9 @@ export const createDaemonSupervisor = ({
   loadToken, // (agentName) => token record | null
   saveToken, // (agentName, record) => void
   runtimeInventory = async () => undefined,
+  // Machine-level facts for the check-in, read locally each beat (D245: the
+  // Windows unsandboxed opt-in). Never derived from anything the server sent.
+  machineReport = () => ({}),
   resolveAdapter, // async (runtime) => adapter name for THIS machine
   persistState = () => {}, // (agentStates) => void; must not persist secrets
   log = () => {},
@@ -555,7 +558,11 @@ export const createDaemonSupervisor = ({
   const heartbeat = async () => {
     if (stopped || now() < reconnectAfter) return;
     try {
-      await client.post(`/api/machines/${record.machineDbId}/heartbeat`, { agents: agentStates(), runtimeInventory: await runtimeInventory() });
+      await client.post(`/api/machines/${record.machineDbId}/heartbeat`, {
+        ...machineReport(),
+        agents: agentStates(),
+        runtimeInventory: await runtimeInventory(),
+      });
       connectionRestored();
     } catch (error) {
       connectionFailure(error, 'heartbeat failed');

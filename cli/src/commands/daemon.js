@@ -38,6 +38,9 @@ import {
   servicePaths,
 } from '../lib/daemon-service.js';
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
+import {
+  UNSANDBOXED_FLAG, clearUnsandboxedOptIn, loadUnsandboxedOptIn, saveUnsandboxedOptIn, unsandboxedFlagRefusal,
+} from '../lib/sandbox/windows-unsandboxed.js';
 import { loadDaemonState, saveDaemonState } from '../lib/daemon-state.js';
 import {
   CLEAR_SCREEN, renderDaemonWatch, shouldRedraw, WATCH_INTERVAL_MS,
@@ -433,11 +436,25 @@ Examples:
 
   daemon
     .command('install')
-    .description('Register the daemon as a login service (launchd/systemd); on Linux, also turn on lingering so it starts at boot')
-    .action(async () => {
+    .description('Register the daemon as a login service (launchd, systemd, or a Windows scheduled task); on Linux, also turn on lingering so it starts at boot')
+    .option(UNSANDBOXED_FLAG, 'Native Windows only: the agents this daemon runs have no sandbox, and run with your own access to files and commands. They get no connector grants. Install again without it to turn it off.')
+    .action(async (opts) => {
       try {
+        if (opts.unsandboxed) {
+          const flagRefusal = unsandboxedFlagRefusal();
+          if (flagRefusal) throw new Error(flagRefusal);
+        }
         // A service without a credential just crash-loops at boot.
         requireDaemonRecord();
+        // D245: this command is the only writer of the opt-in, and installing
+        // without the flag is how it is turned off. Written before the task
+        // starts, so the first seats it spawns already read the answer.
+        if (opts.unsandboxed) {
+          saveUnsandboxedOptIn();
+          console.log('Agents this daemon runs will have no sandbox: they act with your own access to files and commands, and get no connector grants. To turn this off, run: commonly daemon install');
+        } else if (clearUnsandboxedOptIn()) {
+          console.log('Turned off running without a sandbox: on Windows, agents this daemon runs are refused again until you choose otherwise.');
+        }
         // Same class one layer over (TASK-049): a service without the SEATS'
         // provider key comes up clean, and every pi seat then dies inside its
         // adapter. The keys are captured here because this is the only moment
@@ -461,6 +478,7 @@ Examples:
     .action(async () => {
       try {
         await uninstallDaemonService(serviceDeps());
+        clearUnsandboxedOptIn();
       } catch (error) {
         console.error(`Daemon uninstall failed: ${error.message}`);
         process.exitCode = 1;
@@ -590,11 +608,14 @@ Examples:
             chmodSync(seatLog, 0o600);
             return spawn(process.execPath, [process.argv[1], 'agent', 'run', agentName], {
               stdio: ['ignore', out, out],
+              // Windows: never flash a console window per seat (no-op elsewhere).
+              windowsHide: true,
               env: { ...process.env, COMMONLY_MANAGED_RUNNER: '1' },
             });
           },
           loadToken: loadAgentToken,
           saveToken: saveAgentToken,
+          machineReport: () => (loadUnsandboxedOptIn() ? { sandbox: 'unsandboxed-opted-in' } : {}),
           runtimeInventory: async () => {
             if (!cachedInventory || Date.now() - inventoryCheckedAt > 300_000) {
               cachedInventory = await collectRuntimeInventory(getAdapter);
@@ -676,6 +697,7 @@ Examples:
         });
         const lastSeen = machine.lastSeenAt ? new Date(machine.lastSeenAt).toLocaleString() : 'never';
         console.log(`${machine.name}: ${machine.status} (last heartbeat: ${lastSeen})`);
+        if (loadUnsandboxedOptIn()) console.log('Sandbox: unsandboxed (opted in). Agents run with your own access and get no connector grants. Turn off: commonly daemon install');
         if (opts.verbose) {
           const local = loadDaemonState();
           if (!local) {

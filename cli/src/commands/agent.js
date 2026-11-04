@@ -90,6 +90,9 @@ import { prepareCommitAttribution } from '../lib/commit-attribution.js';
 import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
+import {
+  UNSANDBOXED_NOTICE, runOptedInUnsandboxed, unsandboxedFlagRefusal, unsandboxedRunEnvironment,
+} from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
 import { createSeatStop } from '../lib/seat-stop.js';
@@ -4218,7 +4221,15 @@ Docs:
     .option('--cascade-reset <ms>', `Silence window that clears the streak (env ${CASCADE_ENV_VARS.resetMs}, default ${CASCADE_DEFAULTS.resetMs})`)
     .option('--refusal-handoff <agent>', 'Agent to @mention when the model provider refuses a request\'s content; the request is acked as refused, never retried')
     .option('--allow <grants>', 'On first run of an agent that works in its folder, also let it edit files and run commands (write) and/or fetch web pages (web), comma-separated. Commands reach the network.')
+    .option('--unsandboxed', 'Native Windows only: run this agent without a sandbox, with your own access to files and commands. It gets no connector grants.')
     .action(async (name, opts) => {
+      if (opts.unsandboxed) {
+        const flagRefusal = unsandboxedFlagRefusal();
+        if (flagRefusal) {
+          console.error(`${stamp()} [${name}] ${flagRefusal}`);
+          process.exit(1);
+        }
+      }
       let allow;
       try {
         allow = parseAllowGrants(opts.allow);
@@ -4258,9 +4269,20 @@ Docs:
         bootstrapped = true;
       }
 
+      // D245: on native Windows the user may choose to run without a sandbox,
+      // by typing the flag or by installing the daemon with it (the marker is
+      // read only by the seats that daemon spawns). Nothing from the server
+      // decides this. The stored record keeps its sandbox; only this run's
+      // environment drops it, and a dropped sandbox withholds the grant broker.
+      const unsandboxedOptIn = runOptedInUnsandboxed({ flag: opts.unsandboxed === true });
+      const runEnvironment = unsandboxedRunEnvironment(record.environment, {
+        adapterName: record.adapter, optedIn: unsandboxedOptIn,
+      });
+      if (runEnvironment !== record.environment) console.warn(`${stamp()} [${name}] ${UNSANDBOXED_NOTICE}`);
+
       // Every turn of a seat this host cannot confine would fail, so say so
       // once, before a token file is written or a poll is made.
-      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter });
+      const hostRefusal = hostSandboxRefusal({ environment: runEnvironment, adapterName: record.adapter });
       if (hostRefusal) {
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
@@ -4327,7 +4349,7 @@ Docs:
       // back on 2026-08-18, and that only worked because the processes were
       // still alive — after the next restart that route is gone too.
       await prepareMcpBeforeFirstPoll({
-        environment: record.environment,
+        environment: runEnvironment,
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
       });
 
@@ -4348,7 +4370,7 @@ Docs:
         displayName: record.displayName || record.agentName,
         instanceId: record.instanceId,
         podId: record.podId,
-        environment: record.environment || null,
+        environment: runEnvironment || null,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         ...cascadeOverridesFromOpts(opts),
