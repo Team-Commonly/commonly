@@ -201,7 +201,7 @@ const V2AgentProfileRoute: React.FC = () => {
   return (
     <V2AgentProfile
       shell={isAuthenticated
-        ? (page) => <V2AuthenticatedShell>{feature(t('common.pageTitle.agentProfile'), page, false, false, 'v2-feature--bar v2-feature--aprofile')}</V2AuthenticatedShell>
+        ? (page) => <V2AuthenticatedShell>{feature(t('common.pageTitle.agentProfile'), page, false, false)}</V2AuthenticatedShell>
         : undefined}
     />
   );
@@ -386,7 +386,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="pods/:podId/runs/:runId"
-                  element={feature(t('runTrace.title'), <V2RunTrace />, false, false, 'v2-feature--bar v2-feature--run-trace')}
+                  element={feature(t('runTrace.title'), <V2RunTrace />, false, false, 'v2-feature--run-trace')}
                 />
                 <Route
                   path="pods/:podId/tasks/:taskId/record"
@@ -410,7 +410,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="profile/:id"
-                  element={feature(t('common.pageTitle.profile'), <V2PersonProfile />, false, false, 'v2-feature--bar v2-feature--profile')}
+                  element={feature(t('common.pageTitle.profile'), <V2PersonProfile />, false, false, 'v2-feature--profile')}
                 />
                 <Route
                   path="admin/integrations/global"

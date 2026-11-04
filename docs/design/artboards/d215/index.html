@@ -250,6 +250,9 @@ figcaption b { font: 600 13px/1.4 var(--f-body); color: var(--fg); }
 .pod.on { background: var(--t); font-weight: 600; color: var(--ink); }
 .pod.on .mk { background: var(--c); color: #fff; }
 .pod .pin { display: none; }
+/* Sidebar 390: row height raised to the 44 px accessibility floor, Cofounder 11-04, not from Sam's pick.
+   Eight 36 px rows can't each keep a 44 px target. Only the row height changes. */
+.frame[data-surface="sidebar"][data-vp="390"] .pod { height: 44px; }
 .pod.hov .pin { display: grid; position: absolute; right: 6px; background: var(--t); }
 .pod.hov .tm, .pod.hov .un { visibility: hidden; }
 

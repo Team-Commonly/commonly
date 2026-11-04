@@ -50,6 +50,36 @@
   .v2-settings__edit, .v2-settings__token-detail, .v2-settings__fold-body { padding-left: 12px; padding-right: 12px; }
 }
 
+/* Phones (≤760): the frame draws these keys at their desktop size (28 small keys and
+   28 icon keys, 24 small-segment options), so the rows stay 48. The primitives' 44px
+   phone size is undone here; each key takes its 44px touch area from an invisible
+   ::before centred on it (Cofounder ruling 11-04: the pick wins on look, no tap target
+   under 44). */
+@media (max-width: 760px) {
+  .v2-settings .v2p-b.v2p-b-sm { height: 28px; }
+  .v2-settings .v2p-ib.v2p-b-sm { width: 28px; height: 28px; }
+  .v2-settings .v2p-seg.v2p-seg--sm button { height: 24px; }
+  /* Every key this block shrinks gets the area, not only the ones in list rows: the
+     profile editor, the token detail and the folds hold 28px keys too (review, #3402). */
+  .v2-settings .v2p-b.v2p-b-sm,
+  .v2-settings .v2p-seg button { position: relative; }
+  .v2-settings .v2p-b.v2p-b-sm::before,
+  .v2-settings .v2p-seg button::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+    background: transparent;
+  }
+  /* A segment's end options grow outward only, so a neighbour's area never covers
+     theirs (EN is 32 wide beside 中文). */
+  .v2-settings .v2p-seg button:first-child::before { left: auto; right: 0; transform: translateY(-50%); }
+  .v2-settings .v2p-seg button:last-child::before { left: 0; transform: translateY(-50%); }
+}
+
 .v2-settings__account-row { min-height: 64px; }
 
 .v2-settings__avatar {

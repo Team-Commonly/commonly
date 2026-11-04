@@ -32,6 +32,10 @@ interface Pop {
 
 const ASK_HREF = 'https://github.com/Team-Commonly/commonly/issues/new?title=Connector%20request';
 const MAX_CHIPS = 3;
+// A tool's name is namespaced by its connector ("atlassian.search_jira"); the
+// popover already names the connector, so a chip shows the part after the
+// namespace, as the d215 frame draws it. The full name stays in the title.
+const chipName = (name: string): string => (name.includes('.') ? name.slice(name.indexOf('.') + 1) : name);
 const FILTERS: Filter[] = ['all', 'channels', 'tools'];
 // A brand name, not translatable copy.
 const GITHUB_BRAND = 'GitHub';
@@ -355,7 +359,7 @@ const ConnectorsPage: React.FC = () => {
         <p>{catalogDescription(i18n, entry.installableId, entry.description)}</p>
         {names.length > 0 && (
           <div className="v2-cx-pop__chips">
-            {names.slice(0, MAX_CHIPS).map((name) => <span key={name} className="v2-cx-chip">{name}</span>)}
+            {names.slice(0, MAX_CHIPS).map((name) => <span key={name} className="v2-cx-chip" title={name}>{chipName(name)}</span>)}
             {names.length > MAX_CHIPS && <span className="v2-cx-chip">+{names.length - MAX_CHIPS}</span>}
           </div>
         )}
