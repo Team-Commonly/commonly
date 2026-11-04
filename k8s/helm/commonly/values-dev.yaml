@@ -233,6 +233,9 @@ postgresql:
 
 redis:
   enabled: true
+  # Require AUTH from clients (password via ESO: commonly-dev-redis-password).
+  auth:
+    enabled: true
   # ADR-015 amendment (2026-07-11): Redis is a realtime availability
   # dependency. Two user-visible 503s showed that spot reclamation here takes
   # the shell offline, so keep it on the on-demand dev pool.
