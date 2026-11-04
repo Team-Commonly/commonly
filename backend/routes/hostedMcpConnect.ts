@@ -96,11 +96,14 @@ const callbackRedirect = (
     manualRevoke?: { entryId: string; revokeAt: string };
     /** A catalogue entry the page may name in its notice; never vendor text. */
     entryId?: string;
+    /** D248: the page sends the person on to the entry's access page. */
+    next?: 'access';
   },
 ) => {
   const query = new URLSearchParams({ hostedMcp: status });
   if (code) query.set('code', code);
   if (options?.entryId) query.set('entryId', options.entryId);
+  if (options?.next) query.set('next', options.next);
   if (options?.manualRevoke) {
     query.set('entryId', options.manualRevoke.entryId);
     query.set('revokeAt', options.manualRevoke.revokeAt);
@@ -868,12 +871,27 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   // update made the new grant visible.
   forgetHostedMcpDrift(String(consumed._id));
 
-  return callbackRedirect(res, 'connected', undefined, manualRevokeAt ? {
-    manualRevoke: {
-      entryId: entry.id,
-      revokeAt: manualRevokeAt,
-    },
-  } : undefined);
+  if (manualRevokeAt) {
+    return callbackRedirect(res, 'connected', undefined, {
+      manualRevoke: {
+        entryId: entry.id,
+        revokeAt: manualRevokeAt,
+      },
+    });
+  }
+  // D248: connected but reaching nothing yet (GitHub with no App installation).
+  // The page names the step and opens the entry's own access page; the link
+  // comes from the catalogue there, never from this query.
+  let accessNext = false;
+  if (entry.accessPage && typeof entry.needsAccessSetup === 'function') {
+    try {
+      accessNext = await entry.needsAccessSetup(tokens.access_token);
+    } catch {
+      accessNext = false;
+    }
+  }
+  return callbackRedirect(res, 'connected', undefined,
+    accessNext ? { entryId: entry.id, next: 'access' } : undefined);
 };
 
 router.get('/:entryId/callback', callbackRateLimit, async (req: Request, res: Response) => {

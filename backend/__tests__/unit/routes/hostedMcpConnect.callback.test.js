@@ -197,6 +197,8 @@ const outcome = (res) => {
   const entryId = url.searchParams.get('entryId');
   const revokeAt = url.searchParams.get('revokeAt');
   const extraScopes = url.searchParams.getAll('extraScope');
+  const next = url.searchParams.get('next');
+  if (next) result.next = next;
   if (entryId) result.entryId = entryId;
   if (revokeAt) result.revokeAt = revokeAt;
   if (extraScopes.length) result.extraScopes = extraScopes;
