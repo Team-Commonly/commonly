@@ -205,31 +205,31 @@ const SCHEMA_KEYWORDS = new Set([
 ]);
 
 /**
- * `description` is ignorable only at a JSON Schema position. Values of
- * `default`, `const`, `enum`, and unknown keywords are data or unrecognised
- * shapes, so their nested keys are left intact for the exact comparison.
+ * A copy of one schema node with `visit` applied to each child at a JSON
+ * Schema position. Values of `default`, `const`, `enum`, and unknown keywords
+ * are data or unrecognised shapes, so they are copied untouched for the exact
+ * comparison.
  */
-const stripSchemaDescriptions = (schema: unknown): unknown => {
-  if (!isRecord(schema)) return schema;
+const mapSubschemas = (
+  schema: Record<string, unknown>,
+  visit: (child: unknown) => unknown,
+): Record<string, unknown> => {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(schema)) {
-    if (key === 'description') continue;
     if (SCHEMA_MAP_KEYWORDS.has(key) && isRecord(value)) {
-      result[key] = Object.fromEntries(Object.entries(value)
-        .map(([name, child]) => [name, stripSchemaDescriptions(child)]));
+      result[key] = Object.fromEntries(Object.entries(value).map(([name, child]) => [name, visit(child)]));
     } else if (key === 'dependencies' && isRecord(value)) {
       // Draft-07 dependencies may hold either a subschema or an array of
       // property names. The latter is data and must stay byte-for-byte equal.
       result[key] = Object.fromEntries(Object.entries(value).map(([name, child]) => [
-        name, isRecord(child) || typeof child === 'boolean' ? stripSchemaDescriptions(child) : child,
+        name, isRecord(child) || typeof child === 'boolean' ? visit(child) : child,
       ]));
     } else if (SCHEMA_ARRAY_KEYWORDS.has(key) && Array.isArray(value)) {
-      result[key] = value.map(stripSchemaDescriptions);
+      result[key] = value.map(visit);
     } else if (key === 'items') {
-      result[key] = Array.isArray(value)
-        ? value.map(stripSchemaDescriptions) : stripSchemaDescriptions(value);
+      result[key] = Array.isArray(value) ? value.map(visit) : visit(value);
     } else if (SCHEMA_KEYWORDS.has(key)) {
-      result[key] = stripSchemaDescriptions(value);
+      result[key] = visit(value);
     } else {
       result[key] = value;
     }
@@ -237,14 +237,88 @@ const stripSchemaDescriptions = (schema: unknown): unknown => {
   return result;
 };
 
-/** A read pin accepts only new, optional top-level properties after descriptions are stripped. */
+/** `description` is ignorable only at a JSON Schema position. */
+const stripSchemaDescriptions = (schema: unknown): unknown => {
+  if (!isRecord(schema)) return schema;
+  const result = mapSubschemas(schema, stripSchemaDescriptions);
+  delete result.description;
+  return result;
+};
+
+const isTypeName = (value: unknown): boolean => typeof value === 'string';
+const typeSet = (names: unknown[]): unknown => {
+  const sorted = [...new Set(names as string[])].sort();
+  return sorted.length === 1 ? sorted[0] : sorted;
+};
+
+/**
+ * One nullable type has two spellings that accept exactly the same values: an
+ * `anyOf` whose every branch is a bare `{ type }`, and a `type` array (Sentry
+ * moved from the first to the second on 11-01). Both become a sorted `type`
+ * array, or the one type name, at schema positions only. An `anyOf` beside its
+ * own `type`, or with any branch carrying another keyword, is left as written.
+ */
+const normalizeTypeSpelling = (schema: unknown): unknown => {
+  if (!isRecord(schema)) return schema;
+  const result = mapSubschemas(schema, normalizeTypeSpelling);
+  if (Array.isArray(result.type) && result.type.every(isTypeName)) result.type = typeSet(result.type);
+  const branches = result.anyOf;
+  if (result.type === undefined && Array.isArray(branches) && branches.length > 0
+    && branches.every((branch) => isRecord(branch) && Object.keys(branch).length === 1
+      && (isTypeName(branch.type) || (Array.isArray(branch.type) && branch.type.every(isTypeName))))) {
+    result.type = typeSet(branches.flatMap((branch) => ([] as unknown[])
+      .concat((branch as Record<string, unknown>).type)));
+    delete result.anyOf;
+  }
+  return result;
+};
+
+const isNameList = (value: unknown): value is string[] => Array.isArray(value) && value.every(isTypeName);
+
+/**
+ * The pin with each `required` list replaced by the live one wherever the live
+ * one only drops names, walking the two schemas together at schema positions.
+ * A call the pin allowed still validates when the vendor requires less.
+ */
+const relaxRequired = (pinned: unknown, current: unknown): unknown => {
+  if (!isRecord(pinned) || !isRecord(current)) return pinned;
+  const result: Record<string, unknown> = { ...pinned };
+  const pinnedRequired = isNameList(pinned.required) ? pinned.required : null;
+  if (pinnedRequired && (current.required === undefined
+    || (isNameList(current.required) && current.required.every((name) => pinnedRequired.includes(name))))) {
+    if (current.required === undefined) delete result.required;
+    else result.required = current.required;
+  }
+  for (const [key, value] of Object.entries(pinned)) {
+    const live = current[key];
+    if ((SCHEMA_MAP_KEYWORDS.has(key) || key === 'dependencies') && isRecord(value) && isRecord(live)) {
+      result[key] = Object.fromEntries(Object.entries(value).map(([name, child]) => [
+        name, Object.prototype.hasOwnProperty.call(live, name) ? relaxRequired(child, live[name]) : child,
+      ]));
+    } else if ((SCHEMA_ARRAY_KEYWORDS.has(key) || key === 'items') && Array.isArray(value)
+      && Array.isArray(live) && live.length === value.length) {
+      result[key] = value.map((child, index) => relaxRequired(child, live[index]));
+    } else if (key === 'items' || SCHEMA_KEYWORDS.has(key)) {
+      result[key] = relaxRequired(value, live);
+    }
+  }
+  return result;
+};
+
+/**
+ * After descriptions are stripped, a read pin accepts three loosenings: new
+ * optional top-level properties, a property leaving `required`, and a nullable
+ * type respelled. Values (enum, pattern, default, const) still compare
+ * exactly: an added enum value widens what can be read, so it waits until the
+ * broker checks argument values against the pin (CTO ruling 11-04, F100).
+ */
 const readSchemaChange = (
   pin: Record<string, unknown>,
   live: Record<string, unknown> | undefined,
 ): 'unchanged' | 'compatible' | 'drift' => {
   if (canonicalJson(live ?? null) === canonicalJson(pin)) return 'unchanged';
-  const pinned = stripSchemaDescriptions(pin);
-  const current = stripSchemaDescriptions(live ?? null);
+  const current = normalizeTypeSpelling(stripSchemaDescriptions(live ?? null));
+  const pinned = relaxRequired(normalizeTypeSpelling(stripSchemaDescriptions(pin)), current);
   if (canonicalJson(current) === canonicalJson(pinned)) return 'compatible';
   if (!isRecord(pinned) || !isRecord(current)) return 'drift';
   const pinnedProperties = pinned.properties;
