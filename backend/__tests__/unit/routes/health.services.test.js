@@ -18,7 +18,8 @@ const buildApp = () => {
   return app;
 };
 
-const EMAIL_ENV = ['SMTP2GO_API_KEY', 'SMTP2GO_FROM_EMAIL', 'SENDGRID_API_KEY'];
+// AGENT_PROVISIONER_K8S is cleared too: with it set, the route would try a real Redis.
+const EMAIL_ENV = ['SMTP2GO_API_KEY', 'SMTP2GO_FROM_EMAIL', 'SENDGRID_API_KEY', 'AGENT_PROVISIONER_K8S'];
 
 describe('GET /api/health services', () => {
   const saved = {};
