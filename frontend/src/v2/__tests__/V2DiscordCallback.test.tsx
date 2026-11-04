@@ -183,6 +183,25 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     });
   });
 
+  // F90: creating the binding needs authority over the guild; on a first install
+  // that is the same proof, sent in the body (never stored in config).
+  test('sends the install proof with the new integration', async () => {
+    const proof = ['eyJhbGciOiJIUzI1NiJ9', 'eyJwdXIiOiJkaXNjb3JkLWluc3RhbGwifQ', 'c2lnbmF0dXJlLV8'].join('.');
+    localStorage.setItem('token', 't');
+    axios.get.mockImplementation((url) => (url === '/api/discord/channels/123456789012345678'
+      ? Promise.resolve({ data: [{ id: '123456789012345601', name: 'general' }] })
+      : Promise.resolve({ data: { type: 'study' } })));
+    renderAt(`/discord/success?pod_id=pod-1&guild_id=123456789012345678&server_name=Guild&install=${encodeURIComponent(proof)}`);
+    const select = await screen.findByRole('combobox', { name: 'Channel' });
+    await screen.findByRole('option', { name: '#general' });
+    fireEvent.change(select, { target: { value: '123456789012345601' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+
+    const [, body] = axios.post.mock.calls[0];
+    expect(body.install).toBe(proof);
+    expect(body.config).not.toHaveProperty('install');
+  });
+
   test('sends no params to the channel list without a proof', async () => {
     localStorage.setItem('token', 't');
     axios.get.mockResolvedValue({ data: [] });
@@ -201,6 +220,27 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     renderAt(`/discord/success?pod_id=p1&guild_id=123456789012345678&server_name=S&install=${encodeURIComponent(proof)}`);
     expect(await screen.findByRole('alert')).toHaveTextContent('Failed to fetch server channels');
     expect(errors).toHaveBeenCalledWith('Error fetching channels:', 404);
+    expect(JSON.stringify(errors.mock.calls, (_k, v) => (v instanceof Error ? { ...v, message: v.message } : v))).not.toContain(proof);
+  });
+
+  test('a failed create logs its status, not the install proof', async () => {
+    const proof = ['eyJhbGciOiJIUzI1NiJ9', 'eyJwdXIiOiJkaXNjb3JkLWluc3RhbGwifQ', 'c2lnbmF0dXJlLV8'].join('.');
+    localStorage.setItem('token', 't');
+    axios.get.mockImplementation((url) => (url === '/api/discord/channels/123456789012345678'
+      ? Promise.resolve({ data: [{ id: '123456789012345601', name: 'general' }] })
+      : Promise.resolve({ data: { type: 'study' } })));
+    axios.post.mockRejectedValueOnce(Object.assign(new Error('Request failed'), {
+      config: { data: JSON.stringify({ install: proof }) },
+      response: { status: 404, data: { message: 'Guild not found' } },
+    }));
+    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    renderAt(`/discord/success?pod_id=pod-1&guild_id=123456789012345678&server_name=Guild&install=${encodeURIComponent(proof)}`);
+    const select = await screen.findByRole('combobox', { name: 'Channel' });
+    await screen.findByRole('option', { name: '#general' });
+    fireEvent.change(select, { target: { value: '123456789012345601' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+
+    expect(errors).toHaveBeenCalledWith('Error creating integration:', 404);
     expect(JSON.stringify(errors.mock.calls, (_k, v) => (v instanceof Error ? { ...v, message: v.message } : v))).not.toContain(proof);
   });
 

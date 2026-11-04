@@ -404,6 +404,18 @@ describe('Discord binding containment (TASK-123 a)', () => {
       .post('/api/integrations')
       .set('Authorization', 'Bearer user-token')
       .send(body);
+    // The channel lookup the create path makes before the webhook (F90).
+    const channelIn = (guildId) => axios.get.mockImplementation(async (url) => (
+      url === `https://discord.com/api/channels/${CHANNEL}`
+        ? { data: { id: CHANNEL, type: 0, guild_id: guildId } }
+        : { data: [] }));
+
+    beforeEach(() => {
+      // Authority by default: the caller's pod is already bound to the guild,
+      // and the channel is in it. The F90 block below takes each away.
+      Integration.findOne.mockResolvedValue(discordRow());
+      channelIn(GUILD);
+    });
 
     it('refuses a malformed serverId before the row or the webhook exists', async () => {
       const res = await post({ podId: 'pod-1', type: 'discord', config: { serverId: 'guild-1', channelId: CHANNEL } });
@@ -572,8 +584,87 @@ describe('Discord binding containment (TASK-123 a)', () => {
         { $set: { 'config.webhookUrlRef': 'secret-ref-1' } },
       );
     });
-  });
 
+    describe('authority over the guild and channel (F90)', () => {
+      const { mintDiscordInstallProof } = require('../../../utils/discordInstallProof');
+      const BODY = { podId: 'pod-1', type: 'discord', config: { serverId: GUILD, channelId: CHANNEL } };
+      const created = () => axios.post.mock.calls.length > 0;
+
+      it('refuses a guild with no binding in the caller’s pods and no proof, before any row or outbound call', async () => {
+        Integration.findOne.mockResolvedValue(null);
+        const before = Integration.__getLastInstance();
+
+        const res = await post(BODY);
+
+        expect(res.status).toBe(404);
+        expect(Integration.__getLastInstance()).toBe(before);
+        expect(outboundCalls()).toBe(0);
+      });
+
+      it('counts only a binding the caller made, in one of their own pods', async () => {
+        // Membership of a pod someone else bound is not authority: a listed pod
+        // can be joined by anyone.
+        await post(BODY);
+
+        expect(Integration.findOne).toHaveBeenCalledWith({
+          type: 'discord', 'config.serverId': GUILD, podId: { $in: ['pod-1'] }, createdBy: 'user-1',
+        });
+      });
+
+      it('accepts a first install on the callback’s proof for this pod and guild, and does not store it', async () => {
+        Integration.findOne.mockResolvedValue(null);
+        const install = mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD });
+
+        const res = await post({ ...BODY, install });
+
+        expect(res.status).toBe(201);
+        expect(JSON.stringify(Integration.__getLastInstance().config)).not.toContain(install);
+      });
+
+      it.each([
+        ['a proof for another pod', () => mintDiscordInstallProof({ podId: 'pod-2', guildId: GUILD })],
+        ['a proof for another guild', () => mintDiscordInstallProof({ podId: 'pod-1', guildId: OTHER_GUILD })],
+        ['an expired proof', () => mintDiscordInstallProof({ podId: 'pod-1', guildId: GUILD }, -10)],
+        ['a session token in the proof field', () => 'user-token'],
+      ])('refuses %s', async (_label, make) => {
+        Integration.findOne.mockResolvedValue(null);
+
+        const res = await post({ ...BODY, install: make() });
+
+        expect(res.status).toBe(404);
+        expect(created()).toBe(false);
+      });
+
+      it('refuses a channel that belongs to another guild, before the row or the webhook', async () => {
+        channelIn(OTHER_GUILD);
+        const before = Integration.__getLastInstance();
+
+        const res = await post(BODY);
+
+        expect(res.status).toBe(404);
+        expect(Integration.__getLastInstance()).toBe(before);
+        expect(created()).toBe(false);
+      });
+
+      it.each([['a thread', 11], ['a category', 4], ['a forum', 15]])('refuses %s', async (_label, type) => {
+        axios.get.mockResolvedValue({ data: { id: CHANNEL, type, guild_id: GUILD } });
+
+        const res = await post(BODY);
+
+        expect(res.status).toBe(404);
+        expect(created()).toBe(false);
+      });
+
+      it('refuses a channel Discord does not return', async () => {
+        axios.get.mockRejectedValue(Object.assign(new Error('404'), { response: { status: 404 } }));
+
+        const res = await post(BODY);
+
+        expect(res.status).toBe(404);
+        expect(created()).toBe(false);
+      });
+    });
+  });
 
   describe('PATCH /api/integrations/:id', () => {
     const patch = (body) => request(app)
@@ -601,11 +692,27 @@ describe('Discord binding containment (TASK-123 a)', () => {
       expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
     });
 
-    it('still accepts a well-formed retarget', async () => {
+    // F90: the binding is fixed once the row exists. A retarget would aim the
+    // instance bot at a channel the create path never checked; a new binding
+    // goes through the create path, which does check.
+    it.each([
+      ['serverId', { serverId: OTHER_GUILD }],
+      ['channelId', { channelId: '345678901234567891' }],
+    ])('refuses a retarget of %s', async (field, config) => {
       Integration.findById.mockResolvedValue(discordRow());
-      Integration.findByIdAndUpdate.mockResolvedValue(discordRow({ config: { serverId: OTHER_GUILD } }));
 
-      const res = await patch({ config: { serverId: OTHER_GUILD } });
+      const res = await patch({ config });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ code: 'discord_binding_fixed', field });
+      expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('accepts the binding it already has', async () => {
+      Integration.findById.mockResolvedValue(discordRow());
+      Integration.findByIdAndUpdate.mockResolvedValue(discordRow());
+
+      const res = await patch({ config: { serverId: GUILD, channelId: CHANNEL } });
 
       expect(res.status).toBe(200);
       expect(Integration.findByIdAndUpdate).toHaveBeenCalled();

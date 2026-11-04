@@ -107,6 +107,9 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
             botToken: '',
             permissions: ['read_messages', 'send_messages', 'read_message_history'],
           },
+          // A first install has no binding yet; the callback's proof is the
+          // authority over the guild (F90).
+          ...(installProof ? { install: installProof } : {}),
         },
         { headers: { Authorization: `Bearer ${token}` } },
       );
@@ -126,7 +129,9 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
       }
       setTimeout(() => navigate(back), 2000);
     } catch (err: unknown) {
-      console.error('Error creating integration:', err);
+      // The status only, as for the channel list: the request body now carries
+      // the install proof (F90).
+      console.error('Error creating integration:', (err as { response?: { status?: number } })?.response?.status ?? 'no response');
       const e = err as { response?: { data?: { message?: string } } };
       setError(e.response?.data?.message || t('auth.discordHandoff.createFailed'));
     } finally {
