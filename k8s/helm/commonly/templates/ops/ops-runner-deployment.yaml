@@ -602,6 +602,10 @@ spec:
           # gpt-5.4-mini was "no good info at all"; the DeepSeek flash
           # entry already exists in LiteLLM with a live key.
           value: "deepseek-v4-flash"
+        # F103: the model every agent driver default names (the K8s provisioner's
+        # primaries and key allowlists, the global policy's community default).
+        - name: AGENT_DEFAULT_MODEL
+          value: {{ .Values.litellm.agentDefaultModel | quote }}
         # Temporary: bypass LiteLLM's broken chatgpt/ bridge (BerriAI/litellm#25429)
         # and route Codex directly via OpenClaw's native openai-codex-responses handler.
         # Flip to "false" / remove once LiteLLM ships a fix for empty-output responses.

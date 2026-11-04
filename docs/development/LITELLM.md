@@ -194,28 +194,29 @@ issued by the backend provisioner (`issueLiteLLMVirtualKey` / `issueLiteLLMOpenR
 `backend/services/agentProvisionerServiceK8s.ts`, which set `metadata.agent_id`). **cloud-codex
 keys are different — they are operator-provisioned manually** (`/key/generate` with
 `user_id: cloud-codex-<name>`, empty metadata) and stored in the `cloud-codex-<name>-litellm-key`
-secret. When you add a model alias that a cloud-codex / codex-CLI agent must call (e.g.
-`codex-cli/gpt-5.4`), you MUST add it to that agent's key allowlist or the call 403s:
+secret. A cloud-codex agent's codex CLI calls `litellm.agentDefaultModel` (F103; it was
+`codex-cli/gpt-5.4`), so that model MUST be in the agent's key allowlist or every call 403s.
+**Before scaling a cloud-codex agent back up after F103, add the default model** (on dev,
+`claude-haiku-5-5`) to its key, and again whenever `agentDefaultModel` changes:
 
 ```bash
 # inspect:  GET  /key/info?key=<sk-...>                                  (master-key auth)
-# update:   POST /key/update  {"key":"<sk-...>","models":[...,"codex-cli/gpt-5.4"]}
+# update:   POST /key/update  {"key":"<sk-...>","models":[...,"<agentDefaultModel>"]}
 ```
 
 This allowlist lives only in LiteLLM's Postgres (`LiteLLM_VerificationToken`), **not in IaC** —
-if a cloud-codex key is ever regenerated, re-add `codex-cli/*`. (Verified gap, 2026-06-08, PR #472.)
+if a cloud-codex key is ever regenerated, re-add the default model. (Verified gap, 2026-06-08, PR #472.)
 
 ---
 
 ## Codex: chat path vs responses path (the `responses/` prefix rule)
 
 > **Status (F98, 2026-11-04): history.** GPT access was revoked on 2026-10-27, and
-> since then every `gpt-5.4*`, `openai-codex/*` and `codex-cli/*` alias has been a
-> DeepSeek stand-in, not a `chatgpt/` route. Those stand-ins render only under
-> `litellm.legacyAliases`, which is off on dev, so a caller there gets an
-> unknown-model error. Base keeps them for the chart's own driver defaults until
-> F103 moves those defaults. The rule below applies again only if GPT access
-> returns.
+> every `gpt-5.4*`, `openai-codex/*` and `codex-cli/*` alias became a DeepSeek
+> stand-in, not a `chatgpt/` route. F103 deleted them, and the driver defaults that
+> named them now name `litellm.agentDefaultModel`. cloud-codex's codex CLI sends
+> that name on the responses wire as is. The rule below applies again only if GPT
+> access returns.
 
 LiteLLM exposes the chatgpt/ provider on TWO endpoints, and the codex model name must match
 the endpoint the caller uses:
@@ -240,6 +241,11 @@ the endpoint the caller uses:
 ---
 
 ## Config (`litellm-config.yaml`)
+
+> **Status (F103, 2026-11-04): history.** The sample below is the config from when GPT access
+> was live. Its `gpt-5.4`, `openai-codex/*`, `codex-cli/*` and nemotron routes are gone. The
+> current routes are in `k8s/helm/commonly/templates/configmaps/litellm-config.yaml`, and every
+> agent driver default names `litellm.agentDefaultModel` (see `values.yaml`).
 
 ```yaml
 model_list:

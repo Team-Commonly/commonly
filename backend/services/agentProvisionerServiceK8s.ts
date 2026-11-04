@@ -1,4 +1,5 @@
 import { filterRuntimeAccountLogs } from '../utils/runtimeLogFilter';
+import { agentDefaultModel } from '../config/agentDefaultModel';
 /**
  * Kubernetes-native Agent Provisioner Service
  * Replaces Docker socket mounting with K8s API for agent runtime provisioning
@@ -1550,6 +1551,17 @@ const GEMINI_FALLBACKS = [
   'google/gemini-2.0-flash',
 ];
 
+// The models an agent's LiteLLM virtual key may call (F103): the configured
+// default (config/agentDefaultModel), plus the Gemini names, which F105 moves.
+// A key minted before F103 lacks the default, so both issuers re-issue a key
+// whose allowlist doesn't carry it; otherwise the new default would 401.
+const litellmKeyModels = () => [
+  agentDefaultModel(),
+  ...GEMINI_FALLBACKS,
+  'gemini-2.5-flash',
+];
+const keyAllowsDefaultModel = (info: any) => Array.isArray(info?.models) && info.models.includes(agentDefaultModel());
+
 // Default dev agent IDs — overridden by DB openclaw.devAgentIds if set.
 const DEFAULT_DEV_AGENT_IDS = ['theo', 'nova', 'pixel', 'ops'];
 
@@ -1613,6 +1625,30 @@ const readPvcVirtualKey = async (agentId: string): Promise<string | null> => {
   }
 };
 
+// F103 review (CTO and CodeRabbit on #3421): F103's reuse check sends every
+// pre-F103 key for re-issue on the next reprovision-all. The issuers used to
+// delete the old key before minting and writing its replacement, so a failed
+// mint or profile write left the agent holding a revoked key, or none. Now an
+// issuer only records the key it replaced; retireReplacedLiteLLMKey deletes it
+// once that replacement is written to the agent's openrouter:default profile.
+const replacedLiteLLMKeys = new Map<string, { oldKey: string; mintedKey: string }>();
+
+const retireReplacedLiteLLMKey = async (agentId: any, installedKey: string | null) => {
+  const id = String(agentId);
+  const replaced = replacedLiteLLMKeys.get(id);
+  replacedLiteLLMKeys.delete(id);
+  if (!replaced || !installedKey || installedKey !== replaced.mintedKey) return;
+  const baseUrl = process.env.LITELLM_BASE_URL;
+  const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
+  if (!baseUrl || !masterKey || replaced.oldKey === masterKey || replaced.oldKey === installedKey) return;
+  const axios = require('axios');
+  await axios.delete(`${baseUrl}/key/delete`, {
+    headers: { Authorization: `Bearer ${masterKey}` },
+    data: { keys: [replaced.oldKey] },
+  }).catch(() => {});
+  console.log(`[litellm] Retired the key replaced for ${id}`);
+};
+
 const issueLiteLLMVirtualKey = async (agentId: any) => {
   const baseUrl = process.env.LITELLM_BASE_URL;
   const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
@@ -1624,6 +1660,7 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
     // Read current key from PVC. If it is still valid in LiteLLM, reuse it — this makes
     // the function idempotent so concurrent provisioning calls don't race-delete each other.
     const existingKey = await readPvcVirtualKey(agentId);
+    let replacedKey: string | null = null;
 
     // Check if existing key is still valid in LiteLLM DB AND belongs to this agent.
     // Without the ownership check, a key mistakenly written to the wrong agent's PVC
@@ -1632,15 +1669,13 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
       try {
         const check = await axios.get(`${baseUrl}/key/info?key=${existingKey}`, { headers });
         const info = check.data?.info;
-        if (info && (info.metadata?.agent_id === agentId || info.user_id === agentId)) {
-          return existingKey; // still valid and owned by this agent
+        if (info && (info.metadata?.agent_id === agentId || info.user_id === agentId) && keyAllowsDefaultModel(info)) {
+          return existingKey; // still valid, owned by this agent, and allows the default model
         }
-        // Key exists in DB but is invalid or belongs to another agent — delete it so it
-        // doesn't accumulate as an orphan, then fall through to issue a fresh one.
-        if (info) {
-          await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
-          console.log(`[litellm] Deleted stale/misowned key for ${agentId}`);
-        }
+        // Key exists in DB but is invalid, belongs to another agent, or predates the
+        // default model. Issue a fresh one; the old one is retired once the fresh
+        // one is installed, so it doesn't accumulate as an orphan.
+        if (info) replacedKey = existingKey;
       } catch (_: any) { /* key not in DB — fall through to issue a new one */ }
     }
 
@@ -1648,21 +1683,9 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
       `${baseUrl}/key/generate`,
       {
         user_id: agentId,
-        // Grant access to all models the agent may use.
-        // OpenClaw strips "openrouter/" prefix when using openrouter:default profile,
-        // so we allow both prefixed and un-prefixed variants.
-        models: [
-          'gpt-5.4',
-          'openai-codex/gpt-5.4',
-          'gpt-5.4-mini',
-          'openai-codex/gpt-5.4-mini',
-          'google/gemini-2.5-flash',
-          'google/gemini-2.5-flash-lite',
-          'google/gemini-2.0-flash',
-          'gemini-2.5-flash',
-          'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-          'nvidia/nemotron-3-super-120b-a12b:free',
-        ],
+        // OpenClaw sends a provider's model id without the provider prefix, so
+        // `openrouter/<default>` reaches LiteLLM as `<default>`.
+        models: litellmKeyModels(),
         // Abuse circuit-breakers — generous for legit sequential heartbeat use,
         // trips only on runaway flooding (see constant comment).
         max_parallel_requests: LITELLM_KEY_MAX_PARALLEL_REQUESTS,
@@ -1682,6 +1705,7 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
     );
     const newKey = resp.data?.key || null;
     if (newKey) console.log(`[litellm] Issued new virtual key for ${agentId}`);
+    if (newKey && replacedKey) replacedLiteLLMKeys.set(String(agentId), { oldKey: replacedKey, mintedKey: newKey });
     return newKey;
   } catch (err: any) {
     console.warn(`[litellm] Virtual key generation failed for ${agentId}: ${err.message}`);
@@ -1691,13 +1715,9 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
 
 /**
  * Issue a LiteLLM virtual key for a community agent. Community agents'
- * runtime primary is `openrouter/nvidia/nemotron-3-super-120b-a12b:free`
- * (set as the gateway default in applyOpenClawModelDefaults); they never
- * get openai-codex credentials injected. The allowlist on this key still
- * permits the gpt-5.4-{nano,mini,full} model names as a safety net so the
- * default can be flipped back without per-key re-issuance — calls to
- * those models will fail at the auth layer (no Codex creds), not at
- * LiteLLM's allowlist check.
+ * runtime primary is `openrouter/<agentDefaultModel()>` (set as the gateway
+ * default in applyOpenClawModelDefaults); they never get openai-codex
+ * credentials injected.
  */
 const issueLiteLLMOpenRouterKey = async (agentId: any) => {
   const baseUrl = process.env.LITELLM_BASE_URL;
@@ -1710,6 +1730,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
     // Reuse the agent's current virtual key when LiteLLM still recognises it
     // (see readPvcVirtualKey for where it lives).
     const existingKey = await readPvcVirtualKey(agentId);
+    let replacedKey: string | null = null;
 
     if (existingKey && existingKey !== masterKey) {
       // Safety: never delete the master key even if found on PVC
@@ -1717,19 +1738,13 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
         const check = await axios.get(`${baseUrl}/key/info?key=${existingKey}`, { headers });
         const info = check.data?.info;
         const ownedByAgent = info && (info.metadata?.agent_id === agentId || info.user_id === agentId);
-        // Sentinel for "key was issued with the current allowlist." We use
-        // gpt-5.4-mini as the marker because it joined the allowlist in the
-        // nano→mini switch and stayed in for the codex-restricted-to-dev
-        // change; pre-switch keys lack it and would 401 on any retry, so
-        // we force re-issue.
-        const allowsMini = Array.isArray(info?.models) && info.models.includes('gpt-5.4-mini');
-        if (ownedByAgent && allowsMini) {
+        // A key issued before the current default model would 401 on it, so
+        // only a key that allows the default is reused.
+        if (ownedByAgent && keyAllowsDefaultModel(info)) {
           return existingKey;
         }
-        if (info) {
-          await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
-          console.log(`[litellm] Deleted ${ownedByAgent ? 'stale-allowlist' : 'misowned'} OpenRouter key for ${agentId}`);
-        }
+        // Retired once its replacement is installed (retireReplacedLiteLLMKey).
+        if (info) replacedKey = existingKey;
       } catch (_: any) { /* key not in DB — fall through */ }
     }
 
@@ -1737,20 +1752,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
       `${baseUrl}/key/generate`,
       {
         user_id: agentId,
-        models: [
-          'gpt-5.4-nano',
-          'openai-codex/gpt-5.4-nano',
-          'gpt-5.4-mini',
-          'openai-codex/gpt-5.4-mini',
-          'gpt-5.4',
-          'openai-codex/gpt-5.4',
-          'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-          'nvidia/nemotron-3-super-120b-a12b:free',
-          'google/gemini-2.5-flash',
-          'google/gemini-2.5-flash-lite',
-          'google/gemini-2.0-flash',
-          'gemini-2.5-flash',
-        ],
+        models: litellmKeyModels(),
         // Abuse circuit-breakers — generous for legit sequential heartbeat use,
         // trips only on runaway flooding (see constant comment).
         max_parallel_requests: LITELLM_KEY_MAX_PARALLEL_REQUESTS,
@@ -1764,6 +1766,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
     );
     const newKey = resp.data?.key || null;
     if (newKey) console.log(`[litellm] Issued OpenRouter virtual key for ${agentId}`);
+    if (newKey && replacedKey) replacedLiteLLMKeys.set(String(agentId), { oldKey: replacedKey, mintedKey: newKey });
     return newKey;
   } catch (err: any) {
     console.warn(`[litellm] OpenRouter virtual key generation failed for ${agentId}: ${err.message}`);
@@ -1779,8 +1782,8 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
  * The init container runs in patch mode and does NOT update these profiles, so injections
  * persist across gateway restarts.
  */
-const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agentId: any, virtualKey: any) => {
-  if (!virtualKey) return;
+const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agentId: any, virtualKey: any): Promise<boolean> => {
+  if (!virtualKey) return false;
   const escaped = virtualKey.replace(/'/g, "\\'");
   // OpenRouter calls are proxied through LiteLLM (openrouter.baseUrl = http://litellm:4000/v1).
   // LiteLLM expects a virtual key for authorization — always use the LiteLLM key for openrouter:default.
@@ -1815,19 +1818,25 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
     `} catch (e: any) { process.stdout.write('skip:' + e.message); }`,
   ].filter(Boolean).join(' ');
 
-  const execOnPod = async (podName: any) => new Promise<void>((resolve, reject) => {
+  const execOnPod = async (podName: any) => new Promise<string>((resolve, reject) => {
+    // stderr gets its own sink, so a Node warning can't turn a written file
+    // into an apparent failure.
     const stdoutStream = new stream.PassThrough();
+    const stderrStream = new stream.PassThrough();
+    stderrStream.resume();
+    const chunks: Buffer[] = [];
+    stdoutStream.on('data', (d: Buffer) => chunks.push(d));
     k8sExec.exec(
       NAMESPACE,
       podName,
       'clawdbot-gateway',
       ['node', '-e', script],
       stdoutStream,
-      stdoutStream,
+      stderrStream,
       null,
       false,
       (status: any) => {
-        if (status.status === 'Success') resolve();
+        if (status.status === 'Success') setImmediate(() => resolve(Buffer.concat(chunks).toString().trim()));
         else reject(new Error(status.message || 'exec failed'));
       },
     ).catch(reject);
@@ -1838,11 +1847,16 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
       const gwPod = await waitForReadyGatewayPod(90000, 5000);
       if (!gwPod) {
         console.warn(`[k8s-provisioner] openrouter key inject skipped for ${agentId}: no ready gateway pod`);
-        return;
+        return false;
       }
-      await execOnPod(gwPod.metadata.name);
+      const out = await execOnPod(gwPod.metadata.name);
+      if (out !== 'ok') {
+        // The script ran but could not write the file (it prints `skip:<reason>`).
+        console.warn(`[k8s-provisioner] openrouter key inject skipped for ${agentId}: ${out || 'no output'}`);
+        return false;
+      }
       console.log(`[k8s-provisioner] openrouter key injected for ${agentId}`);
-      return;
+      return true;
     } catch (err: any) {
       if (attempt < 2) {
         console.warn(`[k8s-provisioner] openrouter key inject attempt ${attempt} failed for ${agentId}: ${err.message} — retrying`);
@@ -1852,6 +1866,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
       }
     }
   }
+  return false;
 };
 
 const applyOpenClawCodexProviderConfig = async (config: any) => {
@@ -1868,22 +1883,20 @@ const applyOpenClawCodexProviderConfig = async (config: any) => {
   const codexBypassLiteLLM = /^(1|true|yes)$/i.test(process.env.CODEX_BYPASS_LITELLM || '');
   const litellmBase = codexBypassLiteLLM ? null : process.env.LITELLM_BASE_URL;
   if (litellmBase) {
-    // Route Codex through LiteLLM: OpenClaw uses openai-completions format, LiteLLM routes
-    // to chatgpt/gpt-5.4 using OAuth tokens seeded by the codex-auth-seed init container.
-    // The daily refresh job (refreshCodexOAuthTokenIfNeeded) keeps the token fresh and
-    // triggers a LiteLLM pod restart so the init container re-reads the updated secret.
+    // LiteLLM serves no Codex model (GPT access was revoked 2026-10-27, and the
+    // gpt-5.4 names it then served with DeepSeek are gone, F103), so the
+    // LiteLLM-routed provider lists none. It stays registered because the
+    // openai-codex:codex-cli auth profile below carries each agent's virtual key.
     if (!config.models.providers['openai-codex']) {
       config.models.providers['openai-codex'] = {
         baseUrl: litellmBase,
         api: 'openai-completions',
-        models: [
-          { id: 'gpt-5.4', name: 'gpt-5.4' },
-          { id: 'gpt-5.3-codex', name: 'gpt-5.3-codex' },
-        ],
+        models: [],
       };
     } else {
       config.models.providers['openai-codex'].baseUrl = litellmBase;
       config.models.providers['openai-codex'].api = 'openai-completions';
+      config.models.providers['openai-codex'].models = [];
     }
   } else {
     // Direct Codex API (no LiteLLM)
@@ -2203,34 +2216,18 @@ const applyOpenClawModelDefaults = async (config: any) => {
   } catch (error: any) {
     modelConfig = null;
   }
-  // OpenRouter fallbacks: free models only, explicit list enforced on every provision.
-  // Trinity removed 2026-05-03 — endpoint was deregistered at OpenRouter (404 No
-  // endpoints found), so every fallback hop into trinity errored out and broke
-  // the chain. Nemotron is the only working free model right now.
-  const OPENROUTER_FREE_FALLBACKS = [
-    'openrouter/nvidia/nemotron-3-super-120b-a12b:free',
-  ];
-
-  // Global default for non-dev (community) agents: free OpenRouter models
-  // only. Codex quota is finite and shared; reserving it for dev agents
-  // keeps heartbeat orchestration responsive without burning weekly quota
-  // on community agents. Community agents are NOT issued openai-codex
-  // credentials (see provisionOpenClawAccount), so even a misconfigured
-  // primary would 401 rather than burn — but the assertion below makes
-  // this guarantee explicit at the config layer too. Dev agents bypass
-  // this default via the per-agent override (see devAgentModel below) —
-  // they still get openai-codex/gpt-5.4-mini.
-  config.agents.defaults.model.primary = 'openrouter/nvidia/nemotron-3-super-120b-a12b:free';
-  // Gemini entries are kept as inert placeholders — current GEMINI_API_KEY
-  // is revoked so they're no-ops today; reinstating the key restores the
-  // chain without a code change. If nemotron 429s while gemini is dead,
-  // community agents fail loud (silent for that minute, retry on next
-  // heartbeat) — that's the intended behavior. Better than burning Codex.
-  config.agents.defaults.model.fallbacks = Array.from(new Set([
-    'google/gemini-2.5-flash',
-    'google/gemini-2.5-flash-lite',
-    'google/gemini-2.0-flash',
-  ]));
+  // Every agent's default is the configured model (F103): the chart's
+  // `litellm.agentDefaultModel`, which LiteLLM serves under that name (base
+  // deepseek-v4-flash, dev claude-haiku-5-5). The `openrouter` provider below
+  // points at LiteLLM when it is deployed, and OpenClaw sends it the bare id.
+  // Before F103 this was the nemotron free slug, which LiteLLM served with
+  // DeepSeek after OpenRouter retired it.
+  const defaultModel = agentDefaultModel();
+  config.agents.defaults.model.primary = `openrouter/${defaultModel}`;
+  // Gemini entries go straight to Google with the gateway's GEMINI_API_KEY.
+  // Where that key is absent or revoked they are inert, and the agent fails
+  // loud for that turn. F105 moves them.
+  config.agents.defaults.model.fallbacks = Array.from(new Set(GEMINI_FALLBACKS));
 
   // HARD GUARDRAIL: community fallback chain MUST NOT include any
   // openai-codex/* model. Codex quota is paid and shared across the
@@ -2256,7 +2253,8 @@ const applyOpenClawModelDefaults = async (config: any) => {
   // Always set up Codex provider config so dev agents can use it via per-agent override.
   const codexCredentials = await applyOpenClawCodexProviderConfig(config);
 
-  // OpenRouter provider catalog — free models only, no paid models.
+  // The provider every default routes through. Its one model is the configured
+  // default (F103).
   // `api: "openai-completions"` is required: pi-ai uses it to route to the correct provider.
   // `reasoning`, `input`, `cost` are required fields in ModelDefinitionConfig.
   config.models = config.models || {};
@@ -2270,8 +2268,8 @@ const applyOpenClawModelDefaults = async (config: any) => {
     api: 'openai-completions',
     models: [
       {
-        id: 'nvidia/nemotron-3-super-120b-a12b:free',
-        name: 'Nemotron Super 120B (free)',
+        id: defaultModel,
+        name: defaultModel,
         reasoning: false,
         input: ['text'],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -2286,14 +2284,13 @@ const applyOpenClawModelDefaults = async (config: any) => {
     ? modelConfig.openclaw.devAgentIds
     : DEFAULT_DEV_AGENT_IDS;
 
-  // Dev agents use openai-codex/gpt-5.4-mini for heartbeat orchestration.
-  // gpt-5.4-mini uses ~30% of weekly Codex quota vs full gpt-5.4, making
-  // it ideal for heartbeat orchestration (list pods, check tasks, post
-  // updates). acpx_run coding tasks still use full gpt-5.4 via LiteLLM
-  // (hardcoded in tools.ts).
+  // Dev agents ran on openai-codex/gpt-5.4-mini until GPT access was revoked
+  // (2026-10-27); LiteLLM then served that name with DeepSeek. They now take
+  // the same configured default as everyone else (F103). The per-agent
+  // override stays so a dev agent's chain can diverge again later.
   const devAgentModel = {
-    primary: 'openai-codex/gpt-5.4-mini',
-    fallbacks: Array.from(new Set([...OPENROUTER_FREE_FALLBACKS, ...GEMINI_FALLBACKS])),
+    primary: `openrouter/${defaultModel}`,
+    fallbacks: Array.from(new Set(GEMINI_FALLBACKS)),
   };
 
   return { codexCredentials, devAgentIds, devAgentModel };
@@ -2392,6 +2389,8 @@ const provisionOpenClawAccount = async ({
   const isDevAgent = devAgentIds.includes(accountId);
   const codexBypassLiteLLM = /^(1|true|yes)$/i.test(process.env.CODEX_BYPASS_LITELLM || '');
   let codexVirtualKey = null;
+  // True only where a dev agent's Codex profiles were given the master key.
+  let codexProfilesHoldMasterKey = false;
   if (codexBypassLiteLLM) {
     // Bypass mode: openai-codex provider points at chatgpt.com directly and
     // OpenClaw's native handler decodes access as a JWT. Only DEV agents get
@@ -2438,6 +2437,7 @@ const provisionOpenClawAccount = async ({
         // still route through LiteLLM instead of burning raw Codex OAuth tokens directly.
         const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
         if (masterKey) {
+          codexProfilesHoldMasterKey = true;
           const masterCredential = {
             type: 'oauth',
             provider: 'openai-codex',
@@ -2477,18 +2477,23 @@ const provisionOpenClawAccount = async ({
   }
 
   // Route OpenRouter calls through LiteLLM when available (everything-via-LiteLLM
-  // mode). Dev agents reuse their Codex virtual key (already grants OpenRouter
-  // model access); community agents get a separate OR-only key. If virtual-key
-  // issuance fails (e.g. LiteLLM DB down), fall back to LITELLM_MASTER_KEY so
-  // the agent still routes through LiteLLM rather than burning raw keys direct.
+  // mode). Every agent's primary is `openrouter/<default>` (F103), so every
+  // agent needs this key. A dev agent reuses its Codex virtual key when one was
+  // minted (not in Codex-bypass mode); otherwise it gets an OR-only key like a
+  // community agent. If issuance fails (e.g. LiteLLM DB down), fall back to
+  // LITELLM_MASTER_KEY so the agent still routes through LiteLLM rather than
+  // burning raw keys direct.
   if (process.env.LITELLM_BASE_URL) {
     const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
-    const openRouterKey = isDevAgent
-      ? codexVirtualKey
-      : (await issueLiteLLMOpenRouterKey(accountId)) || masterKey || null;
-    if (openRouterKey) {
-      await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
-    }
+    // A dev agent falls back to the master key only when its Codex profiles
+    // already hold it; in Codex-bypass mode it never gets one (CodeRabbit, #3421).
+    const masterFallback = (!isDevAgent || codexProfilesHoldMasterKey) ? masterKey : '';
+    const openRouterKey = (isDevAgent && codexVirtualKey)
+      || (await issueLiteLLMOpenRouterKey(accountId)) || masterFallback || null;
+    const installed = openRouterKey
+      ? await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey)
+      : false;
+    await retireReplacedLiteLLMKey(accountId, installed ? openRouterKey : null);
   }
   applySkillEnvEntriesToConfig(config, skillEnv);
 
@@ -2527,8 +2532,8 @@ const provisionOpenClawAccount = async ({
   const agentEntry = config.agents.list.find((agent: any) => agent?.id === accountId);
   const heartbeatConfig = normalizeHeartbeat(heartbeat);
 
-  // Per-agent model override: dev agents get explicit Codex config.
-  // Community agents use global default (nemotron) — no per-agent entry needed.
+  // Per-agent model override for dev agents (devAgentModel). Community agents
+  // use the global default — no per-agent entry needed.
   const perAgentModel = devAgentIds.includes(accountId) ? devAgentModel : null;
 
   if (agentEntry) {
@@ -2549,7 +2554,7 @@ const provisionOpenClawAccount = async ({
     if (perAgentModel) {
       agentEntry.model = perAgentModel;
     } else {
-      delete agentEntry.model; // community agents: use global default (nemotron)
+      delete agentEntry.model; // community agents: use the global default
     }
   } else {
     config.agents.list.push({
@@ -2590,7 +2595,7 @@ const provisionOpenClawAccount = async ({
     await syncAccountToStateMoltbot(accountId, accountEntry, agentEntry, bindingEntry, {
       gateway,
       // Persist applyOpenClawModelDefaults' work to the gateway PVC. Without
-      // this, the global default (e.g. nemotron) lives only in the in-memory
+      // this, the global default lives only in the in-memory
       // config and the persisted file keeps a stale primary forever.
       agentsDefaults: config.agents?.defaults || null,
       // Same for the model providers (openai-codex + openrouter→LiteLLM).

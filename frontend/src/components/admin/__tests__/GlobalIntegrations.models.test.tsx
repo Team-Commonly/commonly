@@ -41,7 +41,7 @@ const serverDefaults = () => ({
     model: 'google/gemini-2.5-flash',
     fallbackModels: ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.0-flash'],
     devAgentIds: ['theo', 'nova', 'pixel', 'ops'],
-    communityAgentModel: { primary: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', fallbacks: [] },
+    communityAgentModel: { primary: 'openrouter/deepseek-v4-flash', fallbacks: [] },
   },
 });
 const response = (modelPolicy) => ({

@@ -664,15 +664,23 @@ cloudflared:
 # LiteLLM proxy (model gateway + request logging)
 litellm:
   enabled: false
-  # F98 (D243, 11-04): other vendors' model names that LiteLLM serves with
-  # DeepSeek (the nemotron pair, gpt-5.4*, openai-codex/*, codex-mini-latest,
-  # o4-mini, codex-cli/gpt-5.4, and the Gemini names and gpt-4o where their
-  # provider is off). This flag exists ONLY for the four callers that still name
-  # them: the K8s provisioner's community-agent primary and its dev-agent
-  # defaults (agentProvisionerServiceK8s.ts), globalModelConfigService's default
-  # policy, and cloud-codex-deployment.yaml's codex-cli/gpt-5.4. It retires with
-  # them: F103 moves those defaults off the dead names, then flips this to false
-  # and deletes the gated block. Dev sets it false.
+  # The LiteLLM model name every agent driver default names (F103): the K8s
+  # provisioner's community and dev-agent primaries and its key allowlists (as
+  # AGENT_DEFAULT_MODEL on the backend), the global policy's community default,
+  # the static gateway config, and cloud-codex's codex CLI. It must be a
+  # model_name LiteLLM serves; scripts/verify-agent-default-model.js checks the
+  # render in CI. Base: DeepSeek, which these defaults reached before through
+  # other vendors' names. Dev: Claude (values-dev.yaml).
+  agentDefaultModel: deepseek-v4-flash
+  # F98/F103: the Gemini/gpt-4o stand-ins only. With this on, the Gemini names
+  # (where aiProviders.gemini is off) and gpt-4o (where aiProviders.openai is
+  # off) are served by DeepSeek, as they were before F98. It exists only for the
+  # callers that still default to those names: llmService's DEFAULT_MODEL, the
+  # commonly-bot and newshound clients, gatewayProvisionerServiceK8s,
+  # agentProvisionerService, AgentProfile, routes/dev.ts and the admin policy
+  # defaults. It retires with them in F105. (F103 deleted the other legacy
+  # names: nemotron, gpt-5.4*, openai-codex/*, codex-mini-latest, o4-mini and
+  # codex-cli/gpt-5.4.) Dev sets it false.
   legacyAliases: true
   # Per-service LiteLLM virtual keys (TASK-555). When true, backend and
   # commonly-bot call LiteLLM with their own budgeted keys

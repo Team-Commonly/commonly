@@ -214,11 +214,10 @@ spec:
           # Runtime stays codex: codex CLI still spawns, still sandboxes,
           # still owns tool use and sessions. Only the HTTPS layer is proxied.
           cat > /state/.codex/config.toml <<EOF
-          # wire_api=responses below -> LiteLLM /v1/responses. codex-cli/gpt-5.4 has
-          # been a DeepSeek stand-in since 2026-10-27, rendered only under
-          # litellm.legacyAliases (off on dev, F98); F103 moves this default off it.
-          # See litellm-config.yaml.
-          model = "codex-cli/gpt-5.4"
+          # wire_api=responses below -> LiteLLM /v1/responses. The model is the
+          # chart's litellm.agentDefaultModel, a LiteLLM model_name (F103; it was
+          # codex-cli/gpt-5.4, a DeepSeek stand-in from 2026-10-27).
+          model = "{{ $.Values.litellm.agentDefaultModel }}"
           model_provider = "litellm"
 
           # Codex CLI's default sandbox uses bubblewrap (bwrap), which

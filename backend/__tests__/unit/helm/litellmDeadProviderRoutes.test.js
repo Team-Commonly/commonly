@@ -64,8 +64,10 @@ describe('LiteLLM routes no request to a provider that is switched off', () => {
 // signal. The 7-day spend log to 11-04 showed no call to any of these names on
 // dev, so dev (litellm.legacyAliases false) renders none of them: a caller gets
 // an unknown-model error instead of a silent stand-in. The chart's own driver
-// defaults still name them on installs we can't measure, so base keeps today's
-// stand-ins behind the flag until F103 moves those defaults (CTO ruling 11-04).
+// defaults still named them on installs we can't measure, so base kept the
+// stand-ins behind the flag (CTO ruling 11-04). F103 moved those defaults to
+// litellm.agentDefaultModel and deleted the names outright; the flag now gates
+// only the Gemini/gpt-4o stand-ins, until F105.
 const entries = () => lines.map((l, i) => ({ l: l.trim(), i }))
   .filter(({ l }) => l.startsWith('- model_name:'))
   .map(({ l, i }) => ({ name: l.replace('- model_name:', '').trim(), i }));
@@ -73,7 +75,6 @@ const blockOf = (at) => {
   const next = lines.findIndex((l, k) => k > at && /^\s*- model_name:|^\s*router_settings:|^\s*\{\{-? (if|end|else)/.test(l));
   return lines.slice(at + 1, next === -1 ? undefined : next).join('\n');
 };
-const LEGACY = '{{- if .Values.litellm.legacyAliases }}';
 const standInGate = (provider) => `{{- if and (not .Values.aiProviders.${provider}.enabled) .Values.litellm.legacyAliases }}`;
 const LEGACY_NAMES = [
   'openrouter/nvidia/nemotron-3-super-120b-a12b:free', 'nvidia/nemotron-3-super-120b-a12b:free',
@@ -82,7 +83,7 @@ const LEGACY_NAMES = [
 ];
 
 describe('no other vendor\'s name is served by DeepSeek unless legacyAliases is on', () => {
-  test('dev renders no legacy alias; base keeps them until F103', () => {
+  test('dev renders no stand-in; base keeps the Gemini/gpt-4o ones until F105', () => {
     expect(dev.litellm.legacyAliases).toBe(false);
     expect(base.litellm.legacyAliases).toBe(true);
   });
@@ -91,19 +92,19 @@ describe('no other vendor\'s name is served by DeepSeek unless legacyAliases is 
     const standIns = entries()
       .filter(({ i }) => /model:\s*deepseek\//.test(blockOf(i)))
       .filter(({ name }) => !name.startsWith('deepseek-'));
-    expect(standIns.length).toBeGreaterThanOrEqual(LEGACY_NAMES.length);
-    // The flag itself, or a provider-off gate ANDed with it; never `not` the flag.
-    const gate = /^\{\{- if (and \(not \.Values\.aiProviders\.\w+\.enabled\) )?\.Values\.litellm\.legacyAliases \}\}$/;
+    expect(standIns.map(({ name }) => name).sort()).toEqual(
+      ['gemini-2.5-flash', 'google/gemini-2.0-flash', 'google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'gpt-4o'],
+    );
+    // A provider-off gate ANDed with the flag; never `not` the flag.
+    const gate = /^\{\{- if and \(not \.Values\.aiProviders\.\w+\.enabled\) \.Values\.litellm\.legacyAliases \}\}$/;
     standIns.forEach(({ name, i }) => expect([name, gateAbove(i)]).toEqual([name, expect.stringMatching(gate)]));
   });
 
-  test.each(LEGACY_NAMES)('%s exists, and is a fallback, only under the legacyAliases flag', (name) => {
-    const found = entries().filter((entry) => entry.name === name);
-    expect(found).toHaveLength(1);
-    expect(gateAbove(found[0].i)).toBe(LEGACY);
-    lines.forEach((l, i) => {
-      if (l.includes(`"${name}"`)) expect(gateAbove(i)).toBe(LEGACY);
-    });
+  // F103: these names are gone in every render, flag or not, as routes and as
+  // fallbacks.
+  test.each(LEGACY_NAMES)('%s is neither a route nor a fallback', (name) => {
+    expect(entries().filter((entry) => entry.name === name)).toEqual([]);
+    expect(lines.filter((l) => l.includes(`"${name}"`))).toEqual([]);
   });
 
   test.each([
@@ -119,14 +120,14 @@ describe('no other vendor\'s name is served by DeepSeek unless legacyAliases is 
     expect(blockOf(standIn.i)).toMatch(/model:\s*deepseek\/deepseek-v4-flash/);
   });
 
-  test('a Gemini fallback renders where Gemini is on or legacyAliases is; a nemotron one only under the flag', () => {
+  test('a Gemini fallback renders where Gemini is on or legacyAliases is, and no other fallback is listed', () => {
     const gemini = [];
-    const nemotron = [];
+    const other = [];
     lines.forEach((l, i) => {
       if (/^\s*- \{"(gemini-|google\/)/.test(l)) gemini.push(gateAbove(i));
-      if (/^\s*- \{"(openrouter\/)?nvidia\//.test(l)) nemotron.push(gateAbove(i));
+      else if (/^\s*- \{"[^"]+":\s*\[/.test(l)) other.push(l.trim());
     });
     expect(gemini).toEqual(Array(4).fill('{{- if or .Values.aiProviders.gemini.enabled .Values.litellm.legacyAliases }}'));
-    expect(nemotron).toEqual(Array(2).fill(LEGACY));
+    expect(other).toEqual([]);
   });
 });
