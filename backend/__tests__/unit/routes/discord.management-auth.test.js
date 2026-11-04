@@ -113,6 +113,32 @@ describe('discord management route auth', () => {
     expect(res.body).toEqual({ error: 'Access denied' });
   });
 
+  // F143: the install link starts a Discord bind, so it asks the same rule
+  // POST /api/integrations does (services/chatRelay/bindSurface) and the two
+  // cannot disagree: the pod's creator, still a listed member, or an admin.
+  describe('install-link asks the shared-surface rule', () => {
+    beforeEach(() => { process.env.DISCORD_CLIENT_ID = '1111111111'; });
+    afterEach(() => { delete process.env.DISCORD_CLIENT_ID; });
+    const link = (token) => request(app).get('/api/discord/install-link/pod-1').set('Authorization', `Bearer ${token}`);
+
+    it('serves the pod creator who is a member', async () => {
+      Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['user-1'] });
+      expect((await link('user-token')).status).toBe(200);
+    });
+
+    it('refuses a creator who has left the pod, as the bind would', async () => {
+      Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: 'user-1', members: ['someone-else'] });
+      const res = await link('user-token');
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: 'Access denied' });
+    });
+
+    it('serves an instance admin on a pod they did not create', async () => {
+      Pod.findById.mockResolvedValue({ _id: 'pod-1', createdBy: 'someone-else', members: ['someone-else'] });
+      expect((await link('admin-token')).status).toBe(200);
+    });
+  });
+
   it('requires integration ownership for command registration', async () => {
     Integration.findById.mockResolvedValue({
       _id: 'integration-1',

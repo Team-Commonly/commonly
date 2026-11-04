@@ -3,6 +3,7 @@ const express = require('express');
 
 jest.mock('../../../models/Integration');
 jest.mock('../../../models/Pod');
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
 jest.mock('../../../models/Summary', () => ({ findOne: jest.fn() }));
 jest.mock('../../../services/integrationSummaryService', () => ({ createSummary: jest.fn() }));
 jest.mock('../../../services/agentEventService', () => ({ enqueue: jest.fn() }));
@@ -24,6 +25,7 @@ jest.mock('../../../models/WebhookDelivery', () => ({
 
 const Integration = require('../../../models/Integration');
 const Pod = require('../../../models/Pod');
+const User = require('../../../models/User');
 const Summary = require('../../../models/Summary');
 const IntegrationSummaryService = require('../../../services/integrationSummaryService');
 const AgentEventService = require('../../../services/agentEventService');
@@ -55,18 +57,21 @@ describe('Telegram webhook routes', () => {
   });
 
   it('handles /commonly-enable and links chat', async () => {
+    // Minted by the pod's creator: a group is a shared surface (F143).
     const integration = {
       _id: 'integration-1',
       podId: 'pod-1',
+      createdBy: 'creator-1',
       config: { connectCode: 'abc12300000000000000000000000000', connectCodeExpiresAt: new Date(Date.now() + 60000) },
     };
+    User.findById.mockResolvedValue({ _id: 'creator-1', role: 'user' });
 
     Integration.findOne = jest.fn()
       .mockResolvedValueOnce(integration) // connectCode lookup
       .mockResolvedValueOnce(null); // chatId claim lookup
     Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({});
     Pod.findById.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ name: 'Test Pod' }),
+      lean: jest.fn().mockResolvedValue({ name: 'Test Pod', createdBy: 'creator-1', members: ['creator-1'] }),
     });
 
     const res = await telegramPost()
@@ -110,15 +115,18 @@ describe('Telegram webhook routes', () => {
   });
 
   it('escapes a pod name in the bind confirmation, which Telegram parses as HTML', async () => {
+    // Minted by the pod's creator: a group is a shared surface (F143).
     const integration = {
       _id: 'integration-1',
       podId: 'pod-1',
+      createdBy: 'creator-1',
       config: { connectCode: 'abc12300000000000000000000000000', connectCodeExpiresAt: new Date(Date.now() + 60000) },
     };
+    User.findById.mockResolvedValue({ _id: 'creator-1', role: 'user' });
     Integration.findOne = jest.fn().mockResolvedValueOnce(integration).mockResolvedValueOnce(null);
     Integration.findByIdAndUpdate = jest.fn().mockResolvedValue({ config: { chatId: '42' } });
     Pod.findById.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({ name: 'R&D <b>ops</b>' }),
+      lean: jest.fn().mockResolvedValue({ name: 'R&D <b>ops</b>', createdBy: 'creator-1', members: ['creator-1'] }),
     });
 
     const res = await telegramPost()
@@ -394,6 +402,51 @@ describe('bridge command surface (/mode /status /mute /help)', () => {
     expect(text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(text).not.toContain('<script>');
     expect(text).toContain('Agent said &lt;b&gt;ship it&lt;/b&gt; &amp; left');
+  });
+
+  // F143: what a group binding still sends OUT is /tldr — the pod's latest
+  // summary, to everyone in the group. A group bound before the rule by someone
+  // without authority over the pod no longer gets it; one bound by the pod's
+  // creator still does.
+  describe('/tldr in a shared chat', () => {
+    const groupRow = (createdBy) => ({
+      _id: 'integration-1',
+      podId: 'pod-1',
+      type: 'telegram',
+      createdBy,
+      config: { chatId: '42', chatType: 'supergroup' },
+    });
+    const groupPost = () => telegramPost().send({
+      message: {
+        text: '/tldr', message_id: 901, chat: { id: 42, type: 'supergroup' }, from: { id: 7 },
+      },
+    });
+
+    beforeEach(() => {
+      Pod.findById.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ name: 'Pod', createdBy: 'creator-1', members: ['creator-1', 'member-1'] }),
+      });
+      User.findById.mockImplementation(async (id) => ({ _id: String(id), role: 'user' }));
+      Summary.findOne.mockReturnValue({
+        sort: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ title: 'T', content: 'pod secrets' }) }),
+      });
+    });
+
+    it('withholds the pod summary from a group a plain member bound', async () => {
+      Integration.findOne = jest.fn().mockResolvedValue(groupRow('member-1'));
+      const res = await groupPost();
+      expect(res.status).toBe(200);
+      expect(Summary.findOne).not.toHaveBeenCalled();
+      const text = telegramService.sendMessage.mock.calls[0][2];
+      expect(text).not.toContain('pod secrets');
+      expect(text).toMatch(/only the pod's creator/i);
+    });
+
+    it('sends the pod summary to a group the pod creator bound', async () => {
+      Integration.findOne = jest.fn().mockResolvedValue(groupRow('creator-1'));
+      await groupPost();
+      expect(telegramService.sendMessage.mock.calls[0][2]).toContain('pod secrets');
+    });
   });
 
   it('commands never fall through to the live relay', async () => {

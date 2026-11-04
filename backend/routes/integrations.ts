@@ -58,6 +58,9 @@ import {
   malformedDiscordBindingField, serverOwnedConfigError,
 } from '../utils/discordBinding';
 import { readDiscordInstallProof } from '../utils/discordInstallProof';
+import {
+  assertCanBindSurface, isSurfaceBindType, retargetsSurface, SurfaceBindRefusedError,
+} from '../services/chatRelay/bindSurface';
 // Keep this as an ESM import: static analysis recognizes the rate limiter at
 // the route sink, while the middleware owns the shared token/IP bucket.
 import {
@@ -555,18 +558,21 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     if (nextConfig.liveRelay === true) nextConfig.linkedUserId = req.user?.id;
     const missingRequired = getMissingRequiredFields(type, nextConfig);
     if (type === 'discord' && missingRequired.length) return res.status(400).json({ message: `Missing required fields: ${missingRequired.join(', ')}`, missing: missingRequired });
+    // F143: a chat surface people outside the pod can read (a Slack channel, a
+    // Discord channel, a Telegram group) takes authority over the POD — its
+    // creator or an instance admin — not membership. Before the row or any
+    // Discord webhook exists. `nextConfig` is past the server-owned strip, so a
+    // body cannot claim a private chat; a Telegram row's chat is judged where
+    // its code is redeemed (routes/webhooks/telegram.ts).
+    if (isSurfaceBindType(type)) {
+      await assertCanBindSurface({
+        userId: req.user?.id, pod: targetPod, type, config: nextConfig,
+      });
+    }
     if (type === 'discord') {
-      // Authority, then the channel: both before the row or the webhook exist.
-      // One answer for both refusals, as on the channel list.
-      // A channel bridge is a pod-level setting: binding one takes authority
-      // over the POD, the same as the install link (routes/discord.ts
-      // canManagePod: the pod's creator or an instance admin). Guild authority
-      // alone is not enough: the prior-binding arm below proves the guild, and
-      // on its own let a plain member bridge a pod they did not create.
-      const binder = await User.findById(String(req.user?.id)) as { role?: string } | null;
-      if (binder?.role !== 'admin' && targetPod.createdBy?.toString() !== String(req.user?.id)) {
-        return res.status(403).json({ message: 'Only the pod creator can connect Discord to this pod' });
-      }
+      // Guild authority, then the channel. One answer for both refusals, as on
+      // the channel list. The prior-binding arm proves the guild, not the pod:
+      // the rule above is what keeps a plain member from bridging a pod.
       const guildId = String(config.serverId);
       const install = (req.body as { install?: unknown })?.install;
       if (!await hasDiscordGuildAuthority(req.user?.id, String(podId), guildId, install)
@@ -628,6 +634,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     }
     res.status(201).json({ integration, platformIntegration });
   } catch (error) {
+    if (error instanceof SurfaceBindRefusedError) return res.status(403).json(error.body);
     console.error('Error creating integration:', error);
     res.status(500).json({ message: 'Server error' });
   }
@@ -852,6 +859,12 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
         if (!activePod || !isConnectorTargetPod(activePod, requesterId)) {
           return res.status(403).json({ message: 'Access denied' });
         }
+        // Moving a connector bound to a shared chat (F143) binds THAT pod to it.
+        if (isSurfaceBindType(integration.type)) {
+          await assertCanBindSurface({
+            userId: requesterId, pod: activePod, type: integration.type, config: currentConfig,
+          });
+        }
       }
       const requestedGates = config?.gates;
       if (requestedGates !== undefined) {
@@ -926,6 +939,18 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       return res.status(400).json({ message: 'config keys must be field names, not update paths' });
     }
     const nextConfig = incoming ? { ...currentConfig, ...incoming } : currentConfig;
+    // F143: a write that changes which chat a row points at is a bind, judged
+    // against the pod the row will serve (the new one when podId moves too).
+    // Fields that do not select the surface (relay flags, lead, gates) are not.
+    if (incoming && isSurfaceBindType(integration.type)
+      && retargetsSurface(integration.type, currentConfig, nextConfig)) {
+      await assertCanBindSurface({
+        userId: requesterId,
+        pod: await Pod.findById(podId !== undefined ? podId : integration.podId),
+        type: integration.type,
+        config: nextConfig,
+      });
+    }
     if (incoming && incoming.liveRelay === true) {
       // Relay authors inbound as linkedUserId and streams outbound to chatId;
       // both are only honest in a 1:1 private chat (#1289 inbound, F2 outbound).
@@ -972,6 +997,7 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
     // pod read withholds (chatId, linkedUserId, relayMap, messageBuffer).
     return res.json(projectIntegrationForViewer(updated, await resolveConnectorViewer(req.user?.id)));
   } catch (error) {
+    if (error instanceof SurfaceBindRefusedError) return res.status(403).json(error.body);
     console.error('Error updating integration:', error);
     return res.status(500).json({ message: 'Server error' });
   }

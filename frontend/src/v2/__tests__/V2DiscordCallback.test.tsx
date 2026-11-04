@@ -154,6 +154,30 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
 
+  // F143: binding a Discord channel takes authority over the pod. The server's
+  // refusal carries a code, and the page says it in the reader's language.
+  test.each([
+    ['en', 'Only the pod creator can connect a shared channel to this pod.'],
+    ['zh-CN', '只有这个 Pod 的创建者才能把共享频道连接进来。'],
+  ])('a shared-surface refusal reads in %s, not as the server text', async (lang, expected) => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    await act(async () => { await i18n.changeLanguage(lang); });
+    axios.get.mockResolvedValueOnce({ data: [{ id: 'c1', name: 'general' }] });
+    axios.post.mockRejectedValueOnce({
+      response: {
+        status: 403,
+        data: { code: 'shared_surface_needs_pod_authority', message: 'Server wording the page must not show.' },
+      },
+    });
+    renderAt('/discord/success?pod_id=p1&guild_id=g1&server_name=S');
+    const select = await screen.findByRole('combobox');
+    await screen.findByRole('option', { name: '#general' });
+    fireEvent.change(select, { target: { value: 'c1' } });
+    await act(async () => { fireEvent.click(screen.getAllByRole('button').at(-1)); });
+    expect(screen.getByRole('alert')).toHaveTextContent(expected);
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Server wording');
+  });
+
   // The pages are reached through the route tables, which pick the view by prop.
   // A swapped success/error mapping would render the wrong page for the backend's
   // redirect, so both tables are read and their mapping pinned.

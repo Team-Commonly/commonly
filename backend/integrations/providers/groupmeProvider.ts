@@ -12,6 +12,9 @@ const groupmeService = require('../../services/groupmeService');
 const Summary = require('../../models/Summary');
 // eslint-disable-next-line global-require
 const { manifests } = require('../manifests');
+// eslint-disable-next-line global-require
+const Pod = require('../../models/Pod');
+import { assertCanBindSurface, SurfaceBindRefusedError } from '../../services/chatRelay/bindSurface';
 
 interface GroupMePayload {
   system?: boolean;
@@ -208,6 +211,24 @@ function createGroupMeProvider(integration: { _id: unknown; config?: Record<stri
               || command === GROUPME_COMMANDS.POD
             ) {
               try {
+                // F143: this is what a GroupMe binding sends OUT — the pod's
+                // summary, to everyone in the group. A group bound by someone
+                // without authority over the pod gets nothing until the pod's
+                // creator reconnects it.
+                const owner = latest || integration;
+                const pod = await Pod.findById(owner.podId ?? integration.podId).lean();
+                try {
+                  await assertCanBindSurface({
+                    userId: (owner as { createdBy?: unknown }).createdBy, pod, type: 'groupme', config: effectiveConfig,
+                  });
+                } catch (error) {
+                  if (!(error instanceof SurfaceBindRefusedError)) throw error;
+                  await groupmeService.sendMessage(
+                    botId,
+                    "Only the pod's creator can share this pod's summary with a group. Ask them to reconnect it.",
+                  );
+                  return res.sendStatus(200);
+                }
                 const latestSummary = await Summary.findOne({
                   type: 'chats',
                   podId: integration.podId,

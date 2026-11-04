@@ -2,6 +2,10 @@ const createGroupMeProvider = require('../../../integrations/providers/groupmePr
 const Integration = require('../../../models/Integration');
 
 jest.mock('../../../models/Integration');
+jest.mock('../../../models/Pod', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/User', () => ({ findById: jest.fn() }));
+jest.mock('../../../models/Summary', () => ({ findOne: jest.fn() }));
+jest.mock('../../../services/groupmeService', () => ({ sendMessage: jest.fn() }));
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -48,5 +52,52 @@ describe('groupmeProvider', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ authorId: 'u1', content: 'hello' });
   });
+});
+
+// F143: `!pod` is what a GroupMe binding sends OUT — the pod's latest summary,
+// to everyone in the group. A group bound by someone without authority over the
+// pod (its creator or an instance admin) gets nothing.
+describe('groupmeProvider !pod in a shared group', () => {
+  const Pod = require('../../../models/Pod');
+  const User = require('../../../models/User');
+  const Summary = require('../../../models/Summary');
+  const groupmeService = require('../../../services/groupmeService');
+  const row = (createdBy) => ({
+    _id: 'int1', podId: 'pod-1', createdBy, config: { botId: 'bot', groupId: '123' },
+  });
+  const ask = async (createdBy) => {
+    Integration.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue(row(createdBy)) });
+    const { events } = createGroupMeProvider(row(createdBy)).getWebhookHandlers();
+    const res = { sendStatus: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+    await events({ body: { group_id: '123', text: '!pod' } }, res);
+    return res;
+  };
+
+  beforeEach(() => {
+    Pod.findById.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: 'pod-1', createdBy: 'creator-1', members: ['creator-1', 'member-1'] }),
+    });
+    User.findById.mockImplementation(async (id) => ({ _id: String(id), role: String(id) === 'admin-1' ? 'admin' : 'user' }));
+    Summary.findOne.mockReturnValue({
+      sort: jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue({ title: 'T', content: 'pod secrets' }) }),
+    });
+  });
+
+  test('withholds the pod summary from a group a plain member bound', async () => {
+    const res = await ask('member-1');
+    expect(res.sendStatus).toHaveBeenCalledWith(200);
+    expect(Summary.findOne).not.toHaveBeenCalled();
+    const text = groupmeService.sendMessage.mock.calls[0][1];
+    expect(text).not.toContain('pod secrets');
+    expect(text).toMatch(/only the pod's creator/i);
+  });
+
+  test.each([['the pod creator', 'creator-1'], ['an instance admin', 'admin-1']])(
+    'sends the pod summary to a group %s bound',
+    async (_label, createdBy) => {
+      await ask(createdBy);
+      expect(groupmeService.sendMessage.mock.calls[0][1]).toContain('pod secrets');
+    },
+  );
 });
 

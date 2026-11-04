@@ -242,6 +242,40 @@ describe('Connectors page: channels', () => {
     ));
   });
 
+  // F143: a PATCH that would point a connector at a shared chat is refused with
+  // a code; the page names that refusal in the reader's language. Any other
+  // refusal keeps the action's own copy.
+  it.each([
+    ['en', 'Only the pod creator can connect a shared channel to this pod.'],
+    ['zh-CN', '只有这个 Pod 的创建者才能把共享频道连接进来。'],
+  ])('names a shared-surface refusal from a PATCH in %s', async (lang, expected) => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage(lang); });
+    try {
+      mockGets();
+      axios.patch.mockRejectedValue({
+        response: { status: 403, data: { code: 'shared_surface_needs_pod_authority', message: 'Server wording.' } },
+      });
+      renderPage();
+      const drawer = await openDrawer('Slack');
+      fireEvent.click(within(drawer).getAllByRole('checkbox')[0]);
+      expect(await screen.findByText(expected)).toBeInTheDocument();
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+
+  it('keeps the action\'s own copy for a PATCH refusal with any other code', async () => {
+    mockGets();
+    axios.patch.mockRejectedValue({ response: { status: 403, data: { message: 'Access denied' } } });
+    renderPage();
+    const drawer = await openDrawer('Slack');
+    fireEvent.click(within(drawer).getByRole('checkbox', { name: 'Relay' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalled());
+    expect(await screen.findByText(/Could not/)).toBeInTheDocument();
+    expect(screen.queryByText('Only the pod creator can connect a shared channel to this pod.')).toBeNull();
+  });
+
   it('PATCHes the mirror mode from the channel drawer', async () => {
     mockGets([{
       ...connectors[1],

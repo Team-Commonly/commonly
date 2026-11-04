@@ -20,6 +20,7 @@ const {
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
 import { applyRelayCommand } from '../../services/chatRelay/chatRelayCore';
+import { assertCanBindSurface, SurfaceBindRefusedError, surfaceAudienceOf } from '../../services/chatRelay/bindSurface';
 import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay/chatRelayCore';
 
 const router = express.Router({ mergeParams: true });
@@ -185,6 +186,29 @@ const handleEnableCommand = async (chat: any, code: any) => {
     return;
   }
 
+  // F143: a group, supergroup or channel is read by people outside the pod, so
+  // binding one takes authority over the pod (its creator or an instance admin).
+  // The chat type is only known here, so the rule runs here, against the row's
+  // creator: the code is theirs (a re-mint on /:id/connect-code keeps the row's
+  // creator, so an admin re-minting a member's row cannot lend it authority).
+  // The code is not spent, so the same person can still redeem it in a private
+  // chat with the bot.
+  const pod = await Pod.findById(integration.podId).lean();
+  try {
+    await assertCanBindSurface({
+      userId: integration.createdBy, pod, type: 'telegram', config: { chatId, chatType },
+    });
+  } catch (error) {
+    if (!(error instanceof SurfaceBindRefusedError)) throw error;
+    await telegramService.sendMessage(
+      botToken,
+      chatId,
+      "⚠️ Only the pod's creator can connect a group or channel to this pod. "
+      + 'Send the code in a private chat with this bot instead.',
+    );
+    return;
+  }
+
   // `errorMessage: null` because the working bind is the other state of the
   // field the failure writes, and only a bind knows the connector works again
   // (wren 73779). `new: true` is what the confirmation below classifies against:
@@ -207,7 +231,6 @@ const handleEnableCommand = async (chat: any, code: any) => {
     },
   }, { new: true });
 
-  const pod = await Pod.findById(integration.podId).lean();
   const podName = pod?.name || 'your pod';
 
   // Escaped because parse_mode is HTML: a pod named `A <b>` made Telegram reject
@@ -317,6 +340,26 @@ const handlePodSummaryCommand = async (chat: any, integration: any) => {
   if (!integration.podId) {
     await telegramService.sendMessage(botToken, chatId, 'This connector has no active pod. Choose one in Commonly first.');
     return;
+  }
+
+  // F143: /tldr is what a group binding sends OUT — the pod's summary, to
+  // everyone in the chat. A shared chat bound before the rule by someone without
+  // authority over the pod gets nothing until the pod's creator reconnects it.
+  if (surfaceAudienceOf('telegram', integration.config) === 'shared-surface') {
+    const pod = await Pod.findById(integration.podId).lean();
+    try {
+      await assertCanBindSurface({
+        userId: integration.createdBy, pod, type: 'telegram', config: integration.config,
+      });
+    } catch (error) {
+      if (!(error instanceof SurfaceBindRefusedError)) throw error;
+      await telegramService.sendMessage(
+        botToken,
+        chatId,
+        "Only the pod's creator can share this pod's summary with a group or channel. Ask them to reconnect it.",
+      );
+      return;
+    }
   }
 
   const latestSummary = await Summary.findOne({

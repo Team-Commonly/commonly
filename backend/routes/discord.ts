@@ -25,6 +25,7 @@ const { runDiscordCommandForIntegrations } = require('../services/discordMultiCo
 import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middleware/integrationRateLimit';
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { invalidDiscordIdError, isDiscordSnowflake, isSupplied } from '../utils/discordBinding';
+import { assertCanBindSurface, SurfaceBindRefusedError } from '../services/chatRelay/bindSurface';
 import {
   mintDiscordInstallProof, mintDiscordInstallState, readDiscordInstallProof, readDiscordInstallState,
 } from '../utils/discordInstallProof';
@@ -225,8 +226,19 @@ router.get('/install-link/:podId', auth, async (req: AuthReq, res: Res) => {
     // The instance's own application only. A caller-chosen client id would send
     // the bot add to an app whose callback is not ours.
     const clientId = process.env.DISCORD_CLIENT_ID;
-    const canManage = await canManagePod(podId || '', req.user?.id || '');
-    if (!canManage) return res.status(403).json({ error: 'Access denied' });
+    // The link starts a Discord bind, so it asks the rule the bind itself runs
+    // (F143, services/chatRelay/bindSurface): a guild channel is a shared
+    // surface, which takes the pod's creator or an instance admin.
+    const pod = podId ? await Pod.findById(podId) : null;
+    if (!pod) return res.status(403).json({ error: 'Access denied' });
+    try {
+      await assertCanBindSurface({
+        userId: req.user?.id, pod, type: 'discord', config: {},
+      });
+    } catch (error) {
+      if (error instanceof SurfaceBindRefusedError) return res.status(403).json({ error: 'Access denied' });
+      throw error;
+    }
     if (!clientId) return res.status(400).json({ error: 'Discord client ID is required' });
     // A code grant with our callback as the redirect. Without `response_type`
     // and `redirect_uri`, Discord adds the bot and stops on its own page, so the

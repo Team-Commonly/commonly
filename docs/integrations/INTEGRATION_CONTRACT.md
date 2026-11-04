@@ -81,6 +81,37 @@ for summarization. Issue an `cm_int_*` ingest token through
 - Rate-limit webhook routes; strip PII beyond what’s needed for summaries.
 - Store secrets encrypted (reuse existing config patterns).
 
+## Who may bind a pod to a chat (F143)
+A chat that people outside the pod can read is a **shared surface**: a Slack
+channel, a Discord guild channel, a Telegram group, supergroup or channel, and
+a GroupMe group. Binding a pod to one takes authority over the pod: the pod's
+creator (still a listed member) or an instance admin (`User.role === 'admin'`).
+Pod membership is not enough. A **private 1:1** chat with the bot (a Telegram
+`private` chat, the Slack OAuth DM) is read only by the person who bound it and
+stays member-level.
+
+The rule lives in one place, `backend/services/chatRelay/bindSurface.ts`. Each
+platform declares there who can read its chat; an unknown type, or a chat type
+not declared private, counts as shared. The server refuses with 403
+`{ code: 'shared_surface_needs_pod_authority' }`, and the v2 pages map that code
+to `connectors.sharedSurfaceCreatorOnly` (en and zh-CN).
+
+It is checked at:
+- **create**: `POST /api/integrations` (Slack, Discord, GroupMe), and Discord's
+  `GET /api/discord/install-link/:podId`;
+- **retarget**: `PATCH /api/integrations/:id`, when a field that picks the chat
+  changes (Slack `channelId`, GroupMe `groupId`/`botId`; Discord's are fixed by
+  F90), or when a user-scoped connector's `podId` moves;
+- **redemption**: Telegram's `/commonly-enable`, because the chat type is only
+  known there. It is judged against the row's `createdBy`, and a refused code is
+  left unspent for a private chat;
+- **outbound summaries**: Telegram `/tldr` (`/pod_summary`) and GroupMe `!pod`,
+  which send the pod's latest summary to the whole group.
+
+Rows bound by plain members before the rule keep working. The only runtime
+gates are the two outbound summary commands above, which go quiet on such a row
+until the pod's creator reconnects it.
+
 ## Testing contract
 - Shared Jest contract tests under `backend/__tests__/contracts/integrationProvider.test.js`:
   - validates `ingestEvent` produces required fields

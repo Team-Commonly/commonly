@@ -6,6 +6,7 @@ import V2AuthBrand, { V2HandoffState } from './V2AuthBrand';
 import V2AuthNotice from './V2AuthNotice';
 import { ShellGlyph } from '../icons/glyphs';
 import { PlatformGlyph } from '../icons/platforms';
+import { sharedSurfaceRefusal } from '../connectors/channelModel';
 
 // The notice's role, kept out of JSX for the i18n literal rule.
 const STATUS = 'status' as const;
@@ -132,8 +133,11 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
       // The status only, as for the channel list: the request body now carries
       // the install proof (F90).
       console.error('Error creating integration:', (err as { response?: { status?: number } })?.response?.status ?? 'no response');
-      const e = err as { response?: { data?: { message?: string } } };
-      setError(e.response?.data?.message || t('auth.discordHandoff.createFailed'));
+      const e = err as { response?: { data?: { message?: string; code?: string } } };
+      // A known refusal reads in the page's language (F143); any other keeps the
+      // server's sentence.
+      setError(sharedSurfaceRefusal(t, e.response?.data)
+        || e.response?.data?.message || t('auth.discordHandoff.createFailed'));
     } finally {
       setLoading(false);
     }
