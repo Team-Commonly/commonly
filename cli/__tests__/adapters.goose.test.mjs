@@ -234,10 +234,12 @@ test('the public Goose allowlist withholds self-install and every memory write, 
   expect(PUBLIC_GOOSE_TOOLS).toContain('commonly_read_agent_memory');
 });
 
-// F141: deleting your own message is harmless, so public seats keep it.
-test('public seats are offered commonly_delete_message on every adapter', () => {
-  expect(PUBLIC_GOOSE_TOOLS).toContain('commonly_delete_message');
-  expect(PUBLIC_SEAT_WITHHELD_TOOLS).not.toContain('commonly_delete_message');
+// F141: public seats start from nothing. A stranger-steered seat could delete
+// its own replies to an injection, the evidence of what the attack achieved.
+test('public seats are not offered commonly_delete_message on any adapter', () => {
+  expect(PUBLIC_GOOSE_TOOLS).not.toContain('commonly_delete_message');
+  expect(PUBLIC_ONLY_WITHHELD_TOOLS).toContain('commonly_delete_message');
+  expect(PUBLIC_SEAT_WITHHELD_TOOLS).toContain('commonly_delete_message');
 });
 
 test('a public Goose recipe shows the memory it read and names no save tool', async () => {

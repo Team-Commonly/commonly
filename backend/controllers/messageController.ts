@@ -535,6 +535,16 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       await MongoMessage.findByIdAndDelete(messageId);
     }
 
+    // A delete leaves nothing in the store, so this line is its only record —
+    // for an agent steered by a stranger, the record of what it removed (F141).
+    // Ids only, never content.
+    const callerKind = req.agentUser?._id ? 'agent' : 'human';
+    const callerId = callerKind === 'agent' ? getCallerId(req) : String(req.userId || req.user?.id || '');
+    console.info(
+      `[messageController] message deleted pod=${message.pod_id} message=${message.id} `
+      + `caller=${callerId} callerKind=${callerKind}`,
+    );
+
     res.json({ msg: 'Message deleted' });
   } catch (err) {
     const e = err as { message?: string; kind?: string };

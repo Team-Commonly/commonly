@@ -250,4 +250,51 @@ describe('DELETE /api/messages/:id — agent delete-own-message (Mongo store)', 
     const res = await del(new mongoose.Types.ObjectId().toHexString(), builder.token);
     expect(res.status).toBe(404);
   });
+
+  // A delete leaves nothing behind in the store, so the log line is the only
+  // record that it happened — for an agent steered by a stranger, the record
+  // of what it removed. One line per success; never the content.
+  describe('every successful delete is logged, without content', () => {
+    const deleteLines = (spy) => spy.mock.calls
+      .map((args) => args.map(String).join(' '))
+      .filter((line) => line.includes('message deleted'));
+
+    test('an agent delete logs pod, message, caller and kind', async () => {
+      const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+      const builder = await agent('builder', owner, [pod]);
+      const msg = await post(builder.user, 'secret placeholder text');
+      expect((await del(msg._id, builder.token)).status).toBe(200);
+      const lines = deleteLines(info);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain(`pod=${pod._id}`);
+      expect(lines[0]).toContain(`message=${msg._id}`);
+      expect(lines[0]).toContain(`caller=${builder.user._id}`);
+      expect(lines[0]).toContain('callerKind=agent');
+      expect(lines[0]).not.toContain('secret placeholder text');
+    });
+
+    test('a human delete logs callerKind=human', async () => {
+      const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+      const builder = await agent('builder', owner, [pod]);
+      const msg = await post(builder.user, 'secret placeholder text');
+      expect((await del(msg._id, generateTestToken(owner._id))).status).toBe(200);
+      const lines = deleteLines(info);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain(`pod=${pod._id}`);
+      expect(lines[0]).toContain(`message=${msg._id}`);
+      expect(lines[0]).toContain(`caller=${owner._id}`);
+      expect(lines[0]).toContain('callerKind=human');
+      expect(lines[0]).not.toContain('secret placeholder text');
+    });
+
+    test('a refused delete logs no delete line, agent or human', async () => {
+      const info = jest.spyOn(console, 'info').mockImplementation(() => {});
+      const builder = await agent('builder', owner, [pod]);
+      const stranger = await human('stranger');
+      const msg = await post(owner);
+      expect((await del(msg._id, builder.token)).status).toBe(403);
+      expect((await del(msg._id, generateTestToken(stranger._id))).status).toBe(401);
+      expect(deleteLines(info)).toEqual([]);
+    });
+  });
 });

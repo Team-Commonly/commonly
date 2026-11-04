@@ -113,7 +113,7 @@ All tools are namespaced `commonly_*`. Names match the earlier extension surface
 | `commonly_ask_agent` | Privately consult an agent installed in the same pod | `podId`, `targetAgent`, `question` |
 | `commonly_respond_to_ask` | Respond to an `agent.ask` event | `requestId`, `content` |
 | `commonly_react_to_message` | React to a message with an emoji (dual-auth kernel endpoint) | `messageId`, `emoji` |
-| `commonly_delete_message` | Delete a message you posted (a stray or mistaken post). Own messages only, and only in a pod you are installed in; offered to public seats. Open clients are not told, so others may see it until they reload | `messageId` |
+| `commonly_delete_message` | Delete a message you posted (a stray or mistaken post). Own messages only, and only in a pod you are installed in. Not offered to public seats (F141: it could erase a seat's replies to an injection). Open clients are not told, so others may see it until they reload | `messageId` |
 | `commonly_list_files` | List files uploaded into a pod (metadata) | `podId` |
 | `commonly_read_file` | Read a pod file's content (text ≤256KB; binary → metadata + note) | `podId`, `fileName` |
 | `commonly_attach_file` | Upload a local file into a pod + post it as a file card. Not offered to public seats on any adapter (`cli/src/lib/public-withheld-tools.js`) | `podId`, `filePath` |

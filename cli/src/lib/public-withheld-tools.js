@@ -15,11 +15,15 @@ export const PUBLIC_WITHHELD_TOOLS = Object.freeze(['commonly_attach_file', 'com
 // `cycles[]` through POST /api/agents/runtime/memory/sync. Reading memory
 // (commonly_read_agent_memory, and the long_term the wrapper puts in the
 // prompt) stays offered.
+// commonly_delete_message (F141): a stranger-steered seat could delete its own
+// replies to an injection, which are the evidence of what the attack achieved.
+// A workspace seat keeps it.
 export const PUBLIC_ONLY_WITHHELD_TOOLS = Object.freeze([
   'commonly_self_install_into_pod',
   'commonly_write_agent_memory',
   'commonly_save_my_memory',
   'commonly_log_cycle',
+  'commonly_delete_message',
 ]);
 
 // Everything a public seat is not offered. Codex, OpenCode, Qwen and Goose

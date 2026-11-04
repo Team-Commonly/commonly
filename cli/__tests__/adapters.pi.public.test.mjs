@@ -168,21 +168,22 @@ describe('a public pi turn runs inside Seatbelt', () => {
     expect(servers[0].withheldTools).toEqual([...PUBLIC_SEAT_WITHHELD_TOOLS]);
   });
 
-  test('F118: all six public-seat tools are withheld on both layers, and reading memory stays offered', async () => {
+  test('F118 + F141: all seven public-seat tools are withheld on both layers, and reading memory stays offered', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('ok') });
     const { wrap } = captureWrap();
     await pi.spawn('hi', publicCtx({ _spawnImpl: impl, _wrapArgvWithSeatbelt: wrap }));
-    const six = [
+    const withheld = [
       'commonly_attach_file', 'commonly_catch_up', 'commonly_self_install_into_pod',
       'commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle',
+      'commonly_delete_message',
     ];
     const excluded = flagValue(innerOf(calls[0]), '--exclude-tools').split(',');
-    expect(excluded).toEqual(expect.arrayContaining(six));
+    expect(excluded).toEqual(expect.arrayContaining(withheld));
     expect(excluded).not.toContain('commonly_read_agent_memory');
     const [server] = JSON.parse(calls[0].proc.fd3Payload);
-    expect(server.withheldTools).toEqual(expect.arrayContaining(six));
+    expect(server.withheldTools).toEqual(expect.arrayContaining(withheld));
     const offered = registrableTools(
-      [...six, 'commonly_read_agent_memory', 'commonly_post_message'].map((name) => ({ name })), server,
+      [...withheld, 'commonly_read_agent_memory', 'commonly_post_message'].map((name) => ({ name })), server,
     ).map((t) => t.name);
     expect(offered).toEqual(['commonly_read_agent_memory', 'commonly_post_message']);
   });

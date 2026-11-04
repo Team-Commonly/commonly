@@ -836,7 +836,8 @@ describe('claude adapter — ctx.environment', () => {
       const inner = calls[0].args.slice(calls[0].args.indexOf('--') + 1);
       const denied = inner.slice(inner.indexOf('--disallowedTools') + 1);
       for (const tool of ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
-        'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_attach_file', 'commonly_catch_up']) {
+        'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_attach_file', 'commonly_catch_up',
+        'commonly_delete_message']) {
         expect(denied).toContain(`mcp__commonly__${tool}`);
       }
       expect(denied).not.toContain('mcp__commonly__commonly_read_agent_memory');
@@ -1406,7 +1407,7 @@ describe('claude adapter — a workspace seat', () => {
     // F118: a workspace seat is not a public seat. It keeps its memory writes
     // and log_cycle, and its prompt still teaches the save.
     for (const tool of ['commonly_write_agent_memory', 'commonly_save_my_memory', 'commonly_log_cycle',
-      'commonly_read_agent_memory']) {
+      'commonly_read_agent_memory', 'commonly_delete_message']) {
       expect(denied).not.toContain(`mcp__commonly__${tool}`);
     }
     expect(args[args.lastIndexOf('-p') + 1]).toContain('commonly_save_my_memory');
@@ -1443,7 +1444,7 @@ describe('claude adapter — a workspace seat', () => {
   // able to spread it into other pods or rewrite its memory, so those tools
   // are denied on public trust. Reading its memory stays.
   const PUBLIC_ONLY = ['commonly_self_install_into_pod', 'commonly_write_agent_memory',
-    'commonly_save_my_memory', 'commonly_log_cycle'];
+    'commonly_save_my_memory', 'commonly_log_cycle', 'commonly_delete_message'];
 
   test('a public seat keeps the denies it had, without the workspace ones, and loses self-install and memory writes', async () => {
     const { impl, calls } = makeSpawnImpl();
