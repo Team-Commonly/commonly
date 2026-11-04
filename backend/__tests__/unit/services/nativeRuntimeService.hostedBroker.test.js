@@ -231,6 +231,8 @@ describe('a hosted run in a granted pod', () => {
       // A hosted turn has no shell, web or file tools, so the
       // seat-confinement refusal is out of scope for it (TASK-175).
       hostedTurn: true,
+      // F92: no native model in this suite, so no Limited-Use tool may run.
+      limitedUse: false,
       noOutboundRelay: false,
       runId: 'run-1',
       runPodId: POD,
@@ -363,6 +365,21 @@ describe('a hosted run in a granted pod', () => {
     const offered = mockAxiosPost.mock.calls[0][1].tools.map((tool) => tool.function.name);
     expect(offered.some((name) => name.startsWith('github'))).toBe(false);
     expect(mockCallTool).not.toHaveBeenCalled();
+  });
+
+  // F92: this suite runs with no native model set (no no-training route). A
+  // Calendar grant's tools are then not offered at all, while the same grant's
+  // other tools still are.
+  test('with no native model set, a Calendar grant is not offered; its other tools are', async () => {
+    expect(process.env.NATIVE_RUNTIME_MODEL || '').toBe('');
+    mockRoomGrantFind.mockReturnValue(chain([{ ...LIVE_GRANT, tools: ['github.list_issues', 'google-calendar.list_events'] }]));
+    mockAxiosPost.mockResolvedValueOnce(finalTurn);
+
+    await runAgent(INSTALLATION, { type: 'first_contact', eventId: '507f1f77bcf86cd799439012', payload: { content: 'hello' } });
+
+    const offered = mockAxiosPost.mock.calls[0][1].tools.map((tool) => tool.function.name);
+    expect(offered).toContain('github_list_issues');
+    expect(offered.some((name) => name.startsWith('google-calendar'))).toBe(false);
   });
 
   test('a seat that cannot be resolved gets no broker rather than a guess', async () => {

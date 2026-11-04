@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
 import { callTool, listToolsForGrant } from '../services/toolBrokerService';
 import { untrustedConnectorMarker } from '../services/brokerResultMarker';
+import { isLimitedUseTool } from '../services/limitedUseConnectors';
 import { reserveBudgetLineage } from '../models/ToolCall';
 
 // The SDK is CommonJS-compatible, but its package exports use subpath entry
@@ -214,7 +215,9 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
         instanceId,
       });
       return {
-        tools: listed.map((definition) => ({
+        // A Limited-Use connector's data may reach only the no-training model,
+        // and this endpoint cannot know the caller's model (F92).
+        tools: listed.filter((definition) => !isLimitedUseTool(definition.name)).map((definition) => ({
           name: definition.name,
           description: definition.description,
           inputSchema: definition.inputSchema,
@@ -232,6 +235,15 @@ router.post('/:grantId', brokerRateLimit, agentRuntimeAuth, async (req: express.
   server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
     const tool = String(request.params?.name || '');
     const args = request.params?.arguments || {};
+    if (isLimitedUseTool(tool)) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: JSON.stringify({
+          error: 'limited_use_native_only',
+          message: 'This connector is used only by Commonly-hosted agents on the no-training model.',
+        }) }],
+      };
+    }
     try {
       const result = await callTool({
         grantId: String(req.params.grantId),

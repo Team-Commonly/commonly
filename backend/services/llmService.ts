@@ -143,17 +143,32 @@ const parseLiteLLMResponse = (data: unknown): string => {
   return String(content).trim();
 };
 
-const generateViaLiteLLM = async (prompt: string, options: GenerateOptions = {}): Promise<string> => {
+// F92: these calls read pod content. Set (the chart sets it with
+// aiProviders.anthropic), LLM_SERVICE_MODEL decides every call's model, over the
+// caller's and the global model config's, and a failure is never retried on
+// another provider. Unset, the configured provider decides as before.
+const platformModel = (): string => String(process.env.LLM_SERVICE_MODEL || '').trim();
+
+const generateViaLiteLLM = async (
+  prompt: string,
+  options: GenerateOptions = {},
+  { pinned = false }: { pinned?: boolean } = {},
+): Promise<string> => {
   const config = getLiteLLMConfig();
   if (!config) {
     throw new Error('LiteLLM base URL not configured');
   }
+  const model = options.model || config.model;
+  const claude = /^claude-/i.test(model);
   const response = await axios.post(
     `${config.baseUrl}/chat/completions`,
     {
-      model: options.model || config.model,
+      model,
       messages: [{ role: 'user', content: prompt }],
-      temperature: options.temperature ?? 0.4,
+      // Claude 5-series models take no sampling values, and thinking would
+      // spend the output budget a one-shot answer needs.
+      ...(claude ? { thinking: { type: 'disabled' } } : { temperature: options.temperature ?? 0.4 }),
+      ...(pinned ? { disable_fallbacks: true } : {}),
       max_tokens: options.maxTokens || DEFAULT_MAX_OUTPUT_TOKENS,
       // Guardrail opt-in for the untrusted-pod-content surface (see the
       // LLMSERVICE_GUARDRAILS note above). Omitted entirely when empty so an
@@ -230,6 +245,8 @@ const generateViaOpenRouter = async (
 };
 
 export const generateText = async (prompt: string, options: GenerateOptions = {}): Promise<string> => {
+  const pinnedModel = platformModel();
+  if (pinnedModel) return generateViaLiteLLM(prompt, { ...options, model: pinnedModel }, { pinned: true });
   const globalModelConfig = await GlobalModelConfigService.getConfig({
     includeSecrets: true,
   }).catch((configErr: Error) => {

@@ -27,6 +27,7 @@
 import { GRANT_BROKER_ID, GRANT_BROKER_URL } from './installable/toolInstallables';
 import { GRANT_BROKER_AUTHORIZATION } from './seatEnvironmentProjection';
 import { allToolDefinitions, executionErrorOutcome } from './toolBrokerService';
+import { isLimitedUseTool } from './limitedUseConnectors';
 import Pod from '../models/Pod';
 import RoomGrant from '../models/RoomGrant';
 import { assertGrantUsable, RoomGrantError } from './roomGrantService';
@@ -159,6 +160,8 @@ export interface HostedBrokerProjection {
    * the result of `assertGrantUsable`.
    */
   dispatch: Map<string, { grantId: string; tool: string }>;
+  /** Built for a run on the no-training model, so its Limited-Use tools may run (F92). */
+  limitedUse?: boolean;
 }
 
 /**
@@ -182,11 +185,16 @@ export interface HostedBrokerProjection {
  * the map would hand the call to whichever grant happened to load last.
  */
 export const hostedBrokerToolsForRun = async (
-  { identityId, podId }: { identityId: string; podId: string },
+  { identityId, podId, limitedUse = false }: {
+    identityId: string;
+    podId: string;
+    /** The run is on the no-training model route, so Limited-Use tools may be offered (F92). */
+    limitedUse?: boolean;
+  },
 ): Promise<HostedBrokerProjection> => {
   const tools: Record<string, unknown>[] = [];
   const dispatch = new Map<string, { grantId: string; tool: string }>();
-  if (!identityId || !podId) return { tools, dispatch };
+  if (!identityId || !podId) return { tools, dispatch, limitedUse };
 
   const byIdentity = await selectLiveGrantsForIdentities({
     identityIds: [String(identityId)],
@@ -197,7 +205,7 @@ export const hostedBrokerToolsForRun = async (
   // task's pod, so without this a turn elsewhere could use that task's tools.
   const grants = (byIdentity.get(String(identityId)) || [])
     .filter((grant) => !grant.binding || String(grant.binding.podId) === String(podId));
-  if (!grants.length) return { tools, dispatch };
+  if (!grants.length) return { tools, dispatch, limitedUse };
 
   const readable = allToolDefinitions().filter((definition) => definition.requiredWriteMode === 'read');
   const ordered = [...grants].sort((a, b) => String(a.grantId).localeCompare(String(b.grantId)));
@@ -206,6 +214,7 @@ export const hostedBrokerToolsForRun = async (
     const allowed = new Set((grant.tools || []).map(String));
     for (const definition of readable) {
       if (!allowed.has(definition.name)) continue;
+      if (!limitedUse && isLimitedUseTool(definition.name)) continue;
       const exposed = sanitizeGrantBrokerToolName(definition.name);
       if (!GRANT_BROKER_TOOL_NAME_PATTERN.test(exposed)) {
         // Unreachable for the definitions that ship today; fail closed rather
@@ -235,7 +244,7 @@ export const hostedBrokerToolsForRun = async (
     }
   }
 
-  return { tools, dispatch };
+  return { tools, dispatch, limitedUse };
 };
 
 export type HostedBrokerOutcome = 'ok' | 'refused' | 'failed' | 'pending_approval';
@@ -295,6 +304,7 @@ export const dispatchHostedBrokerTool = async (
       // sandbox to confine, so the seat-confinement refusal does not apply
       // (TASK-175). This is the only caller that sets it.
       hostedTurn: true,
+      limitedUse: projection.limitedUse === true,
     });
     return {
       content: result.result,

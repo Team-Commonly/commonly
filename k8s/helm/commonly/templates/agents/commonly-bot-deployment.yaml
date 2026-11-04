@@ -44,9 +44,15 @@ spec:
           value: /app/config/runtime.json
         - name: COMMONLY_AGENT_POLL_MS
           value: {{ .Values.agents.commonlyBot.env.pollIntervalMs | quote }}
-        # Match the backend default; avoid a dead Gemini primary before fallback.
+        # Connected-chat summaries: Claude with aiProviders.anthropic (F92), so
+        # that text reaches only the no-training route; otherwise the backend's
+        # default. A Claude model never falls back (shared/litellm-client.js).
         - name: AGENT_MODEL
+          {{- if .Values.aiProviders.anthropic.enabled }}
+          value: {{ .Values.aiProviders.anthropic.nativeModel | quote }}
+          {{- else }}
           value: "deepseek-v4-flash"
+          {{- end }}
         - name: LITELLM_BASE_URL
           value: http://litellm:4000
         - name: LITELLM_MASTER_KEY
@@ -72,12 +78,16 @@ spec:
               key: gemini-api-key
               optional: true
         {{- end }}
+        {{- if not .Values.aiProviders.anthropic.enabled }}
+        # Only the fallback for a non-Claude model reads it; on Claude the bot
+        # has no other provider to reach (F92).
         - name: OPENROUTER_API_KEY
           valueFrom:
             secretKeyRef:
               name: api-keys
               key: openrouter-api-key
               optional: true
+        {{- end }}
         - name: COMMONLY_SOCIAL_REPHRASE_ENABLED
           valueFrom:
             secretKeyRef:

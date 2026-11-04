@@ -581,9 +581,13 @@ spec:
         - name: LLMSERVICE_GUARDRAILS
           value: "injection-guard"
         {{- if .Values.aiProviders.anthropic.enabled }}
-        # Native turns run on Claude (F91); LITELLM_CHAT_MODEL below stays the
-        # model for llmService (summaries, digests, avatar descriptions).
+        # Native turns (F91) and llmService (summaries, digests, pod skills,
+        # avatar descriptions; F92) run on Claude, so pod content reaches only
+        # the no-training route. LLM_SERVICE_MODEL overrides LITELLM_CHAT_MODEL
+        # and the global model config, with no fallback.
         - name: NATIVE_RUNTIME_MODEL
+          value: {{ .Values.aiProviders.anthropic.nativeModel | quote }}
+        - name: LLM_SERVICE_MODEL
           value: {{ .Values.aiProviders.anthropic.nativeModel | quote }}
         {{- end }}
         - name: LITELLM_CHAT_MODEL

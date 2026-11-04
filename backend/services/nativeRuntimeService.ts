@@ -34,6 +34,7 @@ import {
   hostedBrokerToolsForRun,
   HostedBrokerProjection,
 } from './grantBrokerProjectionService';
+import { isNoTrainingModel } from './limitedUseConnectors';
 import { podHasOutsiderWritableGrant } from './nativeOutsiderGrantPolicy';
 import { podIsBridged } from './outsiderGrantPodEligibility';
 import { isSandboxConfigured, TurnSandbox } from './turnSandboxService';
@@ -2287,7 +2288,12 @@ export async function runAgent(
   const assembleBroker = async (): Promise<HostedBrokerProjection> => {
     if (!seatUserId) return { tools: [], dispatch: new Map() };
     try {
-      return await hostedBrokerToolsForRun({ identityId: seatUserId, podId });
+      // Limited-Use tools (Calendar) only when this run is on the no-training
+      // model: with no native model set, or a non-Claude one, they are not
+      // offered at all (F92).
+      return await hostedBrokerToolsForRun({
+        identityId: seatUserId, podId, limitedUse: isNoTrainingModel(NATIVE_RUNTIME_MODEL),
+      });
     } catch (error) {
       // Fail closed: no broker tools for this run, and the run itself carries
       // on. A projection failure may not become a silent capability.
