@@ -461,6 +461,14 @@ describe('V2PodsSidebar — direction C', () => {
       fireEvent.pointerUp(row, { pointerType: 'touch' });
       fireEvent.click(row);
       expect(screen.getByTestId('current-path').textContent).toBe(before);
+      // A tap on the revealed pin pins the pod, still without opening it (Cofounder 11-04:
+      // press and hold is how a touch user pins).
+      mockTogglePin.mockClear();
+      fireEvent.pointerDown(pin, { pointerType: 'touch' });
+      fireEvent.pointerUp(pin, { pointerType: 'touch' });
+      fireEvent.click(pin);
+      expect(mockTogglePin).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('current-path').textContent).toBe(before);
       // A tap outside the row puts the time back.
       fireEvent.pointerDown(document.body);
       expect(wrap).not.toHaveClass('v2-pods__rowwrap--reveal');
