@@ -60,7 +60,7 @@
     "back": "Back to board",
     "intro": "What happened on this task, in order. Each entry carries the hash of the one before it, so a changed entry breaks the chain.",
     "loading": "Loading record…",
-    "access": "This record isn't available. The pod may not keep records, or you no longer have access to it.",
+    "access": "The pod may not keep records, or you no longer have access.",
     "members": "Only members of this pod can read its record.",
     "store": "The record store is unavailable right now. Try again shortly.",
     "error": "Could not load the record. Try again.",
@@ -70,7 +70,6 @@
     "counts_other": "{{count}} entries",
     "run": "Run {{id}}",
     "empty": "Nothing has been recorded for this task yet.",
-    "entry": "Entry {{number}}",
     "downloadJsonl": "Download JSONL",
     "downloadOtlp": "Download OTLP",
     "downloadError": "Could not download the record. Try again.",
@@ -78,8 +77,7 @@
       "unknown": "Unknown actor",
       "board": "Board",
       "system": "System: {{id}}",
-      "policy": "Policy: {{id}}",
-      "agent": "{{name}} (agent)"
+      "policy": "Policy: {{id}}"
     },
     "kinds": {
       "task_claimed": "Claimed",
@@ -91,6 +89,31 @@
       "permission_decided": "Approval decided",
       "tool_call": "Tool call",
       "tool_update": "Tool update"
+    },
+    "unavailableTitle": "This record isn't available",
+    "about": "About the record",
+    "download": "Download",
+    "details": "Details",
+    "entryKey": "entry",
+    "line": {
+      "leaseUntil": "lease until {{time}}",
+      "reason": "reason {{reason}}",
+      "doneBy": "done by {{name}}",
+      "askedOf": "asked {{name}}"
+    },
+    "reasons": {
+      "blocked": "blocked",
+      "lease_expired": "lease expired",
+      "reassigned": "reassigned",
+      "abandoned": "abandoned"
+    },
+    "decisions": {
+      "allow_once": "allow once",
+      "reject_once": "reject once",
+      "allow_always": "allow always",
+      "reject_always": "reject always",
+      "selected": "selected",
+      "cancelled": "cancelled"
     }
   },
   "common": {

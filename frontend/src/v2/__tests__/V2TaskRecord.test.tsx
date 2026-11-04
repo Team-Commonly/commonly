@@ -1,8 +1,9 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import i18n from '../../i18n';
-import V2TaskRecord, { parseRecord, taskRecordPath } from '../components/V2TaskRecord';
+import { Link } from 'react-router-dom';
+import V2TaskRecord, { parseRecord, shortDigest, taskRecordPath } from '../components/V2TaskRecord';
 
 const mockGet = jest.fn();
 const mockApi = { get: mockGet };
@@ -26,9 +27,15 @@ const recordUrl = `/api/pods/${POD}/record/tasks/TASK-7`;
 // The first page the view asks for; later pages add `after` by the last seq.
 const pageUrl = `${recordUrl}?after=0&limit=1000`;
 
-const wire = (record: () => Promise<unknown>, otlp: () => Promise<unknown> = () => Promise.resolve({ resourceSpans: [] })) => {
+const tasksUrl = `/api/v1/tasks/${POD}`;
+const wire = (
+  record: () => Promise<unknown>,
+  otlp: () => Promise<unknown> = () => Promise.resolve({ resourceSpans: [] }),
+  tasks: () => Promise<unknown> = () => Promise.reject(new Error('no tasks read in this test')),
+) => {
   mockGet.mockImplementation((url: string) => {
     if (url === pageUrl) return record();
+    if (url === tasksUrl) return tasks();
     if (url === `${recordUrl}?format=otlp`) return otlp();
     if (url === `/api/pods/${POD}`) return Promise.resolve({ members: [{ _id: HUMAN, username: 'ana', displayName: 'Ana' }, { _id: AGENT, username: 'scout' }] });
     return Promise.reject(new Error(`unexpected ${url}`));
@@ -83,8 +90,8 @@ test('ids that name Object properties show as ids, never as an inherited value',
     line(2, 'task.done', { id: 'board', type: 'system' }, { doneBy: 'constructor' }),
   ].join('\n')));
   setup();
-  expect(await screen.findByText('__proto__ ·', { exact: false })).toBeInTheDocument();
-  expect(screen.getByText('constructor')).toBeInTheDocument();
+  expect(await screen.findByText('__proto__')).toBeInTheDocument();
+  expect(screen.getByText('done by constructor')).toBeInTheDocument();
 });
 
 test('keeps reading past a full page, so a long chain is not shown short', async () => {
@@ -98,9 +105,9 @@ test('keeps reading past a full page, so a long chain is not shown short', async
     return Promise.reject(new Error(`unexpected ${url}`));
   });
   setup();
-  // Both pages render: the first and the last entry of the 1002 are on screen.
-  expect(await screen.findByText('Entry 1002')).toBeInTheDocument();
-  expect(screen.getByText('Entry 1')).toBeInTheDocument();
+  // Both pages render: all 1002 entries are rows on screen.
+  expect(await screen.findByText('TASK-7 · 1002 entries', { selector: 'p' })).toBeInTheDocument();
+  expect(screen.getAllByRole('listitem')).toHaveLength(1002);
   expect(mockGet).toHaveBeenCalledWith(second, expect.anything());
   // A short second page ends the read: no third request.
   expect(mockGet.mock.calls.filter(([url]) => url.startsWith(recordUrl))).toHaveLength(2);
@@ -116,7 +123,8 @@ test('a failure partway through the chain shows the error, never the partial rec
   });
   setup();
   expect(await screen.findByText(i18n.t('taskRecord.store'))).toBeInTheDocument();
-  expect(screen.queryByText('Entry 1')).toBeNull();
+  expect(screen.queryByText('Claimed')).toBeNull();
+  expect(screen.queryAllByRole('listitem')).toHaveLength(0);
 });
 
 test('reads the JSONL as text and shows every entry with member names, unknown kinds by name', async () => {
@@ -127,29 +135,33 @@ test('reads the JSONL as text and shows every entry with member names, unknown k
   // A one-line record is still text: the transform must not parse it as JSON.
   const config = mockGet.mock.calls.find(([url]) => url === pageUrl)[1];
   expect(config.transformResponse[0](line(1, 'task.done', null))).toBe(line(1, 'task.done', null));
-  expect(screen.getByText('4 entries')).toBeInTheDocument();
+  expect(screen.getByText('TASK-7 · 4 entries', { selector: 'p' })).toBeInTheDocument();
   expect(screen.getByText(`Run ${RUN}`)).toBeInTheDocument();
   expect(screen.getByText('Released')).toBeInTheDocument();
-  expect(screen.getByText('blocked')).toBeInTheDocument();
+  expect(screen.getByText('reason blocked')).toBeInTheDocument();
   expect(screen.getByText('Done')).toBeInTheDocument();
   expect(screen.getByText('harness.switched')).toBeInTheDocument();
-  await waitFor(() => expect(screen.getAllByText(/scout \(agent\)/)).toHaveLength(2));
-  expect(screen.getByText(/^Board ·/)).toBeInTheDocument();
-  expect(screen.getByText(/^Unknown actor ·/)).toBeInTheDocument();
-  expect(screen.getByText('Ana')).toBeInTheDocument();
-  expect(screen.getByText('Entry 4')).toBeInTheDocument();
+  // An agent is its name and avatar, never "(agent)".
+  await waitFor(() => expect(screen.getAllByText('scout')).toHaveLength(2));
+  expect(screen.queryByText(/\(agent\)/)).toBeNull();
+  expect(screen.getByText('Board')).toBeInTheDocument();
+  expect(screen.getByText('Unknown actor')).toBeInTheDocument();
+  expect(screen.getByText('done by Ana')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Back to board' })).toHaveAttribute('href', `/v2/pods/${POD}/board`);
+  // The intro sits behind the (i) beside the title, not on the page.
+  expect(screen.getByRole('button', { name: 'About the record' })).toBeInTheDocument();
 });
 
 test('an empty chain says so rather than showing a blank page', async () => {
   wire(() => Promise.resolve(''));
   setup();
   expect(await screen.findByText('Nothing has been recorded for this task yet.')).toBeInTheDocument();
-  expect(screen.getByText('0 entries')).toBeInTheDocument();
+  expect(screen.getByText('TASK-7 · 0 entries', { selector: 'p' })).toBeInTheDocument();
 });
 
 test.each([
-  [404, "This record isn't available. The pod may not keep records, or you no longer have access to it.", false],
+  [404, "This record isn't availableThe pod may not keep records, or you no longer have access.", false],
   [403, 'Only members of this pod can read its record.', false],
   [503, 'The record store is unavailable right now. Try again shortly.', true],
   [500, 'Could not load the record. Try again.', true],
@@ -178,7 +190,7 @@ test('a JSON line that is not a record entry makes the record unreadable too', a
 test('a task id the route would refuse is never requested', async () => {
   wire(() => Promise.resolve(JSONL));
   setup('bad id');
-  expect(await screen.findByRole('alert')).toHaveTextContent("This record isn't available.");
+  expect(await screen.findByRole('alert')).toHaveTextContent("This record isn't available");
   expect(mockGet).not.toHaveBeenCalled();
 });
 
@@ -194,16 +206,20 @@ test('downloads the served JSONL bytes and the OTLP export as files', async () =
     let failOtlp = true;
     wire(() => Promise.resolve(JSONL), () => (failOtlp ? Promise.reject(new Error('down')) : Promise.resolve({ resourceSpans: [{ id: 1 }] })));
     setup();
-    fireEvent.click(await screen.findByRole('button', { name: 'Download JSONL' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Download' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Download JSONL' }));
+    expect(screen.queryByRole('menu')).toBeNull();
     expect(saved[0].name).toBe('TASK-7.record.jsonl');
     expect(saved[0].type).toBe('application/x-ndjson');
     await expect(saved[0].text).resolves.toBe(JSONL);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Download OTLP' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Download OTLP' }));
     expect(await screen.findByText('Could not download the record. Try again.')).toBeInTheDocument();
     expect(saved).toHaveLength(1);
     failOtlp = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Download OTLP' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Download OTLP' }));
     await waitFor(() => expect(saved).toHaveLength(2));
     expect(saved[1].name).toBe('TASK-7.record.otlp.json');
     await expect(saved[1].text).resolves.toBe(JSON.stringify({ resourceSpans: [{ id: 1 }] }));
@@ -216,7 +232,197 @@ test('Chinese copy covers the page', async () => {
   wire(() => Promise.resolve(JSONL));
   setup();
   expect(await screen.findByText('已认领')).toBeInTheDocument();
-  expect(screen.getByText('4条记录')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: '下载 JSONL' })).toBeInTheDocument();
+  expect(screen.getByText('TASK-7 · 4条记录', { selector: 'p' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '下载' }));
+  expect(screen.getByRole('menuitem', { name: '下载 JSONL' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: '返回看板' })).toBeInTheDocument();
+  expect(screen.getByText('原因：受阻')).toBeInTheDocument();
+  expect(screen.getByText('由 Ana 完成')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '关于此记录' })).toBeInTheDocument();
+});
+
+test('an entry\'s data folds under its row, entry number included', async () => {
+  wire(() => Promise.resolve(JSONL));
+  setup();
+  const row = (await screen.findByText('Released')).closest('button') as HTMLButtonElement;
+  expect(row).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText('reason', { selector: 'dt' })).toBeNull();
+  fireEvent.click(row);
+  expect(row).toHaveAttribute('aria-expanded', 'true');
+  const more = document.getElementById(row.getAttribute('aria-controls') as string) as HTMLElement;
+  expect(more).toHaveTextContent('entry2reasonblocked');
+  fireEvent.click(row);
+  expect(row).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText('reason', { selector: 'dt' })).toBeNull();
+});
+
+test('each row says its entry in one line: lease, ask, decision, tool call', async () => {
+  wire(() => Promise.resolve([
+    line(1, 'task.claimed', { id: AGENT, type: 'agent' }, { leaseUntil: '2026-10-28T10:31:00.000Z' }),
+    line(2, 'permission.requested', { id: AGENT, type: 'agent' }, { question: 'Open pull request #409?', askedOf: { id: HUMAN, role: 'requester' } }),
+    line(3, 'permission.decided', { id: HUMAN, type: 'human' }, { outcome: 'selected', kind: 'allow_once', decidedBy: HUMAN }),
+    line(4, 'tool.call', { id: AGENT, type: 'agent' }, { toolCallId: 'tc-4', title: 'Open', name: 'gh.pr_create', status: 'completed' }),
+  ].join('\n')));
+  setup();
+  const lease = new Date('2026-10-28T10:31:00.000Z').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  expect(await screen.findByText(`lease until ${lease}`)).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByText('Open pull request #409? · asked Ana')).toBeInTheDocument());
+  expect(screen.getByText('allow once')).toBeInTheDocument();
+  expect(screen.getByText('gh.pr_create · completed')).toBeInTheDocument();
+});
+
+test('while the record loads, the header is in place and a status is announced', () => {
+  mockGet.mockImplementation(() => new Promise(() => undefined));
+  setup();
+  expect(screen.getByRole('status')).toHaveTextContent('Loading record…');
+  expect(screen.getByRole('heading', { level: 1, name: 'Task record' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
+});
+
+test('the heading is the task\'s title from the board list, with the id on the line below', async () => {
+  wire(() => Promise.resolve(JSONL), undefined, () => Promise.resolve({ tasks: [
+    { taskId: 'TASK-6', title: 'Not this one' },
+    { taskId: 'TASK-7', title: '<b>CI check</b>: fail a PR' },
+  ] }));
+  setup();
+  // Plain text: markup in a title is shown as typed, never parsed.
+  expect(await screen.findByRole('heading', { level: 2, name: '<b>CI check</b>: fail a PR' })).toBeInTheDocument();
+  expect(document.querySelector('.v2-task-record__task b')).toBeNull();
+  expect(screen.getByText('TASK-7 · 4 entries', { selector: 'p' })).toBeInTheDocument();
+  expect(mockGet).toHaveBeenCalledWith(tasksUrl);
+});
+
+test.each([
+  ['the tasks read fails', () => Promise.reject(new Error('down'))],
+  ['the tasks read is refused', () => Promise.reject(Object.assign(new Error('http'), { response: { status: 403 } }))],
+  ['the task is missing from the list', () => Promise.resolve({ tasks: [{ taskId: 'TASK-8', title: 'Another' }] })],
+  ['the list is not a list', () => Promise.resolve({ tasks: 'nope' })],
+  ['the matching task\'s title is blank', () => Promise.resolve({ tasks: [{ taskId: 'TASK-7', title: '   ' }] })],
+  ['the matching task\'s title is not a string', () => Promise.resolve({ tasks: [{ taskId: 'TASK-7', title: { text: 'CI check' } }] })],
+])('when %s, the heading stays the id and no error shows', async (_case, tasks) => {
+  wire(() => Promise.resolve(JSONL), undefined, tasks);
+  setup();
+  expect(await screen.findByText('Claimed')).toBeInTheDocument();
+  await waitFor(() => expect(mockGet).toHaveBeenCalledWith(tasksUrl));
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  expect(screen.getByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('the record never waits on the tasks read: it renders with the id, then takes the title', async () => {
+  let land: (value: unknown) => void = () => undefined;
+  wire(() => Promise.resolve(JSONL), undefined, () => new Promise((resolve) => { land = resolve; }));
+  setup();
+  expect(await screen.findByText('Claimed')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
+  land({ tasks: [{ taskId: 'TASK-7', title: 'CI check' }] });
+  expect(await screen.findByRole('heading', { level: 2, name: 'CI check' })).toBeInTheDocument();
+});
+
+test('release reasons and decisions read as words in both languages; unknown values show as written', async () => {
+  const lines = [
+    line(1, 'task.released', { id: AGENT, type: 'agent' }, { reason: 'lease_expired' }),
+    line(2, 'permission.decided', { id: HUMAN, type: 'human' }, { outcome: 'selected', kind: 'reject_once', decidedBy: HUMAN }),
+    line(3, 'task.released', { id: AGENT, type: 'agent' }, { reason: 'moved_elsewhere' }),
+    line(4, 'permission.decided', { id: HUMAN, type: 'human' }, { outcome: 'cancelled', decidedBy: HUMAN }),
+  ].join('\n');
+  wire(() => Promise.resolve(lines));
+  const { unmount } = setup();
+  expect(await screen.findByText('reason lease expired')).toBeInTheDocument();
+  expect(screen.getByText('reject once')).toBeInTheDocument();
+  expect(screen.getByText('reason moved elsewhere')).toBeInTheDocument();
+  expect(screen.getByText('cancelled')).toBeInTheDocument();
+  unmount();
+  await i18n.changeLanguage('zh-CN');
+  setup();
+  expect(await screen.findByText('原因：租约到期')).toBeInTheDocument();
+  expect(screen.getByText('拒绝一次')).toBeInTheDocument();
+  expect(screen.getByText('已取消')).toBeInTheDocument();
+  expect(screen.getByText('原因：moved elsewhere')).toBeInTheDocument();
+});
+
+test('a digest shows as the frame draws it, with the full value in its title', async () => {
+  const full = `sha256:9f2c${'0'.repeat(56)}41ab`;
+  expect(shortDigest(full)).toBe('sha256:9f2c…41ab');
+  expect(shortDigest('sha256:9f2c41ab')).toBe('sha256:9f2c41ab');
+  expect(shortDigest('not a digest')).toBe('not a digest');
+  wire(() => Promise.resolve(line(1, 'tool.call', { id: AGENT, type: 'agent' }, { toolCallId: 'tc-1', title: 'Open', argsDigest: full })));
+  setup();
+  fireEvent.click((await screen.findByText('Tool call')).closest('button') as HTMLButtonElement);
+  const cell = screen.getByText('sha256:9f2c…41ab');
+  expect(cell).toHaveAttribute('title', full);
+});
+
+// Moves between two tasks' records inside one mounted page, as a link on the page would.
+const setupTwoTasks = () => render(<MemoryRouter initialEntries={[`/v2/pods/${POD}/tasks/TASK-7/record`]}>
+  <Link to={`/v2/pods/${POD}/tasks/TASK-8/record`}>next task</Link>
+  <Routes><Route path="/v2/pods/:podId/tasks/:taskId/record" element={<V2TaskRecord />} /></Routes>
+</MemoryRouter>);
+const recordOf = (taskId: string) => [
+  line(1, 'task.claimed', { id: AGENT, type: 'agent' }).replace('"TASK-7"', `"${taskId}"`),
+  line(2, 'task.released', { id: AGENT, type: 'agent' }, { reason: 'blocked' }).replace('"TASK-7"', `"${taskId}"`),
+].join('\n');
+
+test.each([
+  ['the old task\'s read lands late', true],
+  ['the next task\'s read fails', false],
+])('after moving to another task, the old title never shows when %s', async (_case, late) => {
+  let landFirst: (value: unknown) => void = () => undefined;
+  let tasksCalls = 0;
+  mockGet.mockImplementation((url: string) => {
+    if (url.startsWith(`/api/pods/${POD}/record/tasks/`)) return Promise.resolve(recordOf(url.includes('TASK-8') ? 'TASK-8' : 'TASK-7'));
+    if (url === `/api/pods/${POD}`) return Promise.resolve({ members: [] });
+    if (url === tasksUrl) {
+      tasksCalls += 1;
+      const list = { tasks: [{ taskId: 'TASK-7', title: 'Old title' }] };
+      if (tasksCalls === 1) return late ? new Promise((resolve) => { landFirst = resolve; }) : Promise.resolve(list);
+      return Promise.reject(new Error('down'));
+    }
+    return Promise.reject(new Error(`unexpected ${url}`));
+  });
+  setupTwoTasks();
+  if (!late) expect(await screen.findByRole('heading', { level: 2, name: 'Old title' })).toBeInTheDocument();
+  else expect(await screen.findByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'next task' }));
+  expect(await screen.findByRole('heading', { level: 2, name: 'TASK-8' })).toBeInTheDocument();
+  await waitFor(() => expect(tasksCalls).toBe(2));
+  // Inside act, so a state update the late read makes is rendered before the check.
+  await act(async () => {
+    landFirst({ tasks: [{ taskId: 'TASK-7', title: 'Old title' }] });
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+  });
+  expect(screen.queryByText('Old title')).toBeNull();
+  expect(screen.getByRole('heading', { level: 2, name: 'TASK-8' })).toBeInTheDocument();
+});
+
+test('an open row and the Download menu do not carry over to the next task', async () => {
+  mockGet.mockImplementation((url: string) => {
+    if (url.startsWith(`/api/pods/${POD}/record/tasks/`)) return Promise.resolve(recordOf(url.includes('TASK-8') ? 'TASK-8' : 'TASK-7'));
+    if (url === `/api/pods/${POD}`) return Promise.resolve({ members: [] });
+    return Promise.reject(new Error('no tasks read'));
+  });
+  setupTwoTasks();
+  fireEvent.click((await screen.findByText('Released')).closest('button') as HTMLButtonElement);
+  fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+  expect(screen.getByRole('menu')).toBeInTheDocument();
+  expect(screen.getByText('Released').closest('button')).toHaveAttribute('aria-expanded', 'true');
+  fireEvent.click(screen.getByRole('link', { name: 'next task' }));
+  expect(await screen.findByText('TASK-8 · 2 entries', { selector: 'p' })).toBeInTheDocument();
+  expect(screen.queryByRole('menu')).toBeNull();
+  expect(screen.getByText('Released').closest('button')).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('an entry of another kind shows its first two plain values, skipping objects between them', async () => {
+  wire(() => Promise.resolve(line(1, 'attempt.settled', { id: AGENT, type: 'agent' }, { attempt: 2, failure: { kind: 'exit', detail: 'x' }, outcome: 'failed', extra: 'not shown' })));
+  setup();
+  expect(await screen.findByText('2 · failed')).toBeInTheDocument();
+  expect(screen.queryByText(/not shown/)).toBeNull();
+});
+
+test('a long actor name keeps its full text in the title, so a truncated row still says who', async () => {
+  const long = 'a-very-long-actor-id-that-would-push-the-time-off-the-row-0123456789';
+  wire(() => Promise.resolve(line(1, 'task.claimed', { id: long, type: 'human' })));
+  setup();
+  const name = await screen.findByText(long, { selector: '.v2-task-record__name' });
+  expect(name.closest('.v2-task-record__who')).toHaveAttribute('title', long);
 });
