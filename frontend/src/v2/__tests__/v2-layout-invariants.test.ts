@@ -597,17 +597,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     // time's slot, out of sight at rest even when pinned.
     expect(podsSidebar).toContain('togglePin(pod._id)');
     expect(podsSidebar).toContain('<ShellGlyph name="pin"');
-    // visibility, not opacity: an opacity-0 pin still catches a tap on the time.
-    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('visibility: hidden');
-    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).not.toContain('opacity: 0');
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { visibility: visible; }');
+    // At rest the pin is opacity 0 so it stays in the accessibility tree (a screen
+    // reader reaches it by swiping, Cofounder 11-04), and pointer-events none so the
+    // hidden pin cannot catch a tap on the time. visibility: hidden would drop it from
+    // the tree and leave touch screen-reader users only the hold.
+    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('opacity: 0');
+    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).toContain('pointer-events: none');
+    expect(ruleBody(v2, '.v2-root button.v2-pods__pin')).not.toContain('visibility: hidden');
+    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__pin,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__pin,\n.v2-root .v2-pods__rowwrap .v2-pods__pin:focus,\n.v2-root .v2-pods__rowwrap--reveal .v2-pods__pin { opacity: 1; pointer-events: auto; }');
     // Touch has no hover: the 390 frame still draws the time at rest, and a press and
     // hold (--reveal) is the row's hover state there, or a phone cannot pin.
     expect(v2).not.toMatch(/@media \(hover: none\) and \(pointer: coarse\) \{\n  \.v2-root button\.v2-pods__pin \{ visibility: visible; \}/);
     expect(podsSidebar).toContain("revealedPin === pod._id ? 'v2-pods__rowwrap--reveal' : ''");
     expect(v2).not.toContain('.v2-root button.v2-pods__pin--active { opacity: 1; }');
     expect(v2).not.toContain("button.v2-pods__pin::before { content: '⌖'");
-    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
+    expect(v2).toContain('.v2-pods__rowwrap:hover .v2-pods__row-time,\n.v2-pods__rowwrap:has(:focus-visible) .v2-pods__row-time,\n.v2-pods__rowwrap:has(.v2-pods__pin:focus) .v2-pods__row-time,\n.v2-pods__rowwrap--reveal .v2-pods__row-time { visibility: hidden; }');
     expect(ruleBody(v2, '.v2-pods__row-time')).toContain('min-width: 24px');
     // The shared segment: a tinted track with the checked option raised.
     // D223: the segment draws as the primitives' v2p-seg; v2.css keeps only its states.
@@ -2970,11 +2974,19 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       // @font-face rules inside a lazy chunk would leave the public landing in
       // fallback fonts until the app shell loaded — and on the landing it never
       // loads at all.
-      expect(entry).toContain("import '@fontsource-variable/bricolage-grotesque';");
+      // The faces carry the optical-size axis the d215 frames are drawn with
+      // (Google Fonts' opsz,wght@12..96); the package's default file has only
+      // weight, which set display type about 2.5% wider than the frames.
+      expect(entry).toContain("import '@fontsource-variable/bricolage-grotesque/opsz.css';");
+      expect(entry).not.toMatch(/^import '@fontsource-variable\/bricolage-grotesque';$/m);
       expect(entry).toContain("import '@fontsource/ibm-plex-sans/400.css';");
       expect(entry).toContain("import './v2/v2.css';");
 
       const shell = read('../V2App.tsx');
+      // The shell loads the same optical-size faces; the default file there would
+      // register weight-only faces after the entry's (#3415 review).
+      expect(shell).toContain("import '@fontsource-variable/bricolage-grotesque/opsz.css';");
+      expect(shell).not.toMatch(/^import '@fontsource-variable\/bricolage-grotesque';$/m);
       // The composer lives in V2Layout, so V2Layout stays IN the shell chunk.
       // Making it lazy would add a serial round trip to the very path this row
       // is measured on while shrinking nothing that path does not need.

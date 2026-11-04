@@ -2214,8 +2214,8 @@
     "typing": "正在输入…",
     "pinTitle": "置顶",
     "unpinTitle": "取消置顶",
-    "pinAriaLabel": "置顶 Pod",
-    "unpinAriaLabel": "取消置顶 Pod",
+    "pinAriaLabel": "置顶 {{name}}",
+    "unpinAriaLabel": "取消置顶 {{name}}",
     "filters": {
       "all": "全部",
       "team": "团队",

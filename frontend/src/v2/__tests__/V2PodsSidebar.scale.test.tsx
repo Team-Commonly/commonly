@@ -80,6 +80,13 @@ const fleet42 = [
   }),
 ];
 
+// A row, not its pin: each pin is named "Pin <pod>", so a bare name matches both.
+const rowButton = (name: RegExp) => {
+  const rows = screen.getAllByRole('button', { name }).filter((b) => b.classList.contains('v2-pods__row'));
+  expect(rows).toHaveLength(1);
+  return rows[0];
+};
+
 const renderSidebar = (pods, selectedPodId = 'sharpen', extra = {}) => render(
   <MemoryRouter initialEntries={['/v2/pods/sharpen']}>
     <V2PodsSidebar
@@ -190,13 +197,13 @@ describe('V2PodsSidebar — direction C', () => {
     expect(within(connectors).getByLabelText('1 needs you')).toHaveTextContent('1');
     expect(within(connectors).getByText('12m')).toBeInTheDocument();
     // The queue page may render only its first page: the pill is the server total, never a list length.
-    expect(within(screen.getByRole('button', { name: /Commonly HQ/ })).getByLabelText('91 needs you')).toHaveTextContent('91');
-    const naming = screen.getByRole('button', { name: /Naming huddle/ });
+    expect(within(screen.getByRole('button', { name: /^Commonly HQ/ })).getByLabelText('91 needs you')).toHaveTextContent('91');
+    const naming = screen.getByRole('button', { name: /^Naming huddle/ });
     expect(naming).not.toHaveClass('v2-pods__row--unread');
     expect(within(naming).queryByLabelText(/needs you/)).not.toBeInTheDocument();
     expect(within(naming).getByText('2h')).toBeInTheDocument();
     // A DM is an ordinary row with the peer's avatar instead of initials.
-    const dm = screen.getByRole('button', { name: /DM test/ });
+    const dm = rowButton(/DM test/);
     expect(dm.querySelector('.v2-pods__row-mark--avatar')).toBeTruthy();
     expect(within(dm).getByText('1d')).toBeInTheDocument();
   });
@@ -211,6 +218,10 @@ describe('V2PodsSidebar — direction C', () => {
     renderSidebar([own, shared]);
     expect(screen.getByRole('button', { name: /^My Workspace \(alex\)/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^My Workspace$/ })).toBeInTheDocument();
+    // Each pin carries the same owner-qualified name its row shows, so the two
+    // workspaces' pins are told apart by a screen reader too (#3415 review).
+    expect(screen.getByRole('button', { name: 'Pin My Workspace (alex)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pin My Workspace' })).toBeInTheDocument();
   });
 
   test('direct rows render the peer character for agents and Paper for unpicked people', () => {
@@ -225,7 +236,7 @@ describe('V2PodsSidebar — direction C', () => {
     ]);
     renderSidebar([agentDm, agentRoom, humanDm], 'none');
 
-    const agentRow = screen.getByRole('button', { name: /Helper Agent/ });
+    const agentRow = rowButton(/Helper Agent/);
     const agentImage = within(agentRow).getByRole('img', { name: 'Builder' });
     const agentSource = characterAvatarFor('builder-id', 'agent');
     expect(agentSource).not.toBeNull();
@@ -236,7 +247,7 @@ describe('V2PodsSidebar — direction C', () => {
       'src', characterAvatarFor('scout-id', 'agent'),
     );
 
-    const humanRow = screen.getByRole('button', { name: /Direct chat/ });
+    const humanRow = rowButton(/Direct chat/);
     const humanImage = within(humanRow).getByRole('img', { name: 'Sam' });
     expect(humanImage).toHaveAttribute('src', paperAvatarFor('sam-id'));
   });
@@ -296,7 +307,7 @@ describe('V2PodsSidebar — direction C', () => {
     kinds.forEach((kind) => expect(kind).toHaveAttribute('aria-expanded', 'false'));
     // Pinned pods are in the inventory too.
     fireEvent.click(screen.getByRole('button', { name: /^team\s+5/ }));
-    expect(within(section('team')).getByRole('button', { name: /Sharpen/ })).toHaveClass('v2-pods__row--in-fold');
+    expect(within(section('team')).getByRole('button', { name: /^Sharpen/ })).toHaveClass('v2-pods__row--in-fold');
     expect(sessionStorage.getItem('v2:pods.view')).toBe('all');
     expect(JSON.parse(sessionStorage.getItem('v2:pods.kindsOpen'))).toEqual(['team']);
   });
@@ -306,7 +317,7 @@ describe('V2PodsSidebar — direction C', () => {
     const input = screen.getByRole('searchbox', { name: 'Search pods' });
     fireEvent.change(input, { target: { value: 'rewire' } });
     expect(listRows().map((row) => row.textContent).join(' ')).not.toContain('Sharpen');
-    expect(screen.getAllByRole('button', { name: /Rewire/ }).map((b) => b.textContent)).toEqual([
+    expect(screen.getAllByRole('button', { name: /^Rewire/ }).map((b) => b.textContent)).toEqual([
       expect.stringContaining('Rewire Live Demo'), expect.stringContaining('Rewire Demo Sprint'),
     ]);
     fireEvent.change(input, { target: { value: 'zzz' } });
@@ -348,7 +359,7 @@ describe('V2PodsSidebar — direction C', () => {
 
   test('a row navigates to its pod; the + square opens the create form', () => {
     renderSidebar(fleet);
-    fireEvent.click(screen.getByRole('button', { name: /Naming huddle/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Naming huddle/ }));
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/naming');
     fireEvent.click(screen.getByRole('button', { name: 'New pod' }));
     expect(screen.getByPlaceholderText('Pod name')).toBeInTheDocument();
@@ -419,18 +430,18 @@ describe('V2PodsSidebar — direction C', () => {
     expect(counts.games).toBe('4');
     const input = screen.getByRole('searchbox', { name: 'Search pods' });
     fireEvent.change(input, { target: { value: 'Generated pod 30' } });
-    expect(screen.getAllByRole('button', { name: /Generated pod 30/ })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: /^Generated pod 30/ })).toHaveLength(1);
   });
 
   test('every row carries a pin icon button that toggles the store without opening the pod', () => {
     mockPinned.add('sharpen');
     renderSidebar(fleet, null);
-    const unpin = screen.getByRole('button', { name: 'Unpin pod' });
+    const unpin = screen.getByRole('button', { name: /^Unpin / });
     expect(unpin).toHaveClass('v2-pods__pin--active');
     expect(unpin).toHaveAttribute('aria-pressed', 'true');
     expect(unpin).toHaveAttribute('title', 'Unpin');
     expect(unpin.querySelector('svg')).toBeTruthy();
-    const pins = screen.getAllByRole('button', { name: 'Pin pod' });
+    const pins = screen.getAllByRole('button', { name: /^Pin / });
     expect(pins).toHaveLength(7);
     // The pin sits beside the row (a button cannot nest a button) and shares
     // its hover wrapper, which hides the time while the pin shows.
@@ -441,19 +452,44 @@ describe('V2PodsSidebar — direction C', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/v2/pods/sharpen');
   });
 
+  test('every pin stays in the accessibility tree at rest, focusable and named for its pod', () => {
+    mockPinned.add('sharpen');
+    renderSidebar(fleet, null);
+    // A screen reader reaches each pin by swiping, without the press and hold
+    // (Cofounder 11-04): never aria-hidden, never out of the tab order, and named
+    // for the pod it pins so one row's pin is told from the next.
+    const pins = screen.getAllByRole('button', { name: /^(Pin|Unpin) / });
+    expect(pins).toHaveLength(8);
+    for (const p of pins) {
+      expect(p).not.toHaveAttribute('aria-hidden');
+      expect(p).not.toHaveAttribute('tabindex', '-1');
+      const rowName = p.parentElement?.querySelector('.v2-pods__row-name')?.textContent;
+      expect(rowName).toBeTruthy();
+      expect(p).toHaveAccessibleName(`${p.getAttribute('aria-pressed') === 'true' ? 'Unpin' : 'Pin'} ${rowName}`);
+    }
+    expect(pins.filter((p) => p.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
+  });
+
   test('a touch press and hold reveals the row pin in the time slot without opening the pod', () => {
     jest.useFakeTimers();
     try {
       renderSidebar(fleet, null);
-      const pin = screen.getAllByRole('button', { name: 'Pin pod' })[0];
+      const pin = screen.getAllByRole('button', { name: /^Pin / })[0];
       const wrap = pin.parentElement as HTMLElement;
       const row = wrap.querySelector('.v2-pods__row') as HTMLElement;
-      const before = screen.getByTestId('current-path').textContent;
-      // A quick tap opens the pod and reveals nothing.
-      fireEvent.pointerDown(row, { pointerType: 'touch' });
-      fireEvent.pointerUp(row, { pointerType: 'touch' });
+      // A quick tap on another pod's row opens that pod and reveals nothing. The
+      // route starts on the first row's pod, so the tap goes to a different row.
+      const tapWrap = screen.getAllByRole('button', { name: /^Pin / })[2].parentElement as HTMLElement;
+      const tapRow = tapWrap.querySelector('.v2-pods__row') as HTMLElement;
+      const atStart = screen.getByTestId('current-path').textContent;
+      fireEvent.pointerDown(tapRow, { pointerType: 'touch' });
+      fireEvent.pointerUp(tapRow, { pointerType: 'touch' });
+      fireEvent.click(tapRow);
       act(() => { jest.advanceTimersByTime(600); });
-      expect(wrap).not.toHaveClass('v2-pods__rowwrap--reveal');
+      expect(tapWrap).not.toHaveClass('v2-pods__rowwrap--reveal');
+      expect(screen.getByTestId('current-path').textContent).not.toBe(atStart);
+      expect(screen.getByTestId('current-path').textContent).toMatch(/^\/v2\/pods\/./);
+      const before = screen.getByTestId('current-path').textContent;
       // A hold reveals the pin; the click it ends in stays on the list.
       fireEvent.pointerDown(row, { pointerType: 'touch' });
       act(() => { jest.advanceTimersByTime(600); });
@@ -474,8 +510,8 @@ describe('V2PodsSidebar — direction C', () => {
       expect(wrap).not.toHaveClass('v2-pods__rowwrap--reveal');
       // A browser that sends no click after a long press must not leave the next
       // keyboard Enter or mouse click swallowed (#3412 review).
-      const other = screen.getAllByRole('button', { name: 'Pin pod' })[1].parentElement
-        ?.querySelector('.v2-pods__row') as HTMLElement;
+      // The quick tap above left another pod open, so the first row's pod is a change.
+      const other = row;
       fireEvent.pointerDown(other, { pointerType: 'touch' });
       act(() => { jest.advanceTimersByTime(600); });
       fireEvent.pointerUp(other, { pointerType: 'touch' });

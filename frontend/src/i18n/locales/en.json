@@ -2225,8 +2225,8 @@
     "typing": "typing…",
     "pinTitle": "Pin",
     "unpinTitle": "Unpin",
-    "pinAriaLabel": "Pin pod",
-    "unpinAriaLabel": "Unpin pod",
+    "pinAriaLabel": "Pin {{name}}",
+    "unpinAriaLabel": "Unpin {{name}}",
     "filters": {
       "all": "All",
       "team": "Team",
