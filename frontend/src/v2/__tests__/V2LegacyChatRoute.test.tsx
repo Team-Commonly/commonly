@@ -118,6 +118,17 @@ describe('legacy chat routes inside v2', () => {
     await landsOn('/v2/pods/crew');
   });
 
+  test('a legacy shape whose first segment is not a pod type reads it as the pod id', async () => {
+    renderShell('/v2/pods/workspace/settings');
+    await landsOn('/v2/pods/workspace');
+  });
+
+  test('an agent-ensemble pod keeps the V1 room, for its ensemble controls', async () => {
+    renderShell('/v2/pods/agent-ensemble/workspace');
+    expect(await screen.findByTestId('v1-chatroom')).toBeInTheDocument();
+    expect(screen.getByTestId('path').textContent).toBe('/v2/pods/agent-ensemble/workspace');
+  });
+
   test('the v2 board route is untouched', async () => {
     renderShell('/v2/pods/workspace/board');
     await waitFor(() => expect(screen.getByTestId('v2-board')).toBeInTheDocument());

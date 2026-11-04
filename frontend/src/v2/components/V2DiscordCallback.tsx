@@ -107,16 +107,8 @@ const V2DiscordCallback: React.FC<V2DiscordCallbackProps> = ({ type = 'callback'
 
       setSuccess(t('auth.discordHandoff.created'));
 
-      try {
-        const podResponse = await axios.get<{ type?: string }>(`/api/pods/${podId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const podType = podResponse.data.type || 'chat';
-        setTimeout(() => navigate(`/pods/${podType}/${podId}`), 2000);
-      } catch (podError) {
-        console.error('Error fetching pod info, defaulting to chat:', podError);
-        setTimeout(() => navigate(`/pods/chat/${podId}`), 2000);
-      }
+      // The v2 pod view takes any pod type, so the return no longer reads the pod first.
+      setTimeout(() => navigate(`/v2/pods/${encodeURIComponent(podId)}`), 2000);
     } catch (err: unknown) {
       console.error('Error creating integration:', err);
       const e = err as { response?: { data?: { message?: string } } };

@@ -3302,9 +3302,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       ]) {
         expect(shell).toContain(`React.lazy(() => import(${heavy}))`);
       }
-      // The V1 ChatRoom no longer mounts inside v2 at all: its old route now
-      // redirects to the v2 pod view (ui-audit 11-04 finding 1).
-      expect(shell).not.toContain("import('../components/ChatRoom')");
+      // The V1 ChatRoom mounts inside v2 only for agent-ensemble pods, whose
+      // controls have no v2 home yet (ui-audit 11-04 finding 1). It stays lazy:
+      // no static import, in either quote style.
+      expect(shell).toContain("React.lazy(() => import('../components/ChatRoom'))");
+      const staticImport = /import\s+\w+\s+from\s+['"]\.\.\/components\/ChatRoom['"]/;
+      expect("import ChatRoom from \"../components/ChatRoom\";").toMatch(staticImport);
+      expect(shell).not.toMatch(staticImport);
     });
 
     test('IBM Plex Sans is self-hosted, first in the stack, and imported before v2.css', () => {
