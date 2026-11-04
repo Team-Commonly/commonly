@@ -1,7 +1,7 @@
 // F82 (2026-11-04): Atlassian and Notion passed their prod agent-read walks
 // (connect, a read-only grant to a hosted agent, a real read through the broker,
-// grant revoke), so dev offers them. Google Calendar stays hidden: no agent that
-// can hold a grant today meets Google's Limited Use terms.
+// grant revoke), so dev offers them. The rest stay hidden for the reasons
+// values-dev.yaml gives beside each entry.
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');

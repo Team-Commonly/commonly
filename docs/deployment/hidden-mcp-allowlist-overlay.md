@@ -64,8 +64,14 @@ malformed id silently hides every allowlisted entry from everyone.
 
 - To grant a user access to a hidden entry, add or extend that entry's key with
   their 24-hex-char `_id`. Edit the YAML, not a word list.
-- `gh secret set DEV_HELM_HIDDENMCP_ALLOWLIST --repo <repo> --body-file <overlay.yaml>`.
-  Never paste ids on the command line or into logs.
+- `gh secret set DEV_HELM_HIDDENMCP_ALLOWLIST --repo <repo> < <overlay.yaml>`: the value
+  comes from stdin. `gh secret set` has no `--body-file` flag (it fails with "unknown flag",
+  2026-11-04), and `--body` would put the ids on the command line. Never paste ids on the
+  command line or into logs.
+- To build the overlay without seeing the ids, start from the deployed value: the backend
+  Deployment's `HOSTED_MCP_HIDDEN_ENTRY_USER_ALLOWLIST` env is the JSON of the last deployed
+  secret. Parse it in a script, edit the map, write the YAML to a 0600 temp file, set the
+  secret from it, delete the file. Print only key names and counts.
 - **Merge order:** set the secret before the deploy that removes the map from
   `values-dev.yaml`, or that deploy's chart-default `{}` removes every exception.
 - **Un-hiding trap:** `hiddenEntries` (the list of hidden entries) lives in
