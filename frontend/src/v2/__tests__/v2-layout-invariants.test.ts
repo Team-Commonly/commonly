@@ -716,7 +716,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(touch).toContain('width: max(100%, 44px)');
     expect(touch).toContain('height: max(100%, 44px)');
     expect(touch).toContain('background: transparent');
-    expect(phone).toContain('.v2-settings .v2p-lrow .v2p-b::before,');
+    // Every key the block shrinks takes the area, wherever it sits: the profile editor,
+    // the token detail and the folds hold 28px keys too, not only the list rows (#3402).
+    expect(phone).toContain('.v2-settings .v2p-b.v2p-b-sm::before,');
+    expect(phone).toContain('.v2-settings .v2p-b.v2p-b-sm,\n  .v2-settings .v2p-seg button { position: relative; }');
+    expect(phone).not.toMatch(/\.v2p-lrow \.v2p-b(::before)?,/);
   });
 
   test('pod search shortcut hint hides on narrow and touch-only screens', () => {

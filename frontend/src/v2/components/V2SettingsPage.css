@@ -59,9 +59,11 @@
   .v2-settings .v2p-b.v2p-b-sm { height: 28px; }
   .v2-settings .v2p-ib.v2p-b-sm { width: 28px; height: 28px; }
   .v2-settings .v2p-seg.v2p-seg--sm button { height: 24px; }
-  .v2-settings .v2p-lrow .v2p-b,
+  /* Every key this block shrinks gets the area, not only the ones in list rows: the
+     profile editor, the token detail and the folds hold 28px keys too (review, #3402). */
+  .v2-settings .v2p-b.v2p-b-sm,
   .v2-settings .v2p-seg button { position: relative; }
-  .v2-settings .v2p-lrow .v2p-b::before,
+  .v2-settings .v2p-b.v2p-b-sm::before,
   .v2-settings .v2p-seg button::before {
     content: '';
     position: absolute;
