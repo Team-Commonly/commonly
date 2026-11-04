@@ -191,7 +191,7 @@ lists exactly what leaves C.
   is derived from the same fields the agent-states endpoint already reads (`routes/pods.ts:498-541`,
   `AgentInstallation.config`):
   `chat`: wake on every message / human messages only / mentions only (`wakeOnMessage.enabled`, `.humanOnly`);
-  `board`: own rows only / all rows (`boardWake.enabled`, which inherits `wakeOnMessage` when absent, `manage-settings.ts:40-41`);
+  `board`: own rows only / all rows (`boardWake.enabled`, which inherits `wakeOnMessage` when absent, `settings()` in `backend/routes/registry/manage-settings.ts`);
   `discovery`: on/off (`workDiscovery.role`, `ADR-018:474`). This shows the cost the split would cut.
 - **Default N = 5 provisionally,** matching the fleet rule. It is replaced by the measured value before
   this ADR is accepted, and it is configurable per instance.

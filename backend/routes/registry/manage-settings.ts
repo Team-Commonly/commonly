@@ -30,6 +30,22 @@ const canManage = (installation: any, userId: string, isAdmin: boolean) => (
   isAdmin || String(installation.installedBy) === String(userId)
 );
 
+const WAKE_FLAGS = ['wakeOnMessage', 'humanOnly', 'boardWake', 'heartbeatEnabled'] as const;
+
+// Names the first field a wake write got wrong, or null when the body is valid.
+// The interval may be left out while the heartbeat is off; the stored one stays.
+const invalidWakeField = (body: Record<string, unknown>) => {
+  const flag = WAKE_FLAGS.find((key) => typeof body[key] !== 'boolean');
+  if (flag) return { field: flag, error: `Invalid wake settings: ${flag} must be true or false` };
+  const minutes = body.heartbeatMinutes;
+  if (minutes === undefined && body.heartbeatEnabled === false) return null;
+  if (!Number.isInteger(minutes) || (minutes as number) < 1 || (minutes as number) > 1440) {
+    return { field: 'heartbeatMinutes',
+      error: 'Invalid wake settings: heartbeatMinutes must be a whole number from 1 to 1440' };
+  }
+  return null;
+};
+
 const settings = (installation: any, podName: string) => {
   const config = normalizeConfigMap(installation.config) || {};
   const wakeOnMessage = config.wakeOnMessage?.enabled === true;
@@ -147,12 +163,10 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
   try {
     const userId = getUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    const { wakeOnMessage, humanOnly, boardWake, heartbeatEnabled, heartbeatMinutes } = req.body || {};
-    if (typeof wakeOnMessage !== 'boolean' || typeof boardWake !== 'boolean'
-      || typeof humanOnly !== 'boolean' || typeof heartbeatEnabled !== 'boolean'
-      || !Number.isInteger(heartbeatMinutes) || heartbeatMinutes < 1 || heartbeatMinutes > 1440) {
-      return res.status(400).json({ error: 'Invalid wake settings' });
-    }
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const invalid = invalidWakeField(body);
+    if (invalid) return res.status(400).json(invalid);
+    const { wakeOnMessage, humanOnly, boardWake, heartbeatEnabled, heartbeatMinutes } = body;
     const installation = await AgentInstallation.findOne({
       agentName: String(req.params.name).toLowerCase(),
       instanceId: normalizeInstanceId(req.query.instanceId),
@@ -167,7 +181,8 @@ router.patch('/agents/:name/manage-settings/pods/:podId', settingsRateLimit, aut
       ...config,
       wakeOnMessage: { ...config.wakeOnMessage, enabled: wakeOnMessage, humanOnly },
       boardWake: { ...config.boardWake, enabled: boardWake },
-      heartbeat: { ...config.heartbeat, enabled: heartbeatEnabled, everyMinutes: heartbeatMinutes },
+      heartbeat: { ...config.heartbeat, enabled: heartbeatEnabled,
+        ...(heartbeatMinutes === undefined ? {} : { everyMinutes: heartbeatMinutes }) },
     }));
     await installation.save();
     return res.json({ settings: settings(installation, '') });
