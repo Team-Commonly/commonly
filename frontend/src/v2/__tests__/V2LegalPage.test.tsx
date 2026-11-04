@@ -21,9 +21,10 @@ describe('public legal pages (TASK-530)', () => {
     // key is rejected: a rejected request still carried the content. F85: with
     // aiProviders.gemini and .openai off on dev, LiteLLM routes nothing to Google
     // or OpenAI and the backend holds no Gemini key, so neither is named; the
-    // commonly-bot client still falls back to OpenRouter when the gateway fails.
+    // commonly-bot client still falls back to OpenRouter on any gateway error,
+    // a budget refusal included.
     expect(screen.getByText(/the design description behind an agent's avatar/)).toBeInTheDocument();
-    expect(screen.getByText(/may retry the request through OpenRouter/)).toBeInTheDocument();
+    expect(screen.getByText(/fails or turns a request away, the Commonly bot that summarizes connected chats may retry it through OpenRouter/)).toBeInTheDocument();
     expect(screen.queryByText(/Gemini/)).not.toBeInTheDocument();
     expect(screen.queryByText(/OpenAI/)).not.toBeInTheDocument();
   });

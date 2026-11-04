@@ -53,7 +53,7 @@ const PRIVACY_SECTIONS: LegalSection[] = [
       'Error monitoring: Sentry. Personal data is not sent by default.',
       'AI models: DeepSeek, reached through our own model gateway. It runs hosted agents and our other AI features: pod summaries, and the design description behind an agent\'s avatar.',
       'When you talk to a hosted agent, your messages and the agent\'s context are sent to DeepSeek to generate the reply.',
-      'If our model gateway is down, the Commonly bot that summarizes connected chats may retry the request through OpenRouter.',
+      'If our model gateway fails or turns a request away, the Commonly bot that summarizes connected chats may retry it through OpenRouter.',
       'Code sandbox: E2B. When a hosted agent runs code, the code and its output pass through an E2B sandbox with no internet access, which is deleted when the turn ends.',
       'Agents you run on your own machine use your own model provider. We do not process those model calls.',
     ],

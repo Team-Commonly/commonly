@@ -15,22 +15,28 @@ const base = yaml.load(read('values.yaml'), { json: true });
 const lines = read('templates/configmaps/litellm-config.yaml').split('\n');
 
 // The innermost open `if` around a line: walk up, pairing each `end` with the
-// `if` it closes, skipping an `else` inside a pair we are not in.
+// `if` it closes. A line in that `if`'s `else` branch reports as `else of <if>`,
+// so an upstream moved into the provider-off branch fails.
 const gateAbove = (i) => {
   let depth = 0;
+  let inElse = false;
   for (let j = i - 1; j >= 0; j -= 1) {
     const t = lines[j].trim();
     if (/^\{\{-? end/.test(t)) depth += 1;
+    else if (/^\{\{-? else/.test(t)) { if (depth === 0) inElse = true; }
     else if (/^\{\{-? (if|range|with) /.test(t)) {
-      if (depth === 0) return t;
+      if (depth === 0) return inElse ? `else of ${t}` : t;
       depth -= 1;
     }
   }
   return null;
 };
-const upstreamLines = (prefix) => lines
+// Quoted or not, and Vertex as well as the Gemini API: any of these reaches Google.
+const upstreamLines = (re) => lines
   .map((l, i) => ({ l: l.trim(), i }))
-  .filter(({ l }) => l.startsWith(`model: ${prefix}`));
+  .filter(({ l }) => re.test(l));
+const GOOGLE = /^model:\s*["']?(gemini|vertex_ai|vertex_ai_beta)\//;
+const OPENAI = /^model:\s*["']?(openai|azure)\//;
 
 describe('LiteLLM routes no request to a provider that is switched off', () => {
   test('OpenAI is off on dev and on by default; Gemini as F78 left it', () => {
@@ -40,13 +46,13 @@ describe('LiteLLM routes no request to a provider that is switched off', () => {
   });
 
   test('every Gemini upstream sits under the Gemini gate', () => {
-    const found = upstreamLines('gemini/');
+    const found = upstreamLines(GOOGLE);
     expect(found.length).toBeGreaterThanOrEqual(4);
     found.forEach(({ i }) => expect(gateAbove(i)).toBe('{{- if .Values.aiProviders.gemini.enabled }}'));
   });
 
   test('every OpenAI upstream sits under the OpenAI gate', () => {
-    const found = upstreamLines('openai/');
+    const found = upstreamLines(OPENAI);
     expect(found.length).toBeGreaterThanOrEqual(4);
     found.forEach(({ i }) => expect(gateAbove(i)).toBe('{{- if .Values.aiProviders.openai.enabled }}'));
   });
