@@ -6270,3 +6270,38 @@ describe('zh-CN labels fit their keys at 390 (content-sized, hit areas overhang 
     expect(hint).not.toMatch(fixedWidth);
   });
 });
+
+describe('sign-in handoff drawn from the d215 s-handoff frames', () => {
+  const css = readV2Css();
+  const tsx = (rel: string) => read(`../components/${rel}`);
+
+  test('the wire tells the state: dotted with a running dot, solid when done, an ink knot on error', () => {
+    expect(ruleBody(css, '.v2-handoff__wire::before')).toContain('border-top: 2px dotted var(--v2-border)');
+    expect(ruleBody(css, '.v2-handoff__wire--done::before')).toContain('border-top: 2px solid var(--v2-accent)');
+    const run = ruleBody(css, '.v2-handoff__run');
+    expect(run).toContain('background: var(--v2-accent)');
+    expect(run).toContain('animation: v2-handoff-run 1.4s ease-in-out infinite');
+    expect(css).toMatch(/@keyframes v2-handoff-run \{[^@]*100% \{ left: calc\(100% - 6px\); opacity: 0; \}/);
+    expect(ruleBody(css, '.v2-handoff__wire--error .v2-handoff__knot')).toContain('box-shadow: inset 0 0 0 1.5px var(--v2-text-primary)');
+    // Reduced motion: the dot stops mid-wire instead of vanishing.
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.v2-handoff__run \{ animation: none; left: calc\(50% - 3px\); \}/);
+  });
+
+  test('the done card keeps its blocks: fact row, a caret select, two keys in one row', () => {
+    const facts = ruleBody(css, '.v2-handoff__facts dd');
+    expect(facts).toContain('overflow-wrap: anywhere');
+    expect(facts).toContain('min-width: 0');
+    expect(ruleBody(css, '.v2-handoff__keys')).toContain('grid-template-columns: 1fr 1fr');
+    const select = ruleBody(css, '.v2-root select.v2-login__input');
+    expect(select).toContain('appearance: none');
+    expect(select).toContain('width: 100%');
+    expect(ruleBody(css, '.v2-handoff__select > svg')).toContain('pointer-events: none');
+  });
+
+  test('the Discord return pages sit in the auth family scroller, and /discord/* reaches V2App', () => {
+    expect(tsx('V2DiscordCallback.tsx')).toMatch(/<div className="v2-login">\s*<div className="v2-login__card v2-login__card--stack">/);
+    // The backend redirects to /discord/*; without this mapping the card renders outside .v2-root, unstyled.
+    expect(read('../../utils/legacyV2Path.ts')).toContain("if (pathname.startsWith('/discord/')) return `/v2${pathname}${search}`;");
+    expect(read('../../index.tsx')).toContain('/^\\/discord\\/(?:callback|success|error)\\/?$/.test(bootPath)');
+  });
+});

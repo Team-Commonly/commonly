@@ -209,6 +209,21 @@ describe('V2OAuthComplete', () => {
     Object.defineProperty(window, 'location', { configurable: true, value: originalLocation });
   });
 
+  test('while the code is exchanged it is the d215 handoff working card: one status line, no subtitle', async () => {
+    axios.post.mockReturnValueOnce(new Promise(() => {}));
+    let view;
+    await act(async () => { view = renderComplete('?code=one-time&next=/v2'); });
+    expect(screen.getByRole('status')).toHaveTextContent('Signing you in…');
+    const wire = view.container.querySelector('.v2-handoff__wire');
+    expect(wire).toHaveClass('v2-handoff__wire--working');
+    expect(wire.querySelector('.v2-handoff__run')).not.toBeNull();
+    // The return URL does not name the provider: a plain tile, never a guessed logo.
+    expect(view.container.querySelector('.v2-handoff__provider svg')).not.toBeNull();
+    expect(view.container.querySelector('.v2-handoff__tile')).toBeNull();
+    expect(view.container.querySelector('.v2-login__subtitle')).toBeNull();
+    expect(view.container.querySelector('.v2-login__card--stack')).not.toBeNull();
+  });
+
   test('exchanges the one-time code, hands the session to AuthContext and navigates in-app', async () => {
     axios.post.mockResolvedValueOnce({ data: { token: 'session-jwt' } });
     const signInWithToken = jest.fn();

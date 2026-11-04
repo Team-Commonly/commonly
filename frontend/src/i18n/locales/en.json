@@ -429,8 +429,26 @@
       "continueWith": "Continue with {{provider}}"
     },
     "oauthComplete": {
-      "title": "Signing you in…",
-      "subtitle": "Completing sign-in with your provider."
+      "title": "Signing you in…"
+    },
+    "discordHandoff": {
+      "workingTitle": "Connecting Discord…",
+      "doneTitle": "Pick a channel",
+      "connectedTitle": "Discord connected",
+      "errorTitle": "Discord didn't connect",
+      "errorFallback": "Something went wrong during Discord authorization.",
+      "server": "Server",
+      "channel": "Channel",
+      "choose": "Choose a channel",
+      "loadingChannels": "Loading channels…",
+      "cancel": "Cancel",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "back": "Back",
+      "pickChannel": "Please select a channel",
+      "channelsFailed": "Failed to fetch server channels",
+      "createFailed": "Failed to create integration",
+      "created": "Discord integration created successfully!"
     },
     "forgot": {
       "title": "Reset your password",

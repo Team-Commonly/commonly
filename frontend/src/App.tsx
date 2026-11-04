@@ -35,7 +35,7 @@ import { V2PrivacyPage, V2TermsPage } from './v2/legal/V2LegalPage';
 const GuidePage = React.lazy(() => import('./components/landing/GuidePage'));
 const GuidesIndexPage = React.lazy(() => import('./components/landing/GuidesIndexPage'));
 const UseCasePage = React.lazy(() => import('./components/landing/UseCasePage'));
-const DiscordCallback = React.lazy(() => import('./components/DiscordCallback'));
+const V2DiscordCallback = React.lazy(() => import('./v2/components/V2DiscordCallback'));
 const V2App = React.lazy(() => import('./v2/V2App'));
 const V2LandingPage = React.lazy(() => import('./v2/landing/V2LandingPage'));
 const V2CliAuthorize = React.lazy(() => import('./v2/components/V2CliAuthorize'));
@@ -310,9 +310,9 @@ function App(): React.ReactElement {
                         answers with `verifyUrl: <origin>/cli/authorize`. Deleting this
                         route 404'd every `commonly login` (#1534, 2026-09-04 → 09-08). */}
                     <Route path="/cli/authorize" element={<V2CliAuthorize />} />
-                    <Route path="/discord/callback" element={<DiscordCallback />} />
-                    <Route path="/discord/success" element={<DiscordCallback type="success" />} />
-                    <Route path="/discord/error" element={<DiscordCallback type="error" />} />
+                    <Route path="/discord/callback" element={<V2DiscordCallback />} />
+                    <Route path="/discord/success" element={<V2DiscordCallback type="success" />} />
+                    <Route path="/discord/error" element={<V2DiscordCallback type="error" />} />
                     </Routes>
                     </Suspense>
                   </div>
