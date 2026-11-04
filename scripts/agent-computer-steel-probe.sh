@@ -8,9 +8,10 @@
 #     attack the policy should stop must leave the witness empty.
 #   - report: the image's own policy. At least one page attack must reach the
 #     witness, or the probe can't tell a block from a broken attack.
-# The page attacks run twice: from https://example.com, a public page like
-# every allowlisted host (asserted), and from a page the runner serves on a
-# private address (recorded). The private page and the rebind name are marked
+# The page attacks run from https://example.com, a public page like every
+# allowed host (asserted). Under the image's policy they also run from a page
+# the runner serves on a private address (recorded); the chart's allowlist
+# refuses that page outright. The private page and the rebind name are marked
 # trustworthy, so mixed-content blocking can't pass for a policy block.
 # CI only: it needs docker, sudo, helm and yq, and mounts no secrets.
 set -euo pipefail
@@ -29,8 +30,10 @@ cleanup() {
 trap cleanup EXIT
 
 q() { yq -N "$1" "$tmp/on.yaml"; }
+# The public attacking page's host is the only allowed host, so the policy is
+# the one the chart renders for any allowlist, and every other host is refused.
 helm template commonly-dev "$chart" -f "$chart/values.yaml" -f "$chart/values-dev.yaml" \
-  --set "agentComputer.users[0]=$user" > "$tmp/on.yaml"
+  --set "agentComputer.users[0]=$user" --set-string backend.env.agentComputerAllowedHosts=example.com > "$tmp/on.yaml"
 browser="select(.kind == \"Deployment\" and .metadata.name == \"steel-$user\") | .spec.template.spec.containers[] | select(.name == \"steel\")"
 
 image=$(q "$browser | .image")

@@ -69,10 +69,20 @@ test "$(q "$browser | .volumeMounts[] | select(.name == \"chrome-policy\") | .mo
 test "$(q "$browser | .volumeMounts[] | select(.name == \"chrome-policy\") | .readOnly" "$on")" = true
 test "$(q "$browser | .volumeMounts[] | select(.name == \"steel-files\") | .mountPath" "$on")" = /files
 q 'select(.kind == "ConfigMap" and .metadata.name == "agent-computer-chrome-policy") | .data["00_policy.json"]' "$on" > "$tmp_dir/policy.json"
-for host in 'file://*' localhost 127.0.0.1 '[::1]' 0.0.0.0 169.254.169.254 metadata.google.internal; do
-  test "$("$yq_bin" -N -p json ".URLBlocklist[] | select(. == \"$host\")" "$tmp_dir/policy.json" 2> /dev/null)" = "$host"
+# Every navigation is blocked but the broker's own allowed hosts, exactly and
+# over https, and no page reaches a loopback or private address.
+pj() { "$yq_bin" -N -p json "$1" "$tmp_dir/policy.json" 2> /dev/null || echo "__yq_error__"; }
+test "$(pj '.URLBlocklist | join(",")')" = '*'
+test "$(pj '.URLAllowlist | join(",")')" = 'https://.commonly.me'
+test "$(pj '.LocalNetworkAccessBlockedForUrls | join(",")')" = '*'
+for bad in '*' 'commonly.me/x' 'localhost' '.commonly.me'; do
+  if helm template commonly-dev "$chart" "${dev[@]}" --set "agentComputer.users[0]=$user" \
+    --set-string "backend.env.agentComputerAllowedHosts=$bad" > "$tmp_dir/bad-host.yaml" 2> "$tmp_dir/bad-host.err"; then
+    echo "agent computer chart accepted allowed host: $bad"
+    exit 1
+  fi
+  grep -q 'is not a plain host name' "$tmp_dir/bad-host.err" || { echo "bad host $bad failed for another reason:"; cat "$tmp_dir/bad-host.err"; exit 1; }
 done
-test "$("$yq_bin" -N -p json '.LocalNetworkAccessBlockedForUrls | join(",")' "$tmp_dir/policy.json" 2> /dev/null)" = '*'
 # A policy change restarts the browser, so it never runs under a stale policy.
 test "$(q "select(.kind == \"Deployment\" and .metadata.name == \"steel-$user\") | .spec.template.metadata.annotations[\"checksum/chrome-policy\"]" "$on" | grep -cE '^[0-9a-f]{64}$')" = 1
 

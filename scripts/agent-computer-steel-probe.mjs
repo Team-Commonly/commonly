@@ -8,6 +8,8 @@
 // network allowed), so nothing on the server side hides a reach.
 //
 // PROBE_MODE=enforce fails on any reach the chart's Chrome policy should stop.
+// The chart is rendered with the public page's host as the only allowed host,
+// so the private page is itself a host the policy must refuse.
 // PROBE_MODE=report records the same attacks against the image's own policy,
 // the control showing the probe can see a reach at all.
 import fs from 'node:fs';
@@ -164,23 +166,21 @@ const cdpNavigations = [
   ['cdp-nav-cluster-name', 'http://kubernetes.default.svc.cluster.local/', false],
   ['cdp-nav-file', 'file:///etc/passwd', false],
   ['cdp-nav-redirect-hop', `${PAGE}redir?to=${encodeURIComponent(`${W}/cdp-nav-redirect-hop`)}`, true],
+  ['cdp-nav-rebind-name', `${WN}/cdp-nav-rebind-name`, true],
+  ['cdp-nav-not-allowed-host', 'https://www.iana.org/', false],
+  ['cdp-nav-private-page', PAGE, false],
 ];
 for (const [test, url, witnessed] of cdpNavigations) {
   const outcome = await navigate(url);
   // A witnessed target counts what arrived; the others count only a policy refusal.
   record(test, 'assert', witnessed ? reached(test) : outcome !== BLOCKED, outcome);
 }
-const rebindNav = await navigate(`${WN}/cdp-nav-rebind-name`);
-record('cdp-nav-rebind-name', 'residual', reached('cdp-nav-rebind-name'), rebindNav);
 
 // 2. Requests a page makes on its own, the path no broker guard sees when the
 // broker isn't connected, and the one a socket or worker takes even when it is.
-// Run from a public page (asserted) and from a private one (recorded: Local
-// Network Access puts private and loopback addresses in one space, so a
-// private page is not expected to be stopped).
-await loadPage();
-const sameOrigin = await evaluate(`fetch(${JSON.stringify(`${PAGE}ok.txt`)}).then((r) => r.text(), (e) => 'refused ' + e.message)`);
-record('page-fetch-same-origin', 'control', sameOrigin === 'ok', sameOrigin);
+// Run from the public page (asserted), and from the private one where it
+// loads at all (recorded: Local Network Access puts private and loopback
+// addresses in one space, so only the allowlist keeps such a page out).
 
 const pageFetch = (url, mode) => `Promise.race([
   fetch(${JSON.stringify(url)}, { mode: ${JSON.stringify(mode)} }).then((r) => 'answered ' + r.type + ' ' + r.status, (e) => 'refused ' + e.message),
@@ -245,22 +245,20 @@ const pageAttacks = async (from, kind) => {
 };
 
 await loadPage(PUBLIC_PAGE);
+const sameOrigin = await evaluate(`fetch(location.href).then((r) => 'answered ' + r.status, (e) => 'refused ' + e.message)`);
+record('page-fetch-same-origin', 'control', sameOrigin === 'answered 200', sameOrigin);
 await pageAttacks('public', 'assert');
-await loadPage();
-await pageAttacks('private', 'residual');
-
-// 3. The page moves its own main frame. A loopback name on the list is
-// refused; a public name that resolves to loopback is the residual the
-// runbook names.
-for (const [test, url, kind] of [
-  ['page-nav-loopback-ip', `${W}/page-nav-loopback-ip`, 'assert'],
-  ['page-nav-rebind-name', `${WN}/page-nav-rebind-name`, 'residual'],
-]) {
-  await loadPage();
+// 3. The public page moves its own main frame: to a loopback address, and to
+// a name that resolves to loopback (rebinding). Only allowed hosts load.
+for (const test of ['page-nav-loopback-ip', 'page-nav-rebind-name']) {
+  const url = test === 'page-nav-loopback-ip' ? `${W}/${test}` : `${WN}/${test}`;
+  await loadPage(PUBLIC_PAGE);
   await evaluate(`setTimeout(() => { location.href = ${JSON.stringify(url)}; }, 0); 'set'`);
   await sleep(4000);
-  record(test, kind, reached(test), await evaluate('location.href', 4000));
+  record(test, 'assert', reached(test), await evaluate('location.href', 4000));
 }
+const privateLoad = await navigate(PAGE);
+if (privateLoad === 'loaded') await pageAttacks('private', 'residual');
 
 // 4. Every browser process runs as this container's user, with no capabilities.
 const processes = fs.readdirSync('/proc').filter((pid) => /^\d+$/.test(pid)).flatMap((pid) => {

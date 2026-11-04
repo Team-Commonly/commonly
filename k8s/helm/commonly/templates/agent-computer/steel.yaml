@@ -11,6 +11,20 @@ never get the address (agentComputerBroker.ts).
 {{- if $users }}
 {{- $ns := include "commonly.namespace" . -}}
 {{- $steel := .Values.agentComputer.steel -}}
+{{- /* Chrome's navigation allowlist is the broker's, from the same value: the
+broker allows a host exactly and over https, so each entry is https://.host
+(the leading dot excludes subdomains). */ -}}
+{{- $allow := list -}}
+{{- range (splitList "," (.Values.backend.env.agentComputerAllowedHosts | default "")) }}
+{{- $host := . | trim | lower }}
+{{- if $host }}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$" $host) }}
+{{- fail (printf "backend.env.agentComputerAllowedHosts: %q is not a plain host name" $host) }}
+{{- end }}
+{{- $allow = append $allow (printf "https://.%s" $host) }}
+{{- end }}
+{{- end }}
+{{- $chromePolicy := dict "URLBlocklist" (list "*") "URLAllowlist" $allow "LocalNetworkAccessBlockedForUrls" (list "*") | toPrettyJson }}
 ---
 # The browser never calls the Kubernetes API. Its own account has no token and
 # no role, and keeps it off any workload-identity binding on `default`.
@@ -24,13 +38,17 @@ metadata:
     app: agent-computer-steel
 automountServiceAccountToken: false
 ---
-# Chrome's managed policy (files/agent-computer/chrome-policy.json), mounted
-# over the image's own, which held only the file:// block kept here. Steel
-# leaves its CDP and API ports open to any page on loopback, so the browser
-# itself refuses: URLBlocklist stops navigations, redirect hops included, to
-# loopback and metadata names, and LocalNetworkAccessBlockedForUrls stops any
-# page or worker request, sockets included, to a loopback or private address
-# after DNS. scripts/agent-computer-steel-probe.sh attacks both in CI.
+# Chrome's managed policy, mounted over the image's own (which blocked only
+# file://). Steel leaves its API and Chrome's DevTools port open to any page on
+# loopback, so the browser holds its own floor under the broker's guard, which
+# runs only while the broker is connected:
+#   - URLBlocklist * with URLAllowlist the allowed hosts: a frame navigates
+#     only to an allowed host, redirect hops and names that resolve to
+#     loopback included.
+#   - LocalNetworkAccessBlockedForUrls *: no page, worker or socket reaches a
+#     loopback or private address, with no prompt for a person to accept
+#     during a takeover.
+# scripts/agent-computer-steel-probe.sh attacks both in CI.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -41,7 +59,7 @@ metadata:
     app: agent-computer-steel
 data:
   00_policy.json: |
-{{ .Files.Get "files/agent-computer/chrome-policy.json" | indent 4 }}
+{{ $chromePolicy | indent 4 }}
 {{- range $id := $users }}
 ---
 apiVersion: v1
@@ -96,7 +114,7 @@ spec:
       annotations:
         # A policy change restarts the browser so it starts under the new
         # policy. The profile disk keeps the signed-in session.
-        checksum/chrome-policy: {{ $.Files.Get "files/agent-computer/chrome-policy.json" | sha256sum }}
+        checksum/chrome-policy: {{ $chromePolicy | sha256sum }}
     spec:
       serviceAccountName: agent-computer-steel
       automountServiceAccountToken: false
