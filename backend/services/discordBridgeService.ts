@@ -22,6 +22,7 @@ import {
 import type { InboundRelayAdapter, LiveRelayRow } from './chatRelay/chatRelayCore';
 
 const LOG = '[discord-bridge]';
+const AUTHOR_LOAD_ATTEMPTS = 3;
 
 // discord.js MessageType: Default and Reply are what a person types. Everything
 // else (joins, pins, boosts, thread starters, …) is the system talking.
@@ -165,19 +166,43 @@ export const relayDiscordMessageToPod = async (opts: {
   if (claim === 'unavailable') {
     // Fail closed: two replicas writing the same line is the defect the claim
     // exists for, and the line is still in the summary buffer.
-    console.warn(`${LOG} inbound not relayed integration=${String(integration._id)}: claim store unavailable`);
+    // A deliberate exception to review rule 19 (INTEGRATION_CONTRACT.md, F131):
+    // the operator is the audience, so name the row and the message.
+    console.warn(
+      `${LOG} inbound not relayed integration=${String(integration._id)} message=${String(message.id)}: `
+      + 'claim store unavailable; the line is in the summary buffer only',
+    );
     return { relayed: false };
   }
 
   const podId = String(integration.podId);
-  const author = await loadInboundAuthor({
-    podId,
-    sender,
-    logPrefix: LOG,
-    // A shared channel gets no notice: the refusal is about one person's pod
-    // membership, and everyone in the guild would read it.
-    onNotMember: async () => {},
-  });
+  // The claim is held from here on, and no other replica will write this line.
+  // So a transient read failure would lose it for good: the author load is
+  // read-only and retried. The write below is not — a retried write is the
+  // duplicate the claim exists to prevent.
+  let author: Awaited<ReturnType<typeof loadInboundAuthor>> = null;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      author = await loadInboundAuthor({
+        podId,
+        sender,
+        logPrefix: LOG,
+        // A shared channel gets no notice: the refusal is about one person's pod
+        // membership, and everyone in the guild would read it.
+        onNotMember: async () => {},
+      });
+      break;
+    } catch (error) {
+      if (attempt >= AUTHOR_LOAD_ATTEMPTS) {
+        console.error(
+          `${LOG} inbound not relayed integration=${String(integration._id)} message=${String(message.id)}: `
+          + `author load failed ${AUTHOR_LOAD_ATTEMPTS} times: ${(error as Error).message}`,
+        );
+        return { relayed: false };
+      }
+    }
+  }
   if (!author) return { relayed: false };
   await writeInboundAsLinkedUser({
     podId,

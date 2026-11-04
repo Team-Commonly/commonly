@@ -98,6 +98,9 @@ export const toPublicIntegration = (
 export const INTEGRATION_ROUTING_STATE_CONFIG_KEYS = [
   'chatId',
   'linkedUserId',
+  // The Discord installer's own user id (F131): whose channel lines are
+  // authored as `linkedUserId`. The creator's, like the line above.
+  'discordUserId',
   'messageBuffer',
   'relayMap',
 ] as const;

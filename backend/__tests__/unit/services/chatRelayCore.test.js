@@ -336,16 +336,30 @@ describe('inbound: only a proven sender reaches the write (F131)', () => {
     expect(chatRelayIntegrationTypes()).toEqual(['telegram', 'slack']);
   });
 
-  test('Telegram and Slack keep the private-chat live-relay rule; an undeclared type falls back to it', () => {
+  test('Telegram keeps the private-chat live-relay rule; an undeclared type falls back to it', () => {
     const group = { config: { chatId: '42', chatType: 'group' } };
     const privateChat = { config: { chatId: '42', chatType: 'private' } };
     const unbound = { config: {} };
-    ['telegram', 'slack', 'groupme', undefined].forEach((type) => {
+    ['telegram', 'groupme', undefined].forEach((type) => {
       expect(liveRelayRefusalFor(type, group, 'u')).toBe(privateChatLiveRelayRefusal(group));
       expect(liveRelayRefusalFor(type, group, 'u')).toMatch(/private chat/);
       expect(liveRelayRefusalFor(type, privateChat, 'u')).toBeNull();
       expect(liveRelayRefusalFor(type, unbound, 'u')).toBeNull();
     });
+  });
+
+  test('Slack’s rule is its own: the OAuth DM (`im`, no channel) may relay live, a channel may not', () => {
+    // Slack stores its DM as chatType 'im'; the shared private-chat rule read
+    // that as a group and refused every bound Slack DM (CodeRabbit on #3456).
+    // Same audience test as F143's surfaceBindDeclarations.slack.
+    expect(liveRelayRefusalFor('slack', { config: { chatId: 'D1', chatType: 'im' } }, 'u')).toBeNull();
+    expect(liveRelayRefusalFor('slack', { config: {} }, 'u')).toBeNull();
+    expect(liveRelayRefusalFor('slack', { config: { chatId: 'D1', chatType: 'im', channelId: 'C1' } }, 'u'))
+      .toMatch(/direct message/);
+    expect(liveRelayRefusalFor('slack', { config: { chatId: 'C1', chatType: 'channel' } }, 'u')).toMatch(/direct message/);
+    expect(liveRelayRefusalFor('slack', { config: { chatId: 'C1', chatType: 'private' } }, 'u')).toMatch(/direct message/);
+    // A legacy per-channel row names only channelId.
+    expect(liveRelayRefusalFor('slack', { config: { channelId: 'C1' } }, 'u')).toMatch(/direct message/);
   });
 
   test('Discord’s rule is its own declaration: a proven installer, not a chat type', () => {

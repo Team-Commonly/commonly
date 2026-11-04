@@ -218,13 +218,61 @@ describe('Discord inbound live relay (F131)', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const result = await relayDiscordMessageToPod({ integration: row(), message: discordMessage() });
+      const message = discordMessage();
+      const result = await relayDiscordMessageToPod({ integration: row(), message });
       expect(result).toEqual({ relayed: false });
       expect(writes()).toHaveLength(0);
+      // The operator is the audience for this exception (review rule 19): the
+      // log names the row and the message so the missed line can be found.
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).toContain('integration-1');
+      expect(logged).toContain(message.id);
     } finally {
       warn.mockRestore();
       error.mockRestore();
     }
+  });
+
+  describe('a transient failure loading the author, while the claim is held', () => {
+    const podOk = { select: () => ({ lean: async () => ({ _id: 'pod-1', type: 'chat', members: [INSTALLER] }) }) };
+    const podThrows = () => { throw new Error('mongo blip'); };
+
+    test('is retried, and the line is written once', async () => {
+      Pod.findById.mockImplementationOnce(podThrows).mockReturnValue(podOk);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const result = await relayDiscordMessageToPod({ integration: row(), message: discordMessage() });
+        expect(result).toEqual({ relayed: true });
+        expect(writes()).toHaveLength(1);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('three throws write nothing, and say so with the row and message', async () => {
+      Pod.findById.mockImplementation(podThrows);
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const message = discordMessage();
+        const result = await relayDiscordMessageToPod({ integration: row(), message });
+        expect(result).toEqual({ relayed: false });
+        expect(writes()).toHaveLength(0);
+        expect(Pod.findById).toHaveBeenCalledTimes(3);
+        const logged = JSON.stringify(error.mock.calls);
+        expect(logged).toContain('integration-1');
+        expect(logged).toContain(message.id);
+      } finally {
+        warn.mockRestore();
+        error.mockRestore();
+      }
+    });
+
+    test('the write itself is never retried', async () => {
+      PGMessage.create.mockRejectedValueOnce(new Error('pg down'));
+      await expect(relayDiscordMessageToPod({ integration: row(), message: discordMessage() })).rejects.toThrow('pg down');
+      expect(writes()).toHaveLength(1);
+    });
   });
 
   test('does not write when the linked user has left the pod, and says nothing in the channel', async () => {

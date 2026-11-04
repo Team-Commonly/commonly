@@ -140,7 +140,25 @@ any undeclared type), the proven installer for Discord.
 A platform that pushes one message to every backend replica (Discord's gateway
 socket) claims it with `claimInboundMessage(provider, integrationId, messageId)`
 before writing; that is the WebhookDelivery unique index the HTTP bridges'
-redelivery dedupe already uses. Inbound and outbound are separate registries:
+redelivery dedupe already uses.
+
+**An explicit exception to review rule 19** (`docs/development/review-checklist.md`:
+a guard that cannot do its job fails toward the noisy outcome, and "noisy" names
+an audience). When the claim store is unavailable, Discord relays the line
+**nothing live**: it fails closed, under-delivering. Failing open would write
+the same line once per replica, each copy authored in the installer's name and
+each waking the pod's agents. That is worse than a missed live line, and it
+can't be undone. The line is not lost: the gateway buffered it for the
+channel's summaries before the bridge ran. The audience is the operator: the
+warning names the integration and the Discord message id. The sender isn't
+told: on a shared channel a notice would reach everyone in the guild. Telegram
+fails open at the same point, because its HTTP redelivery gives it one
+delivery per update. A gateway socket per replica doesn't.
+
+Once the claim is held, no other replica writes the line. So the read-only
+author load (`loadInboundAuthor`) is retried up to three times on a thrown
+error, then logged with the same two ids. The write itself is single-attempt.
+Inbound and outbound are separate registries:
 Discord relays inbound only, and is not in `chatRelayAdapters`.
 
 ## Testing contract

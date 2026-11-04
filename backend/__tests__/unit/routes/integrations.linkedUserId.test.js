@@ -565,3 +565,52 @@ describe('POST /api/integrations — telegram first-run defaults', () => {
     expect(res.body.integration.config.relayAllAgentMessages).toBe(false);
   });
 });
+
+// Slack keeps its OAuth DM as chatType 'im', not 'private'. The shared
+// private-chat rule refused live relay on every bound Slack DM (CodeRabbit on
+// #3456); Slack now declares its own rule.
+describe('PATCH /api/integrations/:id — live relay on Slack', () => {
+  const slackRow = (config) => ({
+    _id: 'integration-1',
+    type: 'slack',
+    podId: 'pod-1',
+    createdBy: { toString: () => 'user-1' },
+    config: { ...config, toObject() { return { ...config }; } },
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    User.findById.mockResolvedValue({ _id: 'user-1', role: 'member' });
+    Pod.findById.mockResolvedValue(null);
+    Integration.findByIdAndUpdate.mockResolvedValue({ _id: 'integration-1' });
+  });
+
+  it('turns live relay on for a bound Slack DM, stamped as the caller', async () => {
+    Integration.findById.mockResolvedValue(slackRow({ teamId: 'T1', chatId: 'D1', chatType: 'im' }));
+
+    const res = await request(app)
+      .patch(`/api/integrations/${integrationId}`)
+      .send({ config: { liveRelay: true } });
+
+    expect(res.status).toBe(200);
+    expect(Integration.findByIdAndUpdate.mock.calls[0][1]).toMatchObject({
+      'config.liveRelay': true, 'config.linkedUserId': 'user-1',
+    });
+  });
+
+  it.each([
+    ['a channel', { teamId: 'T1', chatId: 'C1', chatType: 'channel' }],
+    ['a legacy per-channel row', { channelId: 'C1' }],
+    ['a DM row that also names a channel', { teamId: 'T1', chatId: 'D1', chatType: 'im', channelId: 'C1' }],
+  ])('refuses live relay on %s', async (_label, config) => {
+    Integration.findById.mockResolvedValue(slackRow(config));
+
+    const res = await request(app)
+      .patch(`/api/integrations/${integrationId}`)
+      .send({ config: { liveRelay: true } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/direct message/);
+    expect(Integration.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+});

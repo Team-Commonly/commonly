@@ -17,7 +17,6 @@ import { resolveDecisionCardReply } from './decisionCardReply';
 import type { ChannelCardEntry } from './decisionCardReply';
 import {
   loadInboundAuthor,
-  privateChatLiveRelayRefusal,
   proveInboundSender,
   relayAgentMessageThroughAdapter,
   writeInboundAsLinkedUser,
@@ -283,6 +282,9 @@ export const routeSlackReplyContent = (opts: {
     : { content: `${mention} ${content}`, routedAgent: hit.agentUsername, podId: routedPodId };
 };
 
+const SLACK_LIVE_RELAY_REFUSAL = 'Live relay requires a direct message with the bot; '
+  + 'this connector is bound to a channel';
+
 // Slack's inbound proof: the event's sender is the Slack user the OAuth bind
 // proved (`config.slackUserId`), never a value a request supplied.
 export const slackInboundAdapter: InboundRelayAdapter<SlackIntegrationDoc, { user?: string }> = {
@@ -291,7 +293,18 @@ export const slackInboundAdapter: InboundRelayAdapter<SlackIntegrationDoc, { use
     const slackUserId = integration.config?.slackUserId;
     return Boolean(slackUserId) && event?.user === slackUserId;
   },
-  liveRelayRefusal: privateChatLiveRelayRefusal,
+  // Slack's own audience test, not the shared private-chat one: the OAuth bind
+  // stores the installer's DM as chatType 'im', which that rule read as a group
+  // and refused. A DM (`im`) with no channel is 1:1; a channelId, or a bound
+  // chat of any other type, is a channel. The same reading as F143's
+  // surfaceBindDeclarations.slack and isRelayableIntegration above. A row with
+  // no chat yet has nothing to judge.
+  liveRelayRefusal: (row) => {
+    const config = row.config || {};
+    if (config.channelId) return SLACK_LIVE_RELAY_REFUSAL;
+    if (config.chatId && config.chatType !== 'im') return SLACK_LIVE_RELAY_REFUSAL;
+    return null;
+  },
 };
 
 // Inbound Slack DM → Commonly pod. The event route has already proven the
