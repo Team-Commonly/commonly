@@ -115,7 +115,23 @@ describe('V2DiscordCallback (d215 s-handoff)', () => {
     expect(screen.queryByRole('combobox')).toBeNull();
     act(() => { jest.advanceTimersByTime(2000); });
     expect(screen.getByText('at /v2/pods/p1')).toBeInTheDocument();
-    expect(axios.get).not.toHaveBeenCalledWith('/api/pods/p1', expect.anything());
+  });
+
+  test('an agent-ensemble pod returns to its kept room, where its controls live', async () => {
+    jest.useFakeTimers();
+    localStorage.setItem('token', 'jwt');
+    axios.get.mockImplementation((url) => (url === '/api/discord/channels/112233445566778899'
+      ? Promise.resolve({ data: [{ id: '112233445566778801', name: 'general' }] })
+      : Promise.resolve({ data: { type: 'agent-ensemble' } })));
+    axios.post.mockResolvedValue({ data: {} });
+    renderAt('/discord/success?pod_id=p1&guild_id=112233445566778899&server_name=S');
+    const select = await screen.findByRole('combobox', { name: 'Channel' });
+    await screen.findByRole('option', { name: '#general' });
+    fireEvent.change(select, { target: { value: '112233445566778801' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Connect' })); });
+    await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
+    act(() => { jest.advanceTimersByTime(2000); });
+    expect(screen.getByText('at /v2/pods/agent-ensemble/p1')).toBeInTheDocument();
   });
 
   test('a failed channel fetch and a failed create each land in the alert row', async () => {
