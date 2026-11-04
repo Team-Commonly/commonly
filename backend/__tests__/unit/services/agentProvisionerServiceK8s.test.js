@@ -1000,6 +1000,6 @@ describe('F103 review: an old LiteLLM key is retired only after its replacement 
     const warned = warn.mock.calls.map((args) => args.join(' '));
     expect(logged.filter((line) => /Retired the key replaced/.test(line))).toEqual([]);
     expect(warned.filter((line) => /could not retire the key replaced for theo: LiteLLM 503/.test(line))).toHaveLength(1);
-    expect(warned.join('\n')).not.toContain(OLD);
+    for (const key of [OLD, 'sk-freshly-issued', 'sk-master-for-test']) expect(warned.join('\n')).not.toContain(key);
   });
 });
