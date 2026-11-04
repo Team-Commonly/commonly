@@ -30,9 +30,12 @@ export interface ModelPrice {
 //     api-docs.deepseek.com/quick_start/pricing, last modified 2026-09-24.
 //   Claude Sonnet 5: platform.claude.com/docs/en/about-claude/pricing,
 //     read 2026-10-15.
+//   Claude Haiku 5.5: the same page, read 2026-11-04. Prompts over 100K cost
+//     $0.50/$2.50; native prompts measured at most 32K over 30 days (F91).
 const PRICES: { match: RegExp; price: ModelPrice }[] = [
   { match: /deepseek/i, price: { input: 0.3, output: 1.2 } },
   { match: /sonnet/i, price: { input: 2, output: 10 } },
+  { match: /haiku-5-5/i, price: { input: 0.1, output: 0.5 } },
 ];
 
 // A model with no row is charged at a deliberately high rate, so a new route

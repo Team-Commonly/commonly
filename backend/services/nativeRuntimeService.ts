@@ -123,6 +123,14 @@ export const nativeModelFor = ({
   if (nativeModel && (connectorRun || !named || named === LEGACY_DEFAULT_MODEL)) return nativeModel;
   return named || chatModel || LEGACY_DEFAULT_MODEL;
 };
+// Request fields a Claude route needs. Haiku 5.5 thinks by default, and this
+// loop replays an assistant tool-call turn without its thinking blocks; with
+// thinking off every round replays cleanly (accepted at the default effort).
+// Unasked, LiteLLM requests the model's whole 128K output.
+const CLAUDE_MAX_TOKENS = 8192;
+export const modelRequestFields = (model: string): Record<string, unknown> => (
+  /^claude-/i.test(model) ? { thinking: { type: 'disabled' }, max_tokens: CLAUDE_MAX_TOKENS } : {}
+);
 const LITELLM_TIMEOUT_MS = Number(process.env.NATIVE_RUNTIME_TIMEOUT_MS) || 45_000;
 
 // Guardrail opt-in for the native cloud-agent inference path. Unlike dev agents
@@ -2397,6 +2405,7 @@ export async function runAgent(
           `${litellm.baseUrl}/chat/completions`,
           {
             model,
+            ...modelRequestFields(model),
             // A failed model must not silently substitute another vendor.
             disable_fallbacks: true,
             messages,

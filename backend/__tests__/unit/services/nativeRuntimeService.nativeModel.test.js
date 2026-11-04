@@ -163,6 +163,9 @@ describe('which model a native turn runs on', () => {
     const request = mockAxiosPost.mock.calls[0][1];
     expect(request.model).toBe(NATIVE);
     expect(request.disable_fallbacks).toBe(true);
+    // Thinking off, so a tool round replays without thinking blocks; a bounded output.
+    expect(request.thinking).toEqual({ type: 'disabled' });
+    expect(request.max_tokens).toBe(8192);
   });
 
   test('a turn holding a Calendar grant calls only the native model, with no fallback', async () => {
@@ -179,7 +182,11 @@ describe('which model a native turn runs on', () => {
   test('the same pinned model without a grant keeps its pin', async () => {
     mockAxiosPost.mockResolvedValueOnce(reply('Hi.'));
     await runAgent(installation('gpt-5.4'), TRIGGER);
-    expect(mockAxiosPost.mock.calls[0][1].model).toBe('gpt-5.4');
+    const request = mockAxiosPost.mock.calls[0][1];
+    expect(request.model).toBe('gpt-5.4');
+    // The Claude-only fields stay off every other route.
+    expect(request).not.toHaveProperty('thinking');
+    expect(request).not.toHaveProperty('max_tokens');
   });
 });
 

@@ -74,6 +74,18 @@ describe('userSpendForDay', () => {
     expect(b.usd).toBeCloseTo(0.0015, 6);
   });
 
+  // F91: native turns run on Claude Haiku 5.5. Without its row a turn priced at
+  // the unpriced rate (150x), and one ordinary conversation crossed $2.
+  test('prices Claude Haiku 5.5 at its own rate', async () => {
+    await AgentRun.create([
+      // 1M in + 1M out on Haiku 5.5: $0.10 + $0.50
+      run(USER_A, [{ model: 'claude-haiku-5-5', promptTokens: 1_000_000, completionTokens: 1_000_000 }]),
+    ]);
+
+    const rows = await spend.userSpendForDay(NOW);
+    expect(rows.find((r) => r.userId === String(USER_A)).usd).toBeCloseTo(0.6, 6);
+  });
+
   test('an unpriced model is charged at the high rate, and an unsplit turn as all output', async () => {
     await AgentRun.create([
       run(USER_A, [{ model: 'some-new-route', promptTokens: 1_000_000, completionTokens: 0 }]),

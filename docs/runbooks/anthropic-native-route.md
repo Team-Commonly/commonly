@@ -40,9 +40,17 @@ runtime ends the turn there:
   Haiku's price goes up. At Haiku prices that is about $2.50; allow for
   Claude's tokenizer and adaptive thinking, and it comes to about $3–6 a month
   against the $400 credit.
-- **Cap.** The route's `max_budget` of $50 a month. Over it, LiteLLM answers 429.
-- **Alarm.** The backend key's 80% budget alarm (`alerting.md`, LiteLLM key
-  budget), since native turns spend through that key.
+- **Cap.** Two layers. The route's `max_budget` of $50 a month is kept in
+  LiteLLM's router cache, so a restart (every config change) resets it: a
+  backstop, not the cap. The durable cap is the backend service key's $40 per
+  30 days in LiteLLM's Postgres. Native turns spend through that key, and it is
+  shared with DeepSeek spend.
+- **Alarm.** That key's 80% budget alarm (`alerting.md`, LiteLLM key budget)
+  fires at about $32 of combined spend. The per-user spend alarm
+  (`spendAlarmService`) prices Haiku 5.5 at its own rate.
+- **Request shape.** Claude turns go out with thinking off and `max_tokens`
+  8192 (`modelRequestFields`). Thinking off keeps a multi-round tool turn
+  replayable; the native loop does not carry thinking blocks between rounds.
 
 ## The key
 - **What it is.** A user-linked key in the Anthropic Default workspace, with no

@@ -55,8 +55,11 @@ describe('the Claude route for native turns', () => {
   test('the key reaches LiteLLM, and the model reaches native turns, only under the gate', () => {
     expect(gatedBlock('templates/secrets/api-keys.yaml', '- secretKey: anthropic-api-key'))
       .toContain('key: {{ $keyPrefix }}anthropic-api-key');
-    expect(gatedBlock('templates/agents/litellm-deployment.yaml', '- name: ANTHROPIC_API_KEY'))
-      .toContain('key: anthropic-api-key');
+    const keyEnv = gatedBlock('templates/agents/litellm-deployment.yaml', '- name: ANTHROPIC_API_KEY');
+    expect(keyEnv).toContain('key: anthropic-api-key');
+    // Optional: under Recreate, a required key the secret lacks would keep the
+    // new pod from starting with the old one already gone.
+    expect(keyEnv).toContain('optional: true');
     ['templates/core/backend-deployment.yaml', 'templates/ops/ops-runner-deployment.yaml'].forEach((file) => {
       expect(gatedBlock(file, '- name: NATIVE_RUNTIME_MODEL'))
         .toContain('value: {{ .Values.aiProviders.anthropic.nativeModel | quote }}');

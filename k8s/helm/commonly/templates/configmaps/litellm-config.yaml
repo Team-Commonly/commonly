@@ -48,10 +48,12 @@ data:
       # The price is set here so spend is counted even if this LiteLLM build has
       # no entry for the model: Haiku 5.5 is $0.10/$0.50 per MTok up to a 100K
       # prompt (native prompts measured at most 32K over 30 days, 11-04).
-      # $50 a month across every caller, against a $400 credit; over it LiteLLM
-      # answers 429 "crossed budget". The alarm is the backend key's 80% budget
-      # alarm (docs/runbooks/alerting.md#litellm-key-budget): native turns spend
-      # through that key.
+      # $50 a month across every caller, against a $400 credit. Like the DeepSeek
+      # group above, the month-to-date figure is in the router cache and a
+      # LiteLLM restart resets it: this is a backstop. The durable cap is the
+      # backend key's (in LiteLLM's Postgres, shared with DeepSeek spend), which
+      # native turns spend through, and its 80% budget alarm
+      # (docs/runbooks/alerting.md#litellm-key-budget).
       - model_name: {{ .Values.aiProviders.anthropic.nativeModel }}
         litellm_params:
           model: anthropic/{{ .Values.aiProviders.anthropic.nativeModel }}

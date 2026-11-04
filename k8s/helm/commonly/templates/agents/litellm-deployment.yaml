@@ -215,6 +215,9 @@ spec:
             secretKeyRef:
               name: api-keys
               key: anthropic-api-key
+              # A missing key fails only the Claude calls. Required, a pod
+              # recreated without it would never start and take every route down.
+              optional: true
         {{- end }}
         - name: DEEPSEEK_API_KEY
           valueFrom:
