@@ -83,8 +83,8 @@ test('ids that name Object properties show as ids, never as an inherited value',
     line(2, 'task.done', { id: 'board', type: 'system' }, { doneBy: 'constructor' }),
   ].join('\n')));
   setup();
-  expect(await screen.findByText('__proto__ ·', { exact: false })).toBeInTheDocument();
-  expect(screen.getByText('constructor')).toBeInTheDocument();
+  expect(await screen.findByText('__proto__')).toBeInTheDocument();
+  expect(screen.getByText('done by constructor')).toBeInTheDocument();
 });
 
 test('keeps reading past a full page, so a long chain is not shown short', async () => {
@@ -98,9 +98,9 @@ test('keeps reading past a full page, so a long chain is not shown short', async
     return Promise.reject(new Error(`unexpected ${url}`));
   });
   setup();
-  // Both pages render: the first and the last entry of the 1002 are on screen.
-  expect(await screen.findByText('Entry 1002')).toBeInTheDocument();
-  expect(screen.getByText('Entry 1')).toBeInTheDocument();
+  // Both pages render: all 1002 entries are rows on screen.
+  expect(await screen.findByText('1002 entries')).toBeInTheDocument();
+  expect(screen.getAllByRole('listitem')).toHaveLength(1002);
   expect(mockGet).toHaveBeenCalledWith(second, expect.anything());
   // A short second page ends the read: no third request.
   expect(mockGet.mock.calls.filter(([url]) => url.startsWith(recordUrl))).toHaveLength(2);
@@ -116,7 +116,8 @@ test('a failure partway through the chain shows the error, never the partial rec
   });
   setup();
   expect(await screen.findByText(i18n.t('taskRecord.store'))).toBeInTheDocument();
-  expect(screen.queryByText('Entry 1')).toBeNull();
+  expect(screen.queryByText('Claimed')).toBeNull();
+  expect(screen.queryAllByRole('listitem')).toHaveLength(0);
 });
 
 test('reads the JSONL as text and shows every entry with member names, unknown kinds by name', async () => {
@@ -130,15 +131,19 @@ test('reads the JSONL as text and shows every entry with member names, unknown k
   expect(screen.getByText('4 entries')).toBeInTheDocument();
   expect(screen.getByText(`Run ${RUN}`)).toBeInTheDocument();
   expect(screen.getByText('Released')).toBeInTheDocument();
-  expect(screen.getByText('blocked')).toBeInTheDocument();
+  expect(screen.getByText('reason blocked')).toBeInTheDocument();
   expect(screen.getByText('Done')).toBeInTheDocument();
   expect(screen.getByText('harness.switched')).toBeInTheDocument();
-  await waitFor(() => expect(screen.getAllByText(/scout \(agent\)/)).toHaveLength(2));
-  expect(screen.getByText(/^Board ·/)).toBeInTheDocument();
-  expect(screen.getByText(/^Unknown actor ·/)).toBeInTheDocument();
-  expect(screen.getByText('Ana')).toBeInTheDocument();
-  expect(screen.getByText('Entry 4')).toBeInTheDocument();
+  // An agent is its name and avatar, never "(agent)".
+  await waitFor(() => expect(screen.getAllByText('scout')).toHaveLength(2));
+  expect(screen.queryByText(/\(agent\)/)).toBeNull();
+  expect(screen.getByText('Board')).toBeInTheDocument();
+  expect(screen.getByText('Unknown actor')).toBeInTheDocument();
+  expect(screen.getByText('done by Ana')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { level: 2, name: 'TASK-7' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Back to board' })).toHaveAttribute('href', `/v2/pods/${POD}/board`);
+  // The intro sits behind the (i) beside the title, not on the page.
+  expect(screen.getByRole('button', { name: 'About the record' })).toBeInTheDocument();
 });
 
 test('an empty chain says so rather than showing a blank page', async () => {
@@ -149,7 +154,7 @@ test('an empty chain says so rather than showing a blank page', async () => {
 });
 
 test.each([
-  [404, "This record isn't available. The pod may not keep records, or you no longer have access to it.", false],
+  [404, "This record isn't availableThe pod may not keep records, or you no longer have access.", false],
   [403, 'Only members of this pod can read its record.', false],
   [503, 'The record store is unavailable right now. Try again shortly.', true],
   [500, 'Could not load the record. Try again.', true],
@@ -178,7 +183,7 @@ test('a JSON line that is not a record entry makes the record unreadable too', a
 test('a task id the route would refuse is never requested', async () => {
   wire(() => Promise.resolve(JSONL));
   setup('bad id');
-  expect(await screen.findByRole('alert')).toHaveTextContent("This record isn't available.");
+  expect(await screen.findByRole('alert')).toHaveTextContent("This record isn't available");
   expect(mockGet).not.toHaveBeenCalled();
 });
 
@@ -194,16 +199,20 @@ test('downloads the served JSONL bytes and the OTLP export as files', async () =
     let failOtlp = true;
     wire(() => Promise.resolve(JSONL), () => (failOtlp ? Promise.reject(new Error('down')) : Promise.resolve({ resourceSpans: [{ id: 1 }] })));
     setup();
-    fireEvent.click(await screen.findByRole('button', { name: 'Download JSONL' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Download' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Download JSONL' }));
+    expect(screen.queryByRole('menu')).toBeNull();
     expect(saved[0].name).toBe('TASK-7.record.jsonl');
     expect(saved[0].type).toBe('application/x-ndjson');
     await expect(saved[0].text).resolves.toBe(JSONL);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Download OTLP' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Download OTLP' }));
     expect(await screen.findByText('Could not download the record. Try again.')).toBeInTheDocument();
     expect(saved).toHaveLength(1);
     failOtlp = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Download OTLP' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Download OTLP' }));
     await waitFor(() => expect(saved).toHaveLength(2));
     expect(saved[1].name).toBe('TASK-7.record.otlp.json');
     await expect(saved[1].text).resolves.toBe(JSON.stringify({ resourceSpans: [{ id: 1 }] }));
@@ -217,6 +226,48 @@ test('Chinese copy covers the page', async () => {
   setup();
   expect(await screen.findByText('已认领')).toBeInTheDocument();
   expect(screen.getByText('4条记录')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: '下载 JSONL' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '下载' }));
+  expect(screen.getByRole('menuitem', { name: '下载 JSONL' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: '返回看板' })).toBeInTheDocument();
+  expect(screen.getByText('原因：blocked')).toBeInTheDocument();
+  expect(screen.getByText('由 Ana 完成')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '关于此记录' })).toBeInTheDocument();
+});
+
+test('an entry\'s data folds under its row, entry number included', async () => {
+  wire(() => Promise.resolve(JSONL));
+  setup();
+  const row = (await screen.findByText('Released')).closest('button') as HTMLButtonElement;
+  expect(row).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText('reason', { selector: 'dt' })).toBeNull();
+  fireEvent.click(row);
+  expect(row).toHaveAttribute('aria-expanded', 'true');
+  const more = document.getElementById(row.getAttribute('aria-controls') as string) as HTMLElement;
+  expect(more).toHaveTextContent('entry2reasonblocked');
+  fireEvent.click(row);
+  expect(row).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText('reason', { selector: 'dt' })).toBeNull();
+});
+
+test('each row says its entry in one line: lease, ask, decision, tool call', async () => {
+  wire(() => Promise.resolve([
+    line(1, 'task.claimed', { id: AGENT, type: 'agent' }, { leaseUntil: '2026-10-28T10:31:00.000Z' }),
+    line(2, 'permission.requested', { id: AGENT, type: 'agent' }, { question: 'Open pull request #409?', askedOf: { id: HUMAN, role: 'requester' } }),
+    line(3, 'permission.decided', { id: HUMAN, type: 'human' }, { outcome: 'selected', kind: 'allow_once', decidedBy: HUMAN }),
+    line(4, 'tool.call', { id: AGENT, type: 'agent' }, { toolCallId: 'tc-4', title: 'Open', name: 'gh.pr_create', status: 'completed' }),
+  ].join('\n')));
+  setup();
+  const lease = new Date('2026-10-28T10:31:00.000Z').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  expect(await screen.findByText(`lease until ${lease}`)).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByText('Open pull request #409? · asked Ana')).toBeInTheDocument());
+  expect(screen.getByText('allow once')).toBeInTheDocument();
+  expect(screen.getByText('gh.pr_create · completed')).toBeInTheDocument();
+});
+
+test('while the record loads, the header is in place and a status is announced', () => {
+  mockGet.mockImplementation(() => new Promise(() => undefined));
+  setup();
+  expect(screen.getByRole('status')).toHaveTextContent('Loading record…');
+  expect(screen.getByRole('heading', { level: 1, name: 'Task record' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
 });

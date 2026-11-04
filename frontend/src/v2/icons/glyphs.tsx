@@ -110,3 +110,29 @@ export const ShellGlyph: React.FC<{ name: ShellGlyphName; size?: number }> = ({ 
       return <G size={size}><path d="m6 9 6 6 6-6" /></G>;
   }
 };
+
+export type RecordGlyphName = 'play' | 'term' | 'block' | 'key' | 'download' | 'back' | 'clock' | 'dot' | 'activity';
+
+/** D215 task record (s-task-record): one mark per entry kind, plus the page's keys. */
+export const RecordGlyph: React.FC<{ name: RecordGlyphName; size?: number }> = ({ name, size }) => {
+  switch (name) {
+    case 'play':
+      return <G size={size}><path d="M7 5v14l11-7z" /></G>;
+    case 'term':
+      return <G size={size}><rect x="2.5" y="4" width="19" height="16" rx="3" /><path d="m7 9 3 3-3 3M13 15h4" /></G>;
+    case 'block':
+      return <G size={size}><circle cx="12" cy="12" r="9" /><path d="m5.6 5.6 12.8 12.8" /></G>;
+    case 'key':
+      return <G size={size}><circle cx="8" cy="15" r="4" /><path d="m10.8 12.2 8.7-8.7M17 6l2.5 2.5M14.5 8.5 16.5 10.5" /></G>;
+    case 'download':
+      return <G size={size}><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></G>;
+    case 'back':
+      return <G size={size}><path d="M19 12H5M12 19l-7-7 7-7" /></G>;
+    case 'clock':
+      return <G size={size}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></G>;
+    case 'activity':
+      return <G size={size}><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></G>;
+    default:
+      return <G size={size}><circle cx="12" cy="12" r="3" /></G>;
+  }
+};

@@ -5756,6 +5756,53 @@ test('standalone teammate invite button keeps desktop and phone touch targets', 
   expect(css).toMatch(/@media \(max-width: 760px\) \{\s*\.v2-chat__new-pod-action--invite > \.v2-chat__new-pod-copy \{ min-height: 44px;/);
 });
 
+// d215 s-task-record: the task record has its own sheet and v2-task-record__* names.
+describe('task record layout', () => {
+  const css = read('../components/V2TaskRecord.css');
+  const page = read('../components/V2TaskRecord.tsx');
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
+  const scope = '.v2-feature--task-record';
+  test('the page imports its own sheet and renders none of the run trace\'s classes', () => {
+    expect(page).toContain("import './V2TaskRecord.css'");
+    expect(page).not.toContain('V2RunTrace.css');
+    expect(page).not.toMatch(/v2-run-trace/);
+    expect(read('../V2App.tsx')).toMatch(/<V2TaskRecord \/>, false, false, 'v2-feature--task-record'\)/);
+  });
+  test('every v2-task-record class the page renders has a rule in its sheet', () => {
+    const used = [...new Set([...page.matchAll(/v2-task-record__[a-z-]+/g)].map((m) => m[0]))];
+    expect(used.length).toBeGreaterThan(10);
+    used.forEach((name) => expect(css).toContain(`.${name}`));
+  });
+  test('the head runs the pane edge to edge: no legacy max width, no body padding at 1440 or 390', () => {
+    expect(ruleBody(css, `${scope} .v2-feature__legacy`)).toContain('max-width: none');
+    expect(ruleBody(css, `${scope} > .v2-feature__body`)).toContain('padding: 0 0 28px');
+    expect(ruleBody(css, `${scope} .v2-task-record__head`)).toContain('border-bottom: 1px solid var(--v2-border-soft)');
+    expect(phone).toMatch(/\.v2-feature--task-record > \.v2-feature__body \{ padding: 0; \}/);
+  });
+  test('a row is a 44px target at 1440 and 56px at 390, and its data line never pushes the page sideways', () => {
+    expect(ruleBody(css, `${scope} .v2-task-record__row`)).toContain('min-height: 44px');
+    expect(phone).toMatch(/\.v2-task-record__row \{[^}]*min-height: 56px/);
+    expect(ruleBody(css, `${scope} .v2-task-record__main`)).toContain('min-width: 0');
+    expect(ruleBody(css, `${scope} .v2-task-record__d`)).toContain('text-overflow: ellipsis');
+    expect(ruleBody(css, `${scope} .v2-task-record__more dd`)).toContain('overflow-wrap: anywhere');
+    expect(ruleBody(css, `${scope} .v2-task-record__foot code`)).toContain('overflow-wrap: anywhere');
+  });
+  test('the 390 head keys are 44px and the Download key is the icon alone', () => {
+    expect(phone).toMatch(/\.v2-task-record__download-key \{ width: 44px; height: 44px;/);
+    expect(phone).toMatch(/\.v2-task-record__download-word,[^{]*\{ display: none; \}/);
+    expect(phone).toMatch(/\.v2-task-record__body \{ padding: 16px 16px 12px; \}/);
+    expect(phone).toMatch(/\.v2-task-record__menu button \{ height: 44px; \}/);
+  });
+  test('Done is the only filled mark, in cobalt soft; no rail or side border anywhere (D225)', () => {
+    expect(ruleBody(css, `${scope} .v2-task-record__mk--done`)).toContain('background: var(--v2-accent-soft)');
+    const filled = [...bare.matchAll(/([^{}@]+)\{([^{}]*)\}/g)].filter(([, , body]) => /var\(--v2-accent(-soft)?\)/.test(body)).map(([, sel]) => sel.trim());
+    expect(filled.filter((sel) => /__mk/.test(sel))).toEqual([`${scope} .v2-task-record__mk--done`]);
+    expect(bare).not.toMatch(/border-(left|inline-start)/);
+    expect(bare).not.toMatch(/inset\s+-?[1-9]\d*px\s+0\s+0/);
+  });
+});
+
 describe('run trace layout', () => {
   const css = read('../components/V2RunTrace.css');
   test('long attribution IDs wrap, phone records stack, and links meet touch height', () => {
@@ -5773,19 +5820,8 @@ describe('run trace layout', () => {
     const phone = css.slice(css.indexOf('@media (max-width: 760px)'));
     expect(phone).toMatch(/[,{]\s*\.v2-run-trace-link a[,\s][^{]*\{[^}]*min-height: 44px/);
   });
-  test('every run-trace class the task record page renders keeps a rule in the sheet it imports', () => {
-    // V2TaskRecord imports V2RunTrace.css; a class it still renders must not lose its rule when the run
-    // trace page stops using it (#3322 review: __retention dropped, the record intro went full size).
-    const record = read('../components/V2TaskRecord.tsx');
-    expect(record).toContain("import './V2RunTrace.css'");
-    const used = [...new Set([...record.matchAll(/v2-run-trace__[a-z-]+/g)].map((m) => m[0]))];
-    expect(used.length).toBeGreaterThan(0);
-    used.forEach((name) => expect(css).toContain(`.${name}`));
-    expect(ruleBody(css, '.v2-run-trace__retention')).toContain('color: var(--v2-text-muted)');
-  });
-  test('task record downloads wrap at 390 rather than push the page sideways (TASK-562)', () => {
-    expect(ruleBody(css, '.v2-task-record__downloads')).toContain('flex-wrap: wrap');
-    expect(ruleBody(css, '.v2-task-record__entries')).toContain('list-style: none');
+  test('the run trace sheet carries no task record rule, so neither page moves the other (d215 s-task-record)', () => {
+    expect(css).not.toMatch(/v2-task-record/);
   });
 });
 

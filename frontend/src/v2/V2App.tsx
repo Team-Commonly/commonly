@@ -359,7 +359,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="pods/:podId/tasks/:taskId/record"
-                  element={feature(t('taskRecord.title'), <V2TaskRecord />, false, false)}
+                  element={feature(t('taskRecord.title'), <V2TaskRecord />, false, false, 'v2-feature--task-record')}
                 />
                 <Route
                   path="activity"
