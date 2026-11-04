@@ -103,6 +103,15 @@ const waitFor = async (what, check, timeoutMs) => {
   return fail(`${what}: not within ${Math.round(timeoutMs / 1000)} s`);
 };
 const beatSince = (t) => () => beats.find((b) => b.at > t);
+// Every install, restart and watchdog start must leave ONE daemon: schtasks /End kills the launcher
+// only, so a daemon that did not follow its launcher out showed up here as two (11-04).
+const exactlyOneDaemon = async (when) => {
+  await sleep(8000);
+  const pids = await daemonPids();
+  if (pids.length !== 1) fail(`${when}: expected one daemon process, found ${pids.length} (${pids.join(', ')})`);
+  log(`${when}: one daemon (${pids[0]})`);
+  return pids;
+};
 const newDaemonPid = (old) => async () => (await daemonPids()).find((p) => !old.includes(p));
 
 const dumpLogs = () => {
@@ -125,7 +134,8 @@ try {
   const installedAt = Date.now() - 1000;
   await waitFor('first check-in after install', beatSince(installedAt), 90_000);
   const first = await waitFor('daemon process', daemonPids, 30_000);
-  if (beats.at(-1).body.sandbox !== undefined) fail('a default install reported a sandbox opt-in');
+  if (beats.at(-1).body.sandbox !== 'default') fail(`a default install reported sandbox ${JSON.stringify(beats.at(-1).body.sandbox)}`);
+  await exactlyOneDaemon('after install');
 
   // ── kill the daemon: the launcher restarts it ─────────────────────────────
   const killedAt = Date.now();
@@ -133,6 +143,7 @@ try {
   log(`killed daemon pid ${first[0]}`);
   await waitFor('daemon back after kill (new pid)', newDaemonPid(first), 60_000);
   await waitFor('check-in from the restarted daemon', beatSince(killedAt + 1000), 60_000);
+  await exactlyOneDaemon('after the launcher restarted it');
 
   // ── kill the launcher and the daemon: the task's watchdog brings it back ──
   const before = [...await daemonPids(), ...await launcherPids()];
@@ -144,14 +155,30 @@ try {
   log(`killed launcher and daemon (${before.join(', ')})`);
   await waitFor('daemon back after the launcher was killed (watchdog)', newDaemonPid(before), 150_000);
   await waitFor('check-in after the watchdog restart', beatSince(watchdogAt + 1000), 60_000);
+  await exactlyOneDaemon('after the watchdog restart');
+
+  // ── killing only the launcher takes its daemon with it, then the watchdog restarts both
+  const onlyLauncher = await launcherPids();
+  const daemonBefore = await daemonPids();
+  await run('taskkill', ['/F', '/PID', String(onlyLauncher[0])]);
+  log(`killed only the launcher (${onlyLauncher[0]})`);
+  await waitFor('its daemon exits with it', async () => !(await daemonPids()).some((p) => daemonBefore.includes(p)), 30_000);
+  await waitFor('daemon back via the watchdog', newDaemonPid(daemonBefore), 150_000);
+  await exactlyOneDaemon('after the launcher-only kill');
 
   // ── the unsandboxed opt-in reaches the check-in, and installing without it removes it
   await cli('daemon', 'install', '--unsandboxed');
   const optedAt = Date.now();
   await waitFor('check-in carrying the opt-in', () => beats.find((b) => b.at > optedAt && b.body.sandbox === 'unsandboxed-opted-in'), 90_000);
+  await exactlyOneDaemon('after install --unsandboxed');
   await cli('daemon', 'install');
   const clearedAt = Date.now();
-  await waitFor('check-in without the opt-in after a plain install', () => beats.find((b) => b.at > clearedAt + 1000 && b.body.sandbox === undefined), 90_000);
+  await waitFor('check-in without the opt-in after a plain install', () => beats.find((b) => b.at > clearedAt + 1000 && b.body.sandbox === 'default'), 90_000);
+  const [plain] = await exactlyOneDaemon('after a plain reinstall');
+  // With one daemon left, every check-in from here on must come without the opt-in.
+  const plainAt = Date.now();
+  await sleep(35_000);
+  if (beats.some((b) => b.at > plainAt && b.body.sandbox !== 'default')) fail(`a check-in still carried the opt-in after a plain reinstall (daemon ${plain})`);
 
   // ── stop: disabled, nothing running, and the watchdog does not restart it
   await cli('daemon', 'stop');

@@ -40,7 +40,9 @@ describe('connectSnippet', () => {
     expect(connectSnippet({ ...base, os: 'windows' })).not.toMatch(/export /);
   });
 
-  test('--adapter and --allow ride on the run line; --unsandboxed comes last, on Windows only', () => {
+  // Codex keeps its own permission profile, which --unsandboxed doesn't change,
+  // so only Claude Code's Windows line carries the flag.
+  test('--adapter and --allow ride on the run line; --unsandboxed comes last, for Claude Code on Windows only', () => {
     expect(connectSnippet({ ...base, os: 'unix', allow: 'write,web' }).split('\n')[3])
       .toBe('commonly agent run my-claude --adapter claude --allow write,web');
     expect(connectSnippet({ ...base, os: 'unix', adapter: 'codex' }).split('\n')[3])
@@ -49,7 +51,7 @@ describe('connectSnippet', () => {
     expect(connectSnippet({ ...base, os: 'windows', allow: 'write' }).split('\n')[3])
       .toBe('commonly agent run my-claude --adapter claude --allow write --unsandboxed');
     expect(connectSnippet({ ...base, os: 'windows', adapter: 'codex' }).split('\n')[3])
-      .toBe('commonly agent run my-claude --adapter codex --unsandboxed');
+      .toBe('commonly agent run my-claude --adapter codex');
   });
 });
 

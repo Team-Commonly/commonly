@@ -383,5 +383,5 @@
   background: var(--v2-bg-subtle);
   border-radius: 4px;
 }
-/* Commands named inside the Windows note: a flag never splits at its hyphens. */
-.v2-byo__listen-note code { font-family: var(--v2-font-mono); font-size: 12px; white-space: nowrap; }
+/* Commands named inside the Windows notes: a flag never splits at its hyphens. */
+.v2-byo__listen-note code, .v2-byo__add-computer > .v2-byo__hint code { font-family: var(--v2-font-mono); font-size: 12px; white-space: nowrap; }

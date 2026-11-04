@@ -413,20 +413,30 @@ const buildClaudeEnv = (input, state, expansionEnv = {}, credentialFile = null, 
 
 const absoluteToolDeny = (path) => `Read(/${path}/**)`;
 
+// D245: Claude Code matches permission paths in POSIX form on Windows
+// (C:\Users\ada becomes /c/Users/ada), so an absolute deny written from a
+// Windows path would match nothing.
+const permissionPath = (path, platform) => (platform === 'win32'
+  ? path.replace(/\\/g, '/').replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`)
+  : path);
+
 // The tools that read or write the seat's agent-wide memory.
 const MEMORY_TOOLS = Object.freeze(['commonly_read_agent_memory', 'commonly_write_agent_memory', 'commonly_save_my_memory']);
 
-const buildPublicClaudePolicyArgs = (mcpToolPatterns, { trust, allow = [], memoryWithheld = false } = {}) => {
-  const home = homedir();
+const buildPublicClaudePolicyArgs = (mcpToolPatterns, {
+  trust, allow = [], memoryWithheld = false, platform = process.platform, home: homeOverride = null,
+} = {}) => {
+  const home = homeOverride || homedir();
+  const deny = (sub) => absoluteToolDeny(permissionPath(join(home, sub), platform));
   // `allow` is already narrowed to a workspace seat's grants (workspaceGrants).
   const granted = allow.flatMap((grant) => WORKSPACE_ALLOW_TOOLS[grant] || []);
   const deniedReads = [
-    absoluteToolDeny(join(home, '.commonly')),
-    absoluteToolDeny(join(home, '.claude')),
-    absoluteToolDeny(join(home, '.codex')),
-    absoluteToolDeny(join(home, '.ssh')),
-    absoluteToolDeny(join(home, '.aws')),
-    absoluteToolDeny(join(home, '.config')),
+    deny('.commonly'),
+    deny('.claude'),
+    deny('.codex'),
+    deny('.ssh'),
+    deny('.aws'),
+    deny('.config'),
     'Read(//private/tmp/**)',
     'Read(./.commonly/**)',
     'Read(./.codex/**)',
@@ -1035,6 +1045,16 @@ const claudeInstallRefusal = (claudeBin) => new Error(
   + `\`${claudeBin}\` could not be resolved`,
 );
 
+/**
+ * D245: native Windows has no OS jail, and the user chose to run without one
+ * (`--unsandboxed`). Read from the spawn context only, set by `agent run`, never
+ * from the environment. The seat keeps its trust, so everything the trust
+ * brings except the jail still applies.
+ */
+const policyOnlyHost = (ctx) => ctx.hostUnconfined === true
+  && (ctx._platform || process.platform) === 'win32'
+  && isConfinedTrust(ctx.environment?.sandbox?.trust);
+
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
   const claudeEnv = withClaudePath(ctx.claudeEnv);
@@ -1091,6 +1111,21 @@ const prepareArgv = async (innerArgv, ctx) => {
         }
       })
     : [];
+  if (policyOnlyHost(ctx)) {
+    // The bwrap branch's policy, without the jail: on a host with no OS
+    // isolation the tool policy is the whole boundary, so it is never dropped.
+    innerArgv = [
+      ...innerArgv,
+      ...buildPublicClaudePolicyArgs(allowedPatterns, {
+        ...(sandboxTrust === 'workspace' ? { trust: sandboxTrust, allow: grants } : {}),
+        memoryWithheld: ctx.memoryWithheld === true,
+        platform: ctx._platform || process.platform,
+        home: ctx._home || null,
+      }),
+      ...(ctx.publicSkillArgs || []),
+    ];
+    return { cmd: 'claude', args: innerArgv, env: claudeEnv };
+  }
   // A public trust MUST resolve to an enforced mode. Absent mode is resolved
   // above; anything else that lands here (the literal 'none', a typo, a
   // non-string) used to fall through to the bare `claude` spawn below — an
@@ -1365,11 +1400,13 @@ export default {
     let mcpConfig = null;
     let publicClaudeState = null;
     let publicSkillArgs = [];
-    const publicNativeSandbox = publicTrust
+    // D245: no jail to prepare for on a policy-only Windows host.
+    const jailed = !policyOnlyHost(ctx);
+    const publicNativeSandbox = jailed && publicTrust
       && PUBLIC_SANDBOX_MODES.has(resolvePublicSandboxMode(ctx.environment?.sandbox));
-    const publicBwrapSandbox = publicTrust
+    const publicBwrapSandbox = jailed && publicTrust
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
-    const workspaceBwrapSandbox = ctx.environment?.sandbox?.trust === 'workspace'
+    const workspaceBwrapSandbox = jailed && ctx.environment?.sandbox?.trust === 'workspace'
       && resolvePublicSandboxMode(ctx.environment?.sandbox) === 'bwrap';
     try {
       // Trust is normalized at entry (legacy `internal` reads as public). The

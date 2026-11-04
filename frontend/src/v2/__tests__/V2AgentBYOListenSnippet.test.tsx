@@ -323,8 +323,13 @@ describe('BYO listener snippet', () => {
       expect(screen.queryByTestId('byo-listen-wont-answer')).toBeNull();
       const note = screen.getByTestId('byo-listen-windows');
       expect(note).toHaveTextContent(/^Windows has no sandbox for \S+, so it runs with your own access to files and commands\. You choose that by adding --unsandboxed/);
+      expect(note).toHaveTextContent('It still keeps Commonly’s restricted tool settings, read-only in its folder unless you add --allow, but nothing at the OS level stops it.');
       expect(note).toHaveTextContent('commonly daemon install --unsandboxed sets it up as a task that starts when you log in');
       expect(note).not.toHaveTextContent(/WSL|Codex/);
+      // PowerShell, not Terminal, on Windows.
+      expect(screen.getByTestId('byo-listen-stops-on-close')).toHaveTextContent(/^This stops when this PowerShell window closes\./);
+      expect(screen.getByText(/Keep this PowerShell window open\./)).toBeInTheDocument();
+      expect(screen.getByTestId('byo-listen')).not.toHaveTextContent(/Terminal (window|open)/);
       // It sits directly above the lines it explains.
       expect(note.nextElementSibling).toContainElement(listener());
       // The macOS/Linux confinement notes don't hold here, and npm's EACCES advice is a Unix one.
@@ -451,13 +456,16 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^By default, on macOS/);
     });
 
-    test('Codex on Windows: the PowerShell listener command with --adapter codex, and the Windows note', async () => {
+    // --unsandboxed doesn't change Codex (it keeps its own permission profile),
+    // so its line has no flag and the note is the Codex line alone.
+    test('Codex on Windows: the PowerShell listener command without --unsandboxed, and only the Codex note', async () => {
       setUserAgent(WINDOWS);
       await issueToken('codex');
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly agent run \S+ --adapter codex --unsandboxed$/);
+      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly agent run \S+ --adapter codex$/);
+      expect(listener()?.textContent).not.toContain('--unsandboxed');
       expect(listener()?.textContent).toContain('$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"');
-      expect(screen.getByTestId('byo-listen-windows')).toHaveTextContent(/Codex hasn’t been tested on Windows yet\.$/);
-      expect(screen.getByTestId('byo-listen-windows')).not.toHaveTextContent(/WSL/);
+      expect(screen.getByTestId('byo-listen-windows').textContent)
+        .toBe('Codex hasn’t been tested on Windows yet. On Windows, Commonly gives it no connector grants.');
       expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
       expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
     });

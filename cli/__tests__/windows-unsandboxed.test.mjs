@@ -1,6 +1,6 @@
 // D245: the user's own opt-in to run without a sandbox on native Windows.
-// The rule the tests pin: only a local action decides it, the stored record is
-// never changed, and an unconfined seat never carries the grant broker.
+// The rule the tests pin: only a local action decides it, the environment never
+// carries it, and no seat on native Windows carries the grant broker.
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
@@ -13,7 +13,7 @@ import {
   saveUnsandboxedOptIn,
   unsandboxedFlagRefusal,
   unsandboxedMarkerPath,
-  unsandboxedRunEnvironment,
+  hostUnconfinedForRun,
 } from '../src/lib/sandbox/windows-unsandboxed.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../src/lib/sandbox/host-check.js';
 import { detectBwrap } from '../src/lib/sandbox/bwrap.js';
@@ -86,48 +86,68 @@ describe('who decides for a run', () => {
   });
 });
 
-describe('the environment one run hands its adapter', () => {
-  test('opted in on win32: a Claude seat the host would refuse runs with no sandbox, and the record is not touched', () => {
+describe('which runs skip the OS jail', () => {
+  test('only win32, only the user\'s own opt-in, only Claude', () => {
+    expect(hostUnconfinedForRun({ optedIn: true, adapterName: 'claude', platform: 'win32' })).toBe(true);
+    for (const optedIn of [false, undefined, 'true', 1, { unsandboxed: true }]) {
+      expect(hostUnconfinedForRun({ optedIn, adapterName: 'claude', platform: 'win32' })).toBe(false);
+    }
+    for (const platform of ['darwin', 'linux']) {
+      expect(hostUnconfinedForRun({ optedIn: true, adapterName: 'claude', platform })).toBe(false);
+    }
+    // OpenCode and Qwen stay refused; Codex is never refused on Windows.
+    for (const adapterName of ['codex', 'opencode', 'qwen', 'pi']) {
+      expect(hostUnconfinedForRun({ optedIn: true, adapterName, platform: 'win32' })).toBe(false);
+    }
+  });
+
+  test('host-check admits an opted-in Claude seat on Windows and keeps its trust', () => {
     const stored = connectPage();
-    const before = JSON.stringify(stored);
-    const run = unsandboxedRunEnvironment(stored, { adapterName: 'claude', optedIn: true, platform: 'win32' });
-    expect(run.sandbox).toEqual({ mode: 'none' });
-    expect(run.mcp).toEqual(stored.mcp);
-    expect(JSON.stringify(stored)).toBe(before);
-    expect(hostSandboxRefusal({ environment: run, adapterName: 'claude', platform: 'win32' })).toBeNull();
+    expect(hostSandboxRefusal({ environment: stored, adapterName: 'claude', platform: 'win32', hostUnconfined: true })).toBeNull();
+    // The environment is not what admits it: the same record without the local flag is refused.
+    expect(hostSandboxRefusal({ environment: stored, adapterName: 'claude', platform: 'win32' })).toContain(UNSANDBOXED_FLAG);
+    expect(stored.sandbox.trust).toBe('public');
   });
 
-  test('an unconfined run never carries the grant broker', () => {
-    const run = unsandboxedRunEnvironment(connectPage(), { adapterName: 'claude', optedIn: true, platform: 'win32' });
-    const refusals = [];
-    const out = withholdGrantBroker(run, 'claude', { instanceUrl: INSTANCE, platform: 'win32', onRefuse: (r) => refusals.push(r.reason) });
-    expect(out.mcp).toEqual([kernel]);
-    expect(refusals).toEqual(['sandbox_mode_none']);
-  });
-
-  test('nothing the server sends can stand in for the user: without the local opt-in the environment is returned as is', () => {
+  test('nothing the server sends can stand in for the user', () => {
     const forged = [
-      { ...connectPage(), unsandboxed: true },
-      { ...connectPage(), sandbox: { ...defaultSeatSandbox(), unsandboxed: true, optedIn: true } },
-      { ...connectPage(), sandbox: { trust: 'public', mode: 'none' } },
+      { ...connectPage(), unsandboxed: true, hostUnconfined: true },
+      { ...connectPage(), sandbox: { ...defaultSeatSandbox(), unsandboxed: true, hostUnconfined: true } },
     ];
     for (const environment of forged) {
-      for (const optedIn of [false, undefined, 'true', 1, { unsandboxed: true }]) {
-        expect(unsandboxedRunEnvironment(environment, { adapterName: 'claude', optedIn, platform: 'win32' })).toBe(environment);
+      expect(hostSandboxRefusal({ environment, adapterName: 'claude', platform: 'win32' })).toContain(UNSANDBOXED_FLAG);
+      for (const hostUnconfined of ['true', 1, {}]) {
+        expect(hostSandboxRefusal({ environment, adapterName: 'claude', platform: 'win32', hostUnconfined })).not.toBeNull();
       }
     }
-    // And the forged shapes are still refused on Windows, as before.
-    expect(hostSandboxRefusal({ environment: forged[0], adapterName: 'claude', platform: 'win32' })).toContain(UNSANDBOXED_FLAG);
   });
 
-  test('off Windows, and for seats the host does confine (Codex), nothing changes', () => {
-    const env = connectPage();
+  test('OpenCode is still refused on Windows with the flag, and its message offers no flag', () => {
+    const refusal = hostSandboxRefusal({ environment: connectPage(), adapterName: 'opencode', platform: 'win32', hostUnconfined: true });
+    expect(refusal).not.toBeNull();
+    expect(refusal).not.toContain(UNSANDBOXED_FLAG);
+  });
+});
+
+describe('no seat on native Windows carries the grant broker', () => {
+  for (const adapter of ['claude', 'codex']) {
+    test(`${adapter}: withheld, with a reason that names Windows`, () => {
+      const refusals = [];
+      const out = withholdGrantBroker(connectPage(), adapter, {
+        instanceUrl: INSTANCE, platform: 'win32', onRefuse: (r) => refusals.push(r),
+      });
+      expect(out.mcp).toEqual([kernel]);
+      expect(refusals.map((r) => r.reason)).toEqual(['sandbox_mode_unenforceable']);
+      expect(refusals[0].detail).toContain('native Windows');
+      expect(refusals[0].detail).not.toMatch(/macOS only|bwrap on Linux/);
+    });
+  }
+
+  test('off Windows the same seat keeps it', () => {
     for (const platform of ['darwin', 'linux']) {
-      expect(unsandboxedRunEnvironment(env, { adapterName: 'claude', optedIn: true, platform })).toBe(env);
+      const out = withholdGrantBroker(connectPage(), 'claude', { instanceUrl: INSTANCE, platform });
+      expect(out.mcp).toEqual([kernel, broker]);
     }
-    expect(unsandboxedRunEnvironment(env, { adapterName: 'codex', optedIn: true, platform: 'win32' })).toBe(env);
-    const none = { mcp: [kernel] };
-    expect(unsandboxedRunEnvironment(none, { adapterName: 'claude', optedIn: true, platform: 'win32' })).toBe(none);
   });
 });
 
@@ -138,7 +158,10 @@ describe('what a Windows user is told', () => {
     expect(message).toContain(`commonly agent run <name> ${UNSANDBOXED_FLAG}`);
     expect(message).toContain(`commonly daemon install ${UNSANDBOXED_FLAG}`);
     expect(message).toContain('no connector grants');
+    expect(message).toContain("Commonly's restricted tool settings");
     expect(message).not.toContain('WSL');
+    // The flag is offered only where it does something.
+    expect(windowsSandboxMessage('opencode')).not.toContain(UNSANDBOXED_FLAG);
   });
 
   test('the bwrap probe on Windows says Windows and the flag, not macOS', () => {

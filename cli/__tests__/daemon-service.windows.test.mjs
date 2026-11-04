@@ -24,6 +24,8 @@ import {
   encodeTaskXml,
   psQuote,
   windowsLauncherScript,
+  LAUNCHER_PID_ENV,
+  watchWindowsLauncher,
   windowsTaskXml,
   windowsUserId,
 } from '../src/lib/daemon-service-windows.js';
@@ -120,16 +122,25 @@ describe('the launcher', () => {
 
   test('restarts on every exit except 77 and 78, which disable the task and stop (systemd: RestartPreventExitStatus=77 78)', () => {
     expect(script).toContain('while ($true)');
-    expect(script).toMatch(/if \(\$code -eq 77 -or \$code -eq 78\) \{\s*& schtasks\.exe \/Change \/TN \$task \/DISABLE \| Out-Null\s*exit \$code\s*\}/);
+    expect(script).toMatch(/if \(\$code -eq 77 -or \$code -eq 78\) \{\s*& schtasks\.exe \/Change \/TN \$task \/DISABLE \| Out-Null\s*if \(\$LASTEXITCODE -eq 0\) \{ exit \$code \}/);
+    // N8: a park whose disable failed sleeps instead of exiting into the watchdog.
+    expect(script).toMatch(/could not be disabled; parked[^\n]*\n\s*while \(\$true\) \{ Start-Sleep -Seconds 3600 \}/);
     expect(script).toContain('Start-Sleep -Seconds 5');
     // No other exit: a clean 0 restarts too, as Restart=always does.
-    expect(script.match(/^\s*exit\b/gm)).toHaveLength(1);
+    expect(script.match(/\bexit \$code\b/g)).toHaveLength(1);
+    expect(script.match(/^\s*exit\b/gm)).toBeNull();
   });
 
   test('loads the service environment before node starts, and appends the log', () => {
     expect(script.indexOf('ConvertFrom-Json')).toBeLessThan(script.indexOf('& $node'));
     expect(script).toContain("[Environment]::SetEnvironmentVariable($p.Name, [string]$p.Value, 'Process')");
     expect(script).toContain('Add-Content -LiteralPath $log -Encoding UTF8');
+  });
+
+  test('hands node its own pid (so ending the task ends the daemon) and reads node as UTF-8', () => {
+    expect(script).toContain(`$env:${LAUNCHER_PID_ENV} = "$PID"`);
+    expect(script).toContain('[Console]::OutputEncoding = [System.Text.Encoding]::UTF8');
+    expect(script.indexOf(LAUNCHER_PID_ENV)).toBeLessThan(script.indexOf('& $node'));
   });
 
   test('a quote in a path cannot close the string, including the curly ones PowerShell also accepts', () => {
@@ -240,5 +251,53 @@ describe('windows uninstall and controls', () => {
     await restartDaemonService({ platform: 'win32', home, execCmd: restart });
     expect(restart.mock.calls[0][0]).toEqual(['schtasks', '/End', '/TN', WINDOWS_TASK_NAME]);
     expect(restart.mock.calls.slice(1).map(([argv]) => argv)).toEqual(start.mock.calls.map(([argv]) => argv));
+  });
+});
+
+describe('the daemon follows its launcher (schtasks /End kills the launcher only; seen on windows-latest)', () => {
+  const harness = (env, platform = 'win32') => {
+    const ticks = [];
+    const onGone = jest.fn();
+    let alive = true;
+    const stop = watchWindowsLauncher({
+      env, platform, onGone, isAlive: () => alive,
+      setIntervalFn: (fn) => { ticks.push(fn); return ticks.length; },
+      clearIntervalFn: jest.fn(),
+    });
+    return { ticks, onGone, kill: () => { alive = false; }, stop };
+  };
+
+  test('shuts down once the launcher pid is gone, and only once', () => {
+    const h = harness({ [LAUNCHER_PID_ENV]: '4242' });
+    expect(h.ticks).toHaveLength(1);
+    h.ticks[0]();
+    expect(h.onGone).not.toHaveBeenCalled();
+    h.kill();
+    h.ticks[0]();
+    expect(h.onGone).toHaveBeenCalledWith(4242);
+  });
+
+  test('does nothing for a daemon not started by the launcher, or off Windows', () => {
+    expect(harness({}).ticks).toHaveLength(0);
+    expect(harness({ [LAUNCHER_PID_ENV]: 'x' }).ticks).toHaveLength(0);
+    expect(harness({ [LAUNCHER_PID_ENV]: '4242' }, 'linux').ticks).toHaveLength(0);
+  });
+
+  test('the real liveness probe sees this process alive and a dead pid gone', () => {
+    const onGone = jest.fn();
+    const ticks = [];
+    watchWindowsLauncher({
+      env: { [LAUNCHER_PID_ENV]: String(process.pid) }, platform: 'win32', onGone,
+      setIntervalFn: (fn) => { ticks.push(fn); return 1; }, clearIntervalFn: () => {},
+    });
+    ticks[0]();
+    expect(onGone).not.toHaveBeenCalled();
+    const dead = [];
+    watchWindowsLauncher({
+      env: { [LAUNCHER_PID_ENV]: '2147483646' }, platform: 'win32', onGone,
+      setIntervalFn: (fn) => { dead.push(fn); return 1; }, clearIntervalFn: () => {},
+    });
+    dead[0]();
+    expect(onGone).toHaveBeenCalledWith(2147483646);
   });
 });

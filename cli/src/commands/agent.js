@@ -91,7 +91,7 @@ import { detectBwrap } from '../lib/sandbox/bwrap.js';
 import { resolvePublicSandboxMode } from '../lib/sandbox/mode.js';
 import { hostSandboxRefusal, windowsSandboxMessage } from '../lib/sandbox/host-check.js';
 import {
-  UNSANDBOXED_NOTICE, runOptedInUnsandboxed, unsandboxedFlagRefusal, unsandboxedRunEnvironment,
+  UNSANDBOXED_NOTICE, hostUnconfinedForRun, runOptedInUnsandboxed, unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
 import { prepareMcpBeforeFirstPoll } from '../lib/mcp-first-run.js';
 import { installedCliVersion, startUpdateNotice } from '../lib/update-check.js';
@@ -1584,6 +1584,9 @@ export const performRun = ({
   instanceId = 'default',
   podId = null,
   environment = null,
+  // D245: the user's own Windows opt-in for this run; reaches the adapter's
+  // spawn context only (never the environment).
+  hostUnconfined = false,
   workspacePath = null,
   intervalMs = 5000,
   log = () => {},
@@ -2112,7 +2115,7 @@ export const performRun = ({
     // failed read is not: it throws, so the event stays unacked and comes back
     // through the spawn-retry backoff instead of being refused for good.
     if (placement.reason) {
-      const turnRefusal = hostSandboxRefusal({ environment: placement.environment, adapterName: adapter.name });
+      const turnRefusal = hostSandboxRefusal({ environment: placement.environment, adapterName: adapter.name, hostUnconfined });
       if (turnRefusal && placement.readError) {
         throw Object.assign(
           new Error(`turn deferred, because its pods could not be read: ${placement.readError.message}`, {
@@ -2339,6 +2342,8 @@ export const performRun = ({
         memoryLongTerm,
         memoryWithheld,
         environment: placement.environment,
+        // Only when set, so every other spawn context stays as it was.
+        ...(hostUnconfined === true ? { hostUnconfined: true } : {}),
         onSkillsLinked: ({ mounted, conflicted }) => {
           skillMount = {
             mounted: [...new Set([...serverSkills.mounted, ...mounted.map(reportedSkillName)])],
@@ -4269,20 +4274,20 @@ Docs:
         bootstrapped = true;
       }
 
-      // D245: on native Windows the user may choose to run without a sandbox,
-      // by typing the flag or by installing the daemon with it (the marker is
-      // read only by the seats that daemon spawns). Nothing from the server
-      // decides this. The stored record keeps its sandbox; only this run's
-      // environment drops it, and a dropped sandbox withholds the grant broker.
-      const unsandboxedOptIn = runOptedInUnsandboxed({ flag: opts.unsandboxed === true });
-      const runEnvironment = unsandboxedRunEnvironment(record.environment, {
-        adapterName: record.adapter, optedIn: unsandboxedOptIn,
+      // D245: on native Windows the user may choose to run without an OS
+      // sandbox, by typing the flag or by installing the daemon with it (the
+      // marker is read only by the seats that daemon spawns). Nothing from the
+      // server decides this, and the environment never carries it: the seat
+      // keeps its trust and tool policy, and only the OS jail is skipped.
+      const hostUnconfined = hostUnconfinedForRun({
+        optedIn: runOptedInUnsandboxed({ flag: opts.unsandboxed === true }),
+        adapterName: record.adapter,
       });
-      if (runEnvironment !== record.environment) console.warn(`${stamp()} [${name}] ${UNSANDBOXED_NOTICE}`);
+      if (hostUnconfined) console.warn(`${stamp()} [${name}] ${UNSANDBOXED_NOTICE}`);
 
       // Every turn of a seat this host cannot confine would fail, so say so
       // once, before a token file is written or a poll is made.
-      const hostRefusal = hostSandboxRefusal({ environment: runEnvironment, adapterName: record.adapter });
+      const hostRefusal = hostSandboxRefusal({ environment: record.environment, adapterName: record.adapter, hostUnconfined });
       if (hostRefusal) {
         console.error(`${stamp()} [${name}] ${hostRefusal}`);
         process.exit(1);
@@ -4349,7 +4354,7 @@ Docs:
       // back on 2026-08-18, and that only worked because the processes were
       // still alive — after the next restart that route is gone too.
       await prepareMcpBeforeFirstPoll({
-        environment: runEnvironment,
+        environment: record.environment,
         log: (line) => console.log(`${stamp()} [${name}] ${line}`),
       });
 
@@ -4370,7 +4375,8 @@ Docs:
         displayName: record.displayName || record.agentName,
         instanceId: record.instanceId,
         podId: record.podId,
-        environment: runEnvironment || null,
+        environment: record.environment || null,
+        hostUnconfined,
         workspacePath: record.workspacePath || null,
         intervalMs: parseInt(opts.interval, 10),
         ...cascadeOverridesFromOpts(opts),

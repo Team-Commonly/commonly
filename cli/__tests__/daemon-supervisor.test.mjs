@@ -1112,12 +1112,13 @@ describe('heartbeat', () => {
     let optedIn = true;
     const { supervisor, client } = makeHarness({
       rows: () => [],
-      machineReport: () => (optedIn ? { sandbox: 'unsandboxed-opted-in' } : {}),
+      machineReport: () => ({ sandbox: optedIn ? 'unsandboxed-opted-in' : 'default' }),
     });
     await supervisor.heartbeat();
     expect(client.post).toHaveBeenLastCalledWith(`/api/machines/${record.machineDbId}/heartbeat`, expect.objectContaining({ sandbox: 'unsandboxed-opted-in', agents: [] }));
     optedIn = false;
     await supervisor.heartbeat();
-    expect(client.post.mock.calls.at(-1)[1]).not.toHaveProperty('sandbox');
+    // 'default' is what clears the server's record after a plain reinstall.
+    expect(client.post.mock.calls.at(-1)[1]).toMatchObject({ sandbox: 'default' });
   });
 });

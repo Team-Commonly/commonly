@@ -155,6 +155,18 @@ describe('BYO connect paths: run is the quick try, the daemon keeps it running (
       'commonly daemon register',
       'commonly daemon install --unsandboxed',
     ]);
+    // The flag is explained under the block it appears in.
+    expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(
+      'On Windows there’s no sandbox. With --unsandboxed, the agents this computer runs act with your own access to files and commands, and get no connector grants.',
+    );
+  });
+
+  test('on a Mac the daemon block has no Windows line', async () => {
+    setUserAgent(MAC);
+    mockPage({ machines: [] });
+    renderPage();
+    await screen.findByTestId('byo-add-computer');
+    expect(screen.queryByTestId('byo-add-computer-windows')).toBeNull();
   });
 
   test('with a computer already added, the quick-try line and the daemon block are both gone', async () => {

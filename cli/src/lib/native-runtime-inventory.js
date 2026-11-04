@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { resolveWindowsCommandWithReason } from './windows-command.js';
 
 export const claudeEffortsFromHelp = (help) => {
   const section = String(help).match(/--effort\s+<[^>]+>([\s\S]*?)(?=\n\s+--|$)/)?.[1];
@@ -17,8 +18,14 @@ export const codexModelsFromCache = (cache) => {
     // Only levels supported by every advertised model are offered globally.
     efforts: levels.length ? levels[0].filter((level) => levels.every((list) => list.includes(level))) : [] };
 };
-export const claudeRuntimeInventory = async ({ spawnSyncImpl = spawnSync, env = process.env } = {}) => {
-  const result = spawnSyncImpl('claude', ['--help'], {
+export const claudeRuntimeInventory = async ({
+  spawnSyncImpl = spawnSync, env = process.env, commandResolution = {},
+} = {}) => {
+  // Windows: an npm `claude.cmd` is resolved to its target, never run through
+  // a shell (#2141). Elsewhere this is `claude --help`, unchanged.
+  const located = resolveWindowsCommandWithReason('claude', { env, ...commandResolution });
+  if (!located.command) return { models: null, efforts: [] };
+  const result = spawnSyncImpl(located.command, [...located.args, '--help'], {
     encoding: 'utf8', timeout: 5000, maxBuffer: 128 * 1024, cwd: tmpdir(), env,
   });
   return { models: null, efforts: result.status === 0 ? claudeEffortsFromHelp(result.stdout) : [] };

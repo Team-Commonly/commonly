@@ -18,10 +18,19 @@ on:
       - 'cli/src/lib/adapters/codex.js'
       - 'cli/src/commands/daemon.js'
       - 'cli/src/commands/agent.js'
+      - 'cli/src/index.js'
+      - 'cli/package.json'
+      - 'cli/package-lock.json'
+      - 'cli/src/lib/daemon-logs.js'
+      - 'cli/src/lib/native-runtime-inventory.js'
+      - 'cli/src/lib/grant-broker-guard.js'
+      - 'cli/scripts/windows-shim-smoke.mjs'
       - 'cli/scripts/windows-daemon-smoke.mjs'
       - 'cli/__tests__/daemon-service.windows.test.mjs'
       - 'cli/__tests__/windows-*.test.mjs'
       - 'cli/__tests__/adapters.windows-launch.test.mjs'
+      - 'cli/__tests__/adapters.claude.windows-unconfined.test.mjs'
+      - 'cli/__tests__/native-runtime-inventory.windows.test.mjs'
       - '.github/workflows/daemon-windows.yml'
   workflow_dispatch:
 
@@ -50,7 +59,12 @@ jobs:
           __tests__/windows-unsandboxed.test.mjs
           __tests__/windows-command.test.mjs
           __tests__/adapters.windows-launch.test.mjs
+          __tests__/adapters.claude.windows-unconfined.test.mjs
+          __tests__/native-runtime-inventory.windows.test.mjs
           --runInBand
+      - name: A real npm cmd-shim runs without a shell
+        working-directory: cli
+        run: node scripts/windows-shim-smoke.mjs
       - name: Install, kill, come back, stop, uninstall
         working-directory: cli
         run: node scripts/windows-daemon-smoke.mjs

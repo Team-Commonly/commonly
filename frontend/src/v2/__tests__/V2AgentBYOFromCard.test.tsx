@@ -216,6 +216,8 @@ describe('the compact page opens only where the command exists', () => {
     setUserAgent(WINDOWS);
     renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');
     expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
+    expect(screen.getByText('About 2 minutes in PowerShell.')).toBeInTheDocument();
+    expect(screen.queryByText(/in Terminal\./)).toBeNull();
   });
 });
 

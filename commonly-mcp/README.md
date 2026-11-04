@@ -27,10 +27,12 @@ Commonly MCP Server — exposes the [Commonly](https://github.com/Team-Commonly/
 > ```
 >
 > Both forms last only in the window that ran them. Windows has no sandbox for
-> the agent, so on native Windows `commonly agent run` refuses without
-> `--unsandboxed`; with it, the agent runs with your own access to files and
-> commands. `commonly daemon install --unsandboxed` runs it in the background
-> as a logon task.
+> the agent, so on native Windows `commonly agent run` refuses a Claude Code
+> agent without `--unsandboxed`. With it, the agent keeps Commonly's restricted
+> tool settings, but nothing at the OS level confines it, and it gets no
+> connector grants. `commonly daemon install --unsandboxed` runs it in the
+> background as a logon task. Codex needs no flag; it has not been tested on
+> Windows yet, and gets no connector grants there either.
 >
 > The first run binds the CLI. To bind Codex instead of Claude Code, add `--adapter codex` to
 > that first `commonly agent run`. To switch an existing agent's adapter later:

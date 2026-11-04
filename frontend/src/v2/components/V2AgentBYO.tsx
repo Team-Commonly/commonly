@@ -59,8 +59,10 @@ export type ConnectSnippetOs = 'unix' | 'windows';
 // The command that makes the agent LISTEN, for bash/zsh or for PowerShell.
 // PowerShell has no `export`; its form is `$env:NAME="value"`, which also lasts
 // only in that window. Install line and run line are the same on both, except
-// that on native Windows `agent run` refuses without --unsandboxed: there is no
-// sandbox there, and the flag is the person choosing to run without one.
+// that on native Windows `agent run` refuses Claude Code without --unsandboxed:
+// there is no sandbox there, and the flag is the person choosing to run without
+// one. Codex keeps its own permission profile, which the flag doesn't change,
+// so its line carries no flag.
 export const connectSnippet = ({
   os, apiUrl, token, agentName, adapter, allow = '',
 }: {
@@ -77,7 +79,7 @@ export const connectSnippet = ({
   return [
     CLI_INSTALL_COMMAND,
     ...env,
-    `commonly agent run ${agentName} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' ? ' --unsandboxed' : ''}`,
+    `commonly agent run ${agentName} --adapter ${adapter}${allow ? ` --allow ${allow}` : ''}${os === 'windows' && adapter !== 'codex' ? ' --unsandboxed' : ''}`,
   ].join('\n');
 };
 const AGENT_KIND = 'agent' as const;
@@ -1204,6 +1206,11 @@ const V2AgentBYO: React.FC = () => {
           {copied === 'daemon-setup' ? t('agentByo.addComputer.copied') : t('agentByo.addComputer.copy')}
         </button>
       </div>
+      {setupOs === 'windows' && (
+        <p className="v2-byo__hint" data-testid="byo-add-computer-windows">
+          <Trans i18nKey="agentByo.addComputer.windowsNote" components={{ cmd: <code /> }} />
+        </p>
+      )}
       <p className="v2-byo__hint">{t('agentByo.addComputer.after')}</p>
     </div>
   ) : null;
@@ -1234,7 +1241,7 @@ const V2AgentBYO: React.FC = () => {
   const pageLead = (() => {
     if (issued) return undefined;
     if (showCompactHosted && !hosted && hosting?.configured) return t('agentByo.compact.lead',{ agents: hosting?.caps.agentsPerUser, turns: hosting?.caps.turnsPerDay });
-    if (showCompactByo) return t('agentByo.compactByo.lead');
+    if (showCompactByo) return t(setupOs === 'windows' ? 'agentByo.compactByo.leadWindows' : 'agentByo.compactByo.lead');
     return t('agentByo.description');
   })();
 
@@ -1760,15 +1767,17 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
-            {/* Directly above the lines it explains: the last one carries --unsandboxed. */}
+            {/* Directly above the lines it explains. Claude Code's last line
+                carries --unsandboxed; Codex keeps its own profile and no flag. */}
             {listenerAvailable && setupOs === 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
-                <Trans
-                  i18nKey="agentByo.listen.windowsNote"
-                  values={{ name: issued.agentName }}
-                  components={{ cmd: <code /> }}
-                />
-                {listenAdapter === 'codex' && <>{' '}{t('agentByo.listen.windowsCodex')}</>}
+                {listenAdapter === 'codex' ? t('agentByo.listen.windowsCodex') : (
+                  <Trans
+                    i18nKey="agentByo.listen.windowsNote"
+                    values={{ name: issued.agentName }}
+                    components={{ cmd: <code /> }}
+                  />
+                )}
               </p>
             )}
             {listenerAvailable && (
@@ -1790,7 +1799,9 @@ const V2AgentBYO: React.FC = () => {
             )}
             {listenerAvailable && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-stops-on-close">
-                {t(machines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer')}
+                {t(setupOs === 'windows'
+                  ? (machines.length === 0 ? 'agentByo.listen.stopsOnCloseWindows' : 'agentByo.listen.stopsOnCloseWithComputerWindows')
+                  : (machines.length === 0 ? 'agentByo.listen.stopsOnClose' : 'agentByo.listen.stopsOnCloseWithComputer'))}
               </p>
             )}
             {!listenerAvailable ? null : listenState === 'listening' ? (
@@ -1809,7 +1820,7 @@ const V2AgentBYO: React.FC = () => {
             {listenerAvailable && (
               <>
                 <p className="v2-byo__listen-note">
-                  {t('agentByo.listen.note', { name: issued.agentName })}
+                  {t(setupOs === 'windows' ? 'agentByo.listen.noteWindows' : 'agentByo.listen.note', { name: issued.agentName })}
                 </p>
               </>
             )}

@@ -272,23 +272,32 @@ export const resolveWindowsCommandWithReason = (name, {
 
   // An explicit path is checked where it points, never searched for.
   if (/[\\/]/.test(name) || win32.isAbsolute(name)) {
-    for (const candidate of candidatesFor(name)) {
+    // A path that names an existing file is that file, whatever its extension.
+    for (const candidate of existsSync(name) ? [name] : candidatesFor(name)) {
       if (!existsSync(candidate)) continue;
-      const hit = classify(candidate, deps);
-      if (hit) return hit;
+      return classify(candidate, deps) || {
+        command: null,
+        reason: `${candidate} is a ${extOf(candidate)} file, which can only run through a shell`,
+        source: candidate,
+      };
     }
     return { command: null, reason: `${name} was not found` };
   }
 
   // Windows' own order: each PATH folder in turn, each PATHEXT extension
   // within it. The first file that exists is what a shell would run, so it
-  // is the only one considered: falling through to a later match would launch
-  // a different program from the one the person runs by typing the name.
+  // is decisive: when it is something this CLI cannot launch without a shell
+  // (a `.vbs`, a `.js`, a `.ps1` someone added to PATHEXT), the answer is a
+  // refusal, never a later match, which would be a different program from the
+  // one the person runs by typing the name.
   for (const dir of pathEntries(env)) {
     for (const candidate of candidatesFor(win32.join(dir, name))) {
       if (!existsSync(candidate)) continue;
-      const hit = classify(candidate, deps);
-      if (hit) return hit;
+      return classify(candidate, deps) || {
+        command: null,
+        reason: `${candidate} is first on PATH, and a ${extOf(candidate)} file can only run through a shell`,
+        source: candidate,
+      };
     }
   }
   return { command: null, reason: `${name} was not found on PATH (searched ${exts.join(', ')})` };

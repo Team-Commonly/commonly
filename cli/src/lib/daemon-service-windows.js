@@ -72,12 +72,21 @@ if (Test-Path -LiteralPath $envFile) {
   foreach ($p in $cfg.PSObject.Properties) { [Environment]::SetEnvironmentVariable($p.Name, [string]$p.Value, 'Process') }
 }
 $env:Path = (Split-Path -Parent $node) + ';' + $env:Path
+# Ending the task kills this script, not the node it started. The daemon watches this pid and
+# exits (stopping its seats) once it is gone, so stop, restart and reinstall leave no daemon behind.
+$env:COMMONLY_DAEMON_LAUNCHER_PID = "$PID"
+# Read node's output as UTF-8; Windows PowerShell 5.1 otherwise decodes it in the console code page.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 while ($true) {
   & $node $cli daemon run --foreground 2>&1 | ForEach-Object { "$_" } | Add-Content -LiteralPath $log -Encoding UTF8
   $code = $LASTEXITCODE
   if ($code -eq 77 -or $code -eq 78) {
     & schtasks.exe /Change /TN $task /DISABLE | Out-Null
-    exit $code
+    if ($LASTEXITCODE -eq 0) { exit $code }
+    # The task could not be disabled, so exiting would let the watchdog start
+    # it again within a minute. Park here instead; stop or uninstall ends it.
+    "commonly daemon exited $code and the task could not be disabled; parked" | Add-Content -LiteralPath $log -Encoding UTF8
+    while ($true) { Start-Sleep -Seconds 3600 }
   }
   Start-Sleep -Seconds 5
 }
@@ -174,6 +183,44 @@ export const installWindowsService = async ({
   await execCmd(['schtasks', '/Create', '/TN', target.taskName, '/XML', target.file, '/F']);
   await execCmd(['schtasks', '/Run', '/TN', target.taskName]);
   return target;
+};
+
+export const LAUNCHER_PID_ENV = 'COMMONLY_DAEMON_LAUNCHER_PID';
+
+const pidAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+};
+
+/**
+ * `schtasks /End` terminates the launcher only; the node it started would
+ * keep running, unsupervised and invisible to the task (seen on windows-latest,
+ * 11-04: a stopped task left its daemon checking in). A daemon started by the
+ * launcher therefore polls the launcher's pid and calls `onGone` once it has
+ * exited. Returns a stop function; does nothing outside the launcher.
+ */
+export const watchWindowsLauncher = ({
+  env = process.env,
+  platform = process.platform,
+  isAlive = pidAlive,
+  onGone,
+  everyMs = 2000,
+  setIntervalFn = setInterval,
+  clearIntervalFn = clearInterval,
+}) => {
+  const pid = Number(env[LAUNCHER_PID_ENV]);
+  if (platform !== 'win32' || !Number.isInteger(pid) || pid <= 0) return () => {};
+  const timer = setIntervalFn(() => {
+    if (isAlive(pid)) return;
+    clearIntervalFn(timer);
+    onGone(pid);
+  }, everyMs);
+  if (typeof timer?.unref === 'function') timer.unref();
+  return () => clearIntervalFn(timer);
 };
 
 export const uninstallWindowsService = async ({ home, execCmd, removeFile, existsFile }) => {

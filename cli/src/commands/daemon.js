@@ -38,6 +38,7 @@ import {
   servicePaths,
 } from '../lib/daemon-service.js';
 import { daemonLogsDir, daemonSeatLogPath, readLogTail } from '../lib/daemon-logs.js';
+import { watchWindowsLauncher } from '../lib/daemon-service-windows.js';
 import {
   UNSANDBOXED_FLAG, clearUnsandboxedOptIn, loadUnsandboxedOptIn, saveUnsandboxedOptIn, unsandboxedFlagRefusal,
 } from '../lib/sandbox/windows-unsandboxed.js';
@@ -449,6 +450,9 @@ Examples:
         // D245: this command is the only writer of the opt-in, and installing
         // without the flag is how it is turned off. Written before the task
         // starts, so the first seats it spawns already read the answer.
+        // N3: the marker's state before this install, so a failed install can
+        // put it back rather than leave an opt-in with no daemon behind it.
+        const optedInBefore = loadUnsandboxedOptIn();
         if (opts.unsandboxed) {
           saveUnsandboxedOptIn();
           console.log('Agents this daemon runs will have no sandbox: they act with your own access to files and commands, and get no connector grants. To turn this off, run: commonly daemon install');
@@ -460,11 +464,17 @@ Examples:
         // adapter. The keys are captured here because this is the only moment
         // the operator's shell is in reach; the ones that are missing are named
         // by installDaemonService rather than left to be discovered per seat.
-        const installed = await installDaemonService({
-          ...serviceDeps(),
-          providerKeyEnvNames: providerKeyEnvNames(),
-          optionalEnvNames: [UPDATE_CHECK_OPT_OUT_ENV],
-        });
+        let installed;
+        try {
+          installed = await installDaemonService({
+            ...serviceDeps(),
+            providerKeyEnvNames: providerKeyEnvNames(),
+            optionalEnvNames: [UPDATE_CHECK_OPT_OUT_ENV],
+          });
+        } catch (error) {
+          if (optedInBefore) saveUnsandboxedOptIn(); else clearUnsandboxedOptIn();
+          throw error;
+        }
         console.log(installSummary(installed));
       } catch (error) {
         console.error(`Daemon install failed: ${error.message}`);
@@ -478,10 +488,13 @@ Examples:
     .action(async () => {
       try {
         await uninstallDaemonService(serviceDeps());
-        clearUnsandboxedOptIn();
       } catch (error) {
         console.error(`Daemon uninstall failed: ${error.message}`);
         process.exitCode = 1;
+      } finally {
+        // N4: an uninstall that half-failed still turns the opt-in off; a
+        // later install has to ask for it again.
+        clearUnsandboxedOptIn();
       }
     });
 
@@ -615,7 +628,9 @@ Examples:
           },
           loadToken: loadAgentToken,
           saveToken: saveAgentToken,
-          machineReport: () => (loadUnsandboxedOptIn() ? { sandbox: 'unsandboxed-opted-in' } : {}),
+          // 'default' clears the server's record when the user reinstalls
+          // without --unsandboxed; an older daemon sends nothing, which leaves it.
+          machineReport: () => ({ sandbox: loadUnsandboxedOptIn() ? 'unsandboxed-opted-in' : 'default' }),
           runtimeInventory: async () => {
             if (!cachedInventory || Date.now() - inventoryCheckedAt > 300_000) {
               cachedInventory = await collectRuntimeInventory(getAdapter);
@@ -661,6 +676,13 @@ Examples:
         };
         process.on('SIGINT', shutdown);
         process.on('SIGTERM', shutdown);
+        // D245: under the Windows launcher, the launcher's exit is the stop signal.
+        watchWindowsLauncher({
+          onGone: (pid) => {
+            stampLog(`launcher ${pid} has exited`);
+            shutdown();
+          },
+        });
       } catch (error) {
         console.error(`Daemon run failed: ${error.message}`);
         const badConfig = !record || error.message.startsWith('Daemon credential file');

@@ -134,18 +134,26 @@ describe('V2AgentBYO on Windows', () => {
     expect(listen).toHaveTextContent(/^在 PowerShell 里运行这段命令/);
     expect(screen.getByTestId('byo-listen-needs')).toHaveTextContent('四行都要在同一个 PowerShell 窗口里运行，换了窗口 $env 设置就失效。');
     const note = screen.getByTestId('byo-listen-windows');
-    expect(note).toHaveTextContent(/^Windows 上没有可以运行 \S+ 的沙箱，所以它会以你自己的权限访问文件、运行命令。加上 --unsandboxed 就表示你接受这一点/);
-    expect(note).toHaveTextContent('commonly daemon install --unsandboxed，把它设成登录时自动启动的任务');
+    expect(note).toHaveTextContent(/^Windows 上没有能给 \S+ 用的沙箱，所以它会以你自己的权限访问文件、运行命令。加上 --unsandboxed 就表示你接受这一点/);
+    expect(note).toHaveTextContent('不过在系统层面，没有任何东西拦着它。');
+    expect(note).toHaveTextContent('commonly daemon install --unsandboxed');
+    expect(note).toHaveTextContent('--allow');
+    expect(screen.getByTestId('byo-listen-stops-on-close')).toHaveTextContent(/PowerShell 窗口/);
+    expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent(/^Windows 上没有沙箱。/);
+    expect(screen.getByTestId('byo-add-computer-windows')).toHaveTextContent('连接器授权');
     expect(note).not.toHaveTextContent(/您|代理/);
     expect(screen.getByTestId('byo-listen-npm-hint')).toHaveTextContent('如果 PowerShell 提示禁止运行脚本');
   });
 
-  test('zh-CN with Codex: the note adds the untested line in Chinese', async () => {
+  test('zh-CN with Codex: the note is the Codex line alone, in Chinese', async () => {
     setUserAgent(WINDOWS);
     window.history.replaceState({}, '', '/?adapter=codex');
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     renderPage();
     await issue();
-    expect(screen.getByTestId('byo-listen-windows')).toHaveTextContent(/Codex 还没在 Windows 上测试过。$/);
+    const note = screen.getByTestId('byo-listen-windows');
+    expect(note).toHaveTextContent(/^Codex 还没在 Windows 上测试过。/);
+    expect(note).toHaveTextContent('连接器授权');
+    expect(note).not.toHaveTextContent('--unsandboxed');
   });
 });

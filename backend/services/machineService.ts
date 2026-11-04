@@ -23,6 +23,8 @@ export interface MachineView {
   agentStates: IMachineAgentState[];
   runtimeInventory: HarnessInventory[];
   inventoryAt: Date | null;
+  // D245: this computer's daemon reported running agents without a sandbox.
+  hostUnconfined: boolean;
 }
 
 // D5 heartbeat payload bounds. A daemon reports every agent it supervises;
@@ -76,6 +78,7 @@ const serializeMachine = (machine: IMachine | LeanMachine, now = new Date()): Ma
       : 'offline',
     runtimeInventory: normalizeRuntimeInventory(machine.runtimeInventory) || [],
     inventoryAt: machine.inventoryAt ? new Date(machine.inventoryAt as string | Date) : null,
+    hostUnconfined: (machine as { hostUnconfined?: unknown }).hostUnconfined === true,
     agentStates: ((machine.agentStates || []) as IMachineAgentState[]).map((s) => ({
       agentName: s.agentName,
       instanceId: s.instanceId,
@@ -197,10 +200,17 @@ export async function machineHasLiveAuthorization(
   });
 }
 
+// D245: what a daemon says about its host's confinement on each check-in.
+// 'unsandboxed-opted-in' turns grant refusal on for the machine's seats and
+// 'default' turns it off; anything else (an older daemon sends nothing) leaves
+// the last report standing.
+export const HOST_SANDBOX_REPORTS = { unconfined: 'unsandboxed-opted-in', confined: 'default' } as const;
+
 export async function recordMachineHeartbeat(
   machine: IMachine,
   agentStates?: unknown,
   runtimeInventory?: unknown,
+  hostSandbox?: unknown,
 ): Promise<MachineView> {
   machine.lastSeenAt = new Date();
   machine.status = 'online';
@@ -210,6 +220,8 @@ export async function recordMachineHeartbeat(
   if (normalized !== null) machine.agentStates = normalized;
   const inventory = normalizeRuntimeInventory(runtimeInventory);
   if (inventory !== null) { machine.runtimeInventory = inventory; machine.inventoryAt = new Date(); }
+  if (hostSandbox === HOST_SANDBOX_REPORTS.unconfined) machine.hostUnconfined = true;
+  else if (hostSandbox === HOST_SANDBOX_REPORTS.confined) machine.hostUnconfined = false;
   await machine.save();
   return serializeMachine(machine.toObject ? machine.toObject() : machine);
 }

@@ -41,8 +41,11 @@ export const windowsSandboxMessage = (adapterName) => {
     `Commonly runs a connected ${label} inside a sandbox, and has no sandbox for Windows yet,`,
     'so by default this agent cannot listen for @mentions from native Windows. You can:',
     // D245: the user's own choice, never a default (sandbox/windows-unsandboxed.js).
-    `  - Run it without a sandbox, with your own access to files and commands: add ${UNSANDBOXED_FLAG}`
-      + ` (commonly agent run <name> ${UNSANDBOXED_FLAG}, or commonly daemon install ${UNSANDBOXED_FLAG}). It then gets no connector grants.`,
+    ...(adapterName === 'claude'
+      ? [`  - Run it without an OS sandbox: add ${UNSANDBOXED_FLAG}`
+        + ` (commonly agent run <name> ${UNSANDBOXED_FLAG}, or commonly daemon install ${UNSANDBOXED_FLAG}).`
+        + " It keeps Commonly's restricted tool settings, nothing at the OS level confines it, and it gets no connector grants."]
+      : []),
     ...(adapterName === 'claude'
       ? ['  - Use Commonly from your own Claude Code sessions: the Connect page shows a PowerShell `claude mcp add` command.']
       : [`  - WSL 2 (Ubuntu): install Node and ${label} inside WSL, run \`sudo apt install bubblewrap\`,`
@@ -72,6 +75,9 @@ export const hostSandboxRefusal = ({
   environment,
   adapterName,
   platform = process.platform,
+  // D245: the user's own opt-in for this run (windows-unsandboxed.js
+  // hostUnconfinedForRun). Never derived from the environment.
+  hostUnconfined = false,
   detectBwrap = defaultDetectBwrap,
   detectSeatbelt = defaultDetectSeatbelt,
 } = {}) => {
@@ -83,7 +89,9 @@ export const hostSandboxRefusal = ({
   const mode = sandbox.mode ?? resolvePublicSandboxMode(sandbox, platform);
   if (mode !== 'bwrap' && !SEATBELT_MODES.has(mode)) return null;
 
-  if (platform === 'win32') return windowsSandboxMessage(adapterName);
+  if (platform === 'win32') {
+    return hostUnconfined === true && adapterName === 'claude' ? null : windowsSandboxMessage(adapterName);
+  }
   // A workspace claude seat falls through to the bubblewrap probe below; the
   // probe failing, for any reason, is a refusal like any other adapter's.
   if (mode === 'bwrap' && adapterName === 'claude' && sandbox.trust !== 'workspace') {

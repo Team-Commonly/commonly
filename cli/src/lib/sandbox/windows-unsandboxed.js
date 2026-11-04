@@ -15,17 +15,25 @@
  *
  * Only a LOCAL action sets it. Nothing the server sends (a seat's declared
  * environment, an adopted-seat row, a pod's settings) can create the marker or
- * stand in for the flag: `unsandboxedRunEnvironment` takes the decision as an
- * argument and never reads it from the environment it rewrites.
+ * stand in for the flag: `hostUnconfinedForRun` takes the decision as an
+ * argument, and the adapter reads it from its spawn context, never from the
+ * environment.
  *
- * The stored record keeps its public sandbox. Only the environment a single
- * run hands its adapter is rewritten, and only when this host cannot confine
- * it. The rewrite drops the sandbox to `mode: 'none'` with no trust, so the
- * grant broker guard withholds connector grants from the seat
- * (`sandbox_mode_none`): an unconfined seat never carries a granter's access.
+ * Only the OS jail is skipped. The seat keeps its trust, and with it the
+ * public tool policy (--setting-sources '', --strict-mcp-config, dontAsk,
+ * Read(./**), the denied tools), the sanitized environment and the TASK-294
+ * per-turn placement: on a host with no OS isolation that policy IS the
+ * sandbox. An earlier form of this rewrote the environment to `mode: 'none'`,
+ * which dropped the trust and the policy with it (review of #3388). The
+ * decision now travels as `hostUnconfined` on the adapter's spawn context,
+ * set only by `agent run`, so the environment, stored or derived, never
+ * carries it and nothing the server sends can set it.
  *
- * Codex is untouched: it confines with its own permission profiles and is not
- * among the adapters host-check refuses here.
+ * Claude Code only: it is the adapter that applies the public policy without
+ * its jail. OpenCode and Qwen stay refused on Windows, and Codex is never
+ * refused there (it confines with its own profiles). No seat on native Windows
+ * gets the grant broker (grant-broker-guard.js), and the server refuses grant
+ * use for every seat on a machine whose daemon reports the opt-in.
  */
 
 import { existsSync, readFileSync, rmSync } from 'fs';
@@ -33,7 +41,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 
 import { writeServiceFile } from '../daemon-service.js';
-import { UNSANDBOXED_FLAG, hostSandboxRefusal } from './host-check.js';
+import { UNSANDBOXED_FLAG } from './host-check.js';
 
 export { UNSANDBOXED_FLAG };
 
@@ -79,20 +87,19 @@ export const runOptedInUnsandboxed = ({ flag, env = process.env, load = loadUnsa
   flag === true || (env.COMMONLY_MANAGED_RUNNER === '1' && load() === true)
 );
 
+/** The adapters that can run their trust's tool policy without the OS jail. */
+export const POLICY_ONLY_ADAPTERS = new Set(['claude']);
+
 /**
- * The environment one run hands its adapter. Unchanged unless the user opted
- * in on win32 AND this host would otherwise refuse the seat.
+ * Does this run skip the OS jail? Only on win32, only by the user's own
+ * opt-in, and only for an adapter that keeps its policy without the jail.
  */
-export const unsandboxedRunEnvironment = (environment, {
-  adapterName, optedIn, platform = process.platform,
-}) => {
-  if (platform !== 'win32' || optedIn !== true) return environment;
-  if (!hostSandboxRefusal({ environment, adapterName, platform })) return environment;
-  return { ...environment, sandbox: { mode: 'none' } };
-};
+export const hostUnconfinedForRun = ({ optedIn, adapterName, platform = process.platform }) => (
+  platform === 'win32' && optedIn === true && POLICY_ONLY_ADAPTERS.has(adapterName)
+);
 
 /** One plain line for the run log and `daemon status`. */
-export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): no sandbox on Windows, so this agent runs with your own access to files and commands, and gets no connector grants.';
+export const UNSANDBOXED_NOTICE = 'unsandboxed (opted in): Windows has no sandbox, so nothing at the OS level confines this agent. It keeps Commonly\'s restricted tool settings, and gets no connector grants.';
 
 export default {
   UNSANDBOXED_FLAG,
@@ -103,5 +110,5 @@ export default {
   saveUnsandboxedOptIn,
   unsandboxedFlagRefusal,
   unsandboxedMarkerPath,
-  unsandboxedRunEnvironment,
+  hostUnconfinedForRun,
 };

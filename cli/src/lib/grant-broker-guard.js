@@ -184,13 +184,21 @@ export const confinementReason = (environment, adapter, platform = process.platf
   const declared = sandbox;
   if (declared.mode === 'none') return 'sandbox_mode_none';
   if (effectiveSandboxTrust(declared.trust) !== 'public') return 'sandbox_trust_not_public';
+  // D245: native Windows has no OS jail for any adapter. Claude there runs
+  // only by the user's --unsandboxed (policy without a jail), and Codex runs on
+  // its own profiles with no Commonly sandbox, so neither carries a grant.
+  if (platform === 'win32') return 'sandbox_mode_unenforceable';
   const mode = resolvePublicSandboxMode(declared, platform);
   if (typeof mode !== 'string' || !ENFORCING_MODES.has(mode)) return 'sandbox_mode_unenforceable';
   return null;
 };
 
-const detailFor = (reason, adapter, environment) => {
+const detailFor = (reason, adapter, environment, platform = process.platform) => {
   const drop = 'or drop the grant broker from this seat';
+  if (reason === 'sandbox_mode_unenforceable' && platform === 'win32') {
+    return 'native Windows has no sandbox Commonly can enforce, so no agent on this computer gets connector grants;'
+      + ` run the agent on macOS or Linux to use grants, ${drop}`;
+  }
   if (reason === 'adapter_cannot_confine') {
     return `the seat runs the '${adapter || 'unresolved'}' adapter, which is not approved to receive the grant broker;`
       + ' move this seat to the claude or codex'
@@ -245,7 +253,7 @@ export const withholdGrantBroker = (environment, adapter, {
       code: GRANT_BROKER_REFUSAL_CODE,
       decidedBy: 'daemon',
       reason,
-      detail: detailFor(reason, adapter, environment),
+      detail: detailFor(reason, adapter, environment, platform),
     }, withheld);
   }
   return { ...environment, mcp: kept };

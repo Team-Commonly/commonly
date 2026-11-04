@@ -104,6 +104,22 @@ describe('ADR-026 machine lifecycle service', () => {
     expect(cleared.agentStates).toEqual([]);
   });
 
+  it('D245: records the host sandbox report, and a heartbeat that carries none leaves it standing', async () => {
+    const ownerUserId = new mongoose.Types.ObjectId();
+    const { machine } = await machineService.registerMachine({ ownerUserId, name: 'Windows PC' });
+    expect((await machineService.recordMachineHeartbeat(await Machine.findById(machine.id))).hostUnconfined).toBe(false);
+
+    const opted = await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), [], undefined, 'unsandboxed-opted-in');
+    expect(opted.hostUnconfined).toBe(true);
+    // An older daemon (or a malformed value) says nothing; it does not clear the report.
+    for (const value of [undefined, null, '', 'nope', true]) {
+      // eslint-disable-next-line no-await-in-loop
+      expect((await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), [], undefined, value)).hostUnconfined).toBe(true);
+    }
+    const cleared = await machineService.recordMachineHeartbeat(await Machine.findById(machine.id), [], undefined, 'default');
+    expect(cleared.hostUnconfined).toBe(false);
+  });
+
   it('keeps only the four stored seat fields when a daemon reports its full payload', () => {
     // FILTER 1 of 2. This pins the rebuild in normalizeAgentStates
     // (backend/services/machineService.ts:28-47). Do not move this assertion up

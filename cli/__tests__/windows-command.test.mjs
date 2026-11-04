@@ -196,12 +196,31 @@ describe('resolveWindowsCommand — PATH and PATHEXT order', () => {
     ))).toEqual({ command: NODE, args: [CODEX_JS] });
   });
 
-  test('PATHEXT defaults to .COM;.EXE;.BAT;.CMD and unknown extensions are skipped', () => {
+  test('PATHEXT defaults to .COM;.EXE;.BAT;.CMD; an extra extension with no file there is passed over', () => {
     expect(resolveWindowsCommand('codex', win(files, { Path: NPM }))).toEqual({ command: exe, args: [] });
     expect(resolveWindowsCommand('codex', win(
-      { [`${NPM}\\codex.ps1`]: '', [shim]: files[shim], [CODEX_JS]: '' },
+      { [shim]: files[shim], [CODEX_JS]: '' },
       { Path: NPM, PATHEXT: '.PS1;.CMD' },
     ))).toEqual({ command: NODE, args: [CODEX_JS] });
+  });
+
+  test.each(['.VBS', '.JS', '.PS1'])('a first hit this CLI cannot launch (%s) is refused, not searched past', (ext) => {
+    const first = `${NPM}\\codex${ext.toLowerCase()}`;
+    const result = resolveWindowsCommandWithReason('codex', win(
+      // A perfectly good codex.exe later on PATH, and a .cmd in the same folder:
+      // Windows would run the first hit, so neither may be chosen instead.
+      { [first]: '', [shim]: files[shim], [CODEX_JS]: '', 'C:\\later\\codex.exe': 'MZ' },
+      { Path: `${NPM};C:\\later`, PATHEXT: `${ext};.CMD;.EXE` },
+    ));
+    expect(result.command).toBeNull();
+    expect(result.source).toBe(first);
+    expect(result.reason).toMatch(/first on PATH.*only run through a shell/);
+  });
+
+  test('an explicit path to a non-launchable file is refused with a reason', () => {
+    const result = resolveWindowsCommandWithReason(`${NPM}\\codex.vbs`, win({ [`${NPM}\\codex.vbs`]: '' }));
+    expect(result.command).toBeNull();
+    expect(result.reason).toMatch(/only run through a shell/);
   });
 
   test('extensions are matched case-insensitively', () => {
