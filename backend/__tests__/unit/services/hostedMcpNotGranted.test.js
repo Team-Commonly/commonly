@@ -159,7 +159,9 @@ describe('the runtime cache reads the consent from the row it lists with', () =>
   const CONNECTION = { type: 'hosted-mcp', entryId: 'linear', connectionId: ROW_ID };
   const write = LINEAR_ENTRY.tools.find((tool) => tool.class === 'write');
   const jsonResponse = (body) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-  const makeDeps = (grantedScope) => {
+  // `afterRefresh` is the scope the row holds once credentialFor has run.
+  const makeDeps = (grantedScope, { afterRefresh } = { afterRefresh: grantedScope }) => {
+    let refreshed = false;
     const fetcher = jest.fn(async (_url, init) => {
       if (init.method === 'DELETE') return new Response(null, { status: 204 });
       const body = JSON.parse(init.body);
@@ -179,13 +181,19 @@ describe('the runtime cache reads the consent from the row it lists with', () =>
     });
     const deps = {
       fetcher,
-      loadRow: jest.fn(async () => ({
-        _id: ROW_ID,
-        type: 'hosted-mcp',
-        status: 'connected',
-        config: { entryId: 'linear', credentialRef: 'cred-1', ...(grantedScope === undefined ? {} : { grantedScope }) },
-      })),
-      credentialFor: jest.fn(async () => ({ token: 'access-token-1' })),
+      loadRow: jest.fn(async () => {
+        const scope = refreshed ? afterRefresh : grantedScope;
+        return {
+          _id: ROW_ID,
+          type: 'hosted-mcp',
+          status: 'connected',
+          config: { entryId: 'linear', credentialRef: 'cred-1', ...(scope === undefined ? {} : { grantedScope: scope }) },
+        };
+      }),
+      credentialFor: jest.fn(async () => {
+        refreshed = true;
+        return { token: 'access-token-1' };
+      }),
     };
     deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [LINEAR_ENTRY]);
     return deps;
@@ -213,6 +221,20 @@ describe('the runtime cache reads the consent from the row it lists with', () =>
   test('reverse: on a row that consented to write, the same missing tool is tool_unavailable', async () => {
     const deps = makeDeps('read write openid');
     await expect(definition(deps).call({}, CONNECTION)).rejects.toMatchObject({ code: 'tool_unavailable' });
+    expect(methodsSent(deps)).not.toContain('tools/call');
+  });
+
+  // The list is taken with the token credentialFor returns, so the consent is the
+  // one its refresh recorded, not the row as it read before (CodeRabbit, #3411).
+  test('a legacy row whose refresh records write reads a missing write as tool_unavailable', async () => {
+    const deps = makeDeps(undefined, { afterRefresh: 'read write openid' });
+    await expect(definition(deps).call({}, CONNECTION)).rejects.toMatchObject({ code: 'tool_unavailable' });
+    expect(methodsSent(deps)).not.toContain('tools/call');
+  });
+
+  test('a refresh that drops write reads the missing write as not granted at once', async () => {
+    const deps = makeDeps('read write openid', { afterRefresh: 'read openid' });
+    await expect(definition(deps).call({}, CONNECTION)).rejects.toMatchObject({ code: 'write_scope_required' });
     expect(methodsSent(deps)).not.toContain('tools/call');
   });
 });
