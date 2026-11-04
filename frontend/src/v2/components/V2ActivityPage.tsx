@@ -152,6 +152,40 @@ const readActivitySnapshot = (accountId: string): ActivitySnapshot | null => {
   }
 };
 
+// The recap clips each agent post and task note at 180 characters, and folds an agent post's
+// whitespace to single spaces first (backend/services/activityService.ts, `content.slice(0, 180)`
+// and `lastUpdate.text.slice(0, 180)`). Keep the two in step.
+const RECAP_CLIP = 180;
+
+// A Moved forward line is a one-line digest of an agent post or a task note, so the post's
+// markdown is read as plain text: link text kept, emphasis and code marks dropped, headings and
+// a leading list bullet dropped, every line break folded into one space. Agent posts arrive
+// already folded, so a list inside one reads "Done: a - b - c": the first bullet after the
+// colon goes, the rest stay as dashes. A mark or link the clip left half-open goes too, a
+// clipped post ends on an ellipsis, and a post that was only code keeps its words. The CSS
+// clamps the line to two rows, and the full line is the element's title.
+export const plainLine = (value: string): string => {
+  const clipped = value.length >= RECAP_CLIP;
+  const fold = (text: string) => text.replace(/\s+/g, ' ').trim();
+  const fence = /```[^\n]*\n?([\s\S]*?)(?:```|$)/g;
+  const prose = value.replace(fence, ' ');
+  let text = (fold(prose) ? prose : value.replace(fence, ' $1 '))
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1');
+  if (clipped) text = text.replace(/!?\[([^\]]*)\]\([^)]*$/, '$1').replace(/!?\[([^\]]*)$/, '$1');
+  text = text
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+\.\s+)/gm, '')
+    .replace(/(^|\s)#{1,6}\s+/g, '$1')
+    .replace(/(\*\*|\*|~~|`)(?=\S)([^\n]*?\S)\1/g, '$2')
+    // Underscores mark emphasis only at a word edge, so snake_case, 中_文 and __init__.py survive.
+    .replace(/(^|[^\p{L}\p{N}_])(__|_)(?=\S)([^\n]*?\S)\2(?![\p{L}\p{N}_]|\.[\p{L}\p{N}])/gu, '$1$3')
+    .replace(/\*\*|`|~~/g, '')
+    .replace(/:\s+[-*+]\s+/g, ': ');
+  text = fold(text);
+  if (!clipped) return text;
+  // The backend cuts in UTF-16 units, so a clip can end on half an emoji.
+  return `${text.replace(/[\uD800-\uDBFF]$/, '').replace(/[\s\-–—:;,.]+$/, '')}…`;
+};
+
 const relativeTime = (value: string | null | undefined): string => {
   if (!value) return '';
   const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
@@ -964,7 +998,7 @@ const V2ActivityPage: React.FC = () => {
     recap.agents.forEach((agent) => agent.updates.forEach((update) => add(update.podId, update.podName, {
       id: `agent:${agent.id}:${update.id}`,
       author: agent.name,
-      text: update.content,
+      text: plainLine(update.content),
       timestamp: update.timestamp,
     })));
     recap.board.forEach((item) => {
@@ -972,7 +1006,7 @@ const V2ActivityPage: React.FC = () => {
       add(item.podId, item.podName, {
         id: `board:${item.id}`,
         author: item.lastUpdate.author,
-        text: `${item.title} — ${item.lastUpdate.text}`,
+        text: `${item.title} — ${plainLine(item.lastUpdate.text)}`,
         timestamp: item.lastUpdate.createdAt || item.updatedAt,
       });
     });
@@ -1652,7 +1686,7 @@ const V2ActivityPage: React.FC = () => {
                       {visible.map((line) => (
                         <div key={line.id} className="v2-activity__moved-line">
                           <time>{relativeTime(line.timestamp)}</time>
-                          <span className="v2-activity__moved-text"><strong>{line.author}</strong>{' '}<span>{line.text}</span></span>
+                          <span className="v2-activity__moved-text" title={`${line.author} ${line.text}`}><strong>{line.author}</strong>{' '}<span>{line.text}</span></span>
                         </div>
                       ))}
                       {visibleCount > 3 && <button type="button" className="v2-activity__moved-more" onClick={(event) => {

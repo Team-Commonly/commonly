@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import i18n, { i18nReady } from '../../i18n';
-import V2ActivityPage from '../components/V2ActivityPage';
+import V2ActivityPage, { plainLine } from '../components/V2ActivityPage';
 import { ATTENTION_CHANGED } from '../hooks/useV2PodAttention';
 import { AuthContext } from '../../context/AuthContext';
 import { setupFocusManagement } from '../../utils/focusUtils';
@@ -1690,6 +1690,34 @@ describe('V2ActivityPage', () => {
     fireEvent.click(less);
     expect(lines()).toHaveLength(3);
     await waitFor(() => expect(within(group).getByRole('button', { name: '17 more in launch pod' })).toHaveFocus());
+  });
+
+  test('a Moved forward line reads an agent post as one plain line, not raw markdown', async () => {
+    expect(plainLine('F82 walk — **correction:** the [Atlassian tools](https://x.test) are *on*\n\n- one\n- `two`')).toBe('F82 walk — correction: the Atlassian tools are on one two');
+    expect(plainLine('## Shipped\n> quoted __done__ ~~old~~')).toBe('Shipped quoted done old');
+    expect(plainLine('see ```js\nconst a = 1;\n``` then 2 * 3 = 6')).toBe('see then 2 * 3 = 6');
+    expect(plainLine('snake_case_name stays')).toBe('snake_case_name stays');
+    // The recap clips at 180: a clipped post drops the half-open mark and ends on an ellipsis.
+    const clipped = `What I saw:\n- \`atlassian_search ${'x'.repeat(200)}`.slice(0, 180);
+    expect(plainLine(clipped)).toMatch(/^What I saw: atlassian_search x+…$/);
+    expect(plainLine('Short and done.')).toBe('Short and done.');
+    expect(plainLine('What I saw: - `atla')).toBe('What I saw: atla');
+    expect(plainLine('pages 2 - 4 moved')).toBe('pages 2 - 4 moved');
+    // The shape agent posts arrive in: whitespace already folded by the recap.
+    expect(plainLine('Done: - a - b - c ## Shipped **ok**')).toBe('Done: a - b - c Shipped ok');
+    expect(plainLine('```\nlog line\n```')).toBe('log line');
+    expect(plainLine('中_文_字 and __init__.py stay')).toBe('中_文_字 and __init__.py stay');
+    const link = `${'y'.repeat(160)} see [the doc](https://example.com/aaaaaaaaaaaa`.slice(0, 180);
+    expect(plainLine(link)).toMatch(/ see the doc…$/);
+    const emoji = `${'x'.repeat(179)}🎉`.slice(0, 180);
+    expect(plainLine(emoji)).toBe(`${'x'.repeat(179)}…`);
+    const updates = [{ id: 'md-1', podId: 'pod-1', podName: 'Launch pod', content: '**Walked** the [connectors](https://x.test) page\n\n- all green', timestamp: '2026-08-26T11:00:00.000Z' }];
+    mockGet.mockImplementation((url: string) => Promise.resolve({ data: url === '/api/activity/decision-queue' ? decisionQueue : { ...recap, agents: [{ ...recap.agents[0], updates }], board: [] } }));
+    renderPage();
+    expect(await screen.findByText('Walked the connectors page all green')).toBeInTheDocument();
+    expect(screen.queryByText(/\*\*/)).toBeNull();
+    // The clamp hides the end of a long line; the whole line stays in the title.
+    expect(screen.getByText('Walked the connectors page all green').closest('.v2-activity__moved-text')).toHaveAttribute('title', expect.stringContaining('Walked the connectors page all green'));
   });
 
   test('revalidates the loaded Back extent and preserves the same account draft', async () => {
