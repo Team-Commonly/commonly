@@ -448,12 +448,19 @@ describe('V2PodsSidebar — direction C', () => {
       const pin = screen.getAllByRole('button', { name: 'Pin pod' })[0];
       const wrap = pin.parentElement as HTMLElement;
       const row = wrap.querySelector('.v2-pods__row') as HTMLElement;
-      const before = screen.getByTestId('current-path').textContent;
-      // A quick tap opens the pod and reveals nothing.
-      fireEvent.pointerDown(row, { pointerType: 'touch' });
-      fireEvent.pointerUp(row, { pointerType: 'touch' });
+      // A quick tap on another pod's row opens that pod and reveals nothing. The
+      // route starts on the first row's pod, so the tap goes to a different row.
+      const tapWrap = screen.getAllByRole('button', { name: 'Pin pod' })[2].parentElement as HTMLElement;
+      const tapRow = tapWrap.querySelector('.v2-pods__row') as HTMLElement;
+      const atStart = screen.getByTestId('current-path').textContent;
+      fireEvent.pointerDown(tapRow, { pointerType: 'touch' });
+      fireEvent.pointerUp(tapRow, { pointerType: 'touch' });
+      fireEvent.click(tapRow);
       act(() => { jest.advanceTimersByTime(600); });
-      expect(wrap).not.toHaveClass('v2-pods__rowwrap--reveal');
+      expect(tapWrap).not.toHaveClass('v2-pods__rowwrap--reveal');
+      expect(screen.getByTestId('current-path').textContent).not.toBe(atStart);
+      expect(screen.getByTestId('current-path').textContent).toMatch(/^\/v2\/pods\/./);
+      const before = screen.getByTestId('current-path').textContent;
       // A hold reveals the pin; the click it ends in stays on the list.
       fireEvent.pointerDown(row, { pointerType: 'touch' });
       act(() => { jest.advanceTimersByTime(600); });
@@ -474,8 +481,8 @@ describe('V2PodsSidebar — direction C', () => {
       expect(wrap).not.toHaveClass('v2-pods__rowwrap--reveal');
       // A browser that sends no click after a long press must not leave the next
       // keyboard Enter or mouse click swallowed (#3412 review).
-      const other = screen.getAllByRole('button', { name: 'Pin pod' })[1].parentElement
-        ?.querySelector('.v2-pods__row') as HTMLElement;
+      // The quick tap above left another pod open, so the first row's pod is a change.
+      const other = row;
       fireEvent.pointerDown(other, { pointerType: 'touch' });
       act(() => { jest.advanceTimersByTime(600); });
       fireEvent.pointerUp(other, { pointerType: 'touch' });
