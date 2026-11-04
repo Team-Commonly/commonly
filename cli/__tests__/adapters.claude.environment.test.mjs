@@ -849,6 +849,42 @@ describe('claude adapter — ctx.environment', () => {
     }
   });
 
+  // On native Windows the refusal names Windows and the user's own opt-in,
+  // never macOS or bwrap advice (D245). Host-check passes an unrecognised mode
+  // through, so this throw is what a Windows user sees.
+  test('on win32, an unresolvable mode refuses with Windows advice, not macOS or bwrap', async () => {
+    for (const trust of ['public', 'workspace']) {
+      const { impl, calls } = makeSpawnImpl();
+      const error = await claude.spawn('hi', {
+        sessionId: null,
+        cwd,
+        environment: { model: 'test-model', sandbox: { mode: 'unconfined', trust } },
+        _platform: 'win32',
+        _spawnImpl: impl,
+      }).then(() => null, (e) => e);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toMatch(/Windows/);
+      expect(error.message).toContain('--unsandboxed');
+      expect(error.message).toContain('Run it here');
+      expect(error.message).not.toMatch(/macOS|bwrap|Linux/);
+      expect(calls).toHaveLength(0);
+    }
+  });
+
+  test('on darwin and linux, an unresolvable mode keeps the macOS / bwrap text', async () => {
+    for (const platform of ['darwin', 'linux']) {
+      const { impl, calls } = makeSpawnImpl();
+      await expect(claude.spawn('hi', {
+        sessionId: null,
+        cwd,
+        environment: { model: 'test-model', sandbox: { mode: 'unconfined', trust: 'public' } },
+        _platform: platform,
+        _spawnImpl: impl,
+      })).rejects.toThrow(/require an enforced sandbox mode \(workspace or read-only on macOS, bwrap elsewhere\), got "unconfined"/);
+      expect(calls).toHaveLength(0);
+    }
+  });
+
   test('public trust with an unresolvable explicit mode refuses rather than falls through', async () => {
     const { impl, calls } = makeSpawnImpl();
     await expect(claude.spawn('hi', {

@@ -59,7 +59,8 @@ export type StalledConnectCopyEvidence = {
  * The listener answers @mentions only on a Mac for now (V2AgentBYO's
  * listenerRunsOn), for a different reason per adapter: Commonly's sandbox
  * cannot run Claude Code on Linux or Windows, and Codex there is not yet
- * tested (agentByo.listen.unavailableClaude / unavailableCodex). The server
+ * tested (agentByo.listen.windowsNote for Claude on Windows / unavailableCodex;
+ * frontend/src/i18n/locales/en.json). The server
  * never learns which adapter the copied command named, so the copy names the
  * listener, not the CLI, and states only what is true for both: Mac only.
  *

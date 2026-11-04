@@ -317,7 +317,26 @@ describe('the daemon follows its launcher (schtasks /End kills the launcher only
       env: { [LAUNCHER_PID_ENV]: '2147483646' }, platform: 'win32', onGone,
       setIntervalFn: (fn) => { dead.push(fn); return 1; }, clearIntervalFn: () => {},
     });
-    dead[0]();
+    // Already gone when armed: reported at once, and no poll is left running.
     expect(onGone).toHaveBeenCalledWith(2147483646);
+    expect(dead).toHaveLength(0);
+  });
+
+  test('a launcher already gone when the watch is armed is reported at once, with the pipe guard in place', async () => {
+    const { EventEmitter } = await import('events');
+    const out = new EventEmitter();
+    const ticks = [];
+    const onGone = jest.fn(() => {
+      // The shutdown logs; the guard is already listening when it does.
+      expect(out.listenerCount('error')).toBe(1);
+    });
+    watchWindowsLauncher({
+      env: { [LAUNCHER_PID_ENV]: '4242' }, platform: 'win32', onGone, isAlive: () => false,
+      setIntervalFn: (fn) => { ticks.push(fn); return 1; }, clearIntervalFn: () => {},
+      streams: [out],
+    });
+    expect(onGone).toHaveBeenCalledTimes(1);
+    expect(onGone).toHaveBeenCalledWith(4242);
+    expect(ticks).toHaveLength(0);
   });
 });

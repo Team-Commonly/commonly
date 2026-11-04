@@ -1176,6 +1176,8 @@ export const performAttach = async ({
   log = () => {},
   adapterRegistry = { getAdapter, listAdapterNames },
   seatbelt: probeSeatbelt = detectSeatbelt,
+  bwrap: probeBwrap = detectBwrap,
+  platform = process.platform,
 }) => {
   const adapter = adapterRegistry.getAdapter(adapterName);
   if (!adapter) {
@@ -1210,10 +1212,19 @@ export const performAttach = async ({
     }
     log(`workspace: ${workspace.path}${workspace.created ? ' (created)' : ''}`);
 
-    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter });
+    const { mode: sandboxMode } = resolveAttachSandbox({ environment, adapterName, adapter, platform });
+    // D245: native Windows has neither sandbox, so its refusal names Windows
+    // and the user's own opt-in, never Seatbelt or bwrap advice. Attach still
+    // refuses there, as before; only the words differ.
+    const windowsRefusal = () => new Error(adapterName === 'dsh'
+      ? `confined dsh sandbox.mode=${sandboxMode} needs a sandbox, and Commonly has no sandbox for Windows yet, `
+        + 'so dsh cannot run confined on native Windows. Choose "Run it here" on the Connect page for a hosted agent.'
+      : `This environment file asks for sandbox.mode=${sandboxMode}, which Commonly cannot enforce on Windows, `
+        + `so attach stops here.\n${windowsSandboxMessage(adapterName)}`);
     if (sandboxMode === 'bwrap') {
-      const bwrap = detectBwrap();
+      const bwrap = probeBwrap();
       if (!bwrap.available) {
+        if (platform === 'win32') throw windowsRefusal();
         throw new Error(`sandbox.mode=bwrap requested but unavailable: ${bwrap.error}`);
       }
       if (environment.sandbox?.network?.policy === 'restricted') {
@@ -1239,6 +1250,7 @@ export const performAttach = async ({
           || adapterName;
         const seatbelt = probeSeatbelt();
         if (!seatbelt.available) {
+          if (platform === 'win32') throw windowsRefusal();
           // dsh refuses bwrap, so it gets no Linux hint that leads to a second refusal.
           throw new Error(adapterName === 'dsh'
             ? `confined dsh sandbox.mode=${sandboxMode} requires macOS Seatbelt: ${seatbelt.error}.`

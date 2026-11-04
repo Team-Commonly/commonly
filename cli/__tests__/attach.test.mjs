@@ -47,6 +47,7 @@ const {
   assertSandboxDeclaredForPublicPod,
 } = await import('../src/commands/agent.js');
 const { ADAPTERS_WITH_GRANT_BROKER, seatBaseline } = await import('../src/lib/default-environment.js');
+const { windowsSandboxMessage } = await import('../src/lib/sandbox/host-check.js');
 
 describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)', () => {
   test('a legacy internal trust resolves a confining mode here, on both hosts', () => {
@@ -497,6 +498,71 @@ describe('performAttach', () => {
   test('attach --env carries confined dsh to the Seatbelt check, not the trust refusal', async () => {
     const { error } = await attachConfinedDsh({ available: false, error: 'sandbox-exec not found' });
     expect(error.message).toBe('confined dsh sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found.');
+  });
+
+  // D245: on native Windows a confined --env names Windows and the user's own
+  // opt-in, never macOS or bwrap advice. Attach still refuses there: only the
+  // message changes.
+  const attachConfined = async ({ adapterName, mode, platform, seatbelt, bwrap }) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-win-attach-'));
+    try {
+      const envPath = path.join(root, 'environment.json');
+      fs.writeFileSync(envPath, JSON.stringify({
+        version: 1,
+        workspace: { path: path.join(root, 'workspace') },
+        sandbox: { trust: 'public', mode },
+      }));
+      const client = makeClient();
+      const error = await performAttach({
+        client, adapterName, agentName: `${adapterName}-seat`, podId: 'pod-private', envPath,
+        platform,
+        seatbelt: () => seatbelt,
+        bwrap: () => bwrap,
+        adapterRegistry: {
+          getAdapter: () => ({ name: adapterName, detect: async () => ({ path: `/bin/${adapterName}`, version: '1.0.0' }) }),
+          listAdapterNames: () => [adapterName],
+        },
+      }).then(() => null, (e) => e);
+      return { error, client };
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  };
+  const noSeatbelt = { available: false, error: 'sandbox-exec not found' };
+  const noBwrap = { available: false, error: 'bwrap not found' };
+
+  test('on win32, a confined Claude --env refuses with Windows and --unsandboxed, not Seatbelt or bwrap', async () => {
+    for (const mode of ['workspace', 'read-only', 'bwrap']) {
+      const { error, client } = await attachConfined({
+        adapterName: 'claude', mode, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
+      });
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toContain(`sandbox.mode=${mode}`);
+      expect(error.message).toContain(windowsSandboxMessage('claude'));
+      expect(error.message).toContain('commonly agent run <name> --unsandboxed');
+      expect(error.message).not.toMatch(/macOS|Seatbelt|On Linux|requested but unavailable/);
+      expect(client.post).not.toHaveBeenCalled();
+    }
+  });
+
+  test('on win32, other adapters get the existing Windows text, with no --unsandboxed offer', async () => {
+    for (const mode of ['workspace', 'bwrap']) {
+      const { error } = await attachConfined({
+        adapterName: 'opencode', mode, platform: 'win32', seatbelt: noSeatbelt, bwrap: noBwrap,
+      });
+      expect(error.message).toContain(windowsSandboxMessage('opencode'));
+      expect(error.message).not.toContain('--unsandboxed');
+      expect(error.message).not.toMatch(/macOS|Seatbelt|requested but unavailable/);
+    }
+  });
+
+  test('on darwin and linux, the Seatbelt and bwrap refusals keep their text', async () => {
+    for (const platform of ['darwin', 'linux']) {
+      const seat = await attachConfined({ adapterName: 'claude', mode: 'workspace', platform, seatbelt: noSeatbelt, bwrap: noBwrap });
+      expect(seat.error.message).toBe('public Claude sandbox.mode=workspace requires macOS Seatbelt: sandbox-exec not found. On Linux use sandbox.mode=bwrap.');
+      const jail = await attachConfined({ adapterName: 'claude', mode: 'bwrap', platform, seatbelt: noSeatbelt, bwrap: noBwrap });
+      expect(jail.error.message).toBe('sandbox.mode=bwrap requested but unavailable: bwrap not found');
+    }
   });
 
   test('attach --env gives provider-backed Qwen the same Commonly MCP baseline as the daemon', async () => {
