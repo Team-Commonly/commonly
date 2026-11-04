@@ -43,6 +43,8 @@ export const buildReplyReceipt = ({ adapterName, stats = {}, durationMs } = {}) 
   // carries the account or project it runs in; that is not this reply's to
   // publish, so such a model id is left out.
   if (isName(stats?.model) && !/^arn:|(^|\/)projects\//i.test(stats.model)) receipt.model = stats.model;
+  // D247: the effort level the adapter passed, as a bare level name.
+  if (isName(stats?.effort) && /^[a-z0-9][a-z0-9._-]{0,19}$/i.test(stats.effort)) receipt.effort = stats.effort;
   if (isCount(stats?.turns)) receipt.turns = stats.turns;
   if (Array.isArray(stats?.tools)) {
     const tools = stats.tools.filter(isName);

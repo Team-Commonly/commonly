@@ -11,7 +11,7 @@ export const claudeEffortsFromHelp = (help) => {
 };
 export const codexModelsFromCache = (cache) => {
   const models = Array.isArray(cache?.models) ? cache.models.filter((row) => typeof row.slug === 'string'
-    && row.slug.length > 0 && row.slug.length <= 256 && row.visibility !== 'hidden') : [];
+    && row.slug.length > 0 && row.slug.length <= 256 && row.visibility !== 'hidden' && row.visibility !== 'hide') : [];
   const levels = models.map((row) => (Array.isArray(row.supported_reasoning_levels)
     ? row.supported_reasoning_levels.flatMap((level) => typeof level.effort === 'string' ? [level.effort] : []) : []));
   return { models: models.length ? models.map((row) => row.slug) : null,

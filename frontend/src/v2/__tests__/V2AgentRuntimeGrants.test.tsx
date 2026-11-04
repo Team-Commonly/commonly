@@ -160,7 +160,7 @@ test('a revoked target after preflight keeps the old placement visible and shows
 test('shows this agent grant and requires a second click to revoke through the existing route', async () => {
   renderSection();
   expect(await screen.findByText('changes apply on the next spawn')).toBeInTheDocument();
-  expect(screen.getByRole('option', { name: 'Claude Code 1' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Claude Code · Installed · 1' })).toBeInTheDocument();
   openGrants();
   expect(await screen.findByText(/Work · Granted by Owner/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
@@ -169,7 +169,10 @@ test('shows this agent grant and requires a second click to revoke through the e
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith('/api/grants/grant-1/revoke', undefined, expect.anything()));
 });
 
-test('model changes delegate to the shared settings hook; a single CLI has no edit control', async () => {
+// D247: whether a viewer may save is the server's call (runtimeEditable →
+// onSaveRuntime). Without it the controls are read-only; with it a listener
+// agent is as editable as a daemon one.
+test('model changes delegate to the shared settings hook; without a save the controls are read-only', async () => {
   const { rerender } = renderSection();
   const input = await screen.findByLabelText('model');
   fireEvent.change(input, { target: { value: 'opus' } });
@@ -177,7 +180,7 @@ test('model changes delegate to the shared settings hook; a single CLI has no ed
   await waitFor(() => expect(saveRuntime).toHaveBeenCalledWith({ adapter: 'claude', model: 'opus' }));
   expect(axios.post).not.toHaveBeenCalled();
 
-  rerender(<AuthContext.Provider value={authValue}><MemoryRouter><V2AgentRuntimeBody name="other" instanceId="default" runtime={{ runtimeType: 'webhook', host: 'byo', adapter: 'hermes' }} onSaveRuntime={saveRuntime} /></MemoryRouter></AuthContext.Provider>);
+  rerender(<AuthContext.Provider value={authValue}><MemoryRouter><V2AgentRuntimeBody name="other" instanceId="default" runtime={{ runtimeType: 'webhook', host: 'byo', adapter: 'hermes' }} /></MemoryRouter></AuthContext.Provider>);
   expect(await screen.findByText('read only · this seat runs from the cli')).toBeInTheDocument();
   expect(screen.getByLabelText('model')).toBeDisabled();
 });

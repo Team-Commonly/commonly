@@ -1,0 +1,42 @@
+// D247: the model and effort a seat spawns with.
+//
+// Two rules live here so the run loop and its tests share them:
+//
+// 1. A listener seat (`agent run` with no daemon behind it) reads the model and
+//    effort its owner saved in Settings or on the add page from
+//    GET /api/agents/runtime/installations before each turn. A saved value
+//    replaces the one in the local record; an absent one leaves it alone, so an
+//    older server changes nothing.
+// 2. An effort is dropped only when the device reported a NON-EMPTY list of
+//    levels that leaves it out. A device that reported nothing says nothing
+//    about the level, so the level is passed through and the harness decides.
+
+const isControl = (value) => typeof value === 'string' && value.length > 0 && value.length <= 256;
+
+/** The saved controls for this seat's installation, or null when none are reported. */
+export const savedRuntimeControls = ({ installations, podId, instanceId } = {}) => {
+  if (!Array.isArray(installations)) return null;
+  const rows = installations.filter((row) => row?.type === 'installation'
+    && row.runtimeControls && typeof row.runtimeControls === 'object');
+  const wantedInstance = String(instanceId || 'default');
+  const row = rows.find((entry) => String(entry.podId || '') === String(podId || '')
+    && String(entry.instanceId || 'default') === wantedInstance)
+    || rows.find((entry) => String(entry.instanceId || 'default') === wantedInstance
+      && (isControl(entry.runtimeControls.model) || isControl(entry.runtimeControls.effort)));
+  if (!row) return null;
+  const controls = {};
+  if (isControl(row.runtimeControls.model)) controls.model = row.runtimeControls.model;
+  if (isControl(row.runtimeControls.effort)) controls.effort = row.runtimeControls.effort;
+  return Object.keys(controls).length ? controls : null;
+};
+
+/** The environment with saved controls laid over it. A null environment stays null. */
+export const withSavedRuntimeControls = (environment, controls) => {
+  if (!environment || typeof environment !== 'object' || !controls) return environment;
+  return { ...environment, ...controls };
+};
+
+/** True only when the device listed its effort levels and this one is not among them. */
+export const effortRefusedByDevice = (inventory, effort) => Boolean(effort)
+  && Array.isArray(inventory?.efforts) && inventory.efforts.length > 0
+  && !inventory.efforts.includes(effort);

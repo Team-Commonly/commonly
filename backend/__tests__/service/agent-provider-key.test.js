@@ -156,6 +156,20 @@ it('machine inventory rejects unsupported model/effort/harness choices and permi
   expect(await check({ environment: { effort: 'high' } })).toContain('effort');
   expect(await check({ environment: { effort: '' } })).toBeNull();
 });
+// D247: a computer that reported no effort levels for a harness, or no
+// inventory yet, no longer greys effort out. The catalogue's ladder decides.
+it('an empty or missing device effort list falls back to the harness catalogue', async () => {
+  const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
+  const check = (config, effectiveHarness = 'claude') => runtimeControlRefusal({ agentName: 'key-seat',
+    instanceId: 'default', ownerUserId: String(owner), effectiveHarness, config });
+  await Machine.updateOne({ machineId: 'machine-key' }, { $set: { inventoryAt: new Date(),
+    runtimeInventory: [{ harness: 'claude', installed: true, models: null, efforts: [], version: '2.1' }] } });
+  expect(await check({ environment: { effort: 'xhigh' } })).toBeNull();
+  expect(await check({ environment: { effort: 'ultra' } })).toContain('effort');
+  await Machine.updateOne({ machineId: 'machine-key' }, { $set: { runtimeInventory: [], inventoryAt: null } });
+  expect(await check({ environment: { effort: 'high' } })).toBeNull();
+  expect(await check({ environment: { effort: 'ultra' } })).toContain('effort');
+});
 it.each(['pi', 'qwen', undefined])('inventory does not reject controls for unwalked/legacy adapter %s', async (effectiveHarness) => {
   const { runtimeControlRefusal } = require('../../services/runtimeControlValidation');
   const check = (config) => runtimeControlRefusal({ agentName: 'key-seat', instanceId: 'default',

@@ -134,9 +134,36 @@ describe('per-installation agent settings', () => {
       .set('Authorization', `Bearer ${token(owner)}`);
     expect(response.status).toBe(200);
     expect(response.body.runtimeManaged).toBe(false);
-    expect(response.body.runtimeEditable).toBe(false);
     expect(response.body.runtimeControls.effort).toBe('');
     expect(response.body.runtimeSavedControls.effort).toBe('max');
+  });
+
+  // D247: a listener agent (`agent run` from the connect page) has no machine
+  // binding. It is still the person's own agent, and its run reads these
+  // controls from the server, so they stay editable on add and after.
+  it('lets the owner edit a listener agent\'s runtime controls without a machine binding', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.runtime': { runtimeType: 'webhook' }, 'config.environment': { model: 'gpt-6-sol', effort: 'high' } },
+    });
+    const response = await request(app)
+      .get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.runtimeEditable).toBe(true);
+    expect(response.body.runtimeSourcePodId).toBe(String(podA._id));
+    expect(response.body.runtimeSavedControls).toEqual(expect.objectContaining({ model: 'gpt-6-sol', effort: 'high' }));
+    expect(response.body.harnessCatalog.map((entry) => entry.id)).toEqual(
+      ['claude', 'codex', 'opencode', 'qwen', 'goose', 'hermes', 'pi', 'dsh']);
+  });
+
+  it('serves the harness catalogue to a signed-in person before any agent exists', async () => {
+    const anonymous = await request(app).get('/api/registry/harness-catalog');
+    expect(anonymous.status).toBe(401);
+    const response = await request(app).get('/api/registry/harness-catalog')
+      .set('Authorization', `Bearer ${token(other)}`);
+    expect(response.status).toBe(200);
+    expect(response.body.harnesses[1]).toEqual({ id: 'codex', label: 'Codex',
+      models: expect.arrayContaining(['gpt-6.1-sol']), efforts: ['low', 'medium', 'high', 'xhigh', 'max'] });
   });
 
   it('does not present a hosted runtime preference as its running model or effort', async () => {

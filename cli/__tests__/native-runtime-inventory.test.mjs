@@ -13,6 +13,17 @@ test('Codex reads only native model cache and offers the intersection of support
     { slug: 'hidden', visibility: 'hidden' },
   ] })).toEqual({ models: ['a', 'b'], efforts: ['high'] });
 });
+// codex-cli 0.162.1 spells visibility 'list' and 'hide'; a 'hide' model
+// (gpt-reserve, codex-auto-review) is not one a person should pick (D247).
+test('Codex leaves out models the cache marks hide, as well as hidden', () => {
+  const level = [{ effort: 'high' }];
+  expect(codexModelsFromCache({ models: [
+    { slug: 'gpt-6-sol', visibility: 'list', supported_reasoning_levels: level },
+    { slug: 'gpt-reserve', visibility: 'hide', supported_reasoning_levels: level },
+    { slug: 'codex-auto-review', visibility: 'hide', supported_reasoning_levels: level },
+    { slug: 'old-hidden', visibility: 'hidden', supported_reasoning_levels: level },
+  ] })).toEqual({ models: ['gpt-6-sol'], efforts: ['high'] });
+});
 test('cache errors or oversized caches stay unavailable; no provider request or model command runs', async () => {
   const spawnSyncImpl = jest.fn();
   const readFileImpl = jest.fn();

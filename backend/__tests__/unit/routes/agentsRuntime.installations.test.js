@@ -87,6 +87,24 @@ describe('GET /installations runtime adapter projection', () => {
     expect(response.body.installations[0]).not.toHaveProperty('config');
   });
 
+  // D247: a listener seat (`agent run`, no daemon) reads its saved model and
+  // effort here before each turn, so a Settings change reaches its next spawn.
+  test('projects the saved model and effort controls, and nothing else from the environment', async () => {
+    const config = mockInstallation.config;
+    mockInstallation.config = { runtime: { runtimeType: 'webhook', adapter: 'codex', model: 'legacy-model' },
+      environment: { model: 'gpt-6-sol', effort: 'xhigh', provider: { id: 'p', keyFile: '/secret' } } };
+    try {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.installations[0].runtimeControls).toEqual({ model: 'gpt-6-sol', effort: 'xhigh' });
+      mockInstallation.config = { runtime: { runtimeType: 'webhook', model: 'legacy-model' },
+        environment: { effort: 'bad\nvalue' } };
+      const legacy = await request(app).get('/api/agents/runtime/installations');
+      expect(legacy.body.installations[0].runtimeControls).toEqual({ model: 'legacy-model' });
+    } finally {
+      mockInstallation.config = config;
+    }
+  });
+
   test.each(['pi', 'codex'])('adapter-shaped legacy runtimeType %s projects the resolved binding', async (runtimeType) => {
     const config = mockInstallation.config;
     mockInstallation.config = { runtime: { runtimeType, host: 'byo' } };

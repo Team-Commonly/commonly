@@ -1862,12 +1862,10 @@
       "adapterCodex": "Codex",
       "modelLabel": "模型",
       "modelDefault": "适配器默认",
-      "modelOpus": "Opus——推理最强",
-      "modelSonnet": "Sonnet——均衡",
-      "modelHaiku": "Haiku——最快、最省",
       "modelHintAuto": "适配器和模型都留在默认时，会沿用那台电脑当前偏好的设置。",
-      "modelHintClaude": "Claude 的这些别名跨版本保持稳定。走那台电脑上自己的 Claude 登录。",
-      "modelHintCodex": "这些只是建议；那台电脑上的 Codex CLI 模型目录决定哪些模型标识可用。使用那台电脑自己的 Codex 登录。"
+      "effortLabel": "推理强度",
+      "modelHintList": "模型 ID 会原样传给 {{tool}}。列表里没有的，选「其他…」。",
+      "modelHintFree": "填写 {{tool}} 使用的完整模型 ID，留空则用它的默认模型。"
     },
     "actions": {
       "install": "获取接入命令",
@@ -1979,7 +1977,8 @@
         "web": "允许它抓取网页（--allow web）",
         "folder": "粘贴命令之前，先在终端里打开你的项目文件夹（别在个人文件夹里）。无论选哪一项，它都能把读到的内容传出这台电脑，所以只在你信任的 Pod 里授予。",
         "saved": "写入和联网权限在智能体第一次启动时保存，之后在这里取消勾选并不会移除它们。修改前请先停止正在运行的监听器。然后运行 commonly agent detach <name> --force，再用新的选择重新运行。"
-      }
+      },
+      "unavailableOther": "{{tool}} 目前只能在 Mac 上从这个页面运行。要在 {{os}} 上回复 @提及，你可以选择「在这里运行」，改用托管智能体；也可以换到 Mac 上运行这条命令。"
     },
     "mode": {
       "label": "在哪里运行？",
@@ -2038,7 +2037,8 @@
       "titleClaude": "接入你的 Claude Code",
       "titleCodex": "接入你的 Codex",
       "lead": "在终端里约2分钟完成。",
-      "leadWindows": "在 PowerShell 里约2分钟完成。"
+      "leadWindows": "在 PowerShell 里约2分钟完成。",
+      "titleOther": "接入你的 {{tool}}"
     },
     "compact": {
       "title": "在这里运行智能体",
@@ -2050,6 +2050,18 @@
     },
     "otherWays": {
       "title": "其他接入方式"
+    },
+    "refused": {
+      "public": "{{tool}} 目前还不能作为公开智能体回复，而这里添加的智能体都是公开的。Claude Code、Codex 或 OpenCode 可以，也可以选择「{{hosted}}」。",
+      "dsh": "DeepSeek Harness 只能作为私有智能体运行，需要在终端里设置，而这里添加的智能体都是公开的。Claude Code、Codex 或 OpenCode 可以从这里回复，也可以选择「{{hosted}}」。",
+      "qwen": "Qwen Code 能启动，但还发不出回复。Claude Code、Codex 或 OpenCode 可以，也可以选择「{{hosted}}」。"
+    },
+    "opencode": {
+      "keyStep": "先保存你的 DeepSeek API 密钥。把这一行粘贴到终端，提示时再粘贴密钥。密钥不会显示出来，文件也只有你能读。",
+      "runStep": "然后接入 {{name}} 并启动它。别关这个窗口：它只在运行时回复。",
+      "provider": "这里用的是 DeepSeek 官方 API。要换成其他兼容 OpenAI 的服务商，请按照",
+      "guide": "OpenCode 指南",
+      "machine": "OpenCode 需要那台电脑上有你的服务商密钥，所以请改在 Mac 上用「{{byo}}」接入。"
     }
   },
   "agentProfile": {
@@ -3209,5 +3221,14 @@
     "openAgent": "打开它的智能体页面",
     "followError": "没有保存成功，请再试一次。",
     "viewProfile": "查看 {{name}} 的资料"
+  },
+  "harness": {
+    "installed": "已安装 · {{version}}",
+    "installedNoVersion": "已安装",
+    "notOnComputer": "这台电脑上没有",
+    "other": "其他…",
+    "otherPlaceholder": "完整的模型 ID",
+    "answeredIn": "用 {{harness}} 回复，耗时{{seconds}}秒",
+    "answeredWith": "用 {{harness}} 回复"
   }
 }

@@ -223,6 +223,34 @@ describe('codex adapter — spawn()', () => {
     expect(resumed.calls[0].args[resumed.calls[0].args.indexOf('--model') + 1]).toBe('gpt-5.4');
   });
 
+  // D247, end to end at the adapter: the model and effort picked in Settings
+  // or on the add page reach codex as `--model <id>` and
+  // `model_reasoning_effort="<effort>"`, the spawn observation names both, and
+  // the reply receipt carries them.
+  test('a picked model and effort reach the codex argv, the spawn observation and the reply receipt', async () => {
+    const { buildReplyReceipt } = await import('../src/lib/reply-receipt.js');
+    const run = makeSpawnImpl({ outputContents: 'ok' });
+    const observed = [];
+    const result = await codex.spawn('hi', {
+      sessionId: null,
+      environment: { model: 'gpt-6.1-sol', effort: 'xhigh' },
+      onSpawn: (controls) => observed.push(controls),
+      // The OS 'spawn' event is what the observation waits for.
+      _spawnImpl: (...call) => {
+        const child = run.impl(...call);
+        process.nextTick(() => child.emit('spawn'));
+        return child;
+      },
+    });
+    const { args } = run.calls[0];
+    expect(args[args.indexOf('--model') + 1]).toBe('gpt-6.1-sol');
+    expect(args[args.indexOf('model_reasoning_effort="xhigh"') - 1]).toBe('-c');
+    expect(observed).toEqual([expect.objectContaining({ model: 'gpt-6.1-sol', effort: 'xhigh' })]);
+    expect(result.stats).toEqual({ model: 'gpt-6.1-sol', effort: 'xhigh' });
+    expect(buildReplyReceipt({ adapterName: 'codex', stats: result.stats, durationMs: 4200 }))
+      .toEqual({ adapter: 'codex', model: 'gpt-6.1-sol', effort: 'xhigh', durationMs: 4200 });
+  });
+
   test('TASK-174: a warmed MCP home turns the override into `node <bin>`, and the credential stays on the file channel', async () => {
     // Control: the test below this one declares the same server with an EMPTY
     // home (the jest setup points COMMONLY_MCP_HOME at a fresh dir) and expects

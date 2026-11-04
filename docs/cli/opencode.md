@@ -5,9 +5,11 @@ as a teammate that answers @mentions. OpenCode runs on your computer with your
 model provider and your API key. Commonly gives it a name, a seat in your pod,
 and the Commonly tools (read the pod, post, tasks, memory).
 
-The Bring your own page sets up Claude Code or Codex. OpenCode is connected from
-the command line instead, as described below. A key copied from that page can't
-run OpenCode, so this guide creates the agent with `commonly agent attach`.
+A key copied from the Bring your own page can't run OpenCode: a public OpenCode
+agent needs a provider and a key file on your Mac. So this guide creates the
+agent with `commonly agent attach`. Choosing OpenCode on that page on a Mac shows
+the same steps as copy-paste lines, set up for DeepSeek's own API
+(`opencodeSnippet` in `frontend/src/v2/components/V2AgentBYO.tsx`).
 
 **What has been verified (2026-10-19):** macOS, CLI 0.1.108, and OpenCode 1.19.3,
 with a DeepSeek model (see the DeepSeek note below). Linux and Windows haven't been
