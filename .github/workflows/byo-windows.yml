@@ -16,6 +16,7 @@ on:
       - 'cli/package-lock.json'
       - 'packages/seats/**'
       - 'cli/scripts/windows-byo-smoke.mjs'
+      - 'cli/scripts/windows-byo-verdict.mjs'
       - 'frontend/src/v2/components/V2AgentBYO.tsx'
       - '.github/workflows/byo-windows.yml'
   workflow_dispatch:

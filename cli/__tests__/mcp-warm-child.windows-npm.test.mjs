@@ -61,6 +61,36 @@ describe('the warm runs npm on Windows', () => {
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
+  // A relative PATH entry (`.`) names a folder relative to the child's working
+  // directory, which is where Windows itself would look when spawning it there.
+  // Read against this process's directory instead, an `npm.cmd` planted in the
+  // folder Commonly was started from would run with the agent token in its env.
+  test('a relative PATH entry is read in the child\'s cwd, not this process\'s', async () => {
+    const home = 'C:\\Users\\me\\.commonly';
+    const resolution = windows({
+      'npm.cmd': NPM_NPM_CMD, // relative: what this process's cwd would hold
+      [`${NODEJS}\\npm.cmd`]: NPM_NPM_CMD,
+      [NODE]: 'MZ',
+      [NPM_CLI]: '',
+    });
+    resolution.env.Path = `.;${NODEJS}`;
+    await runCommand('npm', ['view', '@commonlyai/mcp'], { cwd: home, resolution });
+    expect(spawnMock.mock.calls[0].slice(0, 2)).toEqual([NODE, [NPM_CLI, 'view', '@commonlyai/mcp']]);
+    expect(spawnMock.mock.calls[0][2].cwd).toBe(home);
+  });
+
+  test('a relative PATH entry finds npm in the child\'s cwd', async () => {
+    const home = 'C:\\Users\\me\\.commonly';
+    const resolution = windows({
+      [`${home}\\npm.cmd`]: NPM_NPM_CMD,
+      [`${home}\\node_modules\\npm\\bin\\npm-cli.js`]: '',
+      [NODE]: 'MZ',
+    });
+    resolution.env.Path = '.';
+    await runCommand('npm', ['view', '@commonlyai/mcp'], { cwd: home, resolution });
+    expect(spawnMock.mock.calls[0][1][0]).toBe(`${home}\\node_modules\\npm\\bin\\npm-cli.js`);
+  });
+
   test('off Windows the name is spawned as given', async () => {
     const res = await runCommand('npm', ['view', '@commonlyai/mcp'], { resolution: { platform: 'linux' } });
     expect(res.ok).toBe(true);

@@ -101,7 +101,10 @@ failed in milliseconds, no build was ever prepared, and every public turn was re
 `public_mcp_unavailable`, so the page's Windows lines never answered an @mention (D164). Every unit
 tier passed, because they mock the spawn. Only the windows-latest walk below caught it. A new
 `spawn('<name>', …)` needs `resolveLaunch` (or a Windows test that runs it). `commonly dev`'s
-`npm test` is still bare, and it isn't on a seat path.
+`npm test` is still bare, and it isn't on a seat path. A spawn with its own `cwd` passes that `cwd`
+to the resolver too: a relative PATH entry such as `.` is read in the child's folder, as Windows reads
+it, not in the folder the CLI was started from, where a planted `npm.cmd` would run with the agent
+token in its env.
 
 ## What is proven, and what is not
 
@@ -116,7 +119,12 @@ tier passed, because they mock the spawn. Only the windows-latest walk below cau
   @mention acknowledged, from a fresh profile, so the MCP warm and the public-seat gate run too.
   The model is a stub, named in Claude Code's machine-wide managed settings, because a public seat
   strips `ANTHROPIC_*` from Claude Code's env. Two legs: the published CLI and this checkout's packed
-  CLI. On a pull request the published leg only warns, because a CLI fix reaches npm after it merges.
+  CLI. A guard after the install line stops the paste when npm fails, so a failed install never falls
+  through to a `commonly` already on PATH. On a pull request, what the published CLI does once it
+  holds the @mention only warns, because a CLI fix reaches npm after it merges. A published install
+  that fails, or a published CLI that never picks up the @mention, still fails the PR: this tree's
+  leg replaces the page's install line, so only the published leg proves it
+  (`cli/scripts/windows-byo-verdict.mjs`).
 - **Not proven:** a turn on a signed-in Claude Code account (the walk's model is a stub), a tool call
   from the model through the commonly MCP server on Windows (the stub answers in text), and Codex on
   Windows at all. The BYO page says Codex is untested on Windows.

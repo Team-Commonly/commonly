@@ -124,7 +124,8 @@ export const runCommand = (bin, args, {
     resolve(result);
   };
   try {
-    const launch = resolveLaunch(bin, args, resolution);
+    // The child runs in `cwd`, so a relative PATH entry is read there.
+    const launch = resolveLaunch(bin, args, { cwd, ...resolution });
     child = spawnChild(launch.command, launch.args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env, cwd });
   } catch (error) {
     done({ ok: false, stdout: '', stderr: String(error && error.message) });

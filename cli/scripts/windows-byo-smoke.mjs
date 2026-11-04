@@ -37,6 +37,8 @@ import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
+import { installExitFrom, pasteScript, publishedOutcome } from './windows-byo-verdict.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOKEN = 'cm_agent_windows_byo_smoke';
 const AGENT = 'win-byo';
@@ -235,11 +237,13 @@ const walk = async (label, installLine) => {
   leg = { eventId: `evt-${label.replace(/\W+/g, '-')}`, delivered: false, acked: false, posts: [], badAuth: [] };
   const modelBefore = model.paths.length;
   const apiBefore = api.calls.length;
-  log(`${label}: pasting into PowerShell, profile ${profile}:\n  ${lines.join('\n  ')}`);
+  // The install line is followed by a guard that stops the paste when it fails.
+  const script = pasteScript(lines);
+  log(`${label}: pasting into PowerShell, profile ${profile}:\n  ${script.join('\n  ')}`);
 
   // A fresh profile is a machine that has never run Commonly or Claude Code:
   // no token record, no prepared tools, no Claude Code state.
-  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', lines.join('\n')], {
+  const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script.join('\n')], {
     cwd: profile,
     env: { ...process.env, USERPROFILE: profile, HOME: profile },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -271,7 +275,8 @@ const walk = async (label, installLine) => {
   if (leg.badAuth.length) problems.push(`calls without the page's token: ${leg.badAuth.join(', ')}`);
   if (exited !== null && problems.length) problems.push(`PowerShell exited ${exited} before the walk finished`);
 
-  if (problems.length) {
+  const installExit = installExitFrom(out);
+  if (problems.length || installExit !== null) {
     // One stream, so the runner's log keeps this in order.
     log(`${label}: the stub Commonly API saw:\n  ${counts(api.calls.slice(apiBefore)) || '(nothing)'}`);
     log(`${label}: the stub model saw:\n  ${counts(model.paths.slice(modelBefore)) || '(nothing)'}`);
@@ -280,20 +285,22 @@ const walk = async (label, installLine) => {
   } else {
     log(`${label}: reply posted and @mention acknowledged after ${seconds} s`);
   }
-  return problems;
+  return { problems, installExit, delivered: leg.delivered };
 };
 
-// The published leg is what a person gets today. On a pull request it is
-// reported, not failed: a fix to the CLI reaches npm only after it merges, so
-// the published leg cannot pass on the PR that fixes it. This tree's leg is
-// the PR's proof. Dispatched, both legs must pass.
+// The published leg is what a person gets today. On a pull request, what the
+// published CLI does once it holds the @mention is reported, not failed: a fix
+// to the CLI reaches npm only after it merges, so the published leg cannot
+// pass on the PR that fixes it, and this tree's leg is the PR's proof. The
+// page's install line, and the published CLI getting as far as its @mention,
+// fail a PR too: this tree's leg replaces that line, so nothing else proves
+// it. Dispatched, both legs must pass. windows-byo-verdict.mjs holds the rule.
 const publishedReportsOnly = process.env.COMMONLY_BYO_PUBLISHED_REPORT_ONLY === '1';
-for (const problem of await walk('published')) {
-  if (publishedReportsOnly) console.log(`::warning::published CLI on Windows: ${problem}`);
-  else fail(`published: ${problem}`);
-}
+const published = publishedOutcome(await walk('published'), { reportOnly: publishedReportsOnly });
+published.warn.forEach((problem) => console.log(`::warning::published CLI on Windows: ${problem}`));
+published.fail.forEach((problem) => fail(`published: ${problem}`));
 const tarball = process.env.COMMONLY_BYO_TREE_TARBALL;
-if (tarball) (await walk('this tree', `npm i -g ${tarball}`)).forEach((problem) => fail(`this tree: ${problem}`));
+if (tarball) publishedOutcome(await walk('this tree', `npm i -g ${tarball}`)).fail.forEach((problem) => fail(`this tree: ${problem}`));
 else fail('this tree: COMMONLY_BYO_TREE_TARBALL is not set, so this checkout was not walked');
 
 apiServer.close();
