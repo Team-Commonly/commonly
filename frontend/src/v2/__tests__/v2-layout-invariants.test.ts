@@ -3298,11 +3298,13 @@ describe('v2 layout invariants (CSS rule presence)', () => {
         "'./connectors/ConnectorsPage'",
         "'./components/V2ActivityPage'",
         "'./components/V2ArtifactsPage'",
-        "'../components/ChatRoom'",
         "'../components/admin/GlobalIntegrations'",
       ]) {
         expect(shell).toContain(`React.lazy(() => import(${heavy}))`);
       }
+      // The V1 ChatRoom no longer mounts inside v2 at all: its old route now
+      // redirects to the v2 pod view (ui-audit 11-04 finding 1).
+      expect(shell).not.toContain("import('../components/ChatRoom')");
     });
 
     test('IBM Plex Sans is self-hosted, first in the stack, and imported before v2.css', () => {

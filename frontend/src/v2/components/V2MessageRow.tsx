@@ -904,7 +904,7 @@ const V2MessageRow: React.FC<V2MessageRowProps> = ({ message, sourceMessageId, d
             {notice.pods?.length ? <>
               {t('podChat.mentionNotInPodWithPods', { handle: notice.handle })}{' '}
               {notice.pods.map((pod, index) => <React.Fragment key={pod.id}>
-                {index > 0 ? ', ' : ''}<Link to={`/v2/pods/chat/${encodeURIComponent(pod.id)}`}>{pod.name}</Link>
+                {index > 0 ? ', ' : ''}<Link to={`/v2/pods/${encodeURIComponent(pod.id)}`}>{pod.name}</Link>
               </React.Fragment>)}
             </> : t('podChat.mentionNotInPod', { handle: notice.handle })}
           </div>

@@ -60,7 +60,6 @@ const V2RunTrace = React.lazy(() => import('./components/V2RunTrace'));
 const V2TaskRecord = React.lazy(() => import('./components/V2TaskRecord'));
 const V2ActivityPage = React.lazy(() => import('./components/V2ActivityPage'));
 const V2ArtifactsPage = React.lazy(() => import('./components/V2ArtifactsPage'));
-const ChatRoom = React.lazy(() => import('../components/ChatRoom'));
 const ApiDevPage = React.lazy(() => import('../components/ApiDevPage'));
 const PodContextDevPage = React.lazy(() => import('../components/PodContextDevPage'));
 const GlobalIntegrations = React.lazy(() => import('../components/admin/GlobalIntegrations'));
@@ -206,9 +205,37 @@ const V2AgentProfileRoute: React.FC = () => {
   );
 };
 
+// Every Pod.type value, plus the old 'gaming' alias. A first segment in this
+// set marks a `/v2/pods/:podType/:roomId` link from before the v2 pod view.
+const legacyRoomTypes = new Set([...podTypeRoutes, 'agent-dm', 'agent-ensemble', 'team']);
+
+// The v2 pod view reads `?message=` and `#message-` to land on a message, so a
+// redirect into it carries the query and hash along.
+const V2PodViewRedirect: React.FC<{ podId?: string }> = ({ podId }) => {
+  const location = useLocation();
+  if (!podId) return <Navigate to="/v2" replace />;
+  return (
+    <Navigate
+      to={{ pathname: `/v2/pods/${encodeURIComponent(podId)}`, search: location.search, hash: location.hash }}
+      replace
+    />
+  );
+};
+
+// `/v2/chat/:podId` is the v2 spelling of the V1 `/chat/:podId` link.
 const V2LegacyChatRedirect: React.FC = () => {
   const { podId } = useParams<{ podId: string }>();
-  return <Navigate to={podId ? `/v2/pods/chat/${podId}` : '/v2'} replace />;
+  return <V2PodViewRedirect podId={podId} />;
+};
+
+// `/v2/pods/:podType/:roomId` used to mount the V1 MUI ChatRoom ("Pod Tools")
+// inside v2, for the run board before V2PodBoard existed (#922). It rendered
+// V1 styling on chat pods and "Failed to load chat room" on team pods, so
+// every link of that shape now opens the v2 pod view. An unknown first
+// segment is read as the pod id (`/v2/pods/:podId/<unknown>`).
+const V2LegacyPodRoomRedirect: React.FC = () => {
+  const { podType, roomId } = useParams<{ podType: string; roomId: string }>();
+  return <V2PodViewRedirect podId={podType && legacyRoomTypes.has(podType) ? roomId : podType} />;
 };
 
 const V2App: React.FC = () => {
@@ -293,15 +320,7 @@ const V2App: React.FC = () => {
                 />
                 <Route
                   path="pods/:podType/:roomId"
-                  element={feature(
-                    'Pod Tools',
-                    <ChatRoom />,
-                    false,
-                    /* ChatRoom owns its own sticky AppBar with title/tabs;
-                       suppress the v2 feature header so the user does not
-                       get stacked chrome along the top of the route. */
-                    false,
-                  )}
+                  element={<V2LegacyPodRoomRedirect />}
                 />
                 <Route
                   path="chat/:podId"
