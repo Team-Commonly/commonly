@@ -1625,6 +1625,30 @@ const readPvcVirtualKey = async (agentId: string): Promise<string | null> => {
   }
 };
 
+// F103 review (CTO and CodeRabbit on #3421): F103's reuse check sends every
+// pre-F103 key for re-issue on the next reprovision-all. The issuers used to
+// delete the old key before minting and writing its replacement, so a failed
+// mint or profile write left the agent holding a revoked key, or none. Now an
+// issuer only records the key it replaced; retireReplacedLiteLLMKey deletes it
+// once that replacement is written to the agent's openrouter:default profile.
+const replacedLiteLLMKeys = new Map<string, { oldKey: string; mintedKey: string }>();
+
+const retireReplacedLiteLLMKey = async (agentId: any, installedKey: string | null) => {
+  const id = String(agentId);
+  const replaced = replacedLiteLLMKeys.get(id);
+  replacedLiteLLMKeys.delete(id);
+  if (!replaced || !installedKey || installedKey !== replaced.mintedKey) return;
+  const baseUrl = process.env.LITELLM_BASE_URL;
+  const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
+  if (!baseUrl || !masterKey || replaced.oldKey === masterKey || replaced.oldKey === installedKey) return;
+  const axios = require('axios');
+  await axios.delete(`${baseUrl}/key/delete`, {
+    headers: { Authorization: `Bearer ${masterKey}` },
+    data: { keys: [replaced.oldKey] },
+  }).catch(() => {});
+  console.log(`[litellm] Retired the key replaced for ${id}`);
+};
+
 const issueLiteLLMVirtualKey = async (agentId: any) => {
   const baseUrl = process.env.LITELLM_BASE_URL;
   const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
@@ -1636,6 +1660,7 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
     // Read current key from PVC. If it is still valid in LiteLLM, reuse it — this makes
     // the function idempotent so concurrent provisioning calls don't race-delete each other.
     const existingKey = await readPvcVirtualKey(agentId);
+    let replacedKey: string | null = null;
 
     // Check if existing key is still valid in LiteLLM DB AND belongs to this agent.
     // Without the ownership check, a key mistakenly written to the wrong agent's PVC
@@ -1648,12 +1673,9 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
           return existingKey; // still valid, owned by this agent, and allows the default model
         }
         // Key exists in DB but is invalid, belongs to another agent, or predates the
-        // default model — delete it so it doesn't accumulate as an orphan, then fall
-        // through to issue a fresh one.
-        if (info) {
-          await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
-          console.log(`[litellm] Deleted stale/misowned key for ${agentId}`);
-        }
+        // default model. Issue a fresh one; the old one is retired once the fresh
+        // one is installed, so it doesn't accumulate as an orphan.
+        if (info) replacedKey = existingKey;
       } catch (_: any) { /* key not in DB — fall through to issue a new one */ }
     }
 
@@ -1683,6 +1705,7 @@ const issueLiteLLMVirtualKey = async (agentId: any) => {
     );
     const newKey = resp.data?.key || null;
     if (newKey) console.log(`[litellm] Issued new virtual key for ${agentId}`);
+    if (newKey && replacedKey) replacedLiteLLMKeys.set(String(agentId), { oldKey: replacedKey, mintedKey: newKey });
     return newKey;
   } catch (err: any) {
     console.warn(`[litellm] Virtual key generation failed for ${agentId}: ${err.message}`);
@@ -1707,6 +1730,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
     // Reuse the agent's current virtual key when LiteLLM still recognises it
     // (see readPvcVirtualKey for where it lives).
     const existingKey = await readPvcVirtualKey(agentId);
+    let replacedKey: string | null = null;
 
     if (existingKey && existingKey !== masterKey) {
       // Safety: never delete the master key even if found on PVC
@@ -1719,10 +1743,8 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
         if (ownedByAgent && keyAllowsDefaultModel(info)) {
           return existingKey;
         }
-        if (info) {
-          await axios.delete(`${baseUrl}/key/delete`, { headers, data: { keys: [existingKey] } }).catch(() => {});
-          console.log(`[litellm] Deleted ${ownedByAgent ? 'stale-allowlist' : 'misowned'} OpenRouter key for ${agentId}`);
-        }
+        // Retired once its replacement is installed (retireReplacedLiteLLMKey).
+        if (info) replacedKey = existingKey;
       } catch (_: any) { /* key not in DB — fall through */ }
     }
 
@@ -1744,6 +1766,7 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
     );
     const newKey = resp.data?.key || null;
     if (newKey) console.log(`[litellm] Issued OpenRouter virtual key for ${agentId}`);
+    if (newKey && replacedKey) replacedLiteLLMKeys.set(String(agentId), { oldKey: replacedKey, mintedKey: newKey });
     return newKey;
   } catch (err: any) {
     console.warn(`[litellm] OpenRouter virtual key generation failed for ${agentId}: ${err.message}`);
@@ -1759,8 +1782,8 @@ const issueLiteLLMOpenRouterKey = async (agentId: any) => {
  * The init container runs in patch mode and does NOT update these profiles, so injections
  * persist across gateway restarts.
  */
-const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agentId: any, virtualKey: any) => {
-  if (!virtualKey) return;
+const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agentId: any, virtualKey: any): Promise<boolean> => {
+  if (!virtualKey) return false;
   const escaped = virtualKey.replace(/'/g, "\\'");
   // OpenRouter calls are proxied through LiteLLM (openrouter.baseUrl = http://litellm:4000/v1).
   // LiteLLM expects a virtual key for authorization — always use the LiteLLM key for openrouter:default.
@@ -1795,8 +1818,10 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
     `} catch (e: any) { process.stdout.write('skip:' + e.message); }`,
   ].filter(Boolean).join(' ');
 
-  const execOnPod = async (podName: any) => new Promise<void>((resolve, reject) => {
+  const execOnPod = async (podName: any) => new Promise<string>((resolve, reject) => {
     const stdoutStream = new stream.PassThrough();
+    const chunks: Buffer[] = [];
+    stdoutStream.on('data', (d: Buffer) => chunks.push(d));
     k8sExec.exec(
       NAMESPACE,
       podName,
@@ -1807,7 +1832,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
       null,
       false,
       (status: any) => {
-        if (status.status === 'Success') resolve();
+        if (status.status === 'Success') setImmediate(() => resolve(Buffer.concat(chunks).toString().trim()));
         else reject(new Error(status.message || 'exec failed'));
       },
     ).catch(reject);
@@ -1818,11 +1843,16 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
       const gwPod = await waitForReadyGatewayPod(90000, 5000);
       if (!gwPod) {
         console.warn(`[k8s-provisioner] openrouter key inject skipped for ${agentId}: no ready gateway pod`);
-        return;
+        return false;
       }
-      await execOnPod(gwPod.metadata.name);
+      const out = await execOnPod(gwPod.metadata.name);
+      if (out !== 'ok') {
+        // The script ran but could not write the file (it prints `skip:<reason>`).
+        console.warn(`[k8s-provisioner] openrouter key inject skipped for ${agentId}: ${out || 'no output'}`);
+        return false;
+      }
       console.log(`[k8s-provisioner] openrouter key injected for ${agentId}`);
-      return;
+      return true;
     } catch (err: any) {
       if (attempt < 2) {
         console.warn(`[k8s-provisioner] openrouter key inject attempt ${attempt} failed for ${agentId}: ${err.message} — retrying`);
@@ -1832,6 +1862,7 @@ const injectOpenRouterKeyToAgentAuthProfiles = async (deploymentName: any, agent
       }
     }
   }
+  return false;
 };
 
 const applyOpenClawCodexProviderConfig = async (config: any) => {
@@ -2455,9 +2486,10 @@ const provisionOpenClawAccount = async ({
     const masterFallback = (!isDevAgent || codexProfilesHoldMasterKey) ? masterKey : '';
     const openRouterKey = (isDevAgent && codexVirtualKey)
       || (await issueLiteLLMOpenRouterKey(accountId)) || masterFallback || null;
-    if (openRouterKey) {
-      await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
-    }
+    const installed = openRouterKey
+      ? await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey)
+      : false;
+    await retireReplacedLiteLLMKey(accountId, installed ? openRouterKey : null);
   }
   applySkillEnvEntriesToConfig(config, skillEnv);
 

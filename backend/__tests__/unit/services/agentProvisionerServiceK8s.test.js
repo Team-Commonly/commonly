@@ -76,8 +76,13 @@ const mock = {
     ) {
       mock.execCommands.push(Array.isArray(_command) ? _command.join(' ') : String(_command));
       mock.execArgv.push(_command);
-      if (mock.execStdout && _stdout && typeof _stdout.write === 'function') {
-        _stdout.write(mock.execStdout);
+      // execStdout is a string, or a function of the command (so one test can
+      // answer the PVC key read and the profile write differently).
+      const stdout = typeof mock.execStdout === 'function'
+        ? mock.execStdout(Array.isArray(_command) ? _command.join(' ') : String(_command))
+        : mock.execStdout;
+      if (stdout && _stdout && typeof _stdout.write === 'function') {
+        _stdout.write(stdout);
         if (typeof statusCallback === 'function') setImmediate(() => statusCallback({ status: 'Success' }));
         return Promise.resolve();
       }
@@ -803,14 +808,16 @@ describe('F103: LiteLLM key allowlists follow the configured model', () => {
 
   // A key minted before F103 allows only the old names, so the new default
   // would 401 on it. The reuse check has to send it for re-issue.
-  it.each(issuers)('a %s whose allowlist lacks the configured model is re-issued', async (_label, issue) => {
+  // The old key is not deleted here: it is retired only once the new one is
+  // installed (see "retired only after its replacement is installed" below).
+  it.each(issuers)('a %s whose allowlist lacks the configured model is re-issued, and the old key is kept for now', async (_label, issue) => {
     k8s.__mock.execStdout = 'sk-virtual-theo';
     keyInfo(['gpt-5.4-mini', 'openai-codex/gpt-5.4-mini', 'nvidia/nemotron-3-super-120b-a12b:free']);
 
     const key = await issue('theo');
 
     expect(key).toBe('sk-freshly-issued');
-    expect(axios.delete).toHaveBeenCalledWith(expect.stringContaining('/key/delete'), expect.anything());
+    expect(axios.delete).not.toHaveBeenCalled();
   });
 
   it.each(issuers)('a %s that already allows the configured model is reused', async (_label, issue) => {
@@ -888,5 +895,91 @@ describe('F103: a dev agent gets an openrouter:default key on every path', () =>
 
     expect(openRouterKeyWritten()).not.toContain('sk-master-for-test');
     expect(k8s.__mock.execCommands.join('\n')).not.toContain('sk-master-for-test');
+  });
+});
+
+// CTO and CodeRabbit on #3421: F103's reuse check sends every pre-F103 key for
+// re-issue on the next reprovision-all, and the issuers deleted the old key
+// before the new one was minted and written. A failed mint or write then left
+// the agent with a revoked key, or none. The old key now goes only after its
+// replacement is written to openrouter:default.
+describe('F103 review: an old LiteLLM key is retired only after its replacement is installed', () => {
+  const axios = require('axios');
+  const KEYS = ['LITELLM_BASE_URL', 'LITELLM_MASTER_KEY', 'CODEX_BYPASS_LITELLM', 'AGENT_DEFAULT_MODEL'];
+  const OLD = 'sk-old-theo';
+  const isProfileWrite = (cmd) => cmd.includes("store.profiles['openrouter:default'] = Object.assign");
+  let saved;
+  let deletes;
+  beforeEach(() => {
+    saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
+    process.env.LITELLM_BASE_URL = 'http://litellm:4000';
+    process.env.LITELLM_MASTER_KEY = 'sk-master-for-test';
+    process.env.AGENT_DEFAULT_MODEL = 'claude-haiku-5-5';
+    k8s.__mock.execCommands.length = 0;
+    deletes = [];
+    jest.spyOn(axios, 'get').mockResolvedValue({ data: { info: { user_id: 'theo', metadata: { agent_id: 'theo' }, models: ['gpt-5.4-mini'] } } });
+    jest.spyOn(axios, 'delete').mockImplementation(async (_url, cfg) => {
+      deletes.push({
+        keys: cfg?.data?.keys || [],
+        afterWrite: k8s.__mock.execCommands.some((cmd) => isProfileWrite(cmd) && cmd.includes('sk-freshly-issued')),
+      });
+      return {};
+    });
+  });
+  afterEach(() => {
+    k8s.__mock.execStdout = '';
+    jest.restoreAllMocks();
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  });
+  // The PVC still holds the old key; the profile write answers `writeOut`.
+  const pvc = (writeOut) => {
+    k8s.__mock.execStdout = (cmd) => {
+      if (isProfileWrite(cmd)) return writeOut;
+      if (cmd.includes("vk||''")) return OLD;
+      return '';
+    };
+  };
+  const provisionTheo = () => provisionAgentRuntime({
+    runtimeType: 'moltbot',
+    agentName: 'openclaw',
+    instanceId: 'theo',
+    runtimeToken: 'cm_agent_test',
+    userToken: 'cm_user_test',
+    baseUrl: 'http://backend',
+    displayName: 'Theo',
+  });
+  const oldKeyDeletes = () => deletes.filter((d) => d.keys.includes(OLD));
+  const MODES = [['Codex-bypass mode', 'true'], ['LiteLLM Codex mode', 'false']];
+
+  it.each(MODES)('in %s, when the mint fails, the old key survives', async (_label, bypass) => {
+    process.env.CODEX_BYPASS_LITELLM = bypass;
+    pvc('ok');
+    jest.spyOn(axios, 'post').mockRejectedValue(new Error('LiteLLM DB down'));
+
+    await provisionTheo();
+
+    expect(oldKeyDeletes()).toEqual([]);
+  });
+
+  it.each(MODES)('in %s, when the profile write fails, the old key survives', async (_label, bypass) => {
+    process.env.CODEX_BYPASS_LITELLM = bypass;
+    pvc('skip:EACCES');
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+
+    await provisionTheo();
+
+    expect(oldKeyDeletes()).toEqual([]);
+  });
+
+  it.each(MODES)('in %s, once the new key is written, the old key is retired', async (_label, bypass) => {
+    process.env.CODEX_BYPASS_LITELLM = bypass;
+    pvc('ok');
+    jest.spyOn(axios, 'post').mockResolvedValue({ data: { key: 'sk-freshly-issued' } });
+
+    await provisionTheo();
+
+    expect(oldKeyDeletes()).toEqual([{ keys: [OLD], afterWrite: true }]);
   });
 });
