@@ -2354,6 +2354,8 @@ const provisionOpenClawAccount = async ({
   const isDevAgent = devAgentIds.includes(accountId);
   const codexBypassLiteLLM = /^(1|true|yes)$/i.test(process.env.CODEX_BYPASS_LITELLM || '');
   let codexVirtualKey = null;
+  // True only where a dev agent's Codex profiles were given the master key.
+  let codexProfilesHoldMasterKey = false;
   if (codexBypassLiteLLM) {
     // Bypass mode: openai-codex provider points at chatgpt.com directly and
     // OpenClaw's native handler decodes access as a JWT. Only DEV agents get
@@ -2400,6 +2402,7 @@ const provisionOpenClawAccount = async ({
         // still route through LiteLLM instead of burning raw Codex OAuth tokens directly.
         const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
         if (masterKey) {
+          codexProfilesHoldMasterKey = true;
           const masterCredential = {
             type: 'oauth',
             provider: 'openai-codex',
@@ -2447,8 +2450,11 @@ const provisionOpenClawAccount = async ({
   // burning raw keys direct.
   if (process.env.LITELLM_BASE_URL) {
     const masterKey = (process.env.LITELLM_MASTER_KEY || '').trim();
+    // A dev agent falls back to the master key only when its Codex profiles
+    // already hold it; in Codex-bypass mode it never gets one (CodeRabbit, #3421).
+    const masterFallback = (!isDevAgent || codexProfilesHoldMasterKey) ? masterKey : '';
     const openRouterKey = (isDevAgent && codexVirtualKey)
-      || (await issueLiteLLMOpenRouterKey(accountId)) || masterKey || null;
+      || (await issueLiteLLMOpenRouterKey(accountId)) || masterFallback || null;
     if (openRouterKey) {
       await injectOpenRouterKeyToAgentAuthProfiles('clawdbot-gateway', accountId, openRouterKey);
     }

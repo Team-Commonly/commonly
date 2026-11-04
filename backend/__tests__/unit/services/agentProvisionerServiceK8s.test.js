@@ -869,12 +869,24 @@ describe('F103: a dev agent gets an openrouter:default key on every path', () =>
     expect(openRouterKeyWritten()).toEqual(['sk-freshly-issued']);
   });
 
-  it('when key issuance fails, falls back to the master key', async () => {
+  it('when key issuance fails, falls back to the master key its Codex profiles already hold', async () => {
     process.env.CODEX_BYPASS_LITELLM = 'false';
     jest.spyOn(axios, 'post').mockRejectedValue(new Error('LiteLLM DB down'));
 
     await provisionTheo();
 
     expect(openRouterKeyWritten()).toEqual(['sk-master-for-test']);
+  });
+
+  // CodeRabbit on #3421: in bypass mode a dev agent holds raw Codex OAuth and
+  // never the master key, so a failed issuance must not hand it one.
+  it('in Codex-bypass mode, when issuance fails, is not given the master key', async () => {
+    process.env.CODEX_BYPASS_LITELLM = 'true';
+    jest.spyOn(axios, 'post').mockRejectedValue(new Error('LiteLLM DB down'));
+
+    await provisionTheo();
+
+    expect(openRouterKeyWritten()).not.toContain('sk-master-for-test');
+    expect(k8s.__mock.execCommands.join('\n')).not.toContain('sk-master-for-test');
   });
 });
