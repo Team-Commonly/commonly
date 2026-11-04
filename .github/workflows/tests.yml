@@ -540,9 +540,19 @@ jobs:
             --set backend.worker.enabled=true \
             --set backend.worker.startPaused=false \
             > /tmp/dev-worker-rendered.yaml
+          # The committed values name no agent-computer user, so render one to
+          # put the Steel and waker manifests under kubeconform too.
+          helm template commonly-dev-computer k8s/helm/commonly \
+            -f k8s/helm/commonly/values.yaml \
+            -f k8s/helm/commonly/values-dev.yaml \
+            --set 'agentComputer.users[0]=aaaaaaaaaaaaaaaaaaaaaaaa' \
+            > /tmp/dev-computer-rendered.yaml
 
       - name: Verify backend worker render
         run: bash scripts/verify-backend-worker-chart.sh
+
+      - name: Verify agent computer render
+        run: bash scripts/verify-agent-computer-chart.sh
 
       - name: Verify dev provider env
         run: |
@@ -564,7 +574,7 @@ jobs:
           kubeconform --strict --summary -output text \
             --schema-location "https://raw.githubusercontent.com/datreeio/CRDs-catalog/${CRDS_CATALOG_SHA}/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
             --schema-location default \
-            /tmp/dev-rendered.yaml /tmp/dev-worker-rendered.yaml
+            /tmp/dev-rendered.yaml /tmp/dev-worker-rendered.yaml /tmp/dev-computer-rendered.yaml
 
       # The dev render has kubeconform coverage, but staging is otherwise first
       # rendered at deploy time. Parse both values combinations before merge.

@@ -1,8 +1,9 @@
 # Agent computer staging bridge
 
 TASK-276 is a staging-only trial. A human's Steel container owns one persistent
-browser profile on that human's PVC. The Commonly backend is the only network
-peer allowed to reach Steel's unauthenticated API, CDP, or live view. Native
+browser profile on that human's PVC. Steel's API, CDP and live view take no
+credentials, so Steel listens on loopback and a token gate in its pod admits
+only the backend's broker (`AGENT_COMPUTER_STEEL_TOKEN`). Native
 agent installations opt in to the six `computer_*` tools; legacy installs and
 production do not receive them.
 
@@ -12,8 +13,10 @@ production do not receive them.
   `POST {AGENT_COMPUTER_WAKER_URL}/v1/users/{24-hex userId}/wake` and an ESO-held
   bearer token. The waker waits for the user's Steel pod to be ready. The
   backend has no Kubernetes scale permission.
-- It then uses the in-namespace `steel-{userId}` Service, API `:3000` and CDP
-  `:9223`. The broker lists sessions and attaches to an existing `idle` or
+- It then uses the in-namespace `steel-{userId}` Service on `:3000`, for both
+  the API and CDP (Steel's own WebSocket proxy; deployment in
+  [`docs/runbooks/agent-computer-steel.md`](../runbooks/agent-computer-steel.md)).
+  The broker lists sessions and attaches to an existing `idle` or
   `live` session. It creates a session only when none is active; an unfamiliar
   state fails closed because a second session relaunches the browser.
 - One backend broker connection is cached per human. Each installation gets
@@ -25,7 +28,8 @@ production do not receive them.
   A new backend connection gets a new frame epoch, invalidating stale human
   input.
 - `AGENT_COMPUTER_ENABLED` defaults to `false`; the trial needs that flag,
-  both Steel endpoint templates, the waker URL/token, and an allowed host list.
+  both Steel endpoint templates, the waker URL/token, the Steel gate token, and
+  an allowed host list.
   Staging supplies the Steel templates and LinkedIn host list. SRE supplies
   the waker URL and `agent-computer-waker` Secret key `token` before the walk.
 

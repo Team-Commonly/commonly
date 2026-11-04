@@ -655,6 +655,12 @@ spec:
               name: agent-computer-waker
               key: token
               optional: true
+        - name: AGENT_COMPUTER_STEEL_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: agent-computer-steel
+              key: token
+              optional: true
         - name: MARKETPLACE_MANIFEST_PATH
           value: {{ .Values.backend.env.marketplaceManifestPath | default "/app/packages/commonly-marketplace/marketplace.json" | quote }}
 

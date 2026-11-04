@@ -78,6 +78,17 @@ backend:
       effect: "NoSchedule"
   env:
     nodeEnv: development
+    # D244 pilot 2 (Walker): the agent computer. Only an installation whose
+    # config.tools lists the computer_* tools can reach it (agentComputer.ts),
+    # and only Walker's will. It stays inert until the waker token exists AND
+    # agentComputer.users (private overlay) names Walker's owner; see
+    # docs/runbooks/agent-computer-steel.md.
+    agentComputerEnabled: "true"
+    agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-dev.svc.cluster.local:3000"
+    # Steel's own CDP WebSocket proxy on the API port (templates/agent-computer/steel.yaml).
+    agentComputerSteelCdpUrlTemplate: "ws://steel-{userId}.commonly-dev.svc.cluster.local:3000"
+    agentComputerAllowedHosts: "commonly.me"
+    agentComputerWakerUrl: "http://agent-computer-waker.commonly-dev.svc.cluster.local"
     # Registration opened 2026-07-03 — the invitation code now gates the
     # hosted-agent entitlement (redeemed at signup or later), not signup
     # itself. BYO/local agents are open to every account.
@@ -502,6 +513,28 @@ hostedMcp:
 # turning this on doesn't fail the api-keys sync (see values.yaml).
 internalAccounts:
   fromSecret: true
+
+# The agent computer (D244 pilot 2). `users` comes from the private overlay.
+# ADR-015: the browser holds a live, signed-in session, so it stays off spot.
+agentComputer:
+  steel:
+    persistence:
+      storageClass: standard-rwo
+    nodeSelector:
+      pool: dev
+    tolerations:
+      - key: "pool"
+        operator: "Equal"
+        value: "dev"
+        effect: "NoSchedule"
+  waker:
+    nodeSelector:
+      pool: dev
+    tolerations:
+      - key: "pool"
+        operator: "Equal"
+        value: "dev"
+        effect: "NoSchedule"
 
 # ops-runner (docs/runbooks/ops-runner-and-no-exec-into-backend.md): on spot — it
 # serves no traffic and a reclaim just reschedules it, and this keeps it OFF the

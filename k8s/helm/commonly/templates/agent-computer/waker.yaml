@@ -1,0 +1,185 @@
+{{- /*
+The agent computer waker (backend/services/agentComputerWaker.ts). The broker
+POSTs /v1/users/{userId}/wake with the shared bearer token before it opens a
+person's browser; the waker scales steel-{userId} to one replica and answers
+once it is Ready. Its own Role is named down to the rendered steel-{userId}
+Deployments.
+*/ -}}
+{{- $users := include "commonly.agentComputer.users" . | fromJsonArray -}}
+{{- if $users }}
+{{- $ns := include "commonly.namespace" . -}}
+{{- $waker := .Values.agentComputer.waker -}}
+{{- $names := list -}}
+{{- range $id := $users }}{{ $names = append $names (printf "steel-%s" $id) }}{{ end -}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent-computer-waker
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: agent-computer-waker
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent-computer-waker
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: agent-computer-waker
+rules:
+  # Read readiness, and read or set the replica count, of these Deployments
+  # only. No list, no create, no delete, nothing else in the namespace.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: {{ $names | toJson }}
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: {{ $names | toJson }}
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent-computer-waker
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: agent-computer-waker
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agent-computer-waker
+subjects:
+  - kind: ServiceAccount
+    name: agent-computer-waker
+    namespace: {{ $ns }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-computer-waker
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: agent-computer-waker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent-computer-waker
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.labels" . | nindent 8 }}
+        app: agent-computer-waker
+    spec:
+      serviceAccountName: agent-computer-waker
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: waker
+          # The backend image carries the compiled waker; no image of its own.
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          workingDir: /app
+          command: ["node", "dist/services/agentComputerWaker.js"]
+          env:
+            - name: PORT
+              value: {{ $waker.port | quote }}
+            - name: WAKER_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: AGENT_COMPUTER_WAKER_USERS
+              value: {{ join "," $users | quote }}
+            - name: AGENT_COMPUTER_WAKER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agent-computer-waker
+                  key: token
+          ports:
+            - name: http
+              containerPort: {{ $waker.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            {{- toYaml $waker.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      {{- with $waker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $waker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-computer-waker
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: agent-computer-waker
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-computer-waker
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+{{- if .Values.externalSecrets.enabled }}
+{{- $keyPrefix := .Values.externalSecrets.keyPrefix | default "commonly-dev-" }}
+---
+# Its own ExternalSecret, not a key in api-keys: a missing key fails a whole
+# sync, and this one must never take the backend's secrets down with it. The
+# backend reads the same Secret (AGENT_COMPUTER_WAKER_TOKEN, optional).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: agent-computer-waker
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: agent-computer-waker
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: {{ .Values.externalSecrets.secretStore.name }}
+    kind: SecretStore
+  target:
+    name: agent-computer-waker
+    creationPolicy: Owner
+  data:
+    - secretKey: token
+      remoteRef:
+        key: {{ $keyPrefix }}agent-computer-waker-token
+{{- end }}
+{{- end }}

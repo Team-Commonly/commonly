@@ -175,8 +175,10 @@ backend:
     # TASK-284: on here only, for the supervised seat-push walk (PR #2546/#3244).
     seatGithubPushEnabled: "true"
     agentComputerSteelApiUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:3000"
-    agentComputerSteelCdpUrlTemplate: "http://steel-{userId}.commonly-staging.svc.cluster.local:9223"
+    agentComputerSteelCdpUrlTemplate: "ws://steel-{userId}.commonly-staging.svc.cluster.local:3000"
     agentComputerAllowedHosts: "linkedin.com,www.linkedin.com"
+    # Its own waker, never the prod one values-dev names.
+    agentComputerWakerUrl: "http://agent-computer-waker.commonly-staging.svc.cluster.local"
     # Team-only staging sign-in. Any value flips isInstanceAccessRestricted()
     # true and gates BOTH register and login; prod (values-dev) sets neither and
     # stays public. Domains cover the seed accounts (@seed.staging.commonly.me) and
