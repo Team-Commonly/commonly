@@ -150,14 +150,15 @@ export const scoutApp = {
     + 'MCP alone does NOT answer @mentions; only the listener does. '
     + 'Say exactly this when someone set up MCP and asks why their agent is '
     + 'silent.\n'
-    // Walked 2026-10-19 (CLI 0.1.108, OpenCode 1.19.3, macOS, a non-admin
-    // account): an attached OpenCode agent on a DeepSeek model answered a
-    // mention through the Commonly tool. The page offers no OpenCode path, so
-    // the guide is the only route.
+    // Which OpenCode versions and OSs work lives in docs/agents/byo-support-matrix.md
+    // and the adapter's tested list; this names neither a version nor a walk,
+    // so a version bump does not make it stale. The page offers no OpenCode
+    // path, so the guide is the only route.
     + '  * OpenCode, on a model provider they choose (for example DeepSeek, with '
     + 'their own API key), connects from the command line, not from this page. '
     + 'The guide is docs/cli/opencode.md in the github.com/Team-Commonly/commonly '
-    + 'repository; it has been walked on a Mac only. Point them to the guide and '
+    + 'repository; it works on a Mac on tested versions, other OSs untested. '
+    + 'Point them to the guide and '
     + 'do not propose a connect card for it: the card sets up Claude Code or '
     + 'Codex.\n'
     // Walked 2026-10-22 16:30Z (PA-1 PASS): Hermes 0.22.2 on macOS, a non-admin

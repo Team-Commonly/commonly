@@ -113,6 +113,9 @@ describe('Scout onboarding knowledge', () => {
   });
 
   test('connects OpenCode through its guide, never through the connect card', () => {
+    // byo-support-matrix.md holds the versions; Scout names none, so a bump can't make it stale.
+    expect(prompt).toMatch(/it works on a Mac on tested versions, other OSs untested/);
+    expect(prompt).not.toMatch(/1\.19\.3|walked on a Mac only/);
     expect(prompt).toMatch(/OpenCode, on a model provider they choose .* connects from the command line, not from this page/);
     expect(prompt).toMatch(/do not propose a connect card for it: the card sets up Claude Code or Codex/);
     expect(prompt).toMatch(/Qwen Code and pi are not ready for outside use/);
