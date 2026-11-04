@@ -71,3 +71,36 @@ describe('content-less events still get something usable', () => {
     expect(out.length).toBeGreaterThan(20);
   });
 });
+
+// TASK-779: a hosted turn posts its final text unless that text is exactly
+// NO_REPLY (or another silent sentinel), so a heartbeat with nothing to say
+// must be told to return it. Triage's 22:28:01Z heartbeat called no post tool
+// and its prose posted 10 s later. The scheduler's own cue cannot carry that:
+// it is written for seats that read a HEARTBEAT.md file, which a hosted agent
+// does not have, and its cycle frame names a tool native turns lack, so the
+// native cue rewrite drops it and leaves only the HEARTBEAT.md instruction.
+describe('a hosted heartbeat with nothing to post returns NO_REPLY', () => {
+  const { buildHeartbeatContent } = require('../../../services/heartbeatCue');
+  const { nativeCueFromKernel } = require('../../../services/nativeKernelCue');
+  const { NATIVE_TOOL_NAMES } = require('../../../services/nativeRuntimeService');
+
+  it('a content-less heartbeat names NO_REPLY, not "do nothing"', () => {
+    const out = buildUserMessage({ type: 'heartbeat', payload: {} }, POD);
+    expect(out).toContain('If nothing needs a post, reply with exactly NO_REPLY');
+    expect(out).not.toContain('Otherwise do nothing');
+  });
+
+  it('the scheduler\'s heartbeat, as a native turn reads it, names NO_REPLY and no HEARTBEAT.md', () => {
+    const podId = '6aeb8bc75a12e3e23872e765';
+    const out = nativeCueFromKernel(
+      buildUserMessage({ type: 'heartbeat', payload: { content: buildHeartbeatContent(podId) } }, POD),
+      podId,
+      NATIVE_TOOL_NAMES,
+    );
+    expect(out).toContain('If nothing needs a post, reply with exactly NO_REPLY');
+    expect(out).toContain(POD);
+    expect(out).not.toContain('HEARTBEAT.md');
+    expect(out).not.toContain('HEARTBEAT_OK');
+    expect(out).not.toContain('commonly_log_cycle');
+  });
+});

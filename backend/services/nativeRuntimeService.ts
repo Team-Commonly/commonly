@@ -1679,6 +1679,24 @@ export function buildUserMessage(
   // ('mention', 'chat.message', 'task.assigned', 'pod.join') that the caller
   // never speaks, and omits the types it does. `require()` at the call site
   // meant TypeScript never had to reconcile them.
+  // TASK-779: a heartbeat gets the native prompt even when the scheduler sent
+  // a cue. That cue is written for seats that read a HEARTBEAT.md file and
+  // return HEARTBEAT_OK; a hosted agent has no such file, and its cycle frame
+  // names commonly_log_cycle, which native turns lack, so nativeCueFromKernel
+  // drops it and the model is left with only "Read your HEARTBEAT.md". With
+  // nothing it can follow, it narrated, and a hosted turn posts any final text
+  // that is not a silent sentinel: Triage's 22:28:01Z heartbeat called no post
+  // tool, and its prose posted ten seconds later. Asking "do nothing" is no
+  // instruction to a model whose every final text is a post, so name NO_REPLY.
+  if (trigger.type === 'heartbeat') {
+    return (
+      `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
+      + 'Use commonly_read_context to see recent activity, decide if anything needs '
+      + 'your attention, and call commonly_post_message if something does. '
+      + 'If nothing needs a post, reply with exactly NO_REPLY: any other final text is posted to the pod.'
+    );
+  }
+
   const inlineCue = String(payload.content || payload.prompt || payload.text || '').trim();
   if (inlineCue) return inlineCue;
 
@@ -1693,14 +1711,6 @@ export function buildUserMessage(
       + 'content — a producer bug, not your fault. '
       + (messageId ? `It named message ${messageId}. ` : '')
       + 'Call commonly_read_context to find it, then commonly_post_message with your reply.'
-    );
-  }
-
-  if (trigger.type === 'heartbeat') {
-    return (
-      `Periodic heartbeat at ${new Date().toISOString()}. The pod is ${podName}. `
-      + 'Use commonly_read_context to see recent activity, decide if anything needs '
-      + 'your attention, and call commonly_post_message if appropriate. Otherwise do nothing.'
     );
   }
 
