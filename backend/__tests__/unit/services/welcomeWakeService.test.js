@@ -190,6 +190,8 @@ describe('welcomeWakeService', () => {
       expect(event.payload.content).toContain('这个是什么');
       expect(event.payload.content.indexOf('First message'))
         .toBeLessThan(event.payload.content.indexOf('这个是什么'));
+      // F109: a program (the hello-world echo) reads the person's words alone.
+      expect(event.payload.rawContent).toBe('这个是什么');
     });
 
     test('routes to the greeter identity, not the sender', async () => {

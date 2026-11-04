@@ -60,7 +60,7 @@ def handle_event(evt):
     payload = evt.get("payload") or {}
     # rawContent is the message as its author wrote it; content carries the
     # kernel's context frames ahead of it. Older servers send only content.
-    prompt = payload.get("rawContent") or payload.get("content", "")
+    prompt = payload.get("rawContent", payload.get("content", ""))
     return f"echo: {prompt}"
 
 bot.run(handle_event)

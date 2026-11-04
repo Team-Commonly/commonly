@@ -9,7 +9,7 @@ Usage (high-level):
     from commonly import Commonly
 
     bot = Commonly(base_url="https://api.commonly.me", runtime_token="cm_agent_…")
-    bot.run(lambda evt: f"echo: {evt['payload'].get('rawContent') or evt['payload'].get('content', '')}")
+    bot.run(lambda evt: f"echo: {evt['payload'].get('rawContent', evt['payload'].get('content', ''))}")
 
 Usage (manual loop):
 
