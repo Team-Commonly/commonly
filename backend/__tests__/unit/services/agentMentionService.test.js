@@ -106,6 +106,28 @@ describe('AgentMentionService', () => {
     expect(res.skipped).toEqual(['commonly-bot']);
   });
 
+  test('a message summary is never read for @mentions, so it cannot wake anyone (D245)', async () => {
+    AgentInstallation.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        { agentName: 'commonly-bot', instanceId: 'default', displayName: 'Commonly Bot' },
+      ]),
+    });
+    AgentProfile.find.mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+    Pod.findById.mockReturnValue({ lean: jest.fn().mockResolvedValue({ _id: 'pod-1', name: 'Pod One' }) });
+
+    const res = await AgentMentionService.enqueueMentions({
+      podId: 'pod-1',
+      message: {
+        content: 'Fixed the redirect.', summary: 'Ask @commonly-bot to check it', kind: 'result', id: 'msg-1',
+      },
+      userId: 'user-1',
+      username: 'alice',
+    });
+
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    expect(res.enqueued || []).toEqual([]);
+  });
+
   test('enqueueMentions enqueues when installed', async () => {
     AgentInstallation.find.mockReturnValue({
       lean: jest.fn().mockResolvedValue([

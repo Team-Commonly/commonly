@@ -77,6 +77,18 @@ describe('listPodMessages', () => {
 });
 
 describe('toPodMessage', () => {
+  it('carries the D245 summary and kind when the document has them', () => {
+    const row = toPodMessage({
+      _id: 'm2', podId: 'p1', userId: 'u1', content: 'Fixed the redirect.', summary: 'Fixed it', kind: 'result',
+    });
+    expect(row).toMatchObject({ summary: 'Fixed it', kind: 'result' });
+    const plain = toPodMessage({
+      _id: 'm3', podId: 'p1', userId: 'u1', content: 'hi',
+    });
+    expect(plain).not.toHaveProperty('summary');
+    expect(plain).not.toHaveProperty('kind');
+  });
+
   it('maps a populated MongoDB message onto the PG row shape', () => {
     const at = new Date('2026-01-01');
     const row = toPodMessage({

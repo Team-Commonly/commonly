@@ -62,6 +62,8 @@ const BARE_RUNTIME_ARTIFACTS = new Set(['RGCTX']);
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { messageStoreUnavailable } = require('./messageStoreError');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { normalizeMessageContract } = require('./messageContract');
 
 const NO_REPLY_SENTINEL = 'NO_REPLY';
 // `trim()` does not remove every invisible Unicode code point. Normalize a
@@ -199,6 +201,10 @@ interface PostMessageOptions {
   // hosted turn posts when it failed with nothing posted. Each one answers its
   // own ask, so the shared-pod duplicate guard does not apply to it.
   failureNotice?: boolean;
+  // D245: the optional message contract, as the agent sent it. Normalized by
+  // services/messageContract.ts here, warn-only; never read for @mentions.
+  summary?: unknown;
+  kind?: unknown;
 }
 
 interface PostTargetOptions {
@@ -219,6 +225,8 @@ interface PostTargetOptions {
   noOutboundRelay?: boolean;
   answeringMessageId?: string | null;
   authorKind?: 'kernel' | null;
+  // D245: already normalized; stored beside the content.
+  contract?: { summary: string | null; kind: string | null } | null;
 }
 
 interface HeartbeatFallbackOptions {
@@ -1043,6 +1051,14 @@ class AgentMessageService {
       throw new Error('agentName and podId are required');
     }
     let sanitizedContent = AgentMessageService.sanitizeAgentContent(content, { agentName, instanceId, podId });
+    // D245: warn-only. A bad summary or kind is dropped or repaired and named
+    // in `warnings`; it never stops the post.
+    const contract = normalizeMessageContract(
+      { summary: options.summary, kind: options.kind },
+      // No `observe`: its log lines describe the reply, and a silenced summary
+      // is not a silenced reply.
+      (text: string) => AgentMessageService.sanitizeAgentContent(text),
+    );
 
     // Suppress runtime model-failure errors. When a runtime's model chain is
     // exhausted (bad/missing provider auth, 429s, all fallbacks down) the
@@ -1624,6 +1640,7 @@ class AgentMessageService {
       noOutboundRelay,
       answeringMessageId,
       authorKind,
+      contract: contract.summary || contract.kind ? { summary: contract.summary, kind: contract.kind } : null,
     });
 
     // The first answer an agent gives the workspace owner completes "Give your
@@ -1638,6 +1655,7 @@ class AgentMessageService {
     return {
       success: true,
       message: posted.message,
+      ...(contract.warnings.length ? { warnings: contract.warnings } : {}),
       summary: posted.summary
         ? {
           id: (posted.summary as { _id?: unknown })._id?.toString?.() || (posted.summary as { _id?: unknown })._id,
@@ -1707,6 +1725,7 @@ class AgentMessageService {
       noOutboundRelay = false,
       answeringMessageId,
       authorKind = null,
+      contract = null,
     } = options;
 
     // The installation label belongs to this pod; the User label belongs to
@@ -1775,9 +1794,15 @@ class AgentMessageService {
             podId: string, userId: string, content: string, type: string, replyToMessageId?: string | null,
             payload?: unknown, resolvedThreadRootId?: number | null, answeringMessageId?: string | null,
             authorKind?: 'kernel' | null,
+            contract?: { summary: string | null; kind: string | null } | null,
           ): Promise<Record<string, unknown>>;
         };
-        const newMessage = authorKind
+        const newMessage = contract
+          ? await pgMessageStore.create(
+            String(podId), String(agentUser._id), content, messageType,
+            replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind, contract,
+          )
+          : authorKind
           ? await pgMessageStore.create(
             String(podId), String(agentUser._id), content, messageType,
             replyToMessageId, payload, resolvedThreadRootId, answeringMessageId, authorKind,
@@ -1810,6 +1835,10 @@ class AgentMessageService {
           content: newMessage.content as string,
           messageType: (newMessage.message_type as string) || messageType,
           author_kind: (newMessage.author_kind as 'kernel' | null) ?? authorKind,
+          ...(contract ? {
+            summary: (newMessage.summary as string | null) ?? contract.summary,
+            kind: (newMessage.kind as string | null) ?? contract.kind,
+          } : {}),
           replyTo,
           userId: {
             _id: agentUser._id,
@@ -1845,6 +1874,8 @@ class AgentMessageService {
         messageType,
         metadata,
         ...(authorKind ? { authorKind } : {}),
+        ...(contract?.summary ? { summary: contract.summary } : {}),
+        ...(contract?.kind ? { kind: contract.kind } : {}),
         ...(payload != null ? { payload } : {}),
       });
 
@@ -1942,6 +1973,9 @@ class AgentMessageService {
         // arrives with the socket message; without it every agent reply
         // rendered flat until a reload re-fetched the joined row.
         thread_root_id: (message as MessageNormalized).thread_root_id ?? null,
+        // D245: the contract rides the broadcast to the same room as the
+        // content, and only when the post carried it.
+        ...(contract ? { summary: contract.summary, kind: contract.kind } : {}),
       };
 
       io.to(`pod_${podId}`).emit('newMessage', formattedMessage);
@@ -2312,6 +2346,9 @@ class AgentMessageService {
           thread_root_id: (msg.thread_root_id as string | number | null) ?? null,
           author_kind: (msg.author_kind as 'kernel' | null) ?? null,
           replyTo: (msg.replyTo as MessageNormalized['replyTo']) ?? null,
+          // D245: an agent reader sees the contract wherever it sees the content.
+          ...(msg.summary ? { summary: msg.summary as string } : {}),
+          ...(msg.kind ? { kind: msg.kind as string } : {}),
         };
       });
       // Internal provenance for send-time read acknowledgement. A Mongo
@@ -2352,6 +2389,9 @@ class AgentMessageService {
         username,
         isBot: userId?.isBot === true,
         author_kind: msg.authorKind === 'kernel' || msg.author_kind === 'kernel' ? 'kernel' : null,
+        // D245: same as the PG read above.
+        ...(msg.summary ? { summary: msg.summary as string } : {}),
+        ...(msg.kind ? { kind: msg.kind as string } : {}),
         ...withSelf(userId?._id),
         createdAt: msg.createdAt as Date,
       };

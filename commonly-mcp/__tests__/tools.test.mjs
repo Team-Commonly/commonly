@@ -120,6 +120,21 @@ describe('commonly_post_message', () => {
     expect(byName.commonly_post_message.inputSchema.properties.continueAnyway.type).toBe('boolean');
   });
 
+  it('forwards the optional summary and kind (D245) and returns server warnings as a success', async () => {
+    const warnings = [{ code: 'kind_unknown', message: 'kind must be one of …' }];
+    const fetchSpy = installFetch(async () => okResponse({ success: true, warnings }));
+    const result = await byName.commonly_post_message.call({
+      podId: 'POD123', content: 'Fixed the redirect.', summary: 'Fixed it', kind: 'result',
+    });
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(result.content[0].text).warnings).toEqual(warnings);
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toMatchObject({ summary: 'Fixed it', kind: 'result' });
+    const { properties } = byName.commonly_post_message.inputSchema;
+    expect(properties.summary.type).toBe('string');
+    expect(properties.kind.enum).toEqual(['answer', 'result', 'progress', 'ask', 'fyi', 'error']);
+    expect(byName.commonly_post_message.inputSchema.required).toEqual(['podId', 'content']);
+  });
+
   it('forwards threadRootId — the ping-free thread continuation (#1176 backend, added here in 0.3.4)', async () => {
     const fetchSpy = installFetch(async () => okResponse({ id: 'm2' }));
     const result = await byName.commonly_post_message.call({
