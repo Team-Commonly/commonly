@@ -10,10 +10,11 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { HELM_CHART } = require('../../utils/repoRoot');
 const { HOSTED_MCP_ENTRIES } = require('../../../integrations/hostedMcp/entries');
 const { hostedMcpClientConfigKeys } = require('../../../services/hostedMcpIntakeService');
 
-const chart = path.join(__dirname, '../../../../k8s/helm/commonly');
+const chart = HELM_CHART;
 const deployment = fs.readFileSync(path.join(chart, 'templates/core/backend-deployment.yaml'), 'utf8');
 const apiKeys = fs.readFileSync(path.join(chart, 'templates/secrets/api-keys.yaml'), 'utf8');
 const values = fs.readFileSync(path.join(chart, 'values.yaml'), 'utf8');
