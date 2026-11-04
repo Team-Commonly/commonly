@@ -2,12 +2,13 @@ import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ActGlyph, KindGlyph } from '../icons/glyphs';
+import { ActGlyph, KindGlyph, ShellGlyph } from '../icons/glyphs';
 import { AuthContext } from '../../context/AuthContext';
 import { ATTENTION_CHANGED, notifyAttentionChanged } from '../hooks/useV2PodAttention';
-import V2PageHead from './V2PageHead';
-import V2Hint from './V2Hint';
+import V2Segmented from './V2Segmented';
+import { usePhone } from '../connectors/usePhone';
 import { compactAge, compactNow } from '../utils/compactTime';
+import './V2ActivityPage.css';
 
 type ActivityWindow = 'today' | '7d';
 
@@ -162,6 +163,183 @@ const relativeTime = (value: string | null | undefined): string => {
   return compactAge('day', Math.floor(hours / 24));
 };
 
+// Closes a popover on a mouse or touch press outside the element that holds it.
+const useOutsidePress = (open: boolean, holder: React.RefObject<HTMLElement | null>, close: () => void) => {
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => {
+    if (!open) return undefined;
+    const onPress = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (target instanceof Node && holder.current && !holder.current.contains(target)) closeRef.current();
+    };
+    document.addEventListener('mousedown', onPress);
+    document.addEventListener('touchstart', onPress);
+    return () => {
+      document.removeEventListener('mousedown', onPress);
+      document.removeEventListener('touchstart', onPress);
+    };
+  }, [open, holder]);
+};
+
+interface PickerOption { id: string; label: string }
+
+// The d215 `.sel`: one key that names the current choice and opens a listbox of
+// the others. The pod scope and the composer's destination are both this key.
+const ActivityPicker: React.FC<{
+  value: string;
+  options: PickerOption[];
+  onSelect: (id: string) => void;
+  listLabel: string;
+  triggerLabel: string;
+  buttonClassName: string;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  disabled?: boolean;
+}> = ({ value, options, onSelect, listLabel, triggerLabel, buttonClassName, open, setOpen, disabled = false }) => {
+  const holderRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const optionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  useOutsidePress(open, holderRef, () => setOpen(false));
+  const focusOption = (index: number) => {
+    if (options.length === 0) return;
+    const option = options[(index + options.length) % options.length];
+    if (!option) return;
+    setOpen(true);
+    globalThis.window.requestAnimationFrame(() => optionRefs.current[option.id]?.focus());
+  };
+  const choose = (id: string) => {
+    onSelect(id);
+    setOpen(false);
+    globalThis.window.requestAnimationFrame(() => buttonRef.current?.focus());
+  };
+  return (
+    <div ref={holderRef} className="v2-activity__picker">
+      <button
+        type="button"
+        ref={buttonRef}
+        className={`v2-activity__sel ${buttonClassName}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen(!open)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && open) {
+            event.preventDefault();
+            event.stopPropagation(); // This menu keeps focus; the global Escape handler blurs it.
+            setOpen(false);
+          } else if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            focusOption(0);
+          } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            focusOption(options.length - 1);
+          }
+        }}
+      >
+        <span className="v2-activity__sel-label">{triggerLabel}</span>
+        <ShellGlyph name="chevron" size={14} />
+      </button>
+      {open && (
+        <div className="v2-activity__menu v2-activity__menu--list" role="listbox" aria-label={listLabel}>
+          {options.map((option, index) => (
+            <button
+              key={option.id}
+              type="button"
+              role="option"
+              ref={(element) => { optionRefs.current[option.id] = element; }}
+              aria-selected={option.id === value}
+              className={`v2-activity__menu-item${option.id === value ? ' is-active' : ''}`}
+              onClick={() => choose(option.id)}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  focusOption(index + 1);
+                } else if (event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  focusOption(index - 1);
+                } else if (event.key === 'Home') {
+                  event.preventDefault();
+                  focusOption(0);
+                } else if (event.key === 'End') {
+                  event.preventDefault();
+                  focusOption(options.length - 1);
+                } else if (event.key === 'Escape') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setOpen(false);
+                  buttonRef.current?.focus();
+                } else if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  choose(option.id);
+                }
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface RowAct { key: string; label: string; glyph: React.ReactNode; onSelect: () => void; disabled?: boolean }
+
+// The phone's ⋯ key (d215 activity 390): there is no hover, so the row's
+// secondary acts live behind one 44px key, in the same order as the cluster.
+const RowMenu: React.FC<{ acts: RowAct[]; label: string; open: boolean; setOpen: (open: boolean) => void }> = ({
+  acts, label, open, setOpen,
+}) => {
+  const holderRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  useOutsidePress(open, holderRef, () => setOpen(false));
+  return (
+    <div
+      ref={holderRef}
+      className="v2-activity__more"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && open) {
+          event.preventDefault();
+          event.stopPropagation();
+          setOpen(false);
+          buttonRef.current?.focus();
+        }
+      }}
+    >
+      <button
+        type="button"
+        ref={buttonRef}
+        className="v2p-b v2p-b-g v2p-ib v2-activity__more-key"
+        aria-label={label}
+        title={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <ShellGlyph name="more" />
+      </button>
+      {open && (
+        <div className="v2-activity__menu" role="menu" aria-label={label}>
+          {acts.map((act) => (
+            <button
+              key={act.key}
+              type="button"
+              role="menuitem"
+              className="v2-activity__menu-item"
+              disabled={act.disabled}
+              onClick={() => { setOpen(false); act.onSelect(); }}
+            >
+              {act.glyph}
+              <span>{act.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const V2ActivityPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -238,10 +416,13 @@ const V2ActivityPage: React.FC = () => {
   const [composePodId, setComposePodId] = useState('');
   const [composeDraft, setComposeDraft] = useState('');
   const [composeMenuOpen, setComposeMenuOpen] = useState(false);
-  const composePickerRef = useRef<HTMLDivElement | null>(null);
-  const composePickerButtonRef = useRef<HTMLButtonElement | null>(null);
-  const composePickerOptionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const scopeMenuButtonRef = useRef<HTMLButtonElement | null>(null);
+  // The composer is one line until its text area takes focus (d215 activity), and stays open
+  // while focus is inside it or it holds a draft, a send or an error.
+  const [composeFocused, setComposeFocused] = useState(false);
+  const [rowMenuId, setRowMenuId] = useState<string | null>(null);
+  // At phone width the head holds only the title and count; the window and scope move into
+  // the page as one row, and each row's secondary acts sit behind ⋯ (d215 activity 390).
+  const phone = usePhone('(max-width: 760px)');
   const [composing, setComposing] = useState(false);
   const [composeError, setComposeError] = useState<string | null>(null);
   const [movedVisibleCounts, setMovedVisibleCounts] = useState<Record<string, number>>({});
@@ -319,22 +500,6 @@ const V2ActivityPage: React.FC = () => {
       globalThis.window.removeEventListener('focus', refresh);
     };
   }, []);
-
-  useEffect(() => {
-    if (!composeMenuOpen) return undefined;
-    const closeOnOutsidePress = (event: MouseEvent | TouchEvent) => {
-      const target = event.target;
-      if (target instanceof Node && composePickerRef.current && !composePickerRef.current.contains(target)) {
-        setComposeMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', closeOnOutsidePress);
-    document.addEventListener('touchstart', closeOnOutsidePress);
-    return () => {
-      document.removeEventListener('mousedown', closeOnOutsidePress);
-      document.removeEventListener('touchstart', closeOnOutsidePress);
-    };
-  }, [composeMenuOpen]);
 
   useEffect(() => {
     const snapshot = restoredSnapshotRef.current;
@@ -823,32 +988,9 @@ const V2ActivityPage: React.FC = () => {
     return recap?.pods || [];
   }, [recap]);
   const composePodName = scopedPods.find((pod) => pod.id === composePodId)?.name || t('activity.allPods');
-  const selectComposePod = (nextPodId: string) => {
-    setComposePodId(nextPodId);
-    setComposeMenuOpen(false);
-    globalThis.window.requestAnimationFrame(() => composePickerButtonRef.current?.focus());
-  };
-  const focusComposePickerOption = (index: number) => {
-    if (scopedPods.length === 0) return;
-    const boundedIndex = (index + scopedPods.length) % scopedPods.length;
-    const option = scopedPods[boundedIndex];
-    if (!option) return;
-    setComposeMenuOpen(true);
-    globalThis.window.requestAnimationFrame(() => composePickerOptionRefs.current[option.id]?.focus());
-  };
-  // One seat has one mark everywhere (66390): an agent actor takes the chat's
-  // cobalt mark, a human the tint mark. The kind glyph stays for asks with no actor.
-  // Rows written before the actor id was stamped still carry the name, so the
-  // name is the second door.
-  const agentUserIds = useMemo(() => new Set((recap?.agents || []).map((agent) => String(agent.id))), [recap]);
-  const agentNames = useMemo(() => new Set((recap?.agents || []).map((agent) => agent.name.trim().toLowerCase())), [recap]);
-  // The id is the authority when it exists — a failed id lookup means "not an
-  // agent", not "unknown" — so the name door opens only for rows with no id.
-  const isAgentActor = (item: NeedsYouItem): boolean => (
-    item.actorUserId
-      ? agentUserIds.has(item.actorUserId)
-      : (!!item.actorName && agentNames.has(item.actorName.trim().toLowerCase()))
-  );
+  const podOptions = useMemo(() => scopedPods.map((pod) => ({ id: pod.id, label: pod.name })), [scopedPods]);
+  const scopeOptions = useMemo(() => [{ id: 'all', label: t('activity.allPods') }, ...podOptions], [podOptions, t]);
+  const scopeName = scopeOptions.find((option) => option.id === podId)?.label || t('activity.allPods');
   // 0-state (66400 fix 5): "Nothing needs you." and, when the history knows it,
   // when the last ask was answered — the newest ruling in this scope.
   const lastAnsweredAt = useMemo(() => {
@@ -1091,335 +1233,322 @@ const V2ActivityPage: React.FC = () => {
   const markHandoffHandled = (item: NeedsYouItem) => acknowledgeAttention(item, 'activity.handoff.actionFailed');
 
 
+  const openLabel = (item: NeedsYouItem) => (
+    item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')
+  );
+  const openAct = (item: NeedsYouItem): RowAct => ({
+    key: 'open', label: openLabel(item), glyph: <ActGlyph name="open" />, onSelect: () => openPod(item.podId, item.messageId), disabled: !item.podId,
+  });
+  const iconKey = (act: RowAct) => (
+    <button key={act.key} type="button" className="v2p-b v2p-b-g v2p-ib v2p-b-sm v2-activity__icon-key" aria-label={act.label} title={act.label} onClick={act.onSelect} disabled={act.disabled}>
+      {act.glyph}
+    </button>
+  );
+  // A row's secondary acts: the hover cluster at desktop, the ⋯ menu on a phone (d215 activity).
+  const secondaryActs = (item: NeedsYouItem): RowAct[] => {
+    if (item.kind === 'approval') {
+      return [{
+        key: 'deny', label: t('activity.approval.deny'), glyph: <ActGlyph name="deny" />, onSelect: () => { void actOnApproval(item, 'reject'); }, disabled: actingApprovalId === item.id,
+      }, openAct(item)];
+    }
+    if (item.kind === 'mention') {
+      return [{
+        key: 'handled',
+        label: acknowledgingAttentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled'),
+        glyph: <ActGlyph name="handled" />,
+        onSelect: () => { void acknowledgeMention(item); },
+        disabled: acknowledgingAttentionId === item.id,
+      }, openAct(item)];
+    }
+    if (item.kind === 'handoff' || item.kind === 'blocked') return [openAct(item)];
+    return [];
+  };
+  const primaryKey = (item: NeedsYouItem): React.ReactNode => {
+    if (item.kind === 'approval') {
+      return (
+        <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__key" onClick={() => actOnApproval(item, 'approve')} disabled={actingApprovalId === item.id}>
+          {actingApprovalId === item.id ? t('activity.approval.working') : t('activity.approval.approve')}
+        </button>
+      );
+    }
+    if (item.kind === 'mention') {
+      if (replyOpenIds.has(item.id)) return null;
+      return (
+        <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__key" onClick={() => setReplyOpenIds((current) => new Set(current).add(item.id))}>
+          {t('activity.reply.open')}
+        </button>
+      );
+    }
+    if (item.kind === 'handoff' || item.kind === 'blocked') {
+      return (
+        <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__key" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
+          {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
+        </button>
+      );
+    }
+    // A decision's only act beside its row is Open; its choices are keys inside the row.
+    return iconKey(openAct(item));
+  };
+  const rowDomId = (item: NeedsYouItem) => `activity-row-${item.id}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const movedCount = movedGroups.reduce((sum, group) => sum + group.lines.length, 0);
+  const startGlyph = { hire: 'agents', speak: 'chat', connect: 'plug' } as const;
+
+  const controls = (
+    <div className="v2-activity__controls" role="group" aria-label={t('activity.controlsAriaLabel')}>
+      <V2Segmented<ActivityWindow>
+        className="v2-activity__window"
+        ariaLabel={t('activity.windowAriaLabel')}
+        value={window}
+        onChange={setWindow}
+        options={(['today', '7d'] as ActivityWindow[]).map((value) => ({ value, label: t(`activity.windows.${value}`) }))}
+      />
+      <ActivityPicker
+        value={podId}
+        options={scopeOptions}
+        onSelect={setPodId}
+        listLabel={t('activity.podScopeLabel')}
+        triggerLabel={scopeName}
+        buttonClassName="v2-activity__scope-button"
+        open={scopeMenuOpen}
+        setOpen={setScopeMenuOpen}
+      />
+    </div>
+  );
+  const composeOpen = composeFocused || composeDraft.length > 0 || composing || Boolean(composeError);
+
   return (
     <div className="v2-activity" aria-busy={loading}>
-      <V2PageHead
-        className="v2-activity__header"
-        titleClassName="v2-activity__title"
-        title={t('activity.title')}
-        meta={queueCount === null ? undefined : `${t('activity.head.needsYou', { count: queueCount })} · ${t('activity.head.moved', { count: movedGroups.reduce((sum, group) => sum + group.lines.length, 0) })}`}
-        hint={t('activity.subtitle')}
-        hintLabel={t('activity.about')}
-      />
-      <div className="v2-activity__controls" aria-label={t('activity.controlsAriaLabel')}>
-        <div className="v2-activity__window" role="group" aria-label={t('activity.windowAriaLabel')}>
-          {(['today', '7d'] as ActivityWindow[]).map((value) => (
-            <button key={value} type="button" className={`v2-activity__window-button${window === value ? ' v2-activity__window-button--active' : ''}`} onClick={() => setWindow(value)} aria-pressed={window === value}>
-              {t(`activity.windows.${value}`)}
-            </button>
-          ))}
-        </div>
-        <div className="v2-activity__scope" role="group" aria-label={t('activity.podScopeLabel')} onKeyDown={(event) => {
-          if (event.key === 'Escape' && scopeMenuOpen) {
-            event.preventDefault();
-            event.stopPropagation(); // This menu restores focus; the global Escape handler blurs it.
-            setScopeMenuOpen(false);
-            scopeMenuButtonRef.current?.focus();
-          }
-        }}>
-          <button type="button" className={`v2-activity__scope-button${podId === 'all' ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId('all'); setScopeMenuOpen(false); }} aria-pressed={podId === 'all'}>{t('activity.allPods')}</button>
-          {scopedPods.slice(0, 2).map((pod) => (
-            <button key={pod.id} type="button" className={`v2-activity__scope-button${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); }} aria-pressed={podId === pod.id}>{pod.name}</button>
-          ))}
-          {scopedPods.length > 2 && <button type="button" ref={scopeMenuButtonRef} className={`v2-activity__scope-button${scopedPods.slice(2).some((pod) => pod.id === podId) ? ' v2-activity__scope-button--active' : ' v2-activity__scope-button--more'}`} onClick={() => setScopeMenuOpen((open) => !open)} aria-expanded={scopeMenuOpen}>{scopedPods.slice(2).find((pod) => pod.id === podId)?.name || t('activity.morePods')}</button>}
-          {scopeMenuOpen && <div className="v2-activity__scope-menu">{scopedPods.slice(2).map((pod) => (
-            <button key={pod.id} type="button" className={`v2-activity__scope-button v2-activity__scope-button--menu${podId === pod.id ? ' v2-activity__scope-button--active' : ''}`} onClick={() => { setPodId(pod.id); setScopeMenuOpen(false); scopeMenuButtonRef.current?.focus(); }} aria-pressed={podId === pod.id}>{pod.name}</button>
-          ))}</div>}
-        </div>
-      </div>
-
-      {loading && <div className="v2-activity__loading"><span className="v2-spinner" /></div>}
-      {!loading && error && <div className="v2-activity__error" role="alert">
-        <span>{error}</span>
-        <button type="button" className="v2-activity__queue-more" onClick={() => { setError(null); setReloadKey((value) => value + 1); }}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
-      </div>}
-      {!loading && !error && recap && (
-        <>
-          {/* The composer stays hidden while step 1 is open — nobody to wake — and returns the moment an agent exists. */}
-          {!startSteps.includes('hire') && (
-          <section className="v2-activity__compose" aria-label={t('activity.compose.placeholder')}>
-            <div className="v2-activity__compose-top">
-              <div className="v2-activity__compose-pod">
-                <span>{t('activity.compose.podLabel')}</span>
-                <div ref={composePickerRef} className="v2-activity__compose-picker">
-                  <button
-                    type="button"
-                    ref={composePickerButtonRef}
-                    className="v2-activity__compose-picker-button"
-                    aria-haspopup="listbox"
-                    aria-expanded={composeMenuOpen}
-                    onClick={() => setComposeMenuOpen((open) => !open)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape' && composeMenuOpen) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setComposeMenuOpen(false);
-                        return;
-                      }
-                      if (event.key === 'ArrowDown') {
-                        event.preventDefault();
-                        focusComposePickerOption(0);
-                      } else if (event.key === 'ArrowUp') {
-                        event.preventDefault();
-                        focusComposePickerOption(scopedPods.length - 1);
-                      }
-                    }}
-                    disabled={composing || scopedPods.length === 0}
-                  >
-                    {composePodName}
-                  </button>
-                  {composeMenuOpen && <div className="v2-activity__compose-picker-menu" role="listbox" aria-label={t('activity.compose.podLabel')}>
-                    {scopedPods.map((pod, index) => (
-                      <button
-                        key={pod.id}
-                        type="button"
-                        role="option"
-                        ref={(element) => { composePickerOptionRefs.current[pod.id] = element; }}
-                        aria-selected={pod.id === composePodId}
-                        className={`v2-activity__compose-picker-option${pod.id === composePodId ? ' is-active' : ''}`}
-                        onClick={() => selectComposePod(pod.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'ArrowDown') {
-                            event.preventDefault();
-                            focusComposePickerOption(index + 1);
-                          } else if (event.key === 'ArrowUp') {
-                            event.preventDefault();
-                            focusComposePickerOption(index - 1);
-                          } else if (event.key === 'Home') {
-                            event.preventDefault();
-                            focusComposePickerOption(0);
-                          } else if (event.key === 'End') {
-                            event.preventDefault();
-                            focusComposePickerOption(scopedPods.length - 1);
-                          } else if (event.key === 'Escape') {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            setComposeMenuOpen(false);
-                            composePickerButtonRef.current?.focus();
-                          } else if (event.key === 'Enter' || event.key === ' ') {
-                            event.preventDefault();
-                            selectComposePod(pod.id);
-                          }
-                        }}
-                      >
-                        {pod.name}
-                      </button>
-                    ))}
-                  </div>}
-                </div>
-              </div>
-            </div>
-            <textarea
-              aria-label={t('activity.compose.placeholder')}
-              rows={2}
-              placeholder={t('activity.compose.placeholder')}
-              value={composeDraft}
-              onChange={(event) => setComposeDraft(event.target.value)}
-              onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void sendCompose(); }}
-              disabled={composing || !composePodId}
-            />
-            <div className="v2-activity__compose-foot">
-              <span className="v2-activity__compose-hint">{t('activity.compose.hint')}</span>
-              <button type="button" aria-label={t('activity.compose.sendAriaLabel')} onClick={() => { void sendCompose(); }} disabled={composing || !composePodId || !composeDraft.trim()}>
-                {composing ? t('activity.compose.working') : t('activity.compose.send')}
-              </button>
-            </div>
-            {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
-          </section>
-          )}
-          {startPending && (
-            <section className="v2-activity__start v2-activity__start--pending" aria-busy="true" aria-labelledby="activity-get-started" data-testid="activity-start-pending">
-              <div className="v2-activity__start-head">
-                <h2 id="activity-get-started">{t('activity.getStarted.title')}</h2>
-                <span className="v2-activity__start-kicker">{t('activity.getStarted.checking')}</span>
-              </div>
-              {/* A step's description is one line at desktop and two on a phone; the second bar shows only ≤760. */}
-              {['first', 'second'].map((row) => (
-                <div key={row} className="v2-activity__start-row" aria-hidden="true">
-                  <span className="v2-activity__start-num v2-activity__start-num--pending" />
-                  <div className="v2-activity__start-copy">
-                    <i className="v2-activity__start-bar v2-activity__start-bar--title" />
-                    <i className="v2-activity__start-bar" />
-                    <i className="v2-activity__start-bar v2-activity__start-bar--phone" />
+      <header className="v2p-ph v2-activity__head">
+        <h1 className="v2-activity__title">{t('activity.title')}</h1>
+        {queueCount !== null && <span className="meta v2-activity__meta">{`${t('activity.head.needsYou', { count: queueCount })} · ${t('activity.head.moved', { count: movedCount })}`}</span>}
+        {!phone && <><span className="sp" />{controls}</>}
+      </header>
+      <div className="v2-activity__body">
+        <div className="v2-activity__col">
+          {phone && controls}
+          {loading && <div className="v2-activity__loading"><span className="v2-spinner" /></div>}
+          {!loading && error && <div className="v2-activity__error" role="alert">
+            <span>{error}</span>
+            <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__queue-more" onClick={() => { setError(null); setReloadKey((value) => value + 1); }}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+          </div>}
+          {!loading && !error && recap && (
+            <>
+              {/* The composer stays hidden while step 1 is open — nobody to wake — and returns the moment an agent exists. */}
+              {!startSteps.includes('hire') && (
+                <section
+                  className={`v2-activity__compose${composeOpen ? ' v2-activity__compose--open' : ''}`}
+                  aria-label={t('activity.compose.placeholder')}
+                  onBlur={(event) => {
+                    if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setComposeFocused(false);
+                  }}
+                >
+                  <span className="v2-activity__compose-icon" aria-hidden="true"><ShellGlyph name="pencil" size={15} /></span>
+                  <textarea
+                    aria-label={t('activity.compose.placeholder')}
+                    rows={composeOpen ? 2 : 1}
+                    placeholder={t('activity.compose.placeholder')}
+                    value={composeDraft}
+                    onFocus={() => setComposeFocused(true)}
+                    onChange={(event) => setComposeDraft(event.target.value)}
+                    onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void sendCompose(); }}
+                    disabled={composing || !composePodId}
+                  />
+                  <div className="v2-activity__compose-foot">
+                    <span className="v2-activity__compose-post">{t('activity.compose.podLabel')}</span>
+                    <ActivityPicker
+                      value={composePodId}
+                      options={podOptions}
+                      onSelect={setComposePodId}
+                      listLabel={t('activity.compose.podLabel')}
+                      triggerLabel={composePodName}
+                      buttonClassName="v2-activity__compose-picker-button"
+                      open={composeMenuOpen}
+                      setOpen={setComposeMenuOpen}
+                      disabled={composing || scopedPods.length === 0}
+                    />
+                    <span className="v2-activity__compose-sp" />
+                    <kbd className="v2-activity__kbd" aria-hidden="true">{t('activity.compose.hint')}</kbd>
+                    <button type="button" className="v2p-b v2p-b-p v2p-b-sm v2-activity__send" aria-label={t('activity.compose.sendAriaLabel')} onClick={() => { void sendCompose(); }} disabled={composing || !composePodId || !composeDraft.trim()}>
+                      {composing ? t('activity.compose.working') : t('activity.compose.send')}
+                    </button>
                   </div>
-                  <div className="v2-activity__start-act"><i className="v2-activity__start-bar v2-activity__start-bar--key" /></div>
-                </div>
-              ))}
-            </section>
-          )}
-          {!startPending && startEligible && startSteps.length > 0 && (
-            <section className="v2-activity__start" aria-labelledby="activity-get-started">
-              <div className="v2-activity__start-head">
-                <h2 id="activity-get-started">{t('activity.getStarted.title')}</h2>
-                <span className="v2-activity__start-kicker">{t('activity.getStarted.kicker', { count: startSteps.length })}</span>
-              </div>
-              {startSteps.map((step, index) => (
-                <div key={step} className="v2-activity__start-row" data-step={step}>
-                  <span className="v2-activity__start-num" aria-hidden="true">{({ hire: 1, speak: 2, connect: 3 })[step]}</span>
-                  <div className="v2-activity__start-copy">
-                    <strong>{t(`activity.getStarted.${step}.title`)}</strong>
-                    <p>{t(`activity.getStarted.${step}.description`)}</p>
-                  </div>
-                  <div className="v2-activity__start-act">
-                    <button type="button" className={index === 0 ? 'v2-activity__start-cta--current' : ''} onClick={() => navigate(startStepTarget(step))}>{t(`activity.getStarted.${step}.cta`, { pod: speakPod?.name || t('activity.getStarted.speak.anyPod') })}</button>
-                  </div>
-                </div>
-              ))}
-            </section>
-          )}
-          <div className="v2-activity__sections">
-          <section className="v2-activity__section" aria-labelledby="activity-needs-you">
-            <div className="v2-activity__section-heading">
-              <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
-              {queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
-              {queueCount === null && <span>{t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })}</span>}
-              {queueCount !== null && queueCount !== 0 && <V2Hint label={t('activity.needsYou.about')}>
-                {t(podId === 'all' ? 'activity.needsYou.countDescription' : 'activity.needsYou.scopedCountDescription', { count: queueCount })}
-              </V2Hint>}
-            </div>
-            {queueFailed ? <>
-              <p role="status">{t('activity.loadFailed')}</p>
-              <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
-            </> : (
-              <>
-              {(queueCount === 0 || visibleQueue.length === 0) && (
-                <div className="v2-activity__empty v2-activity__empty--plain">
-                  <span>{queueCount === 0
-                    ? t('activity.needsYou.emptyTitle')
-                    : t('activity.needsYou.countLabel', { count: queueCount })}</span>
-                  {/* Under a minute the age reads "now", and "answered now ago" is not a
-                      sentence in either language, so that case has its own line. */}
-                  {queueCount === 0 && lastAnsweredAt && <span>{Date.now() - new Date(lastAnsweredAt).getTime() < 60_000
-                    ? t('activity.needsYou.emptyLastNow')
-                    : t('activity.needsYou.emptyLast', { age: relativeTime(lastAnsweredAt) })}</span>}
-                </div>
+                  {composeError && <div className="v2-activity__action-error" role="alert">{composeError}</div>}
+                </section>
               )}
-              {visibleQueue.length > 0 && (
-              <div className="v2-activity__queue">
-                {visibleQueue.map((item) => (
-                  <article key={item.id} data-activity-item-id={item.id} data-attention-id={item.attentionItemId} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${item.kind === 'decision' && ruledDecisions[item.id] ? ' v2-activity__queue-row--settled' : ''}`}>
-                    {/* The kind is a category, so it is a mark (direction A); the word stays for
-                        assistive tech. The mark's colour still says who is asking: an agent is cobalt. */}
-                    <span className={`v2-activity__queue-mark${item.actorName ? (isAgentActor(item) ? ' v2-activity__queue-mark--agent' : ' v2-activity__queue-mark--human') : ''}`} role="img" aria-label={t(`activity.needsYou.kinds.${item.kind}`)} title={t(`activity.needsYou.kinds.${item.kind}`)}>
-                      <KindGlyph kind={item.kind} />
-                    </span>
-                    <div className="v2-activity__queue-copy">
-                      <div className="v2-activity__queue-kind">{shortPodName(item.podName)}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</div>
-                      <div className="v2-activity__queue-topline">
-                        <strong>{item.kind === 'mention' && item.actorName ? item.actorName : item.title}</strong>
+              {startPending && (
+                <section className="v2-activity__section v2-activity__start v2-activity__start--pending" aria-busy="true" aria-labelledby="activity-get-started" data-testid="activity-start-pending">
+                  <div className="v2-activity__gtitle">
+                    <ShellGlyph name="play" size={13} />
+                    <h2 id="activity-get-started">{t('activity.getStarted.title')}</h2>
+                    <span className="v2-activity__gtitle-r">{t('activity.getStarted.checking')}</span>
+                  </div>
+                  <div className="v2-activity__list">
+                    {/* The same rows as the loaded steps, with bars where the words land. */}
+                    {['first', 'second'].map((row) => (
+                      <div key={row} className="v2-activity__queue-row v2-activity__start-row" aria-hidden="true">
+                        <span className="v2-activity__queue-mark" />
+                        <div className="v2-activity__queue-copy">
+                          <i className="v2-activity__start-bar v2-activity__start-bar--title" />
+                          <i className="v2-activity__start-bar" />
+                        </div>
+                        <div className="v2-activity__acts"><i className="v2-activity__start-bar v2-activity__start-bar--key" /></div>
                       </div>
-                      {item.detail && (
-                        <button
-                          type="button"
-                          className={`v2-activity__queue-detail${expandedDetailIds.has(item.id) ? ' v2-activity__queue-detail--expanded' : ''}${dismissedDetailIds.has(item.id) ? ' v2-activity__queue-detail--dismissed' : ''}`}
-                          aria-expanded={expandedDetailIds.has(item.id)}
-                          onClick={() => {
-                            const collapsing = expandedDetailIds.has(item.id);
-                            setExpandedDetailIds((current) => {
-                              const next = new Set(current);
-                              if (next.has(item.id)) next.delete(item.id);
-                              else next.add(item.id);
-                              return next;
-                            });
-                            setDismissedDetailIds((current) => {
-                              const next = new Set(current);
-                              if (collapsing) next.add(item.id);
-                              else next.delete(item.id);
-                              return next;
-                            });
-                          }}
-                          onBlur={() => setDismissedDetailIds((current) => {
-                            if (!current.has(item.id)) return current;
-                            const next = new Set(current);
-                            next.delete(item.id);
-                            return next;
-                          })}
-                        >
-                          {item.detail}
-                        </button>
-                      )}
+                    ))}
+                  </div>
+                </section>
+              )}
+              {!startPending && startEligible && startSteps.length > 0 && (
+                <section className="v2-activity__section v2-activity__start" aria-labelledby="activity-get-started">
+                  <div className="v2-activity__gtitle">
+                    <ShellGlyph name="play" size={13} />
+                    <h2 id="activity-get-started">{t('activity.getStarted.title')}</h2>
+                    <span className="v2-activity__gtitle-r">{t('activity.getStarted.kicker', { count: startSteps.length })}</span>
+                  </div>
+                  <div className="v2-activity__list">
+                    {startSteps.map((step, index) => (
+                      <div key={step} className="v2-activity__queue-row v2-activity__start-row" data-step={step}>
+                        <span className="v2-activity__queue-mark" aria-hidden="true"><ShellGlyph name={startGlyph[step]} /></span>
+                        <div className="v2-activity__queue-copy">
+                          <strong className="v2-activity__queue-name">{t(`activity.getStarted.${step}.title`)}</strong>
+                          <p className="v2-activity__queue-snip">{t(`activity.getStarted.${step}.description`)}</p>
+                        </div>
+                        <div className="v2-activity__acts">
+                          {/* Every step is a raised key, as the d215 day-zero frames draw it; the class still names the current one. */}
+                          <button type="button" className={`v2p-b v2p-b-s v2p-b-sm ${index === 0 ? 'v2-activity__start-cta--current' : 'v2-activity__start-cta--next'}`} onClick={() => navigate(startStepTarget(step))}>{t(`activity.getStarted.${step}.cta`, { pod: speakPod?.name || t('activity.getStarted.speak.anyPod') })}</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+              <section className="v2-activity__section" aria-labelledby="activity-needs-you">
+                <div className="v2-activity__gtitle">
+                  <ShellGlyph name="inbox" size={13} />
+                  <h2 id="activity-needs-you">{t('activity.needsYou.title')}</h2>
+                  <span className="v2-activity__gtitle-r">
+                    {queueCount !== null && queueCount > 0 && <span className="v2-activity__count" aria-label={t('activity.needsYou.countLabel', { count: queueCount })}>{queueCount}</span>}
+                    {queueCount !== null && queueCount > 0 && !phone && <span className="v2-activity__order">{` · ${t('activity.needsYou.order')}`}</span>}
+                    {queueCount === null && <span>{t('activity.needsYou.countUnavailable', { defaultValue: 'Count unavailable' })}</span>}
+                  </span>
+                </div>
+                {queueFailed ? (
+                  <div className="v2-activity__list">
+                    <div className="v2-activity__empty" role="status">
+                      <span>{t('activity.loadFailed')}</span>
+                      <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
                     </div>
-                    <div className="v2-activity__queue-actions">
-                      {item.kind === 'approval' && (
-                        <>
-                          <button type="button" onClick={() => actOnApproval(item, 'approve')} disabled={actingApprovalId === item.id}>
-                            {actingApprovalId === item.id ? t('activity.approval.working') : t('activity.approval.approve')}
-                          </button>
-                          <button type="button" className="v2-activity__queue-action--secondary v2-activity__queue-action--icon" aria-label={t('activity.approval.deny')} title={t('activity.approval.deny')} onClick={() => actOnApproval(item, 'reject')} disabled={actingApprovalId === item.id}>
-                            <ActGlyph name="deny" />
-                          </button>
-                        </>
-                      )}
-                      {item.kind === 'mention' && (
-                        <>
-                          {!replyOpenIds.has(item.id) ? <button type="button" className="v2-activity__queue-action--bordered" onClick={() => setReplyOpenIds((current) => new Set(current).add(item.id))}>{t('activity.reply.open')}</button> : <div className="v2-activity__reply" data-testid="queue-reply">
-                            <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
-                            <button type="button" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
-                          </div>}
-                          <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered v2-activity__queue-action--icon" aria-label={acknowledgingAttentionId === item.id ? t('activity.mention.working') : t('activity.mention.markHandled')} title={t('activity.mention.markHandled')} onClick={() => acknowledgeMention(item)} disabled={acknowledgingAttentionId === item.id}>
-                            <ActGlyph name="handled" />
-                          </button>
-                        </>
-                      )}
-                      {(item.kind === 'handoff' || item.kind === 'blocked') && (
-                        <button type="button" onClick={() => markHandoffHandled(item)} disabled={acknowledgingAttentionId === item.id}>
-                          {acknowledgingAttentionId === item.id ? t('activity.handoff.working', { defaultValue: 'Saving…' }) : t('activity.handoff.markHandled', { defaultValue: 'Mark handled' })}
-                        </button>
-                      )}
-                      {item.kind === 'decision' && (item.options || []).length > 0 && (
-                        <>
-                          {ruledDecisions[item.id] ? (
-                            <>
+                  </div>
+                ) : (
+                  <div className="v2-activity__list v2-activity__queue">
+                    {(queueCount === 0 || visibleQueue.length === 0) && (
+                      <div className="v2-activity__empty">
+                        <span>{queueCount === 0
+                          ? t('activity.needsYou.emptyTitle')
+                          : t('activity.needsYou.countLabel', { count: queueCount })}</span>
+                        {/* Under a minute the age reads "now", and "answered now ago" is not a
+                            sentence in either language, so that case has its own line. */}
+                        {queueCount === 0 && lastAnsweredAt && <span>{Date.now() - new Date(lastAnsweredAt).getTime() < 60_000
+                          ? t('activity.needsYou.emptyLastNow')
+                          : t('activity.needsYou.emptyLast', { age: relativeTime(lastAnsweredAt) })}</span>}
+                      </div>
+                    )}
+                    {visibleQueue.map((item) => {
+                      const ruled = item.kind === 'decision' ? ruledDecisions[item.id] : undefined;
+                      const choosing = item.kind === 'decision' && (item.options || []).length > 0 && !ruled;
+                      const secondary = secondaryActs(item);
+                      const titleId = `${rowDomId(item)}-title`;
+                      return (
+                        <article key={item.id} data-activity-item-id={item.id} data-attention-id={item.attentionItemId} tabIndex={-1} className={`v2-activity__queue-row v2-activity__queue-row--${item.kind}${choosing ? ' v2-activity__queue-row--open' : ''}${ruled ? ' v2-activity__queue-row--settled' : ''}`}>
+                          {/* The kind is a mark; its word stays for assistive tech. */}
+                          <span className="v2-activity__queue-mark" role="img" aria-label={t(`activity.needsYou.kinds.${item.kind}`)} title={t(`activity.needsYou.kinds.${item.kind}`)}>
+                            <KindGlyph kind={item.kind} />
+                          </span>
+                          <div className="v2-activity__queue-copy">
+                            <div className="v2-activity__queue-line">
+                              <strong id={titleId} className="v2-activity__queue-name">{item.kind === 'mention' && item.actorName ? item.actorName : item.title}</strong>
+                              <span className="v2-activity__queue-meta">{shortPodName(item.podName)}{item.timestamp ? ` · ${relativeTime(item.timestamp)}` : ''}</span>
+                            </div>
+                            {item.detail && (
+                              <button
+                                type="button"
+                                className={`v2-activity__queue-detail${expandedDetailIds.has(item.id) ? ' v2-activity__queue-detail--expanded' : ''}${dismissedDetailIds.has(item.id) ? ' v2-activity__queue-detail--dismissed' : ''}`}
+                                aria-expanded={expandedDetailIds.has(item.id)}
+                                onClick={() => {
+                                  const collapsing = expandedDetailIds.has(item.id);
+                                  setExpandedDetailIds((current) => {
+                                    const next = new Set(current);
+                                    if (next.has(item.id)) next.delete(item.id);
+                                    else next.add(item.id);
+                                    return next;
+                                  });
+                                  setDismissedDetailIds((current) => {
+                                    const next = new Set(current);
+                                    if (collapsing) next.add(item.id);
+                                    else next.delete(item.id);
+                                    return next;
+                                  });
+                                }}
+                                onBlur={() => setDismissedDetailIds((current) => {
+                                  if (!current.has(item.id)) return current;
+                                  const next = new Set(current);
+                                  next.delete(item.id);
+                                  return next;
+                                })}
+                              >
+                                {item.detail}
+                              </button>
+                            )}
+                            {ruled && (
                               <span className="v2-activity__decision-ruled" role="status">
-                                {t('activity.decision.ruled', ruledDecisions[item.id])}
+                                {t('activity.decision.ruled', ruled)}
                               </span>
-                              <div className="v2-activity__decision-footer">
-                                <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered v2-activity__queue-action--icon" aria-label={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} title={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
-                                  <ActGlyph name="open" />
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              {(item.options || []).map((option, index) => {
-                                const optionId = `${item.id}-${index}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-                                const recommendedId = `${optionId}-recommended`;
-                                const descriptionId = `${optionId}-description`;
-                                const describedBy = option.description ? descriptionId : undefined;
-                                return (
-                                  <div className="v2-activity__option-choice" key={option.label}>
-                                    <button
-                                      type="button"
-                                      className={`v2-activity__option${index === 0 ? ' v2-activity__option--primary' : ''}`}
-                                      onClick={() => ruleDecision(item, option.label)}
-                                      disabled={rulingId === item.id}
-                                      aria-label={t(option.recommended
-                                        ? 'activity.decision.ruleOptionRecommended'
-                                        : 'activity.decision.ruleOption', { option: option.label })}
-                                      aria-describedby={describedBy}
-                                    >
-                                      {rulingId === item.id ? t('activity.decision.working') : option.label}
-                                    </button>
-                                    {option.recommended && (
-                                      <span id={recommendedId} className="v2-activity__option-recommended">{t('activity.decision.recommended')}</span>
-                                    )}
-                                    {option.description && (
-                                      <span id={descriptionId} className="v2-activity__option-description">{option.description}</span>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                              <div className="v2-activity__decision-footer">
-                                <button
-                                  type="button"
-                                  className="v2-activity__queue-action--secondary v2-activity__option v2-activity__option--other"
-                                  onClick={() => setOtherDecisionId((current) => current === item.id ? null : item.id)}
-                                  disabled={rulingId === item.id}
-                                >
-                                  {t('activity.decision.other')}
-                                </button>
+                            )}
+                            {choosing && (
+                              <>
+                                {/* The decision is the only open row: its choices are keys inside it, in authored order. */}
+                                <div className="v2-activity__keys" role="group" aria-labelledby={titleId}>
+                                  {(item.options || []).map((option, index) => {
+                                    const descriptionId = `${rowDomId(item)}-${index}-description`;
+                                    return (
+                                      <button
+                                        key={option.label}
+                                        type="button"
+                                        className="v2p-b v2p-b-s v2p-b-sm v2-activity__option"
+                                        onClick={() => ruleDecision(item, option.label)}
+                                        disabled={rulingId === item.id}
+                                        aria-label={t(option.recommended
+                                          ? 'activity.decision.ruleOptionRecommended'
+                                          : 'activity.decision.ruleOption', { option: option.label })}
+                                        aria-describedby={option.description ? descriptionId : undefined}
+                                      >
+                                        {rulingId === item.id ? t('activity.decision.working') : option.label}
+                                        {option.recommended && rulingId !== item.id && <span className="v2-activity__option-recommended">{t('activity.decision.recommended')}</span>}
+                                      </button>
+                                    );
+                                  })}
+                                  <button
+                                    type="button"
+                                    className="v2p-b v2p-b-g v2p-b-sm v2-activity__option v2-activity__option--other"
+                                    onClick={() => setOtherDecisionId((current) => current === item.id ? null : item.id)}
+                                    disabled={rulingId === item.id}
+                                    aria-expanded={otherDecisionId === item.id}
+                                  >
+                                    {t('activity.decision.other')}
+                                  </button>
+                                </div>
+                                {(item.options || []).some((option) => option.description) && (
+                                  <ul className="v2-activity__option-notes">
+                                    {(item.options || []).map((option, index) => option.description && (
+                                      <li key={option.label}>
+                                        <b>{option.label}</b>
+                                        {' '}
+                                        <span id={`${rowDomId(item)}-${index}-description`} className="v2-activity__option-description">{option.description}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
                                 {otherDecisionId === item.id && (
-                                  <div className="v2-activity__decision-other" data-testid="decision-other">
+                                  <div className="v2-activity__editor v2-activity__decision-other" data-testid="decision-other">
                                     <textarea
                                       aria-label={t('activity.decision.otherPlaceholder')}
                                       rows={2}
@@ -1429,6 +1558,7 @@ const V2ActivityPage: React.FC = () => {
                                     />
                                     <button
                                       type="button"
+                                      className="v2p-b v2p-b-p v2p-b-sm"
                                       onClick={() => ruleDecision(item, otherDecisionValue)}
                                       disabled={rulingId === item.id || !otherDecisionValue.trim()}
                                     >
@@ -1436,105 +1566,117 @@ const V2ActivityPage: React.FC = () => {
                                     </button>
                                   </div>
                                 )}
-                                <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered v2-activity__queue-action--icon" aria-label={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} title={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
-                                  <ActGlyph name="open" />
-                                </button>
+                              </>
+                            )}
+                            {item.kind === 'mention' && replyOpenIds.has(item.id) && (
+                              <div className="v2-activity__editor v2-activity__reply" data-testid="queue-reply">
+                                <textarea aria-label={t('activity.reply.placeholder')} className="v2-activity__reply-input" rows={2} placeholder={t('activity.reply.placeholder')} value={replyDrafts[item.id] || ''} onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') sendReply(item); }} disabled={replyingId === item.id} />
+                                <button type="button" className="v2p-b v2p-b-p v2p-b-sm" onClick={() => sendReply(item)} disabled={replyingId === item.id || !(replyDrafts[item.id] || '').trim()}>{replyingId === item.id ? t('activity.reply.working') : repliedIds.has(item.id) ? t('activity.reply.sent') : t('activity.reply.send')}</button>
                               </div>
-                            </>
-                          )}
-                        </>
-                      )}
-                      {(item.kind !== 'decision' || (item.options || []).length === 0) && (
-                        <button type="button" className="v2-activity__queue-action--thread v2-activity__queue-action--bordered v2-activity__queue-action--icon" aria-label={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} title={item.messageId === undefined || item.messageId === null || item.messageId === '' ? t('activity.openPod') : t('activity.open')} onClick={() => openPod(item.podId, item.messageId)} disabled={!item.podId}>
-                          <ActGlyph name="open" />
-                        </button>
-                      )}
-                    </div>
-                    {actionErrorItemId === item.id && actionError && (
-                      <div className="v2-activity__row-action-error v2-activity__action-error" role="alert">{actionError}</div>
-                    )}
-                  </article>
-                ))}
-              </div>
-              )}
-              </>
-            )}
-            {/* 66311 keeps the fetch under the fold: normal paging shows nothing, not even
-                Loading; Retry on error; and a stalled auto-load (pages remain, none expected)
-                still surfaces the way back. */}
-            {visibleQueue.length > 0 && (queueMoreError || (queueHydrated && queueRemaining > 0 && !queueLoadingMore && !queueAutoPending)) && (
-              <button
-                type="button"
-                ref={queueMoreButtonRef}
-                className="v2-activity__queue-more"
-                onClick={() => loadMoreQueue()}
-                disabled={queueLoadingMore}
-              >
-                {queueLoadingMore
-                  ? t('activity.needsYou.loadingMore', { defaultValue: 'Loading…' })
-                  : queueMoreError
-                    ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
-                    : t('activity.needsYou.showMore', { count: queueRemaining, defaultValue: `Show more · ${queueRemaining} remaining` })}
-              </button>
-            )}
-            {(historyRemaining > 0 || historyMoreError) && (
-              <button
-                type="button"
-                ref={historyMoreButtonRef}
-                className="v2-activity__queue-more"
-                onClick={loadMoreHistory}
-                disabled={historyLoadingMore}
-              >
-                {historyLoadingMore
-                  ? t('activity.needsYou.loadingMore', { defaultValue: 'Loading…' })
-                  : historyMoreError
-                    ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
-                    : t('activity.needsYou.showMoreSettled', { count: historyRemaining, defaultValue: `Show more settled · ${historyRemaining} remaining` })}
-              </button>
-            )}
-            {visibleQueue.length === 0 && queueMoreError && !queueFailed && (
-              <button type="button" className="v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
-            )}
-          </section>
-
-          <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">
-            <div className="v2-activity__section-heading">
-              <h2 id="activity-moved-forward">{t('activity.movedForward.title')}</h2>
-              <V2Hint label={t('activity.movedForward.about')}>{t('activity.movedForward.description')}</V2Hint>
-            </div>
-            {movedGroups.length === 0 ? <div className="v2-activity__empty v2-activity__empty--plain"><strong>{t(window === '7d' ? 'activity.movedForward.emptyWeek' : 'activity.movedForward.empty')}</strong></div> : <div className="v2-activity__moved-list">
-              {movedGroups.map((group) => {
-                const visibleCount = movedVisibleCounts[group.id] || 3;
-                const visible = group.lines.slice(0, Math.min(visibleCount, group.lines.length));
-                const hasMore = visible.length < group.lines.length;
-                const initialMore = Math.max(Math.min(20, group.lines.length) - visible.length, 0);
-                const omittedCount = Math.max(group.lines.length - visible.length, 0);
-                return <article key={group.id} className="v2-activity__moved-group">
-                  <div className="v2-activity__moved-head"><span>{shortPodName(group.name)}</span><span>{group.lines.length}</span></div>
-                  <div className="v2-activity__moved-lines">
-                    {visible.map((line) => <div key={line.id} className="v2-activity__moved-line"><strong>{line.author}</strong><span>{line.text}</span><time>{relativeTime(line.timestamp)}</time></div>)}
+                            )}
+                            {actionErrorItemId === item.id && actionError && (
+                              <div className="v2-activity__row-action-error v2-activity__action-error" role="alert">{actionError}</div>
+                            )}
+                          </div>
+                          <div className="v2-activity__acts">
+                            {primaryKey(item)}
+                            {secondary.length > 0 && (phone
+                              ? <RowMenu acts={secondary} label={t('activity.moreActions')} open={rowMenuId === item.id} setOpen={(open) => setRowMenuId(open ? item.id : null)} />
+                              : <span className="v2-activity__hv">{secondary.map(iconKey)}</span>)}
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
-                  {visibleCount > 3 && <button type="button" className="v2-activity__moved-more" onClick={(event) => {
-                    const article = event.currentTarget.closest('article');
-                    setMovedVisibleCounts((current) => ({ ...current, [group.id]: 3 }));
-                    globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
-                  }}>{t('activity.movedForward.showLess')}</button>}
-                  {hasMore && <button type="button" className="v2-activity__moved-more" onClick={(event) => {
-                    const article = event.currentTarget.closest('article');
-                    const nextCount = Math.min(visibleCount < 20 ? 20 : visibleCount + 20, group.lines.length);
-                    setMovedVisibleCounts((current) => ({ ...current, [group.id]: nextCount }));
-                    if (nextCount === group.lines.length) {
-                      globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
-                    }
-                  }}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount), pod: shortPodName(group.name) })}</button>}
-                  {visibleCount >= 20 && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
-                </article>;
-              })}
-            </div>}
-          </section>
-          </div>
-        </>
-      )}
+                )}
+                {/* 66311 keeps the fetch under the fold: normal paging shows nothing, not even
+                    Loading; Retry on error; and a stalled auto-load (pages remain, none expected)
+                    still surfaces the way back. */}
+                {visibleQueue.length > 0 && (queueMoreError || (queueHydrated && queueRemaining > 0 && !queueLoadingMore && !queueAutoPending)) && (
+                  <div className="v2-activity__foot">
+                    <button
+                      type="button"
+                      ref={queueMoreButtonRef}
+                      className="v2p-b v2p-b-s v2p-b-sm v2-activity__queue-more"
+                      onClick={() => loadMoreQueue()}
+                      disabled={queueLoadingMore}
+                    >
+                      {queueLoadingMore
+                        ? t('activity.needsYou.loadingMore', { defaultValue: 'Loading…' })
+                        : queueMoreError
+                          ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
+                          : t('activity.needsYou.showMore', { count: queueRemaining, defaultValue: `Show more · ${queueRemaining} remaining` })}
+                    </button>
+                  </div>
+                )}
+                {(historyRemaining > 0 || historyMoreError) && (
+                  <div className="v2-activity__foot">
+                    <button
+                      type="button"
+                      ref={historyMoreButtonRef}
+                      className="v2p-b v2p-b-s v2p-b-sm v2-activity__queue-more"
+                      onClick={loadMoreHistory}
+                      disabled={historyLoadingMore}
+                    >
+                      {historyLoadingMore
+                        ? t('activity.needsYou.loadingMore', { defaultValue: 'Loading…' })
+                        : historyMoreError
+                          ? t('activity.needsYou.retry', { defaultValue: 'Retry' })
+                          : t('activity.needsYou.showMoreSettled', { count: historyRemaining, defaultValue: `Show more settled · ${historyRemaining} remaining` })}
+                    </button>
+                  </div>
+                )}
+                {visibleQueue.length === 0 && queueMoreError && !queueFailed && (
+                  <div className="v2-activity__foot">
+                    <button type="button" className="v2p-b v2p-b-s v2p-b-sm v2-activity__queue-more" onClick={() => setReloadKey((value) => value + 1)}>{t('activity.needsYou.retry', { defaultValue: 'Retry' })}</button>
+                  </div>
+                )}
+              </section>
+
+              <section className="v2-activity__section v2-activity__moved" aria-labelledby="activity-moved-forward">
+                <div className="v2-activity__gtitle">
+                  <ShellGlyph name="send" size={13} />
+                  <h2 id="activity-moved-forward">{t('activity.movedForward.title')}</h2>
+                  {movedCount > 0 && <span className="v2-activity__gtitle-r">{movedCount}{phone ? '' : ` · ${t('activity.movedForward.order')}`}</span>}
+                </div>
+                <div className="v2-activity__list v2-activity__moved-list">
+                  {movedGroups.length === 0 ? <div className="v2-activity__empty">{t(window === '7d' ? 'activity.movedForward.emptyWeek' : 'activity.movedForward.empty')}</div> : movedGroups.map((group) => {
+                    const visibleCount = movedVisibleCounts[group.id] || 3;
+                    const visible = group.lines.slice(0, Math.min(visibleCount, group.lines.length));
+                    const hasMore = visible.length < group.lines.length;
+                    const initialMore = Math.max(Math.min(20, group.lines.length) - visible.length, 0);
+                    const omittedCount = Math.max(group.lines.length - visible.length, 0);
+                    // One list, a mono sub-row per pod, then Journal's time column (d215 activity).
+                    return <article key={group.id} className="v2-activity__moved-group">
+                      <div className="v2-activity__moved-head"><span>{shortPodName(group.name)}</span><span>{group.lines.length}</span></div>
+                      {visible.map((line) => (
+                        <div key={line.id} className="v2-activity__moved-line">
+                          <time>{relativeTime(line.timestamp)}</time>
+                          <span className="v2-activity__moved-text"><strong>{line.author}</strong>{' '}<span>{line.text}</span></span>
+                        </div>
+                      ))}
+                      {visibleCount > 3 && <button type="button" className="v2-activity__moved-more" onClick={(event) => {
+                        const article = event.currentTarget.closest('article');
+                        setMovedVisibleCounts((current) => ({ ...current, [group.id]: 3 }));
+                        globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
+                      }}>{t('activity.movedForward.showLess')}</button>}
+                      {hasMore && <button type="button" className="v2-activity__moved-more" onClick={(event) => {
+                        const article = event.currentTarget.closest('article');
+                        const nextCount = Math.min(visibleCount < 20 ? 20 : visibleCount + 20, group.lines.length);
+                        setMovedVisibleCounts((current) => ({ ...current, [group.id]: nextCount }));
+                        if (nextCount === group.lines.length) {
+                          globalThis.window.requestAnimationFrame(() => article?.querySelector('button')?.focus());
+                        }
+                      }}>{t('activity.movedForward.more', { count: initialMore || Math.min(20, omittedCount), pod: shortPodName(group.name) })}</button>}
+                      {visibleCount >= 20 && omittedCount > 0 && <span className="v2-activity__moved-cap-note">{t('activity.movedForward.omitted', { count: omittedCount, pod: group.name, defaultValue: `${omittedCount} more updates in ${group.name} not shown` })}</span>}
+                    </article>;
+                  })}
+                </div>
+              </section>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

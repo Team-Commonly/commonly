@@ -174,11 +174,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone).toMatch(/\.v2-profile \.v2-profile__follow, \.v2-profile \.v2-profile__edit \{[^}]*flex: 1 0 100%/);
   });
 
-  test('/v2/activity and /v2/artifacts: on a phone the page head is the pinned 52px bar (d215 .mtop 390)', () => {
+  test('/v2/artifacts: on a phone the page head is the pinned 52px bar (d215 .mtop 390)', () => {
     const v2 = readV2Css();
-    const barSelector = '.v2-activity__header,\n  .v2-artifacts__head {';
-    const phone = mediaBlockContaining(v2, barSelector);
-    // Both heads render inside the scrolling .v2-feature__body; sticky is what keeps them on screen.
+    const barSelector = '.v2-artifacts__head {';
+    const phone = mediaBlockContaining(v2, '  .v2-artifacts__head {\n    position: sticky;');
+    // The head renders inside the scrolling .v2-feature__body; sticky is what keeps it on screen.
     const bar = selectorRuleBody(phone, barSelector);
     expect(bar).toContain('position: sticky');
     expect(bar).toContain('top: 0');
@@ -189,66 +189,21 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(bar).toContain('background: var(--v2-surface)');
     // The compact 22px title, not the desktop 32px display head.
     expect(selectorRuleBody(phone, '.v2-artifacts__head .v2-artifacts__title {')).toContain('font: 800 22px/1');
-    // Activity's title shares the rule, and keeps its width: the meta is what gives way.
-    const activityTitle = selectorRuleBody(phone, '.v2-activity__header .v2-activity__title,');
-    expect(activityTitle).toContain('font: 800 22px/1');
-    expect(activityTitle).toContain('flex-shrink: 0');
-    // The meta sits at the bar's right edge, on both pages, and truncates rather than wrapping.
+    // The meta sits at the bar's right edge and truncates rather than wrapping.
     expect(selectorRuleBody(phone, '.v2-artifacts__head .v2-page-head__meta {')).toContain('margin-left: auto');
-    const meta = selectorRuleBody(phone, '.v2-activity__header .v2-page-head__meta,');
-    expect(meta).toContain('margin-left: auto');
-    expect(meta).toContain('text-overflow: ellipsis');
-    // Closed, the identity is one line (identity wraps by default, which would drop the meta to a
-    // second row and grow the bar); an open hint keeps its own row.
-    expect(selectorRuleBody(phone, '.v2-activity__header .v2-page-head__identity:not(:has(.v2-hint--open)),')).toContain('flex-wrap: nowrap');
     // Artifacts pads its column 12px; the bar bleeds back out to the pane edges.
     // ...and the column's 16px phone top padding is dropped, so the bar starts at 0,0 before any scroll.
     expect(phone).toContain('.v2-artifacts { padding-top: 0; }');
     expect(phone).toContain('.v2-artifacts__head { margin: 0 -12px; }');
-    // The block must come after the pages' own head rules, or their padding and baseline win by order.
-    expect(v2.indexOf(phone)).toBeGreaterThan(v2.lastIndexOf('.v2-activity__header { min-height: 56px;'));
     expect(v2.indexOf(phone)).toBeGreaterThan(v2.indexOf('\n.v2-artifacts__head {'));
     // ...and after the Artifacts phone rule, whose 16px top padding would push the bar down until scrolled.
     const artifactsPhonePad = v2.indexOf('.v2-artifacts { padding: 16px 12px 0;');
     expect(artifactsPhonePad).toBeGreaterThan(-1);
     expect(v2.indexOf(phone)).toBeGreaterThan(artifactsPhonePad);
+    // Activity left this shared bar for its own sheet (d215 activity build).
+    expect(v2).not.toContain('v2-activity');
   });
 
-  test('/v2/activity: on a phone the window and scope controls are two full-width rows under the bar (d215 activity 390)', () => {
-    const v2 = readV2Css();
-    const phone = mediaBlockContaining(v2, '.v2-activity__controls { flex-direction: column;');
-    const controls = selectorRuleBody(phone, '.v2-activity__controls {');
-    expect(controls).toContain('flex-direction: column');
-    expect(controls).toContain('flex-wrap: nowrap');
-    expect(controls).toContain('align-items: stretch');
-    // The 12px gutter is margin, so the block is the frame's 366px box; no filter-row rule under it.
-    // width: auto drops the ≤1100 width: 100%, which plus the margin would overflow the pane by 24px.
-    expect(controls).toContain('width: auto');
-    expect(controls).toContain('margin: 12px 12px 0');
-    expect(controls).toContain('padding: 0');
-    expect(controls).toContain('border-bottom: 0');
-    // 1px border + 2px padding is the frame's 3px inset. The frame's 36px buttons hold at the 44px touch floor.
-    expect(selectorRuleBody(phone, '.v2-activity__window,\n  .v2-activity__scope {')).toContain('padding: 2px');
-    expect(selectorRuleBody(phone, '.v2-activity__window,\n  .v2-activity__scope {')).toContain('width: auto');
-    const windowButton = selectorRuleBody(phone, '.v2-root button.v2-activity__window-button {');
-    expect(windowButton).toContain('flex: 1 1 0');
-    expect(windowButton).toContain('justify-content: center');
-    expect(windowButton).toContain('min-height: 44px');
-    const scopeButton = selectorRuleBody(phone, '.v2-root button.v2-activity__scope-button {');
-    expect(scopeButton).toContain('min-height: 44px');
-    // The scope stays one row: pod buttons shrink into their ellipsis rather than wrap, never below 44px wide.
-    expect(scopeButton).toContain('min-width: 44px');
-    // Its own rule: `.v2-activity__scope {` alone would match the shared window/scope rule above it.
-    expect(phone).toContain('\n  .v2-activity__scope { flex-wrap: nowrap; }');
-    // "All pods" and the "more" trigger never shrink, so the trigger keeps its label and caret.
-    expect(phone).toContain('.v2-root .v2-activity__scope > button.v2-activity__scope-button:first-child,\n  .v2-root button.v2-activity__scope-button--more { flex-shrink: 0; }');
-    expect(fs.readFileSync(path.join(__dirname, '../components/V2ActivityPage.tsx'), 'utf8')).toContain("' v2-activity__scope-button--active' : ' v2-activity__scope-button--more'");
-    expect(selectorRuleBody(phone, '.v2-activity__controls + .v2-activity__compose {')).toContain('margin-top: 12px');
-    // Same selectors as the ≤1100 filter row (a row with a rule under it), so this block must come after it.
-    const filterRow = v2.indexOf('.v2-activity__controls { position: relative; top: auto; right: auto;');
-    expect(filterRow).toBeGreaterThan(-1);
-    expect(v2.indexOf(phone)).toBeGreaterThan(filterRow);
-  });
 
   test('/invite: a long pod name or description wraps inside the auth card (d215 s-invite)', () => {
     const invite = read('../components/V2InviteRedeem.css');
@@ -310,7 +265,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
   const podBoard = read('../components/V2PodBoard.tsx');
   const activityPage = read('../components/V2ActivityPage.tsx');
   const yourTeamPage = read('../components/V2YourTeamPage.tsx');
-  const featurePage = read('../components/V2FeaturePage.tsx');
   const v2App = read('../V2App.tsx');
   const app = read('../../App.tsx');
   const appStyles = read('../../App.css');
@@ -951,86 +905,12 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(v2).toMatch(/\.v2-root button\.v2-verification-banner__dismiss \{[\s\S]*?width: 44px;/);
   });
 
-  test('Activity queue actions stay in the row grammar and wrap on narrow screens', () => {
-    // Day-zero onboarding and approval actions share the queue row. Keeping
-    // their action cluster explicit prevents a later button refactor from
-    // forcing a third column past a 390px viewport.
-    // The desktop declaration shares its rule with the buttons, so it is not
-    // eligible for ruleBody's exact-selector helper.
-    expect(v2).toMatch(/\.v2-activity__queue-actions,\n\.v2-activity__queue-row button \{\n\s*display: flex;[\s\S]*?gap: 6px;/);
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-actions \{ grid-column: 2; \}[\s\S]*?\.v2-activity__queue-actions \{ flex-wrap: wrap; \}/);
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
-    // Every non-option card act is 32 tall at desktop, level with the options (ux-lead 67327):
-    // Approve / Deny / Mark handled / Reply / Open read 30 from the shared row-button rule.
-    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('min-height: 32px');
-  });
 
-  test('Activity details clamp to two lines and reveal full copy on hover, focus, or expand', () => {
-    const detail = ruleBody(v2, '.v2-root .v2-activity__queue-detail');
-    expect(detail).toContain('display: -webkit-box');
-    expect(detail).toContain('-webkit-line-clamp: 2');
-    expect(detail).toContain('overflow: hidden');
-    const reveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail--expanded');
-    expect(reveal).toContain('display: block');
-    // Tab-in preview is kept; a reader's collapse is excluded so focus can't re-open it (#2407).
-    const focusReveal = selectorRuleBody(v2, '.v2-root .v2-activity__queue-detail:focus-visible:not(.v2-activity__queue-detail--dismissed)');
-    expect(focusReveal).toContain('display: block');
-    expect(focusReveal).toContain('-webkit-line-clamp: unset');
-    expect(activityPage).toContain('v2-activity__queue-detail--dismissed');
-    expect(reveal).toContain('-webkit-line-clamp: unset');
-    const baseDetail = selectorRuleBody(v2, '.v2-root button.v2-activity__queue-detail');
-    expect(baseDetail).toContain('color: var(--v2-text-secondary)');
-    const mentionDetail = selectorRuleBody(v2, '.v2-root .v2-activity__queue-row--mention .v2-activity__queue-detail');
-    expect(mentionDetail).toContain('color: var(--v2-text-primary)');
-    expect(v2).toContain('.v2-root:lang(zh) .v2-activity__queue-detail,');
-    expect(v2).toContain('.v2-root .v2-activity__queue-detail:hover:not(:focus)');
-    expect(v2).toContain('@media (hover: hover)');
-    expect(activityPage).toContain('aria-expanded={expandedDetailIds.has(item.id)}');
-    expect(activityPage).toContain('v2-activity__queue-detail');
-    expect(activityPage).toContain('aria-label={t(\'activity.compose.placeholder\')}');
-    expect(activityPage).not.toContain('v2-activity__compose-label');
-  });
 
-  test('Activity pagination keeps the Show more affordance visible and keyboard-sized', () => {
-    const more = ruleBody(v2, '.v2-activity__queue-more');
-    expect(more).toContain('min-height: 36px');
-    expect(more).toContain('border: 1px solid var(--v2-accent)');
-    expect(more).toContain('color: var(--v2-accent-text)');
-    expect(v2).toContain('.v2-activity__queue-more:hover:not(:disabled)');
-    expect(v2).toContain('.v2-activity__queue-more:disabled');
-  });
 
-  test('DecisionRequest options preserve authored order with one cobalt primary choice', () => {
-    // The first build left options inside the narrow actions column. Generic
-    // queue-button CSS once made every non-recommended option blue while the
-    // first authored option looked secondary — exactly backwards for a fork card.
-    const decisionActions = ruleBody(v2, '.v2-activity__queue-row--decision .v2-activity__queue-actions');
-    expect(decisionActions).toContain('grid-column: 1 / -1');
-    expect(decisionActions).toContain('justify-content: flex-start');
-    const decisionActionsOverride = lastRuleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__queue-actions');
-    expect(decisionActionsOverride).toContain('grid-column: 1 / -1');
-    expect(decisionActionsOverride).toContain('max-width: none');
-    expect(decisionActionsOverride).toContain('width: 100%');
-    // Inline at 32px with Other… beside (ux-lead 66400 fix 4), never stacked bars.
-    expect(decisionActionsOverride).toContain('flex-direction: row');
-    expect(decisionActionsOverride).toContain('flex-wrap: wrap');
-    expect(decisionActionsOverride).toContain('gap: 8px');
-    expect(lastRuleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer')).toContain('display: contents');
-    expect(ruleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision')).toContain('align-items: start');
-    expect(lastRuleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice'))
-      .toContain('flex: 0 1 auto');
-    expect(lastRuleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button'))
-      .toContain('min-height: 32px');
-    expect(lastRuleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button'))
-      .toContain('padding-inline: 12px');
-    const neutralOptionHover = ruleBody(v2, '.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice button.v2-activity__option:not(.v2-activity__option--primary):hover:not(:disabled)');
-    expect(neutralOptionHover).toContain('background: var(--v2-surface-hover)');
-    expect(neutralOptionHover).toContain('color: var(--v2-text-primary)');
-    const primaryOptionHover = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--primary:hover:not(:disabled)');
-    expect(primaryOptionHover).toContain('background: var(--v2-accent-strong)');
-    expect(primaryOptionHover).toContain('color: var(--v2-on-ink)');
-    expect(activityPage).toContain('aria-describedby={describedBy}');
-    expect(activityPage).toContain('v2-activity__decision-footer');
+  test('DecisionRequest options preserve authored order on the thread card', () => {
+    // Activity's decision row is pinned in the d215 activity block below; the
+    // thread card keeps its own grammar and its decision loader here.
     expect(decisionCard).toContain('aria-describedby={describedBy}');
     expect(decisionCard).toContain('v2-decision-card__option-recommended');
     expect(decisionCard).toContain('v2-decision-card__option-description');
@@ -1038,36 +918,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-decision-card__options')).toContain('gap: 12px');
     expect(ruleBody(v2, '.v2-decision-card__option')).toContain('display: grid');
     expect(ruleBody(v2, '.v2-decision-card__option')).toContain('gap: 4px');
-
-    const neutralOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option');
-    expect(neutralOption).toContain('border: 1px solid var(--v2-border)');
-    expect(neutralOption).toContain('background: var(--v2-surface)');
-    expect(neutralOption).toContain('border-radius: var(--v2-radius-sm)');
-
-    const primaryOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--primary');
-    expect(primaryOption).toContain('background: var(--v2-accent)');
-    expect(primaryOption).toContain('color: var(--v2-on-ink)');
-    expect(v2).toContain('v2-activity__queue-action--bordered');
-    const borderedAction = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered');
-    expect(borderedAction).toContain('border: 1px solid var(--v2-border)');
-    expect(ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-button')).toContain('border: 1px solid var(--v2-border)');
-    const composeMenu = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-menu');
-    expect(composeMenu).toContain('max-height: 240px');
-    expect(composeMenu).toContain('overflow-y: auto');
-    const composeOption = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-option');
-    expect(composeOption).toContain('min-height: 30px');
-    expect(composeOption).toContain('background: transparent');
-    expect(composeOption).toContain('color: var(--v2-text-primary)');
-    const composeOptionHover = ruleBody(v2, '.v2-root .v2-activity__compose .v2-activity__compose-picker-menu button.v2-activity__compose-picker-option:hover:not(:disabled)');
-    expect(composeOptionHover).toContain('background: var(--v2-surface-hover)');
-    expect(composeOptionHover).toContain('color: var(--v2-text-primary)');
-    expect(composeOptionHover).toContain('border-color: transparent');
-    expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-root \.v2-activity__compose \.v2-activity__compose-picker-menu \.v2-activity__compose-picker-option \{ min-height: 44px; \}/);
-    const otherOption = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary');
-    expect(otherOption).toContain('color: var(--v2-accent-text)');
-    expect(v2).toContain('.v2-activity__option-description');
-    expect(activityPage).toContain('(option, index)');
-    expect(activityPage).not.toContain('.sort((a, b) => Number(Boolean(b.recommended))');
     expect(thread).toContain("loadDecisionPages<T>(");
     expect(thread).toContain("'/api/activity/decision-queue'");
     expect(thread).toContain("'/api/activity/decision-history'");
@@ -1075,7 +925,6 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(thread).toContain('loadDecisionPagesForMessageIds<ThreadDecision>');
     expect(thread).toContain('loadedMessageIdsRef.current = [...new Set(messages');
     expect(thread).toContain('if (pendingData)');
-    expect(thread).toContain("'/api/activity/decision-history'");
     expect(thread).toContain('settledDecisionByMessageId');
   });
 
@@ -2083,35 +1932,8 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(phone).toContain('.v2-pane--rail { display: none; }');
   });
 
-  test('Activity cards have shrinkable desktop and mobile layout guards', () => {
-    // The recap is a feature-wide page, but it is still reachable at 390px.
-    // The zero-min grid tracks are the load-bearing no-horizontal-overflow
-    // rule; jsdom cannot observe the scrollbar they prevent.
-    expect(ruleBody(v2, '.v2-activity__queue-row'))
-      .toContain('28px minmax(0, 1fr) auto');
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-activity__queue-row \{[\s\S]*?28px minmax\(0, 1fr\)/);
-    // The agent grid and board rows this also pinned are gone from the page,
-    // and their rules with them (TASK-758).
-  });
 
-  test('Activity queue actions distinguish an action from the thread handoff', () => {
-    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).toContain('background: var(--v2-ink)');
-    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--secondary')).toContain('background: var(--v2-surface-hover)');
-    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--thread')).toContain('background: transparent');
-    const bordered = ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--bordered');
-    expect(bordered).toContain('border: 1px solid var(--v2-border)');
-    expect(bordered).toContain('background: var(--v2-surface)');
-  });
 
-  test('DecisionRequest options remain 44px touch targets when they wrap at 390px', () => {
-    // Options are agent-authored data, not compact task metadata. Keep the
-    // primary state and the free-text escape hatch visible in the CSS
-    // source because jsdom has no layout engine to catch a narrow regression.
-    expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--primary'))
-      .toContain('background: var(--v2-accent)');
-    expect(ruleBody(v2, '.v2-activity__decision-other')).toContain('flex-basis: 100%');
-    expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
-  });
 
   test('starter prompts wrap within the mobile chat pane', () => {
     // On the edge-to-edge phone thread, both the row and each chip need
@@ -2883,7 +2705,7 @@ describe('v2 layout invariants (CSS rule presence)', () => {
     expect(ruleBody(v2, '.v2-connector-gate__switch')).toContain('accent-color: var(--v2-ink)');
     expect(ruleBody(v2, '.v2-connector-gate__switch')).not.toContain('border-radius');
     expect(ruleBody(v2, '.v2-connector-gate__tag')).toContain('var(--v2-font-mono)');
-    const connectorCss = v2.slice(v2.indexOf('/* ── Connectors'), v2.indexOf('/* Activity queue'));
+    const connectorCss = v2.slice(v2.indexOf('/* ── Connectors'), v2.indexOf('/* ---------- Workspace sidebar (TASK-129 PR 1)'));
     expect(connectorCss.length).toBeGreaterThan(1000);
     expect(connectorCss).not.toContain('var(--v2-success)');
     expect(connectorCss).not.toContain('var(--v2-warning)');
@@ -3029,28 +2851,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       }
     });
 
-    test('Needs-you rows: open asks sit on a 1px neutral border, no shadow, no dividers (66390; ring moved to focus, TASK-748)', () => {
-      const row = ruleBody(v2, '.v2-activity__queue-row');
-      expect(row).toContain('border: 1px solid var(--v2-border)');
-      expect(row).toContain('border-radius: var(--v2-radius)');
-      expect(v2).not.toContain('.v2-activity__queue-row + .v2-activity__queue-row');
-      const hover = ruleBody(v2, '.v2-activity__queue-row:hover');
-      const declarations = hover.slice(hover.indexOf('{') + 1).split(';').map((d) => d.trim()).filter(Boolean);
-      expect(declarations.length).toBeGreaterThan(0);
-      for (const declaration of declarations) expect(declaration).toMatch(/^background/);
-      // A pending decision or approval wears the same neutral border as every other ask — never a lift.
-      const pending = ruleBody(v2, '.v2-activity__queue-row--decision,\n.v2-activity__queue-row--approval');
-      expect(pending).toContain('border-color: var(--v2-border)');
-      expect(pending).toContain('box-shadow: none');
+    test('the pending-card shadow token stays in step with the design system', () => {
       expect(cssVariable(v2Root, '--v2-shadow-pending')).toBe(cssVariable(tokens, '--c-shadow-pending'));
-      // A ruled decision settles to a flat bordered row.
-      const settled = ruleBody(v2, '.v2-activity__queue-row--settled');
-      expect(settled).toContain('border: 1px solid var(--v2-border)');
-      expect(settled).toContain('box-shadow: none');
-      expect(activityPage).toContain("' v2-activity__queue-row--settled'");
     });
 
-    test('Needs you never folds; one count; toggles are tint-selected; kicker and marks per 66389/66390', () => {
+    test('Needs you never folds and runs oldest waiting first; the rail badge is the exact count (66311, 66390)', () => {
       // Pages after the first load themselves — the only queue control left is Retry/Loading.
       expect(activityPage).toContain('void loadMoreQueue(true);');
       // The remaining arm stays as the way back if auto-load ever stops short (sprint-review 66398).
@@ -3060,76 +2865,11 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(activityPage).toContain('disabled={queueLoadingMore}');
       // The stall detector clears the expectation when nothing fetches the next page (sprint-review 66417).
       expect(activityPage).toContain('globalThis.window.setTimeout(() => setQueueAutoPending(false), 1500)');
-      expect(activityPage).toContain('item.actorUserId\n      ? agentUserIds.has(item.actorUserId)');
       // Oldest waiting first.
       expect(activityPage).toContain('new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()');
-      // The section count is mono text beside the heading, not an ink pill.
-      const count = ruleBody(v2, '.v2-activity__count');
-      expect(count).toContain('var(--v2-font-mono)');
-      expect(count).not.toContain('var(--v2-ink)');
-      // Selected segment: tint ground + ink text inside the bordered group. Ink fill is for acts.
-      expect(ruleBody(v2, '.v2-root button.v2-activity__window-button--active')).toContain('background: var(--v2-surface-hover)');
-      expect(ruleBody(v2, '.v2-root button.v2-activity__window-button--active')).toContain('box-shadow: none');
-      expect(ruleBody(v2, '.v2-root button.v2-activity__scope-button--active')).toContain('background: var(--v2-surface-hover)');
-      expect(ruleBody(v2, '.v2-root button.v2-activity__scope-button--active')).not.toContain('var(--v2-ink)');
-      // Card kicker: kind · pod (lowercase) · time, in mono 500, lowercase — and the LAST rule says so.
-      expect(activityPage).toContain('shortPodName(item.podName)');
-      expect(lastRuleBody(v2, '.v2-activity__queue-kind')).toContain('500 11px/16px var(--v2-font-mono)');
-      expect(lastRuleBody(v2, '.v2-activity__queue-kind')).toContain('text-transform: lowercase');
-      // Open asks sit on a 1px neutral border (slop tell 2); the cobalt ring belongs to the focused row only.
-      expect(lastRuleBody(v2, '.v2-activity__queue-row')).toContain('border: 1px solid var(--v2-border)');
-      expect(lastRuleBody(v2, '.v2-activity__queue-row')).not.toContain('var(--v2-accent)');
-      expect(lastRuleBody(v2, '.v2-activity__queue-row--approval')).toContain('border-color: var(--v2-border)');
-      expect(v2).toContain('.v2-activity__queue-row--approval:focus-within { border-color: var(--v2-accent); box-shadow: 0 0 0 1px var(--v2-accent); }');
-      expect(lastRuleBody(v2, '.v2-activity__queue-row--decision')).toContain('box-shadow: none');
-      expect(v2).toContain('.v2-activity__queue-row--settled,\n.v2-activity__queue-row--onboarding { padding: 12px; border: 1px solid var(--v2-border); }');
-      // Day zero (66658/66666): Get started is its own card above Needs you; a step is not an ask.
-      expect(activityPage).toContain('className="v2-activity__start" aria-labelledby="activity-get-started"');
-      expect(activityPage).not.toContain('v2-activity__queue-row--onboarding');
+      // Day zero (66658/66666): the composer hides while nobody is there to wake.
       expect(activityPage).toContain("{!startSteps.includes('hire') && (");
-      expect(ruleBody(v2, '.v2-activity__start-num')).toContain('background: var(--v2-ink)');
-      expect(ruleBody(v2, '.v2-root .v2-activity__start-act button')).toContain('min-height: 32px');
-      expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-root \.v2-activity__start-act button \{ width: 100%; min-height: 44px; \}/);
-      // One segment grammar (66400 fix 6): both groups bordered, active = tint + ink 600, inactive = white + secondary.
-      expect(lastRuleBody(v2, '.v2-activity__scope')).toContain('border: 1px solid var(--v2-border)');
-      expect(lastRuleBody(v2, '.v2-activity__scope')).toContain('background: var(--v2-surface)');
-      expect(lastRuleBody(v2, '.v2-root button.v2-activity__scope-button')).toContain('border: 0');
-      expect(lastRuleBody(v2, '.v2-activity__window')).toContain('background: var(--v2-surface)');
-      // 0-state (66400 fix 5): a dashed panel with the sentence, not plain text.
-      expect(lastRuleBody(v2, '.v2-activity__empty--plain')).toContain('border: 1px dashed var(--v2-border)');
       expect(activityPage).toContain("t('activity.needsYou.emptyLast', { age: relativeTime(lastAnsweredAt) })");
-      // One seat, one mark: agent cobalt, human tint.
-      expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--agent')).toContain('background: var(--v2-accent)');
-      expect(ruleBody(v2, '.v2-activity__queue-row .v2-activity__queue-mark--human')).toContain('background: var(--v2-surface-hover)');
-      // Direction A: the mark holds a 16px glyph; a secondary act is a 32px square
-      // (44 under 760), never a word — and never a menu.
-      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-mark svg')).toContain('width: 16px');
-      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon svg')).toContain('width: 16px');
-      const iconAct = lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon');
-      expect(iconAct).toContain('width: 32px');
-      expect(iconAct).toContain('padding: 0');
-      // Both 44px rules must sit INSIDE a ≤760 block — sprint-review's gate on #1671: a lazy regex
-      // matched from an earlier 760 query into the 640 block, so 641–760 got 674px bars, and a move
-      // to top level passed too. Resolve the media block that actually encloses each rule.
-      const enclosingMedia = (rule: string): string | null => {
-        const at = v2.indexOf(rule);
-        expect(at).toBeGreaterThan(-1);
-        const open = v2.lastIndexOf('@media', at);
-        if (open === -1) return null;
-        const close = v2.indexOf('\n}', open);
-        return close > at ? v2.slice(open, v2.indexOf('{', open)).trim() : null;
-      };
-      const icon44 = '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon { width: 44px; min-width: 44px; flex: none; }';
-      const footer44 = '.v2-root .v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__decision-footer > button.v2-activity__queue-action--icon { flex: none; width: 44px; min-width: 44px; }';
-      expect(enclosingMedia(icon44)).toBe('@media (max-width: 760px)');
-      expect(enclosingMedia(footer44)).toBe('@media (max-width: 760px)');
-      // And the footer override follows the text-button rule it beats, inside that same block.
-      const footerText = '.v2-activity__decision-footer > button { flex: 1 1 auto;';
-      expect(v2.indexOf(footer44)).toBeGreaterThan(v2.indexOf(footerText));
-      expect(enclosingMedia(footerText)).toBe('@media (max-width: 760px)');
-      // Other… is cobalt text; the handoff act is ink (no bordered modifier).
-      expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option--other')).toContain('color: var(--v2-accent-text)');
-      expect(activityPage).toContain('<button type="button" onClick={() => markHandoffHandled(item)}');
       // The rail badge is the exact count at any width, in mono and never clipped.
       // D223 (TASK-735): the artboard's .nav .bd, a filled cobalt count ringed
       // by the shell ground, replaced the bordered surface badge.
@@ -3137,136 +2877,14 @@ describe('v2 layout invariants (CSS rule presence)', () => {
       expect(badge).toContain('var(--v2-font-mono)');
       expect(badge).toContain('background: var(--v2-accent)');
       expect(badge).toContain('box-shadow: 0 0 0 2px var(--v2-shell-bg)');
-      // Moved forward: no section count; N more in <pod>.
+      // Moved forward: N more in <pod>.
       expect(activityPage).toContain("pod: shortPodName(group.name)");
-      // ≤760: toggles stack, actions drop under the copy at 44px — on ONE row (d215 s-activity, see below).
-      expect(v2).toContain('.v2-root .v2-activity__queue-actions > button { flex: 1 1 auto; min-height: 44px; }');
-      // The reply editor's nested Send takes only height at ≤760 — never a descendant width rule (66493/66498).
-      expect(v2).toContain('.v2-root .v2-activity__reply > button { min-height: 44px; }');
-      expect(v2).not.toContain('.v2-root .v2-activity__queue-actions button { flex: 1 1 100%;');
-      // …and the stack outranks the desktop action column by ORDER: the ≤760 rule for
-      // `.v2-activity__queue-row .v2-activity__queue-actions` comes after the grid-column: 3 rule (66438 at 720).
-      const desktopActionsAt = v2.indexOf('.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 3;');
-      const stackedActionsAt = v2.indexOf('.v2-activity__queue-row .v2-activity__queue-actions { grid-column: 1 / -1; grid-row: auto; max-width: none;');
-      expect(desktopActionsAt).toBeGreaterThan(-1);
-      expect(stackedActionsAt).toBeGreaterThan(desktopActionsAt);
     });
 
-    test('Activity: at ≤760 a card\'s acts are one row — the text act fills it, the 44px squares sit beside it (walk 11-02, d215 s-activity)', () => {
-      // The walk measured each Needs-you card at 390 stacking Reply / ✓ / ↗ on separate lines (~60px
-      // a card) because the ≤760 rule gave every direct-child button `flex: 1 1 100%`. The drawn
-      // row: Reply (or Approve, or Mark handled) grows into the line, the icon keys stay `flex: none`.
-      const enclosing = (rule: string): string | null => {
-        const at = v2.indexOf(rule);
-        expect(at).toBeGreaterThan(-1);
-        const open = v2.lastIndexOf('@media', at);
-        if (open === -1) return null;
-        const close = v2.indexOf('\n}', open);
-        return close > at ? v2.slice(open, v2.indexOf('{', open)).trim() : null;
-      };
-      const textAct = '.v2-root .v2-activity__queue-actions > button { flex: 1 1 auto; min-height: 44px; }';
-      const iconAct = '.v2-root .v2-activity__queue-actions button.v2-activity__queue-action--icon { width: 44px; min-width: 44px; flex: none; }';
-      expect(enclosing(textAct)).toBe('@media (max-width: 760px)');
-      expect(enclosing(iconAct)).toBe('@media (max-width: 760px)');
-      // The squares' `flex: none` must follow the grow rule it overrides (equal specificity + 1 class wins
-      // anyway, but order keeps the intent legible), and no full-width basis may come back for direct acts.
-      expect(v2.indexOf(iconAct)).toBeGreaterThan(v2.indexOf(textAct));
-      expect(v2).not.toMatch(/\.v2-activity__queue-actions > button \{ flex: 1 1 100%/);
-      // Decision options and their footer may still stack full width at ≤760 — unchanged by the walk.
-      expect(v2).toContain('.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }');
-      // An open reply editor still takes the whole row at ≤640, pushing the squares to the next line.
-      expect(v2).toMatch(/@media \(max-width: 640px\) \{\n  \.v2-activity__reply \{ flex-basis: 100%; \}/);
-      // The older ≤640 rules (`grid-column: 2`, `flex-wrap: wrap`, the descendant 44px floor) are kept,
-      // not deleted: the descendant floor still lifts nested acts the ≤760 block never names (the
-      // reply's and Other…'s Send), so the block is not dead.
-      expect(v2).toMatch(/@media \(max-width: 640px\)[\s\S]*?\.v2-root \.v2-activity__queue-actions button \{ min-height: 44px; \}/);
-    });
 
-    test('Activity: Get started holds its place while its steps are in flight (d215 s-activity)', () => {
-      // Same line boxes as the loaded rows: 20px bars, a 32px key that turns 44px full width at ≤760.
-      expect(activityPage).toContain('className="v2-activity__start v2-activity__start--pending" aria-busy="true"');
-      expect(ruleBody(v2, '.v2-activity__start-bar')).toContain('height: 20px');
-      const key = ruleBody(v2, '.v2-activity__start-bar--key');
-      expect(key).toContain('height: 32px');
-      expect(ruleBody(v2, '.v2-activity__start-bar--key', { within: mediaBlockContaining(v2, '.v2-activity__start-bar--key') }))
-        .toContain('height: 44px');
-    });
 
-    test('Activity keeps the Direction C bar, inbox measure, and moved-forward grouping', () => {
-      expect(v2App).toContain("'v2-feature--activity'");
-      expect(featurePage).toContain('className?: string;');
-      expect(lastRuleBody(v2, '.v2-feature--activity > .v2-feature__body')).toContain('padding: 0 0 28px');
-      expect(lastRuleBody(v2, '.v2-feature--activity .v2-feature__legacy')).toContain('max-width: none');
-      // The page head is display 32 + muted 13 meta (ux-lead 66400 fix 2), not a 52px bar.
-      expect(lastRuleBody(v2, '.v2-activity__title')).toContain('32px/36px var(--v2-font-display)');
-      expect(activityPage).toContain('hint={t(\'activity.subtitle\')}');
-      expect(lastRuleBody(v2, '.v2-activity__header')).toContain('border-bottom: 0');
-      expect(lastRuleBody(v2, '.v2-activity')).toContain('width: 100%');
-      expect(lastRuleBody(v2, '.v2-activity__sections')).toContain('760px');
-      expect(activityPage).toContain('v2-activity__moved');
-      expect(activityPage).toContain('v2-activity__queue-more');
-      expect(activityPage).toContain('v2-activity__moved-cap-note');
-      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('border-radius: var(--v2-radius-sm)');
-      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('var(--v2-accent-text)');
-      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option.v2-activity__queue-action--secondary')).toContain('border: 0');
-      expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__header \{ min-height: 56px; align-items: baseline;/);
-      // 390: decision options stack to 44px full width like every other action (66422 miss 2).
-      // …and that block must come AFTER the inline option rules, or they outrank it (66428).
-      const inlineOptionsAt = v2.indexOf('.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice {');
-      const stackedOptionsAt = v2.indexOf('.v2-activity__queue-row.v2-activity__queue-row--decision .v2-activity__option-choice { flex: 1 1 100%; max-width: none; }');
-      expect(inlineOptionsAt).toBeGreaterThan(-1);
-      expect(stackedOptionsAt).toBeGreaterThan(inlineOptionsAt);
-      expect(v2.slice(0, stackedOptionsAt).lastIndexOf('@media (max-width: 760px)')).toBeGreaterThan(inlineOptionsAt);
-      expect(v2).toMatch(/@media \(max-width: 760px\) \{[\s\S]*?\.v2-activity__queue-row\.v2-activity__queue-row--decision \.v2-activity__option-choice button \{ width: 100%; min-height: 44px; \}/);
-      // 0-state (66422 miss 1): the dashed panel renders whenever nothing is open, settled cards under it, no kicker.
-      expect(activityPage).toContain('{(queueCount === 0 || visibleQueue.length === 0) && (');
-      expect(activityPage).toContain('queueCount === null && <span>');
-      expect(activityPage).toContain('queueCount !== null && queueCount !== 0 && <V2Hint');
-      // 390: mention and handoff actions drop full width under the copy, like the decision options (66400 fix 7).
-      expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-activity__queue-row \.v2-activity__queue-actions \{ grid-column: 1 \/ -1;/);
-      expect(lastRuleBody(v2, '.v2-root button.v2-activity__window-button')).toContain('var(--v2-font-mono)');
-      expect(lastRuleBody(v2, '.v2-root button.v2-activity__queue-more')).toContain('color: var(--v2-accent)');
-      expect(lastRuleBody(v2, '.v2-root button.v2-activity__scope-button')).toContain('var(--v2-font-mono)');
-      expect(lastRuleBody(v2, '.v2-root .v2-activity__queue-actions button.v2-activity__option')).toContain('min-height: 32px');
-      // The 0-state is a sentence in a dashed panel (66400 fix 5), sans 13 — not mono meta.
-      expect(lastRuleBody(v2, '.v2-activity__empty--plain span')).toContain('13px/18px var(--v2-font)');
-      expect(activityPage).not.toContain('v2-activity__footer');
-      expect(activityPage.indexOf('</header>')).toBeLessThan(activityPage.indexOf('className="v2-activity__controls"'));
-      expect(v2).toMatch(/@media \(max-width: 1100px\) \{[\s\S]*?\.v2-activity__controls \{[^}]*position: relative;[^}]*top: auto;[^}]*right: auto;[^}]*flex-wrap: wrap;/);
-      expect(lastRuleBody(v2, '.v2-activity__controls')).toContain('z-index: 2');
-      expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('position: absolute');
-      expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('max-height: 240px');
-      expect(lastRuleBody(v2, '.v2-activity__scope-menu')).toContain('overflow-y: auto');
-      expect(lastRuleBody(v2, '.v2-activity__queue-row .v2-activity__queue-actions')).toContain('grid-column: 3');
-      expect(lastRuleBody(v2, '.v2-activity__queue-row .v2-activity__queue-actions:has(textarea)')).toContain('grid-column: 2 / -1');
-      expect(v2).toMatch(/@media \(max-width: 640px\) \{[\s\S]*?\.v2-root \.v2-activity__reply button \{ min-height: 44px; \}/);
-      const rowActionError = ruleBody(v2, '.v2-root .v2-activity__row-action-error');
-      expect(rowActionError).toContain('grid-column: 1 / -1');
-      expect(rowActionError).toContain('color: var(--v2-ink)');
-    });
 
-    test('halo focus: no hard outline in any Activity focus-visible rule; the global halo still carries the ring', () => {
-      const activityFocusRules = v2.split('}').filter((block) => {
-        const brace = block.indexOf('{');
-        if (brace === -1) return false;
-        const selector = block.slice(0, brace);
-        return selector.includes('.v2-activity__') && selector.includes(':focus-visible');
-      });
-      expect(activityFocusRules.length).toBeGreaterThan(0);
-      for (const block of activityFocusRules) expect(block.slice(block.indexOf('{'))).not.toContain('outline: 2px');
-      expect(ruleBody(v2, '.v2-root button:focus-visible,\n.v2-root input:focus-visible,\n.v2-root textarea:focus-visible,\n.v2-root a:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
-      // The custom pod picker is outside the global halo's element list, so it carries its own.
-      expect(ruleBody(v2, '.v2-activity__compose-picker-button:focus-visible')).toContain('box-shadow: var(--v2-focus-ring)');
-    });
 
-    test('ink primary: filled Activity buttons are ink, and blue stays off them', () => {
-      expect(cssVariable(v2Root, '--v2-ink')).toBe('#101828');
-      expect(cssVariable(tokens, '--c-ink')).toBe('#101828');
-      const send = ruleBody(v2, '.v2-root .v2-activity__compose button');
-      expect(send).toContain('var(--v2-ink)');
-      expect(send).not.toContain('var(--v2-accent)');
-      expect(ruleBody(v2, '.v2-root .v2-activity__queue-actions button')).not.toContain('var(--v2-accent)');
-    });
 
     test('route chunks stay split the way the first screen depends on (TASK-145)', () => {
       // The cut that took the entry chunk from 4.18 MB (1.16 MB gzip) to 455 kB
@@ -6357,5 +5975,93 @@ describe('sign-in handoff drawn from the d215 s-handoff frames', () => {
     // The backend redirects to /discord/*; without this mapping the card renders outside .v2-root, unstyled.
     expect(read('../../utils/legacyV2Path.ts')).toContain("if (pathname.startsWith('/discord/')) return `/v2${pathname}${search}`;");
     expect(read('../../index.tsx')).toContain('/^\\/discord\\/(?:callback|success|error)\\/?$/.test(bootPath)');
+  });
+});
+
+describe('Activity built to the d215 signal frames (#s-activity-signal)', () => {
+  const css = read('../components/V2ActivityPage.css');
+  const page = read('../components/V2ActivityPage.tsx');
+  const phone = blockContaining(css, '@media (max-width: 760px)', '.v2-activity__body');
+  const rule = (selector: string, within?: string) => ruleBody(css, selector, within ? { within } : {});
+
+  test('the page owns its pane: the head stays, the body scrolls, the column caps at 760', () => {
+    expect(rule('.v2-feature--activity > .v2-feature__body')).toContain('overflow: hidden');
+    expect(rule('.v2-activity__body')).toContain('overflow-y: auto');
+    expect(rule('.v2-activity__col')).toContain('max-width: 760px');
+    expect(page).toContain('className="v2p-ph v2-activity__head"');
+    expect(page).toContain("import './V2ActivityPage.css';");
+    // The route hands the page its feature class, which the opt-out above keys on.
+    expect(read('../V2App.tsx')).toContain("'v2-feature--activity'");
+    expect(read('../components/V2FeaturePage.tsx')).toContain('className?: string;');
+  });
+
+  test('the head carries one .seg and one .sel, not two pill rows, and no (i) marks', () => {
+    expect(page).toContain('<V2Segmented<ActivityWindow>');
+    expect(page.match(/buttonClassName="v2-activity__scope-button"/g)).toHaveLength(1);
+    expect(page).not.toContain('V2Hint');
+    expect(page).not.toContain('aria-pressed');
+    const sel = rule('.v2-root button.v2-activity__sel');
+    expect(sel).toContain('height: 32px');
+    expect(sel).toContain('box-shadow: inset 0 0 0 1px var(--v2-border)');
+  });
+
+  test('the composer is one line until focus, and its focus is the token ring', () => {
+    const line = rule('.v2-activity__compose');
+    expect(line).toContain('display: flex');
+    expect(line).toContain('min-height: 40px');
+    expect(line).toContain('background: var(--v2-bg-subtle)');
+    // Post in, ⌘↵ and Send wait for the open card.
+    expect(css).toContain('.v2-activity__compose-post,\n.v2-activity__compose-sp,\n.v2-activity__kbd,\n.v2-activity__send { display: none; }');
+    expect(rule('.v2-activity__compose--open')).toContain('display: block');
+    expect(css).toContain('.v2-activity__compose--open:focus-within { box-shadow: inset 0 0 0 1px var(--v2-accent), var(--v2-focus-ring); }');
+    expect(css).not.toMatch(/rgba\(29, 63, 209/);
+  });
+
+  test('Needs you is one hairline list: rows split by a 1px top rule, no cards, no side rails (D225)', () => {
+    const list = rule('.v2-activity__list');
+    expect(list).toContain('border: 1px solid var(--v2-border-soft)');
+    expect(list).toContain('border-radius: var(--v2-r-12)');
+    const row = rule('.v2-activity__queue-row');
+    expect(row).toContain('grid-template-columns: 16px minmax(0, 1fr) auto');
+    expect(row).toContain('border-top: 1px solid var(--v2-border-soft)');
+    expect(row).not.toContain('box-shadow');
+    // The ⋯ menu escapes the list, so the queue list never clips.
+    expect(list).not.toContain('overflow');
+    // D225: no coloured rail, inset stripe or left border anywhere on the page.
+    expect(css).not.toMatch(/border-left\s*:/);
+    expect(css).not.toMatch(/inset\s+\d+px\s+0\s+0/);
+    // No new hex: every colour is a --v2-* token (comments cite PR numbers, so strip them first).
+    expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  });
+
+  test('the decision is the only open row; its choices are keys inside it', () => {
+    expect(rule('.v2-activity__queue-row--open')).toContain('align-items: start');
+    expect(rule('.v2-activity__keys')).toContain('flex-wrap: wrap');
+    expect(page).toContain("v2-activity__queue-row--open' : ''");
+    expect(page).toContain('className="v2p-b v2p-b-s v2p-b-sm v2-activity__option"');
+  });
+
+  test('a desktop row hides its secondary cluster until hover or focus, drawn before its key', () => {
+    const hv = rule('.v2-activity__hv');
+    expect(hv).toContain('display: none');
+    expect(hv).toContain('order: -1');
+    expect(css).toContain('.v2-activity__queue-row:hover .v2-activity__hv,\n.v2-activity__queue-row:focus-within .v2-activity__hv { display: flex; }');
+  });
+
+  test('Moved forward has no table head: a mono pod sub-row, then a 44px time column', () => {
+    expect(rule('.v2-activity__moved-line')).toContain('grid-template-columns: 44px minmax(0, 1fr)');
+    expect(rule('.v2-activity__moved-head')).toContain('var(--v2-font-mono)');
+    expect(page).not.toContain('v2-activity__moved-columns');
+  });
+
+  test('at 390: 16px gutter, one-row scope, 44px touch floor on keys, rows and the select', () => {
+    expect(phone).toContain('.v2-activity__body { padding: 12px 16px 16px; }');
+    expect(phone).toContain('.v2-activity__controls { display: flex; flex-wrap: nowrap;');
+    expect(phone).toContain('.v2-root button.v2-activity__sel { height: 44px;');
+    expect(phone).toContain('.v2-root .v2-activity__acts button.v2-activity__key { height: 44px; }');
+    expect(phone).toMatch(/button\.v2-activity__more-key \{ width: 44px; height: 44px; \}/);
+    expect(phone).toMatch(/button\.v2-activity__option \{ width: 100%; height: 44px;/);
+    expect(phone).toContain('.v2-root button.v2-activity__menu-item { min-height: 44px; }');
+    expect(phone).toContain('.v2-activity__compose { min-height: 52px;');
   });
 });

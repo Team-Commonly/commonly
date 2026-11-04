@@ -179,9 +179,6 @@ describe('AI-slop tells (docs/design/ai-slop-tells.md)', () => {
       'podChat.composer.aimThread': '↳',
       'podChat.composer.aimReply': '↳',
       'inspector.detail.openDm': '↔',
-      // 2026-11-03: Activity belongs to its redesign owner; the ✓ prefix is a
-      // proposal there (docs/design/ai-slop-tells.md), not a fix here.
-      'activity.decision.ruled': '✓',
     };
     const offenders: string[] = [];
     for (const locale of ['en', 'zh-CN']) {

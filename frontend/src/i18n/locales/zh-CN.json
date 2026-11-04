@@ -231,8 +231,6 @@
   },
   "activity": {
     "title": "动态",
-    "subtitle": "需要你处理的事项，以及刚刚推进的工作",
-    "about": "关于动态",
     "head": {
       "needsYou_one": "{{count}}项需要你处理",
       "needsYou_other": "{{count}}项需要你处理",
@@ -247,11 +245,11 @@
     },
     "podScopeLabel": "Pod 范围",
     "allPods": "所有 Pod",
-    "morePods": "更多 ▾",
     "loadFailed": "无法加载动态，请重试。",
     "openThread": "打开讨论",
     "open": "打开",
     "openPod": "打开 pod",
+    "moreActions": "更多操作",
     "openBoard": "打开看板",
     "compose": {
       "eyebrow": "发起对话",
@@ -263,7 +261,7 @@
       "working": "发送中…",
       "actionFailed": "无法发送消息，请重试。",
       "label": "告诉你的智能体",
-      "hint": "⌘↵ 发送"
+      "hint": "⌘↵"
     },
     "reply": {
       "open": "回复",
@@ -277,12 +275,10 @@
     "updatesCount_one": "{{count}}条更新",
     "updatesCount_other": "{{count}}条更新",
     "needsYou": {
-      "about": "关于需要你处理的事项",
       "eyebrow": "决策队列",
       "title": "需要你处理",
+      "order": "最早在前",
       "description": "这里只显示需要你回应的直接提及、审批和待决事项。",
-      "countDescription": "最早等待的在前",
-      "scopedCountDescription": "最早等待的在前 · 此 Pod",
       "countUnavailable": "数量暂不可用",
       "emptyTitle": "没有需要你处理的事项。",
       "emptyDescription": "需要回复的提及或审批请求会显示在这里。",
@@ -316,7 +312,7 @@
       "other": "其他…",
       "otherPlaceholder": "写下你的裁定…",
       "sendOther": "发送裁定",
-      "ruled": "✓ {{by}} 已裁定：{{value}}",
+      "ruled": "{{by}} 已裁定：{{value}}",
       "ruledShort": "已裁定",
       "actionFailed": "无法保存该裁定，请重试。"
     },
@@ -352,9 +348,8 @@
       }
     },
     "movedForward": {
-      "about": "关于推进的工作",
       "title": "推进的工作",
-      "description": "按 Pod 分组 · 最新在前",
+      "order": "最新在前",
       "empty": "今天还没有更新。",
       "emptyWeek": "最近7天没有新进展。",
       "more": "{{pod}} 还有{{count}}项",
@@ -365,8 +360,8 @@
     "footer": "请在源讨论中行动；底层事实变化后，这份回顾会自动离开。",
     "getStarted": {
       "title": "开始使用",
-      "kicker_one": "还有1步 · 直到你的第一个请求到来",
-      "kicker_other": "还有{{count}}步 · 直到你的第一个请求到来",
+      "kicker_one": "还有1步",
+      "kicker_other": "还有{{count}}步",
       "checking": "正在检查…",
       "hire": {
         "title": "雇用你的第一个智能体",
