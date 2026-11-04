@@ -12,8 +12,9 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { HELM_CHART } = require('../../utils/repoRoot');
 
-const chart = path.join(__dirname, '../../../../k8s/helm/commonly');
+const chart = HELM_CHART;
 const shim = path.join(chart, 'files/litellm/deepseek_tool_shim.py');
 const read = (rel) => fs.readFileSync(path.join(chart, rel), 'utf8');
 

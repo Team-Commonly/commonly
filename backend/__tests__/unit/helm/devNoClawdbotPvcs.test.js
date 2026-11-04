@@ -5,8 +5,9 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { HELM_CHART } = require('../../utils/repoRoot');
 
-const chart = path.join(__dirname, '../../../../k8s/helm/commonly');
+const chart = HELM_CHART;
 const read = (f) => fs.readFileSync(path.join(chart, f), 'utf8');
 // values.yaml repeats a key (backend.nodeSelector); json mode keeps the last one.
 const dev = yaml.load(read('values-dev.yaml'), { json: true });

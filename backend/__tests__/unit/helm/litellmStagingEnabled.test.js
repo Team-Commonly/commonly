@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { HELM_CHART } = require('../../utils/repoRoot');
 
 // Regression guard for the 2026-10-31 staging-walk incident: Scout's onboarding
 // REPLY turns failed ("native runtime failed: turn failed") because the staging
@@ -9,8 +10,8 @@ const yaml = require('js-yaml');
 // stanza and so inherited the base default `enabled:false` — no litellm in the
 // namespace. The scripted welcome still posted, which hid it. This test fails if
 // anyone points staging's backend at a litellm that isn't deployed in the same ns.
-const loadValues = (name) => yaml.load(fs.readFileSync(path.join(__dirname,
-  `../../../../k8s/helm/commonly/${name}`), 'utf8'));
+const loadValues = (name) => yaml.load(fs.readFileSync(path.join(HELM_CHART,
+  name), 'utf8'));
 
 const staging = loadValues('values-staging.yaml');
 const dev = loadValues('values-dev.yaml');
