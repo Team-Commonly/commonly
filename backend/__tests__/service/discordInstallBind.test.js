@@ -250,8 +250,75 @@ describe('the install state and proof are bound to the person who asked', () => 
         },
         install: proof,
       });
-    expect(bind.status).toBe(404);
+    // A member is refused at the pod check (only the creator or an admin binds).
+    expect(bind.status).toBe(403);
+    expect(await Integration.findOne({ podId: POD_ID, type: 'discord' })).toBeNull();
+
+    // An admin passes the pod check, and is still refused another person's proof.
+    User.findById.mockImplementation(async (id) => ({ _id: String(id), role: String(id) === MEMBER ? 'admin' : 'user' }));
+    const adminBind = await request(app)
+      .post('/api/integrations')
+      .set('Authorization', 'Bearer member-token')
+      .send({
+        podId: POD_ID,
+        type: 'discord',
+        config: {
+          serverId: GUILD, serverName: 'Commonly Dev', channelId: CHANNEL, channelName: 'general', webhookUrl: '', botToken: '',
+        },
+        install: proof,
+      });
+    expect(adminBind.status).toBe(404);
     expect(await Integration.findOne({ podId: POD_ID, type: 'discord' })).toBeNull();
   });
 });
 
+
+// A channel bridge is a pod-level setting, so binding one takes the same
+// authority as the install link: the pod's creator or an instance admin. The
+// "you bound this guild before" arm proves authority over the GUILD, not over
+// the pod, so on its own it let a plain member bridge someone else's pod.
+describe('binding a Discord channel takes authority over the pod', () => {
+  const MEMBERS_OWN_POD = '6a8f6de2a1dccf2e02f314ff';
+  const bindAs = (token, install) => request(app)
+    .post('/api/integrations')
+    .set('Authorization', `Bearer ${token}`)
+    .send({
+      podId: POD_ID,
+      type: 'discord',
+      config: {
+        serverId: GUILD, serverName: 'Commonly Dev', channelId: CHANNEL, channelName: 'general', webhookUrl: '', botToken: '',
+      },
+      ...(install ? { install } : {}),
+    });
+
+  test("a member who bound the guild to their own pod still can't bridge a pod they didn't create", async () => {
+    Pod.find.mockImplementation((query) => {
+      const userId = String(query?.$or?.[0]?.members || '');
+      const rows = userId === MEMBER ? [{ _id: POD_ID }, { _id: MEMBERS_OWN_POD }] : [{ _id: POD_ID }];
+      return { select: () => ({ lean: async () => rows }) };
+    });
+    await Integration.collection.insertOne({
+      podId: new mongoose.Types.ObjectId(MEMBERS_OWN_POD),
+      type: 'discord',
+      status: 'connected',
+      config: { serverId: GUILD, channelId: '777777777777777777' },
+      createdBy: new mongoose.Types.ObjectId(MEMBER),
+    });
+
+    const res = await bindAs('member-token');
+    expect(res.status).toBe(403);
+    expect(await Integration.findOne({ podId: POD_ID, type: 'discord' })).toBeNull();
+    expect(axios.post.mock.calls.find(([url]) => url.endsWith('/webhooks'))).toBeUndefined();
+  });
+
+  test('an instance admin may bind a pod they did not create, on a proof minted for them', async () => {
+    User.findById.mockImplementation(async (id) => ({ _id: String(id), role: String(id) === MEMBER ? 'admin' : 'user' }));
+    const link = await request(app).get(`/api/discord/install-link/${POD_ID}`).set('Authorization', 'Bearer member-token');
+    expect(link.status).toBe(200);
+    const state = new URL(link.body.installUrl).searchParams.get('state');
+    const cb = await request(app).get(`/api/discord/callback?code=the-code&state=${encodeURIComponent(state)}&guild_id=${GUILD}`);
+    const proof = new URL(cb.headers.location).searchParams.get('install');
+
+    expect((await bindAs('member-token', proof)).status).toBe(201);
+  });
+});
