@@ -149,6 +149,14 @@ describe('dark-safe surfaces (TASK-681)', () => {
     expect(rule?.[0]).toContain('background: linear-gradient(180deg, var(--v2-fill-a), var(--v2-fill-b))');
     expect(rule?.[0]).toContain('color: var(--v2-on-fill)');
     expect(rule?.[0]).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    // Every fill and text declaration resolves through a token: no hex, rgb(), hsl() or named colour.
+    const paint = [...(rule?.[0] ?? '').matchAll(/(?:^|[;{\s])(background(?:-color|-image)?|color):\s*([^;}]+)/g)];
+    expect(paint.map(([, prop]) => prop)).toEqual(expect.arrayContaining(['background', 'color']));
+    for (const [, prop, value] of paint) {
+      expect({ prop, literal: value.replace(/var\([^)]*\)/g, '').match(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?)\(|\b(?:white|black|red|blue|green|gray|grey)\b/i)?.[0] ?? null }).toEqual({ prop, literal: null });
+    }
+    // Your team's own sheet adds no colour to the ink keys.
+    expect(rd('../components/V2YourTeamPage.css')).not.toMatch(/v2-team__hire[^{]*\{[^}]*(?:background|color):/);
   });
   test('the board drawer scrim is --v2-scrim', () => {
     // S4: the board's rules live in its own sheet; the scrim backs the phone sheet.

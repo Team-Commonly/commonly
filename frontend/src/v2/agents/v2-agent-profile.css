@@ -162,4 +162,6 @@
   .v2-aprofile button.v2-aprofile__more { display: inline-flex; align-items: center; min-height: 44px; }
   .v2-aprofile .v2-aprofile__avatar-cancel { min-height: 44px; }
   .v2-aprofile .v2-aprofile__cta-row .v2-aprofile__btn { height: 44px; font-size: 14px; }
+  /* The bar draws the owner's avatar control at 24px; the touch area stays 44. */
+  .v2-feature--aprofile .v2-aprofile__avatar-button::after { content: ''; position: absolute; inset: -10px; }
 }

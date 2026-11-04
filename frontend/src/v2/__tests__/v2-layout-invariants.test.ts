@@ -6058,6 +6058,13 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
     expect(app).toContain("'v2-feature--bar v2-feature--aprofile'");
     expect(ruleBody(v2, '.v2-feature--bar > .v2-feature__body')).toContain('padding: 0');
     expect(ruleBody(v2, '.v2-feature__scroll')).toContain('overflow-y: auto');
+    // The flex chain that lets the scroller scroll: each link fills and may shrink below its content.
+    const barBody = ruleBody(v2, '.v2-feature--bar > .v2-feature__body');
+    for (const decl of ['display: flex', 'flex-direction: column', 'overflow: hidden']) expect(barBody).toContain(decl);
+    const legacy = ruleBody(v2, '.v2-feature--bar .v2-feature__legacy');
+    for (const decl of ['flex: 1 1 auto', 'min-height: 0', 'display: flex', 'flex-direction: column']) expect(legacy).toContain(decl);
+    const scroll = ruleBody(v2, '.v2-feature__scroll');
+    for (const decl of ['flex: 1 1 auto', 'min-height: 0']) expect(scroll).toContain(decl);
     // BYO and Connect moved the hint to an intro line.
     expect(app).not.toMatch(/<V2FeaturePage title="Connect" hint=/);
     expect(read('../components/V2AgentBYO.tsx')).not.toMatch(/\n\s*hint=\{/);
@@ -6113,6 +6120,17 @@ describe('secondary pages on the reference grammar (ui-audit-1104 findings 2–8
       expect(css).toContain(`.v2-root button.${key}::after`);
       expect({ key, ...sizesOn(css, key) }).toEqual({ key, width: '32px', height: '32px' });
     }
+  });
+
+  test('the agent profile bar keeps a 44px touch area on the 24px owner avatar control at 390', () => {
+    const css = read('../agents/v2-agent-profile.css');
+    const phone = mediaBlockContaining(css, '.v2-feature--aprofile .v2-aprofile__hero .v2-avatar { width: 24px; height: 24px; }');
+    expect(phone).not.toBe('');
+    const hit = selectorRuleBody(css, '.v2-feature--aprofile .v2-aprofile__avatar-button::after {');
+    // 24 + 2 x 10 = 44, from a positioned button.
+    expect(hit).toContain('inset: -10px');
+    expect(ruleBody(css, '.v2-aprofile .v2-aprofile__avatar-button')).toContain('position: relative');
+    expect(css.lastIndexOf('@media (max-width: 760px)')).toBeLessThan(css.indexOf('.v2-feature--aprofile .v2-aprofile__avatar-button::after'));
   });
 
   test('finding 6: the board header icon keys never shrink on a phone', () => {
