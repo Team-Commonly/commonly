@@ -23,6 +23,12 @@ const LINEAR_FIRST_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list
 const LINEAR_READ_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-14.json');
 const LINEAR_CAPTURE = require('../../fixtures/hostedMcp/linear-tools-list-2026-10-19.json');
 const ATLASSIAN_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-10-19.json');
+// The 11-04 capture backs the five Atlassian writers, which Atlassian re-described.
+const ATLASSIAN_1104_CAPTURE = require('../../fixtures/hostedMcp/atlassian-tools-list-2026-11-04.json');
+
+const ATLASSIAN_REPINNED_1104 = [
+  'updateConfluenceContent', 'createJiraIssue', 'editJiraIssue', 'transitionJiraIssue', 'addOrEditJiraIssueComment',
+];
 const AIRTABLE_CAPTURE = require('../../fixtures/hostedMcp/airtable-tools-list-2026-10-09.json');
 const AIRTABLE_AS_CAPTURE = require('../../fixtures/hostedMcp/airtable-authorization-server-2026-10-28.json');
 // Three Sentry captures, from rows consented with different skills. The 10-19 row
@@ -34,6 +40,22 @@ const SENTRY_TRIAGE_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-lis
 const SENTRY_1101_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-11-01.json');
 const SENTRY_CAPTURE = require('../../fixtures/hostedMcp/sentry-tools-list-2026-11-04.json');
 const NOTION_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-10-19.json');
+// The 11-04 capture backs the 14 Notion pins it changed: 11 writers exactly, and
+// three reads without the vendor's tracking-only fields.
+const NOTION_1104_CAPTURE = require('../../fixtures/hostedMcp/notion-tools-list-2026-11-04.json');
+
+const NOTION_REPINNED_1104_WRITES = [
+  'notion-create-pages', 'notion-update-page', 'notion-move-pages', 'notion-duplicate-page',
+  'notion-create-database', 'notion-create-folder', 'notion-update-folder', 'notion-update-data-source',
+  'notion-create-comment', 'notion-create-view', 'notion-update-view',
+];
+const NOTION_REPINNED_1104_READS = ['notion-get-comments', 'notion-query-data-sources', 'notion-query-meeting-notes'];
+const NOTION_TRACKING_FIELDS = ['skill', 'instructions_version', 'telemetry'];
+const withoutTracking = (schema) => ({
+  ...schema,
+  properties: Object.fromEntries(Object.entries(schema.properties)
+    .filter(([name]) => !NOTION_TRACKING_FIELDS.includes(name))),
+});
 const GITLAB_CAPTURE = require('../../fixtures/hostedMcp/gitlab-tools-list-2026-10-19.json');
 const SUPABASE_CAPTURE = require('../../fixtures/hostedMcp/supabase-tools-list-2026-10-19.json');
 // Latchkey annotated none of its 19 tools on 11-01 and all 22 by 11-03, so the
@@ -775,8 +797,10 @@ describe('the shipped catalogue cannot land half-wired', () => {
       .toEqual(['createConfluenceContent', 'discover', 'executeDestructive', 'executeRead', 'executeWrite']);
 
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    const measured1104 = new Map(ATLASSIAN_1104_CAPTURE.tools.map((tool) => [tool.name, tool]));
     for (const tool of entry.tools) {
-      const found = measured.get(tool.upstreamName);
+      const found = (ATLASSIAN_REPINNED_1104.includes(tool.upstreamName) ? measured1104 : measured)
+        .get(tool.upstreamName);
       expect(found).toBeDefined();
       // The namespace cannot carry camelCase, so the agent-facing name differs
       // from the vendor's; calls and drift use upstreamName.
@@ -1007,6 +1031,44 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(resource.description).toContain('by type and ID');
     expect(entry.tools.find((tool) => tool.name === 'update_issue').irreversible).toBe(true);
     entry.tools.forEach((tool) => expect(tool.class).toBe(tool.name === 'update_issue' ? 'write' : 'read'));
+  });
+
+  test('on the 11-04 lists every Notion and Atlassian pin assesses ok, and the old pins are the ones that drifted', () => {
+    const notion = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'notion');
+    const atlassian = findHostedMcpEntry(HOSTED_MCP_ENTRIES, 'atlassian');
+    const notOk = (entry, capture) => assessEntryTools(entry, capture.tools).filter((tool) => tool.verdict !== 'ok');
+    expect(notOk(notion, NOTION_1104_CAPTURE)).toEqual([]);
+    expect(notOk(atlassian, ATLASSIAN_1104_CAPTURE)).toEqual([]);
+    // The three re-pinned reads leave the tracking-only fields out, so the
+    // model is not offered them and the broker refuses them by name.
+    NOTION_REPINNED_1104_READS.forEach((name) => {
+      const read = notion.tools.find((tool) => tool.upstreamName === name);
+      NOTION_TRACKING_FIELDS.forEach((field) => expect(read.inputSchema.properties[field]).toBeUndefined());
+    });
+    // move-pages now declares itself destructive; it was already irreversible.
+    expect(notion.tools.find((tool) => tool.upstreamName === 'notion-move-pages'))
+      .toMatchObject({ annotations: { destructiveHint: true }, irreversible: true });
+    const oldPins = (entry, capture, names) => ({
+      ...entry,
+      tools: entry.tools.map((tool) => {
+        if (!names.includes(tool.upstreamName)) return tool;
+        const before = capture.tools.find((t) => t.name === tool.upstreamName);
+        const { readOnlyHint, destructiveHint } = before.annotations;
+        return { ...tool, inputSchema: before.inputSchema, annotations: { readOnlyHint, destructiveHint } };
+      }),
+    });
+    const repinnedNotion = [...NOTION_REPINNED_1104_WRITES, ...NOTION_REPINNED_1104_READS];
+    const drifted = (entry, capture) => assessEntryTools(entry, capture.tools)
+      .filter((tool) => tool.verdict === 'tool_drift').map((tool) => tool.name).sort();
+    expect(drifted(oldPins(notion, NOTION_CAPTURE, repinnedNotion), NOTION_1104_CAPTURE))
+      .toEqual(repinnedNotion.map((name) => name.replace(/-/g, '_')).sort());
+    expect(drifted(oldPins(atlassian, ATLASSIAN_CAPTURE, ATLASSIAN_REPINNED_1104), ATLASSIAN_1104_CAPTURE))
+      .toEqual(atlassian.tools.filter((tool) => ATLASSIAN_REPINNED_1104.includes(tool.upstreamName))
+        .map((tool) => tool.name).sort());
+    // Neither list's new tools are pinned.
+    expect(atlassian.tools.some((tool) => tool.upstreamName === 'listJiraIssueComments')).toBe(false);
+    expect(NOTION_1104_CAPTURE.tools).toHaveLength(74);
+    expect(ATLASSIAN_1104_CAPTURE.tools).toHaveLength(17);
   });
 
   test('the Supabase pin follows the capture and excludes spend, code, and credential tools', () => {
@@ -1337,11 +1399,15 @@ describe('the shipped catalogue cannot land half-wired', () => {
     expect(entry.scopes).toEqual([capture.tokenShape.grantedScope]);
     expect(entry.tools).toHaveLength(24);
     const measured = new Map(capture.tools.map((tool) => [tool.name, tool]));
+    const measured1104 = new Map(NOTION_1104_CAPTURE.tools.map((tool) => [tool.name, tool]));
     for (const tool of entry.tools) {
-      const source = measured.get(tool.upstreamName);
+      const repinnedRead = NOTION_REPINNED_1104_READS.includes(tool.upstreamName);
+      const source = (repinnedRead || NOTION_REPINNED_1104_WRITES.includes(tool.upstreamName) ? measured1104 : measured)
+        .get(tool.upstreamName);
       expect(source).toBeDefined();
       expect(tool.name).toBe(tool.upstreamName.replace(/-/g, '_'));
-      expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(source.inputSchema));
+      expect(canonicalJson(tool.inputSchema))
+        .toBe(canonicalJson(repinnedRead ? withoutTracking(source.inputSchema) : source.inputSchema));
       expect(tool.annotations).toMatchObject({
         readOnlyHint: source.annotations.readOnlyHint,
         destructiveHint: source.annotations.destructiveHint,
