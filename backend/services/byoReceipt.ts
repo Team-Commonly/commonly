@@ -53,8 +53,11 @@ const ADAPTER = /^[a-z0-9][a-z0-9._-]*$/i;
 // (claude-opus-5-5, openai/gpt-5.6-sol, mcp__commonly__post, us.anthropic.x:0).
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$/;
 
+// A URL is all name characters, and a client that autolinks would render it as
+// a link inside a tool-name chip; `://` never occurs in a real model id.
 const isName = (value: unknown, pattern: RegExp, max: number): value is string => (
   typeof value === 'string' && value.length > 0 && value.length <= max && pattern.test(value)
+  && !value.includes('://')
 );
 
 const isBoundedInt = (value: unknown, max: number): value is number => (

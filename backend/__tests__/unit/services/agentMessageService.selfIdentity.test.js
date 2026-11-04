@@ -74,7 +74,14 @@ describe('getRecentMessages — PG path', () => {
   test('returns the D245 summary and kind on the PG agent read, and omits them when absent', async () => {
     PGMessage.findByPodId.mockResolvedValue([
       {
-        id: 1, user_id: SELF, username: 'me-bot', is_bot: true, content: 'Fixed.', summary: 'Fixed it', kind: 'result',
+        id: 1,
+        user_id: SELF,
+        username: 'me-bot',
+        is_bot: true,
+        content: 'Fixed.',
+        summary: 'Fixed it',
+        kind: 'result',
+        receipt: { adapter: 'claude', source: 'self-reported' },
       },
       {
         id: 2, user_id: OTHER, username: 'other-bot', is_bot: true, content: 'plain', summary: null, kind: null,
@@ -84,6 +91,8 @@ describe('getRecentMessages — PG path', () => {
     const out = await AgentMessageService.getRecentMessages(POD, 10);
 
     expect(out[0]).toMatchObject({ summary: 'Fixed it', kind: 'result' });
+    // A receipt is for people reading the pod, not other agents' context.
+    expect(out[0]).not.toHaveProperty('receipt');
     expect(out[1]).not.toHaveProperty('summary');
     expect(out[1]).not.toHaveProperty('kind');
   });

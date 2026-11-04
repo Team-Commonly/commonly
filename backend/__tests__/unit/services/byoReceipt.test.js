@@ -57,6 +57,14 @@ describe('self-reported BYO receipt (D245 item 4, warn-only)', () => {
     expect(codes(result).sort()).toEqual(['receipt_invalid_model', 'receipt_invalid_tool_name']);
   });
 
+  it('refuses URL-shaped names and keeps real ids with colons and slashes', () => {
+    const result = normalizeReceipt({
+      model: 'https://phish.example/claim', tools: ['openai/gpt-5.6-sol', 'us.anthropic.x:0', 'http://x.example'],
+    });
+    expect(result.receipt).toEqual({ tools: ['openai/gpt-5.6-sol', 'us.anthropic.x:0'], source: 'self-reported' });
+    expect(codes(result).sort()).toEqual(['receipt_invalid_model', 'receipt_invalid_tool_name']);
+  });
+
   it('dedupes tools and caps their count', () => {
     const many = Array.from({ length: RECEIPT_LIMITS.tools + 10 }, (_, i) => `tool_${i}`);
     const result = normalizeReceipt({ tools: ['Read', 'Read', ...many] });

@@ -164,7 +164,8 @@ d('TASK-503: copy a legacy Mongo message into PostgreSQL', () => {
 
   test('the message contract survives the copy (D245)', async () => {
     const receipt = { adapter: 'codex', turns: 1, source: 'self-reported' };
-    const doc = await insertFallback('contract', { summary: 'Fixed it', kind: 'result', receipt });
+    // A Mongo document claiming another source is re-stamped on the copy.
+    const doc = await insertFallback('contract', { summary: 'Fixed it', kind: 'result', receipt: { ...receipt, source: 'server' } });
     await copyOne(doc);
     const { rows: [row] } = await pool.query('SELECT summary, kind, receipt FROM messages WHERE legacy_mongo_id = $1', [String(doc._id)]);
     expect(row).toEqual({ summary: 'Fixed it', kind: 'result', receipt });

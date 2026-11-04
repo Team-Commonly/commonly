@@ -109,7 +109,11 @@ export async function copyOne(doc: LegacyMessageDoc): Promise<'moved' | 'present
       doc.payload == null ? null : JSON.stringify(doc.payload),
       doc.summary || null,
       doc.kind || null,
-      doc.receipt == null ? null : JSON.stringify(doc.receipt),
+      // Re-stamped here too, so the copy never depends on every Mongo writer
+      // having stamped it.
+      doc.receipt == null || typeof doc.receipt !== 'object'
+        ? null
+        : JSON.stringify({ ...(doc.receipt as Record<string, unknown>), source: 'self-reported' }),
     ],
   );
   let pgId = inserted.rows[0]?.id;
