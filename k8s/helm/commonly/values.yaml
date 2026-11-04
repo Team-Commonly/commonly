@@ -271,6 +271,14 @@ agentComputer:
         memory: "2Gi"
     # Chromium's shared memory. Memory-backed, so it counts toward the limit.
     shmSizeLimit: "512Mi"
+    # The token gate in front of Steel (a sidecar from the backend image).
+    gate:
+      resources:
+        requests:
+          cpu: "10m"
+          memory: "48Mi"
+        limits:
+          memory: "160Mi"
     # The browser profile (cookies, the one-time sign-in) lives here.
     persistence:
       size: 5Gi

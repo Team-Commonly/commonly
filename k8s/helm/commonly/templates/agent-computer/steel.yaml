@@ -1,8 +1,10 @@
 {{- /*
 One Steel browser per person (agentComputer.users): a profile disk, a
 Deployment and a ClusterIP Service, all named steel-{userId} to match the
-backend's AGENT_COMPUTER_STEEL_*_URL_TEMPLATE. Only the broker in the backend
-talks to it; agents never get its address (agentComputerBroker.ts).
+backend's AGENT_COMPUTER_STEEL_*_URL_TEMPLATE. Steel takes no credentials, so
+it listens on loopback only and a token gate in the same pod is the Service's
+only backend; the broker in the backend holds the token, and agents never get
+the address (agentComputerBroker.ts).
 */ -}}
 {{- $users := include "commonly.agentComputer.users" . | fromJsonArray -}}
 {{- if $users }}
@@ -79,45 +81,97 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        # Chrome refuses a profile whose Singleton lock names another host, and
+        # Steel clears only a lock its own hostname left. Every new pod has a
+        # new hostname. Recreate plus the ReadWriteOnce disk mean the old pod is
+        # gone, so its lock is stale by construction.
+        - name: clear-profile-lock
+          image: "{{ $steel.image.repository }}@{{ $steel.image.digest }}"
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "rm -f /profile/SingletonLock /profile/SingletonSocket /profile/SingletonCookie"]
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: profile
+              mountPath: /profile
       containers:
         - name: steel
           image: "{{ $steel.image.repository }}@{{ $steel.image.digest }}"
           imagePullPolicy: IfNotPresent
           # The broker reaches CDP through Steel's own WebSocket proxy on the
-          # API port, the path the 10-25 spike proved. The bundled nginx on 9223
-          # forwards the caller's Host header, and Chrome answers /json/version
-          # only for an IP or localhost Host, so it stays off.
+          # API port, the path the TASK-276 spike proved. The bundled nginx on
+          # 9223 forwards the caller's Host header, and Chrome answers
+          # /json/version only for an IP or localhost Host, so it stays off.
           args: ["--no-nginx"]
+          env:
+            # Steel binds its API, and Chrome its debugging port, to HOST. Both
+            # take no credentials, so both stay on loopback; the gate below is
+            # the pod's only listener.
+            - name: HOST
+              value: "127.0.0.1"
+            - name: PORT
+              value: "3001"
+            # Steel launches its default browser at startup, before any session
+            # is created, so the profile must be on the disk from that launch
+            # on, not only for a persist:true session (same path).
+            - name: CHROME_USER_DATA_DIR
+              value: /app/api/user-data-dir
+          resources:
+            {{- toYaml $steel.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: profile
+              mountPath: /app/api/user-data-dir
+            - name: dshm
+              mountPath: /dev/shm
+        # The token gate (backend/services/agentComputerSteelGate.ts): every
+        # request and WebSocket upgrade must carry the bearer token only the
+        # backend's broker holds. Its /healthz reflects Steel's own health.
+        - name: gate
+          image: "{{ $.Values.backend.image.repository }}:{{ $.Values.backend.image.tag }}"
+          imagePullPolicy: {{ $.Values.backend.image.pullPolicy }}
+          workingDir: /app
+          command: ["node", "dist/services/agentComputerSteelGate.js"]
+          env:
+            - name: PORT
+              value: "3000"
+            - name: STEEL_UPSTREAM_PORT
+              value: "3001"
+            - name: STEEL_GATE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agent-computer-steel
+                  key: token
           ports:
             - name: api
               containerPort: 3000
               protocol: TCP
           readinessProbe:
             httpGet:
-              path: /v1/health
+              path: /healthz
               port: api
             initialDelaySeconds: 5
             periodSeconds: 5
-            timeoutSeconds: 3
+            timeoutSeconds: 4
             failureThreshold: 3
           livenessProbe:
             tcpSocket:
               port: api
-            initialDelaySeconds: 30
+            initialDelaySeconds: 10
             periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 6
+            failureThreshold: 3
           resources:
-            {{- toYaml $steel.resources | nindent 12 }}
+            {{- toYaml $steel.gate.resources | nindent 12 }}
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             allowPrivilegeEscalation: false
-          volumeMounts:
-            # Steel's persistent sessions (the broker always asks persist:true)
-            # keep the profile at <app>/api/user-data-dir.
-            - name: profile
-              mountPath: /app/api/user-data-dir
-            - name: dshm
-              mountPath: /dev/shm
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
       volumes:
         - name: profile
           persistentVolumeClaim:
@@ -154,5 +208,32 @@ spec:
       port: 3000
       targetPort: api
       protocol: TCP
+{{- end }}
+{{- if .Values.externalSecrets.enabled }}
+{{- $keyPrefix := .Values.externalSecrets.keyPrefix | default "commonly-dev-" }}
+---
+# The gate's token, which the backend's broker also reads
+# (AGENT_COMPUTER_STEEL_TOKEN). Its own ExternalSecret, apart from the waker's,
+# so either token can rotate alone and a missing key fails only this sync.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: agent-computer-steel
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" . | nindent 4 }}
+    app: agent-computer-steel
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: {{ .Values.externalSecrets.secretStore.name }}
+    kind: SecretStore
+  target:
+    name: agent-computer-steel
+    creationPolicy: Owner
+  data:
+    - secretKey: token
+      remoteRef:
+        key: {{ $keyPrefix }}agent-computer-steel-token
 {{- end }}
 {{- end }}

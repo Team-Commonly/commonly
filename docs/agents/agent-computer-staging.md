@@ -1,8 +1,9 @@
 # Agent computer staging bridge
 
 TASK-276 is a staging-only trial. A human's Steel container owns one persistent
-browser profile on that human's PVC. The Commonly backend is the only network
-peer allowed to reach Steel's unauthenticated API, CDP, or live view. Native
+browser profile on that human's PVC. Steel's API, CDP and live view take no
+credentials, so Steel listens on loopback and a token gate in its pod admits
+only the backend's broker (`AGENT_COMPUTER_STEEL_TOKEN`). Native
 agent installations opt in to the six `computer_*` tools; legacy installs and
 production do not receive them.
 
@@ -27,7 +28,8 @@ production do not receive them.
   A new backend connection gets a new frame epoch, invalidating stale human
   input.
 - `AGENT_COMPUTER_ENABLED` defaults to `false`; the trial needs that flag,
-  both Steel endpoint templates, the waker URL/token, and an allowed host list.
+  both Steel endpoint templates, the waker URL/token, the Steel gate token, and
+  an allowed host list.
   Staging supplies the Steel templates and LinkedIn host list. SRE supplies
   the waker URL and `agent-computer-waker` Secret key `token` before the walk.
 

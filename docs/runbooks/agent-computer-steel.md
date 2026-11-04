@@ -23,54 +23,81 @@ For each user it renders:
     means resolving the new index digest and changing
     `agentComputer.steel.image.digest`.
   - The pod has no service-account token and no role.
-  - It runs Steel with `--no-nginx`. The broker reaches CDP through Steel's
-    own WebSocket proxy on `:3000`. The bundled nginx on `:9223` forwards the
-    caller's Host header, and Chrome answers `/json/version` only for an IP or
-    `localhost` Host.
   - The Deployment has no `replicas` field. The waker owns scale, and helm's
     three-way merge then leaves a live session alone on upgrade.
-- One `agent-computer-waker` Deployment and Service, shared by all users.
+- **The Steel pod has three parts:**
+  - `steel` runs with `HOST=127.0.0.1` and `PORT=3001`. Steel binds its API,
+    and Chrome binds its debugging port, to that host. Neither takes
+    credentials, so neither is reachable from outside the pod.
+  - `gate` (`backend/services/agentComputerSteelGate.ts`, from the backend
+    image) is the pod's only listener, on `:3000`.
+    - Every request and WebSocket upgrade must carry
+      `Authorization: Bearer <token>`. The token is the `agent-computer-steel`
+      Secret, key `token`; the backend's broker reads it as
+      `AGENT_COMPUTER_STEEL_TOKEN`. The gate strips the header before Steel.
+    - `/healthz` is open and reports only whether Steel's `/v1/health`
+      answers 200. It is the pod's readiness probe.
+  - `clear-profile-lock`, an init container, deletes Chrome's `Singleton*`
+    lock files. Steel clears only a lock its own hostname left, and every new
+    pod has a new hostname. Recreate and the ReadWriteOnce disk mean the old
+    pod is gone first.
+- **Where the profile lives.** `CHROME_USER_DATA_DIR` is the disk's mount
+  path, which is also Steel's `persist: true` path. Steel launches a default
+  browser at startup, before any session exists, and that launch must use the
+  disk too, or the sign-in is lost on the next restart.
+- **CDP goes through Steel's own WebSocket proxy** on the API port. The
+  bundled nginx on `:9223` stays off (`--no-nginx`): it forwards the caller's
+  Host header, and Chrome answers `/json/version` only for an IP or
+  `localhost` Host.
+- **One `agent-computer-waker` Deployment and Service,** shared by all users.
   - The code is `backend/services/agentComputerWaker.ts`, run from the
     backend image.
   - Its Role is limited to `get` on the rendered `steel-*` Deployments and
     `get`/`patch` on their `scale`.
-  - Its token is the `agent-computer-waker` Secret, key `token`, which has
-    its own ExternalSecret. A missing key fails only that sync, never
-    `api-keys`.
+  - Its token is the `agent-computer-waker` Secret, key `token`.
+- **Each token has its own ExternalSecret.** A missing key fails only that
+  sync, never `api-keys`.
 
 The browser holds a signed-in session. Under ADR-015 it stays off spot, so
 `values-dev.yaml` pins both pods to the dev pool.
 
 ## Turning it on
 
-1. Create the Secret Manager key `<keyPrefix>agent-computer-waker-token` with
-   a random value of 32 bytes or more.
+1. Create two Secret Manager keys, each with a random value of 32 bytes or
+   more:
+   - `<keyPrefix>agent-computer-waker-token`
+   - `<keyPrefix>agent-computer-steel-token`
 2. Add the owner's user id to `agentComputer.users` in the private overlay.
 3. Run `Deploy Dev`.
-4. The backend reads the token only at pod start (the secret ref is optional).
-   If the backend pod started before the ExternalSecret synced, restart it.
-   `agentComputerEnabled()` stays false until the env holds the token.
-5. Before the sign-in, confirm that the backend is the only peer that can
-   reach `steel-{userId}:3000`. Steel's API takes no credentials, and the
-   chart adds no NetworkPolicy.
-6. Give the computer tools to exactly one installation:
+4. The backend reads both tokens only at pod start (the secret refs are
+   optional). If the backend pod started before the ExternalSecrets synced,
+   restart it. `agentComputerEnabled()` stays false until the env holds both.
+5. Give the computer tools to exactly one installation:
    - it must be a native install (`runtimeType: 'native'`), owned by the
      person whose id is in `users`;
    - `config.tools` lists the `computer_*` tools, `computer_request_takeover`
      included;
    - no other installation lists them.
-7. Do the one-time sign-in through `computer_request_takeover`. The owner signs
+6. Do the one-time sign-in through `computer_request_takeover`. The owner signs
    in by hand in the takeover UI, and the agent never types a password. The
    profile disk keeps that session across restarts.
+
+Outbound traffic from the browser is held by the broker's request guard:
+navigation goes only to the allowed hosts, and subresources only to public
+addresses. The chart adds no egress NetworkPolicy, so a page's own DNS answer
+changing between the guard's lookup and the browser's is not stopped here.
 
 ## Day to day
 
 - **Park the browser:** `kubectl scale deploy/steel-<id> --replicas=0`. The
-  next computer action wakes it, and the waker answers within about 18 s or
+  next computer action wakes it, and the waker answers within about 14 s or
   returns 504.
 - **Remove a user:** drop the id from the overlay and deploy. The disk stays
   until you delete `steel-<id>-profile` by hand, and deleting it signs the
   browser out.
+- **Gate answers:** a 401 from `steel-<id>:3000` means the backend's
+  `AGENT_COMPUTER_STEEL_TOKEN` doesn't match the gate's. The two read the same
+  Secret, so a mismatch means one pod predates a rotation; restart it.
 - **Waker answers:**
   - 401: the token doesn't match.
   - 404 `no_computer`: the id isn't in `users`.

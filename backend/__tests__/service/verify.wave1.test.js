@@ -166,10 +166,10 @@ tier1('commonly verify wave 1 — production HTTP routes', () => {
   });
 
   test('computer press gates owner and computer capability before attempting a browser action', async () => {
-    const keys = ['AGENT_COMPUTER_ENABLED', 'AGENT_COMPUTER_STEEL_API_URL_TEMPLATE', 'AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE', 'AGENT_COMPUTER_WAKER_URL', 'AGENT_COMPUTER_WAKER_TOKEN'];
+    const keys = ['AGENT_COMPUTER_ENABLED', 'AGENT_COMPUTER_STEEL_API_URL_TEMPLATE', 'AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE', 'AGENT_COMPUTER_WAKER_URL', 'AGENT_COMPUTER_WAKER_TOKEN', 'AGENT_COMPUTER_STEEL_TOKEN'];
     const prior = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
     try {
-      Object.assign(process.env, { AGENT_COMPUTER_ENABLED: 'true', AGENT_COMPUTER_STEEL_API_URL_TEMPLATE: 'http://127.0.0.1:1', AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE: 'http://127.0.0.1:1', AGENT_COMPUTER_WAKER_URL: 'http://127.0.0.1:1', AGENT_COMPUTER_WAKER_TOKEN: 'verify-only' });
+      Object.assign(process.env, { AGENT_COMPUTER_ENABLED: 'true', AGENT_COMPUTER_STEEL_API_URL_TEMPLATE: 'http://127.0.0.1:1', AGENT_COMPUTER_STEEL_CDP_URL_TEMPLATE: 'http://127.0.0.1:1', AGENT_COMPUTER_WAKER_URL: 'http://127.0.0.1:1', AGENT_COMPUTER_WAKER_TOKEN: 'verify-only', AGENT_COMPUTER_STEEL_TOKEN: 'verify-only' });
       const url = `/api/agent-computer/${installation._id}/press`;
       const otherPress = await request(app).post(url).set(human(otherToken)).send({ key: 'Enter', frameRevision: 'stale' }).expect(403);
       expect(otherPress.body.code).toBe('not_owner');

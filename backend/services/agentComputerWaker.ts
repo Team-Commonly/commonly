@@ -16,12 +16,14 @@
 import http from 'node:http';
 import https from 'node:https';
 import fs from 'node:fs';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 const USER_ID = /^[a-f\d]{24}$/;
 const WAKE_PATH = /^\/v1\/users\/([^/]+)\/wake$/;
-// The broker gives up on the wake after 20 s (SESSION_TIMEOUT_MS); answer first.
-const DEFAULT_READY_TIMEOUT_MS = 18_000;
+// The broker gives up on the wake after 20 s (SESSION_TIMEOUT_MS). The budget
+// starts when the request is accepted, and a cluster call can take 5 s more
+// than it, so 14 s keeps the answer inside the broker's window.
+const DEFAULT_READY_TIMEOUT_MS = 14_000;
 const POLL_MS = 500;
 const SA_DIR = '/var/run/secrets/kubernetes.io/serviceaccount';
 
@@ -50,9 +52,9 @@ export const tokenMatches = (header: string | undefined, token: string): boolean
   if (!token) return false;
   const match = /^Bearer (.+)$/.exec(String(header || ''));
   if (!match) return false;
-  const given = Buffer.from(match[1]);
-  const expected = Buffer.from(token);
-  return given.length === expected.length && timingSafeEqual(given, expected);
+  // Compare digests, so neither the content nor the length of the token leaks.
+  const digest = (value: string) => createHash('sha256').update(value).digest();
+  return timingSafeEqual(digest(match[1]), digest(token));
 };
 
 export const steelDeploymentName = (userId: string): string => {
@@ -77,6 +79,7 @@ export const wakeUser = async (
   if (!USER_ID.test(userId)) return { status: 400, body: { error: 'invalid_user' } };
   if (!tokenMatches(authorization, config.token)) return { status: 401, body: { error: 'unauthorized' } };
   if (!config.users.has(userId)) return { status: 404, body: { error: 'no_computer' } };
+  const deadline = Date.now() + (config.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
 
   const name = steelDeploymentName(userId);
   const base = `/apis/apps/v1/namespaces/${encodeURIComponent(config.namespace)}/deployments/${name}`;
@@ -88,7 +91,6 @@ export const wakeUser = async (
   }
 
   const sleep = config.sleep || sleepFor;
-  const deadline = Date.now() + (config.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
   for (;;) {
     // eslint-disable-next-line no-await-in-loop
     const deployment = await config.kube('GET', base);
