@@ -20,9 +20,9 @@
  * directly, find_dropped_events among them. None of the 39 is pinned, since each
  * needs its own review. find_organizations and get_sentry_resource keep their
  * 11-01 pins, which still assess as compatible. The get_sentry_resource pin deliberately
- * omits the vendor's optional `url`: that route can reach types outside the
- * pinned enum, so its live schema always reports a compatible addition in the
- * assessment log. The by-name dispatcher and its catalogue are excluded because
+ * omits the vendor's optional `url`, and the `resourceUrl` and `issueUrl` that
+ * 11-04 added: those routes can reach types outside the pinned enum, so its live
+ * schema always reports a compatible addition in the assessment log. The by-name dispatcher and its catalogue are excluded because
  * they can reach operations outside this reviewed pin. Seer analysis is
  * excluded because it starts a vendor AI workflow.
  */

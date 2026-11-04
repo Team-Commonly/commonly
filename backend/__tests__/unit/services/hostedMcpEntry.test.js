@@ -943,7 +943,10 @@ describe('the shipped catalogue cannot land half-wired', () => {
       if (tool.name !== 'get_sentry_resource') {
         expect(canonicalJson(tool.inputSchema)).toBe(canonicalJson(found.inputSchema));
       }
-      // The live annotations still match every read pin.
+      // Every pin's annotations match its own capture, the writer's included,
+      // and every read pin's still match the live 11-04 list.
+      expect(tool.annotations?.readOnlyHint).toBe(found.annotations.readOnlyHint);
+      expect(tool.annotations?.destructiveHint).toBe(found.annotations.destructiveHint);
       const live = capture.tools.find((t) => t.name === tool.upstreamName);
       if (live) {
         expect(tool.annotations?.readOnlyHint).toBe(live.annotations.readOnlyHint);
@@ -991,7 +994,11 @@ describe('the shipped catalogue cannot land half-wired', () => {
     // find_dropped_events is top-level again on 11-04, but unreviewed, so it is not pinned.
     expect(entry.tools.some((tool) => tool.name === 'find_dropped_events')).toBe(false);
     const resource = entry.tools.find((tool) => tool.name === 'get_sentry_resource');
-    expect(resource.inputSchema.properties.url).toBeUndefined();
+    // None of the vendor's URL-shaped routes is offered: `url` (11-01), and
+    // `resourceUrl` and `issueUrl` (added by 11-04).
+    ['url', 'resourceUrl', 'issueUrl'].forEach((name) => expect(resource.inputSchema.properties[name]).toBeUndefined());
+    const live = SENTRY_CAPTURE.tools.find((tool) => tool.name === 'get_sentry_resource').inputSchema.properties;
+    ['url', 'resourceUrl', 'issueUrl'].forEach((name) => expect(live[name]).toBeDefined());
     expect(SENTRY_1101_CAPTURE.tools.find((tool) => tool.name === 'get_sentry_resource').inputSchema.properties.url)
       .toBeDefined();
     expect(resource.inputSchema.properties.resourceType.enum).toEqual([
