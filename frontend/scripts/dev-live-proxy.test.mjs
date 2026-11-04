@@ -25,7 +25,7 @@ async function startStub() {
 }
 
 async function withDevLive(env, fn) {
-  const keys = ['DEV_LIVE', 'DEV_LIVE_TARGET', 'DEV_LIVE_UPSTREAM'];
+  const keys = ['DEV_LIVE', 'DEV_LIVE_TARGET', 'DEV_LIVE_UPSTREAM', 'DEV_LIVE_PORT'];
   const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
   Object.assign(process.env, env);
   let server;
@@ -33,7 +33,7 @@ async function withDevLive(env, fn) {
     server = await createServer({ configFile, logLevel: 'silent', server: { host: '127.0.0.1' } });
     await server.listen();
     const port = server.httpServer.address().port;
-    return await fn(`http://127.0.0.1:${port}`, port);
+    return await fn(`http://127.0.0.1:${port}`, port, server.config.define['process.env.REACT_APP_API_URL']);
   } finally {
     await server?.close();
     for (const k of keys) {
@@ -123,6 +123,34 @@ test('each target listens on its own port, so localStorage cannot cross targets'
     });
   } finally {
     await stub.close();
+  }
+});
+
+test('DEV_LIVE_PORT moves the port and the API base together', async () => {
+  const stub = await startStub();
+  try {
+    await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod', DEV_LIVE_UPSTREAM: stub.url, DEV_LIVE_PORT: '3131' }, async (base, port, apiBase) => {
+      assert.equal(port, 3131);
+      assert.equal(apiBase, JSON.stringify('http://localhost:3131'), 'the app must call its own origin, not 3101');
+      const res = await fetch(`${base}/api/health`);
+      assert.equal(res.status, 200);
+    });
+    await withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: 'prod', DEV_LIVE_UPSTREAM: stub.url }, async (_base, port, apiBase) => {
+      assert.equal(port, 3101);
+      assert.equal(apiBase, JSON.stringify('http://localhost:3101'));
+    });
+  } finally {
+    await stub.close();
+  }
+});
+
+test('DEV_LIVE_PORT refuses another target\'s port and junk', async () => {
+  for (const [target, port] of [['prod', '3102'], ['staging', '3101'], ['prod', 'abc'], ['prod', '80']]) {
+    await assert.rejects(
+      withDevLive({ DEV_LIVE: '1', DEV_LIVE_TARGET: target, DEV_LIVE_PORT: port }, async () => {}),
+      /DEV_LIVE_PORT must be a free port/,
+      `${target} on ${port}`,
+    );
   }
 });
 

@@ -20,7 +20,18 @@ const liveEntry = LIVE_TARGETS[liveName];
 if (DEV_LIVE && !liveEntry) {
   throw new Error(`DEV_LIVE_TARGET must be one of: ${Object.keys(LIVE_TARGETS).join(', ')}`);
 }
-const livePort = DEV_LIVE ? liveEntry.port : 3000;
+// DEV_LIVE_PORT moves a run off its target's default port, so several sessions can run
+// dev:live at once. It moves the API base with it (below), which `--port` does not.
+// A port another target owns is refused, so a prod token never lands on staging's origin.
+const portOverride = DEV_LIVE ? process.env.DEV_LIVE_PORT : undefined;
+if (portOverride !== undefined && portOverride !== '') {
+  const n = Number(portOverride);
+  const owned = Object.entries(LIVE_TARGETS).find(([name, t]) => name !== liveName && t.port === n);
+  if (!Number.isInteger(n) || n < 1024 || n > 65535 || owned) {
+    throw new Error(`DEV_LIVE_PORT must be a free port from 1024 to 65535, not another target's (${owned ? owned[0] : portOverride})`);
+  }
+}
+const livePort = DEV_LIVE ? Number(portOverride) || liveEntry.port : 3000;
 const liveTarget = DEV_LIVE ? process.env.DEV_LIVE_UPSTREAM || liveEntry.url : undefined;
 const dropOrigin: NonNullable<ProxyOptions['configure']> = (proxy) => {
   proxy.on('proxyReq', (req) => req.removeHeader('origin'));
