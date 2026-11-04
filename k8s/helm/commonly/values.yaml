@@ -664,6 +664,16 @@ cloudflared:
 # LiteLLM proxy (model gateway + request logging)
 litellm:
   enabled: false
+  # F98 (D243, 11-04): other vendors' model names that LiteLLM serves with
+  # DeepSeek (the nemotron pair, gpt-5.4*, openai-codex/*, codex-mini-latest,
+  # o4-mini, codex-cli/gpt-5.4, and the Gemini names and gpt-4o where their
+  # provider is off). This flag exists ONLY for the four callers that still name
+  # them: the K8s provisioner's community-agent primary and its dev-agent
+  # defaults (agentProvisionerServiceK8s.ts), globalModelConfigService's default
+  # policy, and cloud-codex-deployment.yaml's codex-cli/gpt-5.4. It retires with
+  # them: F103 moves those defaults off the dead names, then flips this to false
+  # and deletes the gated block. Dev sets it false.
+  legacyAliases: true
   # Per-service LiteLLM virtual keys (TASK-555). When true, backend and
   # commonly-bot call LiteLLM with their own budgeted keys
   # (<keyPrefix>litellm-backend-key, <keyPrefix>litellm-commonly-bot-key) as

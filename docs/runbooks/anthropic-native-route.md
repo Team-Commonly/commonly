@@ -49,14 +49,19 @@ digests, pod skills, avatar descriptions) and the commonly-bot.
   longer handed `OPENROUTER_API_KEY`. Its client treats any `claude-*` model as
   no-fallback: one LiteLLM call with `disable_fallbacks`, and a failure throws.
 
-What still reaches DeepSeek: only a caller that names `deepseek-v4-flash` or
-`deepseek-flash-1017` itself. F98 removed every other vendor's name that
-LiteLLM served with DeepSeek. The nemotron, `gpt-5.4*`, `openai-codex/*`,
-`codex-mini-latest`, `o4-mini` and `codex-cli/gpt-5.4` entries are gone, and the
-Gemini names and `gpt-4o` render only where their own provider is on. None was
-called in the 7 days to 11-04 (the spend-log read is in the F98 pull request), so a caller
-that still asks for one gets an unknown-model error instead of a silent
-stand-in. With every native pin mapped to Claude, /privacy names no DeepSeek.
+What still reaches DeepSeek on dev: only a caller that names `deepseek-v4-flash`
+or `deepseek-flash-1017` itself. Other vendors' names that LiteLLM serves with
+DeepSeek render only under `litellm.legacyAliases`: the nemotron pair,
+`gpt-5.4*`, `openai-codex/*`, `codex-mini-latest`, `o4-mini`, `codex-cli/gpt-5.4`,
+and the Gemini names and `gpt-4o` where their provider is off. The flag is off on
+dev, so a caller there gets an unknown-model error instead of a silent stand-in.
+None of those names was called on dev in the 7 days to 11-04 (the spend-log read
+is in the F98 pull request). Base keeps the flag on, rendering exactly as
+before, because the chart's own driver defaults still name them: the K8s
+provisioner's community and dev-agent models, `globalModelConfigService`'s
+default policy and cloud-codex's `codex-cli/gpt-5.4`. F103 moves those defaults,
+then turns the flag off in base and deletes the gated block. With every native
+pin mapped to Claude, /privacy names no DeepSeek.
 The DeepSeek routes themselves go once post-deploy spend logs show zero.
 **Staging depends on them until then:** staging renders with Anthropic off, so
 its Scout and chat run on `deepseek-v4-flash` (`LITELLM_CHAT_MODEL`).
