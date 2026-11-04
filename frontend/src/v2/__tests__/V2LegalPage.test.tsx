@@ -27,7 +27,9 @@ describe('public legal pages (TASK-530)', () => {
     render(<V2PrivacyPage />);
     expect(screen.getByRole('heading', { level: 2, name: 'Google Calendar' })).toBeInTheDocument();
     expect(screen.getByText(/read-only access to three things/)).toBeInTheDocument();
-    expect(screen.getByText(/We do not keep the calendar data a call returns\./)).toBeInTheDocument();
+    expect(screen.getByText(/We do not store the calendar data a call returns as it came from Google\./)).toBeInTheDocument();
+    // The run record keeps model text that can repeat calendar details, with no expiry: say so.
+    expect(screen.getByText(/That record can repeat details from your calendar, and it has no expiry date\./)).toBeInTheDocument();
     expect(screen.getByText(/Google API Services User Data Policy, including the Limited Use requirements\./)).toBeInTheDocument();
   });
 
