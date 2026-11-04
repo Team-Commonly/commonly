@@ -346,6 +346,22 @@ describe('macOS Seatbelt profile', () => {
     }
   });
 
+  test('processInfo self limits process inspection to the process itself; the default is unchanged', () => {
+    const base = { workspacePath: workspace, executablePath: process.execPath, statePath: state };
+    const shared = buildSeatbeltProfile(base);
+    expect(shared).toContain('(allow process-info* (target same-sandbox))');
+    expect(shared).not.toContain('(deny process-info* (target same-sandbox))');
+    const isolated = buildSeatbeltProfile({ ...base, processInfo: 'self' });
+    const deny = isolated.indexOf('(deny process-info* (target same-sandbox))');
+    const self = isolated.indexOf('(allow process-info* (target self))');
+    // Later rules win in SBPL, so the narrowing has to follow the baseline allow.
+    expect(deny).toBeGreaterThan(isolated.indexOf('(allow process-info* (target same-sandbox))'));
+    expect(self).toBeGreaterThan(deny);
+    // Signals stay same-sandbox: a parent must still stop the children it started.
+    expect(isolated).toContain('(allow signal (target same-sandbox))');
+    expect(() => buildSeatbeltProfile({ ...base, processInfo: 'all' })).toThrow(/processInfo/);
+  });
+
   test('rejects relative dynamic paths', () => {
     expect(() => buildSeatbeltProfile({
       workspacePath: 'relative',

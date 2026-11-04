@@ -9,11 +9,10 @@
  * the pod saw nothing.
  *
  * Only the adapters that run inside these mechanisms are checked. Codex
- * confines with its own permission profiles (mode.js). pi is a scope boundary,
- * not a gap in this check: it refuses a declared sandbox itself, so a
- * Connect-page pi seat is saved without one and runs unconfined
- * (default-environment.js, ADAPTERS_WITH_DEFAULT_SANDBOX); confining pi
- * belongs to pi's own sandbox work.
+ * confines with its own permission profiles (mode.js). pi confines an
+ * explicitly public seat with Seatbelt and refuses one it cannot confine at
+ * attach (validateEnvironment) and at spawn (adapters/pi.js); a Connect-page pi
+ * seat declares no sandbox and is not checked here.
  */
 
 import { normalizeSandboxTrust } from '../environment.js';

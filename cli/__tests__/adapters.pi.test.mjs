@@ -558,27 +558,29 @@ describe('helpers', () => {
   });
 });
 
-describe('sandbox — fail closed: pi cannot enforce one', () => {
-  test('a public-trust seat is refused before pi starts', async () => {
+describe('sandbox — a public seat never runs outside Seatbelt', () => {
+  // F113b: pi now confines a public turn with Seatbelt (adapters.pi.public.test.mjs).
+  // What stays fail-closed is every public turn this host cannot confine.
+  test('a public-trust seat off macOS is refused before pi starts', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
-    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } } })))
-      .rejects.toThrow(/public-trust seats are not supported/);
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, _platform: 'linux', environment: { model: 'test-model', sandbox: { trust: 'public', mode: 'workspace' } } })))
+      .rejects.toThrow(/public seats .*macOS Seatbelt/);
     expect(calls).toHaveLength(0);
   });
   // TASK-114. This gate read `trust` raw, so it was the one site in the package
-  // that failed OPEN: a stored `internal` means `public` and every other gate resolves it that way, but here both checks
-  // passed and the seat started with no confinement — pi confines on no host,
-  // so that is the whole of its confinement. Read through the shared reader.
-  test('a legacy `internal` record is refused too — it means public, and pi reads it that way', async () => {
+  // that failed OPEN: a stored `internal` means `public` and every other gate
+  // resolves it that way. Read through the shared reader, it is confined (or,
+  // where it cannot be, refused) exactly like public.
+  test('a legacy `internal` record is read as public', async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
-    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { model: 'test-model', sandbox: { trust: 'internal' } } })))
-      .rejects.toThrow(/public-trust seats are not supported/);
+    await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, _platform: 'linux', environment: { model: 'test-model', sandbox: { trust: 'internal' } } })))
+      .rejects.toThrow(/public seats .*macOS Seatbelt/);
     expect(calls).toHaveLength(0);
   });
   test("an explicit mode 'none' does not rescue a legacy `internal` record", async () => {
     const { impl, calls } = makeSpawnImpl({ stdout: assistant('must not run') });
     await expect(pi.spawn('hi', baseCtx({ _spawnImpl: impl, environment: { model: 'test-model', sandbox: { trust: 'internal', mode: 'none' } } })))
-      .rejects.toThrow(/public-trust seats are not supported/);
+      .rejects.toThrow(/public seats require an enforced sandbox/);
     expect(calls).toHaveLength(0);
   });
   test('a declared sandbox mode is refused rather than silently left unenforced', async () => {
