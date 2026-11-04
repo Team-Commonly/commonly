@@ -17,6 +17,8 @@ Direction on 2026-09-23: stop adding features and harden what exists until a rea
 
 The matrix below is the definition of "ready". A row is ready when every cell is green, verified on commonly.me against the deployed build.
 
+A hosted-MCP row refused as `tool_drift`: find it, measure it and re-pin it with [connector-drift.md](../runbooks/connector-drift.md).
+
 ## Method rules
 
 1. **Stranger session.** "A new user connects it" is checked from a fresh non-admin account's own session, never an admin one. An admin session cannot reproduce what 0 of 29 hit.
