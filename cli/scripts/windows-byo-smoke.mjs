@@ -48,7 +48,9 @@ const LEG_TIMEOUT_MS = 8 * 60_000;
 // connectSnippet and the two helpers it uses, lifted out of the component
 // and run as plain JS. Each piece must be found in the shape read here, or
 // the walk stops and says which piece moved.
-const pageSource = readFileSync(resolve(HERE, '../../frontend/src/v2/components/V2AgentBYO.tsx'), 'utf8');
+// A Windows checkout has CRLF line endings (autocrlf); the shapes read LF.
+const pageSource = readFileSync(resolve(HERE, '../../frontend/src/v2/components/V2AgentBYO.tsx'), 'utf8')
+  .replace(/\r\n/g, '\n');
 const lift = (re, what) => {
   const m = re.exec(pageSource);
   if (!m) {
