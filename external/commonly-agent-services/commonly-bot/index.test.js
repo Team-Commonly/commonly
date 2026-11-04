@@ -188,10 +188,21 @@ for (const [mode, reason] of [
 
 }
 
+// D243 (F91) brings back one Claude route on purpose: LiteLLM's native-model
+// route and its key, both inside `aiProviders.anthropic.enabled`. Everything
+// #2704 removed stays removed outside that gate, and nothing falls back to or
+// from Claude.
+const ANTHROPIC_GATE = /\{\{-? if \.Values\.aiProviders\.anthropic\.enabled \}\}[\s\S]*?\{\{-? end \}\}/g;
+const outsideAnthropicGate = (text) => text.replace(ANTHROPIC_GATE, '');
+
 test('chart and dynamic gateways no longer consume a direct Anthropic key or route', () => {
   const root = path.resolve(__dirname, '../../..');
   const chart = path.join(root, 'k8s/helm/commonly');
-  const routes = fs.readFileSync(path.join(chart, 'templates/configmaps/litellm-config.yaml'), 'utf8');
+  const rawRoutes = fs.readFileSync(path.join(chart, 'templates/configmaps/litellm-config.yaml'), 'utf8');
+  const routes = outsideAnthropicGate(rawRoutes);
+  // The gated route is the only Claude route, and the gate is what holds it.
+  assert.match(rawRoutes, /model: anthropic\/\{\{ \.Values\.aiProviders\.anthropic\.nativeModel \}\}/);
+  assert.equal((rawRoutes.match(/model:\s*anthropic\//gi) || []).length, 1);
   const directRoute = /model_name:\s*claude-|model:\s*anthropic\//i;
   const directKeyOrFallback = /ANTHROPIC_API_KEY|["']claude-[^"']*["']/;
   assert.match('      - model_name: claude-haiku-4-5', directRoute);
@@ -208,7 +219,7 @@ test('chart and dynamic gateways no longer consume a direct Anthropic key or rou
     'templates/secrets/local-secrets.yaml',
     'values-local.yaml',
   ]) {
-    assert.doesNotMatch(fs.readFileSync(path.join(chart, file), 'utf8'), /ANTHROPIC_API_KEY|anthropic-api-key|anthropicApiKey/);
+    assert.doesNotMatch(outsideAnthropicGate(fs.readFileSync(path.join(chart, file), 'utf8')), /ANTHROPIC_API_KEY|anthropic-api-key|anthropicApiKey/);
   }
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'backend/services/gatewayProvisionerServiceK8s.ts'), 'utf8'), /ANTHROPIC_API_KEY|anthropic-api-key/);
 });
