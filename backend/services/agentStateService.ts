@@ -30,6 +30,7 @@
  */
 import { hostedRunsNative } from './hostedEngine';
 import { BYO_STALE_MS } from './agentConnectionStateService';
+import { newestPerInstall } from './newestPerInstall';
 
 export const AGENT_LISTENING_STALE_MS = 5 * 60 * 1000;
 
@@ -177,6 +178,21 @@ interface ActivityInstallationLike {
 }
 
 /**
+ * Newest delivered heartbeat per install, keyed `agentName:instanceId`
+ * (TASK-774: one index seek per install, not a read of the seat's events).
+ */
+export const lastHeartbeatPerInstall = (
+  installations: ActivityInstallationLike[],
+): Promise<Map<string, Date>> => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const AgentEvent = require('../models/AgentEvent');
+  return newestPerInstall(AgentEvent, installations, {
+    match: ({ agentName, instanceId }) => ({ agentName, instanceId, type: 'heartbeat', status: 'delivered' }),
+    field: 'createdAt',
+  });
+};
+
+/**
  * Batch: max(last heartbeat, last run, last token use) per (agentName,
  * instanceId) for one pod — heartbeats cover gateway moltbots, AgentRuns
  * cover native agents, token lastUsedAt covers BYO/MCP wrappers. Shared by
@@ -192,58 +208,26 @@ export const collectPodAgentActivity = async (
   const result = new Map<string, Date | null>();
   if (!installations.length) return result;
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const AgentEvent = require('../models/AgentEvent');
-  const heartbeatRows = await AgentEvent.aggregate([
-    {
-      $match: {
-        type: 'heartbeat',
-        status: 'delivered',
-        agentName: { $in: installations.map((i) => i.agentName) },
-        instanceId: { $in: installations.map((i) => i.instanceId || 'default') },
-      },
-    },
-    { $sort: { createdAt: -1 } },
-    {
-      $group: {
-        _id: { agentName: '$agentName', instanceId: '$instanceId' },
-        lastHeartbeatAt: { $first: '$createdAt' },
-      },
-    },
-  ]);
-  const heartbeatMap = new Map<string, Date>(
-    heartbeatRows.map((r: { _id: { agentName: string; instanceId: string }; lastHeartbeatAt: Date }) => [
-      key(r._id.agentName, r._id.instanceId), r.lastHeartbeatAt,
-    ]),
-  );
+  const heartbeatMap = await lastHeartbeatPerInstall(installations);
 
   // Native agents never heartbeat and never use a runtime token — their
   // proof of life is AgentRun rows. Aggregation $match does not cast, so
-  // podId must be an ObjectId (#915).
+  // podId must be an ObjectId (#915). One seek per install on
+  // { podId, agentName, instanceId, startedAt }; a run with no instanceId
+  // (missing, null or '') counts for `default`, as it always has.
   let runMap = new Map<string, Date>();
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const AgentRun = require('../models/AgentRun');
-    const runRows = await AgentRun.aggregate([
-      {
-        $match: {
-          podId: new mongoose.Types.ObjectId(String(podId)),
-          agentName: { $in: installations.map((i) => i.agentName) },
-        },
-      },
-      { $sort: { startedAt: -1 } },
-      {
-        $group: {
-          _id: { agentName: '$agentName', instanceId: '$instanceId' },
-          lastRunAt: { $first: '$startedAt' },
-        },
-      },
-    ]);
-    runMap = new Map(
-      runRows.map((r: { _id: { agentName: string; instanceId?: string }; lastRunAt: Date }) => [
-        key(r._id.agentName, r._id.instanceId), r.lastRunAt,
-      ]),
-    );
+    const pod = new mongoose.Types.ObjectId(String(podId));
+    runMap = await newestPerInstall(AgentRun, installations, {
+      match: ({ agentName, instanceId }) => ({
+        podId: pod,
+        agentName,
+        instanceId: instanceId === 'default' ? { $in: ['default', null, ''] } : instanceId,
+      }),
+      field: 'startedAt',
+    });
   } catch (runErr) {
     console.warn('[agent-state] AgentRun activity lookup failed:', (runErr as Error).message);
   }

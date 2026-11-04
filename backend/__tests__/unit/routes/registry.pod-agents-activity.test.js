@@ -38,11 +38,15 @@ jest.mock('../../../models/AgentProfile', () => ({
 jest.mock('../../../models/AgentTemplate', () => ({
   find: jest.fn(),
 }));
+// Rows come back as newestPerInstall projects them: one per install, keyed
+// `agentName:instanceId` (TASK-774).
 jest.mock('../../../models/AgentEvent', () => ({
   aggregate: jest.fn().mockResolvedValue([]),
+  collection: { collectionName: 'agentevents' },
 }));
 jest.mock('../../../models/AgentRun', () => ({
   aggregate: jest.fn().mockResolvedValue([]),
+  collection: { collectionName: 'agentruns' },
 }));
 jest.mock('../../../models/AgentCredential', () => ({ find: jest.fn() }));
 jest.mock('../../../models/Machine', () => ({ find: jest.fn() }));
@@ -284,10 +288,7 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
   it('surfaces AgentRun activity for native agents with no heartbeats and no tokens', async () => {
     AgentInstallation.getInstalledAgents.mockResolvedValue([baseInstallation()]);
     AgentRun.aggregate.mockResolvedValue([
-      {
-        _id: { agentName: 'guide', instanceId: 'default' },
-        lastRunAt: new Date('2026-08-12T19:04:00.000Z'),
-      },
+      { key: 'guide:default', at: new Date('2026-08-12T19:04:00.000Z') },
     ]);
 
     const res = await request(app).get(`/api/registry/pods/${POD_ID}/agents`);
@@ -316,10 +317,7 @@ describe('pod agents lastActiveAt derivation (#915)', () => {
       baseInstallation({ agentName: 'my-byo', config: new Map() }),
     ]);
     AgentEvent.aggregate.mockResolvedValue([
-      {
-        _id: { agentName: 'my-byo', instanceId: 'default' },
-        lastHeartbeatAt: new Date('2026-08-10T00:00:00.000Z'),
-      },
+      { key: 'my-byo:default', at: new Date('2026-08-10T00:00:00.000Z') },
     ]);
     User.find.mockReturnValue({
       select: jest.fn().mockReturnValue({
