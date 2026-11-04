@@ -3,13 +3,30 @@ One Steel browser per person (agentComputer.users): a profile disk, a
 Deployment and a ClusterIP Service, all named steel-{userId} to match the
 backend's AGENT_COMPUTER_STEEL_*_URL_TEMPLATE. Steel takes no credentials, so
 it listens on loopback only and a token gate in the same pod is the Service's
-only backend; the broker in the backend holds the token, and agents never get
-the address (agentComputerBroker.ts).
+only backend. The token is in the backend's env for its broker, and in
+ops-runner's, which carries the backend's env for operator scripts. Agents
+never get the address (agentComputerBroker.ts).
 */ -}}
 {{- $users := include "commonly.agentComputer.users" . | fromJsonArray -}}
 {{- if $users }}
 {{- $ns := include "commonly.namespace" . -}}
 {{- $steel := .Values.agentComputer.steel -}}
+{{- /* Chrome's navigation allowlist is the broker's, from the same value. The
+broker allows a host exactly, over https, on the default port, so each entry
+is https://.host:443: the leading dot excludes subdomains, and the port keeps
+Chrome from matching any other. A host must be a name whose last label starts
+with a letter, so no IP literal can be allowed. */ -}}
+{{- $allow := list -}}
+{{- range (splitList "," (.Values.backend.env.agentComputerAllowedHosts | default "")) }}
+{{- $host := . | trim | lower }}
+{{- if $host }}
+{{- if not (regexMatch "^([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]([a-z0-9-]*[a-z0-9])?$" $host) }}
+{{- fail (printf "backend.env.agentComputerAllowedHosts: %q is not a plain host name" $host) }}
+{{- end }}
+{{- $allow = append $allow (printf "https://.%s:443" $host) }}
+{{- end }}
+{{- end }}
+{{- $chromePolicy := dict "URLBlocklist" (list "*") "URLAllowlist" $allow "LoopbackNetworkBlockedForUrls" (list "*") "LocalNetworkAccessBlockedForUrls" (list "*") | toPrettyJson }}
 ---
 # The browser never calls the Kubernetes API. Its own account has no token and
 # no role, and keeps it off any workload-identity binding on `default`.
@@ -22,6 +39,31 @@ metadata:
     {{- include "commonly.labels" $ | nindent 4 }}
     app: agent-computer-steel
 automountServiceAccountToken: false
+---
+# Chrome's managed policy, mounted over the image's own (which blocked only
+# file://). Steel leaves its API and Chrome's DevTools port open to any page on
+# loopback, so the browser holds its own floor under the broker's guard, which
+# runs only while the broker is connected:
+#   - URLBlocklist * with URLAllowlist the allowed hosts: a frame navigates
+#     only to an allowed host, redirect hops and names that resolve to
+#     loopback included.
+#   - LoopbackNetworkBlockedForUrls * and LocalNetworkAccessBlockedForUrls *
+#     (Chromium splits loopback out since 146). Headless Chrome already refuses
+#     a public page's requests to loopback, and the probe can't show these add
+#     to that default (runbook, "What remains"). They stay as the stated
+#     intent if the default changes.
+# scripts/agent-computer-steel-probe.sh attacks both in CI.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-computer-chrome-policy
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.labels" $ | nindent 4 }}
+    app: agent-computer-steel
+data:
+  00_policy.json: |
+{{ $chromePolicy | indent 4 }}
 {{- range $id := $users }}
 ---
 apiVersion: v1
@@ -73,6 +115,10 @@ spec:
         {{- include "commonly.labels" $ | nindent 8 }}
         app: agent-computer-steel
         commonly.me/computer-user: {{ $id | quote }}
+      annotations:
+        # A policy change restarts the browser so it starts under the new
+        # policy. The profile disk keeps the signed-in session.
+        checksum/chrome-policy: {{ $chromePolicy | sha256sum }}
     spec:
       serviceAccountName: agent-computer-steel
       automountServiceAccountToken: false
@@ -81,6 +127,9 @@ spec:
       securityContext:
         seccompProfile:
           type: RuntimeDefault
+        # The image's own user (node, 1000) owns the profile disk.
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       initContainers:
         # Chrome refuses a profile whose Singleton lock names another host, and
         # Steel clears only a lock its own hostname left. Every new pod has a
@@ -91,7 +140,12 @@ spec:
           imagePullPolicy: IfNotPresent
           command: ["sh", "-c", "rm -f /profile/SingletonLock /profile/SingletonSocket /profile/SingletonCookie"]
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: profile
               mountPath: /profile
@@ -117,15 +171,34 @@ spec:
             # on, not only for a persist:true session (same path).
             - name: CHROME_USER_DATA_DIR
               value: /app/api/user-data-dir
+            # Steel drops Chrome's sandbox only when it runs as root. Under
+            # 1000 Chrome would try its user-namespace sandbox, which
+            # RuntimeDefault seccomp refuses, and fail to start. Chrome ran
+            # unsandboxed as root before this; the container is the boundary
+            # either way, now as non-root with no capabilities.
+            - name: DISABLE_CHROME_SANDBOX
+              value: "true"
           resources:
             {{- toYaml $steel.resources | nindent 12 }}
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: profile
               mountPath: /app/api/user-data-dir
             - name: dshm
               mountPath: /dev/shm
+            - name: chrome-policy
+              mountPath: /etc/chromium/policies/managed
+              readOnly: true
+            # Steel creates /files at start, and the image's root can't be
+            # written by 1000.
+            - name: steel-files
+              mountPath: /files
         # The token gate (backend/services/agentComputerSteelGate.ts): every
         # request and WebSocket upgrade must carry the bearer token only the
         # backend's broker holds. Its /healthz reflects Steel's own health.
@@ -183,6 +256,12 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: {{ $steel.shmSizeLimit }}
+        - name: chrome-policy
+          configMap:
+            name: agent-computer-chrome-policy
+        - name: steel-files
+          emptyDir:
+            sizeLimit: 1Gi
       {{- with $steel.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -216,7 +295,8 @@ spec:
 {{- $keyPrefix := .Values.externalSecrets.keyPrefix | default "commonly-dev-" }}
 ---
 # The gate's token, which the backend's broker also reads
-# (AGENT_COMPUTER_STEEL_TOKEN). Its own ExternalSecret, apart from the waker's,
+# (AGENT_COMPUTER_STEEL_TOKEN), as does ops-runner, which carries the
+# backend's env. Its own ExternalSecret, apart from the waker's,
 # so either token can rotate alone and a missing key fails only this sync.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

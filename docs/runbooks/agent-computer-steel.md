@@ -85,19 +85,74 @@ The browser holds a signed-in session. Under ADR-015 it stays off spot, so
    in by hand in the takeover UI, and the agent never types a password. The
    profile disk keeps that session across restarts.
 
+## What keeps a page away from Steel
+
 The gate token is a Secret in the namespace, so it is exactly as private as
-the namespace's Secrets. Workloads that already read those (the backend and
-ops-runner run as `agent-provisioner`) can read it too, and a port-forward into
-the pod reaches Steel's loopback port directly.
+the namespace's Secrets. Two workloads already read those Secrets (the backend
+and ops-runner run as `agent-provisioner`), and both hold the token in their
+env. A port-forward into the pod reaches Steel's loopback port directly.
 
-Pages loaded in the browser can also reach Steel's loopback port, which takes no
-credentials. Only allowlisted origins load, so this matters only if script on
-an allowlisted origin turns hostile.
+Inside the pod, Steel's API (`:3001`) takes no credentials and answers any
+origin. Chrome's DevTools port (`:9222`) accepts any origin. A page that
+reaches either one controls the signed-in browser. Three layers stand in the
+way:
 
-Outbound traffic from the browser is held by the broker's request guard:
-navigation goes only to the allowed hosts, and subresources only to public
-addresses. The chart adds no egress NetworkPolicy, so a page's own DNS answer
-changing between the guard's lookup and the browser's is not stopped here.
+- **The broker's request guard**, while the broker is connected: navigation
+  goes only to the allowed hosts, and subresources only to public addresses.
+- **Chrome's managed policy**, which holds whether or not the broker is
+  connected (`agent-computer-chrome-policy`):
+  - `URLBlocklist *` with `URLAllowlist` set to the allowed hosts, exactly,
+    over https and on port 443. A frame navigates nowhere else: not to
+    loopback, a metadata address, a cluster name, a private address, a
+    redirect hop from an allowed host to loopback, or a public name that
+    resolves to loopback. A host that is an IP literal, or carries a port or
+    path, fails the chart render.
+  - `LoopbackNetworkBlockedForUrls *` and `LocalNetworkAccessBlockedForUrls *`
+    (Chromium splits loopback out since 146). They state that no page may
+    reach a loopback or private address. Headless Chrome already refuses a
+    public page's requests there, and the probe can't show these entries add
+    anything to that default (below).
+- **The container:** Steel and Chrome run as uid 1000 with no capabilities.
+  Chrome's own sandbox is off (`DISABLE_CHROME_SANDBOX`), as it was under root.
+
+`scripts/agent-computer-steel-probe.sh` attacks the first two layers in CI on
+every change to the chart's browser or the image pin. It starts the browser the
+way the broker does (`POST /v1/sessions` with `persist: true`), then aims each
+attack at a loopback witness and counts what arrives. Rows that can't be aimed
+at the witness say how they were counted. On Chromium 156 under the chart's
+policy:
+
+- **Navigations.** Every navigation and redirect hop above was refused. Under
+  the image's own policy, each witnessed one reached loopback, and each of the
+  others was not refused (only `file://` was).
+- **A public page's requests.** Fetches, images, sockets, workers and frames
+  to loopback were blocked, as were reads of Steel's API and the DevTools
+  socket. They were blocked under the image's own policy too: that is Chrome's
+  default.
+- **Controls.** The allowed pages loaded, a public cross-host fetch worked,
+  the redirect's first leg reached the allowed host, and every Chrome process
+  ran as uid 1000 with no capabilities.
+
+**What remains:**
+
+- **The policy doesn't stop an allowed host's own script.** Script on an
+  allowed origin can still use the session that origin holds. Keep
+  `agentComputerAllowedHosts` to first-party hosts, so a third-party host is
+  a new review, not a values change.
+- **Local Network Access doesn't cover a page served from a private address.**
+  It treats private and loopback addresses as one space, so such a page
+  reaches Steel freely (the probe's private-page rows). The allowlist is what
+  keeps such a page from loading, so never allow a host that resolves to a
+  private address.
+- **The network entries are unmeasured beyond Chrome's default.** A DevTools
+  permission grant gets past both, because a DevTools override outranks
+  policy. Only a DevTools client can set one, and that client already
+  controls the browser. If a Chromium release changes the default, the
+  probe's public-page rows show whether these entries hold.
+- **Policy names are Chrome's.** If a release renames or drops a URL entry,
+  the navigation rows fail. Re-run the probe when the image pin moves.
+- **No egress NetworkPolicy.** Any pod in the cluster can still reach the
+  gate's port and must present the token there.
 
 ## Day to day
 

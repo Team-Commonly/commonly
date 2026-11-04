@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # The agent computer chart (templates/agent-computer/): nothing renders without
 # both the flag and a user id. With them, Steel listens on loopback behind a
-# token gate, the image is pinned by digest, the waker's role names only that
-# browser, and a bad id fails the render.
+# token gate, runs as non-root under the chart's Chrome policy, the image is
+# pinned by digest, the waker's role names only that browser, and a bad id
+# fails the render. What the policy actually stops is measured by
+# scripts/agent-computer-steel-probe.sh.
 set -euo pipefail
 
 chart=k8s/helm/commonly
@@ -51,6 +53,39 @@ test "$(q "$steel | .serviceAccountName" "$on")" = agent-computer-steel
 test "$(q "$steel | .nodeSelector.pool" "$on")" = dev
 test "$(q "select(.kind == \"PersistentVolumeClaim\" and .metadata.name == \"steel-$user-profile\") | .metadata.annotations[\"helm.sh/resource-policy\"]" "$on")" = keep
 test "$(q 'select(.kind == "ServiceAccount" and .metadata.name == "agent-computer-steel") | .automountServiceAccountToken' "$on")" = false
+
+# The browser and its init step run as the image's own user (1000) with no
+# capabilities. Chrome's sandbox is off, as Steel needs it to be there, and the
+# chart's Chrome policy is mounted read-only over the image's own.
+test "$(q "$browser | .securityContext.runAsNonRoot" "$on")" = true
+test "$(q "$browser | .securityContext.runAsUser" "$on")" = 1000
+test "$(q "$browser | .securityContext.allowPrivilegeEscalation" "$on")" = false
+test "$(q "$browser | .securityContext.capabilities.drop | join(\",\")" "$on")" = ALL
+test "$(q "$steel | .initContainers[0].securityContext.runAsNonRoot" "$on")" = true
+test "$(q "$steel | .initContainers[0].securityContext.capabilities.drop | join(\",\")" "$on")" = ALL
+test "$(q "$steel | .securityContext.fsGroup" "$on")" = 1000
+test "$(q "$browser | .env[] | select(.name == \"DISABLE_CHROME_SANDBOX\") | .value" "$on")" = true
+test "$(q "$browser | .volumeMounts[] | select(.name == \"chrome-policy\") | .mountPath" "$on")" = /etc/chromium/policies/managed
+test "$(q "$browser | .volumeMounts[] | select(.name == \"chrome-policy\") | .readOnly" "$on")" = true
+test "$(q "$browser | .volumeMounts[] | select(.name == \"steel-files\") | .mountPath" "$on")" = /files
+q 'select(.kind == "ConfigMap" and .metadata.name == "agent-computer-chrome-policy") | .data["00_policy.json"]' "$on" > "$tmp_dir/policy.json"
+# Every navigation is blocked but the broker's own allowed hosts, exactly and
+# over https, and no page reaches a loopback or private address.
+pj() { "$yq_bin" -N -p json "$1" "$tmp_dir/policy.json" 2> /dev/null || echo "__yq_error__"; }
+test "$(pj '.URLBlocklist | join(",")')" = '*'
+test "$(pj '.URLAllowlist | join(",")')" = 'https://.commonly.me:443'
+test "$(pj '.LoopbackNetworkBlockedForUrls | join(",")')" = '*'
+test "$(pj '.LocalNetworkAccessBlockedForUrls | join(",")')" = '*'
+for bad in '*' 'commonly.me/x' 'commonly.me:8443' 'localhost' '.commonly.me' '127.0.0.1' '10.0.0.5' '[::1]'; do
+  if helm template commonly-dev "$chart" "${dev[@]}" --set "agentComputer.users[0]=$user" \
+    --set-string "backend.env.agentComputerAllowedHosts=$bad" > "$tmp_dir/bad-host.yaml" 2> "$tmp_dir/bad-host.err"; then
+    echo "agent computer chart accepted allowed host: $bad"
+    exit 1
+  fi
+  grep -q 'is not a plain host name' "$tmp_dir/bad-host.err" || { echo "bad host $bad failed for another reason:"; cat "$tmp_dir/bad-host.err"; exit 1; }
+done
+# A policy change restarts the browser, so it never runs under a stale policy.
+test "$(q "select(.kind == \"Deployment\" and .metadata.name == \"steel-$user\") | .spec.template.metadata.annotations[\"checksum/chrome-policy\"]" "$on" | grep -cE '^[0-9a-f]{64}$')" = 1
 
 # The gate is the pod's only listener and the Service's only target.
 test "$(q "$gate | .command | join(\" \")" "$on")" = "node dist/services/agentComputerSteelGate.js"
