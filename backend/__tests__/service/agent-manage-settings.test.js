@@ -208,6 +208,48 @@ describe('per-installation agent settings', () => {
     expect(config(unchanged).wakeOnMessage).toEqual({ enabled: true, humanOnly: true });
   });
 
+  it('turns the heartbeat off without an interval and keeps the stored one', async () => {
+    await AgentInstallation.updateOne({ podId: podA._id, agentName: 'settings-agent' }, {
+      $set: { 'config.heartbeat': { enabled: true, everyMinutes: 45 } },
+    });
+    const response = await request(app)
+      .patch(`/api/registry/agents/settings-agent/manage-settings/pods/${podA._id}?instanceId=same`)
+      .set('Authorization', `Bearer ${token(owner)}`)
+      .send({ wakeOnMessage: true, humanOnly: true, boardWake: false, heartbeatEnabled: false });
+    expect(response.status).toBe(200);
+    expect(response.body.settings).toEqual(expect.objectContaining({
+      heartbeatEnabled: false, heartbeatMinutes: 45,
+    }));
+    const saved = await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' });
+    expect(config(saved).heartbeat).toEqual({ enabled: false, everyMinutes: 45 });
+  });
+
+  it('names the field a rejected wake write got wrong, and writes nothing', async () => {
+    const url = `/api/registry/agents/settings-agent/manage-settings/pods/${podA._id}?instanceId=same`;
+    const body = { wakeOnMessage: false, humanOnly: false, boardWake: true, heartbeatEnabled: true, heartbeatMinutes: 30 };
+    const send = (patch) => request(app).patch(url).set('Authorization', `Bearer ${token(owner)}`)
+      .send({ ...body, ...patch });
+    const cases = [
+      [{ wakeOnMessage: 'yes' }, 'wakeOnMessage'],
+      [{ humanOnly: undefined }, 'humanOnly'],
+      [{ boardWake: 1 }, 'boardWake'],
+      [{ heartbeatEnabled: null }, 'heartbeatEnabled'],
+      [{ heartbeatMinutes: undefined }, 'heartbeatMinutes'],
+      [{ heartbeatMinutes: 0 }, 'heartbeatMinutes'],
+      [{ heartbeatEnabled: false, heartbeatMinutes: 1441 }, 'heartbeatMinutes'],
+      [{ heartbeatEnabled: false, heartbeatMinutes: '30' }, 'heartbeatMinutes'],
+    ];
+    for (const [patch, field] of cases) {
+      // eslint-disable-next-line no-await-in-loop
+      const response = await send(patch);
+      expect({ patch, status: response.status, field: response.body.field }).toEqual({ patch, status: 400, field });
+      expect(response.body.error).toContain(field);
+    }
+    const unchanged = await AgentInstallation.findOne({ podId: podA._id, agentName: 'settings-agent' });
+    expect(config(unchanged).wakeOnMessage).toEqual({ enabled: true, humanOnly: true });
+    expect(config(unchanged).heartbeat).toBeUndefined();
+  });
+
   it('lets an instance admin manage an installation they did not create', async () => {
     const listed = await request(app).get('/api/registry/agents/settings-agent/manage-settings?instanceId=same')
       .set('Authorization', `Bearer ${token(admin)}`);
