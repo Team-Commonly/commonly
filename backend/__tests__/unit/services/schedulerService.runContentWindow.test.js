@@ -52,11 +52,15 @@ describe('scheduler: run content window opt-in', () => {
 
   it('the job applies the redaction, not a dry run', async () => {
     const { redactExpiredRunContent } = require('../../../services/agentRunContentWindow');
+    redactExpiredRunContent.mockClear();
     const log = jest.spyOn(console, 'log').mockImplementation(() => {});
     try {
       process.env.AGENT_RUN_CONTENT_WINDOW = 'true';
       scheduler.start();
+      // Starting the scheduler (a deploy) must not redact; only the cron tick does.
+      expect(redactExpiredRunContent).not.toHaveBeenCalled();
       await windowJobs()[0].task();
+      expect(redactExpiredRunContent).toHaveBeenCalledTimes(1);
       expect(redactExpiredRunContent).toHaveBeenCalledWith({ apply: true });
     } finally {
       log.mockRestore();
