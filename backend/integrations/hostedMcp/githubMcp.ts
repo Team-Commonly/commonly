@@ -13,6 +13,7 @@
  */
 import type { HostedMcpEntry, HostedMcpPinnedTool } from '../../services/hostedMcpEntryService';
 import pin from './githubMcpSchemas.json';
+import { hostedVendorFetch } from '../../services/hostedVendorFetch';
 
 const descriptions: Record<string, string> = {
   get_me: 'Read the account profile for this GitHub connection.',
@@ -52,7 +53,7 @@ const INSTALLATIONS_TIMEOUT_MS = 5000;
 // page. Anything unreadable answers false: a wrong "no" only skips a shortcut.
 export const githubNeedsAccessSetup = async (
   accessToken: string,
-  { fetchImpl = fetch }: { fetchImpl?: typeof fetch } = {},
+  { fetchImpl = hostedVendorFetch }: { fetchImpl?: typeof fetch } = {},
 ): Promise<boolean> => {
   if (!accessToken) return false;
   try {

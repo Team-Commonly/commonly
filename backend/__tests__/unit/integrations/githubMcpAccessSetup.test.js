@@ -34,6 +34,16 @@ describe('githubNeedsAccessSetup', () => {
     await expect(githubNeedsAccessSetup('', { fetchImpl: jest.fn() })).resolves.toBe(false);
   });
 
+  test('with no fetch injected, the check goes through the guarded vendor fetch', async () => {
+    await jest.isolateModulesAsync(async () => {
+      const guarded = jest.fn().mockResolvedValue(reply(200, { total_count: 0 }));
+      jest.doMock('../../../services/hostedVendorFetch', () => ({ hostedVendorFetch: guarded }));
+      const mod = require('../../../integrations/hostedMcp/githubMcp');
+      await expect(mod.githubNeedsAccessSetup('user-token')).resolves.toBe(true);
+      expect(guarded).toHaveBeenCalledWith('https://api.github.com/user/installations?per_page=1', expect.any(Object));
+    });
+  });
+
   test('the GitHub entry carries the check exactly when it has an install page', () => {
     const original = process.env.GITHUB_MCP_APP_SLUG;
     try {
