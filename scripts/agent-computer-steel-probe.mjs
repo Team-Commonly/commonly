@@ -278,17 +278,19 @@ const pageAttacks = async (from, kind) => {
   record(`page-${from}-socket-devtools`, kind, devtoolsSocket !== 'error', devtoolsSocket, 'page');
 };
 
-// Local Network Access asks a person before a public page reaches loopback,
-// and headless Chrome answers no by itself. A grant stands in for a person
-// saying yes during a takeover: under the image's policy the page then gets
-// through, and the chart's policy must still refuse it. That pair is what
-// shows the policy entry takes effect, apart from Chrome's default.
+// Local Network Access asks before a public page reaches loopback, and
+// headless Chrome shows no prompt, so the answer is no. A DevTools permission
+// grant is recorded too: it gets past the chart's Loopback and Local Network
+// Access entries (11-04, Chromium 156), because a DevTools override outranks
+// policy. Only a DevTools client can set one, and a DevTools client already
+// controls the browser. So the probe shows those entries agree with Chrome's
+// default; it cannot show they add anything to it.
 const browserCdp = new Cdp(version.webSocketDebuggerUrl);
 await browserCdp.open();
 const protocol = await fetch(`${CDP}/json/protocol`).then((r) => r.json(), () => ({ domains: [] }));
 const permissionTypes = protocol.domains.find((d) => d.domain === 'Browser')?.types
   ?.find((t) => t.id === 'PermissionType')?.enum || [];
-const networkPermissions = permissionTypes.filter((name) => /local|loopback/i.test(name));
+const networkPermissions = permissionTypes.filter((name) => /network/i.test(name));
 const grantLocalNetwork = async (origin) => {
   const granted = [];
   for (const name of networkPermissions) {
@@ -310,11 +312,11 @@ await pageAttacks('public', 'assert');
 const granted = await grantLocalNetwork(new URL(PUBLIC_PAGE).origin);
 await loadPage(PUBLIC_PAGE);
 for (const [test, expression] of [
-  ['public-granted-fetch-loopback', pageFetch(`${W}/public-granted-fetch-loopback`, 'no-cors')],
-  ['public-granted-socket-loopback', pageSocket(`ws://127.0.0.1:3999/public-granted-socket-loopback`)],
+  ['public-devtools-granted-fetch-loopback', pageFetch(`${W}/public-devtools-granted-fetch-loopback`, 'no-cors')],
+  ['public-devtools-granted-socket-loopback', pageSocket(`ws://127.0.0.1:3999/public-devtools-granted-socket-loopback`)],
 ]) {
   const outcome = await evaluate(expression);
-  record(`page-${test}`, 'assert', reached(test), `${outcome} (granted: ${granted.join(',') || 'none'})`);
+  record(`page-${test}`, 'residual', reached(test), `${outcome} (granted: ${granted.join(',') || 'none'})`);
 }
 await browserCdp.send('Browser.resetPermissions').catch(() => {});
 // 3. The public page moves its own main frame: to a loopback address, and to

@@ -101,21 +101,37 @@ way:
   goes only to the allowed hosts, and subresources only to public addresses.
 - **Chrome's managed policy**, which holds whether or not the broker is
   connected (`agent-computer-chrome-policy`):
-  - `URLBlocklist *` with `URLAllowlist` set to the allowed hosts, exactly and
-    over https. A frame navigates nowhere else: not to loopback, a metadata
-    address, a cluster name, a private address, a redirect hop off the list,
-    or a public name that resolves to loopback.
-  - `LocalNetworkAccessBlockedForUrls *`. A page, worker or socket never
-    reaches a loopback or private address, and no prompt asks a person to
-    allow it.
+  - `URLBlocklist *` with `URLAllowlist` set to the allowed hosts, exactly,
+    over https and on port 443. A frame navigates nowhere else: not to
+    loopback, a metadata address, a cluster name, a private address, a
+    redirect hop from an allowed host to loopback, or a public name that
+    resolves to loopback. A host that is an IP literal, or carries a port or
+    path, fails the chart render.
+  - `LoopbackNetworkBlockedForUrls *` and `LocalNetworkAccessBlockedForUrls *`
+    (Chromium splits loopback out since 146). They state that no page may
+    reach a loopback or private address. Headless Chrome already refuses a
+    public page's requests there, and the probe can't show these entries add
+    anything to that default (below).
 - **The container:** Steel and Chrome run as uid 1000 with no capabilities.
   Chrome's own sandbox is off (`DISABLE_CHROME_SANDBOX`), as it was under root.
 
 `scripts/agent-computer-steel-probe.sh` attacks the first two layers in CI on
-every change to the chart's browser or the image pin. It aims each attack at a
-loopback witness and counts what arrives. On Chromium 156, every navigation and
-page attack from a public page was blocked. Under the image's own policy, every
-one of those navigations landed except `file://`.
+every change to the chart's browser or the image pin. It starts the browser the
+way the broker does (`POST /v1/sessions` with `persist: true`), then aims each
+attack at a loopback witness and counts what arrives. Rows that can't be aimed
+at the witness say how they were counted. On Chromium 156 under the chart's
+policy:
+
+- **Navigations.** Every navigation and redirect hop above was refused. Under
+  the image's own policy, each witnessed one reached loopback, and each of the
+  others was not refused (only `file://` was).
+- **A public page's requests.** Fetches, images, sockets, workers and frames
+  to loopback were blocked, as were reads of Steel's API and the DevTools
+  socket. They were blocked under the image's own policy too: that is Chrome's
+  default.
+- **Controls.** The allowed pages loaded, a public cross-host fetch worked,
+  the redirect's first leg reached the allowed host, and every Chrome process
+  ran as uid 1000 with no capabilities.
 
 **What remains:**
 
@@ -126,9 +142,15 @@ one of those navigations landed except `file://`.
 - **Local Network Access doesn't cover a page served from a private address.**
   It treats private and loopback addresses as one space, so such a page
   reaches Steel freely (the probe's private-page rows). The allowlist is what
-  keeps such a page from loading.
-- **Policy names are Chrome's.** A Chromium release could rename or drop one,
-  and the probe is what catches it. Re-run it when the image pin moves.
+  keeps such a page from loading, so never allow a host that resolves to a
+  private address.
+- **The network entries are unmeasured beyond Chrome's default.** A DevTools
+  permission grant gets past both, because a DevTools override outranks
+  policy. Only a DevTools client can set one, and that client already
+  controls the browser. If a Chromium release changes the default, the
+  probe's public-page rows show whether these entries hold.
+- **Policy names are Chrome's.** If a release renames or drops a URL entry,
+  the navigation rows fail. Re-run the probe when the image pin moves.
 - **No egress NetworkPolicy.** Any pod in the cluster can still reach the
   gate's port and must present the token there.
 

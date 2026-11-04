@@ -181,9 +181,9 @@ test "$report_rc" = 0 || { echo "report run: a control failed"; exit 1; }
 reached_in_report() { python3 -c 'import json,sys; r={x["test"]: x for x in json.load(open(sys.argv[1]))["results"]}; print("yes" if r.get(sys.argv[2], {}).get("reached") else "no")' "$tmp/report.json" "$1"; }
 seen=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["results"]; print(sum(1 for x in r if x["test"].startswith("page-private-") and x["reached"]))' "$tmp/report.json")
 test "$seen" -gt 0 || { echo "report run: no page attack reached the witness, so the probe can't tell a block from a broken attack"; exit 1; }
-# Each of these blocked rows means something only if the same attack gets
-# through under the image's policy.
-for row in cdp-nav-redirect-hop page-public-granted-fetch-loopback; do
+# A blocked redirect hop means something only if the same hop gets through
+# under the image's policy.
+for row in cdp-nav-redirect-hop; do
   test "$(reached_in_report "$row")" = yes || { echo "report run: $row did not reach the witness, so its block under the chart's policy proves nothing"; exit 1; }
 done
 test "$enforce_rc" = 0 || { echo "enforce run: $(python3 -c 'import json,sys; print(", ".join(json.load(open(sys.argv[1]))["failures"]))' "$tmp/enforce.json") got through the chart's policy"; exit 1; }

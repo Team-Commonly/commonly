@@ -47,11 +47,11 @@ automountServiceAccountToken: false
 #   - URLBlocklist * with URLAllowlist the allowed hosts: a frame navigates
 #     only to an allowed host, redirect hops and names that resolve to
 #     loopback included.
-#   - LoopbackNetworkBlockedForUrls * and LocalNetworkAccessBlockedForUrls *:
-#     no page asks to reach a loopback or private address. Chromium splits
-#     the two since 146, and the loopback entry takes precedence.
-#     Chrome's own default already refuses a public page here, so these back
-#     that default rather than replace it (runbook, "What remains").
+#   - LoopbackNetworkBlockedForUrls * and LocalNetworkAccessBlockedForUrls *
+#     (Chromium splits loopback out since 146). Headless Chrome already refuses
+#     a public page's requests to loopback, and the probe can't show these add
+#     to that default (runbook, "What remains"). They stay as the stated
+#     intent if the default changes.
 # scripts/agent-computer-steel-probe.sh attacks both in CI.
 apiVersion: v1
 kind: ConfigMap
