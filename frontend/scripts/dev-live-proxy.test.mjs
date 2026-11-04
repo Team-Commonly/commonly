@@ -182,6 +182,7 @@ test('dev:live refuses --port and strictPort opt-outs, so the port comes only fr
     [['--port', '3124'], /does not take --port/], [['--port=3124'], /does not take --port/],
     [['--no-strictPort'], /needs strictPort/], [['--strictPort=false'], /needs strictPort/],
     [['--strictPort=0'], /needs strictPort/], [['--strictPort', 'false'], /needs strictPort/], [['--strictPort', '0'], /needs strictPort/],
+    [['--no-strict-port'], /needs strictPort/], [['--strict-port=false'], /needs strictPort/], [['--strict-port', '0'], /needs strictPort/],
   ]) {
     process.argv.push(...flag);
     try {

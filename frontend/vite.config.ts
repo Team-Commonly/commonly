@@ -33,9 +33,15 @@ if (DEV_LIVE && process.argv.some((arg) => arg === '--port' || arg.startsWith('-
 }
 // A strictPort opt-out would let Vite fall through to the next free port, which can sit in
 // the other target's range while the API base stays put.
-const strictPortOff = (arg: string, i: number, argv: string[]) => arg === '--no-strictPort'
-  || /^--strictPort=(false|0)$/.test(arg)
-  || (arg === '--strictPort' && /^(false|0)$/.test(argv[i + 1] ?? ''));
+// Vite's parser accepts camel and kebab spellings (--strictPort, --strict-port), so the
+// flag name is normalised before it is read: any no- form, =false/=0, or a separate false/0.
+const strictPortOff = (arg: string, i: number, argv: string[]) => {
+  const m = /^--(no-)?strict-?port(?:=(.*))?$/i.exec(arg);
+  if (!m) return false;
+  if (m[1]) return true;
+  const value = m[2] ?? argv[i + 1] ?? '';
+  return /^(false|0)$/i.test(value);
+};
 if (DEV_LIVE && process.argv.some(strictPortOff)) {
   throw new Error('dev:live needs strictPort; a fallback port can land in another target\'s range');
 }
