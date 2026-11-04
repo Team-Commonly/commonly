@@ -8,8 +8,10 @@
 #     attack the policy should stop must leave the witness empty.
 #   - report: the image's own policy. At least one page attack must reach the
 #     witness, or the probe can't tell a block from a broken attack.
-# The attacking page is served from the runner, a private address, and is
-# marked a secure context, as an https page on the open web would be.
+# The page attacks run twice: from https://example.com, a public page like
+# every allowlisted host (asserted), and from a page the runner serves on a
+# private address (recorded). The private page and the rebind name are marked
+# trustworthy, so mixed-content blocking can't pass for a policy block.
 # CI only: it needs docker, sudo, helm and yq, and mounts no secrets.
 set -euo pipefail
 
@@ -89,7 +91,7 @@ start() {
     --user "$run_uid:$run_gid" --cap-drop ALL --security-opt no-new-privileges \
     --shm-size 1g \
     "${env_args[@]}" \
-    -e "CHROME_ARGS=--unsafely-treat-insecure-origin-as-secure=$page_origin" \
+    -e "CHROME_ARGS=--unsafely-treat-insecure-origin-as-secure=$page_origin,http://loop.probe.test:3999" \
     -v "$tmp/$mode/profile:$profile_dir" -v "$tmp/$mode/files:$files_dir" \
     -v "$PWD/scripts/agent-computer-steel-probe.mjs:/probe/probe.mjs:ro" \
     --add-host "page.probe.test:host-gateway" --add-host "loop.probe.test:127.0.0.1" \
@@ -130,7 +132,7 @@ EOF
 enforce_rc=$(cat "$tmp/enforce.rc")
 report_rc=$(cat "$tmp/report.rc")
 test "$report_rc" = 0 || { echo "report run: a control failed"; exit 1; }
-seen=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["results"]; print(sum(1 for x in r if x["kind"]=="assert" and x["test"].startswith(("page-","worker-")) and x["reached"]))' "$tmp/report.json")
+seen=$(python3 -c 'import json,sys; r=json.load(open(sys.argv[1]))["results"]; print(sum(1 for x in r if x["test"].startswith("page-private-") and x["reached"]))' "$tmp/report.json")
 test "$seen" -gt 0 || { echo "report run: no page attack reached the witness, so the probe can't tell a block from a broken attack"; exit 1; }
 test "$enforce_rc" = 0 || { echo "enforce run: $(python3 -c 'import json,sys; print(", ".join(json.load(open(sys.argv[1]))["failures"]))' "$tmp/enforce.json") got through the chart's policy"; exit 1; }
 echo "agent computer browser probe: ok"

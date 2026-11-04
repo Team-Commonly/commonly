@@ -14,7 +14,10 @@ import fs from 'node:fs';
 import http from 'node:http';
 
 const MODE = process.env.PROBE_MODE || 'enforce';
-const PAGE = process.env.PROBE_PAGE; // the attacking page, e.g. http://page.probe.test:8080/
+const PAGE = process.env.PROBE_PAGE; // a page on a private address, e.g. http://page.probe.test:8080/
+// A page on the open web. Local Network Access treats a public page apart
+// from a private one, and every allowlisted host (commonly.me) is public.
+const PUBLIC_PAGE = process.env.PROBE_PUBLIC_PAGE || 'https://example.com/';
 const LOOP_NAME = process.env.PROBE_LOOP_NAME; // a name that resolves to 127.0.0.1
 const CDP = 'http://127.0.0.1:9222';
 const STEEL = 'http://127.0.0.1:3001';
@@ -140,10 +143,12 @@ const results = [];
 // expected to stop it; the runbook names it), control (must succeed).
 const record = (test, kind, isReached, detail) => results.push({ test, kind, reached: isReached, detail });
 
-const loadPage = async () => {
-  const outcome = await navigate(PAGE);
+const loadPage = async (url = PAGE) => {
+  const outcome = await navigate(url);
   const title = await evaluate('document.title');
-  if (title !== 'probe') throw new Error(`the attacking page did not load: ${outcome} / ${title}`);
+  if (!title || title.startsWith('exception') || outcome !== 'loaded') {
+    throw new Error(`the attacking page ${url} did not load: ${outcome} / ${title}`);
+  }
 };
 
 // 1. Navigations the browser is told to make, as a CDP client would. In
@@ -170,6 +175,9 @@ record('cdp-nav-rebind-name', 'residual', reached('cdp-nav-rebind-name'), rebind
 
 // 2. Requests a page makes on its own, the path no broker guard sees when the
 // broker isn't connected, and the one a socket or worker takes even when it is.
+// Run from a public page (asserted) and from a private one (recorded: Local
+// Network Access puts private and loopback addresses in one space, so a
+// private page is not expected to be stopped).
 await loadPage();
 const sameOrigin = await evaluate(`fetch(${JSON.stringify(`${PAGE}ok.txt`)}).then((r) => r.text(), (e) => 'refused ' + e.message)`);
 record('page-fetch-same-origin', 'control', sameOrigin === 'ok', sameOrigin);
@@ -192,8 +200,7 @@ const pageImage = (url) => `new Promise((resolve) => {
   setTimeout(() => resolve('timeout'), 8000);
 })`;
 const inWorker = (body) => `new Promise((resolve) => {
-  const code = 'const sleep = (ms) => new Promise((r) => setTimeout(r, ms));' +
-    'self.onmessage = async () => { let out; try { out = await (' + ${JSON.stringify(body)} + '); } catch (e) { out = "refused " + e.message; } postMessage(String(out)); };';
+  const code = 'self.onmessage = async () => { let out; try { out = await (' + ${JSON.stringify(body)} + '); } catch (e) { out = "refused " + e.message; } postMessage(String(out)); };';
   const worker = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
   worker.onmessage = (m) => resolve(m.data);
   worker.onerror = (e) => resolve('worker error ' + e.message);
@@ -208,30 +215,39 @@ const pageFrame = (url) => `new Promise((resolve) => {
   setTimeout(() => resolve('timeout'), 6000);
 })`;
 
-const pageAttacks = [
-  ['page-fetch-loopback', pageFetch(`${W}/page-fetch-loopback`, 'no-cors')],
-  ['page-fetch-loopback-cors', pageFetch(`${W}/page-fetch-loopback-cors`, 'cors')],
-  ['page-fetch-rebind-name', pageFetch(`${WN}/page-fetch-rebind-name`, 'no-cors')],
-  ['page-fetch-redirect-hop', pageFetch(`${PAGE}redir?to=${encodeURIComponent(`${W}/page-fetch-redirect-hop`)}`, 'no-cors')],
-  ['page-image-loopback', pageImage(`${W}/page-image-loopback`)],
-  ['page-socket-loopback', pageSocket('ws://127.0.0.1:3999/page-socket-loopback')],
-  ['page-socket-rebind-name', pageSocket(`ws://${LOOP_NAME}:3999/page-socket-rebind-name`)],
-  ['worker-fetch-loopback', inWorker(`fetch('${W}/worker-fetch-loopback', { mode: 'no-cors' }).then((r) => 'answered ' + r.type)`)],
-  ['worker-socket-loopback', inWorker(`new Promise((resolve) => { const ws = new WebSocket('ws://127.0.0.1:3999/worker-socket-loopback'); ws.onopen = () => resolve('open'); ws.onerror = () => resolve('error'); setTimeout(() => resolve('timeout'), 6000); })`)],
-  ['page-frame-loopback', pageFrame(`${W}/page-frame-loopback`)],
-  ['page-frame-rebind-name', pageFrame(`${WN}/page-frame-rebind-name`)],
-];
-for (const [test, expression] of pageAttacks) {
-  const outcome = await evaluate(expression);
-  record(test, 'assert', reached(test), outcome);
-}
+const pageAttacks = async (from, kind) => {
+  const tag = (name) => `${from}-${name}`;
+  const attacks = [
+    [tag('fetch-loopback'), pageFetch(`${W}/${tag('fetch-loopback')}`, 'no-cors')],
+    [tag('fetch-loopback-cors'), pageFetch(`${W}/${tag('fetch-loopback-cors')}`, 'cors')],
+    [tag('fetch-rebind-name'), pageFetch(`${WN}/${tag('fetch-rebind-name')}`, 'no-cors')],
+    [tag('image-loopback'), pageImage(`${W}/${tag('image-loopback')}`)],
+    [tag('socket-loopback'), pageSocket(`ws://127.0.0.1:3999/${tag('socket-loopback')}`)],
+    [tag('socket-rebind-name'), pageSocket(`ws://${LOOP_NAME}:3999/${tag('socket-rebind-name')}`)],
+    [tag('worker-fetch-loopback'), inWorker(`fetch('${W}/${tag('worker-fetch-loopback')}', { mode: 'no-cors' }).then((r) => 'answered ' + r.type)`)],
+    [tag('worker-socket-loopback'), inWorker(`new Promise((resolve) => { const ws = new WebSocket('ws://127.0.0.1:3999/${tag('worker-socket-loopback')}'); ws.onopen = () => resolve('open'); ws.onerror = () => resolve('error'); setTimeout(() => resolve('timeout'), 6000); })`)],
+    [tag('frame-loopback'), pageFrame(`${W}/${tag('frame-loopback')}`)],
+    [tag('frame-rebind-name'), pageFrame(`${WN}/${tag('frame-rebind-name')}`)],
+  ];
+  if (from === 'private') {
+    attacks.push([tag('fetch-redirect-hop'), pageFetch(`${PAGE}redir?to=${encodeURIComponent(`${W}/${tag('fetch-redirect-hop')}`)}`, 'no-cors')]);
+  }
+  for (const [test, expression] of attacks) {
+    const outcome = await evaluate(expression);
+    record(`page-${test}`, kind, reached(test), outcome);
+  }
+  // The real targets: Steel's API, which answers any origin, and Chrome's own
+  // DevTools socket, which accepts any origin.
+  const steelRead = await evaluate(pageFetch(`${STEEL}/v1/sessions`, 'cors'));
+  record(`page-${from}-read-steel-api`, kind, steelRead.startsWith('answered'), steelRead);
+  const devtoolsSocket = await evaluate(pageSocket(version.webSocketDebuggerUrl));
+  record(`page-${from}-socket-devtools`, kind, devtoolsSocket === 'open', devtoolsSocket);
+};
 
-// The real targets: Steel's API, which answers any origin, and Chrome's own
-// DevTools socket, which accepts any origin.
-const steelRead = await evaluate(pageFetch(`${STEEL}/v1/sessions`, 'cors'));
-record('page-read-steel-api', 'assert', steelRead.startsWith('answered'), steelRead);
-const devtoolsSocket = await evaluate(pageSocket(version.webSocketDebuggerUrl));
-record('page-socket-devtools', 'assert', devtoolsSocket === 'open', devtoolsSocket);
+await loadPage(PUBLIC_PAGE);
+await pageAttacks('public', 'assert');
+await loadPage();
+await pageAttacks('private', 'residual');
 
 // 3. The page moves its own main frame. A loopback name on the list is
 // refused; a public name that resolves to loopback is the residual the
