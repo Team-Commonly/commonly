@@ -1,4 +1,4 @@
-/** Goose wrapper (1.54.0, 1.56.0). Public seats expose only the Commonly MCP extension. */
+/** Goose 1.54.0 wrapper. Public seats expose only the Commonly MCP extension. */
 import { requireSeatModel } from './seat-model.js';
 import { spawn as childSpawn, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -20,8 +20,13 @@ import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 // A version enters this list only after a real headless turn with that binary.
 // Each version here is proven by the real-binary smoke test on macOS and Linux
 // (.github/workflows/goose-public-proof.yml carries one pinned row per version).
-// 1.56.0: D247 harness walk, 11-04.
-export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0', '1.56.0']);
+// 1.56.0 is NOT admitted (11-04, F113c): its state-machine agent loop offers the
+// model a `load_skill` operation on every turn that the extension allowlist
+// cannot remove, so a stranger could read any skill under the seat's working
+// directory (.agents/.goose/.claude skills) and Goose's builtin skills. The
+// proof failed on both hosts at the allowlist check. Re-admit a version only
+// once skills can be switched off for public turns and the proof is green.
+export const TESTED_GOOSE_VERSIONS = Object.freeze(['1.54.0']);
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const TERMINATION_GRACE_MS = 5000;
 const DEFAULT_PROVIDER_HOST = 'https://litellm.commonly.me';

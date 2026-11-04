@@ -34,9 +34,6 @@ jobs:
           - version: '1.54.0'
             arm64_sha: 63738f0eed2fe9d8585a4ba988c3ffb23d600db0b43858a6cd868fa6b035a7af
             x86_64_sha: 81fd55f4003950bb72719402e2defb1375eef4b9a739d901a365fb737b73aeee
-          - version: '1.56.0'
-            arm64_sha: 62d806417b19be167474297eaaec7783ff9917f4fa772e781e977f2bdc155163
-            x86_64_sha: 0dabf1bc691a1855bc06d2bb5445d27d9c7c08f7ea5af49d32e460a85b98a2ad
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,8 +68,6 @@ jobs:
         include:
           - version: '1.54.0'
             x86_64_sha: bf01cb6359f7a2b1acb54ca4827e1d059b18aabb3d2b75202e21066cfd3a3396
-          - version: '1.56.0'
-            x86_64_sha: e29544421a6e698aab0fe4becda96096218ff36abe85b83785519d41c555c714
     steps:
       - uses: actions/checkout@v4
         with:
