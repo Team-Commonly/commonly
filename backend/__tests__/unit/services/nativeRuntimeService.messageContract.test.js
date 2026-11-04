@@ -143,6 +143,8 @@ describe('native posts carry the message contract (D245)', () => {
       .mockResolvedValueOnce(says('NO_REPLY'));
     const result = await runAgent(postOnly, ask);
     expect(result.status).toBe('succeeded');
+    // Still counted as posted through the tool: no fallback second post.
+    expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
     const toolResult = JSON.parse(axios.post.mock.calls[1][1].messages.find((m) => m.role === 'tool').content);
     expect(toolResult).toMatchObject({ ok: true, posted: true });
     expect(toolResult.result.warnings).toEqual(warnings);
@@ -156,5 +158,9 @@ describe('the hosted posting instructions cue the contract inline (D245)', () =>
     ['answer', 'result', 'progress', 'ask', 'fyi', 'error'].forEach((kind) => expect(postLine).toContain(kind));
     expect(postLine).toMatch(/summary/);
     expect(postLine).toContain('120');
+    // The cue modifies the one post: it follows the post instruction directly,
+    // ahead of the guidance on when not to post.
+    expect(postLine).toMatch(/addressed to the pod\. Give that post a kind/);
+    expect(postLine.indexOf('Give that post a kind')).toBeLessThan(postLine.indexOf('do not post'));
   });
 });
