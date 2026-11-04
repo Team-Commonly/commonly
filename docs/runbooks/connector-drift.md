@@ -46,7 +46,7 @@ and operators don't hold users' credentials.
 2. Group by `entryId` and tool name, and count the rows. Split `tool_drift`
    from `tool_unavailable`: only the first says anything about the vendor.
 3. If no row has used the connector recently, there are no lines. Assess a
-   team-owned row (one Lily or the operator connected) by using the connector
+   team-owned row by using the connector
    from a seat that holds that row's grant.
 
 For prod reads, follow the read path in `ops-runner-and-no-exec-into-backend.md`.
@@ -54,8 +54,8 @@ Never exec into the serving backend.
 
 ## Re-pinning from a fresh capture
 
-The pattern for #3283 (Sentry 11-01), #3396 (Sentry 11-04) and #3398 (Notion and
-Atlassian 11-04):
+The pattern used by #3283 (Sentry 11-01, merged), and by #3396 (Sentry 11-04) and
+#3398 (Notion and Atlassian 11-04), both still open:
 
 1. **Capture** the vendor's `tools/list` from a team-owned row consented to the
    widest scope the entry pins (Sentry: a Triage-consented row, or
@@ -79,8 +79,7 @@ Atlassian 11-04):
 6. **Update the vendor's row** in `docs/plans/integration-readiness-matrix.md`.
 
 A read re-pin is tier 1. A re-pin that restores write tools, or admits new
-vendor fields into a write pin, is tier 2 and gets a CTO look. Connector-ops
-presses.
+vendor fields into a write pin, is tier 2 review.
 
 ### Which read changes count as compatible
 
