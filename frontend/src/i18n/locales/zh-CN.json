@@ -428,8 +428,26 @@
       "continueWith": "使用 {{provider}} 继续"
     },
     "oauthComplete": {
-      "title": "正在登录…",
-      "subtitle": "正在完成第三方账号登录。"
+      "title": "正在登录…"
+    },
+    "discordHandoff": {
+      "workingTitle": "正在连接 Discord…",
+      "doneTitle": "选择一个频道",
+      "connectedTitle": "Discord 已连接",
+      "errorTitle": "Discord 连接失败",
+      "errorFallback": "Discord 授权时出了问题。",
+      "server": "服务器",
+      "channel": "频道",
+      "choose": "选择频道",
+      "loadingChannels": "正在加载频道…",
+      "cancel": "取消",
+      "connect": "连接",
+      "connecting": "正在连接…",
+      "back": "返回",
+      "pickChannel": "请选择一个频道",
+      "channelsFailed": "没能获取服务器的频道",
+      "createFailed": "没能创建集成",
+      "created": "Discord 集成已创建。"
     },
     "forgot": {
       "title": "重置密码",

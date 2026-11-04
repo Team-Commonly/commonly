@@ -7,7 +7,6 @@ import { useAuth } from '../context/AuthContext';
 import { useTimeZoneCapture } from './hooks/useTimeZoneCapture';
 import RegistrationInviteRequired from '../components/RegistrationInviteRequired';
 import VerifyEmail from '../components/VerifyEmail';
-import DiscordCallback from '../components/DiscordCallback';
 import V2EmailVerificationBanner from './components/V2EmailVerificationBanner';
 import ProtectedRoute from '../components/ProtectedRoute';
 import '@fontsource-variable/bricolage-grotesque';
@@ -42,6 +41,7 @@ const V2Login = React.lazy(() => import('./components/V2Login'));
 const V2PrimitivesPage = React.lazy(() => import('./primitives/V2PrimitivesPage'));
 const V2Register = React.lazy(() => import('./components/V2Register'));
 const V2OAuthComplete = React.lazy(() => import('./components/V2OAuthComplete'));
+const V2DiscordCallback = React.lazy(() => import('./components/V2DiscordCallback'));
 const V2ForgotPassword = React.lazy(() => import('./components/V2ForgotPassword'));
 const V2ResetPassword = React.lazy(() => import('./components/V2ResetPassword'));
 const V2YourTeamPage = React.lazy(() => import('./components/V2YourTeamPage'));
@@ -260,9 +260,9 @@ const V2App: React.FC = () => {
           <Route path="forgot-password" element={<V2ForgotPassword />} />
           <Route path="reset-password" element={<V2ResetPassword />} />
           <Route path="verify-email" element={<VerifyEmail />} />
-          <Route path="discord/callback" element={<DiscordCallback />} />
-          <Route path="discord/success" element={<DiscordCallback type="success" />} />
-          <Route path="discord/error" element={<DiscordCallback type="error" />} />
+          <Route path="discord/callback" element={<V2DiscordCallback />} />
+          <Route path="discord/success" element={<V2DiscordCallback type="success" />} />
+          <Route path="discord/error" element={<V2DiscordCallback type="error" />} />
           {/* Community access is resolved by the membership-gated pod probe.
               Keep this outside V2RequireAuth so an anonymous 401 can fall
               through to the public invite preview instead of the login wall. */}

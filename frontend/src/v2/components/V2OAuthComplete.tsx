@@ -2,7 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from '../../utils/axiosConfig';
 import { useAuth } from '../../context/AuthContext';
-import V2AuthBrand from './V2AuthBrand';
+import V2AuthBrand, { V2HandoffState } from './V2AuthBrand';
+import { ShellGlyph } from '../icons/glyphs';
 import { safeNextPath } from '../utils/safeNextPath';
 import {
   forgetInvite, forgetInviteOAuthStart, hasInviteOAuthStart,
@@ -16,6 +17,8 @@ import { useTranslation } from 'react-i18next';
 // sign-in does. A full-page navigation here used to re-download and re-boot
 // the whole app on the path most new people take (OAuth is 93% of outside
 // signups).
+const WORKING: V2HandoffState = 'working';
+
 const V2OAuthComplete: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -65,12 +68,14 @@ const V2OAuthComplete: React.FC = () => {
       });
   }, [searchParams, navigate, signInWithToken]);
 
+  // The d215 s-handoff working frame: the brand row carries the handoff and
+  // the title is the one line. The return URL does not say which provider
+  // sent the person here, so the provider tile is a plain lock, not a logo.
   return (
     <div className="v2-login">
-      <div className="v2-login__card">
-        <V2AuthBrand />
-        <h1 className="v2-login__title">{t('auth.oauthComplete.title')}</h1>
-        <p className="v2-login__subtitle">{t('auth.oauthComplete.subtitle')}</p>
+      <div className="v2-login__card v2-login__card--stack">
+        <V2AuthBrand handoff={{ state: WORKING, provider: <ShellGlyph name="lock" /> }} />
+        <h1 className="v2-login__title" role="status">{t('auth.oauthComplete.title')}</h1>
       </div>
     </div>
   );
