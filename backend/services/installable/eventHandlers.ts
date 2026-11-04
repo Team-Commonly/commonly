@@ -6,10 +6,7 @@ import { Types } from 'mongoose';
 const Integration = require('../../models/Integration');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Pod = require('../../models/Pod');
-// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const telegramBridgeService = require('../telegramBridgeService');
-// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const slackBridgeService = require('../slackBridgeService');
+import { chatRelayEventHandlers, chatRelayIntegrationTypes } from '../chatRelay/adapters';
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { handleGithubGig } = require('../githubGigService');
 
@@ -32,8 +29,8 @@ export type InternalEventHandler = (
 // component tests can pin selection at this seam and future component types
 // add one registration instead of another dispatcher branch.
 export const eventHandlers: Record<string, InternalEventHandler> = {
-  'telegram.relay': telegramBridgeService.relayAgentMessageToTelegram,
-  'slack.relay': slackBridgeService.relayAgentMessageToSlack,
+  // `telegram.relay`, `slack.relay`, … — one per chat-relay adapter.
+  ...chatRelayEventHandlers(),
   // Inbound App activity is selected by the webhook's indexed pod binding.
   'github.gig': handleGithubGig,
 };
@@ -67,13 +64,14 @@ const activeHandlersForPod = async (podId: string, includeCardHolds = false): Pr
   )).map((id) => new Types.ObjectId(id));
   if (!memberIds.length) return [];
   const gateEnabledPath = `config.gates.${String(podId)}.enabled`;
+  const relayTypes = chatRelayIntegrationTypes();
   // A decision card must record why it was deliberately withheld. Ordinary
   // chat retains the narrow selector below; cards additionally reach paused
   // and gate-off member bindings so their bridge can write a `hold` verdict
   // without sending anything to the channel.
   const selection = includeCardHolds
     ? {
-      type: { $in: ['telegram', 'slack'] },
+      type: { $in: relayTypes },
       isActive: true,
       status: { $ne: 'error' },
       'config.liveRelay': true,
@@ -89,7 +87,7 @@ const activeHandlersForPod = async (podId: string, includeCardHolds = false): Pr
       ],
     }
     : {
-      type: { $in: ['telegram', 'slack'] },
+      type: { $in: relayTypes },
       isActive: true,
       status: { $ne: 'error' },
       'config.liveRelay': true,

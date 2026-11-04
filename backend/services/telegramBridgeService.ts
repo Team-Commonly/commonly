@@ -26,16 +26,17 @@ const telegramSend = require('./telegramService');
 const deliveryFailures = require('./connectorDeliveryFailureService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const {
-  shouldEscalate, isGatedPodTarget, isRoutedPodTarget, isListedPodMember,
+  shouldEscalate, isGatedPodTarget, isRoutedPodTarget,
 } = require('./connectorRelayPolicy');
-// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const channelVerdictService = require('./channelVerdictService');
-const { publicAppUrl } = require('../utils/publicAppUrl');
 import type { DecisionRelayCard } from './decisionCardRelay';
 import { resolveDecisionCardReply } from './decisionCardReply';
 import type { ChannelCardEntry } from './decisionCardReply';
-
-const RELAY_MAP_CAP = 100;
+import {
+  loadInboundAuthor,
+  relayAgentMessageThroughAdapter,
+  writeInboundAsLinkedUser,
+} from './chatRelay/chatRelayCore';
+import type { ChatRelayAdapter, OutboundRelayOptions } from './chatRelay/chatRelayCore';
 const OUTBOUND_TEXT_CAP = 900;
 const CARD_OUTBOUND_TEXT_CAP = 1_900;
 
@@ -268,121 +269,42 @@ const podNameForTag = async (podId: string): Promise<string> => {
 };
 
 // Outbound: agent message → Telegram, attributed, with a deep link back into
-// the pod. Fire-and-forget from AgentMessageService.postMessage — a bridge
-// failure must never fail the post itself.
-export const relayAgentMessageToTelegram = async (opts: {
-  podId: string;
-  agentUsername: string;
-  displayName: string;
-  content: string;
-  podMessageId?: string | null;
-  card?: DecisionRelayCard;
-  integration?: TelegramIntegrationDoc;
-}): Promise<void> => {
-  const {
-    podId, agentUsername, displayName, content, podMessageId,
-  } = opts;
-  try {
-    // The dispatcher selects each pod-scoped subscription. Its row is the
-    // authority for this send; the fallback preserves legacy direct rows.
-    const integration = opts.integration ?? await findLiveIntegration(podId);
-    if (!integration) return;
-    // TASK-160: the "why is this held" label reads the gate through the same
-    // predicate the relay itself uses, so a change to gate semantics cannot
-    // leave the reason a user is shown stale. The scope test stays because it
-    // asks a different question than the gate read does: the label means "this
-    // person's gate for that pod is off", not "this connector owns that pod",
-    // which is what the predicate's pod-scoped arm answers.
-    const cardHoldReason = opts.card
-      ? (integration.config?.adminPause
-        ? 'paused'
-        : integration.scope === 'user' && !isGatedPodTarget(integration, podId)
-          ? 'gate_off'
-          : null)
-      : null;
-    if (cardHoldReason) {
-      if (podMessageId) {
-        await channelVerdictService.record({
-          integrationId: integration._id,
-          ...(integration.installationId ? { installationId: integration.installationId } : {}),
-          podId,
-          provider: 'telegram',
-          event: { kind: 'decision_request', podMessageId },
-          verdict: 'hold',
-          reason: cardHoldReason,
-        });
-      }
-      return;
-    }
-    if (!isRelayableIntegration(integration, podId)) return;
-    // /mute pauses ALL outbound relay to the chat, escalations included —
-    // mute means mute; /status shows it, and it self-expires.
-    const mutedUntil = (integration.config as { relayMutedUntil?: Date | string })?.relayMutedUntil;
-    if (mutedUntil && new Date(mutedUntil) > new Date()) {
-      if (opts.card && podMessageId) {
-        await channelVerdictService.record({
-          integrationId: integration._id,
-          ...(integration.installationId ? { installationId: integration.installationId } : {}),
-          podId,
-          provider: 'telegram',
-          event: { kind: 'decision_request', podMessageId },
-          verdict: 'hold',
-          reason: 'muted',
-        });
-      }
-      return;
-    }
-    if (!opts.card && !shouldEscalate({ content, agentUsername, integration, podId })) return;
-
+// the pod. The hold/mute/escalate ladder and the relayMap write are the shared
+// core's (chatRelay/chatRelayCore); this adapter owns what only Telegram knows:
+// its row shape, its HTML rendering, and the send.
+export const telegramRelayAdapter: ChatRelayAdapter<TelegramIntegrationDoc> = {
+  provider: 'telegram',
+  relayMapKey: 'tgMessageId',
+  findLiveIntegration,
+  isRelayableIntegration,
+  send: async ({
+    integration, podId, agentUsername, displayName, content, card, link,
+  }) => {
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = integration.config?.chatId;
-    if (!botToken || !chatId) return;
-
-    const base = publicAppUrl();
-    const link = opts.card && podMessageId
-      ? `${base}/v2/pods/${encodeURIComponent(podId)}?message=${encodeURIComponent(podMessageId)}`
-      : `${base}/v2/pods/${podId}`;
+    if (!botToken || !chatId) return null;
     const body = escapeHtml(String(content).slice(0, OUTBOUND_TEXT_CAP));
-    const text = opts.card
-      ? renderTelegramDecisionCard({ card: opts.card, displayName, agentUsername, link })
+    const text = card
+      ? renderTelegramDecisionCard({ card, displayName, agentUsername, link })
       : `[${escapeHtml(await podNameForTag(podId))}] <b>${escapeHtml(displayName || agentUsername)}</b>: ${body}`
         + `\n\n<a href="${link}">open in Commonly</a>`;
-
     const result = await telegramSend.sendMessage(botToken, chatId, text);
+    // A missing id used to return with no trace at all, so a blocked bot left
+    // the connector looking healthy while replies vanished (row D). The core
+    // now classifies it against the bound chat.
     const tgMessageId = result && result.messageId != null ? String(result.messageId) : null;
-    if (!tgMessageId) {
-      // The silent half of row D: this used to return with no trace at all, so a
-      // blocked bot left the connector looking healthy while replies vanished.
-      await deliveryFailures.noteBoundChatDeliveryFailure(integration, chatId, result);
-      return;
-    }
-
-    await IntegrationModel.findByIdAndUpdate(integration._id, {
-      $push: {
-        'config.relayMap': {
-          $each: [{ tgMessageId, agentUsername, podMessageId: podMessageId || null, podId }],
-          $slice: -RELAY_MAP_CAP,
-        },
-        ...(opts.card && podMessageId ? {
-          'config.cards': { podMessageId, tgMessageId, sentAt: new Date() },
-        } : {}),
-      },
-    });
-    if (opts.card && podMessageId) {
-      await channelVerdictService.record({
-        integrationId: integration._id,
-        ...(integration.installationId ? { installationId: integration.installationId } : {}),
-        podId,
-        provider: 'telegram',
-        event: { kind: 'decision_request', podMessageId },
-        verdict: 'interrupt',
-        reason: 'card',
-      });
-    }
-  } catch (err) {
-    console.warn('[tg-bridge] outbound relay failed:', (err as Error).message);
-  }
+    return { chatId, externalMessageId: tgMessageId, result };
+  },
+  logOutboundFailure: (err) => {
+    console.warn('[tg-bridge] outbound relay failed:', err.message);
+  },
 };
+
+// Fire-and-forget from AgentMessageService.postMessage — a bridge failure must
+// never fail the post itself.
+export const relayAgentMessageToTelegram = async (
+  opts: OutboundRelayOptions<TelegramIntegrationDoc>,
+): Promise<void> => relayAgentMessageThroughAdapter(telegramRelayAdapter, opts);
 
 // Inbound: Telegram message from a linked live-relay chat → pod message,
 // attributed to the integration's linked user, delivered through the same
@@ -546,106 +468,27 @@ export const relayTelegramMessageToPod = async (opts: {
     ? `📱 ${senderName} (via Telegram): ${routedText}`
     : `📱 (via Telegram): ${routedText}`;
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const User = require('../models/User');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const Pod = require('../models/Pod');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const PGMessage = require('../models/pg/Message');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const { deliverMessageToAgents } = require('./messageAgentDeliveryService');
-  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-  const socketConfig = require('../config/socket');
+  const author = await loadInboundAuthor({
+    podId,
+    linkedUserId: String(linkedUserId),
+    logPrefix: '[tg-bridge]',
+    onNotMember: () => replyNoActivePod(integration),
+  });
+  if (!author) return { relayed: false };
 
-  const pod = await Pod.findById(podId).select('type createdBy members').lean();
-  if (!pod || !isListedPodMember(pod, linkedUserId)) {
-    console.warn('[tg-bridge] inbound dropped — linked user is no longer a pod member');
-    await replyNoActivePod(integration);
-    return { relayed: false };
-  }
-  const linkedUser = await User.findById(linkedUserId).select('username profilePicture').lean();
-  if (!linkedUser) {
-    console.warn('[tg-bridge] inbound dropped — linked user missing');
-    return { relayed: false };
-  }
-
-  // Same heal the human routes perform: Mongo-only pods have no PG row and
-  // the insert would FK-fail.
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-    const PGPod = require('../models/pg/Pod');
-    const pgPodExists = await PGPod.findById(podId);
-    if (!pgPodExists) {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-      const { syncPodFromMongo } = require('./pgPodSyncService');
-      await syncPodFromMongo(podId, String(linkedUserId));
-    }
-  } catch (syncErr) {
-    console.warn('[tg-bridge] PG pod backfill skipped:', (syncErr as Error).message);
-  }
-
-  let threadRootId: number | null = null;
-  if (cardReply.lateReply?.threadRootId) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-    const { resolveThreadRoot } = require('./threadRootResolver');
-    threadRootId = await resolveThreadRoot({ podId, replyToMessageId, threadRootId: cardReply.lateReply.threadRootId });
-  }
-  const created = await PGMessage.create(
-    podId, String(linkedUserId), content, 'text', replyToMessageId, null, threadRootId,
-  );
-  let message: Record<string, unknown> = created;
-  try {
-    const populated = created?.id ? await PGMessage.findById(created.id) : null;
-    if (populated) message = populated;
-  } catch (readErr) {
-    console.warn('[tg-bridge] post-write read failed:', (readErr as Error).message);
-  }
-
-  // Past this point the pod row exists. A throw here would reach the webhook
-  // route, return non-2xx, and Telegram would redeliver — re-running
-  // PGMessage.create and duplicating both the message and every wake it
-  // triggers, because nothing dedupes on telegramMessage.message_id. Swallow
-  // instead: the record survives and a human can re-poke. Failures BEFORE the
-  // write are left to propagate, where the same redelivery is the repair.
-  try {
-    await deliverMessageToAgents({
-      podId,
-      podType: pod.type,
-      message,
-      userId: String(linkedUserId),
-      requestUser: { username: linkedUser.username },
-      replyToMessageId,
-    });
-  } catch (deliverErr) {
-    console.error('[tg-bridge] agent delivery failed after pod write:', (deliverErr as Error).message);
-  }
-
-  try {
-    const io = socketConfig.getIO();
-    if (io) {
-      io.to(`pod_${podId}`).emit('newMessage', {
-        _id: (message as { id?: unknown }).id,
-        id: (message as { id?: unknown }).id,
-        pod_id: podId,
-        podId,
-        content: (message as { content?: unknown }).content || content,
-        messageType: 'text',
-        userId: {
-          _id: linkedUserId,
-          username: linkedUser.username,
-          profilePicture: linkedUser.profilePicture,
-        },
-        username: linkedUser.username,
-        profile_picture: linkedUser.profilePicture,
-        createdAt: (message as { created_at?: unknown }).created_at || new Date(),
-        replyTo: replyToMessageId,
-        thread_root_id: (message as { thread_root_id?: unknown }).thread_root_id ?? threadRootId ?? replyToMessageId,
-        payload: null,
-      });
-    }
-  } catch (socketErr) {
-    console.warn('[tg-bridge] socket emit failed:', (socketErr as Error).message);
-  }
+  // Past the PG write, failures are swallowed by the core: nothing dedupes on
+  // telegramMessage.message_id, so a non-2xx here would make Telegram redeliver
+  // and duplicate both the message and every wake it triggers.
+  await writeInboundAsLinkedUser({
+    podId,
+    podType: author.pod.type,
+    linkedUserId: String(linkedUserId),
+    linkedUser: author.linkedUser,
+    content,
+    replyToMessageId,
+    lateReplyThreadRootId: cardReply.lateReply?.threadRootId,
+    logPrefix: '[tg-bridge]',
+  });
 
   return { relayed: true, routedAgent };
 };
@@ -658,6 +501,7 @@ module.exports = {
   renderTelegramDecisionCard,
   relayAgentMessageToTelegram,
   relayTelegramMessageToPod,
+  telegramRelayAdapter,
 };
 
 export {};

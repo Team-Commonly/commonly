@@ -19,6 +19,8 @@ const {
 } = require('../../services/webhookDeliveryService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
+import { applyRelayCommand } from '../../services/chatRelay/chatRelayCore';
+import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay/chatRelayCore';
 
 const router = express.Router({ mergeParams: true });
 
@@ -46,6 +48,17 @@ const UNMUTE_COMMAND = '/unmute';
 const HELP_COMMAND = '/help';
 
 const normalizeCommand = (raw = '') => raw.split('@')[0].toLowerCase();
+
+// Telegram's spelling of the shared bridge commands. `/mode` accepts any case
+// of its argument; `/mute` hands its argument to parseInt as typed.
+const parseTelegramRelayCommand = (command: string | null, arg?: string): RelayCommand | null => {
+  if (command === MODE_COMMAND) return { name: 'mode', arg: (arg || '').toLowerCase() };
+  if (command === STATUS_COMMAND) return { name: 'status' };
+  if (command === MUTE_COMMAND) return { name: 'mute', arg };
+  if (command === UNMUTE_COMMAND) return { name: 'unmute' };
+  if (command === HELP_COMMAND) return { name: 'help' };
+  return null;
+};
 
 const getMessageFromUpdate = (update: any) => update?.message || update?.channel_post || null;
 
@@ -351,64 +364,53 @@ const HELP_TEXT = [
   '/summary — summarize recent chat here into the pod',
 ].join('\n');
 
-// /mode [mirror|attention] — the two relay modes are one stored flag:
-// mirror ⇔ config.relayAllAgentMessages. Attention mode leaves the
-// escalation gate (markers + lead agent) as the only path to the phone.
-const handleModeCommand = async (chat: any, integration: any, arg?: string) => {
-  const chatId = chat?.id?.toString();
-  if (!integration) return sendToChat(chatId, NOT_LINKED);
-  const current = integration.config?.relayAllAgentMessages === true ? 'mirror' : 'attention';
-  const wanted = (arg || '').toLowerCase();
-  if (!wanted) {
-    return sendToChat(chatId, `Relay mode: <b>${current}</b>. Switch with /mode mirror or /mode attention.`);
+// The bridge commands' state changes are the shared chat-relay core's
+// (applyRelayCommand); what stays here is Telegram's spelling — `/mode`, the
+// arg lowercased — and its HTML replies.
+const telegramCommandReply = (outcome: RelayCommandOutcome, podName?: string): string => {
+  switch (outcome.kind) {
+    case 'not-linked':
+      return NOT_LINKED;
+    case 'help':
+      return HELP_TEXT;
+    case 'mode-show':
+      return `Relay mode: <b>${outcome.mode}</b>. Switch with /mode mirror or /mode attention.`;
+    case 'mode-usage':
+      return 'Usage: /mode mirror | attention';
+    case 'mode-set':
+      return outcome.mode === 'mirror'
+        ? 'Mode: <b>mirror</b> — every agent message in the pod is copied here.'
+        : 'Mode: <b>attention</b> — only escalations and the lead agent reach you.';
+    case 'mute':
+      return `Muted for ${outcome.minutes} min — nothing relays here until then. /unmute to resume.`;
+    case 'unmute':
+      return 'Unmuted — relay resumes.';
+    case 'status': {
+      const muted = outcome.mutedUntil
+        ? `muted until ${outcome.mutedUntil.toISOString().slice(11, 16)} UTC`
+        : 'not muted';
+      return [
+        `Pod: <b>${escapeHtml(podName || 'unknown')}</b>`,
+        `Mode: <b>${outcome.mode}</b> · Relay: ${outcome.liveRelay ? 'on' : 'off'} · ${muted}`,
+        outcome.lead ? `Lead agent: ${escapeHtml(outcome.lead)}` : null,
+      ].filter(Boolean).join('\n');
+    }
+    default:
+      return HELP_TEXT;
   }
-  if (wanted !== 'mirror' && wanted !== 'attention') {
-    return sendToChat(chatId, 'Usage: /mode mirror | attention');
+};
+
+// Attention mode leaves the escalation gate (markers + lead agent) as the only
+// path to the phone; /status reads the active pod, so it needs one first.
+const handleRelayCommand = async (chat: any, integration: any, command: RelayCommand) => {
+  const chatId = chat?.id?.toString();
+  if (command.name === 'status' && integration && !integration.podId) {
+    return sendToChat(chatId, 'This connector has no active pod. Choose one in Commonly first.');
   }
-  await Integration.findByIdAndUpdate(integration._id, {
-    $set: { 'config.relayAllAgentMessages': wanted === 'mirror' },
-  });
-  return sendToChat(chatId, wanted === 'mirror'
-    ? 'Mode: <b>mirror</b> — every agent message in the pod is copied here.'
-    : 'Mode: <b>attention</b> — only escalations and the lead agent reach you.');
-};
-
-const handleStatusCommand = async (chat: any, integration: any) => {
-  const chatId = chat?.id?.toString();
-  if (!integration) return sendToChat(chatId, NOT_LINKED);
-  if (!integration.podId) return sendToChat(chatId, 'This connector has no active pod. Choose one in Commonly first.');
-  const pod = await Pod.findById(integration.podId).lean();
-  const mode = integration.config?.relayAllAgentMessages === true ? 'mirror' : 'attention';
-  const mutedUntil = integration.config?.relayMutedUntil;
-  const muted = mutedUntil && new Date(mutedUntil) > new Date()
-    ? `muted until ${new Date(mutedUntil).toISOString().slice(11, 16)} UTC`
-    : 'not muted';
-  const lead = integration.config?.leadAgentUsername;
-  return sendToChat(chatId, [
-    `Pod: <b>${escapeHtml(pod?.name || 'unknown')}</b>`,
-    `Mode: <b>${mode}</b> · Relay: ${integration.config?.liveRelay ? 'on' : 'off'} · ${muted}`,
-    lead ? `Lead agent: ${escapeHtml(lead)}` : null,
-  ].filter(Boolean).join('\n'));
-};
-
-const handleMuteCommand = async (chat: any, integration: any, arg?: string) => {
-  const chatId = chat?.id?.toString();
-  if (!integration) return sendToChat(chatId, NOT_LINKED);
-  const minutes = Math.min(Math.max(parseInt(arg || '60', 10) || 60, 1), 24 * 60);
-  const until = new Date(Date.now() + minutes * 60_000);
-  await Integration.findByIdAndUpdate(integration._id, {
-    $set: { 'config.relayMutedUntil': until },
-  });
-  return sendToChat(chatId, `Muted for ${minutes} min — nothing relays here until then. /unmute to resume.`);
-};
-
-const handleUnmuteCommand = async (chat: any, integration: any) => {
-  const chatId = chat?.id?.toString();
-  if (!integration) return sendToChat(chatId, NOT_LINKED);
-  await Integration.findByIdAndUpdate(integration._id, {
-    $unset: { 'config.relayMutedUntil': '' },
-  });
-  return sendToChat(chatId, 'Unmuted — relay resumes.');
+  const outcome = applyRelayCommand(command, integration);
+  if ('update' in outcome) await Integration.findByIdAndUpdate(integration._id, outcome.update);
+  const pod = outcome.kind === 'status' ? await Pod.findById(integration.podId).lean() : null;
+  return sendToChat(chatId, telegramCommandReply(outcome, pod?.name));
 };
 
 // Dedup TTL: Telegram redelivers an unacked update for well under this window;
@@ -480,28 +482,9 @@ router.post('/', telegramWebhookRateLimit, async (req: any, res: any) => {
       return res.sendStatus(200);
     }
 
-    if (command === MODE_COMMAND) {
-      await handleModeCommand(chat, integration, args[0]);
-      return res.sendStatus(200);
-    }
-
-    if (command === STATUS_COMMAND) {
-      await handleStatusCommand(chat, integration);
-      return res.sendStatus(200);
-    }
-
-    if (command === MUTE_COMMAND) {
-      await handleMuteCommand(chat, integration, args[0]);
-      return res.sendStatus(200);
-    }
-
-    if (command === UNMUTE_COMMAND) {
-      await handleUnmuteCommand(chat, integration);
-      return res.sendStatus(200);
-    }
-
-    if (command === HELP_COMMAND) {
-      await sendToChat(chatId, HELP_TEXT);
+    const relayCommand = parseTelegramRelayCommand(command, args[0]);
+    if (relayCommand) {
+      await handleRelayCommand(chat, integration, relayCommand);
       return res.sendStatus(200);
     }
 
