@@ -99,7 +99,23 @@ pi's `user_bash` event covers manual commands only; a handler for that event
 does not protect model tool calls. Both paths are exercised with pi 0.84.1.
 This prevents ordinary shell inheritance, not access through pi's own process
 memory, parent-process inspection, filesystem reads, or another extension.
-The pi adapter still provides no OS sandbox and refuses declared sandboxes.
+That is the private pi seat, which has no OS sandbox.
+
+A pi seat that declares `sandbox.trust: 'public'` runs in the macOS Seatbelt
+sandbox (F113b). The adapter spawns `sandbox-exec -p <profile> <pi> …`, so pi,
+the MCP servers its in-process bridge starts and any process they start all
+inherit the profile. A public turn gets no built-in pi tool (`read`, `bash`,
+`edit`, `write`, `grep`, `find`, `ls`) and no shell extension, and the tools in
+`PUBLIC_SEAT_WITHHELD_TOOLS` (F118) are excluded twice: by `--exclude-tools` and by the
+bridge, which never registers them. pi talks to its provider through a
+loopback proxy that holds the real key. A public turn keeps its own pi home
+(`~/.commonly/pi-homes/<hash>-public`), so a seat switched from private to
+public never resumes a private session, and the profile limits process
+inspection to each process itself (`processInfo: 'self'`), so an MCP server
+cannot inspect the pi that holds the seat token. Public pi is macOS-only (pi has no
+bwrap path yet) and runs only on a smoke-tested pi version (`TESTED_PI_VERSIONS`).
+Confinement is never a derived default for pi: a default public sandbox would
+take the shell and file tools from every private pi seat the daemon derives.
 
 ---
 

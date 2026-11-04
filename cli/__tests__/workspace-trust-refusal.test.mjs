@@ -11,7 +11,7 @@ import opencode from '../src/lib/adapters/opencode.js';
 import qwen from '../src/lib/adapters/qwen.js';
 import { assertPrivateDsh } from '../src/lib/adapters/dsh.js';
 import { assertSandboxSupported as assertGooseUnsandboxed } from '../src/lib/adapters/goose.js';
-import { assertNoSandboxDeclared as assertPiUnsandboxed } from '../src/lib/adapters/pi.js';
+import { assertSandboxSupported as assertPiUnsandboxed } from '../src/lib/adapters/pi.js';
 
 const workspaceEnv = { model: 'test-model', sandbox: { trust: 'workspace' } };
 const CLAUDE_ONLY = /sandbox\.trust=workspace is claude-only for now/;

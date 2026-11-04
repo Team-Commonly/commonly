@@ -13,7 +13,7 @@ import {
   withDefaultMcpServer,
   withDefaultSandbox,
 } from '../src/lib/default-environment.js';
-import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
+import { assertSandboxSupported } from '../src/lib/adapters/pi.js';
 import { assertSandboxSupported as assertGooseSandboxSupported } from '../src/lib/adapters/goose.js';
 
 describe('defaultMcpServers', () => {
@@ -38,7 +38,7 @@ describe('defaultMcpServers', () => {
     expect([...ADAPTERS_WITH_DEFAULT_MCP].sort()).toEqual(['claude', 'codex', 'dsh', 'goose', 'opencode', 'pi', 'qwen']);
   });
 
-  test('ADAPTERS_WITH_DEFAULT_SANDBOX is the enforcing subset, pi excluded', () => {
+  test('ADAPTERS_WITH_DEFAULT_SANDBOX is the derived-default subset, pi excluded', () => {
     expect([...ADAPTERS_WITH_DEFAULT_SANDBOX].sort()).toEqual(['claude', 'codex', 'opencode', 'qwen']);
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('goose')).toBe(false);
@@ -210,17 +210,16 @@ describe('seatBaseline', () => {
     expect(seatBaseline(once, 'codex', { sandbox: true })).toBe(once);
   });
 
-  // The sandbox half is written for the adapters that can enforce it, and NOT
-  // for every adapter that consumes mcp[]. pi fails closed on a declared
-  // sandbox (#1727), so a baseline carrying one is a seat that cannot start —
-  // the invariant is not "no sandbox key" but "the spec this adapter receives
-  // is one this adapter accepts", which is what is asserted here by running the
-  // derived value through pi's own guard rather than by inspecting a key.
+  // The sandbox half is written for the adapters that take it as a default, and
+  // NOT for every adapter that consumes mcp[]. pi confines an explicitly public
+  // seat (F113b), but a derived public default would strip the shell and file
+  // tools from every fleet pi seat the daemon derives, so pi gets the mcp half
+  // only. The derived value is run through pi's own guard as well.
   test('gives pi the mcp half only, and a spec its own guard accepts', () => {
     const derived = seatBaseline(null, 'pi', { sandbox: true });
     expect(derived.sandbox).toBeUndefined();
     expect(derived).toEqual({ mcp: [commonlyMcpServer()] });
-    expect(() => assertNoSandboxDeclared(derived)).not.toThrow();
+    expect(() => assertSandboxSupported(derived)).not.toThrow();
     // The control: the same baseline handed to an enforcing adapter does carry
     // it, so the absence above is the adapter set and not a missing default.
     expect(seatBaseline(null, 'claude', { sandbox: true }).sandbox)

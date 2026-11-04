@@ -86,8 +86,9 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
 
   test('that same record is still refused on an adapter that cannot honour it', () => {
     // The support check moved into the derivation must not become a no-op.
+    // (pi was the witness here until it gained Seatbelt in F113b.)
     expect(() => resolveAttachSandbox({
-      environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'pi',
+      environment: { sandbox: { mode: 'workspace', trust: 'internal' } }, adapterName: 'stub',
     })).toThrow(/requires public trust and an adapter with sandbox enforcement/);
   });
 
@@ -103,19 +104,33 @@ describe('resolveAttachSandbox — the sandbox an attach runs under (TASK-113)',
     expect(resolveAttachSandbox({ environment, adapterName: 'goose', platform: 'linux' }))
       .toEqual({ mode: 'bwrap', trust: 'public' });
     // Enforcement is still required: a Goose mode with no confined trust stays
-    // refused, and pi, which enforces nothing, stays refused under public trust.
+    // refused.
     expect(() => resolveAttachSandbox({
       environment: { sandbox: { mode: 'workspace' } }, adapterName: 'goose',
     })).toThrow(/sandbox enforcement/);
+  });
+
+  test('a public pi seat attaches under the Seatbelt sandbox its adapter now enforces (F113b)', () => {
+    // pi runs a public turn as sandbox-exec around pi itself (adapters/pi.js),
+    // so the gate admits it the way it admits Goose: on an explicit public
+    // declaration, not as a derived default.
+    expect(resolveAttachSandbox({
+      environment: { model: 'm', sandbox: { trust: 'public' } }, adapterName: 'pi', platform: 'darwin',
+    })).toEqual({ mode: 'workspace', trust: 'public' });
+    expect(resolveAttachSandbox({
+      environment: { model: 'm', sandbox: { trust: 'public', mode: 'read-only' } }, adapterName: 'pi', platform: 'darwin',
+    })).toEqual({ mode: 'read-only', trust: 'public' });
+    // A mode with no confined trust is still refused for pi.
     expect(() => resolveAttachSandbox({
-      environment: { sandbox: { trust: 'public' } }, adapterName: 'pi', platform: 'darwin',
+      environment: { sandbox: { mode: 'workspace' } }, adapterName: 'pi', platform: 'darwin',
     })).toThrow(/sandbox enforcement/);
   });
 
-  test('the enforcement set is the default-sandbox set plus Goose, and never pi', () => {
+  test('the enforcement set is the default-sandbox set plus Goose and pi; pi is never a derived default', () => {
     expect([...ADAPTERS_WITH_SANDBOX_ENFORCEMENT].sort())
-      .toEqual([...ADAPTERS_WITH_DEFAULT_SANDBOX, 'goose'].sort());
-    expect(ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has('pi')).toBe(false);
+      .toEqual([...ADAPTERS_WITH_DEFAULT_SANDBOX, 'goose', 'pi'].sort());
+    expect(ADAPTERS_WITH_SANDBOX_ENFORCEMENT.has('pi')).toBe(true);
+    expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('pi')).toBe(false);
   });
 
   test('an explicit mode is taken as declared, and a public one is guarded', () => {

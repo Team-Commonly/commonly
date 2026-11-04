@@ -27,9 +27,9 @@ import { CREDENTIAL_FILE_VAR, CREDENTIAL_KEY } from '../credential-file.js';
 
 /**
  * The grant broker's path. wren's ruling for the daemon-side half of TASK-063:
- * pi confines on no host — `pi.js assertNoSandboxDeclared` refuses a DECLARED
- * sandbox and nothing ever derives one — so a grant broker must not reach a pi
- * seat by ANY route: not the server's projection (the backend refuses it there
+ * pi is not approved to confine a granter's authority (a public pi runs in
+ * Seatbelt since F113b, but grant-broker confinement is claude and codex only),
+ * so a grant broker must not reach a pi seat by ANY route: not the server's projection (the backend refuses it there
  * too), and not an older backend that still projects it, which is this layer's
  * job. Keyed on the PATH and not on the entry's `name`, because the name is
  * whatever the declaration says while the path is the broker's. A url that does
@@ -541,6 +541,18 @@ export const isStdioServer = (s) => Array.isArray(s?.command) && s.command.lengt
   && !(typeof s?.url === 'string' && s.url.length > 0);
 export const isHttpServer = (s) => typeof s?.url === 'string' && s.url.length > 0
   && !(Array.isArray(s?.command) && s.command.length > 0);
+
+/**
+ * The tools the bridge may register for one server: all of them, minus the
+ * entry's `withheldTools`. pi.js sets that list on a public seat
+ * (PUBLIC_SEAT_WITHHELD_TOOLS), so a withheld Commonly tool is never registered with
+ * pi at all; pi's own `--exclude-tools` removes the same names as a second
+ * layer.
+ */
+export const registrableTools = (tools, server) => {
+  const withheld = new Set(Array.isArray(server?.withheldTools) ? server.withheldTools : []);
+  return withheld.size ? tools.filter((tool) => !withheld.has(tool?.name)) : tools;
+};
 
 export const readServers = (raw) => {
   if (!raw) return [];

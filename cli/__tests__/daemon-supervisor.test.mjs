@@ -14,7 +14,7 @@ import {
   reconnectDelayMs,
   MAX_CONCURRENT_AGENT_STARTS,
 } from '../src/lib/daemon-supervisor.js';
-import { assertNoSandboxDeclared } from '../src/lib/adapters/pi.js';
+import { assertSandboxSupported } from '../src/lib/adapters/pi.js';
 import claude from '../src/lib/adapters/claude.js';
 
 const record = {
@@ -278,18 +278,16 @@ describe('tick', () => {
     await supervisor.tick();
     const record = saveToken.mock.calls[0][1];
     expect(record.adapter).toBe('pi');
-    // The kernel MCP server (TASK-048), and NO sandbox: pi fails closed on a
-    // declared sandbox (#1727), so the both-halves assertion that used to sit
-    // here pinned a record whose own adapter refuses to start — the seat would
-    // have died on every spawn with 'public-trust seats are not supported'.
-    // The sandbox half is asserted for claude in 'the baseline a seat nobody
-    // authored gets' below, which is where the enforcing adapters are covered.
+    // The kernel MCP server (TASK-048), and NO derived sandbox: pi confines
+    // only an explicitly public seat (F113b), so a seat the daemon derives keeps
+    // the private shape it had. The sandbox half is asserted for claude in 'the
+    // baseline a seat nobody authored gets' below.
     expect(record.environment).toEqual({
       model: 'deepseek-v4-flash',
       effort: 'high',
       mcp: [expect.objectContaining({ name: 'commonly', command: ['npx', '-y', '@commonlyai/mcp@latest'] })],
     });
-    expect(() => assertNoSandboxDeclared(record.environment)).not.toThrow();
+    expect(() => assertSandboxSupported(record.environment)).not.toThrow();
   });
 
   test('an adapter with no mcp consumption path still invents no environment', async () => {
