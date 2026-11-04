@@ -9,14 +9,8 @@ import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
 import { createHash } from 'crypto';
 import daemonAuth, { DaemonAuthedRequest } from '../middleware/daemonAuth';
-import { GRANT_BROKER_ID, GRANT_BROKER_URL } from '../services/installable/toolInstallables';
-import { GrantBrokerRefusal, grantBrokerRefusal } from '../services/grantBrokerConfinement';
-import { namingLiftsFor, namingLiftsRefusal } from '../services/byoGrantNaming';
 import { KERNEL_RUN_RUNTIME_TYPES } from '../services/configWriteGuard';
-import {
-  grantBrokerServer,
-  selectLiveGrantsForIdentities,
-} from '../services/grantBrokerProjectionService';
+import { GrantProjectionIdentity, grantServersForIdentities } from '../services/seatGrantBrokerProjection';
 import {
   projectSeatEnvironments,
   seatEnvironmentKey,
@@ -62,93 +56,11 @@ const bindingRateLimit = rateLimit({
 const normalize = (v: unknown): string => String(v ?? '').trim().toLowerCase();
 
 
-type AssignedIdentity = { _id?: unknown; botMetadata?: Record<string, unknown> };
-type AssignmentEntry = { podIds: string[]; environment: Record<string, unknown> | null; runtime?: unknown };
+type AssignedIdentity = GrantProjectionIdentity;
 
-/**
- * Project live room grants into a daemon assignment. Grants are capabilities,
- * not installation config: querying them means revoke and expiry take effect on
- * the next daemon poll without rewriting every AgentInstallation. Which grants
- * a seat has is not decided here — `selectLiveGrantsForIdentities` owns that
- * predicate and the hosted run path (TASK-132) asks the same question, so a
- * seat cannot be handed a capability one path projects and the other withholds.
- * What stays here is the daemon's own shape: the environment-confined refusal
- * and the MCP server naming.
- *
- * The grant is external reach, so it is only injected into an environment that
- * can confine it: a seat whose declaration no host would confine gets NO
- * broker servers and a typed refusal instead (TASK-063 — fail closed rather
- * than hand a seat a capability it cannot be held to). The refusal is a
- * top-level field on the assignment row, never inside `environment`, because
- * that object is spec-validated and handed to the adapter as-is.
- */
-type IdentityGrantProjection = { servers: Record<string, unknown>[]; refusal: GrantBrokerRefusal | null };
-const grantServersForIdentities = async (
-  identities: AssignedIdentity[],
-  entries: Map<string, AssignmentEntry>,
-): Promise<Map<string, IdentityGrantProjection>> => {
-  const identityIds = identities
-    .map((identity) => String(identity._id || ''))
-    .filter(Boolean);
-  if (!identityIds.length) return new Map();
-
-  // One predicate for both delivery paths (TASK-132): the daemon projects for
-  // every pod the seat is installed in, and a hosted run passes only its own
-  // pod. Neither path decides for itself what "live, audience, target" means.
-  const liveGrants = await selectLiveGrantsForIdentities({
-    identityIds,
-    podIds: Array.from(new Set(Array.from(entries.values()).flatMap((entry) => entry.podIds))),
-  });
-  if (!liveGrants.size) return new Map();
-
-  const output = new Map<string, IdentityGrantProjection>();
-  for (const identityId of identityIds) {
-    const grants = liveGrants.get(identityId) || [];
-    const entry = identities
-      .find((identity) => String(identity._id || '') === identityId);
-    const meta = entry?.botMetadata || {};
-    const key = `${normalize(meta.agentName)}\0${normalize(meta.instanceId) || 'default'}`;
-    const assigned = entries.get(key);
-    if (!assigned) continue;
-    const existingMcp = Array.isArray(assigned.environment?.mcp) ? assigned.environment.mcp : [];
-    const usedNames = new Set(
-      existingMcp
-        // The builtin component is a template only; once a live grant exists,
-        // replace that placeholder entry with the grant-specific URL below.
-        .filter((server: Record<string, unknown>) => !(
-          server?.name === GRANT_BROKER_ID && server?.url === GRANT_BROKER_URL
-        ))
-        .map((server: Record<string, unknown>) => server?.name)
-        .filter((name: unknown): name is string => typeof name === 'string'),
-    );
-    const refusal = grantBrokerRefusal(assigned.environment, assigned.runtime);
-    const servers: Record<string, unknown>[] = [];
-    let refused = false;
-    for (const grant of grants) {
-      const grantId = typeof grant.grantId === 'string' ? grant.grantId : '';
-      if (!grantId) continue;
-      // F94: a grant that names this seat (its owner's own agent, with consent)
-      // rides even when the seat cannot confine it.
-      // eslint-disable-next-line no-await-in-loop
-      const byoNamed = namingLiftsRefusal(refusal) && await namingLiftsFor(grant, identityId);
-      if (refusal && !byoNamed) {
-        // The grant is live and applies to this seat; the seat cannot be held
-        // to it, so it is withheld rather than projected unenforced.
-        refused = true;
-        continue;
-      }
-
-      let serverName = GRANT_BROKER_ID;
-      if (usedNames.has(serverName)) serverName = `${GRANT_BROKER_ID}-${grantId}`;
-      usedNames.add(serverName);
-      servers.push(grantBrokerServer(grantId, serverName, { byoNamed }));
-    }
-    if (servers.length || refused) {
-      output.set(identityId, { servers, refusal: refused ? refusal : null });
-    }
-  }
-  return output;
-};
+// The per-seat grant projection lives in services/seatGrantBrokerProjection.ts,
+// shared with the run-path read (GET /api/agents/runtime/grant-brokers, F150),
+// so a daemon seat and an `agent run` seat get one answer.
 
 // Ownership predicate — SOLE-INSTALLER. Shared with
 // the token routes since 2026-10-14; see services/runtimeIdentityOwnership.ts.

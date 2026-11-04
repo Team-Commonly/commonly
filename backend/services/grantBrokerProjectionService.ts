@@ -2,8 +2,9 @@
  * One definition of "which live grants does this seat have, and what does it
  * receive from them", shared by the two delivery paths:
  *
- *  - the daemon's assignment projection (`routes/agentBinding.ts`), which hands
- *    a seat an MCP server per live grant, and
+ *  - the BYO seat projection (`services/seatGrantBrokerProjection.ts`), which
+ *    hands a seat an MCP server per live grant through the daemon's /assigned
+ *    or, for `commonly agent run` with no daemon, GET /runtime/grant-brokers, and
  *  - a hosted native run (`services/nativeRuntimeService.ts`), which hands the
  *    model the same grants as function tools dispatched in process.
  *

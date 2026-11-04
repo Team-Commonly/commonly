@@ -47,7 +47,7 @@ const add = (base: string, routeClass: RouteClass, methodsAndPaths: string[], re
 };
 const runtime = '/api/agents/runtime';
 add(runtime, 'read', [
-  'GET /installations', 'GET /events', 'GET /pods/:podId/context', 'GET /pods/:podId/messages',
+  'GET /installations', 'GET /grant-brokers', 'GET /events', 'GET /pods/:podId/context', 'GET /pods/:podId/messages',
   'GET /pods/:podId/files', 'GET /pods/:podId/files/:fileName/content', 'GET /pods/:podId/posts',
   'GET /memory', 'GET /pods', 'GET /pods/:podId/integrations',
   'GET /pods/:podId/skills', 'GET /pods/:podId/send-freshness',
