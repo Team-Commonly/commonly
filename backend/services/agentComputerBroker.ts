@@ -75,7 +75,9 @@ const configured: ComputerConfig = {
 
 // Steel takes no credentials of its own, so its pod runs a token gate in front
 // of it (agentComputerSteelGate.ts). Every API call and the CDP connection
-// carry this header; nothing else in the cluster holds the token.
+// carry this header. The backend holds the token for this broker, and so does
+// ops-runner, which carries the backend's env for operator scripts. No other
+// workload's env has it, though any that can read the namespace's Secrets can.
 const steelAuthorization = (): Record<string, string> => ({
   Authorization: `Bearer ${process.env.AGENT_COMPUTER_STEEL_TOKEN || ''}`,
 });

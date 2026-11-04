@@ -1,0 +1,49 @@
+name: Agent computer browser probe
+
+# Attacks the agent computer's browser from a page and fails if the chart's
+# Chrome policy lets a request reach loopback (scripts/agent-computer-steel-probe.sh).
+# It runs on any branch push that touches the chart's browser, its policy, the
+# image pin or the probe. It isn't a required check.
+on:
+  push:
+    paths:
+      - k8s/helm/commonly/templates/agent-computer/**
+      - k8s/helm/commonly/files/agent-computer/**
+      - k8s/helm/commonly/values.yaml
+      - scripts/agent-computer-steel-probe.*
+      - .github/workflows/agent-computer-steel-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-computer-steel-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      YQ_VERSION: v4.44.3
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.0
+
+      - name: Install yq
+        run: |
+          curl -sSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" -o yq
+          chmod +x yq
+          sudo mv yq /usr/local/bin/yq
+          yq --version
+
+      - name: Attack the browser from a page
+        run: bash scripts/agent-computer-steel-probe.sh
