@@ -10,12 +10,13 @@ const mockInstallation = {
 };
 
 let mockAuthorizedPodIds = ['pod-1'];
+let mockInstallations = null;
 let mockPods = [{ _id: 'pod-1', name: 'Connector room', type: 'team' }];
 
 jest.mock('../../../middleware/agentRuntimeAuth', () => (req, _res, next) => {
   req.agentUser = { _id: 'agent-1', username: 'writer' };
   req.agentInstallation = mockInstallation;
-  req.agentInstallations = [mockInstallation];
+  req.agentInstallations = mockInstallations || [mockInstallation];
   req.agentAuthorizedPodIds = mockAuthorizedPodIds;
   next();
 });
@@ -100,6 +101,23 @@ describe('GET /installations runtime adapter projection', () => {
       expect(silent.body.runtimeSourcePodId).toBeNull();
     } finally {
       mockInstallation.config = config;
+    }
+  });
+
+  // An auto-joined row (installedBy the agent itself) copies the source's
+  // config but is never what Settings reads, even when it is the oldest.
+  test('the source skips a row the agent installed itself', async () => {
+    mockInstallations = [
+      { _id: 'a1', podId: 'pod-auto', instanceId: 'writer', status: 'active', installedBy: 'agent-1',
+        config: { runtime: { runtimeType: 'webhook', adapter: 'codex' }, environment: { model: 'auto-model' } } },
+      { _id: 'b2', podId: 'pod-1', instanceId: 'writer', status: 'active', installedBy: 'owner-1',
+        config: { runtime: { runtimeType: 'webhook', adapter: 'codex' } } },
+    ];
+    try {
+      const response = await request(app).get('/api/agents/runtime/installations');
+      expect(response.body.runtimeSourcePodId).toBe('pod-1');
+    } finally {
+      mockInstallations = null;
     }
   });
 

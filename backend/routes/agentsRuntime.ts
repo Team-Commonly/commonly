@@ -613,8 +613,13 @@ router.get('/installations', phase4RateLimit, agentRuntimeAuth, async (req: any,
     // D247: the installation Settings reads the model and effort from, by the
     // daemon projection's rule: the oldest active one that declares a seat.
     // A listener uses this row's controls only, so it runs what Settings shows.
+    // Settings reads the owner's rows only, so a row this agent installed
+    // itself (an auto-join copies the source's config) never counts.
+    const agentUserId = req.agentUser?._id ? String(req.agentUser._id) : null;
     const source = [...installations]
-      .filter((inst: any) => (inst?.status || 'active') === 'active' && declaresSeat(inst?.config))
+      .filter((inst: any) => (inst?.status || 'active') === 'active'
+        && (!agentUserId || String(inst?.installedBy || '') !== agentUserId)
+        && declaresSeat(inst?.config))
       .sort((a: any, b: any) => String(a?._id || '').localeCompare(String(b?._id || '')))[0];
     const runtimeSourcePodId = source?.podId ? String(source.podId) : null;
 
