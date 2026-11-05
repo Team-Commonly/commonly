@@ -378,12 +378,12 @@ describe('BYO listener snippet', () => {
       expect(mcpBox()).toMatch(/-- npx -y @commonlyai\/mcp$/);
     });
 
-    // Say only what is tested on Linux: CI with a stand-in model, no person's walk.
+    // Say only what is walked on Linux: the API-key scratch-folder setup (run 41945040493); the rest is CI or untested.
     test('Linux with Claude Code: the reach note says how far it has been tested, and the login rule', async () => {
       setUserAgent(LINUX);
       await issueToken();
       const reach = screen.getByTestId('byo-listen-reach');
-      expect(reach).toHaveTextContent(/The scratch-folder setup has been checked in CI with a stand-in model; no one has run either setup end to end on Linux yet/);
+      expect(reach).toHaveTextContent(/On Nov 5 we ran the scratch-folder setup on a fresh Ubuntu machine against Commonly, with an API key, and it answered its first @mention\. On your own login it has been checked only in CI, and no one has run the project-folder setup end to end on Linux yet/);
       expect(reach).toHaveTextContent(/run \/login in Claude Code/);
       // The CLI's workspace seat copies a login and drops ANTHROPIC_API_KEY (claude.js),
       // and refuses --allow anywhere else (agent.js, firstRunWorkspace).

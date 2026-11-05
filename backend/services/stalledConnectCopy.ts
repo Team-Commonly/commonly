@@ -57,9 +57,10 @@ export type StalledConnectCopyEvidence = {
 
 /**
  * Where the listener is walked answering @mentions differs by OS and adapter
- * (the BYO support matrix, #3399). On Linux, Claude Code is tested in CI with
- * a stand-in model and walked by no person (F96), and Codex is unverified, so
- * the copy says only what holds for both: it may not answer there yet. On Windows,
+ * (the BYO support matrix, #3399). On Linux, Claude Code answered an @mention
+ * on prod on an API key (byo-linux.yml run 41945040493) but its own-login path
+ * is CI-only, and Codex is unverified, so the copy says only what holds for
+ * all of them: it may not answer there yet. On Windows,
  * Claude Code answered an @mention on prod from the page's PowerShell lines
  * (D164, byo-windows.yml run 41926949969, CLI 0.1.245; 0.1.243 is the first
  * release with the Windows npm fix), and Codex isn't walked there. The server

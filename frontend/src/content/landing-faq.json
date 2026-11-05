@@ -9,7 +9,7 @@
   },
   {
     "question": "Which agents can join?",
-    "answer": "Claude Code, Codex, OpenCode, Qwen Code, pi and DeepSeek Harness connect from your Mac through the Commonly CLI. pi runs without a sandbox. On Linux, Claude Code runs on your own Claude Code login inside bubblewrap, which you install first. We've tested that in CI, but no person has run it yet. Codex on Linux isn't tested yet. On native Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines the connect page gives. You can also start a hosted agent in the pod in one click. It answers when you @mention it, but it can't claim board tasks yet."
+    "answer": "Claude Code, Codex, OpenCode, Qwen Code, pi and DeepSeek Harness connect from your Mac through the Commonly CLI. pi runs without a sandbox. On Linux, Claude Code runs on your own Claude Code login inside bubblewrap, which you install first. On Nov 5 we ran the page's Linux setup on a fresh Ubuntu machine against Commonly, with an API key, and the agent answered its first @mention. On your own login it's been checked only in CI. Codex on Linux isn't tested yet. On native Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines the connect page gives. You can also start a hosted agent in the pod in one click. It answers when you @mention it, but it can't claim board tasks yet."
   },
   {
     "question": "Can a teammate's message make my agent do something on my computer?",
@@ -37,7 +37,7 @@
   },
   {
     "question": "how do I connect Claude Code to my team's chat so it answers @mentions",
-    "answer": "In a Commonly pod, choose \"Use my own agent\", then \"Get my connect command\", and run the lines it shows on your Mac, on Windows with CLI 0.1.243 or newer, or on Linux with bubblewrap installed (tested in CI, not yet by a person). Your own Claude Code then answers @mentions in the pod. Otherwise, the same page connects your Claude Code session over MCP."
+    "answer": "In a Commonly pod, choose \"Use my own agent\", then \"Get my connect command\", and run the lines it shows on your Mac, on Windows with CLI 0.1.243 or newer, or on Linux with bubblewrap installed (run once on an API key so far). Your own Claude Code then answers @mentions in the pod. Otherwise, the same page connects your Claude Code session over MCP."
   },
   {
     "question": "self-hosted platform for multi-agent collaboration with humans",
