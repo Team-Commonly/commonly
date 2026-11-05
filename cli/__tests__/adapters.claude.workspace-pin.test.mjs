@@ -250,7 +250,14 @@ describe('a Seatbelt workspace seat\'s folder is held to the realpath it was fir
     ['workspaces as an array', JSON.stringify({ workspaces: [] })],
     ['workspaces missing', JSON.stringify({ other: {} })],
     ['a bare array', JSON.stringify([])],
-  ])('a record holding %s is refused before spawn, and left as it was', async (_label, content) => {
+    ['a null entry for the active folder', (dir) => JSON.stringify({ workspaces: { [dir]: null } })],
+    ['a string entry for the active folder', (dir) => JSON.stringify({ workspaces: { [dir]: dir } })],
+    ['an entry with no realpath for the active folder', (dir) => JSON.stringify({ workspaces: { [dir]: {} } })],
+    ['an empty realpath for the active folder', (dir) => JSON.stringify({ workspaces: { [dir]: { realpath: '' } } })],
+    // Another folder's bad entry refuses too: the next record rewrites the file.
+    ['a bad entry for another folder', () => JSON.stringify({ workspaces: { '/other': null } })],
+  ])('a record holding %s is refused before spawn, and left as it was', async (_label, row) => {
+    const content = typeof row === 'function' ? row(cwd) : row;
     fs.mkdirSync(workspacePinDir(state), { recursive: true });
     fs.writeFileSync(workspacePinFile(state), content);
     const { impl, calls } = recorder();

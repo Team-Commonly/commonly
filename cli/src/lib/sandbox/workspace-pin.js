@@ -38,6 +38,8 @@ const isInsideOrEqual = (child, parent) => {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 };
 
+const isEntry = (entry) => typeof entry?.realpath === 'string' && entry.realpath.length > 0;
+
 const readRecord = async (file) => {
   let stat;
   try {
@@ -55,7 +57,9 @@ const readRecord = async (file) => {
   try {
     const parsed = JSON.parse(await readFile(file, 'utf8'));
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
-      || typeof parsed.workspaces !== 'object' || !parsed.workspaces || Array.isArray(parsed.workspaces)) {
+      || typeof parsed.workspaces !== 'object' || !parsed.workspaces || Array.isArray(parsed.workspaces)
+      // Every entry, not only this folder's: the next record rewrites the file.
+      || !Object.values(parsed.workspaces).every(isEntry)) {
       throw new Error('bad shape');
     }
     return parsed;
