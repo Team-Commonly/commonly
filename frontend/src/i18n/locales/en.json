@@ -1068,7 +1068,7 @@
       "items": {
         "claudeCode": {
           "name": "Claude Code",
-          "label": "Mac, and Linux in invite-only pods"
+          "label": "Mac; Linux tested in CI only"
         },
         "codex": {
           "name": "Codex",
