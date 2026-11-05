@@ -484,6 +484,12 @@ slack:
   oauth:
     enabled: true
 
+# The grant broker's PR path on the public Commonly Connect App (F172, #3481).
+# Turned on 2026-11-05 after the App gained Contents and Pull requests write and
+# both api-keys secrets had an enabled version. Issues stay read-only on Connect.
+githubConnectApp:
+  enabled: true
+
 # Google Calendar credentials are on (2026-11-03, D239), but the tile stays
 # hidden below. Wren found on 2026-10-14 that OAuth works and every tool call
 # then fails Google's Workspace MCP Developer Preview gate, which is per Cloud
