@@ -25,7 +25,7 @@ describe('a workspace seat\'s record of its folder, under Seatbelt (F200)', () =
   let workspace;
   let state;
   let pinFile;
-  const RECORD = '{"workspaces":{}}\n';
+  const RECORD = '{"realpath":"/somewhere"}\n';
 
   const attempt = (op, { workspacePath = workspace, deny = true } = {}) => {
     const argv = wrapArgvWithSeatbelt([
@@ -48,7 +48,7 @@ describe('a workspace seat\'s record of its folder, under Seatbelt (F200)', () =
     root = realpathSync(mkdtempSync(join(tmpdir(), 'commonly-workspace-pin-seatbelt-')));
     workspace = join(root, 'project');
     state = join(root, 'state');
-    pinFile = workspacePinFile(state);
+    pinFile = workspacePinFile(state, workspace);
     mkdirSync(workspace);
     mkdirSync(state);
     mkdirSync(join(root, 'elsewhere'));

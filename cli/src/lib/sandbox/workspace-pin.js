@@ -17,35 +17,41 @@
  * denies writes to it by name, and bwrap never binds it. A workspace that
  * contains it is refused.
  *
+ * Each folder has its own record file, created once and never rewritten: a
+ * staged copy is hard-linked to the final name, which fails if the name is
+ * taken. So two turns recording at once cannot lose each other's record, and
+ * two that disagree about one folder cannot both pass.
+ *
  * Recording happens on the first turn, not at attach: attach does not know
  * the seat's state folder, and no turn of the seat runs between attach and its
  * first turn. A seat that already ran before this check existed is recorded on
  * its first turn after the update.
  */
 import {
-  lstat, mkdir, readFile, realpath, rename, rm, writeFile,
+  link, lstat, mkdir, readFile, realpath, rm, writeFile,
 } from 'fs/promises';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import {
   basename, dirname, isAbsolute, join, relative, resolve,
 } from 'path';
 
 export const workspacePinDir = (statePath) => join(dirname(statePath), 'workspace-pins');
-export const workspacePinFile = (statePath) => join(workspacePinDir(statePath), `${basename(statePath)}.json`);
+export const workspacePinFile = (statePath, cwd) => {
+  const folder = createHash('sha256').update(resolve(cwd)).digest('hex').slice(0, 16);
+  return join(workspacePinDir(statePath), `${basename(statePath)}-${folder}.json`);
+};
 
 const isInsideOrEqual = (child, parent) => {
   const rel = relative(parent, child);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 };
 
-const isEntry = (entry) => typeof entry?.realpath === 'string' && entry.realpath.length > 0;
-
 const readRecord = async (file) => {
   let stat;
   try {
     stat = await lstat(file);
   } catch (err) {
-    if (err?.code === 'ENOENT') return { workspaces: {} };
+    if (err?.code === 'ENOENT') return null;
     throw err;
   }
   const unreadable = (why) => new Error(
@@ -56,27 +62,27 @@ const readRecord = async (file) => {
   if (!stat.isFile()) throw unreadable('is not a regular file');
   try {
     const parsed = JSON.parse(await readFile(file, 'utf8'));
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
-      || typeof parsed.workspaces !== 'object' || !parsed.workspaces || Array.isArray(parsed.workspaces)
-      // Every entry, not only this folder's: the next record rewrites the file.
-      || !Object.values(parsed.workspaces).every(isEntry)) {
-      throw new Error('bad shape');
-    }
+    if (typeof parsed?.realpath !== 'string' || !parsed.realpath) throw new Error('bad shape');
     return parsed;
   } catch {
     throw unreadable('cannot be read');
   }
 };
 
-const writeRecord = async (file, record) => {
+// True when this call created the record, false when another had already. The
+// final name appears only complete, because it is a link to a finished copy.
+const createRecord = async (file, record, { _writeFile = writeFile } = {}) => {
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
   const staged = join(dirname(file), `.${basename(file)}.${randomUUID()}.tmp`);
   try {
-    await writeFile(staged, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    await rename(staged, file);
+    await _writeFile(staged, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+    await link(staged, file);
+    return true;
   } catch (err) {
-    await rm(staged, { force: true });
+    if (err?.code === 'EEXIST') return false;
     throw err;
+  } finally {
+    await rm(staged, { force: true });
   }
 };
 
@@ -90,22 +96,28 @@ const changed = ({ given, current, recorded, file }) => new Error(
 
 /**
  * Compare the folder's realpath with the one recorded for it, recording it
- * when there is none. Returns the realpath to grant, or null when a folder
- * with no record does not exist (nothing to resolve; the grant then names the
- * path as given).
+ * when there is none, and return the realpath to grant. A folder that does not
+ * resolve is refused, recorded or not: the run loop makes the folder before
+ * each turn, so there is nothing here to grant.
+ *
+ * `_realpath` and `_writeFile` are test seams.
  */
-export const holdWorkspaceRealpath = async ({ cwd, statePath, log = (line) => console.warn(line) }) => {
+export const holdWorkspaceRealpath = async ({
+  cwd, statePath, log = (line) => console.warn(line), _realpath = realpath, _writeFile = writeFile,
+}) => {
   const given = resolve(cwd);
-  const file = workspacePinFile(statePath);
+  const file = workspacePinFile(statePath, given);
   let current;
   try {
-    current = await realpath(given);
+    current = await _realpath(given);
   } catch {
-    // Missing, or a link to nowhere. Nothing is recorded for it; a folder that
-    // was recorded and no longer resolves is refused like any other change.
-    const entry = (await readRecord(file)).workspaces[given];
+    // Missing, or a link to nowhere.
+    const entry = await readRecord(file);
     if (entry) throw changed({ given, current: 'nothing', recorded: entry.realpath, file });
-    return null;
+    throw new Error(
+      `refusing a workspace turn: ${given} does not resolve to a folder. `
+      + 'Create the folder or point the agent at one, and run the turn again.',
+    );
   }
   const pinDir = workspacePinDir(statePath);
   let realPinDir = pinDir;
@@ -124,16 +136,19 @@ export const holdWorkspaceRealpath = async ({ cwd, statePath, log = (line) => co
       + 'which the agent must not be able to write. Point the agent at a project folder instead.',
     );
   }
-  const record = await readRecord(file);
-  const entry = record.workspaces[given];
-  if (entry) {
-    if (entry.realpath !== current) throw changed({ given, current, recorded: entry.realpath, file });
+  const held = async (entry) => {
+    if (entry?.realpath !== current) {
+      throw changed({ given, current, recorded: entry?.realpath ?? 'nothing', file });
+    }
     return current;
-  }
-  await writeRecord(file, {
-    ...record,
-    workspaces: { ...record.workspaces, [given]: { realpath: current, recordedAt: new Date().toISOString() } },
-  });
+  };
+  const existing = await readRecord(file);
+  if (existing) return held(existing);
+  const created = await createRecord(file, {
+    workspace: given, realpath: current, recordedAt: new Date().toISOString(),
+  }, { _writeFile });
+  // Another turn recorded it first: this turn answers to that record.
+  if (!created) return held(await readRecord(file));
   // Once per folder: a seat that ran before this check is recorded as its
   // folder resolves now, which the operator should confirm.
   log(`[claude] workspace: recorded ${given} → ${current}`);

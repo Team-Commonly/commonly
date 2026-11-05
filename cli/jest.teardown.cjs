@@ -1,4 +1,4 @@
-const { rmSync, rmdirSync } = require('node:fs');
+const { readdirSync, rmSync, rmdirSync } = require('node:fs');
 const { basename, dirname, join } = require('node:path');
 
 // setupFiles creates one isolated MCP home per test file. Remove that home
@@ -9,11 +9,15 @@ afterAll(() => {
   if (tempDirs) {
     for (const tempDir of tempDirs) {
       rmSync(tempDir, { recursive: true, force: true });
-      // A temp dir used as a workspace seat's state folder gets its folder
-      // record beside it (F200, sandbox/workspace-pin.js), outside the dir.
+      // A temp dir used as a workspace seat's state folder gets one record per
+      // folder beside it (F200, sandbox/workspace-pin.js), outside the dir.
       const pins = join(dirname(tempDir), 'workspace-pins');
-      rmSync(join(pins, `${basename(tempDir)}.json`), { force: true });
-      try { rmdirSync(pins); } catch { /* absent, or still holds another file's record */ }
+      try {
+        for (const name of readdirSync(pins)) {
+          if (name.startsWith(`${basename(tempDir)}-`)) rmSync(join(pins, name), { force: true });
+        }
+        rmdirSync(pins);
+      } catch { /* absent, or still holds another file's record */ }
     }
     delete globalThis.__commonlyTempDirsForCleanup;
   }

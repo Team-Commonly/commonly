@@ -1776,12 +1776,15 @@ describe('claude adapter — a workspace seat on Linux', () => {
     await linuxSpawn(impl, { trust: 'workspace', allow: ['write'] });
 
     const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
-    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')], [cwd, cwd]]);
+    // The source is the checked realpath (F200); tmpdir is itself a link on macOS.
+    const realCwd = fs.realpathSync(cwd);
+    const realGit = fs.realpathSync(gitDir);
+    expect(flagTriples(outer, '--bind')).toEqual([[state, state], [path.join(state, '.claude'), path.join(state, '.claude')], [path.join(state, 'tmp'), path.join(state, 'tmp')], [realCwd, cwd]]);
     // Strict, not -try: a .git that vanished must stop bwrap, not go unbound.
-    expect(flagTriples(outer, '--ro-bind')).toContainEqual([gitDir, gitDir]);
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([realGit, gitDir]);
     // .git is bound after the project, so it lands on top of it.
     const bindAt = (flag, p) => outer.findIndex((arg, i) => arg === flag && outer[i + 1] === p);
-    expect(bindAt('--ro-bind', gitDir)).toBeGreaterThan(bindAt('--bind', cwd));
+    expect(bindAt('--ro-bind', realGit)).toBeGreaterThan(bindAt('--bind', realCwd));
   });
 
   test('a write grant on a project with no .git refuses, and creates nothing in it', async () => {
@@ -1809,7 +1812,7 @@ describe('claude adapter — a workspace seat on Linux', () => {
     const { impl, calls } = childImpl();
     await linuxSpawn(impl);
     const outer = calls[0].args.slice(0, calls[0].args.indexOf('--'));
-    expect(flagTriples(outer, '--ro-bind')).toContainEqual([cwd, cwd]);
+    expect(flagTriples(outer, '--ro-bind')).toContainEqual([fs.realpathSync(cwd), cwd]);
     expect(fs.readdirSync(cwd)).toEqual([]);
   });
 
