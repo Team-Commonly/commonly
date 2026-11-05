@@ -67,7 +67,7 @@ const row = (overrides = {}) => ({
 // effects never finished; these tests have none of the latter.
 const sweepFinds = (lapsed) => mockApproval.find.mockImplementation((query) => (
   query.status === 'expired'
-    ? { select: () => ({ limit: () => ({ lean: async () => [] }) }) }
+    ? { select: () => ({ sort: () => ({ limit: () => ({ lean: async () => [] }) }) }) }
     : Promise.resolve(lapsed)));
 
 beforeEach(() => {

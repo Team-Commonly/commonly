@@ -383,26 +383,41 @@ depends on the last of them.
 - **The flip stays the decision.** `findOneAndUpdate({ _id, status: 'flagged' }, { status:
   'expired', … })` decides who expires the row. The side effects come after it and cannot
   undo it.
-- **A marker, written last.** `expirySideEffectsDoneAt` is set only after every side effect
-  succeeds. A row that is `expired` without the marker crashed or failed midway.
+- **Steps run independently; a marker is written last.** The trail, the wake and the card each
+  run whether or not another failed, so a failing card never holds back the wake the parked
+  runs wait on. `expirySideEffectsDoneAt` is set only when all of them succeeded; otherwise the
+  attempt throws one error naming every failed step. A row that is `expired` without the marker
+  crashed or failed midway.
 - **Opt rows in with the flip.** The same flip writes `expiryRetryCount: 0`. The retry selects
   `expiryRetryCount: { $lt: MAX_EXPIRY_RETRIES }`, which a missing field never matches, so rows
   closed before F202 are never re-run.
-- **A grace before retrying.** The retry takes only rows whose `resolvedAt` is more than
-  `EXPIRY_RETRY_GRACE_MS` (1 min) old, so it never doubles an expiry still in progress.
-- **Claim each attempt by compare-and-set.** `$inc: { expiryRetryCount: 1 }` filtered on the
-  count just read: two sweepers cannot retry one row at once, and the count caps the retries.
-  The sweep logs an error and stops selecting a row after the last one.
+- **Backoff, and a lease from it.** A row is due once `max(resolvedAt, expiryRetryClaimedAt)` is
+  older than `EXPIRY_RETRY_GRACE_MS * 2^expiryRetryCount` (1 min, doubling, at most an hour per
+  step); `expiryRetryDueAt` computes it. The claim is one conditional write on the count and the
+  claim time the sweeper read, stamping a new `expiryRetryClaimedAt` and bumping the count: a
+  sweeper that read the same row loses the claim, and one that reads it afterwards finds it not
+  yet due. An attempt slower than its wait can overlap the next one; that is tolerable only
+  because every step is safe to repeat. `MAX_EXPIRY_RETRIES` (11) spans about six hours, then the
+  sweep logs an error and stops selecting the row.
+- **An operator way back from the cap.** `backend/scripts/retry-capped-approval-expiries.ts`
+  lists capped rows (expired, no marker, count at the cap) on a dry run, and with an explicit
+  `--apply` resets their count to 0 so the next sweep retries them. It refuses any other argument.
 - **Every side effect must be safe to repeat.** The trail row's id is derived from the approval
   and the reason, so a second insert hits the primary key. The record dedupes on its event key.
-  The card rewrites the same payload. The wake is stamped on the row (`expiryEventSentAt`) right
-  after it is enqueued and skipped once stamped. The stamp lives on the approval because
-  `AgentEvent` rows are collected after about 30 minutes, inside the retry window; an existing
-  `approval.resolved` event for the approval is a second guard.
+  The card rewrites the same payload. The wake is sent at least once, with a narrow overlap
+  window. An attempt takes a lease on it (`expiryEventClaimedAt`, set by a conditional write while
+  `expiryEventSentAt` is null and the lease is unset or older than `EXPIRY_WAKE_CLAIM_LEASE_MS`,
+  2 min), enqueues, then stamps `expiryEventSentAt`. A failed enqueue clears the lease only if it
+  is still that attempt's. A crashed sender's lease expires and a later retry sends. While another
+  attempt holds a fresh lease the step fails, so the row is not marked done before the wake is
+  known sent. A crash after the send but before the stamp is covered by an existing
+  `approval.resolved` event for the approval; the overlap window is a send that stalls past its
+  lease, or that crash found after the event row is collected (about 30 minutes). The stamp
+  itself does not depend on `AgentEvent` retention.
 
-Fields: `expiryRetryCount` (Number), `expirySideEffectsDoneAt` (Date) and `expiryEventSentAt`
-(Date), on `tool_call` rows only. Index `tool_call_expiry_retry`: `{ status, actionType, resolvedAt }`, partial on
-`expiryRetryCount: { $exists: true }`.
+Fields, on `tool_call` rows only: `expiryRetryCount` (Number), `expiryRetryClaimedAt` (Date),
+`expirySideEffectsDoneAt` (Date), `expiryEventSentAt` (Date) and `expiryEventClaimedAt` (Date). Index `tool_call_expiry_retry`:
+`{ status, actionType, resolvedAt }`, partial on `expiryRetryCount: { $exists: true }`.
 
 ### PostgreSQL Indexes
 

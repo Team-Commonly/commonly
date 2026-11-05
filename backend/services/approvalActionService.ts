@@ -1442,23 +1442,94 @@ const executeApprovedToolCall = async (
 };
 
 /**
- * F202: how long an `expired` row may lack its side-effect marker before the
- * sweep treats the expiry as crashed and re-runs them. A live expiry finishes
- * in well under a second; the grace keeps the sweep from doubling one.
+ * F202: the first wait before an expiry is retried, and the base of the
+ * backoff. A live expiry finishes in well under a second.
  */
 export const EXPIRY_RETRY_GRACE_MS = 60 * 1000;
-/** F202: retries per expired row before the sweep stops and logs it as stuck. */
-export const MAX_EXPIRY_RETRIES = 5;
+/** F202: the longest wait between two retries of one row. */
+export const EXPIRY_RETRY_MAX_DELAY_MS = 60 * 60 * 1000;
+/**
+ * F202: retries per expired row before the sweep stops and logs it as stuck.
+ * With the backoff (1, 2, 4, 8, 16, 32 minutes, then hourly) eleven retries
+ * span about six hours. A row at the cap is put back by
+ * `scripts/retry-capped-approval-expiries.ts`.
+ */
+export const MAX_EXPIRY_RETRIES = 11;
+
+/**
+ * When an incomplete expiry may next be retried: its last attempt (the flip,
+ * or the latest retry claim) plus `grace * 2^retries`, at most an hour. The
+ * wait is also the lease: a sweeper before it neither selects nor claims the
+ * row.
+ */
+export const expiryRetryDueAt = (row: {
+  resolvedAt?: Date | null; expiryRetryClaimedAt?: Date | null; expiryRetryCount?: number | null;
+}): Date => {
+  const last = Math.max(
+    row.resolvedAt ? new Date(row.resolvedAt).getTime() : 0,
+    row.expiryRetryClaimedAt ? new Date(row.expiryRetryClaimedAt).getTime() : 0,
+  );
+  const delay = Math.min(EXPIRY_RETRY_GRACE_MS * 2 ** Number(row.expiryRetryCount || 0), EXPIRY_RETRY_MAX_DELAY_MS);
+  return new Date(last + delay);
+};
+
+/** F202: how long one attempt's claim on the expiry wake holds before another may send it. */
+export const EXPIRY_WAKE_CLAIM_LEASE_MS = 2 * 60 * 1000;
+
+/**
+ * The expiry's wake, sent at least once. An attempt first takes a lease on it
+ * (`expiryEventClaimedAt`, only while unsent and unclaimed or claimed more
+ * than EXPIRY_WAKE_CLAIM_LEASE_MS ago), then enqueues, then stamps
+ * `expiryEventSentAt`. A failed enqueue clears the lease, only if it is still
+ * this attempt's. A crash after the claim leaves a lease that expires, so a
+ * later retry sends. A crash after the send but before the stamp is covered by
+ * the `AgentEvent` check in the enqueue; past that event row's retention, the
+ * run can be woken twice. While another attempt holds a fresh lease this one
+ * throws, so the row stays incomplete until the wake is known sent.
+ */
+const sendToolCallExpiryWake = async (row: IApprovalAction): Promise<void> => {
+  const claimedAt = new Date();
+  const claimed = await ApprovalAction.findOneAndUpdate(
+    {
+      _id: row._id,
+      expiryEventSentAt: null,
+      $or: [
+        { expiryEventClaimedAt: null },
+        { expiryEventClaimedAt: { $lte: new Date(claimedAt.getTime() - EXPIRY_WAKE_CLAIM_LEASE_MS) } },
+      ],
+    },
+    { $set: { expiryEventClaimedAt: claimedAt } },
+  );
+  if (!claimed) {
+    const current = await ApprovalAction.findById(row._id).select('expiryEventSentAt').lean() as
+      { expiryEventSentAt?: Date } | null;
+    if (current?.expiryEventSentAt) return;
+    throw new Error('another attempt holds the wake claim');
+  }
+  try {
+    await enqueueToolCallResolvedEvent(row, undefined, undefined, { strict: true });
+  } catch (error) {
+    await ApprovalAction.updateOne(
+      { _id: row._id, expiryEventClaimedAt: claimedAt },
+      { $unset: { expiryEventClaimedAt: 1 } },
+    );
+    throw error;
+  }
+  await ApprovalAction.updateOne(
+    { _id: row._id, expiryEventSentAt: null },
+    { $set: { expiryEventSentAt: new Date() } },
+  );
+};
 
 /**
  * Everything an expiry owes after the row flips to `expired`: the inbox item,
- * the refusal trail, the stored ending, the record, the card and the wake to
- * every parked run. Each step is safe to repeat (F202): the trail id derives
- * from the approval, the record dedupes on its event key, the card rewrites
- * the same payload, and the wake is skipped once `expiryEventSentAt` is
- * stamped (or its event row still exists). The marker is
- * written only after all of them, so a crash anywhere leaves the row for the
- * sweep's retry. Throws when a step fails.
+ * the refusal trail and stored ending, the record, the wake to every parked
+ * run, and the card. Each step is safe to repeat (F202): the trail id derives
+ * from the approval, the record dedupes on its event key, the wake is leased
+ * on the row and stamped once sent, and the card rewrites the same payload. The steps run
+ * independently, so a failing card never holds back the wake the parked runs
+ * wait on. The marker is written only when all of them succeeded; otherwise
+ * this throws one error naming every failure, and the sweep retries the row.
  */
 const completeToolCallExpiry = async (row: IApprovalAction): Promise<void> => {
   // eslint-disable-next-line global-require
@@ -1466,18 +1537,27 @@ const completeToolCallExpiry = async (row: IApprovalAction): Promise<void> => {
   await resolveExpiredAttention('approval_action', row._id);
   row.toolCallEnding = 'expired';
   row.toolCallCode = 'approval_expired';
-  row.toolCallTrailId = await recordToolCallDecision(row, 'refused', 'approval_expired');
-  await row.save();
-  recordApprovalOutcome(row, row.toolCall, { kind: 'expired' });
-  await updateCardEverywhere(row, { strict: true });
-  if (!row.expiryEventSentAt) {
-    await enqueueToolCallResolvedEvent(row, undefined, undefined, { strict: true });
-    // Stamped on the row because AgentEvent rows are collected after about
-    // 30 minutes, inside the retry window; the event check is a second guard.
-    await ApprovalAction.updateOne(
-      { _id: row._id, expiryEventSentAt: null },
-      { $set: { expiryEventSentAt: new Date() } },
-    );
+  const failures: Array<{ step: string; error: unknown }> = [];
+  const step = async (name: string, run: () => Promise<void>): Promise<void> => {
+    try {
+      await run();
+    } catch (error) {
+      failures.push({ step: name, error });
+    }
+  };
+  // Derived, so the wake and the card can name the trail row even when its
+  // write fails here and lands on a retry.
+  row.toolCallTrailId = row.toolCall ? decisionCallId(String(row._id), 'approval_expired') : undefined;
+  await step('trail', async () => {
+    await recordToolCallDecision(row, 'refused', 'approval_expired');
+    await row.save();
+    recordApprovalOutcome(row, row.toolCall, { kind: 'expired' });
+  });
+  await step('wake', () => sendToolCallExpiryWake(row));
+  await step('card', () => updateCardEverywhere(row, { strict: true }));
+  if (failures.length) {
+    throw new AggregateError(failures.map((f) => f.error), `expiry steps failed: ${failures
+      .map((f) => `${f.step} (${(f.error as Error)?.message || String(f.error)})`).join('; ')}`);
   }
   await ApprovalAction.updateOne({ _id: row._id }, { $set: { expirySideEffectsDoneAt: new Date() } });
 };
@@ -1526,25 +1606,39 @@ const expireToolCallApproval = async (
  * F202: re-run the side effects of expiries that flipped the row but never
  * finished (a crash or a failed step after the flip). Every other sweep
  * selects `flagged`, so without this a parked run waits on such a row forever.
- * Each attempt is claimed by bumping `expiryRetryCount` from the value read,
- * so two sweepers never retry one row at once, and the count caps the retries.
+ * A row is due at `expiryRetryDueAt`, which backs off per retry. Each attempt
+ * claims the row with one conditional write on the count and the claim time
+ * it read, stamping a new `expiryRetryClaimedAt` and bumping the count, so a
+ * second sweeper that read the same row loses the claim, and one that reads it
+ * afterwards finds it not yet due. An attempt slower than its wait can overlap
+ * the next one; every step is safe to repeat and the wake has its own lease,
+ * so the overlap costs a repeated card write, and a second wake only when a
+ * send stalls past that lease. The count caps the retries.
  */
 const retryIncompleteToolCallExpiries = async (now: Date): Promise<number> => {
-  const pending = {
+  const incomplete = {
     status: 'expired',
     actionType: 'tool_call',
     expiryRetryCount: { $lt: MAX_EXPIRY_RETRIES },
     expirySideEffectsDoneAt: null,
-    resolvedAt: { $lte: new Date(now.getTime() - EXPIRY_RETRY_GRACE_MS) },
   };
-  const rows = await ApprovalAction.find(pending).select('_id expiryRetryCount').limit(100)
-    .lean() as Array<{ _id: unknown; expiryRetryCount: number }>;
+  // The first wait is the shortest, so nothing flipped inside it can be due.
+  const candidates = await ApprovalAction.find({
+    ...incomplete, resolvedAt: { $lte: new Date(now.getTime() - EXPIRY_RETRY_GRACE_MS) },
+  }).select('_id resolvedAt expiryRetryClaimedAt expiryRetryCount').sort({ resolvedAt: 1 }).limit(500)
+    .lean() as Array<{ _id: unknown; resolvedAt: Date; expiryRetryClaimedAt?: Date; expiryRetryCount: number }>;
+  const rows = candidates.filter((one) => expiryRetryDueAt(one).getTime() <= now.getTime());
   let completed = 0;
   for (const one of rows) {
     // eslint-disable-next-line no-await-in-loop
     const claimed = await ApprovalAction.findOneAndUpdate(
-      { ...pending, _id: one._id, expiryRetryCount: one.expiryRetryCount },
-      { $inc: { expiryRetryCount: 1 } },
+      {
+        ...incomplete,
+        _id: one._id,
+        expiryRetryCount: one.expiryRetryCount,
+        expiryRetryClaimedAt: one.expiryRetryClaimedAt || null,
+      },
+      { $inc: { expiryRetryCount: 1 }, $set: { expiryRetryClaimedAt: now } },
       { new: true },
     );
     if (!claimed) continue;
@@ -1557,7 +1651,8 @@ const retryIncompleteToolCallExpiries = async (now: Date): Promise<number> => {
       const message = (error as Error).message;
       if (attempts >= MAX_EXPIRY_RETRIES) {
         console.error(`[approval] expiry side effects gave up approval=${String(claimed._id)} `
-          + `after ${attempts} retries; its trail, card or wake may be missing:`, message);
+          + `after ${attempts} retries; its trail, card or wake may be missing. Once the cause is fixed, `
+          + 'requeue it with backend/scripts/retry-capped-approval-expiries.ts --apply:', message);
       } else {
         console.warn(`[approval] expiry retry ${attempts} failed approval=${String(claimed._id)}:`, message);
       }

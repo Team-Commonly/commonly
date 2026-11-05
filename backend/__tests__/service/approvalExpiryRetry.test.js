@@ -62,9 +62,12 @@ const AgentEvent = require('../../models/AgentEvent');
 const ApprovalAction = require('../../models/ApprovalAction');
 const ToolCall = require('../../models/ToolCall');
 const AgentEventService = require('../../services/agentEventService');
+const attention = require('../../services/attentionItemService');
 const {
-  sweepExpiredToolCallApprovals, resolveApproval, EXPIRY_RETRY_GRACE_MS, MAX_EXPIRY_RETRIES,
+  sweepExpiredToolCallApprovals, resolveApproval, EXPIRY_RETRY_GRACE_MS, MAX_EXPIRY_RETRIES, expiryRetryDueAt,
+  EXPIRY_WAKE_CLAIM_LEASE_MS,
 } = require('../../services/approvalActionService');
+const retryCappedScript = require('../../scripts/retry-capped-approval-expiries');
 
 jest.setTimeout(60000);
 
@@ -99,6 +102,24 @@ const eventsFor = (row) => AgentEvent.find({ type: 'approval.resolved', 'payload
 const cardFor = async (row) => (await Message.findById(row.messageId).lean()).payload;
 const reread = (row) => ApprovalAction.findById(row._id).lean();
 const realEnqueue = AgentEventService.enqueue.getMockImplementation();
+const deferred = () => {
+  let release;
+  const promise = new Promise((resolve) => { release = resolve; });
+  return { promise, release };
+};
+// Hold the next completion at its first step (the inbox resolve) until released.
+const gateNextCompletion = () => {
+  const gate = deferred();
+  const reached = deferred();
+  attention.resolve.mockImplementationOnce(async () => { reached.release(); await gate.promise; });
+  // Fail fast, not at the suite timeout, when no completion ever reaches the gate.
+  const timeout = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('no completion reached the gate')), 5000).unref();
+  });
+  return { reached: Promise.race([reached.promise, timeout]), release: gate.release };
+};
+// Sweep at the moment the row next becomes due, as the cron eventually would.
+const sweepWhenDue = async (row) => sweepExpiredToolCallApprovals(expiryRetryDueAt(await reread(row)));
 const failWakeOnce = () => AgentEventService.enqueue.mockImplementationOnce(async () => {
   throw new Error('event store down');
 });
@@ -117,6 +138,10 @@ beforeEach(async () => {
   await Message.deleteMany({});
   ToolCall.rows.clear();
   jest.clearAllMocks();
+  // clearAllMocks keeps queued Once implementations; a gate a failing test never
+  // consumed must not hold the next test's completion.
+  attention.resolve.mockReset();
+  attention.resolve.mockImplementation(async () => undefined);
 });
 
 describe('F202: expiry side effects survive a failure after the status flip', () => {
@@ -182,18 +207,140 @@ describe('F202: expiry side effects survive a failure after the status flip', ()
     }
   });
 
-  it('two sweepers racing on one crashed expiry retry it once', async () => {
+  it('a second sweeper inside the claim lease neither claims the row nor wakes the run again', async () => {
     const row = await park();
     failWakeOnce();
     const now = new Date();
     await sweepExpiredToolCallApprovals(now);
     const later = new Date(now.getTime() + EXPIRY_RETRY_GRACE_MS + MINUTE);
 
-    await Promise.all([sweepExpiredToolCallApprovals(later), sweepExpiredToolCallApprovals(later)]);
+    // The first retry claims the row and is held mid-completion...
+    const held = gateNextCompletion();
+    const first = sweepExpiredToolCallApprovals(later);
+    await held.reached;
+    expect((await reread(row)).expiryRetryCount).toBe(1);
+    // ...while a second sweeper, half a grace later, tries the same row.
+    await sweepExpiredToolCallApprovals(new Date(later.getTime() + EXPIRY_RETRY_GRACE_MS / 2));
+    expect((await reread(row)).expiryRetryCount).toBe(1);
+    expect(attention.resolve).toHaveBeenCalledTimes(2); // the first expiry, then the held retry
+    held.release();
+    await first;
+
     const stored = await reread(row);
     expect(stored.expiryRetryCount).toBe(1);
+    expect(stored.expiryRetryClaimedAt).toEqual(later);
     expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+    // One failed send on the first expiry, one successful send on the retry.
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(2);
     expect(await eventsFor(row)).toHaveLength(1);
+  });
+
+  it('a wake another attempt already claimed is not sent again', async () => {
+    const row = await park();
+    failWakeOnce();
+    const now = new Date();
+    await sweepExpiredToolCallApprovals(now);
+    expect((await reread(row)).expiryEventSentAt).toBeUndefined(); // the failed send released its claim
+
+    const held = gateNextCompletion();
+    const retry = sweepExpiredToolCallApprovals(new Date(now.getTime() + EXPIRY_RETRY_GRACE_MS + MINUTE));
+    await held.reached;
+    // An overlapping attempt claims the wake while this one holds a row read before that.
+    await ApprovalAction.updateOne({ _id: row._id }, { $set: { expiryEventSentAt: new Date() } });
+    held.release();
+    await retry;
+
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1); // only the first, failed send
+    expect((await reread(row)).expirySideEffectsDoneAt).toBeInstanceOf(Date);
+  });
+
+  it('an existing wake event stops a resend even when the stamp is missing', async () => {
+    const row = await park();
+    const now = new Date();
+    await sweepExpiredToolCallApprovals(now);
+    expect(await eventsFor(row)).toHaveLength(1);
+    // A crash after the send but before the stamp, found after the wake lease lapsed.
+    await ApprovalAction.updateOne({ _id: row._id }, {
+      $unset: { expirySideEffectsDoneAt: 1, expiryEventSentAt: 1 },
+      $set: { expiryEventClaimedAt: new Date(Date.now() - EXPIRY_WAKE_CLAIM_LEASE_MS - 1000) },
+    });
+
+    await sweepExpiredToolCallApprovals(new Date(now.getTime() + EXPIRY_RETRY_GRACE_MS + MINUTE));
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(await eventsFor(row)).toHaveLength(1);
+    expect((await reread(row)).expirySideEffectsDoneAt).toBeInstanceOf(Date);
+  });
+
+  // An expired row whose first attempt took the wake lease at `claimedAt` and
+  // then crashed: no stamp, no event row, no marker, due for a retry.
+  const crashedHoldingTheWake = async (claimedAt) => {
+    const row = await park();
+    await ApprovalAction.updateOne({ _id: row._id }, {
+      $set: {
+        status: 'expired',
+        toolCallEnding: 'expired',
+        resolvedAt: new Date(Date.now() - 60 * MINUTE),
+        expiryRetryCount: 0,
+        expiryEventClaimedAt: claimedAt,
+      },
+    });
+    return row;
+  };
+
+  it('a stale wake lease from a crashed attempt is taken over, and the wake is sent once', async () => {
+    const row = await crashedHoldingTheWake(new Date(Date.now() - EXPIRY_WAKE_CLAIM_LEASE_MS - 1000));
+    await sweepExpiredToolCallApprovals(new Date());
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+    expect(await eventsFor(row)).toHaveLength(1);
+    const stored = await reread(row);
+    expect(stored.expiryEventSentAt).toBeInstanceOf(Date);
+    expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+
+    await ApprovalAction.updateOne({ _id: row._id }, { $unset: { expirySideEffectsDoneAt: 1 } });
+    await sweepWhenDue(row);
+    expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('a fresh wake lease held by another attempt is not sent over, and the row stays incomplete', async () => {
+    const row = await crashedHoldingTheWake(new Date(Date.now() - 10 * 1000));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await sweepExpiredToolCallApprovals(new Date());
+    } finally {
+      warn.mockRestore();
+    }
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+    const stored = await reread(row);
+    expect(stored.expiryRetryCount).toBe(1);
+    expect(stored.expiryEventSentAt).toBeUndefined();
+    expect(stored.expirySideEffectsDoneAt).toBeUndefined();
+  });
+
+  it('a card that never writes does not hold back the wake, and is retried until the cap', async () => {
+    const row = await park();
+    const write = jest.spyOn(Message, 'updateOne').mockRejectedValue(new Error('card store down'));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await sweepExpiredToolCallApprovals(new Date());
+      expect(await eventsFor(row)).toHaveLength(1);
+      expect((await reread(row)).expiryEventSentAt).toBeInstanceOf(Date);
+
+      for (let i = 1; i <= MAX_EXPIRY_RETRIES + 1; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await sweepWhenDue(row);
+      }
+      const stored = await reread(row);
+      expect(stored.expiryRetryCount).toBe(MAX_EXPIRY_RETRIES);
+      expect(stored.expirySideEffectsDoneAt).toBeUndefined();
+      expect(write).toHaveBeenCalledTimes(1 + MAX_EXPIRY_RETRIES);
+      expect(AgentEventService.enqueue).toHaveBeenCalledTimes(1);
+      expect(await eventsFor(row)).toHaveLength(1);
+    } finally {
+      write.mockRestore();
+      error.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   it('a fully completed expiry is not re-run', async () => {
@@ -219,7 +366,7 @@ describe('F202: expiry side effects survive a failure after the status flip', ()
     // A live expiry has flipped the row and is still running its side effects.
     await ApprovalAction.updateOne({ _id: row._id }, {
       $set: {
-        status: 'expired', resolvedAt: flippedAt, expiryRetryCount: 0, toolCallEnding: 'expired', 
+        status: 'expired', resolvedAt: flippedAt, expiryRetryCount: 0, toolCallEnding: 'expired',
       },
     });
 
@@ -237,12 +384,17 @@ describe('F202: expiry side effects survive a failure after the status flip', ()
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      const start = Date.now();
-      await sweepExpiredToolCallApprovals(new Date(start));
-      for (let i = 1; i <= MAX_EXPIRY_RETRIES + 2; i += 1) {
+      await sweepExpiredToolCallApprovals(new Date());
+      for (let i = 1; i <= MAX_EXPIRY_RETRIES; i += 1) {
         // eslint-disable-next-line no-await-in-loop
-        await sweepExpiredToolCallApprovals(new Date(start + i * 5 * MINUTE));
+        await sweepWhenDue(row);
+        // The row stays eligible, one retry per due time, up to the cap.
+        // eslint-disable-next-line no-await-in-loop
+        expect((await reread(row)).expiryRetryCount).toBe(i);
       }
+      // Past the cap no sweep selects it, however late.
+      await sweepWhenDue(row);
+      await sweepExpiredToolCallApprovals(new Date(Date.now() + 48 * 60 * MINUTE));
       const stored = await reread(row);
       expect(stored.expiryRetryCount).toBe(MAX_EXPIRY_RETRIES);
       expect(stored.expirySideEffectsDoneAt).toBeUndefined();
@@ -284,5 +436,81 @@ describe('F202: expiry side effects survive a failure after the status flip', ()
     expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
     expect(await eventsFor(row)).toHaveLength(1);
     expect(trailFor(row)).toHaveLength(1);
+  });
+
+  // A row whose expiry failed `count` times so far, last attempted at `last`.
+  const failedSoFar = async (count, last) => {
+    const row = await park();
+    await ApprovalAction.updateOne({ _id: row._id }, {
+      $set: {
+        status: 'expired',
+        toolCallEnding: 'expired',
+        resolvedAt: new Date(last.getTime() - (count ? 30 * MINUTE : 0)),
+        expiryRetryCount: count,
+        ...(count ? { expiryRetryClaimedAt: last } : {}),
+      },
+    });
+    return row;
+  };
+
+  it.each([
+    [0, 1],
+    [1, 2],
+    [3, 8],
+    [8, 60], // 2^8 minutes, capped at an hour
+  ])('after %i retries the row waits %i minutes from its last attempt, then is retried', async (count, minutes) => {
+    const last = new Date(Date.now() - 24 * 60 * MINUTE);
+    const row = await failedSoFar(count, last);
+    expect(expiryRetryDueAt(await reread(row))).toEqual(new Date(last.getTime() + minutes * MINUTE));
+
+    await sweepExpiredToolCallApprovals(new Date(last.getTime() + minutes * MINUTE - 1000));
+    expect((await reread(row)).expiryRetryCount).toBe(count);
+    expect(AgentEventService.enqueue).not.toHaveBeenCalled();
+
+    await sweepExpiredToolCallApprovals(new Date(last.getTime() + minutes * MINUTE));
+    const stored = await reread(row);
+    expect(stored.expiryRetryCount).toBe(count + 1);
+    expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+  });
+
+  it('the retries before the cap span about six hours', () => {
+    let at = new Date(0);
+    for (let count = 0; count < MAX_EXPIRY_RETRIES; count += 1) {
+      at = expiryRetryDueAt({
+        resolvedAt: new Date(0), expiryRetryClaimedAt: count ? at : null, expiryRetryCount: count,
+      });
+    }
+    expect(at.getTime()).toBeGreaterThanOrEqual(5.5 * 60 * MINUTE);
+    expect(at.getTime()).toBeLessThanOrEqual(6.5 * 60 * MINUTE);
+  });
+
+  it('the operator script lists capped rows on a dry run and requeues them only with --apply', async () => {
+    const last = new Date(Date.now() - 24 * 60 * MINUTE);
+    const capped = await failedSoFar(MAX_EXPIRY_RETRIES, last);
+    const retrying = await failedSoFar(2, last);
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      expect(() => retryCappedScript.parseArgs(['--aply'])).toThrow(/unknown argument/);
+
+      const dry = await retryCappedScript.run([]);
+      expect(dry).toMatchObject({ apply: false, requeued: 0 });
+      expect(dry.capped.map((r) => r.approvalId)).toEqual([String(capped._id)]);
+      expect((await reread(capped)).expiryRetryCount).toBe(MAX_EXPIRY_RETRIES);
+      await sweepExpiredToolCallApprovals(new Date());
+      expect((await reread(capped)).expiryRetryCount).toBe(MAX_EXPIRY_RETRIES);
+      expect((await reread(capped)).expirySideEffectsDoneAt).toBeUndefined();
+
+      const applied = await retryCappedScript.run(['--apply']);
+      expect(applied).toMatchObject({ apply: true, requeued: 1 });
+      expect((await reread(capped)).expiryRetryCount).toBe(0);
+      expect((await reread(retrying)).expiryRetryCount).toBe(3); // the sweep above retried it once
+
+      await sweepExpiredToolCallApprovals(new Date());
+      const stored = await reread(capped);
+      expect(stored.expiryRetryCount).toBe(1);
+      expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+    } finally {
+      log.mockRestore();
+    }
   });
 });

@@ -130,6 +130,19 @@ export interface IApprovalAction extends Document {
    * enqueued. A retried expiry skips the wake once it is set.
    */
   expiryEventSentAt?: Date;
+  /**
+   * tool_call only (F202): one attempt's lease on sending the expiry wake,
+   * taken before the send and cleared if the send fails. Another attempt may
+   * take it once it is EXPIRY_WAKE_CLAIM_LEASE_MS old, so a crashed sender
+   * never loses the wake.
+   */
+  expiryEventClaimedAt?: Date;
+  /**
+   * tool_call only (F202): when the expiry sweep last claimed this row for a
+   * retry. The row is held for EXPIRY_RETRY_GRACE_MS after it, as after
+   * `resolvedAt`, so a second sweeper does not take it meanwhile.
+   */
+  expiryRetryClaimedAt?: Date;
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -182,6 +195,8 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     expiryRetryCount: { type: Number },
     expirySideEffectsDoneAt: { type: Date },
     expiryEventSentAt: { type: Date },
+    expiryEventClaimedAt: { type: Date },
+    expiryRetryClaimedAt: { type: Date },
     // Plain Date — deliberately NOT a Mongo TTL index: expiry is a lifecycle
     // STATE (the card renders "expired"), not a deletion.
     expiresAt: { type: Date, default: () => new Date(Date.now() + DEFAULT_TTL_MS) },
