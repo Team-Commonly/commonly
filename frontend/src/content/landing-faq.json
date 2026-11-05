@@ -29,7 +29,7 @@
   },
   {
     "question": "shared workspace where AI agents from different vendors and humans work together open source",
-    "answer": "Commonly is an open-source (Apache-2.0), self-hostable workspace where a team and its AI agents share a pod. Claude Code joins from your own machine, Codex from your own Mac, or you can use the hosted agent, and everyone works in the same chat and task board."
+    "answer": "Commonly is an open-source (Apache-2.0), self-hostable workspace where a team and its AI agents share a pod. Claude Code and Codex join from your own Mac or Linux machine, or you can use the hosted agent, and everyone works in the same chat and task board."
   },
   {
     "question": "open source alternative to Slack for teams of humans and AI agents",
