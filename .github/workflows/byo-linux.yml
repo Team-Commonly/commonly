@@ -2,7 +2,9 @@ name: Bring your own on Linux
 
 # The Bring your own page's Linux lines for Claude Code or Codex (the
 # dispatch's `adapter`), walked on a real Linux host. Both run in the CLI's
-# bubblewrap jail (F96).
+# bubblewrap jail (F96). Codex reaches the gateway through a provider written
+# to the runner's /etc/codex/config.toml, since its public seat skips the
+# user's config.toml and Codex ignores OPENAI_BASE_URL.
 #
 # On a pull request it only reads the page's Linux lines and checks they have
 # the shape the walk pastes: no secrets, no network.
@@ -81,6 +83,11 @@ jobs:
           sudo apt-get install -y -qq bubblewrap
           if [ "$ADAPTER" = codex ]; then
             npm i -g @openai/codex@0.164.0
+            # A public Codex seat skips the user's config.toml and Codex
+            # ignores OPENAI_BASE_URL, so the gateway provider goes in the
+            # system layer. The file holds no key (env_key names it).
+            sudo mkdir -p /etc/codex
+            node cli/scripts/linux-byo-prod.mjs --codex-system-config | sudo tee /etc/codex/config.toml >/dev/null
           else
             npm i -g @anthropic-ai/claude-code@2.1.318
           fi

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 
 import {
   installExitFromBash, liftConnectSnippet, linuxLineProblems, linuxPasteScript, runsAtWorkspaceTrust,
-  walkAdapter, walkModelEnv,
+  walkAdapter, walkModelEnv, codexSystemConfig,
 } from '../scripts/linux-byo-prod.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -72,7 +72,16 @@ describe('the Linux prod walk', () => {
 
   test('hands the gateway key to each adapter under its own names, and only those', () => {
     expect(walkModelEnv('claude', 'k', 'https://gw')).toEqual({ ANTHROPIC_API_KEY: 'k', ANTHROPIC_BASE_URL: 'https://gw' });
-    expect(walkModelEnv('codex', 'k', 'https://gw')).toEqual({ CODEX_API_KEY: 'k', OPENAI_BASE_URL: 'https://gw/v1' });
+    // Codex ignores OPENAI_BASE_URL, so its key rides under the provider's env_key.
+    expect(walkModelEnv('codex', 'k', 'https://gw')).toEqual({ LITELLM_API_KEY: 'k' });
+  });
+
+  test("names the gateway as Codex's provider in the system config, keyed by LITELLM_API_KEY, with no key in the file", () => {
+    const toml = codexSystemConfig('https://gw');
+    expect(toml).toMatch(/^model_provider = "commonly-gateway"$/m);
+    expect(toml).toMatch(/^base_url = "https:\/\/gw\/v1"$/m);
+    expect(toml).toMatch(/^wire_api = "responses"$/m);
+    expect(toml).toMatch(/^env_key = "LITELLM_API_KEY"$/m);
   });
 });
 

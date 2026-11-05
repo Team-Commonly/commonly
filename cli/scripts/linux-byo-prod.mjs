@@ -10,12 +10,13 @@
  * per-turn proxy. The person's-own-login path is not walked here: that would
  * put a personal Claude login into repo secrets.
  *
- * Codex takes the same path through the same gateway: its public seat skips
- * config.toml (`--ignore-user-config`) but keeps its environment, so the key
- * and the gateway reach Codex's built-in provider as CODEX_API_KEY and
- * OPENAI_BASE_URL (the gateway's Responses route, as cloud-codex uses). The
- * agent's saved model must be one the gateway serves on that route. A
- * person's own ChatGPT login is not walked, for the same reason.
+ * Codex takes the same gateway key, on the gateway's Responses route (the
+ * route cloud-codex uses). Its public seat skips the user's config.toml
+ * (`--ignore-user-config`) and Codex ignores OPENAI_BASE_URL, so the workflow
+ * writes the gateway provider into the runner's /etc/codex/config.toml
+ * (`--codex-system-config` prints it) and the key rides as LITELLM_API_KEY.
+ * The agent's saved model must be one the gateway serves on that route. A
+ * person's own ChatGPT login or OpenAI key is not walked.
  *
  * The run does not post the @mention. When the CLI is polling, it logs
  * `READY: listening in <podId>`, and someone in the pod posts the @mention.
@@ -91,10 +92,33 @@ export const walkAdapter = (env) => {
   return adapter;
 };
 
-/** The gateway key and address, under the names each adapter reads. */
+/**
+ * The gateway key (and, for Claude Code, its address) under the names each
+ * adapter reads. Codex ignores OPENAI_BASE_URL (measured on codex-cli 0.162.1
+ * and 0.164.0: every request went to api.openai.com), so its gateway is a
+ * provider in the runner's system config (codexSystemConfig), which reads the
+ * key from LITELLM_API_KEY as cloud-codex does.
+ */
 export const walkModelEnv = (adapter, llmKey, gateway) => (adapter === 'codex'
-  ? { CODEX_API_KEY: llmKey, OPENAI_BASE_URL: `${gateway}/v1` }
+  ? { LITELLM_API_KEY: llmKey }
   : { ANTHROPIC_API_KEY: llmKey, ANTHROPIC_BASE_URL: gateway });
+
+/**
+ * /etc/codex/config.toml for the runner. A public Codex seat runs with
+ * --ignore-user-config, which skips $CODEX_HOME/config.toml; the system layer
+ * is the one place left to name a provider. The walk's label says so: this is
+ * our gateway set system-wide, not a user's own ChatGPT login or OpenAI key.
+ */
+export const codexSystemConfig = (gateway) => [
+  'model_provider = "commonly-gateway"',
+  '',
+  '[model_providers.commonly-gateway]',
+  'name = "Commonly model gateway"',
+  `base_url = "${gateway}/v1"`,
+  'wire_api = "responses"',
+  'env_key = "LITELLM_API_KEY"',
+  '',
+].join('\n');
 
 /** What is wrong with the page's Linux lines for this adapter, if anything. */
 export const linuxLineProblems = (lines, {
@@ -314,7 +338,8 @@ export const runLinuxProdWalk = async () => {
       + `in ${outcome.answerSeconds} s, event ${outcome.ack.eventId} acked HTTP ${outcome.ack.status}`);
     log(`the reply: ${JSON.stringify(said.slice(0, 300))}`);
     log(`PASS: published @commonlyai/cli ${cliVersion} on Linux answered an @mention on ${API} with `
-      + `${ADAPTER_LABEL[adapter]} in the bubblewrap jail, on an API key through the model gateway`);
+      + `${ADAPTER_LABEL[adapter]} in the bubblewrap jail, on an API key through the model gateway`
+      + `${adapter === 'codex' ? ' (provider set in the runner\'s system Codex config)' : ''}`);
     return 0;
   }
   (outcome?.problems || ['the walk ended before the pod was read']).forEach((problem) => fail(problem));
@@ -327,5 +352,9 @@ export const runLinuxProdWalk = async () => {
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  if (process.argv.includes('--codex-system-config')) {
+    process.stdout.write(codexSystemConfig(MODEL_GATEWAY));
+    process.exit(0);
+  }
   process.exit(process.argv.includes('--check') ? check() : await runLinuxProdWalk());
 }
