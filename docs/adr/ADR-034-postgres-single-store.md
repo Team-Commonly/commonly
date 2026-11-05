@@ -7,6 +7,12 @@ direction does not settle three things, and each is named where it lives:** the 
 mismatch log that a read cut may tolerate (D3 sets it at zero unexplained mismatches, which may prove
 too strict for models with clock-derived fields).
 
+**Amended 2026-11-05 (D7).** A self-hosted instance can run its Mongo layer on FerretDB, which
+stores it in Postgres, so self-host gets to one database engine before the per-model migration
+does. Production stays on MongoDB. D1 to D6 are unchanged as the direction; the model-by-model
+work (the dual-store helper, F0 onward) is paused while D7 ships. **Open in D7:** the latency on the
+auth hot path under real load, which the CI bench measures only on a seeded store.
+
 **Deciders:** founder (direction), eng lead (plan).
 
 **Scope boundary.** This ADR decides where data lives. It does not reopen these:
@@ -19,6 +25,9 @@ too strict for models with clock-derived fields).
 - **The vector search index** (`services/vectorSearchService.ts`, a local SQLite file with `sqlite-vec`)
   is derived from pod content and rebuilt from it. It is an index, not a store of record.
 - **ADR-011** (shell-first): this is kernel work and launch does not wait on it.
+- **FerretDB (D7) is a deployment choice for self-host, not the target store.** It changes which
+  server answers the Mongo wire protocol on an instance that picks it, and nothing about where a
+  model's data is meant to end up. Code still talks to Mongoose; D1 to D6 still describe the move off it.
 
 ## Context: the split, measured at `origin/main` `e2cb8c2fc` (2026-11-02)
 
@@ -170,6 +179,66 @@ step 1 is the only step that edits callers:
 
 The waves hold 66 models. `Message` leaves in Wave 0, and the three models added after the first count
 join Wave 1, which accounts for all 70. The order inside Wave 5 is open.
+
+### D7. Self-host may run the Mongo layer on FerretDB (amended 2026-11-05)
+FerretDB 2.7 (Apache-2.0) speaks the Mongo wire protocol and keeps the data in Postgres through
+the DocumentDB extension (MIT). A self-hoster then runs Postgres alone: the chat tables and the
+Mongo layer on one engine. Production stays on MongoDB.
+
+**Measured.** The backend suite, run on both stores through the same harness (each suite gets its
+own database on a real server; `TEST_MONGO_URI`, `.github/workflows/backend-ferretdb.yml`), on
+`main` as of 2026-11-05 without the fixes below (CI run 42001537424; #3492 lists every suite):
+
+| | Suites failing | Tests failing |
+|---|---|---|
+| MongoDB 7.0.14 | 0 of 925 | 0 of 11,228 |
+| FerretDB 2.7.0 | 28 of 925 | 228 of 11,228 |
+
+The failures fall into the groups below. A signup → pod → install → token → @mention → reply walk
+passed end to end once the first was out of the way:
+
+1. **Collation.** FerretDB refuses collation on an update or an index and ignores it on a read
+   without an error, so a case-insensitive label check passed a case-variant duplicate: a
+   fail-open on the auth path. Fixed by lowercase key fields and a verified backfill (#3493).
+2. **A partial index filtered with `$in`** is refused, and Mongoose only logs a failed index build,
+   so the live-installation unique index silently stopped refusing. Fixed by a boolean `live`
+   field (#3491).
+3. **Racing upserts** come back as E11000, a Postgres deadlock, or for `findOneAndUpdate` a code-1
+   error, where MongoDB retries internally; a racing `$inc` lost increments. Fixed by a retry on
+   FerretDB only (#3495) and one `isDuplicateKeyError` for both error forms. Concurrent writers
+   that don't upsert can still hit a Postgres deadlock (the decision-card reply bridges, GitHub
+   repository connect, the needs-you email); those are open, and a retry on deadlock is the likely
+   shape.
+4. **A query-plan assertion** (`IXSCAN`) that reads MongoDB's explain output. Store-specific by nature.
+
+Also unsupported, and unused today: change streams, `commitTransaction`. A `listIndexes` on a
+missing collection errors. The rest of what Commonly leans on behaves the same: atomic
+`findOneAndUpdate` claims, `$inc`, TTL indexes, partial indexes on equality and `$exists`, `$text`,
+`$lookup`, pipeline updates, `arrayFilters`, majority write concern.
+
+**Rules for new Mongo-layer code**, so self-host does not rot: no collation, no `$in` (or other
+operator) in a partial index filter, and every duplicate-key check goes through
+`isDuplicateKeyError`. The FerretDB workflow runs the suite on both stores on every backend PR and
+nightly. It is not a required check yet; it becomes one once it is green.
+
+**Constraints.** The DocumentDB extension needs a superuser and `shared_preload_libraries`
+(`pg_cron`, `documentdb`), so it runs on a Postgres the instance owns, not on a managed one. The
+`ferretdb/postgres-documentdb` image also bundles PostGIS (GPL-2.0). Commonly references that image
+by tag in compose, Helm and CI and does not redistribute it; a self-hoster pulls it from its
+publisher.
+
+**Auth hot path** (CI bench `__tests__/bench/authHotPath.bench.js`: 5,000 users, 2,000 pods,
+3,000 timed runs after 200 warm-up, each store on its own runner, ms):
+
+| Query | FerretDB p50 / p95 / p99 | MongoDB p50 / p95 / p99 |
+|---|---|---|
+| Session account read (auth middleware) | 1.02 / 1.28 / 1.95 | 0.52 / 0.83 / 1.15 |
+| `lastActive` write (auth middleware) | 1.83 / 2.55 / 4.39 | 0.39 / 0.72 / 0.91 |
+| Pods for a member (pod list) | 0.95 / 1.09 / 1.58 | 0.32 / 0.62 / 0.80 |
+| User by username (login) | 0.94 / 1.05 / 1.66 | 0.32 / 0.63 / 0.79 |
+
+FerretDB adds about 0.5 to 2 ms at p95 per query, the write the most: inside a request's budget for
+a self-hosted instance, and the reason production stays on MongoDB until the Postgres port.
 
 ## Risks
 - **Copy drift is a bug we already have.** The Postgres `pods`, `pod_members` and `users` rows are synced
