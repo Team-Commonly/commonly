@@ -48,3 +48,23 @@ describe('the Windows prod walk', () => {
     expect(windowsProfileRoot().startsWith(tmpdir())).toBe(false);
   });
 });
+
+// The walks' install steps pin the CLI each adapter runs, at the versions the
+// walks passed on; a dropped branch or a moved pin fails here, not on a runner.
+describe('the walk workflows install the CLI the dispatch names', () => {
+  const workflow = (name) => readFileSync(resolve(HERE, `../../.github/workflows/${name}`), 'utf8');
+
+  test('byo-linux.yml: Codex 0.164.0 for codex, Claude Code 2.1.318 otherwise', () => {
+    const install = /if \[ "\$ADAPTER" = codex \]; then\n([\s\S]*?)\n\s*else\n([\s\S]*?)\n\s*fi/.exec(workflow('byo-linux.yml'));
+    expect(install).not.toBeNull();
+    expect(install[1]).toMatch(/npm i -g @openai\/codex@0\.164\.0\n/);
+    expect(install[1]).toMatch(/\/etc\/codex\/config\.toml/);
+    expect(install[2].trim()).toBe('npm i -g @anthropic-ai/claude-code@2.1.318');
+  });
+
+  test('byo-windows.yml: Codex 0.164.0 only on a prod codex dispatch', () => {
+    expect(workflow('byo-windows.yml')).toMatch(
+      /- name: Install Codex\n\s+if: inputs\.target == 'prod' && inputs\.adapter == 'codex'\n\s+run: npm i -g @openai\/codex@0\.164\.0\n/,
+    );
+  });
+});
