@@ -269,6 +269,16 @@ describe('the call is judged again when it is approved', () => {
       .toMatchObject({ toolCallEnding: 'refused', toolCallCode: 'confinement_changed' });
   });
 
+  test('a hosted agent bound to a machine between park and approve: confinement_changed', async () => {
+    // Only the machine binding changes; the installation still reads as hosted.
+    const approvalId = await parkOne();
+    await User.updateOne({ isBot: true, 'botMetadata.agentName': 'helper' }, { $set: { 'botMetadata.machineId': 'mach-a' } });
+    expect((await resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'approved' })).status).toBe(200);
+    expect(github.createPullRequest).not.toHaveBeenCalled();
+    expect(await ApprovalAction.findById(approvalId).lean())
+      .toMatchObject({ toolCallEnding: 'refused', toolCallCode: 'confinement_changed' });
+  });
+
   test('a hosted agent whose installation is gone: confinement_changed, fail closed', async () => {
     const approvalId = await parkOne();
     await require('../../models/AgentRegistry').AgentInstallation.deleteMany({});
