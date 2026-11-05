@@ -59,6 +59,13 @@ export interface IRoomGrant extends Document {
    */
   byoAgents?: string[];
   byoConsent?: IRoomGrantByoConsent | null;
+  /**
+   * TASK-783: the granter chose pull-request access at mint. Only `true`
+   * counts. It permits the PR-write tools (`services/prWriteScope.ts`) and
+   * nothing else, each call parked for the connection owner. A child can drop
+   * it and never add it.
+   */
+  prWrite?: boolean;
   expiresAt: Date;
   revokedAt?: Date | null;
   /** User who revoked this grant (and its descendants), when known. */
@@ -151,6 +158,7 @@ const RoomGrantSchema = new Schema<IRoomGrant>(
       }, { _id: false }),
       default: undefined,
     },
+    prWrite: { type: Boolean, default: undefined },
     // No TTL index: expiry is a capability check and an audit fact, not a
     // reason to delete the grant or its call trail.
     expiresAt: { type: Date, required: true },

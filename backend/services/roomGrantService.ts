@@ -26,6 +26,8 @@ export interface RoomGrantCreateInput {
   /** F94: set by the mint route after its checks, never copied from the body. */
   byoAgents?: string[];
   byoConsent?: IRoomGrantByoConsent;
+  /** TASK-783: set by the mint route after its checks, or inherited by a child; never copied from the body. */
+  prWrite?: boolean;
   expiresAt: Date | string | number;
   brokerId: string;
   parentGrantId?: string;
@@ -45,6 +47,8 @@ export interface RoomGrantAttenuationInput {
   budget?: IRoomGrantBudget;
   audience?: string[];
   expiresAt?: Date | string | number;
+  /** TASK-783: only `false` is meaningful (drop the scope); a child can never add it. */
+  prWrite?: boolean;
   /** Accepted for API compatibility but never copied into the row. */
   grantId?: string;
   /** The delegating agent, from authentication; set by the route, never the body. */
@@ -477,6 +481,9 @@ export const mintGrant = async (input: RoomGrantCreateInput): Promise<IRoomGrant
     // with named agents.
     ...(input.byoConsent
       ? { byoAgents: uniqueStrings(input.byoAgents || [], 'byoAgents'), byoConsent: input.byoConsent } : {}),
+    // Stored only when exactly true, so a read of the field cannot meet a
+    // truthy non-boolean.
+    ...(input.prWrite === true ? { prWrite: true } : {}),
     expiresAt,
     parentGrantId,
     rootGrantId,
@@ -573,6 +580,16 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
     throw new RoomGrantError('grant_not_attenuated', 'child writeMode cannot be stronger than its parent');
   }
 
+  // TASK-783: a child keeps the parent's PR access unless it drops it, and
+  // never gains it. A read child holds no write, so it holds no PR access.
+  if (input.prWrite !== undefined && typeof input.prWrite !== 'boolean') {
+    throw new RoomGrantError('invalid_grant', 'prWrite must be a boolean');
+  }
+  if (input.prWrite === true && parent.prWrite !== true) {
+    throw new RoomGrantError('grant_not_attenuated', 'a child cannot add pull-request access');
+  }
+  const prWrite = parent.prWrite === true && input.prWrite !== false && writeMode !== 'read';
+
   const requestedBudget = normalizeBudget(input.budget);
   const budget = mergeBudget(parent.budget, requestedBudget);
   assertBudgetAttenuated(budget, parent.budget);
@@ -616,6 +633,7 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
       byoAgents: (parent.byoAgents || []).map(String).filter((id) => audience.includes(id)),
       byoConsent: parent.byoConsent,
     } : {}),
+    ...(prWrite ? { prWrite: true } : {}),
     expiresAt,
     parentGrantId,
     brokerId: parent.brokerId,

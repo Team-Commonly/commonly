@@ -117,6 +117,17 @@ interface CreatePullRequestOptions {
   forceApp?: boolean;
 }
 
+/** Git Data API calls the broker's `github.commit_files` makes. App-only: every caller passes an installation. */
+interface GitDataOptions {
+  owner: string;
+  repo: string;
+  installationId: string;
+  forceApp?: boolean;
+}
+
+/** One path segment at a time, so a `/` in a branch stays a separator and nothing else is read as one. */
+const refPath = (branch: string): string => branch.split('/').map(encodeURIComponent).join('/');
+
 /**
  * GitHubAppService — generates short-lived installation access tokens
  * using a GitHub App's private key (RS256 JWT).
@@ -378,6 +389,96 @@ class GitHubAppService {
       { headers },
     );
     return res.data;
+  }
+
+  // ─── Git Data API (TASK-783) ───────────────────────────────────────────────
+
+  /** The commit a branch points at, or null when the branch does not exist. */
+  static async getBranchHead({
+    owner, repo, branch, installationId, forceApp,
+  }: GitDataOptions & { branch: string }): Promise<string | null> {
+    const headers = await this._apiHeaders(installationId, forceApp);
+    try {
+      const res = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${refPath(branch)}`,
+        { headers },
+      );
+      const object = (res.data as { ref?: string; object?: { sha?: string; type?: string } }) || {};
+      // GitHub answers a prefix lookup with an array; only an exact ref is one branch.
+      if (Array.isArray(res.data) || object.ref !== `refs/heads/${branch}` || object.object?.type !== 'commit') {
+        return null;
+      }
+      return typeof object.object?.sha === 'string' ? object.object.sha : null;
+    } catch (error) {
+      if (Number((error as { response?: { status?: unknown } }).response?.status) === 404) return null;
+      throw error;
+    }
+  }
+
+  /** The tree a commit records. */
+  static async getCommitTree({
+    owner, repo, sha, installationId, forceApp,
+  }: GitDataOptions & { sha: string }): Promise<string> {
+    const headers = await this._apiHeaders(installationId, forceApp);
+    const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}/git/commits/${sha}`, { headers });
+    return String((res.data as { tree?: { sha?: string } })?.tree?.sha || '');
+  }
+
+  /** A tree that is `baseTree` with each file's text written as a regular (100644) blob. */
+  static async createTextTree({ owner, repo, baseTree, files, installationId, forceApp }: GitDataOptions & {
+    baseTree: string;
+    files: Array<{ path: string; content: string }>;
+  }): Promise<string> {
+    const headers = await this._apiHeaders(installationId, forceApp);
+    const res = await axios.post(
+      `https://api.github.com/repos/${owner}/${repo}/git/trees`,
+      {
+        base_tree: baseTree,
+        tree: files.map((file) => ({ path: file.path, mode: '100644', type: 'blob', content: file.content })),
+      },
+      { headers },
+    );
+    return String((res.data as { sha?: string })?.sha || '');
+  }
+
+  static async createCommit({ owner, repo, message, tree, parents, installationId, forceApp }: GitDataOptions & {
+    message: string;
+    tree: string;
+    parents: string[];
+  }): Promise<string> {
+    const headers = await this._apiHeaders(installationId, forceApp);
+    const res = await axios.post(
+      `https://api.github.com/repos/${owner}/${repo}/git/commits`,
+      { message, tree, parents },
+      { headers },
+    );
+    return String((res.data as { sha?: string })?.sha || '');
+  }
+
+  /** Create a branch. GitHub refuses (422) when it already exists. */
+  static async createBranchRef({ owner, repo, branch, sha, installationId, forceApp }: GitDataOptions & {
+    branch: string;
+    sha: string;
+  }): Promise<void> {
+    const headers = await this._apiHeaders(installationId, forceApp);
+    await axios.post(
+      `https://api.github.com/repos/${owner}/${repo}/git/refs`,
+      { ref: `refs/heads/${branch}`, sha },
+      { headers },
+    );
+  }
+
+  /** Move a branch forward. Never forced: GitHub refuses (422) anything but a fast-forward. */
+  static async fastForwardBranchRef({ owner, repo, branch, sha, installationId, forceApp }: GitDataOptions & {
+    branch: string;
+    sha: string;
+  }): Promise<void> {
+    const headers = await this._apiHeaders(installationId, forceApp);
+    await axios.patch(
+      `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${refPath(branch)}`,
+      { sha, force: false },
+      { headers },
+    );
   }
 
   // ─── Pull Requests API ─────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ import User from '../models/User';
 import { assertAgentRuntimeMayJoinPod } from './outsiderGrantAgentJoinPolicy';
 import { recordApprovalOutcome } from './brokerRecordService';
 import { nextFreeByoName } from './byoNameAllocator';
+import { prWriteApprovalSummary } from './prWriteScope';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation, AgentRegistry } = require('../models/AgentRegistry');
@@ -120,14 +121,27 @@ export const buildCardPayload = (row: IApprovalAction): CardPayload => ({
     }),
 });
 
-/** Add the parked call's exact arguments only for its accountable owner. */
+/**
+ * Add the parked call's exact arguments only for its accountable owner. A PR
+ * write (TASK-783) shows the owner a summary instead: a push's bundle and a
+ * commit's file contents stay server-side on the row, and only the envelope's
+ * winner ever reads them.
+ */
 export const buildOwnerCardPayload = (
   row: IApprovalAction,
   callerUserId: string,
-): CardPayload & { toolCall?: ApprovalToolCall } => {
-  const payload = buildCardPayload(row) as CardPayload & { toolCall?: ApprovalToolCall };
+): CardPayload & { toolCall?: ApprovalToolCall & { summary?: Record<string, unknown> } } => {
+  const payload = buildCardPayload(row) as CardPayload & {
+    toolCall?: ApprovalToolCall & { summary?: Record<string, unknown> };
+  };
   if (row.actionType === 'tool_call' && String(row.ownerUserId) === String(callerUserId) && row.toolCall) {
-    payload.toolCall = row.toolCall;
+    const summary = prWriteApprovalSummary(row.toolCall.tool, row.toolCall.canonicalArgs);
+    if (summary) {
+      const { canonicalArgs: _withheld, ...envelope } = row.toolCall;
+      payload.toolCall = { ...envelope, summary };
+    } else {
+      payload.toolCall = row.toolCall;
+    }
   }
   return payload;
 };
@@ -960,7 +974,10 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       // database copy is scrubbed atomically, so no later reader can recover
       // the raw arguments; only this winning resolver can execute them.
       const result = parkedCall
-        ? await executeApprovedToolCall(parkedCall, String(row._id), String(row.agentUserId || ''))
+        ? await executeApprovedToolCall(parkedCall, String(row._id), String(row.agentUserId || ''), {
+          agentName: row.agentName ? String(row.agentName) : undefined,
+          instanceId: row.instanceId ? String(row.instanceId) : undefined,
+        })
         : await executeAction(transitioned);
       transitioned.executedAt = new Date();
       if (parkedCall) {
@@ -1027,6 +1044,7 @@ const executeApprovedToolCall = async (
   toolCall: ApprovalToolCall,
   approvalId: string,
   agentUserId: string,
+  caller: { agentName?: string; instanceId?: string } = {},
 ): Promise<{ result: unknown; callId: string; outcome: 'ok' | 'failed'; receipt?: Record<string, number> }> => {
   if (!toolCall.canonicalArgs) throw new Error('approval arguments unavailable');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -1041,6 +1059,9 @@ const executeApprovedToolCall = async (
     expectedArgsDigest: toolCall.argsDigest,
     expectedDefinitionDigest: toolCall.definitionDigest,
     approvalId,
+    callerConfinement: toolCall.callerConfinement,
+    agentName: caller.agentName,
+    instanceId: caller.instanceId,
   });
   return response;
 };
