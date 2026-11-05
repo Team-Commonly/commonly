@@ -3489,7 +3489,10 @@ export const performRun = ({
       // batch), so a carried event never pushes a full page past the prompt's
       // body cap and a busy pod can't keep the greeting out (CodeRabbit on
       // #3511). The overflow pass below stays as the backstop.
-      const carriedCount = heldRetry.length + heldGreeting.length;
+      // Only wake events count: the server's page cap is on wakes, and a
+      // carried digest row takes no body (CodeRabbit on #3511).
+      const carriedCount = [...heldRetry, ...heldGreeting]
+        .filter((event) => event.deliveryMode !== 'digest').length;
       const page = await client.get('/api/agents/runtime/events', {
         agentName, instanceId, limit: Math.max(1, batchLimit - carriedCount),
         ...(adapter?.name ? { reportedCli: adapter.name } : {}),

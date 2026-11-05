@@ -256,8 +256,9 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
   test('a second pod\'s greeting does not spend the window early', async () => {
     const spawn = jest.fn(async () => ({ text: 'hello' }));
     const joinB = { ...joinEvent, _id: 'evt-join-b', podId: 'pod-other' };
+    // A real page holds one pod, so the second greeting lands on the next poll.
     const { acked } = await runTicks({
-      arrivals: [[joinEvent, joinB]],
+      arrivals: [[joinEvent], [joinB]],
       ticks: HOLD_POLLS,
       spawn,
     });
@@ -331,6 +332,24 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
       .filter(([route]) => String(route).includes('/events'))
       .map(([, params]) => params.limit);
     expect(limits[0]).toBe(LIMIT);
+    expect(limits[1]).toBe(LIMIT - 1);
+  });
+
+  // CodeRabbit on #3511: digest rows carried with the greeting took wake
+  // capacity, so a greeting page full of digests shrank the next poll to one.
+  test('carried digest rows do not shrink the next poll', async () => {
+    const LIMIT = 10;
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const digests = Array.from({ length: 9 }, (_, i) => ({
+      _id: `evt-d${i}`, type: 'chat.message', deliveryMode: 'digest', podId: POD,
+      agentName: 'my-stub', instanceId: 'default', payload: { content: `ambient ${i}`, messageId: `msg-d${i}` },
+    }));
+    const { mockGet } = await runTicks({
+      arrivals: [[joinEvent, ...digests]], ticks: 3, spawn, runOptions: { inboxBatchLimit: LIMIT },
+    });
+    const limits = mockGet.mock.calls
+      .filter(([route]) => String(route).includes('/events'))
+      .map(([, params]) => params.limit);
     expect(limits[1]).toBe(LIMIT - 1);
   });
 
