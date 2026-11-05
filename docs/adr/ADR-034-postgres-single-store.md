@@ -10,8 +10,10 @@ too strict for models with clock-derived fields).
 **Amended 2026-11-05 (D7).** A self-hosted instance can run its Mongo layer on FerretDB, which
 stores it in Postgres, so self-host gets to one database engine before the per-model migration
 does. Production stays on MongoDB. D1 to D6 are unchanged as the direction; the model-by-model
-work (the dual-store helper, F0 onward) is paused while D7 ships. **Open in D7:** the latency on the
-auth hot path under real load, which the CI bench measures only on a seeded store.
+work (the dual-store helper and the D6 waves) is paused while D7 ships. **Open in D7:** latency
+under real load (the CI bench seeds its store); deadlocks between concurrent writers that don't
+upsert; failing suites not yet traced to a group; and the compose and Helm path plus a clean-install
+walk, which are not built, so a self-hoster can't pick FerretDB from them yet.
 
 **Deciders:** founder (direction), eng lead (plan).
 
@@ -186,26 +188,28 @@ the DocumentDB extension (MIT). A self-hoster then runs Postgres alone: the chat
 Mongo layer on one engine. Production stays on MongoDB.
 
 **Measured.** The backend suite, run on both stores through the same harness (each suite gets its
-own database on a real server; `TEST_MONGO_URI`, `.github/workflows/backend-ferretdb.yml`), on
-`main` as of 2026-11-05 without the fixes below (CI run 42001537424; #3492 lists every suite):
+own database on a real server; `TEST_MONGO_URI`, `.github/workflows/backend-ferretdb.yml`), at
+`20c6bfb4` (main as of 2026-11-05 plus that harness, #3492), without the fixes below. CI run
+42001537424; #3492 lists every suite:
 
 | | Suites failing | Tests failing |
 |---|---|---|
 | MongoDB 7.0.14 | 0 of 925 | 0 of 11,228 |
 | FerretDB 2.7.0 | 28 of 925 | 228 of 11,228 |
 
-The failures fall into the groups below. A signup → pod → install → token → @mention → reply walk
-passed end to end once the first was out of the way:
+The failures traced so far fall into the groups below. #3492 labels 13 suites only by their first
+error, and not all of those are traced yet:
 
 1. **Collation.** FerretDB refuses collation on an update or an index and ignores it on a read
    without an error, so a case-insensitive label check passed a case-variant duplicate: a
-   fail-open on the auth path. Fixed by lowercase key fields and a verified backfill (#3493).
+   fail-open on the auth path. Fixed by lowercase key fields and a verified backfill (#3493, open).
 2. **A partial index filtered with `$in`** is refused, and Mongoose only logs a failed index build,
    so the live-installation unique index silently stopped refusing. Fixed by a boolean `live`
-   field (#3491).
+   field (#3491, open).
 3. **Racing upserts** come back as E11000, a Postgres deadlock, or for `findOneAndUpdate` a code-1
-   error, where MongoDB retries internally; a racing `$inc` lost increments. Fixed by a retry on
-   FerretDB only (#3495) and one `isDuplicateKeyError` for both error forms. Concurrent writers
+   error, where MongoDB retries internally; 20 racing `$inc` upserts ended at 7 to 19. Fixed by a
+   retry on FerretDB only (#3495, open) and one `isDuplicateKeyError` that recognises both the
+   E11000 and the code-1 constraint forms (not deadlocks, which only the retry handles). Concurrent writers
    that don't upsert can still hit a Postgres deadlock (the decision-card reply bridges, GitHub
    repository connect, the needs-you email); those are open, and a retry on deadlock is the likely
    shape.
@@ -217,17 +221,20 @@ missing collection errors. The rest of what Commonly leans on behaves the same: 
 `$lookup`, pipeline updates, `arrayFilters`, majority write concern.
 
 **Rules for new Mongo-layer code**, so self-host does not rot: no collation, no `$in` (or other
-operator) in a partial index filter, and every duplicate-key check goes through
-`isDuplicateKeyError`. The FerretDB workflow runs the suite on both stores on every backend PR and
-nightly. It is not a required check yet; it becomes one once it is green.
+operator) in a partial index filter, and every check for a lost race goes through
+`isDuplicateKeyError`. A known gap: existing refusals that read `keyPattern` (signup, username
+change and a few others) still surface a code-1 refusal as a 500 on FerretDB (#3495 lists them). The
+FerretDB workflow (#3492, open) runs the suite on both stores on every backend PR and nightly. It
+is not a required check yet; it becomes one once it is green.
 
 **Constraints.** The DocumentDB extension needs a superuser and `shared_preload_libraries`
 (`pg_cron`, `documentdb`), so it runs on a Postgres the instance owns, not on a managed one. The
-`ferretdb/postgres-documentdb` image also bundles PostGIS (GPL-2.0). Commonly references that image
-by tag in compose, Helm and CI and does not redistribute it; a self-hoster pulls it from its
-publisher.
+`ferretdb/postgres-documentdb` image also bundles PostGIS (GPL-2.0-or-later). Commonly references
+that image by tag only in CI (`backend-ferretdb.yml`) and does not redistribute it. Compose and Helm
+support is not built yet; when it lands it references the image the same way, and a self-hoster
+pulls it from its publisher.
 
-**Auth hot path** (CI bench `__tests__/bench/authHotPath.bench.js`: 5,000 users, 2,000 pods,
+**Auth hot path** (CI bench `backend/__tests__/bench/authHotPath.bench.js`: 5,000 users, 2,000 pods,
 3,000 timed runs after 200 warm-up, each store on its own runner, ms):
 
 | Query | FerretDB p50 / p95 / p99 | MongoDB p50 / p95 / p99 |
