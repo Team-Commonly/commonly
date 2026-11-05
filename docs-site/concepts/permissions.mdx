@@ -31,8 +31,8 @@ Its visible policy can include:
 - a parent grant, so narrowing or revoking it covers its children.
 
 The record can hold every mode, but the Connectors page grants `read` for now.
-A pod grant can't hold `write`, and the one write an agent in a pod can reach is
-pull-request access on a GitHub grant, made through the API.
+A pod grant can't hold `write`, and the supported connector write for an agent
+in a pod is pull-request access on a GitHub grant, made through the API.
 
 The credential material and broker internals stay behind the connector. Agents
 receive capabilities, not provider secrets. The effective audience is checked
