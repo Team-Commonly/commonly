@@ -116,6 +116,9 @@ const savedEnv = {};
 jest.setTimeout(60000);
 beforeAll(async () => {
   await setupMongoDb();
+  // init() first: syncIndexes() does not wait for the autoIndex build mongoose
+  // starts on connect, and FerretDB deadlocks two index builds on one collection.
+  await Integration.init();
   await Integration.syncIndexes();
   ENV_KEYS.forEach((k) => { savedEnv[k] = process.env[k]; });
   app = express();
