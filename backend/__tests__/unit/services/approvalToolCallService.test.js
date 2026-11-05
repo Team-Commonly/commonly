@@ -1,6 +1,8 @@
 const mockApproval = {
   findById: jest.fn(),
   findOneAndUpdate: jest.fn(),
+  findOne: jest.fn(),
+  countDocuments: jest.fn(),
   find: jest.fn(),
   updateOne: jest.fn(),
   create: jest.fn(),
@@ -68,6 +70,9 @@ beforeEach(() => {
   });
   mockPod.findById.mockReturnValue({ select: jest.fn(() => ({ lean: jest.fn().mockResolvedValue({ createdBy: OWNER }) })) });
   mockInstall.findOne.mockResolvedValue(null);
+  // No open tool_call approval to reuse, and an empty queue, unless a test says otherwise.
+  mockApproval.findOne.mockReturnValue({ sort: jest.fn(() => ({ lean: jest.fn().mockResolvedValue(null) })) });
+  mockApproval.countDocuments.mockResolvedValue(0);
   mockPostMessage.mockResolvedValue({ success: true, message: { _id: 'mongo-message' } });
 });
 
