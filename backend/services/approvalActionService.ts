@@ -11,7 +11,7 @@
  * resources owned by `ownerUserId` — never by the agent's bot user. The
  * resolved row is the AuthorizedAction audit record.
  */
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import ApprovalAction, {
   IApprovalAction, ApprovalActionType, ApprovalToolCall, ApprovalToolCallEnding,
 } from '../models/ApprovalAction';
@@ -946,7 +946,15 @@ export interface ResolveResult {
   body: Record<string, unknown>;
 }
 
-const updateCardEverywhere = async (row: IApprovalAction): Promise<void> => {
+/**
+ * Re-render the card wherever it lives. Writing the same payload twice is
+ * harmless. `strict` rethrows a failed payload write so the expiry retry
+ * (F202) can try again; the socket push stays best-effort either way.
+ */
+const updateCardEverywhere = async (
+  row: IApprovalAction,
+  { strict = false }: { strict?: boolean } = {},
+): Promise<void> => {
   const payload = buildCardPayload(row);
   const messageId = row.messageId;
   if (messageId) {
@@ -962,6 +970,7 @@ const updateCardEverywhere = async (row: IApprovalAction): Promise<void> => {
       }
     } catch (err) {
       console.warn('[approval] card message payload update failed:', (err as Error).message);
+      if (strict) throw err;
     }
   }
   // Same shape discipline as emitReactionChange: fire-and-forget, never fatal.
@@ -981,6 +990,21 @@ const updateCardEverywhere = async (row: IApprovalAction): Promise<void> => {
   }
 };
 
+/**
+ * The trail id of an approval's own decision row, derived from the approval
+ * and the reason (F202). An approval decides once per reason, so a second
+ * write of the same decision (an expiry retried after a crash) hits the
+ * table's primary key instead of adding a second row. UUID-shaped, so it
+ * reads like every other `tool_call_` id.
+ */
+const decisionCallId = (approvalId: string, reason: string): string => {
+  const hex = createHash('sha256').update(`approval-decision:${approvalId}:${reason}`).digest('hex');
+  const uuid = [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20, 32)];
+  return `tool_call_${uuid.join('-')}`;
+};
+
+const isUniqueViolation = (error: unknown): boolean => (error as { code?: string })?.code === '23505';
+
 const recordToolCallDecision = async (
   row: IApprovalAction,
   outcome: 'refused' | 'failed',
@@ -992,19 +1016,24 @@ const recordToolCallDecision = async (
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const ToolCall = require('../models/ToolCall');
   const { digestArgs } = ToolCall;
-  const callId = `tool_call_${randomUUID()}`;
-  await ToolCall.create({
-    callId,
-    grantId: toolCall.grantId,
-    podId: String(row.podId),
-    agentUserId: row.agentUserId || '',
-    credentialOwnerId: toolCall.credentialOwnerId,
-    tool: toolCall.tool,
-    argsDigest: toolCall.argsDigest || digestArgs({}),
-    outcome,
-    reason,
-    approvalId: String(row._id),
-  });
+  const callId = decisionCallId(String(row._id), reason);
+  try {
+    await ToolCall.create({
+      callId,
+      grantId: toolCall.grantId,
+      podId: String(row.podId),
+      agentUserId: row.agentUserId || '',
+      credentialOwnerId: toolCall.credentialOwnerId,
+      tool: toolCall.tool,
+      argsDigest: toolCall.argsDigest || digestArgs({}),
+      outcome,
+      reason,
+      approvalId: String(row._id),
+    });
+  } catch (error) {
+    // Already written by an earlier attempt at this same decision.
+    if (!isUniqueViolation(error)) throw error;
+  }
   return callId;
 };
 
@@ -1102,14 +1131,33 @@ const enqueueApprovalResolvedEvent = async (
   }
 };
 
-/** Parked calls report only broker facts, never vendor result or error prose. */
+/**
+ * Parked calls report only broker facts, never vendor result or error prose.
+ *
+ * `strict` is the expiry path (F202): it skips the wake when this approval's
+ * `approval.resolved` event already exists for the seat, so a retried expiry
+ * never wakes a run twice, and it rethrows a failed enqueue so the retry runs.
+ */
 const enqueueToolCallResolvedEvent = async (
   row: IApprovalAction,
   approver?: { userId: string; username: string },
   receipt?: Record<string, number>,
+  { strict = false }: { strict?: boolean } = {},
 ): Promise<void> => {
   if (!row.agentName || !row.toolCallEnding) return;
   try {
+    if (strict) {
+      // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+      const AgentEvent = require('../models/AgentEvent');
+      const sent = await AgentEvent.exists({
+        agentName: String(row.agentName).toLowerCase(),
+        instanceId: String(row.instanceId || 'default'),
+        podId: row.podId,
+        type: 'approval.resolved',
+        'payload.approvalId': String(row._id),
+      });
+      if (sent) return;
+    }
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentEventService = require('./agentEventService');
     const tool = String(row.toolCall?.tool || 'the parked tool');
@@ -1147,6 +1195,7 @@ const enqueueToolCallResolvedEvent = async (
     });
   } catch (err) {
     console.warn('[approval] tool-call wake failed:', (err as Error).message);
+    if (strict) throw err;
   }
 };
 
@@ -1236,6 +1285,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
           status: 'expired', resolvedAt: new Date(),
           decidedBy: 'policy', decidedByRole: 'policy',
           toolCallEnding: 'expired', toolCallCode: 'approval_expired',
+          expiryRetryCount: 0,
         },
         $unset: { 'toolCall.canonicalArgs': 1 },
       },
@@ -1246,17 +1296,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       return { status: 409, body: { error: 'Already decided', approval: current ? buildCardPayload(current) : null } };
     }
     if (expired.toolCall) expired.toolCall.canonicalArgs = undefined;
-    // The expired decision is still terminal for the inbox item.
-    // eslint-disable-next-line global-require
-    const { resolve: resolveExpiredAttention } = require('./attentionItemService');
-    await resolveExpiredAttention('approval_action', expired._id);
-    expired.toolCallEnding = 'expired';
-    expired.toolCallCode = 'approval_expired';
-    expired.toolCallTrailId = await recordToolCallDecision(expired, 'refused', 'approval_expired', parkedCall);
-    await expired.save();
-    recordApprovalOutcome(expired, parkedCall, { kind: 'expired' });
-    await updateCardEverywhere(expired);
-    await enqueueToolCallResolvedEvent(expired);
+    await finishToolCallExpiryOrLeaveForRetry(expired);
     return { status: 409, body: { error: 'expired', approval: buildCardPayload(expired) } };
   }
 
@@ -1402,11 +1442,145 @@ const executeApprovedToolCall = async (
 };
 
 /**
+ * F202: the first wait before an expiry is retried, and the base of the
+ * backoff. A live expiry finishes in well under a second.
+ */
+export const EXPIRY_RETRY_GRACE_MS = 60 * 1000;
+/** F202: the longest wait between two retries of one row. */
+export const EXPIRY_RETRY_MAX_DELAY_MS = 60 * 60 * 1000;
+/**
+ * F202: retries per expired row before the sweep stops and logs it as stuck.
+ * With the backoff (1, 2, 4, 8, 16, 32 minutes, then hourly) eleven retries
+ * span about six hours. A row at the cap is put back by
+ * `scripts/retry-capped-approval-expiries.ts`.
+ */
+export const MAX_EXPIRY_RETRIES = 11;
+
+/**
+ * When an incomplete expiry may next be retried: its last attempt (the flip,
+ * or the latest retry claim) plus `grace * 2^retries`, at most an hour. The
+ * wait is also the lease: a sweeper before it neither selects nor claims the
+ * row.
+ */
+export const expiryRetryDueAt = (row: {
+  resolvedAt?: Date | null; expiryRetryClaimedAt?: Date | null; expiryRetryCount?: number | null;
+}): Date => {
+  const last = Math.max(
+    row.resolvedAt ? new Date(row.resolvedAt).getTime() : 0,
+    row.expiryRetryClaimedAt ? new Date(row.expiryRetryClaimedAt).getTime() : 0,
+  );
+  const delay = Math.min(EXPIRY_RETRY_GRACE_MS * 2 ** Number(row.expiryRetryCount || 0), EXPIRY_RETRY_MAX_DELAY_MS);
+  return new Date(last + delay);
+};
+
+/** F202: how long one attempt's claim on the expiry wake holds before another may send it. */
+export const EXPIRY_WAKE_CLAIM_LEASE_MS = 2 * 60 * 1000;
+
+/**
+ * The expiry's wake, sent at least once. An attempt first takes a lease on it
+ * (`expiryEventClaimedAt`, only while unsent and unclaimed or claimed more
+ * than EXPIRY_WAKE_CLAIM_LEASE_MS ago), then enqueues, then stamps
+ * `expiryEventSentAt`. A failed enqueue clears the lease, only if it is still
+ * this attempt's. A crash after the claim leaves a lease that expires, so a
+ * later retry sends. A crash after the send but before the stamp is covered by
+ * the `AgentEvent` check in the enqueue; past that event row's retention, the
+ * run can be woken twice. While another attempt holds a fresh lease this one
+ * throws, so the row stays incomplete until the wake is known sent.
+ */
+const sendToolCallExpiryWake = async (row: IApprovalAction): Promise<void> => {
+  const claimedAt = new Date();
+  const claimed = await ApprovalAction.findOneAndUpdate(
+    {
+      _id: row._id,
+      expiryEventSentAt: null,
+      $or: [
+        { expiryEventClaimedAt: null },
+        { expiryEventClaimedAt: { $lte: new Date(claimedAt.getTime() - EXPIRY_WAKE_CLAIM_LEASE_MS) } },
+      ],
+    },
+    { $set: { expiryEventClaimedAt: claimedAt } },
+  );
+  if (!claimed) {
+    const current = await ApprovalAction.findById(row._id).select('expiryEventSentAt').lean() as
+      { expiryEventSentAt?: Date } | null;
+    if (current?.expiryEventSentAt) return;
+    throw new Error('another attempt holds the wake claim');
+  }
+  try {
+    await enqueueToolCallResolvedEvent(row, undefined, undefined, { strict: true });
+  } catch (error) {
+    await ApprovalAction.updateOne(
+      { _id: row._id, expiryEventClaimedAt: claimedAt },
+      { $unset: { expiryEventClaimedAt: 1 } },
+    );
+    throw error;
+  }
+  await ApprovalAction.updateOne(
+    { _id: row._id, expiryEventSentAt: null },
+    { $set: { expiryEventSentAt: new Date() } },
+  );
+};
+
+/**
+ * Everything an expiry owes after the row flips to `expired`: the inbox item,
+ * the refusal trail and stored ending, the record, the wake to every parked
+ * run, and the card. Each step is safe to repeat (F202): the trail id derives
+ * from the approval, the record dedupes on its event key, the wake is leased
+ * on the row and stamped once sent, and the card rewrites the same payload. The steps run
+ * independently, so a failing card never holds back the wake the parked runs
+ * wait on. The marker is written only when all of them succeeded; otherwise
+ * this throws one error naming every failure, and the sweep retries the row.
+ */
+const completeToolCallExpiry = async (row: IApprovalAction): Promise<void> => {
+  // eslint-disable-next-line global-require
+  const { resolve: resolveExpiredAttention } = require('./attentionItemService');
+  await resolveExpiredAttention('approval_action', row._id);
+  row.toolCallEnding = 'expired';
+  row.toolCallCode = 'approval_expired';
+  const failures: Array<{ step: string; error: unknown }> = [];
+  const step = async (name: string, run: () => Promise<void>): Promise<void> => {
+    try {
+      await run();
+    } catch (error) {
+      failures.push({ step: name, error });
+    }
+  };
+  // Derived, so the wake and the card can name the trail row even when its
+  // write fails here and lands on a retry.
+  row.toolCallTrailId = row.toolCall ? decisionCallId(String(row._id), 'approval_expired') : undefined;
+  await step('trail', async () => {
+    await recordToolCallDecision(row, 'refused', 'approval_expired');
+    await row.save();
+    recordApprovalOutcome(row, row.toolCall, { kind: 'expired' });
+  });
+  await step('wake', () => sendToolCallExpiryWake(row));
+  await step('card', () => updateCardEverywhere(row, { strict: true }));
+  if (failures.length) {
+    throw new AggregateError(failures.map((f) => f.error), `expiry steps failed: ${failures
+      .map((f) => `${f.step} (${(f.error as Error)?.message || String(f.error)})`).join('; ')}`);
+  }
+  await ApprovalAction.updateOne({ _id: row._id }, { $set: { expirySideEffectsDoneAt: new Date() } });
+};
+
+/**
+ * The row is already `expired`, which is the decision; a failed side effect
+ * must not undo it or fail the caller. The sweep's retry picks the row up.
+ */
+const finishToolCallExpiryOrLeaveForRetry = async (row: IApprovalAction): Promise<void> => {
+  try {
+    await completeToolCallExpiry(row);
+  } catch (error) {
+    console.warn(`[approval] expiry side effects failed approval=${String(row._id)}; the sweep retries:`,
+      (error as Error).message);
+  }
+};
+
+/**
  * Close one lapsed broker approval as `expired` (scrub, trail, outcome, card,
  * wake). False when it was no longer open: someone else closed it first.
  */
 const expireToolCallApproval = async (
-  row: { _id: unknown; toolCall?: ApprovalToolCall },
+  row: { _id: unknown },
   now: Date,
 ): Promise<boolean> => {
   const result = await ApprovalAction.findOneAndUpdate(
@@ -1416,6 +1590,7 @@ const expireToolCallApproval = async (
         status: 'expired', resolvedAt: now,
         decidedBy: 'policy', decidedByRole: 'policy',
         toolCallEnding: 'expired', toolCallCode: 'approval_expired',
+        expiryRetryCount: 0,
       },
       $unset: { 'toolCall.canonicalArgs': 1 },
     },
@@ -1423,20 +1598,70 @@ const expireToolCallApproval = async (
   );
   if (!result) return false;
   if (result.toolCall) result.toolCall.canonicalArgs = undefined;
-  // eslint-disable-next-line global-require
-  const { resolve: resolveExpiredAttention } = require('./attentionItemService');
-  await resolveExpiredAttention('approval_action', row._id);
-  result.toolCallEnding = 'expired';
-  result.toolCallCode = 'approval_expired';
-  result.toolCallTrailId = await recordToolCallDecision(result, 'refused', 'approval_expired', row.toolCall);
-  await result.save();
-  recordApprovalOutcome(result, row.toolCall, { kind: 'expired' });
-  await updateCardEverywhere(result);
-  await enqueueToolCallResolvedEvent(result);
+  await finishToolCallExpiryOrLeaveForRetry(result);
   return true;
 };
 
-/** First-sweep hook for abandoned broker approvals. */
+/**
+ * F202: re-run the side effects of expiries that flipped the row but never
+ * finished (a crash or a failed step after the flip). Every other sweep
+ * selects `flagged`, so without this a parked run waits on such a row forever.
+ * A row is due at `expiryRetryDueAt`, which backs off per retry. Each attempt
+ * claims the row with one conditional write on the count and the claim time
+ * it read, stamping a new `expiryRetryClaimedAt` and bumping the count, so a
+ * second sweeper that read the same row loses the claim, and one that reads it
+ * afterwards finds it not yet due. An attempt slower than its wait can overlap
+ * the next one; every step is safe to repeat and the wake has its own lease,
+ * so the overlap costs a repeated card write, and a second wake only when a
+ * send stalls past that lease. The count caps the retries.
+ */
+const retryIncompleteToolCallExpiries = async (now: Date): Promise<number> => {
+  const incomplete = {
+    status: 'expired',
+    actionType: 'tool_call',
+    expiryRetryCount: { $lt: MAX_EXPIRY_RETRIES },
+    expirySideEffectsDoneAt: null,
+  };
+  // The first wait is the shortest, so nothing flipped inside it can be due.
+  const candidates = await ApprovalAction.find({
+    ...incomplete, resolvedAt: { $lte: new Date(now.getTime() - EXPIRY_RETRY_GRACE_MS) },
+  }).select('_id resolvedAt expiryRetryClaimedAt expiryRetryCount').sort({ resolvedAt: 1 }).limit(500)
+    .lean() as Array<{ _id: unknown; resolvedAt: Date; expiryRetryClaimedAt?: Date; expiryRetryCount: number }>;
+  const rows = candidates.filter((one) => expiryRetryDueAt(one).getTime() <= now.getTime());
+  let completed = 0;
+  for (const one of rows) {
+    // eslint-disable-next-line no-await-in-loop
+    const claimed = await ApprovalAction.findOneAndUpdate(
+      {
+        ...incomplete,
+        _id: one._id,
+        expiryRetryCount: one.expiryRetryCount,
+        expiryRetryClaimedAt: one.expiryRetryClaimedAt || null,
+      },
+      { $inc: { expiryRetryCount: 1 }, $set: { expiryRetryClaimedAt: now } },
+      { new: true },
+    );
+    if (!claimed) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await completeToolCallExpiry(claimed);
+      completed += 1;
+    } catch (error) {
+      const attempts = Number(claimed.expiryRetryCount);
+      const message = (error as Error).message;
+      if (attempts >= MAX_EXPIRY_RETRIES) {
+        console.error(`[approval] expiry side effects gave up approval=${String(claimed._id)} `
+          + `after ${attempts} retries; its trail, card or wake may be missing. Once the cause is fixed, `
+          + 'requeue it with backend/scripts/retry-capped-approval-expiries.ts --apply:', message);
+      } else {
+        console.warn(`[approval] expiry retry ${attempts} failed approval=${String(claimed._id)}:`, message);
+      }
+    }
+  }
+  return completed;
+};
+
+/** First-sweep hook for abandoned broker approvals, and F202's expiry retry. */
 export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<number> => {
   const rows = await ApprovalAction.find({
     actionType: 'tool_call',
@@ -1448,6 +1673,8 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
     // eslint-disable-next-line no-await-in-loop
     if (await expireToolCallApproval(row, now)) expired += 1;
   }
+  const retried = await retryIncompleteToolCallExpiries(now);
+  if (retried) console.log(`[approval] completed crashed tool-call expiries=${retried}`);
   return expired;
 };
 

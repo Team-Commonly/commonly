@@ -112,6 +112,37 @@ export interface IApprovalAction extends Document {
   toolCallEnding?: ApprovalToolCallEnding;
   toolCallCode?: string;
   toolCallTrailId?: string;
+  /**
+   * tool_call only (F202): how many times the expiry sweep has re-run this
+   * row's expiry side effects (trail, card, wake). Set to 0 by the same write
+   * that flips the row to `expired`, so a row without it (a legacy expiry, or
+   * any other ending) is never re-selected. Retries stop at
+   * MAX_EXPIRY_RETRIES in approvalActionService.
+   */
+  expiryRetryCount?: number;
+  /**
+   * tool_call only (F202): when every expiry side effect last succeeded. Unset
+   * means the trail, card or wake may be missing, and the sweep retries it.
+   */
+  expirySideEffectsDoneAt?: Date;
+  /**
+   * tool_call only (F202): when the expiry's `approval.resolved` wake was
+   * enqueued. A retried expiry skips the wake once it is set.
+   */
+  expiryEventSentAt?: Date;
+  /**
+   * tool_call only (F202): one attempt's lease on sending the expiry wake,
+   * taken before the send and cleared if the send fails. Another attempt may
+   * take it once it is EXPIRY_WAKE_CLAIM_LEASE_MS old, so a crashed sender
+   * never loses the wake.
+   */
+  expiryEventClaimedAt?: Date;
+  /**
+   * tool_call only (F202): when the expiry sweep last claimed this row for a
+   * retry. The row is held for EXPIRY_RETRY_GRACE_MS after it, as after
+   * `resolvedAt`, so a second sweeper does not take it meanwhile.
+   */
+  expiryRetryClaimedAt?: Date;
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -161,6 +192,11 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     toolCallEnding: { type: String, enum: ['ran', 'failed', 'refused', 'declined', 'expired'] },
     toolCallCode: { type: String },
     toolCallTrailId: { type: String },
+    expiryRetryCount: { type: Number },
+    expirySideEffectsDoneAt: { type: Date },
+    expiryEventSentAt: { type: Date },
+    expiryEventClaimedAt: { type: Date },
+    expiryRetryClaimedAt: { type: Date },
     // Plain Date — deliberately NOT a Mongo TTL index: expiry is a lifecycle
     // STATE (the card renders "expired"), not a deletion.
     expiresAt: { type: Date, default: () => new Date(Date.now() + DEFAULT_TTL_MS) },
@@ -198,6 +234,13 @@ ApprovalActionSchema.index(
 ApprovalActionSchema.index(
   { podId: 1, agentUserId: 1, toolCallSlot: 1 },
   { unique: true, name: 'tool_call_open_slot', partialFilterExpression: OPEN_TOOL_CALL_SLOT },
+);
+
+// F202: the expiry sweep's retry lookup. Partial on `expiryRetryCount`, which
+// only the F202 expiry write sets, so legacy and non-expired rows stay out.
+ApprovalActionSchema.index(
+  { status: 1, actionType: 1, resolvedAt: 1 },
+  { name: 'tool_call_expiry_retry', partialFilterExpression: { expiryRetryCount: { $exists: true } } },
 );
 
 export const ApprovalAction: Model<IApprovalAction> =
