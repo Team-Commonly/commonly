@@ -226,6 +226,35 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
     expect(acked).toEqual(['evt-join']);
   });
 
+  // Gate review of #3511: two pods' greetings carried in the same window must
+  // both survive. Assigning the second group over the first dropped pod A's
+  // greeting until the server's requeue, 10 to 20 minutes later.
+  test('greetings for two pods carried in the same window both run, and the window is not shortened', async () => {
+    const spawn = jest.fn(async () => ({ text: 'hello' }));
+    const joinB = { ...joinEvent, _id: 'evt-join-b', podId: 'pod-other' };
+    const { acked } = await runTicks({
+      arrivals: [[joinEvent], [joinB]],
+      ticks: HOLD_POLLS + 2,
+      spawn,
+    });
+
+    expect(acked.sort()).toEqual(['evt-join', 'evt-join-b']);
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  test('a second pod\'s greeting does not spend the window early', async () => {
+    const spawn = jest.fn(async () => ({ text: 'hello' }));
+    const joinB = { ...joinEvent, _id: 'evt-join-b', podId: 'pod-other' };
+    const { acked } = await runTicks({
+      arrivals: [[joinEvent, joinB]],
+      ticks: HOLD_POLLS,
+      spawn,
+    });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(acked).toEqual([]);
+  });
+
   test('only the connect-time greeting is held: once it has run, a later one is not carried', async () => {
     const spawn = jest.fn(async () => ({ text: 'hi' }));
     const later = { ...joinEvent, _id: 'evt-join-2' };

@@ -3526,6 +3526,9 @@ export const performRun = ({
         eventGroups.set(key, group);
       }
       const groups = [...eventGroups.values()];
+      // The greeting window is counted once per poll, however many pods'
+      // greetings this page carries (gate review of #3511).
+      let greetingCarriedThisPoll = false;
       // The claimed events a failure at `groupIndex` stops before they run.
       // A digest-only group was never claimed, so it is not carried.
       const untriedAfter = (groupIndex) => groups.slice(groupIndex + 1)
@@ -3546,14 +3549,20 @@ export const performRun = ({
           // agent in that window is answered first, in the same turn, instead
           // of behind a greeting. Only the connect-time greeting is held: once
           // a turn has carried one, later greetings run as they arrive.
-          if (!greetingHoldSpent && greetingHeldPolls < greetingHoldPolls
+          if (!greetingHoldSpent && (greetingCarriedThisPoll || greetingHeldPolls < greetingHoldPolls)
             && group.every((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) {
-            if (greetingHeldPolls === 0) {
+            if (greetingHeldPolls === 0 && !greetingCarriedThisPoll) {
               log(`[inbox.batch] carrying ${group.length} greeting event(s) for up to `
                 + `${Math.round(GREETING_HOLD_MS / 1000)} s, so a person who mentions this agent is answered first`);
             }
-            greetingHeldPolls += 1;
-            heldGreeting = group;
+            if (!greetingCarriedThisPoll) {
+              greetingCarriedThisPoll = true;
+              greetingHeldPolls += 1;
+            }
+            // Appended, never assigned: two pods' greetings can be carried in
+            // the same window, and an overwrite left the first unacked until
+            // the server's requeue, 10 to 20 minutes later.
+            heldGreeting = [...heldGreeting, ...group];
             continue;
           }
           if (group.some((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) greetingHoldSpent = true;
