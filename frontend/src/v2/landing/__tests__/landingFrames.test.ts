@@ -33,6 +33,12 @@ const FRAMES: Array<[landing: string, source: string, dir: string]> = [
 const LANDING_ONLY = ['byo.png'];
 const LANDING_IMAGES = [...FRAMES.map(([landing]) => landing), ...LANDING_ONLY].sort();
 
+// The connect command carries a private key from the app, so the landing can't
+// print a working one. A placeholder `agent attach` sent a visitor to a failure.
+test('the landing prints no agent attach command', () => {
+  expect(PAGE).not.toMatch(/agent attach/);
+});
+
 describe('landing feature frames', () => {
   test.each(FRAMES)('%s is byte-identical to its source frame %s', (landing, source, dir) => {
     const copy = fs.readFileSync(path.join(LANDING_ASSETS, landing));

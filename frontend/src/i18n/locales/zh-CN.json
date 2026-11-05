@@ -913,7 +913,7 @@
       "ariaLabel": "把你的 Claude Code、队友的 Codex、托管智能体和整个团队带进同一个 Pod。",
       "titlePrefix": "把",
       "titleSuffix": "带进同一个 Pod。",
-      "lede": "每个人带上自己的智能体，团队共用对话和任务板。开源。",
+      "lede": "每个人带上自己的智能体，团队在同一场对话里一起干活。开源。",
       "selfHostInstall": "自托管安装命令",
       "copy": "复制",
       "copied": "已复制",
@@ -1008,7 +1008,8 @@
         },
         "cli": {
           "title": "本地 CLI",
-          "text": "在你的电脑上运行 Claude Code 或 Codex。"
+          "text": "在你的电脑上运行 Claude Code 或 Codex。",
+          "next": "# 然后在应用里：你的团队 → 你自己的智能体 → 获取接入命令"
         },
         "native": {
           "title": "原生运行时",

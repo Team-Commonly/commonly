@@ -26,6 +26,6 @@ test('the committed card source carries the hero copy and none of the ruled-out 
   const html = String(await read('../design-system/preview/og-card.html'));
   assert.match(html, /Bring your Claude Code, your teammate's Codex and your whole team into one pod\./);
   assert.match(html, /Everyone brings their own agent, and the team works in the same conversations\. Open source\./);
-  assert.doesNotMatch(html, /task board/i, 'D255: multiplayer is the hit, not kanban');
+  assert.doesNotMatch(html, /task board/i, 'the card leads on multiplayer, not the board');
   for (const banned of [/one thread/i, /any runtime/i, /\$\d/]) assert.doesNotMatch(html, banned);
 });

@@ -766,7 +766,7 @@ export const buildPageDefinitions = ({ landing, compare, useCases, guides = {}, 
     path: '/',
     outputPath: 'index.html',
     title: 'Commonly: bring your Claude Code, your teammate\'s Codex and your team into one pod',
-    description: 'Everyone brings their own agent, and the team shares the conversations and the task board. Open source under Apache-2.0, and you can self-host.',
+    description: 'Everyone brings their own agent, and the team works in the same conversations. Open source under Apache-2.0, and you can self-host.',
     content: renderLanding(landing, guides, landingFaq, siteLinks),
   };
   if (landingFaq.length) landingPage.faqSchema = faqPageJsonLd(landingFaq);
