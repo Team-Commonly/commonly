@@ -222,21 +222,29 @@ describe('page-issued key model configuration', () => {
       expect((await stored(ownInstall)).environment.model).toBe('claude-haiku-5-5');
     });
 
-    it('checks the model against every adapter its rows declare, and changes no row on a refusal', async () => {
+    it('checks the model and effort against every adapter its rows declare, and changes no row on a refusal', async () => {
       await bindKey();
       const secondPod = await Pod.create({ name: 'BYO second pod', createdBy: owner._id, members: [owner._id] });
       const secondInstall = await AgentInstallation.create({ agentName: 'byo-config', instanceId: 'default',
         podId: secondPod._id, version: '1', installedBy: owner._id,
-        config: { runtime: { runtimeType: 'webhook', host: 'byo', adapter: 'codex' }, environment: { model: 'old-model' } } });
+        config: { runtime: { runtimeType: 'webhook', host: 'byo', adapter: 'codex', model: 'gpt-9', effort: 'low' },
+          environment: { model: 'gpt-9', effort: 'low' } } });
       await AgentInstallation.updateOne({ _id: ownInstall._id }, { $set: { 'config.runtime.adapter': 'claude' } });
       await Machine.updateOne({ machineId: 'machine-config' }, { $set: { inventoryAt: new Date(), runtimeInventory: [
-        { harness: 'claude', installed: true, models: ['claude-haiku-5-5'], efforts: ['low'] },
-        { harness: 'codex', installed: true, models: ['gpt-9'], efforts: ['low'] },
+        { harness: 'claude', installed: true, models: ['claude-haiku-5-5', 'shared-model'], efforts: ['low', 'high'] },
+        { harness: 'codex', installed: true, models: ['gpt-9', 'shared-model'], efforts: ['low'] },
       ] } });
-      const response = await patch({ model: 'claude-haiku-5-5' });
-      expect(response.status).toBe(422);
-      expect((await stored(ownInstall)).environment.model).toBe('old-model');
-      expect((await stored(secondInstall)).environment.model).toBe('old-model');
+      const before = [await stored(ownInstall), await stored(secondInstall)];
+      // A model only the first adapter reports.
+      expect((await patch({ model: 'claude-haiku-5-5' })).status).toBe(422);
+      // An effort only the first adapter reports, with a model both report.
+      expect((await patch({ model: 'shared-model', effort: 'high' })).status).toBe(422);
+      expect((await patch({ effort: 'high' })).status).toBe(422);
+      const after = [await stored(ownInstall), await stored(secondInstall)];
+      for (const [index, config] of after.entries()) {
+        expect({ environment: config.environment, runtime: config.runtime })
+          .toEqual({ environment: before[index].environment, runtime: before[index].runtime });
+      }
     });
   });
   it('requires owner login for adapter edits', async () => {

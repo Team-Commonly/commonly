@@ -73,6 +73,13 @@ const UNRELATED = [
   ['a model id that starts with 404', new Error('codex turn failed: model 404-mini not found')],
   ['a 403 only inside a model id, with the key-scope phrase', new Error(
     'claude exited with code 1: The requested model claude-403x is not available for this API key')],
+  ['a request id of 404 on a 500', Object.assign(
+    new Error('codex turn failed: request_id=404 model: gpt-5'), { status: 500 })],
+  ['a request id of 404 with no status attached', new Error('codex turn failed: request_id=404 model: gpt-5')],
+  ['a status-shaped 404 in text when the attached status is 500', Object.assign(
+    new Error('codex turn failed: HTTP 404: model: gpt-5'), { status: 500 })],
+  ['a status-shaped 403 beside the key-scope phrase when the attached status is 500', Object.assign(
+    new Error('HTTP 403: The requested model claude-x-3 is not available for this API key'), { status: 500 })],
   ['a quota failure', adapterFailure('claude', "You've hit your weekly limit", { exitCode: 1 })],
   ['a withheld public tool quoting vendor text', Object.assign(
     new Error('tool failed: The requested model x is not available for this API key'),
@@ -94,6 +101,12 @@ describe('modelUnavailableFailure', () => {
       '400: {"error":{"message":"Request rejected","code":"model_not_found"}}', { exitCode: 1 }), 'seat-model'],
     ['a 403 key-scope phrase attached by status', Object.assign(
       new Error('claude: The requested model claude-x-2 is not available for this API key'), { status: 403 }), 'claude-x-2'],
+    ['an attached 404 with a model shape in the text', Object.assign(new Error('codex turn failed: model: gpt-5 is gone'),
+      { status: 404 }), 'gpt-5'],
+    ['no attached status and HTTP 404 beside a model shape', new Error('proxy answered HTTP 404 Not Found, model: claude-x-1'),
+      'claude-x-1'],
+    ['a status_code field', new Error('proxy error status_code: 404 model: claude-x-4'), 'claude-x-4'],
+    ['an HTTP status line', new Error('HTTP/1.1 404 Not Found: model claude-x-2 not found'), 'claude-x-2'],
     ['a 404 whose prose names no id', adapterFailure('codex', 'HTTP 404: model is not found'), 'seat-model'],
   ])('recognises %s', (_label, error, model) => {
     expect(modelUnavailableFailure(error, { fallbackModel: 'seat-model' })).toEqual({ model });

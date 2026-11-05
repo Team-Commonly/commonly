@@ -31,11 +31,14 @@ import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-too
 export const MODEL_UNAVAILABLE_HINT_WINDOW_MS = 60 * 60 * 1000;
 
 const NOT_AVAILABLE_FOR_KEY_RE = /\bmodel\b[^\n]{0,160}?\bis not available for (?:this|your) API key\b/i;
-// A status-shaped code only: after a line start, whitespace, `(`, `[`, `:`, `=`,
-// `,` or a quote, or straight after HTTP/status/code, and never followed by a
-// word character, `.` or `-`. A 403/404 inside a model id (`gpt-404-mini`,
-// `claude-403x`) is not a status.
-const statusRe = (code) => new RegExp(`(?:^|[\\s(\\[:=,'"\`]|(?:HTTP|status|code)_?)${code}(?![\\w.-])`, 'i');
+// A status read out of text counts only where a status is written: at a line
+// start, just inside a bracket, or after an explicit HTTP, HTTP/1.1, HTTP status,
+// status, status_code, code, our own `upstream` label (adapterFailure's "(upstream 404)") or
+// claude's `API Error`, each with an optional `:`, `=`, `_` or `-`. It is never
+// followed by a word character, `.` or `-`. So `request_id=404`, `gpt-404-mini`
+// and `claude-403x` are not statuses.
+const statusRe = (code) => new RegExp('(?:^\\s*|[([{]\\s*|\\b(?:HTTP(?:/\\d(?:\\.\\d)?|\\s+status)?'
+  + `|status(?:_?code)?|code|upstream|API\\s+Error)\\s*[:=_-]?\\s*)${code}(?![\\w.-])`, 'i');
 const STATUS_403_RE = statusRe(403);
 const MODEL_404_SHAPES = [
   /\bmodel:\s*[`'"]?[\w.:/@-]+/i,
@@ -104,12 +107,19 @@ export const modelUnavailableFailure = (error, { fallbackModel = null } = {}) =>
   // The key-scope phrase counts only on a 403: the attached status, or a 403 on
   // the phrase's own line. The provider's code counts only as the structured
   // field adapterFailure keeps, never as words in a message.
-  const keyScope = NOT_AVAILABLE_FOR_KEY_RE.test(text) && (error.status === 403
-    || text.split('\n').some((line) => STATUS_403_RE.test(line) && NOT_AVAILABLE_FOR_KEY_RE.test(line)));
+  // An attached status is the adapter's own reading of the failure, so it wins:
+  // when it is set, only that status decides, and the text is not searched for
+  // another one. Without it, the status must be written on the same line.
+  const attached = typeof error.status === 'number' ? error.status : null;
+  const lines = text.split('\n');
+  const keyScope = NOT_AVAILABLE_FOR_KEY_RE.test(text) && (attached !== null ? attached === 403
+    : lines.some((line) => STATUS_403_RE.test(line) && NOT_AVAILABLE_FOR_KEY_RE.test(line)));
+  const notFound = attached !== null
+    ? attached === 404 && (lines.some(modelShaped) || jsonBody404(text))
+    : sameLine404(text) || jsonBody404(text);
   const matched = keyScope
     || error.providerCode === 'model_not_found'
-    || sameLine404(text)
-    || jsonBody404(text);
+    || notFound;
   if (!matched) return null;
   for (const pattern of MODEL_NAME_RES) {
     const named = safeModelName(pattern.exec(text)?.[1]);
