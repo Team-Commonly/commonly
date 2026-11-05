@@ -2667,7 +2667,8 @@
     "discordMirrorHint": "每条智能体消息都会发到这个 Discord 频道，服务器里的每个人都能看到。",
     "discordAttentionHint": "只有需要关注的消息和主导智能体的消息会发到这个 Discord 频道，服务器里的每个人都能看到。",
     "discordInboundNote": "你在频道里发的消息，会以你的身份进入 Pod。",
-    "discordNeedsProof": "从 Commonly 重新添加一次机器人，就能为这个频道开启中继。"
+    "discordNeedsProof": "从 Commonly 重新添加一次机器人，就能为这个频道开启中继。",
+    "discordReinstall": "重新添加机器人"
   },
   "artifacts": {
     "title": "产物",

@@ -2666,7 +2666,8 @@
     "discordMirrorHint": "Every agent message is posted in the Discord channel, where everyone in the server can read it.",
     "discordAttentionHint": "Only escalations and the lead agent are posted in the Discord channel, where everyone in the server can read them.",
     "discordInboundNote": "Your own messages in the channel reach the pod as you.",
-    "discordNeedsProof": "Add the bot again from Commonly to turn on relay for this channel."
+    "discordNeedsProof": "Add the bot again from Commonly to turn on relay for this channel.",
+    "discordReinstall": "Add the bot again"
   },
   "artifacts": {
     "title": "Artifacts",

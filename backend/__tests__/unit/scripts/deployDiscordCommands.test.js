@@ -14,7 +14,10 @@ beforeEach(() => {
   jest.spyOn(console, 'log').mockImplementation(() => {});
 });
 
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.restoreAllMocks();
+  process.exitCode = undefined;
+});
 
 test('one PUT to the global commands endpoint, carrying all seven bridge commands', async () => {
   axios.put.mockResolvedValue({ status: 200 });
@@ -39,4 +42,46 @@ test('/mode offers exactly the two modes, and /mute takes a duration', () => {
   expect(mode.options[0].choices.map((c) => c.value)).toEqual(['mirror', 'attention']);
   const mute = commands.find((c) => c.name === 'mute');
   expect(mute.options[0]).toMatchObject({ name: 'duration', type: 3, required: false });
+});
+
+// F161 item 8: the bridge commands make sense only in a guild channel bound to a pod.
+test('every bridge command is offered in guilds only', () => {
+  const commands = require('../../../config/discordApplicationCommands.json');
+  BRIDGE.forEach((name) => {
+    expect(commands.find((c) => c.name === name).contexts).toEqual([0]);
+  });
+});
+
+// F161 item 5: the boot-time PUT cannot hang boot, and a failure is an exit code.
+describe('deploy at boot', () => {
+  beforeEach(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(DiscordCommandDeployment.prototype, 'sleep').mockResolvedValue();
+  });
+
+  test('the PUT carries a 10 s timeout', async () => {
+    axios.put.mockResolvedValue({ status: 200 });
+    await new DiscordCommandDeployment().deploy();
+    expect(axios.put.mock.calls[0][2].timeout).toBe(10_000);
+  });
+
+  test('main sets exit code 1 when every attempt fails', async () => {
+    axios.put.mockRejectedValue(Object.assign(new Error('timeout of 10000ms exceeded'), { code: 'ECONNABORTED' }));
+    await DiscordCommandDeployment.main(['deploy']);
+    expect(axios.put).toHaveBeenCalledTimes(3);
+    expect(process.exitCode).toBe(1);
+  });
+
+  test('main sets exit code 1 when credentials are missing', async () => {
+    delete process.env.DISCORD_BOT_TOKEN;
+    await DiscordCommandDeployment.main(['deploy']);
+    expect(axios.put).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  test('main leaves the exit code alone on success', async () => {
+    axios.put.mockResolvedValue({ status: 200 });
+    await DiscordCommandDeployment.main(['deploy']);
+    expect(process.exitCode).toBeUndefined();
+  });
 });

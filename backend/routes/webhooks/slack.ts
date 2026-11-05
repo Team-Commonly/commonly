@@ -156,10 +156,11 @@ const commandHelp = 'Use /commonly status, mode mirror|attention, mute [minutes]
 // with a subcommand. The subcommand is case-insensitive, the argument is taken
 // as typed, and anything unrecognised — an empty text included — is help.
 const parseSlackRelayCommand = (text: unknown): RelayCommand => {
-  const [command, argument] = String(text || '').trim().split(/\s+/, 2);
+  const [command, argument, ...rest] = String(text || '').trim().split(/\s+/);
   const normalized = command?.toLowerCase() || 'help';
   if (normalized === 'mode') return { name: 'mode', arg: argument };
-  if (normalized === 'mute') return { name: 'mute', arg: argument };
+  // /mute reads its whole argument (`mute 2 hours`); the others read one word (F161).
+  if (normalized === 'mute') return { name: 'mute', arg: [argument, ...rest].filter(Boolean).join(' ') || undefined };
   if (normalized === 'unmute') return { name: 'unmute' };
   if (normalized === 'status') return { name: 'status' };
   return { name: 'help' };
@@ -177,6 +178,8 @@ const slackCommandReply = (outcome: RelayCommandOutcome): string => {
       return `Relay mode: ${outcome.mode}.`;
     case 'mute':
       return `Muted for ${outcome.minutes} minutes.`;
+    case 'mute-usage':
+      return 'Usage: /commonly mute 30m|2h';
     case 'unmute':
       return 'Relay unmuted.';
     case 'status':

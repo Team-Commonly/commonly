@@ -130,6 +130,19 @@ describe('DiscordService', () => {
     });
   });
 
+  // F161 item 1: the single-pod path hands the caller's Discord id to the toggles.
+  describe('handleSlashCommand passes the caller to the sync toggles', () => {
+    it.each([
+      ['discord-enable', 'handleEnableCommand', { member: { user: { id: '345678901234567890' } } }],
+      ['discord-disable', 'handleDisableCommand', { user: { id: '345678901234567890' } }],
+    ])('%s', async (name, method, who) => {
+      const handler = jest.fn().mockResolvedValue({ success: true, content: 'ok' });
+      discordService.commandService = { [method]: handler };
+      await discordService.handleSlashCommand(name, { type: 2, data: { name }, ...who });
+      expect(handler).toHaveBeenCalledWith('345678901234567890');
+    });
+  });
+
   describe('initialization', () => {
     it('should initialize successfully with valid integration', async () => {
       const result = await discordService.initialize();
@@ -450,6 +463,18 @@ describe('DiscordService', () => {
   });
 
   describe('registerSlashCommands', () => {
+    // F161 item 2: every command is global (config/discordApplicationCommands.json),
+    // so a guild registration carries none of them. The PUT is a bulk overwrite,
+    // so an empty one also clears the duplicates older guild registrations left.
+    it('registers nothing per guild that is already global', async () => {
+      axios.put.mockResolvedValue({ status: 200 });
+      await discordService.registerSlashCommands('guild123');
+      const [url, commands] = axios.put.mock.calls[0];
+      expect(url).toMatch(/\/guilds\/guild123\/commands$/);
+      const globalNames = require('../../../config/discordApplicationCommands.json').map((c) => c.name);
+      expect(commands.filter((c) => globalNames.includes(c.name))).toEqual([]);
+    });
+
     it('should register commands successfully', async () => {
       axios.put.mockResolvedValue({ status: 200 });
 

@@ -401,7 +401,7 @@ const HELP_TEXT = [
   '  • <b>mirror</b>: every agent message in the pod is copied here',
   '  • <b>attention</b>: only escalations and the lead agent reach you',
   '/status — pod, mode, and mute state for this chat',
-  '/mute [minutes] — pause relay to this chat (default 60); /unmute to resume',
+  '/mute [30m | 2h] — pause relay to this chat (default 60 minutes; a bare number is minutes); /unmute to resume',
   '/tldr — latest pod summary',
   '/summary — summarize recent chat here into the pod',
 ].join('\n');
@@ -425,6 +425,8 @@ const telegramCommandReply = (outcome: RelayCommandOutcome, podName?: string): s
         : 'Mode: <b>attention</b> — only escalations and the lead agent reach you.';
     case 'mute':
       return `Muted for ${outcome.minutes} min — nothing relays here until then. /unmute to resume.`;
+    case 'mute-usage':
+      return 'Usage: /mute 30m or /mute 2h (a bare number is minutes, at most 24 hours)';
     case 'unmute':
       return 'Unmuted — relay resumes.';
     case 'status': {
@@ -524,7 +526,8 @@ router.post('/', telegramWebhookRateLimit, async (req: any, res: any) => {
       return res.sendStatus(200);
     }
 
-    const relayCommand = parseTelegramRelayCommand(command, args[0]);
+    // /mute reads its whole argument (`/mute 2 hours`); /mode reads one word.
+    const relayCommand = parseTelegramRelayCommand(command, command === MUTE_COMMAND ? args.join(' ') : args[0]);
     if (relayCommand) {
       await handleRelayCommand(chat, integration, relayCommand);
       return res.sendStatus(200);

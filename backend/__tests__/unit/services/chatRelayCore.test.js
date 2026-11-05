@@ -76,13 +76,25 @@ describe('applyRelayCommand', () => {
   });
 
   test.each([
-    [undefined, 60], ['15', 15], ['0', 60], ['-5', 1], ['99999', 1440], ['soon', 60],
+    [undefined, 60], ['', 60], ['15', 15], ['0', 60], ['99999', 1440],
+    ['30m', 30], ['2h', 120], ['2 hours', 120], [' 45 min ', 45],
   ])('mute %p is %i minutes from now', (arg, minutes) => {
     const outcome = applyRelayCommand({ name: 'mute', arg }, integration, NOW);
     const until = new Date(NOW.getTime() + minutes * MIN);
     expect(outcome).toEqual({
       kind: 'mute', minutes, until, update: { $set: { 'config.relayMutedUntil': until } }, 
     });
+  });
+
+  // F161 item 7: a unit the parse cannot read is usage, not a guess. Before,
+  // `90s` fell through to parseInt and muted for 90 minutes.
+  test.each(['90s', '1.5h', 'soon', '-5', '2 days'])('mute %p is usage and writes nothing', (arg) => {
+    expect(applyRelayCommand({ name: 'mute', arg }, integration, NOW)).toEqual({ kind: 'mute-usage' });
+  });
+
+  test('a refused caller still gets usage for a bad duration, since nothing would be written', () => {
+    expect(applyRelayCommand({ name: 'mute', arg: '90s' }, integration, NOW, { mayChangeSettings: false }))
+      .toEqual({ kind: 'mute-usage' });
   });
 
   test('unmute unsets only the owner mute', () => {

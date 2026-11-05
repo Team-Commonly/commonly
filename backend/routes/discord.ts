@@ -26,7 +26,9 @@ import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middle
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { invalidDiscordIdError, isDiscordSnowflake, isSupplied } from '../utils/discordBinding';
 import { assertCanBindSurface, SurfaceBindRefusedError } from '../services/chatRelay/bindSurface';
-import { discordApplicationCommands, handleDiscordRelayCommand, isDiscordRelayCommand } from '../services/discordRelayCommandService';
+import {
+  discordApplicationCommands, handleDiscordRelayCommand, interactionActorId, isDiscordRelayCommand,
+} from '../services/discordRelayCommandService';
 import {
   mintDiscordInstallProof, mintDiscordInstallState, readDiscordInstallProof, readDiscordInstallState,
 } from '../utils/discordInstallProof';
@@ -221,7 +223,9 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
         return res.json({ type: 4, data: { content: '❌ Command not recognized.', flags: 64 } });
       }
 
-      const commandResults = await runDiscordCommandForIntegrations({ commandName: data.name, integrations, guildId, channelId }) as Array<{ integration: typeof integrations[0]; result: { content: string; success: boolean; refused?: boolean } }>;
+      const commandResults = await runDiscordCommandForIntegrations({
+        commandName: data.name, integrations, guildId, channelId, actorId: interactionActorId(interaction),
+      }) as Array<{ integration: typeof integrations[0]; result: { content: string; success: boolean; refused?: boolean } }>;
       const header = `🔗 ${integrations.length} pods linked to this Discord channel`;
       const blocks = commandResults.map(({ integration, result }) => {
         const podName = (integration.podId as { name?: string })?.name || integration.config?.channelName || `Pod ${integration.podId || integration._id}`;
@@ -328,7 +332,9 @@ router.post('/register-commands/:integrationId', auth, async (req: AuthReq, res:
     const discordService = new DiscordService(integrationId);
     await discordService.initialize();
     const success = await discordService.registerSlashCommands(guildId);
-    if (success) res.json({ message: 'Slash commands registered successfully', commands: ['/commonly-summary', '/discord-status', '/discord-enable', '/discord-disable'] });
+    // Every command is global (F161), so a guild registration clears the
+    // guild's duplicate copies and adds none.
+    if (success) res.json({ message: 'Guild command copies cleared; every command is registered globally', commands: [] });
     else res.status(500).json({ error: 'Failed to register slash commands' });
   } catch (error) {
     console.error('Error registering slash commands:', error);

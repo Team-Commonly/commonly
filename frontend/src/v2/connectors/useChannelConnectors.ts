@@ -705,9 +705,24 @@ export const useChannelConnectors = () => {
     const title = connector.config?.chatTitle || connector.config?.teamName || TYPE_LABELS[connector.type] || connector.type;
 
     if (connector.status === 'error') {
+      // F161: reconnecting a Discord channel is adding the bot again, through
+      // the install link the Connect flow uses.
+      const isDiscordRow = connector.type === 'discord';
+      let errorAction: ConnectorAction | null = null;
+      let errorActionLabel = '';
+      if (isTelegram) {
+        errorAction = 'new-code';
+        errorActionLabel = t('connectors.newCode', { defaultValue: 'New code' });
+      } else if (isSlack) {
+        errorAction = 'authorize';
+        errorActionLabel = t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' });
+      } else if (isDiscordRow && connectorPodId(connector)) {
+        errorAction = 'reinstall';
+        errorActionLabel = t('connectors.discordReinstall', { defaultValue: 'Add the bot again' });
+      }
       return {
-        action: isTelegram ? 'new-code' : isSlack ? 'authorize' : null,
-        actionLabel: isTelegram ? t('connectors.newCode', { defaultValue: 'New code' }) : t('connectors.slackAuthorize', { defaultValue: 'Authorize in Slack' }),
+        action: errorAction,
+        actionLabel: errorActionLabel,
         detail: t('connectors.errorReconnect', { defaultValue: 'reconnect to resume' }),
         dot: 'empty',
         line: connector.errorMessageUserFacing && connector.errorMessage
@@ -1073,6 +1088,10 @@ export const useChannelConnectors = () => {
     if (!connector) return undefined;
     if (action === 'new-code') return regenerateCode(connector);
     if (action === 'authorize') return authorizeSlack(connector, item.key);
+    if (action === 'reinstall') {
+      const podId = connectorPodId(connector);
+      return podId ? linkInstall(connector.type, String(podId)) : undefined;
+    }
     // The row opens the aside where the active pod's lead can be chosen.
     // Sending a confirm here would silently omit that choice.
     if (action === 'confirm') return undefined;

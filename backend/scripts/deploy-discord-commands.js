@@ -117,11 +117,14 @@ class DiscordCommandDeployment {
     try {
       const url = `https://discord.com/api/v10/applications/${clientId}/commands`;
 
+      // Bounded: this runs at boot (start.sh), and an unanswered PUT would
+      // hold the server's start for as long as the socket stays open.
       const response = await axios.put(url, commands, {
         headers: {
           Authorization: `Bot ${botToken}`,
           "Content-Type": "application/json",
         },
+        timeout: 10_000,
       });
 
       if (response.status === 200 || response.status === 201) {
@@ -233,18 +236,23 @@ class DiscordCommandDeployment {
 /**
  * CLI interface
  */
-async function main() {
-  const args = process.argv.slice(2);
+async function main(args = process.argv.slice(2)) {
   const command = args[0];
 
   const deployment = new DiscordCommandDeployment();
 
+  // A failure is an exit code, so start.sh can say so. start.sh does not
+  // stop the boot on it.
+  const failIf = (result) => {
+    if (!result || !result.success) process.exitCode = 1;
+  };
+
   switch (command) {
     case "deploy":
-      await deployment.deploy();
+      failIf(await deployment.deploy());
       break;
     case "verify":
-      await deployment.verifyDeployment();
+      failIf(await deployment.verifyDeployment());
       break;
     case "help":
       console.log("Discord Command Deployment Script");
@@ -267,13 +275,17 @@ async function main() {
       break;
     default:
       // Default: deploy
-      await deployment.deploy();
+      failIf(await deployment.deploy());
   }
 }
 
 // Run if called directly
 if (require.main === module) {
-  main().catch(console.error);
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 }
 
 module.exports = DiscordCommandDeployment;
+module.exports.main = main;
