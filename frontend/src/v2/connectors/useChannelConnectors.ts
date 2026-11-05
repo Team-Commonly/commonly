@@ -93,6 +93,7 @@ export const useChannelConnectors = () => {
   const [hostedMcpCallbackNotice, setHostedMcpCallbackNotice] = useState<
     | { kind: 'installed'; provider: string; connected: boolean }
     | { kind: 'access'; provider: string; accessPage: string }
+    | { kind: 'reach'; provider: string }
     | null
   >(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -279,6 +280,11 @@ export const useChannelConnectors = () => {
       if (entry?.label && safeProviderRevokePage(entry.accessPage)) {
         setHostedMcpCallbackNotice({ kind: 'access', provider: entry.label, accessPage: entry.accessPage });
       }
+    }
+    // TASK-782: connected, but the account can see nothing to search yet.
+    if (entryId && query.get('next') === 'reach') {
+      const entry = hostedCatalog.find((candidate) => candidate.entryId === entryId);
+      if (entry?.label) setHostedMcpCallbackNotice({ kind: 'reach', provider: entry.label });
     }
     if (entryId && revokeAt) {
       const row = connectors.find((candidate) => (

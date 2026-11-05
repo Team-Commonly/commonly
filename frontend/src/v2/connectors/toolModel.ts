@@ -113,6 +113,8 @@ export interface ToolConnection {
   connectedAt?: string;
   /** The bot User a key row is bound to; absent on the OAuth sign-in. */
   agentId?: string;
+  /** TASK-782: at connect, the account could see nothing to search (Sentry with no projects). */
+  reach?: 'none';
 }
 
 export interface HiddenToolConnection {
