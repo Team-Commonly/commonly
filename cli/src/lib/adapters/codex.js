@@ -900,7 +900,7 @@ const CODEX_PROVIDER_KEY_ENVS = [
 // `ownGroup`: see runClaude in claude.js.
 const runCodex = ({
   args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
-  turnReap = turnReapEnabled(), commandResolution = {},
+  turnReap = turnReapEnabled(), commandResolution = {}, confined = false,
 }) => new Promise((resolve, reject) => {  // stdio: ['ignore', 'pipe', 'pipe'] — without this, child_process.spawn
   // defaults stdin to a fresh pipe. Codex 0.125.0's `exec` then blocks on
   // `Reading additional input from stdin...` because it sees an open pipe
@@ -909,7 +909,8 @@ const runCodex = ({
   // `'ignore'` gives codex /dev/null → immediate EOF → it falls back to the
   // argv prompt as intended. Surfaced live during ADR-005 Phase 2 smoke.
   // What the turn leaves running is stopped once it has closed (see claude.js).
-  const turn = markTurn(env ?? process.env, { enabled: turnReap });
+  // A confined turn's leftovers are stopped whatever the keep setting says.
+  const turn = markTurn(env ?? process.env, { enabled: turnReap, confined });
   // On Windows `npm i -g @openai/codex` leaves a `codex.cmd`; it is read and
   // its target spawned directly, never through cmd.exe, because the prompt is
   // the last argv element and is pod content (#2141). Identity elsewhere.
@@ -1120,6 +1121,10 @@ export default {
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,
+        // A public seat keeps nothing a turn leaves running, whatever the turn
+        // set (F201, as claude.js does for F197). `publicSandboxMode` is set
+        // exactly when trust is `public`; workspace trust is refused above.
+        confined: publicSandboxMode !== null,
         commandResolution: ctx._commandResolution, // test seam only
       });
 
