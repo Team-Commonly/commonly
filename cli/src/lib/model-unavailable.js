@@ -31,13 +31,18 @@ import { PUBLIC_MCP_NOT_READY_CODE, PUBLIC_TOOL_FAILED_CODE } from './public-too
 export const MODEL_UNAVAILABLE_HINT_WINDOW_MS = 60 * 60 * 1000;
 
 const NOT_AVAILABLE_FOR_KEY_RE = /\bmodel\b[^\n]{0,160}?\bis not available for (?:this|your) API key\b/i;
-const STATUS_403_RE = /(?:^|[^\d])403(?!\d)/;
+// A status-shaped code only: after a line start, whitespace, `(`, `[`, `:`, `=`,
+// `,` or a quote, or straight after HTTP/status/code, and never followed by a
+// word character, `.` or `-`. A 403/404 inside a model id (`gpt-404-mini`,
+// `claude-403x`) is not a status.
+const statusRe = (code) => new RegExp(`(?:^|[\\s(\\[:=,'"\`]|(?:HTTP|status|code)_?)${code}(?![\\w.-])`, 'i');
+const STATUS_403_RE = statusRe(403);
 const MODEL_404_SHAPES = [
   /\bmodel:\s*[`'"]?[\w.:/@-]+/i,
   /\bthe model\b[^\n]{0,120}?\bdoes not exist\b/i,
   /\bmodel\b[^\n]{0,120}?\bnot found\b/i,
 ];
-const STATUS_404_RE = /(?:^|[^\d])404(?!\d)/;
+const STATUS_404_RE = statusRe(404);
 const modelShaped = (text) => MODEL_404_SHAPES.some((pattern) => pattern.test(text));
 
 // A 404 counts only when the status and the model shape are one statement: the

@@ -69,6 +69,10 @@ const UNRELATED = [
   ['a message that only quotes model_not_found', new Error('the agent wrote: model_not_found is a code some providers send')],
   ['a tail quoting model_not_found outside any JSON code', adapterFailure('codex',
     'HTTP 500: retry failed after a model_not_found note in the log', { exitCode: 1 })],
+  ['a 404 only inside a model id', new Error('codex turn failed: model: gpt-404-mini not found')],
+  ['a model id that starts with 404', new Error('codex turn failed: model 404-mini not found')],
+  ['a 403 only inside a model id, with the key-scope phrase', new Error(
+    'claude exited with code 1: The requested model claude-403x is not available for this API key')],
   ['a quota failure', adapterFailure('claude', "You've hit your weekly limit", { exitCode: 1 })],
   ['a withheld public tool quoting vendor text', Object.assign(
     new Error('tool failed: The requested model x is not available for this API key'),
@@ -180,12 +184,12 @@ describe('performRun posts the model hint', () => {
     recordNotice('hint-seat', 'model-unavailable:m-1');
     const dir = path.join(homeDir, '.commonly/sessions');
     const file = path.join(dir, 'hint-seat.notices.json');
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
     expect(fs.readdirSync(dir).filter((name) => name.includes('.tmp'))).toEqual([]);
     expect(noticeDue('hint-seat', 'model-unavailable:m-1', MODEL_UNAVAILABLE_HINT_WINDOW_MS)).toBe(false);
-    fs.chmodSync(file, 0o644);
+    if (process.platform !== 'win32') fs.chmodSync(file, 0o644);
     recordNotice('hint-seat', 'model-unavailable:m-2');
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
   });
 
   test('a skipped delivery is not recorded, so the next turn tries again', async () => {
