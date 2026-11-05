@@ -17,6 +17,7 @@
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { AgentInstallation } from '../models/AgentRegistry';
+import AgentCredential from '../models/AgentCredential';
 import { installationIdentityFilter } from './agentInstallationIdentity';
 import { podsWithOutsiderWritableGrants } from './nativeOutsiderGrantPolicy';
 import { podWriteSurvivesNarrowing } from './outsiderGrantNarrowingRule';
@@ -72,6 +73,28 @@ const identityInstallations = async (
   };
 };
 
+/**
+ * Whether the identity still holds a runtime token the guard would see. An
+ * install that runs in-process holds none, but a token minted for an earlier
+ * external install survives while a native one remains, so the rows alone are
+ * not evidence. A lookup failure throws: the callers report "unavailable".
+ */
+const identityMayHoldRuntimeToken = async (agentName: string, instanceId: string): Promise<boolean> => {
+  const user = await User.findOne({
+    'botMetadata.agentName': String(agentName).toLowerCase(),
+    'botMetadata.instanceId': instanceId || 'default',
+  }).select('_id agentRuntimeTokens.expiresAt').lean() as {
+    _id?: unknown; agentRuntimeTokens?: Array<{ expiresAt?: Date | null }>;
+  } | null;
+  if (!user?._id) return false;
+  const now = Date.now();
+  const live = (expiresAt?: Date | null) => !expiresAt || new Date(expiresAt).getTime() > now;
+  if ((user.agentRuntimeTokens || []).some((token) => live(token.expiresAt))) return true;
+  const credentials = await AgentCredential.find({ agentUserId: user._id, status: 'active' })
+    .select('expiresAt').lean() as Array<{ expiresAt?: Date | null }>;
+  return credentials.some((credential) => live(credential.expiresAt));
+};
+
 /** Split pods into the ones the viewer may see by name and a count of the rest. */
 const namePodsForViewer = async (
   podIds: string[], viewerId: unknown,
@@ -116,8 +139,11 @@ export const previewInstallNarrowing = async ({
   try {
     const installs = await identityInstallations(agentName, instanceId);
     // The guard's census covers every active install of the identity, so the
-    // install is clear only when no install, new or current, holds a token.
-    if (newInProcess && installs.allInProcess) return { status: 'clear' };
+    // install is clear only when no install, new or current, runs outside
+    // Commonly's process and the identity holds no runtime token.
+    if (newInProcess && installs.allInProcess && !(await identityMayHoldRuntimeToken(agentName, instanceId))) {
+      return { status: 'clear' };
+    }
     const current = installs.podIds.filter((id) => id !== target);
     // A new seat has no other pod to lose, and alone in one pod it writes there.
     if (!current.length) return { status: 'clear' };
@@ -192,7 +218,9 @@ export const runtimeNarrowingStatus = async ({
       status: 'active',
     }).select('podId config').lean() as Array<{ podId?: unknown; config?: unknown }>;
     // A seat Commonly runs in-process holds no runtime token, so the guard never sees it.
-    if (!installations.length || installations.every((row) => runsInNarrowedProcess(row))) return null;
+    if (!installations.length) return null;
+    if (installations.every((row) => runsInNarrowedProcess(row))
+      && !(await identityMayHoldRuntimeToken(agentName, instanceId))) return null;
     podIds = [...new Set(installations.map((row) => objectId(row.podId)).filter((id): id is string => Boolean(id)))];
     narrowed = await podsWithOutsiderWritableGrants(podIds);
   } catch (error) {

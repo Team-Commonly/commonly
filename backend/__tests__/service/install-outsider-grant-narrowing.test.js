@@ -278,6 +278,30 @@ describe('install-time warning for the outsider-grant narrowing', () => {
     expect(result.preview.losesWrites).toEqual([{ podId: String(hq._id), name: 'Team HQ' }]);
   });
 
+  it('still warns when every install runs in-process but the identity kept a runtime token', async () => {
+    // Uninstalling the last webhook install leaves the token while a native
+    // install remains; that token still authenticates and meets the guard.
+    const tokenRes = await request(app)
+      .post(`/api/registry/pods/${hq._id}/agents/${SEAT}/runtime-tokens`)
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .send({ label: 'f164-kept' });
+    expect(tokenRes.body.token).toMatch(/^cm_agent_/);
+    await grantReachingSeatIn(target);
+    await AgentInstallation.updateMany({}, { $set: { 'config.runtime.runtimeType': 'native' } });
+
+    const result = await previewNative();
+    expect(result.status).toBe('warn');
+
+    // Once joined, the owner's settings still show the narrowing that token meets.
+    await AgentInstallation.updateMany({}, { $set: { 'config.runtime.runtimeType': 'webhook' } });
+    expect((await install(target._id, { confirmNarrowing: true })).status).toBe(200);
+    await AgentInstallation.updateMany({}, { $set: { 'config.runtime.runtimeType': 'native' } });
+    const settings = await request(app)
+      .get(`/api/registry/agents/${SEAT}/manage-settings?instanceId=default`)
+      .set('Authorization', `Bearer ${ownerToken}`);
+    expect(settings.body.runtimeNarrowing).toMatchObject({ code: 'outsider_grant_runtime_narrowed' });
+  });
+
   it('is clear when the new install and every current one run in Commonly\'s process, which holds no token', async () => {
     await grantReachingSeatIn(target);
     await AgentInstallation.updateMany({}, { $set: { 'config.runtime.runtimeType': 'native' } });
