@@ -20,6 +20,7 @@
  * push applies: a seat branch must not run, or ask review from, automation
  * policy the default branch has since replaced.
  */
+import { sendWrite } from './brokerWriteOutcome';
 import { RoomGrantError } from './roomGrantService';
 import { PROTECTED_PATH } from './seatGithubPush';
 
@@ -276,20 +277,24 @@ export const commitSeatFiles = async (
   const baseTree = await GitHubAppService.getCommitTree({ ...gitData(connection), sha: parentSha });
   await assertProtectedFilesMatchDefault(connection, parentSha, baseTree, defaultBranch);
   const tree = await GitHubAppService.createTextTree({ ...gitData(connection), baseTree, files: args.files });
-  const commitSha = await GitHubAppService.createCommit({
-    ...gitData(connection), message: args.message, tree, parents: [parentSha],
-  });
-  try {
-    if (branchExists) {
-      await GitHubAppService.fastForwardBranchRef({ ...gitData(connection), branch: args.branch, sha: commitSha });
-    } else {
-      await GitHubAppService.createBranchRef({ ...gitData(connection), branch: args.branch, sha: commitSha });
+  // From here the provider holds something of ours, so a deadline on any
+  // remaining step, token mint included, leaves the outcome unknown.
+  return sendWrite(async () => {
+    const commitSha = await GitHubAppService.createCommit({
+      ...gitData(connection), message: args.message, tree, parents: [parentSha],
+    });
+    try {
+      if (branchExists) {
+        await GitHubAppService.fastForwardBranchRef({ ...gitData(connection), branch: args.branch, sha: commitSha });
+      } else {
+        await GitHubAppService.createBranchRef({ ...gitData(connection), branch: args.branch, sha: commitSha });
+      }
+    } catch (error) {
+      // The ref moved between the check above and this write. The commit object
+      // is left unreferenced, which GitHub collects; the branch is untouched.
+      if (refRefused(error)) throw new RoomGrantError('stale_branch', 'the branch moved since approval; ask again', 409);
+      throw error;
     }
-  } catch (error) {
-    // The ref moved between the check above and this write. The commit object
-    // is left unreferenced, which GitHub collects; the branch is untouched.
-    if (refRefused(error)) throw new RoomGrantError('stale_branch', 'the branch moved since approval; ask again', 409);
-    throw error;
-  }
-  return { branch: args.branch, commitSha, parentSha, files: args.files.length };
+    return { branch: args.branch, commitSha, parentSha, files: args.files.length };
+  });
 };

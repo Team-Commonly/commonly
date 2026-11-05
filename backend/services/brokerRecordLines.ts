@@ -79,6 +79,16 @@ export const toolUpdate = (call: Pick<BrokerCall, 'toolCallId' | 'agent'>, statu
   data: { toolCallId: call.toolCallId, status },
 });
 
+/**
+ * An approved call nothing recorded the end of. It may have run, so the line
+ * claims neither `completed` nor `failed`; it carries no status at all.
+ */
+export const unknownOutcomeUpdate = (call: Pick<BrokerCall, 'toolCallId' | 'agent'>): RecordLineInput => ({
+  kind: 'tool.update',
+  actor: call.agent,
+  data: { toolCallId: call.toolCallId, title: 'Outcome unknown: this call may have run' },
+});
+
 /** B1: the broker refused before reaching the vendor. */
 export const refusedCallLines = (call: BrokerCall): RecordLineInput[] => [
   toolCall(call),

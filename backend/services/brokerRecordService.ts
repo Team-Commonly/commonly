@@ -14,8 +14,9 @@ import {
 } from './recordService';
 import {
   executedCallLines, expiredCallLines, grantIssuedLine, grantRevokedLine, parkedCallLines,
-  refusedCallLines, resolvedCallLines, toolUpdate, type GrantShape,
+  refusedCallLines, resolvedCallLines, toolUpdate, unknownOutcomeUpdate, type GrantShape,
 } from './brokerRecordLines';
+import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
 
 /* eslint-disable @typescript-eslint/no-require-imports, global-require */
 const lazyUser = () => require('../models/User');
@@ -82,6 +83,7 @@ type ApprovalRow = {
   podId?: unknown;
   agentUserId?: unknown;
   toolCallEnding?: string | null;
+  toolCallCode?: string | null;
   decidedBy?: string | null;
   decidedByRole?: string | null;
 };
@@ -131,6 +133,7 @@ export const recordApprovalOutcome = (
       if (outcome.kind === 'expired') return expiredCallLines(call, approvalId);
       const lines = resolvedCallLines(call, outcome.kind === 'approved', decidedBy, approvalId);
       if (outcome.kind !== 'approved') return lines;
+      if (row.toolCallCode === APPROVAL_OUTCOME_UNKNOWN) return [...lines, unknownOutcomeUpdate(call)];
       return [...lines, toolUpdate(call, row.toolCallEnding === 'ran' ? 'completed' : 'failed')];
     });
   })().catch((error: Error) => console.warn('[record] approval outcome skipped:', error.name, String(error.message || '').slice(0, 160)));

@@ -78,6 +78,8 @@ const {
   sweepExpiredToolCallApprovals: sweep, resolveApproval, expiryRetryDueAt, MAX_EXPIRY_RETRIES,
   EXPIRY_RETRY_GRACE_MS, EXPIRY_WAKE_CLAIM_LEASE_MS, APPROVED_CALL_SETTLE_MS,
 } = require('../../services/approvalActionService');
+
+const { GITHUB_REST_TIMEOUT_MS } = jest.requireActual('../../services/githubAppService');
 const retryCappedScript = require('../../scripts/retry-capped-approval-expiries');
 
 jest.setTimeout(60000);
@@ -355,6 +357,36 @@ describe('approve: a failure after the call never runs it again', () => {
     expect(broker.executeApprovedToolCall).toHaveBeenCalledTimes(1);
   });
 
+  it('a broker code that is not a clean code does not reach the card on the live path', async () => {
+    const row = await park();
+    broker.executeApprovedToolCall.mockRejectedValue(Object.assign(new Error('nope'), {
+      code: 'Vendor said: no', details: { recorded: true, outcome: 'failed', callId: 'tool_call_bad' },
+    }));
+    await decide(row, 'approved');
+    expect(await reread(row)).toMatchObject({ toolCallEnding: 'failed', toolCallCode: 'broker_error' });
+  });
+
+  it('a write whose deadline fired takes the same path as a lost one: card, receipt, wake, no re-run', async () => {
+    const row = await park();
+    broker.executeApprovedToolCall.mockRejectedValue(Object.assign(new Error('did not run'), {
+      code: 'approval_outcome_unknown', details: { recorded: true, outcome: 'failed', callId: 'tool_call_timed_out' },
+    }));
+    expect((await decide(row, 'approved')).body.approval).toMatchObject({ toolCallCode: 'approval_outcome_unknown' });
+    const stored = await reread(row);
+    expect(stored).toMatchObject({
+      toolCallEnding: 'failed', toolCallCode: 'approval_outcome_unknown', toolCallTrailId: 'tool_call_timed_out',
+    });
+    expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+    expect(trailFor(row)).toHaveLength(0); // the broker wrote it
+    expect(await cardFor(row)).toMatchObject({ toolCallCode: 'approval_outcome_unknown' });
+    expect(AgentMessageService.postMessage.mock.calls[0][0].content)
+      .toContain('This call may have run. Check before approving it again.');
+    const [event] = await eventsFor(row);
+    expect(event.payload.content).toMatch(/may have run/i);
+    await sweep(pastSettle());
+    expect(broker.executeApprovedToolCall).toHaveBeenCalledTimes(1);
+  });
+
   it('a broker failure that wrote no trail keeps its ending and writes the trail on the retry', async () => {
     const row = await park();
     broker.executeApprovedToolCall.mockRejectedValue(new Error('boom'));
@@ -377,18 +409,36 @@ describe('approve: a failure after the call never runs it again', () => {
   it('a call that ran but whose trail write failed stays run, and the retry writes the trail row', async () => {
     const row = await park();
     broker.executeApprovedToolCall.mockResolvedValue({
-      callId: 'tool_call_unwritten', outcome: 'ok', result: {}, trailUnwritten: true,
+      callId: 'tool_call_unwritten',
+      outcome: 'ok',
+      result: {},
+      trailUnwritten: {
+        podId: 'grant-target-pod', installationId: 'install-1', durationMs: 1234, providerRef: 'refs/heads/seat/x',
+      },
     });
     failTrailOnce();
     await withLogsMuted(() => decide(row, 'approved'));
     let stored = await reread(row);
-    expect(stored).toMatchObject({ toolCallEnding: 'ran', toolCallTrailId: 'tool_call_unwritten', toolCallTrailUnwritten: true });
+    expect(stored).toMatchObject({
+      toolCallEnding: 'ran',
+      toolCallTrailId: 'tool_call_unwritten',
+      toolCallTrailUnwritten: { installationId: 'install-1', durationMs: 1234 },
+    });
+    const ranAt = stored.executedAt;
     expect(trailFor(row)).toHaveLength(0);
 
     await sweep(pastGrace());
     stored = await reread(row);
     expect(trailFor(row)).toHaveLength(1);
-    expect(trailFor(row)[0]).toMatchObject({ callId: 'tool_call_unwritten', outcome: 'ok' });
+    expect(trailFor(row)[0]).toMatchObject({
+      callId: 'tool_call_unwritten',
+      outcome: 'ok',
+      at: ranAt,
+      podId: 'grant-target-pod',
+      installationId: 'install-1',
+      durationMs: 1234,
+      providerRef: 'refs/heads/seat/x',
+    });
     expect(stored.toolCallTrailUnwritten).toBeUndefined();
     expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
   });
@@ -464,6 +514,60 @@ describe('approve: a crash between the call and the marker', () => {
     const [event] = await eventsFor(row);
     expect(event.payload).toMatchObject({ ending: 'failed', code: 'approval_outcome_unknown' });
     expect(event.payload.content).toMatch(/may have run/i);
+    const [receipt] = AgentMessageService.postMessage.mock.calls[0];
+    expect(receipt.content).toContain('This call may have run. Check before approving it again.');
+    expect(receipt.content).not.toMatch(/failed/i);
+  });
+
+  it('a trail reason that is not a clean code does not reach the card', async () => {
+    const row = await crashedAfterFlip('approved', { resolvedAt: new Date(Date.now() - APPROVED_CALL_SETTLE_MS - MINUTE) });
+    ToolCall.rows.set('tool_call_ran', {
+      callId: 'tool_call_ran', approvalId: String(row._id), outcome: 'failed', reason: 'Vendor said: no',
+    });
+    await sweep(new Date());
+    expect(await reread(row)).toMatchObject({ toolCallEnding: 'failed', toolCallCode: 'broker_error' });
+    expect(await cardFor(row)).toMatchObject({ toolCallCode: 'broker_error' });
+  });
+
+  it('a settle that loses to a live ending leaves it alone, on the row and on the card', async () => {
+    const row = await crashedAfterFlip('approved', { resolvedAt: new Date(Date.now() - APPROVED_CALL_SETTLE_MS - MINUTE) });
+    // The live save lands after the sweep read the trail and before it writes.
+    ToolCall.findApprovedRun.mockImplementationOnce(async () => {
+      await ApprovalAction.updateOne({ _id: row._id }, {
+        $set: { toolCallEnding: 'ran', toolCallTrailId: 'tool_call_live', executedAt: new Date() },
+      });
+      return null;
+    });
+    await sweep(new Date());
+    const stored = await reread(row);
+    expect(stored).toMatchObject({ toolCallEnding: 'ran', toolCallTrailId: 'tool_call_live' });
+    expect(stored.toolCallCode).toBeUndefined();
+    expect(await cardFor(row)).toMatchObject({ toolCallEnding: 'ran', toolCallTrailId: 'tool_call_live' });
+    expect(trailFor(row)).toHaveLength(0);
+    // The attempt carries on with the stored ending, so the wake and receipt tell the truth.
+    const events = await eventsFor(row);
+    expect(events).toHaveLength(1);
+    expect(events[0].payload).toMatchObject({ ending: 'ran', callId: 'tool_call_live' });
+    expect(AgentMessageService.postMessage.mock.calls[0][0].content).toContain('· ran');
+  });
+
+  it('a live ending that lands while the sweep is mid-closure wins the card', async () => {
+    const row = await crashedAfterFlip('approved', { resolvedAt: new Date(Date.now() - APPROVED_CALL_SETTLE_MS - MINUTE) });
+    // The sweep settled unknown; a live save lands while it posts the receipt.
+    AgentMessageService.postMessage.mockImplementationOnce(async () => {
+      await ApprovalAction.updateOne({ _id: row._id }, {
+        $set: { toolCallEnding: 'ran', toolCallTrailId: 'tool_call_live' }, $unset: { toolCallCode: 1 },
+      });
+      return { success: true };
+    });
+    await sweep(new Date());
+    expect(await cardFor(row)).toMatchObject({ toolCallEnding: 'ran', toolCallTrailId: 'tool_call_live' });
+  });
+
+  it('the slowest broker path stays well under the settle', () => {
+    // A commit's sequential GitHub requests, plus one token mint.
+    const commitRequests = 9 + 1;
+    expect(GITHUB_REST_TIMEOUT_MS * commitRequests).toBeLessThan(APPROVED_CALL_SETTLE_MS / 2);
   });
 
   it('a call still running is not judged: the sweep leaves an unended approval alone until it settles', async () => {
@@ -501,6 +605,35 @@ describe('approve: a crash between the call and the marker', () => {
     expect(stored).toMatchObject({ toolCallEnding: 'ran', toolCallTrailId: 'tool_call_slow' });
     expect(stored.toolCallCode).toBeUndefined();
     expect(await cardFor(row)).toMatchObject({ toolCallEnding: 'ran' });
+    expect(broker.executeApprovedToolCall).toHaveBeenCalledTimes(1);
+  });
+
+  it('a late live ending reopens the row, so a closure failing after the sweep stamped it is still retried', async () => {
+    const row = await park();
+    let finish;
+    broker.executeApprovedToolCall.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const deciding = decide(row, 'approved');
+    await new Promise((resolve) => { setTimeout(resolve, 100); });
+    await sweep(pastSettle());
+    expect((await reread(row)).expirySideEffectsDoneAt).toBeInstanceOf(Date);
+
+    failCardOnce();
+    finish({
+      callId: 'tool_call_slow', outcome: 'ok', result: {}, trailUnwritten: { installationId: 'install-1', durationMs: 5 },
+    });
+    failTrailOnce();
+    await withLogsMuted(() => deciding);
+    let stored = await reread(row);
+    expect(stored).toMatchObject({ toolCallEnding: 'ran', toolCallTrailId: 'tool_call_slow' });
+    expect(stored.toolCallTrailUnwritten).toBeTruthy();
+    expect(stored.expirySideEffectsDoneAt).toBeUndefined();
+
+    await sweepWhenDue(row);
+    stored = await reread(row);
+    expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+    expect(stored.toolCallTrailUnwritten).toBeUndefined();
+    expect(await cardFor(row)).toMatchObject({ toolCallEnding: 'ran' });
+    expect(trailFor(row).find((r) => r.callId === 'tool_call_slow')).toMatchObject({ outcome: 'ok' });
     expect(broker.executeApprovedToolCall).toHaveBeenCalledTimes(1);
   });
 

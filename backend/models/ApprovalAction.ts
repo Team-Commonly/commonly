@@ -121,10 +121,18 @@ export interface IApprovalAction extends Document {
   toolCallReceipt?: Record<string, number>;
   /**
    * tool_call only: the provider ran but the broker could not write its trail
-   * row, so the approval's retry writes it under `toolCallTrailId`. Cleared
-   * once written.
+   * row. These are the facts only the broker had, kept so the approval's retry
+   * can write the row under `toolCallTrailId`; cleared once it lands. Server-only,
+   * never on a card. The ref is shape-checked to `refs/heads/...`, so it holds
+   * no credential.
    */
-  toolCallTrailUnwritten?: boolean;
+  toolCallTrailUnwritten?: {
+    podId?: string;
+    installationId?: string;
+    credentialOwnerId?: string;
+    providerRef?: string;
+    durationMs?: number;
+  };
   /**
    * tool_call only (F202): how many times the sweep has re-run this row's side
    * effects after it closed. Despite the `expiry` prefix these five fields
@@ -214,7 +222,7 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     toolCallCode: { type: String },
     toolCallTrailId: { type: String },
     toolCallReceipt: { type: Schema.Types.Mixed },
-    toolCallTrailUnwritten: { type: Boolean },
+    toolCallTrailUnwritten: { type: Schema.Types.Mixed },
     expiryRetryCount: { type: Number },
     expirySideEffectsDoneAt: { type: Date },
     expiryEventSentAt: { type: Date },

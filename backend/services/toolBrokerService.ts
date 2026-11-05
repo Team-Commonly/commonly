@@ -19,6 +19,7 @@ import { assertPinnedArgValues } from './hostedMcpArgValues';
 import { outsiderGrantPodRefusal, outsiderGrantRefusalMessage } from './outsiderGrantPodEligibility';
 import { byoPodExemptAgentIds, namingLiftsFor, namingLiftsRefusal } from './byoGrantNaming';
 import { recordBrokerCall } from './brokerRecordService';
+import { APPROVAL_OUTCOME_UNKNOWN, isWriteUnknown } from './brokerWriteOutcome';
 import { parseSeatPushArgs, pushSeatBranch, SeatPushError } from './seatGithubPush';
 import { assertOwnedSeatBranch, commitSeatFiles, prepareCommitFiles } from './seatGithubCommit';
 import { grantHoldsPrWrite, isPrWriteTool } from './prWriteScope';
@@ -145,9 +146,18 @@ export interface BrokerCallResult {
   /**
    * Approved path only: the provider ran but this call's trail row was not
    * written. The approval still records the call as run and writes the row,
-   * under `callId`, on its retry.
+   * under `callId`, on its retry, from these facts.
    */
-  trailUnwritten?: boolean;
+  trailUnwritten?: UnwrittenTrailRow;
+}
+
+/** What a trail row holds that only the broker knows. Carries no secret. */
+export interface UnwrittenTrailRow {
+  podId?: string;
+  installationId?: string;
+  credentialOwnerId?: string;
+  providerRef?: string;
+  durationMs: number;
 }
 
 const issueView = (issue: Record<string, unknown>): Record<string, unknown> => ({
@@ -1534,6 +1544,21 @@ const refusedCredentialOwner = (
     : resolved
 );
 
+/** The grant's and call's facts on a trail row. The ref is shape-checked, so a URL or token can't be stored as one. */
+const trailFacts = (
+  input: BrokerCallInput,
+  grant: IRoomGrant | Record<string, unknown> | undefined,
+  startedAt: number,
+): Omit<UnwrittenTrailRow, 'credentialOwnerId'> => ({
+  podId: grant ? String(((grant as Record<string, unknown>).target as { id?: string })?.id || '') : undefined,
+  installationId: grant ? String((grant as Record<string, unknown>).installationId || '') : undefined,
+  providerRef: input.tool === 'github.push_branch'
+    && typeof (input.args as { ref?: unknown })?.ref === 'string'
+    && /^refs\/heads\/[A-Za-z0-9._/-]{1,220}$/.test((input.args as { ref: string }).ref)
+    ? (input.args as { ref: string }).ref : undefined,
+  durationMs: Math.max(0, Date.now() - startedAt),
+});
+
 const recordCall = async (
   input: BrokerCallInput,
   grant: IRoomGrant | Record<string, unknown> | undefined,
@@ -1565,9 +1590,8 @@ const recordCall = async (
   const callId = overrides?.callId || `tool_call_${randomUUID()}`;
   await ToolCall.create({
     callId,
+    ...trailFacts(input, grant, startedAt),
     grantId: input.grantId,
-    podId: grant ? String(((grant as Record<string, unknown>).target as { id?: string })?.id || '') : undefined,
-    installationId: grant ? String((grant as Record<string, unknown>).installationId || '') : undefined,
     agentUserId: input.agentUserId,
     credentialOwnerId: overrides?.credentialOwnerId,
     tool: input.tool,
@@ -1578,12 +1602,7 @@ const recordCall = async (
     vendorStatus: overrides?.vendorStatus,
     vendorError: overrides?.vendorError?.split(/[\r\n]/, 1)[0].slice(0, 200),
     providerRepo: overrides?.providerRepo,
-    providerRef: input.tool === 'github.push_branch'
-      && typeof (input.args as { ref?: unknown })?.ref === 'string'
-      && /^refs\/heads\/[A-Za-z0-9._/-]{1,220}$/.test((input.args as { ref: string }).ref)
-      ? (input.args as { ref: string }).ref : undefined,
     approvalId: overrides?.approvalId,
-    durationMs: Math.max(0, Date.now() - startedAt),
     callerConfinement: overrides?.callerConfinement,
   });
   // The trail row has committed; the record mirrors it (ADR-033 B1, B2, B5).
@@ -2092,7 +2111,7 @@ export const executeApprovedToolCall = async (
     // From here the provider has acted, so nothing below may report the call as
     // not run: a failed trail write must not reach the catch, which would
     // record this call as failed.
-    let recorded: { callId: string; outcome: 'ok' | 'failed'; trailUnwritten?: boolean };
+    let recorded: { callId: string; outcome: 'ok' | 'failed'; trailUnwritten?: UnwrittenTrailRow };
     try {
       recorded = await recordExecutionResult(
         { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
@@ -2104,7 +2123,16 @@ export const executeApprovedToolCall = async (
     } catch (trailError) {
       console.error(`[broker] approved call ran but its trail row failed approval=${input.approvalId}:`,
         (trailError as Error).name);
-      recorded = { callId, outcome: isToolErrorResult(result) ? 'failed' : 'ok', trailUnwritten: true };
+      const facts = trailFacts(
+        { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
+        grant,
+        startedAt,
+      );
+      recorded = {
+        callId,
+        outcome: isToolErrorResult(result) ? 'failed' : 'ok',
+        trailUnwritten: { ...facts, credentialOwnerId },
+      };
     }
     const receipt = recorded.outcome === 'ok' ? approvedCallReceipt(definition, result) : undefined;
     return {
@@ -2115,8 +2143,12 @@ export const executeApprovedToolCall = async (
         ? { untrustedSourceTitle: definition.entryTitle } : {}),
     };
   } catch (error) {
-    const reason = error instanceof RoomGrantError || error instanceof HostedMcpCredentialError
+    const known = error instanceof RoomGrantError || error instanceof HostedMcpCredentialError
       ? safeReason(error) : 'broker_error';
+    // A write whose deadline fired may have landed, so it ends under the code
+    // the approval path reads as unknown.
+    const reason = isWriteUnknown(error) && definition?.requiredWriteMode !== 'read'
+      ? APPROVAL_OUTCOME_UNKNOWN : known;
     const outcome = executionErrorOutcome(error);
     await recordCall(
       { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },

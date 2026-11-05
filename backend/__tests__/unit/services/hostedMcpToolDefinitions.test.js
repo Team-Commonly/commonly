@@ -1,3 +1,4 @@
+const { isWriteUnknown } = require('../../../services/brokerWriteOutcome');
 /**
  * The `call` half of a hosted-MCP tool: one JSON-RPC request, and the credential
  * fetched inside it.
@@ -778,6 +779,57 @@ describe('hosted-MCP results are bounded', () => {
     deps.driftCache = createHostedMcpRuntimeDriftCache(deps, [ENTRY]);
     await expectRefusal(definitionFor('linear.list_issues', deps).call({}, CONNECTION), 'provider_error');
     expect(toolCalls(deps).map(([, init]) => JSON.parse(init.body).method)).toEqual(['tools/list']);
+  });
+
+  describe('a deadline that fires', () => {
+    const hangingOn = (method) => {
+      const deps = makeDeps();
+      const answer = deps.fetcher;
+      deps.fetcher = jest.fn(async (url, init) => {
+        if (init.method === 'DELETE' || JSON.parse(init.body).method !== method) return answer(url, init);
+        return new Promise((_, reject) => {
+          init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      });
+      return deps;
+    };
+    const settle = async (deps) => {
+      jest.useFakeTimers();
+      try {
+        const pending = definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((error) => error);
+        await jest.advanceTimersByTimeAsync(HOSTED_MCP_CALL_TIMEOUT_MS + 1);
+        return await pending;
+      } finally {
+        jest.useRealTimers();
+      }
+    };
+
+    it('during tools/call: the request went out, so it may have landed', async () => {
+      const error = await settle(hangingOn('tools/call'));
+      expect(error).toMatchObject({ code: 'provider_unreachable' });
+      expect(isWriteUnknown(error)).toBe(true);
+    });
+
+    it('after the vendor answered: its answer stands', async () => {
+      const deps = makeDeps();
+      const answer = deps.fetcher;
+      deps.fetcher = jest.fn(async (url, init) => {
+        if (init.method === 'DELETE' || JSON.parse(init.body).method !== 'tools/call') return answer(url, init);
+        // The refusal arrives first, and the deadline fires while it is closed.
+        return new Response(new ReadableStream({
+          cancel: () => new Promise((resolve) => { init.signal.addEventListener('abort', resolve); }),
+        }), { status: 401 });
+      });
+      const error = await settle(deps);
+      expect(error).toMatchObject({ code: 'credential_rejected' });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
+
+    it('during initialize: no call went out, so it is an ordinary failure', async () => {
+      const error = await settle(hangingOn('initialize'));
+      expect(error).toMatchObject({ code: 'provider_unreachable' });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
   });
 
   it('keeps the deadline armed while the body is read, so a trickling reply ends the call', async () => {

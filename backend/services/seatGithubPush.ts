@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { promisify } from 'util';
+import { isWriteUnknown, markWriteUnknown } from './brokerWriteOutcome';
 import type { GithubToolConnection } from './toolBrokerService';
 
 // Typed, so tsc refuses a call that names an installation without its App (F172).
@@ -134,6 +135,37 @@ export const validateSeatBundle = async (options: {
   }
 };
 
+/**
+ * The failure a provider git call ends in. A push killed at its timeout may
+ * already have updated the ref, so it is marked; every other git step sends no
+ * write, and a push git itself refused has its answer.
+ */
+export const providerGitFailure = (
+  args: string[],
+  error: unknown,
+  failure: SeatPushError = new SeatPushError('provider_git_failed', 502),
+): SeatPushError => (
+  args[0] === 'push' && (error as { killed?: unknown } | undefined)?.killed === true
+    ? markWriteUnknown(failure) : failure
+);
+
+export const runProviderGit = async (
+  args: string[],
+  options: { cwd: string; env: NodeJS.ProcessEnv; timeout?: number },
+  failure?: SeatPushError,
+): Promise<string> => {
+  try {
+    const answer = await runFile('/usr/bin/git', args, {
+      timeout: 45_000, ...options, maxBuffer: PROVIDER_GIT_MAX_BUFFER,
+    });
+    return answer.stdout.trim();
+  } catch (error) {
+    // Git stderr may contain URL or credential-helper output. No provider
+    // diagnostic is reflected to the untrusted seat.
+    throw providerGitFailure(args, error, failure);
+  }
+};
+
 /** Provider CAS is independent of client push flags or advertised remote state. */
 export const pushWithLease = async (options: {
   git: (args: string[], cwd?: string, failure?: SeatPushError) => Promise<string>;
@@ -147,7 +179,9 @@ export const pushWithLease = async (options: {
   try {
     await git(['push', '--porcelain', `--force-with-lease=${ref}:${oldOid === ZERO_OID ? '' : oldOid}`,
       url, `${newOid}:${ref}`], repo);
-  } catch {
+  } catch (error) {
+    // Reading the ref now can't settle it: the push may land after the read.
+    if (isWriteUnknown(error)) throw error;
     const latest = await git(['ls-remote', url, ref], repo);
     const latestOid = latest ? latest.split(/\s+/, 1)[0] : ZERO_OID;
     if (latestOid !== oldOid) throw new SeatPushError('stale_ref', 409);
@@ -216,18 +250,9 @@ export const pushSeatBranch = async (
       GIT_CONFIG_VALUE_0: await authHeader(),
       GIT_CONFIG_KEY_1: 'http.followRedirects', GIT_CONFIG_VALUE_1: 'false',
     };
-    const git = async (args: string[], cwd = repo, failure?: SeatPushError) => {
-      try {
-        const answer = await runFile('/usr/bin/git', args, {
-          cwd, env, timeout: 45_000, maxBuffer: PROVIDER_GIT_MAX_BUFFER,
-        });
-        return answer.stdout.trim();
-      } catch {
-        // Git stderr may contain URL or credential-helper output. No provider
-        // diagnostic is reflected to the untrusted seat.
-        throw failure || new SeatPushError('provider_git_failed', 502);
-      }
-    };
+    const git = (args: string[], cwd = repo, failure?: SeatPushError) => (
+      runProviderGit(args, { cwd, env }, failure)
+    );
     await git(['init', '--bare', repo], directory);
     const defaultHead = await git(['ls-remote', '--symref', url, 'HEAD']);
     const defaultRef = defaultHead.match(/^ref: (refs\/heads\/[A-Za-z0-9._/-]+)\s+HEAD/m)?.[1];

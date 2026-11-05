@@ -21,6 +21,7 @@ import { assertAgentRuntimeMayJoinPod } from './outsiderGrantAgentJoinPolicy';
 import { recordApprovalOutcome } from './brokerRecordService';
 import { nextFreeByoName } from './byoNameAllocator';
 import { prWriteApprovalSummary } from './prWriteScope';
+import { APPROVAL_OUTCOME_UNKNOWN } from './brokerWriteOutcome';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { AgentInstallation, AgentRegistry } = require('../models/AgentRegistry');
@@ -35,10 +36,10 @@ const CARD_KIND = 'approval-card';
 const CREATABLE_POD_TYPES = new Set(['chat', 'team']);
 
 /**
- * The code on an approved call whose outcome nobody recorded: no ending on the
- * row and no trail row. It may have run.
+ * What the owner reads when that happens, on the room receipt. The card's
+ * `approvalCard.toolCall.outcomeUnknown` says the same.
  */
-const APPROVAL_OUTCOME_UNKNOWN = 'approval_outcome_unknown';
+const OUTCOME_UNKNOWN_SENTENCE = 'This call may have run. Check before approving it again.';
 
 const KNOWN_ACTION_TYPES = new Set<ApprovalActionType>(['create_pod', 'connect_local_agent', 'tool_call']);
 
@@ -1009,33 +1010,42 @@ const decisionCallId = (approvalId: string, reason: string): string => {
   return `tool_call_${uuid.join('-')}`;
 };
 
+/**
+ * A broker code as the card, receipt and wake may show it. Anything that is not
+ * a plain code could be vendor prose, so it never leaves the trail.
+ */
+const safeToolCallCode = (code: unknown): string => (
+  typeof code === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(code) ? code : 'broker_error'
+);
+
 const isUniqueViolation = (error: unknown): boolean => (error as { code?: string })?.code === '23505';
 
 /**
- * Write the trail row a closing approval owes. `callId` defaults to the
- * derived decision id; the broker's own id is passed when it ran the call but
- * could not write the row. Safe to repeat either way: a second write hits the
- * primary key.
+ * Write the trail row a closing approval owes. The call id defaults to the
+ * derived decision id; `brokerRow` is the row the broker ran the call under but
+ * could not write. Safe to repeat either way: a second write hits the primary
+ * key.
  */
 const recordToolCallDecision = async (
   row: IApprovalAction,
   outcome: 'ok' | 'refused' | 'failed',
   reason: string | undefined,
-  brokerCallId?: string,
+  brokerRow?: { callId?: string; at?: Date } & IApprovalAction['toolCallTrailUnwritten'],
 ): Promise<string | undefined> => {
   const { toolCall } = row;
   if (!toolCall) return undefined;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const ToolCall = require('../models/ToolCall');
   const { digestArgs } = ToolCall;
-  const callId = brokerCallId || decisionCallId(String(row._id), String(reason));
+  const callId = brokerRow?.callId || decisionCallId(String(row._id), String(reason));
   try {
     await ToolCall.create({
+      podId: String(row.podId),
+      credentialOwnerId: toolCall.credentialOwnerId,
+      ...brokerRow,
       callId,
       grantId: toolCall.grantId,
-      podId: String(row.podId),
       agentUserId: row.agentUserId || '',
-      credentialOwnerId: toolCall.credentialOwnerId,
       tool: toolCall.tool,
       argsDigest: toolCall.argsDigest || digestArgs({}),
       outcome,
@@ -1210,7 +1220,9 @@ const postToolCallRoomReceipt = async (row: IApprovalAction, approverName: strin
   if (!row.toolCallEnding || !row.toolCall) return;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const AgentMessageService = require('./agentMessageService');
-  const ending = `${row.toolCallEnding}${row.toolCallCode ? ` (${row.toolCallCode})` : ''}`;
+  const ending = row.toolCallCode === APPROVAL_OUTCOME_UNKNOWN
+    ? `outcome unknown. ${OUTCOME_UNKNOWN_SENTENCE}`
+    : `${row.toolCallEnding}${row.toolCallCode ? ` (${row.toolCallCode})` : ''}`;
   const content = `${approverName} approved ${row.agentName}'s ${row.toolCall.tool} · ${ending}`;
   const metadata = { source: 'approval-tool-call', approvalId: String(row._id) };
   if (typeof AgentMessageService._postToTarget === 'function' && row.agentUserId) {
@@ -1366,12 +1378,9 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
         const call = result as Awaited<ReturnType<typeof executeApprovedToolCall>>;
         transitioned.toolCallEnding = call.outcome === 'ok' ? 'ran' : 'failed';
         transitioned.toolCallCode = call.outcome === 'failed' ? 'upstream_tool_error' : undefined;
-        // A sweep that gave up on a slow call may have stored a code this row
-        // never read; the save must clear it.
-        transitioned.markModified?.('toolCallCode');
         transitioned.toolCallTrailId = call.callId;
         if (call.receipt) transitioned.toolCallReceipt = call.receipt;
-        if (call.trailUnwritten) transitioned.toolCallTrailUnwritten = true;
+        if (call.trailUnwritten) transitioned.toolCallTrailUnwritten = call.trailUnwritten;
       } else {
         transitioned.executionResult = result;
       }
@@ -1382,8 +1391,7 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
         const failure = err as { code?: string; details?: { callId?: string; outcome?: string; recorded?: boolean } };
         const brokerRecord = failure.details?.recorded === true;
         transitioned.toolCallEnding = brokerRecord && failure.details?.outcome === 'refused' ? 'refused' : 'failed';
-        transitioned.toolCallCode = brokerRecord && /^[a-z][a-z0-9_]{0,63}$/.test(failure.code || '')
-          ? failure.code : 'broker_error';
+        transitioned.toolCallCode = brokerRecord ? safeToolCallCode(failure.code) : 'broker_error';
         // The trail step writes the derived row (`selfTrailedReason`).
         transitioned.toolCallTrailId = (brokerRecord && failure.details?.callId)
           || decisionCallId(String(transitioned._id), 'broker_error');
@@ -1392,6 +1400,11 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       }
     }
     if (parkedCall) {
+      // A sweep that gave up on a slow call may have stored a code and a done
+      // stamp this row never read. This save clears both: the real ending
+      // replaces the guess, and the closure below stays retryable.
+      transitioned.markModified?.('toolCallCode');
+      transitioned.markModified?.('expirySideEffectsDoneAt');
       // The durable marker: the call's ending, on the row, before anything
       // else. If this write fails the call still ran, so the side effects go
       // on from memory, the trail step's save tries it again, and otherwise
@@ -1431,7 +1444,11 @@ const executeApprovedToolCall = async (
   agentUserId: string,
   caller: { agentName?: string; instanceId?: string } = {},
 ): Promise<{
-  result: unknown; callId: string; outcome: 'ok' | 'failed'; receipt?: Record<string, number>; trailUnwritten?: boolean;
+  result: unknown;
+  callId: string;
+  outcome: 'ok' | 'failed';
+  receipt?: Record<string, number>;
+  trailUnwritten?: IApprovalAction['toolCallTrailUnwritten'];
 }> => {
   if (!toolCall.canonicalArgs) throw new Error('approval arguments unavailable');
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -1462,9 +1479,12 @@ export const EXPIRY_RETRY_GRACE_MS = 60 * 1000;
 export const EXPIRY_RETRY_MAX_DELAY_MS = 60 * 60 * 1000;
 /**
  * How long an approved call with no ending may take before the sweep treats its
- * process as dead. Far past any broker call: a hosted call is bounded at 30
- * seconds a step. A live call that outlasts it still saves its real ending,
- * over whatever the sweep wrote.
+ * process as dead. Every provider request on the broker path has its own bound
+ * (GitHub REST and hosted MCP 30 seconds, git 45), and a commit is about ten
+ * of them, so a live call ends well inside this. What can outlast it is a stalled
+ * event loop or a paused process; that call still saves its real ending over
+ * the unknown one, but the wake, the receipt, the Record line and the sweep's
+ * trail row stay as they were.
  */
 export const APPROVED_CALL_SETTLE_MS = 15 * 60 * 1000;
 /**
@@ -1585,7 +1605,9 @@ const writeApprovedCallTrail = async (row: IApprovalAction): Promise<void> => {
   if (reason) {
     await recordToolCallDecision(row, 'failed', reason);
   } else if (row.toolCallTrailUnwritten) {
-    await recordToolCallDecision(row, row.toolCallEnding === 'ran' ? 'ok' : 'failed', row.toolCallCode, row.toolCallTrailId);
+    await recordToolCallDecision(row, row.toolCallEnding === 'ran' ? 'ok' : 'failed', row.toolCallCode, {
+      ...row.toolCallTrailUnwritten, callId: row.toolCallTrailId, at: row.executedAt,
+    });
     row.toolCallTrailUnwritten = undefined;
   }
 };
@@ -1650,7 +1672,12 @@ const completeToolCallClosure = async (
   await step('wake', () => sendUnderLease(row, WAKE_SEND, async () => {
     await enqueueToolCallResolvedEvent(row, closure === 'expired' ? undefined : (await theDecider()).approver);
   }));
-  await step('card', () => updateCardEverywhere(row, { strict: true }));
+  await step('card', async () => {
+    // A live ending may have landed while a retry ran. The card shows the row
+    // as stored, never this attempt's copy.
+    const current = closure === 'approved' && !live ? await ApprovalAction.findById(row._id) : null;
+    await updateCardEverywhere(current || row, { strict: true });
+  });
   if (failures.length) {
     throw new AggregateError(failures.map((f) => f.error), `${closure} steps failed: ${failures
       .map((f) => `${f.step} (${(f.error as Error)?.message || String(f.error)})`).join('; ')}`);
@@ -1709,30 +1736,43 @@ const expireToolCallApproval = async (
  * row is the answer when there is one. With no row the call may not have
  * started, or may have reached the provider and died before the trail write;
  * nothing can tell those apart, so the ending says it is unknown rather than
- * guessing, and the wake tells the agent to check. A trail read that fails
- * settles nothing: it throws, and a later attempt reads again.
+ * guessing, and the wake, receipt, card and Record all say so. A trail read that
+ * fails settles nothing: it throws, and a later attempt reads again.
+ *
+ * The write applies only while the row has no ending, so it can't replace a
+ * live one. Whoever loses carries on with the row as stored. Returns that row.
  */
-const settleApprovedCall = async (row: IApprovalAction): Promise<void> => {
-  if (row.toolCallEnding) return;
+const settleApprovedCall = async (row: IApprovalAction): Promise<IApprovalAction> => {
+  if (row.toolCallEnding) return row;
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
   const ToolCall = require('../models/ToolCall');
   const run = await ToolCall.findApprovedRun(String(row.toolCall?.grantId), String(row._id));
+  // A provider that answered with an error still ran the call.
+  const ran = run?.outcome === 'ok' || run?.reason === 'upstream_tool_error';
+  let ending: Partial<IApprovalAction>;
   if (!run) {
-    row.toolCallEnding = 'failed';
-    row.toolCallCode = APPROVAL_OUTCOME_UNKNOWN;
-    row.toolCallTrailId = decisionCallId(String(row._id), APPROVAL_OUTCOME_UNKNOWN);
+    ending = {
+      toolCallEnding: 'failed',
+      toolCallCode: APPROVAL_OUTCOME_UNKNOWN,
+      toolCallTrailId: decisionCallId(String(row._id), APPROVAL_OUTCOME_UNKNOWN),
+    };
   } else {
-    if (run.outcome === 'ok') {
-      row.toolCallEnding = 'ran';
-    } else {
-      row.toolCallEnding = run.outcome === 'refused' ? 'refused' : 'failed';
-      row.toolCallCode = run.reason || 'broker_error';
-    }
-    // A provider that answered with an error still ran the call.
-    if (run.outcome === 'ok' || run.reason === 'upstream_tool_error') row.executedAt = run.at;
-    row.toolCallTrailId = run.callId;
+    ending = {
+      toolCallEnding: run.outcome === 'ok' ? 'ran' : (run.outcome === 'refused' ? 'refused' : 'failed'),
+      ...(run.outcome === 'ok' ? {} : { toolCallCode: safeToolCallCode(run.reason) }),
+      toolCallTrailId: run.callId,
+      ...(ran ? { executedAt: run.at } : {}),
+    };
   }
-  await row.save();
+  const settled = await ApprovalAction.findOneAndUpdate(
+    { _id: row._id, toolCallEnding: null },
+    { $set: ending },
+    { new: true },
+  );
+  if (settled) return settled;
+  const current = await ApprovalAction.findById(row._id);
+  if (!current) throw new Error('approval row is gone');
+  return current;
 };
 
 /**
@@ -1779,12 +1819,10 @@ const retryIncompleteToolCallClosures = async (now: Date): Promise<number> => {
     if (!claimed) continue;
     const closure = (claimed.status === 'expired' ? 'expired' : claimed.decision) as ToolCallClosure;
     try {
-      if (closure === 'approved') {
-        // eslint-disable-next-line no-await-in-loop
-        await settleApprovedCall(claimed);
-      }
       // eslint-disable-next-line no-await-in-loop
-      await completeToolCallClosure(claimed, closure);
+      const settled = closure === 'approved' ? await settleApprovedCall(claimed) : claimed;
+      // eslint-disable-next-line no-await-in-loop
+      await completeToolCallClosure(settled, closure);
       completed += 1;
     } catch (error) {
       const attempts = Number(claimed.expiryRetryCount);

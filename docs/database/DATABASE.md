@@ -437,25 +437,39 @@ has nothing to run with.
   is told the real ending, and the trail step's save tries the write again. If that also fails,
   or the process died, the row is `resolved`, `approved` and has no ending.
 - **The sweep then establishes what happened, and never re-runs it.** It waits
-  `APPROVED_CALL_SETTLE_MS` (15 min, far past any broker call, so a live call is not judged), then
-  reads the broker's row with `ToolCall.findApprovedRun`. A row gives the ending. No row means
-  the call may never have started, or reached the provider and died before the trail write, and
-  nothing can tell those apart. The row then ends `failed` with `approval_outcome_unknown`, gets a
-  trail row of its own, and the wake tells the agent the call may have run. A later identical call
-  needs a new human approval. A trail read that fails settles nothing; the attempt fails and a
-  later one reads again.
-- **A live call that outlasts the settle** still saves its real ending, over the unknown one,
-  and rewrites the card. The wake that already went out is not re-sent.
+  `APPROVED_CALL_SETTLE_MS` (15 min), then reads the broker's row with `ToolCall.findApprovedRun`.
+  Every provider request on the broker path has its own bound (GitHub REST and hosted MCP 30 s,
+  git 45 s), and a commit is about ten requests, so a live call ends well inside the wait. A row
+  gives the ending. No row means the call may never have started, or reached the provider and
+  died before the trail write, and nothing can tell those apart. The row then ends `failed` with
+  `approval_outcome_unknown` and gets a trail row of its own. The card and the room receipt tell
+  the owner the call may have run and to check before approving it again, the wake tells the
+  agent, and the Record's `tool.update` carries no status, only a title saying the outcome is
+  unknown. A later identical call needs a new human approval. A trail read that fails settles
+  nothing; the attempt fails and a later one reads again. The write applies only while the row
+  has no ending, so it can't replace a live one, and a retry's card shows the row as stored.
+  A write whose own deadline fired ends the same way, with the code on the broker's trail row:
+  it went out and no answer came back, so it may have landed
+  (`services/brokerWriteOutcome.ts`). That covers a GitHub write, a push killed at its timeout,
+  and a hosted `tools/call`, plus any later step of a commit or a commented close once its first
+  write went out. Reads, token mints, session opens and answered requests stay ordinary failures.
+- **What can still outlast the settle** is a stalled event loop or a paused process. That live
+  call saves its real ending over the unknown one and clears `expirySideEffectsDoneAt` in the
+  same write, so its own later failures stay retryable, and it rewrites the card. The rest stands:
+  the wake and receipt already went out, the Record is append-only, and the sweep's trail row
+  remains beside the broker's, so `countsForGrant` counts that one call twice.
 - **The trail write can fail after the provider ran.** The broker then reports the call as run,
-  with `trailUnwritten`, instead of letting its catch record a failure. The row stores
-  `toolCallTrailUnwritten` and the trail step writes the row under the broker's call id.
+  with `trailUnwritten`, instead of letting its catch record a failure. That carries what only the
+  broker knew (installation, duration, grant target, credential owner, and a ref shape-checked to
+  `refs/heads/...`). The row stores it in `toolCallTrailUnwritten`, server-only, and the trail step
+  writes the row under the broker's call id, dated `executedAt`, then clears it.
 - **What a crash can cost.** A trail recovered by the sweep has no receipt numbers, so that wake
   goes out without them.
 
 Fields, on `tool_call` rows only: `expiryRetryCount` (Number), `expiryRetryClaimedAt` (Date),
 `expirySideEffectsDoneAt` (Date), `expiryEventSentAt` (Date), `expiryEventClaimedAt` (Date),
 `toolCallReceiptPostedAt` (Date), `toolCallReceiptClaimedAt` (Date), `toolCallReceipt` (Mixed,
-declared numeric fields only) and `toolCallTrailUnwritten` (Boolean). Index
+declared numeric fields only) and `toolCallTrailUnwritten` (Mixed). Index
 `tool_call_expiry_retry`: `{ status, actionType, resolvedAt }`, partial on `expiryRetryCount:
 { $exists: true }`; it covers `resolved` rows as well as `expired` ones.
 

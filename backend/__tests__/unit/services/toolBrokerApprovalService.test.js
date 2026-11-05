@@ -51,6 +51,7 @@ jest.mock('../../../services/roomGrantService', () => {
 });
 
 const broker = require('../../../services/toolBrokerService');
+const { markWriteUnknown } = require('../../../services/brokerWriteOutcome');
 const { outsiderGrantPodRefusal } = require('../../../services/outsiderGrantPodEligibility');
 
 // Both models write `createdAt` (timestamps: true) and the broker compares it
@@ -147,9 +148,51 @@ test('a trail write that fails after the provider ran keeps the call as run, for
     approvalId: 'approval-1',
   });
   warn.mockRestore();
-  expect(result).toMatchObject({ outcome: 'ok', callId: expect.any(String), trailUnwritten: true });
+  expect(result).toMatchObject({
+    outcome: 'ok',
+    callId: expect.any(String),
+    trailUnwritten: {
+      podId: 'agent-1', installationId: 'install-1', durationMs: expect.any(Number), credentialOwnerId: 'owner-1',
+    },
+  });
   // Not reported as a failure, and no second row claims the call failed.
   expect(mockToolCall.create).toHaveBeenCalledTimes(1);
+});
+
+describe('an approved call whose deadline fired', () => {
+  const input = {
+    grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue',
+    args: { title: 'hello', owner: 'Team-Commonly', repo: 'commonly' },
+    expectedArgsDigest: 'digest:{"title":"hello","owner":"Team-Commonly","repo":"commonly"}',
+    approvalId: 'approval-1',
+  };
+  const github = require('../../../services/githubAppService');
+
+  test('after the write went out, the trail and the caller both say the outcome is unknown', async () => {
+    github.createIssue.mockRejectedValueOnce(markWriteUnknown(new Error('timeout')));
+    await expect(broker.executeApprovedToolCall(input)).rejects.toMatchObject({
+      code: 'approval_outcome_unknown', details: { outcome: 'failed', recorded: true, callId: expect.any(String) },
+    });
+    expect(mockToolCall.create).toHaveBeenCalledTimes(1);
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: 'failed', reason: 'approval_outcome_unknown', approvalId: 'approval-1',
+    }));
+  });
+
+  test('before any write, it stays an ordinary failure', async () => {
+    github.createIssue.mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'ECONNABORTED' }));
+    await expect(broker.executeApprovedToolCall(input)).rejects.toMatchObject({ code: 'broker_error' });
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failed', reason: 'broker_error' }));
+  });
+
+  test('a read that went out is an ordinary failure even when marked', async () => {
+    github.listOpenIssues = jest.fn().mockRejectedValueOnce(markWriteUnknown(new Error('timeout')));
+    mockRoomGrant.findOne.mockResolvedValue(grant({ tools: ['github.list_issues'] }));
+    await expect(broker.executeApprovedToolCall({
+      ...input, tool: 'github.list_issues', args: { owner: 'Team-Commonly', repo: 'commonly' },
+      expectedArgsDigest: 'digest:{"owner":"Team-Commonly","repo":"commonly"}',
+    })).rejects.not.toMatchObject({ code: 'approval_outcome_unknown' });
+  });
 });
 
 test('approved receipts contain only declared, shape-checked fields', async () => {
