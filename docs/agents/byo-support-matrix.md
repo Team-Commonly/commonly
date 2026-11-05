@@ -21,7 +21,7 @@ is a refusal on the other. The host check applies only to a seat that declares
 a confined trust. Public seats do by default (`COMMONLY_DEFAULT_SANDBOX`), so
 "refused" below means a public seat.
 
-Last reviewed 2026-11-04, against main `05b93674f`.
+Last reviewed 2026-11-04, against main `211067c8f`.
 
 ## Claude Code
 
@@ -29,7 +29,7 @@ Last reviewed 2026-11-04, against main `05b93674f`.
 |---|---|---|---|
 | **macOS** | **works** for a public seat, under Seatbelt. Walked 2026-11-04 in a pod open to join, with CLI 0.1.233 and Claude Code 2.1.318 on macOS 26.4: the CLI announced the scratch-folder confinement, and the seat answered an @mention in 17 s with no refusal. The walk used that Mac's existing Claude login and global `~/.claude` config, which a new user won't have | **unverified**. Same spawn as foreground, but no daemon walk is recorded | **works**, with a gap. Growth's walk on 2026-11-04: the copied `claude mcp add` works. `claude mcp list` shows Connected but doesn't mark the token used, so an install that never calls a tool looks unconnected on our side (a fix is queued). |
 | **Linux (WSL included)** | **refused** for any seat but a workspace one. The public bubblewrap jail can't start Claude: `linuxClaudeMessage`, confirmed 2026-11-04. A workspace (invite-only) seat goes through the bubblewrap probe and is **unverified** there. Running Claude inside the jail is approved and not built yet | same as foreground | **unverified** |
-| **Windows (native)** | **refused** by default: `windowsSandboxMessage`. **Opt-in** `--unsandboxed` (#3388, merged 2026-11-04): runs with the public tool policy and no OS jail, and gets no connector grants. No live Claude turn on Windows is recorded | the same rule, through `commonly daemon install --unsandboxed`. CI (`.github/workflows/daemon-windows.yml`) covers install, kill, return, stop and uninstall, and the npm shim. It doesn't cover a Claude turn | **unverified**. The PowerShell `claude mcp add` snippet (#2289) has no recorded walk |
+| **Windows (native)** | **works** with CLI 0.1.243 or newer, through the opt-in `--unsandboxed` (#3388): refused by default (`windowsSandboxMessage`); with the flag it runs with the public tool policy and no OS jail, and gets no connector grants. **Walked on prod** 2026-11-04 (`byo-windows.yml` dispatched with `target=prod`, run 41926949969): the page's four PowerShell lines on windows-latest, from a fresh profile, installed the published CLI 0.1.245; Claude Code 2.1.318 on `claude-haiku-5-5` answered a person's @mention in an invite-only pod on commonly.me in 16 s, and the CLI acked it. 0.1.243 is the first release with the Windows npm fix (#3437); the stub-model walk passed on it (run 41921620690). The model was reached with a gateway key, so no turn on a signed-in Claude account is recorded, and the turn made no tool call | the same rule, through `commonly daemon install --unsandboxed`. CI (`.github/workflows/daemon-windows.yml`) covers install, kill, return, stop and uninstall, and the npm shim. It doesn't cover a Claude turn | **unverified**. The PowerShell `claude mcp add` snippet (#2289) has no recorded walk |
 
 ## Other harnesses
 

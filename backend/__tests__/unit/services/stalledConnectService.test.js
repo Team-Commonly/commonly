@@ -181,7 +181,7 @@ describe('stalledConnectService.scan', () => {
     }),
   });
 
-  it.each([['linux', 'Linux'], ['windows', 'Windows']])(
+  it.each([['linux', 'Linux']])(
     'from a %s browser, says the listener is tested on a Mac and may not answer there yet',
     async (os, label) => {
       setup();
@@ -190,7 +190,7 @@ describe('stalledConnectService.scan', () => {
       const { content } = mockPost.mock.calls[0][0];
       // Conditional: the page shows this command only on its Mac tab, so the
       // browser's OS is not proof of where it ran.
-      expect(content).toContain(`If you ran it on ${label}, that may be why: the listener is tested on a Mac. On Linux and Windows it may not answer @mentions yet, and we're working on that.`);
+      expect(content).toContain(`If you ran it on ${label}, that may be why: the listener is tested on a Mac. On Linux it may not answer @mentions yet, and we're working on that.`);
       // The server cannot tell Claude Code from Codex, so no adapter-specific cause.
       expect(content).not.toContain('sandbox');
       expect(content).toContain('Run `commonly agent run ai1-agent` on a Mac');
@@ -199,6 +199,23 @@ describe('stalledConnectService.scan', () => {
       expect(content).not.toContain('one thing to check');
     },
   );
+
+  // D164: the published CLI (0.1.243) answered an @mention from the page's
+  // Windows lines with Claude Code. Codex isn't walked there, and the server
+  // can't tell which adapter was copied, so the copy says both.
+  it('from a Windows browser, says Claude Code answers there with CLI 0.1.243 or newer and Codex is untested', async () => {
+    setup();
+    copiedListenerOn('windows');
+    await scan({ now: NOW });
+    const { content } = mockPost.mock.calls[0][0];
+    expect(content).toContain('If you ran it on Windows: Claude Code answers @mentions there with CLI 0.1.243 or newer, '
+      + 'from the PowerShell lines on the Bring your own page. Codex hasn’t been tested on Windows yet.');
+    expect(content).toContain('Check yours with `commonly --version`, and run all of the page’s lines again in one PowerShell window');
+    expect(content).toContain('Or choose “Run it here” on the Bring your own page for a hosted agent');
+    expect(content).not.toContain('may not answer @mentions yet');
+    expect(content).not.toMatch(/on a Mac/);
+    expect(content).toContain("I'll post here the moment I connect");
+  });
 
   it.each(['mac', 'other', undefined])('with os=%p keeps the neutral check', async (os) => {
     setup();
@@ -352,14 +369,16 @@ describe('stalledConnectService.scan', () => {
       await scan({ now: NOW });
       const { content } = mockPost.mock.calls[0][0];
       expect(content).toContain(`You first opened this page on ${label}.`);
-      expect(content).toContain('in a Terminal on a Mac');
+      // On Windows the listener is the page's PowerShell lines, not a Mac.
+      expect(content).toContain(os === 'windows'
+        ? 'You first opened this page on Windows. On Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page.'
+        : 'in a Terminal on a Mac');
       expect(content).not.toContain('but not the listener command');
     },
   );
 
   // The BYO support matrix (#3399): Linux and Windows differ by adapter, never
-  // Mac-only for both, so no nudge may say the listener runs only on a Mac, and none
-  // may suggest --unsandboxed before a real Windows walk exists.
+  // Mac-only for both, so no nudge may say the listener runs only on a Mac.
   it.each([
     ['cli', 'linux'], ['cli', 'windows'], ['mcp', 'linux'], ['mcp', 'windows'],
   ])('a %s copy from a %s browser claims no Mac-only listener and offers no --unsandboxed', async (kind, os) => {
@@ -372,7 +391,11 @@ describe('stalledConnectService.scan', () => {
     });
     await scan({ now: NOW });
     const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('may not answer @mentions yet');
+    expect(content).toContain(os === 'windows'
+      ? 'CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. Codex hasn’t been tested on Windows yet.'
+      : 'may not answer @mentions yet');
+    // The server can't tell Claude Code from Codex, and Codex takes no
+    // --unsandboxed, so the copy points at the page's lines, not the flag.
     expect(content).not.toMatch(/only (from|on) a Mac|Mac only|--unsandboxed/i);
   });
 
@@ -796,7 +819,9 @@ describe('keeping the forward promise', () => {
 
     expect(r.resolved).toHaveLength(1);
     const { content } = mockPost.mock.calls[0][0];
-    expect(content).toContain('`commonly agent run ai1-agent`, which is tested on a Mac. On Linux and Windows it may not answer @mentions yet');
+    expect(content).toContain(os === 'windows'
+      ? 'that takes the listener. On Windows, Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. Codex hasn’t been tested on Windows yet.'
+      : '`commonly agent run ai1-agent`, which is tested on a Mac. On Linux it may not answer @mentions yet');
     expect(content).not.toMatch(/only (from|on) a Mac|Mac only|--unsandboxed/i);
     expect(content).toContain('Run it here');
   });

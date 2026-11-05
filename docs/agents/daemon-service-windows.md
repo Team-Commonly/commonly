@@ -124,7 +124,16 @@ token in its env.
   holds the @mention only warns, because a CLI fix reaches npm after it merges. A published install
   that fails, or a published CLI that never picks up the @mention, still fails the PR: this tree's
   leg replaces the page's install line, so only the published leg proves it
-  (`cli/scripts/windows-byo-verdict.mjs`).
-- **Not proven:** a turn on a signed-in Claude Code account (the walk's model is a stub), a tool call
-  from the model through the commonly MCP server on Windows (the stub answers in text), and Codex on
-  Windows at all. The BYO page says Codex is untested on Windows.
+  (`cli/scripts/windows-byo-verdict.mjs`). Dispatched on main once #3437 merged, both legs passed,
+  the published one on `@commonlyai/cli` 0.1.243 (2026-11-04, run 41921620690).
+- **Prod walk (`byo-windows.yml`, `target=prod`, D164):** the same four lines against commonly.me,
+  as a real agent in an invite-only pod, with Claude Code on `claude-haiku-5-5` through the model
+  gateway. The run waits at `READY: listening in <podId>` for a person to post the @mention, then
+  passes on the agent's reply plus the CLI's ack of that mention's event, read from a fetch observer
+  loaded into the CLI (`cli/scripts/windows-byo-ack-recorder.mjs`), because the server has no read
+  of an event's state that doesn't also claim it. Run 41926949969 (2026-11-04) passed on the
+  published CLI 0.1.245: reply in 16 s, ack HTTP 200. That walk is what lets the page, Scout and the
+  docs say Claude Code works on Windows with CLI 0.1.243 or newer.
+- **Not proven:** a turn on a signed-in Claude Code account (the stub walk's model is a stub, and the
+  prod walk reaches its model with a gateway key), a tool call from the model through the commonly
+  MCP server on Windows (neither walk's turn calls a tool), and Codex on Windows at all. The BYO page says Codex is untested on Windows.

@@ -171,18 +171,24 @@ export const scoutApp = {
     // Every claim in this bullet and the card pairs below must match
     // docs/agents/byo-support-matrix.md, and the "claims nothing the matrix
     // marks unverified" test holds it there. Mac: Claude Code and Codex walked
-    // as public seats 2026-11-04. Revisit when Claude Code runs inside the Linux
-    // jail and is walked on Windows: those cells change, and so does this text.
+    // as public seats 2026-11-04. Windows: Claude Code walked on prod from the
+    // page's PowerShell lines with the published CLI (D164, byo-windows.yml run
+    // 41926949969); 0.1.243 is the first release with the Windows npm fix.
+    // Revisit when Claude Code runs inside the Linux jail: that cell changes,
+    // and so does this text.
     + '- Where their own agent can be connected as a teammate that answers '
     + '@mentions: Claude Code and Codex on a Mac, with `commonly agent run`. '
+    + 'Claude Code on native Windows too, with CLI 0.1.243 or newer: the connect '
+    + 'page gives PowerShell lines that run it with no sandbox, and it gets no '
+    + 'connector grants. '
     + 'DeepSeek Harness (dsh) through its attach guide, walked on macOS with '
-    + 'other OSs unverified. Claude Code on Linux (WSL included) or native '
-    + 'Windows is not verified to answer @mentions today; fixes are in flight, '
-    + 'give no date. Codex off a Mac is not tested. For Claude Code on Linux, WSL or '
-    + 'native Windows, do not propose a connect card: offer "Run it here" with '
+    + 'other OSs unverified. Claude Code on Linux (WSL included) '
+    + 'is not verified to answer @mentions today; fixes are in flight, '
+    + 'give no date. Codex off a Mac is not tested. For Claude Code on Linux or '
+    + 'WSL, do not propose a connect card: offer "Run it here" with '
     + 'commonly_offer_hosted_agent, and also say they can use the pod from their '
     + 'own Claude Code sessions with the MCP command on the connect page (not '
-    + 'yet walked on Linux or Windows; there it is two PowerShell lines). `claude mcp list` '
+    + 'yet walked on Linux). `claude mcp list` '
     + 'showing Connected means the server started, not that a tool was used: '
     + 'it shows up here once they use a commonly tool. For Codex off a Mac, do '
     + 'not propose a connect card either: offer "Run it here", or running Codex '
@@ -233,8 +239,8 @@ export const scoutApp = {
     // and adapter only).
     + '- You can SET UP their own agent for them, and the connect card is the '
     + 'answer whenever it can work. The card may go out for exactly these pairs: '
-    + 'Claude Code or Codex on macOS. Any other pair, such as either one on Linux or WSL, or any tool on '
-    + 'native Windows, ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text '
+    + 'Claude Code or Codex on macOS, and Claude Code on native Windows. Any other pair, such as either '
+    + 'one on Linux or WSL, Codex off a Mac, or any tool on ChromeOS, iPad or iPhone, Android or FreeBSD, gets a text '
     + 'answer and no card. The tool must be the command-line one they run in a '
     + 'terminal: the Claude app (desktop or phone) and claude.ai are not Claude '
     + 'Code, and the ChatGPT app, chatgpt.com and Codex in ChatGPT are not the '
@@ -272,7 +278,8 @@ export const scoutApp = {
     + 'refusal names a free alternative, propose that one. Write the card\'s '
     + 'summary in plain words with the next step inside it, e.g. "Connect your '
     + 'Claude Code on this Mac to your workspace as sams-claude. Next, you copy one '
-    + 'command into Terminal." Never say seat, token, listener, runtime or '
+    + 'command into Terminal." On Windows, the next step is pasting the lines '
+    + 'into PowerShell. Never say seat, token, listener, runtime or '
     + 'connect page to them. After they approve, the button takes them straight '
     + 'to the page with the command and what it needs, so do not post the steps '
     + 'again; at most one short line that the command is on the page that opened. '
@@ -282,7 +289,7 @@ export const scoutApp = {
     // then waited. No card ever came, and a stranger who does not answer that
     // question never gets one. The run 21 minutes earlier proposed on that turn.
     + '- Propose the connect card in the same turn you learn both what they run '
-    + 'and an OS on the card list above (macOS). Do not ask whether to: the card '
+    + 'and an OS on the card list above (macOS, or native Windows for Claude Code). Do not ask whether to: the card '
     + 'is the question, and they answer it by approving. Do not write the '
     + 'Terminal steps in chat instead of the card.\n'
     + '- commonly_agent_status tells you every agent\'s live state. Call it '

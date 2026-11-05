@@ -56,12 +56,16 @@ export type StalledConnectCopyEvidence = {
 };
 
 /**
- * The listener is tested answering @mentions only on a Mac. On Linux and
- * Windows it differs by adapter (the BYO support matrix, #3399): Claude Code
- * is refused in a pod open to join and unverified otherwise, and Codex is
- * unverified. The server never learns which adapter the copied command named,
- * so the copy says only what holds for both: it may not answer there yet. It
- * never suggests --unsandboxed: no real Windows walk exists yet.
+ * Where the listener is walked answering @mentions differs by OS and adapter
+ * (the BYO support matrix, #3399). On Linux, Claude Code is refused in a pod
+ * open to join and unverified otherwise, and Codex is unverified, so the copy
+ * says only what holds for both: it may not answer there yet. On Windows,
+ * Claude Code answered an @mention on prod from the page's PowerShell lines
+ * (D164, byo-windows.yml run 41926949969, CLI 0.1.245; 0.1.243 is the first
+ * release with the Windows npm fix), and Codex isn't walked there. The server
+ * never learns which adapter the copied command named, so the Windows copy
+ * says both, and points at the page's lines rather than at --unsandboxed,
+ * which Codex doesn't take.
  *
  * It hedges, unlike the rest of this file. Since #3388 the page also shows the
  * listener command for Windows (opt-in) and for Claude Code in a private
@@ -70,7 +74,11 @@ export type StalledConnectCopyEvidence = {
  * command ran, so the sentence is conditional on it.
  */
 const LISTENER_UNAVAILABLE_OS: Record<string, string> = { linux: 'Linux', windows: 'Windows' };
-const LISTENER_PLATFORM_NOTE = "is tested on a Mac. On Linux and Windows it may not answer @mentions yet, and we're working on that.";
+const LISTENER_PLATFORM_NOTE = "is tested on a Mac. On Linux it may not answer @mentions yet, and we're working on that.";
+const WINDOWS_LISTENER_FACTS = 'Claude Code answers @mentions with CLI 0.1.243 or newer, from the PowerShell lines on the Bring your own page. '
+  + 'Codex hasn’t been tested on Windows yet.';
+const WINDOWS_LISTENER_NOTE = `On Windows, ${WINDOWS_LISTENER_FACTS}`;
+const HOSTED_FALLBACK = 'choose “Run it here” on the Bring your own page for a hosted agent.';
 
 const copiedAtOffsetSeconds = (evidence: StalledConnectCopyEvidence): number | null => {
   if (!evidence.commandCopiedAt || !evidence.tokenIssuedAt) return null;
@@ -144,6 +152,13 @@ export const composeStalledConnectNudge = ({
   if (mcpOnly && offsetSeconds !== null) {
     const unavailableOs = evidence.openedOs ? LISTENER_UNAVAILABLE_OS[evidence.openedOs] : undefined;
     const when = copiedAtDescription(offsetSeconds);
+    if (evidence.openedOs === 'windows') {
+      return `@${installerName} — you copied the MCP command ${when}. `
+        + `MCP-only clients can call Commonly, but they do not answer @mentions; the listener does. `
+        + `You first opened this page on Windows. ${WINDOWS_LISTENER_NOTE} `
+        + `Or ${HOSTED_FALLBACK} `
+        + `I'll post here the moment I connect.`;
+    }
     if (unavailableOs) {
       // Their browser may not have shown the listener command, so do not
       // tell this person they missed it.
@@ -166,6 +181,14 @@ export const composeStalledConnectNudge = ({
     const unavailableOs = effective.commandType === 'cli' && effective.openedOs
       ? LISTENER_UNAVAILABLE_OS[effective.openedOs]
       : undefined;
+    if (effective.commandType === 'cli' && effective.openedOs === 'windows') {
+      return `@${installerName} — you copied the listener command `
+        + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
+        + `If you ran it on Windows: ${WINDOWS_LISTENER_FACTS.replace('answers @mentions with', 'answers @mentions there with')} `
+        + 'Check yours with `commonly --version`, and run all of the page’s lines again in one PowerShell window. '
+        + `Or ${HOSTED_FALLBACK} `
+        + `I'll post here the moment I connect.`;
+    }
     if (unavailableOs) {
       return `@${installerName} — you copied the listener command `
         + `${copiedAtDescription(offsetSeconds)}; no connection arrived. `
@@ -255,6 +278,10 @@ export const composeStalledConnectMcpResolution = ({
   const head = `${displayName} connected from your MCP client (seen ${seen}). `
     + 'I can read and post here whenever you ask me from that client. '
     + 'Try: “read my Commonly pod and post a hello there”. ';
+  if (openedOs === 'windows') {
+    return `${head}I won't answer @${handle} on my own: that takes the listener. ${WINDOWS_LISTENER_NOTE} `
+      + 'For an agent that answers here from any computer, choose “Run it here” on the Bring your own page.';
+  }
   const unavailableOs = openedOs ? LISTENER_UNAVAILABLE_OS[openedOs] : undefined;
   if (unavailableOs) {
     return `${head}I won't answer @${handle} on my own: that takes the listener, `
