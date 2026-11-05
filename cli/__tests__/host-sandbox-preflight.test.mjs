@@ -161,6 +161,18 @@ describe('hostSandboxRefusal', () => {
     expect(windowsSandboxMessage('codex')).not.toContain('--unsandboxed');
   });
 
+  // CodeRabbit on #3501: Codex refuses workspace trust on every platform
+  // (refuseWorkspaceTrust, at attach and at spawn), in its own words. Pointing
+  // such a seat to WSL would send it somewhere it fails again, so this check
+  // leaves workspace to that refusal.
+  test('a workspace Codex seat on Windows is left to the adapter\'s own workspace refusal, opt-in or not', () => {
+    for (const hostUnconfined of [false, true]) {
+      expect(hostSandboxRefusal({
+        environment: { sandbox: { trust: 'workspace' } }, adapterName: 'codex', platform: 'win32', hostUnconfined,
+      })).toBeNull();
+    }
+  });
+
   test('Codex on a Mac or Linux, and an owner Codex seat with no sandbox on Windows, are left alone', () => {
     expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'darwin' })).toBeNull();
     expect(hostSandboxRefusal({ environment: connectPage, adapterName: 'codex', platform: 'linux' })).toBeNull();

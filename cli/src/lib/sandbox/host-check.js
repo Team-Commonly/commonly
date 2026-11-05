@@ -88,9 +88,11 @@ export const hostSandboxRefusal = ({
   if (adapterName === 'codex') {
     // Keyed on trust, not mode: Codex resolves no Seatbelt or bwrap mode of
     // its own. The D245 opt-in never applies (see CODEX_WINDOWS_MESSAGE).
+    // Public only (a legacy `internal` normalizes to it): Codex refuses
+    // workspace trust on every platform, at attach and at spawn, in its own
+    // words, so WSL advice would only send that seat to a second refusal.
     const trust = normalizeSandboxTrust(environment?.sandbox)?.trust;
-    return platform === 'win32' && (trust === 'public' || trust === 'workspace')
-      ? CODEX_WINDOWS_MESSAGE : null;
+    return platform === 'win32' && trust === 'public' ? CODEX_WINDOWS_MESSAGE : null;
   }
   if (!Object.prototype.hasOwnProperty.call(ADAPTER_LABELS, adapterName)) return null;
   const sandbox = normalizeSandboxTrust(environment?.sandbox);
