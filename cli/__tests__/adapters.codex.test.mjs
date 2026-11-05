@@ -1519,7 +1519,9 @@ describe('codex adapter — a public seat keeps the host model route (F188)', ()
 
   const hostEnv = (extra = {}) => {
     const env = { ...process.env, CODEX_HOME: operatorHome, OPENAI_API_KEY: KEY, ...extra };
-    if (!('OPENAI_BASE_URL' in extra)) delete env.OPENAI_BASE_URL;
+    for (const name of ['OPENAI_BASE_URL', 'CODEX_ACCESS_TOKEN', 'CODEX_API_KEY']) {
+      if (!(name in extra)) delete env[name];
+    }
     return env;
   };
   const runPublic = async ({ sessionId = null, env, trust = 'public' }) => {
@@ -1643,6 +1645,25 @@ describe('codex adapter — a public seat keeps the host model route (F188)', ()
       const calls = await runPublic({ env: hostEnv({ OPENAI_BASE_URL: 'https://azure.example.test/openai?api-version=1' }) });
       expect(calls).toHaveLength(1);
       expect(calls[0].args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+    });
+
+    test('a CODEX_ACCESS_TOKEN in the env is a login even beside an API-key auth.json', async () => {
+      await writeAuth({ auth_mode: 'apikey', OPENAI_API_KEY: KEY });
+      for (const sessionId of [null, 'sid-f188']) {
+        const env = hostEnv({ OPENAI_BASE_URL: ROUTE, CODEX_ACCESS_TOKEN: 'codex-access-token-secret' });
+        const { args } = (await runPublic({ sessionId, env }))[0];
+        expect(args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+      }
+      expect(loggedLines().filter((l) => l.includes(LINE))).toHaveLength(2);
+      for (const line of loggedLines()) expect(line).not.toContain('codex-access-token-secret');
+    });
+
+    test('with no auth.json, a CODEX_API_KEY in the env is the key and the route is forwarded', async () => {
+      const env = hostEnv({ OPENAI_BASE_URL: ROUTE, CODEX_API_KEY: KEY });
+      delete env.OPENAI_API_KEY;
+      const { args } = (await runPublic({ env }))[0];
+      expect(args[routeFlag(args) + 1]).toBe(`openai_base_url=${JSON.stringify(ROUTE)}`);
+      expect(args.some((a) => String(a).includes(KEY))).toBe(false);
     });
 
     test('an auth.json that does not parse is treated as a login', async () => {

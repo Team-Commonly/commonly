@@ -740,11 +740,16 @@ export const publicModelRouteBaseUrl = (source = {}) => {
 // it is kept or logged. Only "apikey" counts as a key; a file with any other
 // mode, no mode, or that does not parse is treated as a login and fails closed,
 // whatever OPENAI_API_KEY says, since codex prefers its stored login. With no
-// auth.json, an OPENAI_API_KEY in the env is the key.
+// auth.json, an OPENAI_API_KEY or CODEX_API_KEY in the env is the key. A
+// CODEX_ACCESS_TOKEN in the env is a token codex sends in place of either, so
+// it counts as a login whatever auth.json says.
 const CHATGPT_ROUTE_IGNORED = 'OPENAI_BASE_URL is ignored while Codex is signed in with ChatGPT; '
   + 'use an API key for a custom route';
 
+const envSet = (source, name) => typeof source[name] === 'string' && source[name].trim() !== '';
+
 export const codexAuthKind = async (operatorHome, source = {}) => {
+  if (envSet(source, 'CODEX_ACCESS_TOKEN')) return 'login';
   let text = null;
   try {
     text = await readFile(join(operatorHome, 'auth.json'), 'utf8');
@@ -752,7 +757,7 @@ export const codexAuthKind = async (operatorHome, source = {}) => {
     if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') return 'login';
   }
   if (text === null) {
-    return typeof source.OPENAI_API_KEY === 'string' && source.OPENAI_API_KEY.trim() ? 'apikey' : 'none';
+    return envSet(source, 'OPENAI_API_KEY') || envSet(source, 'CODEX_API_KEY') ? 'apikey' : 'none';
   }
   let mode = null;
   try { mode = JSON.parse(text)?.auth_mode ?? null; } catch { /* unreadable: a login */ }
