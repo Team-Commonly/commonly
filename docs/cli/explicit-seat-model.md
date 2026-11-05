@@ -45,7 +45,9 @@ A daemon seat's own key may also set its model (F178). The key must be the seat
 root that the daemon of the machine the identity is bound to minted for its
 owner: a spawn child, a key from another machine's daemon, or a page key for an
 identity a machine now manages is refused. The model and effort are checked
-against what that machine reports, as the Settings page checks them. `--adapter` and `--env` still require
+against what that machine reports, as the Settings page checks them. The seat's own process holds this power too, through the seat-fallback key or,
+under an unsandboxed harness, by reading the token file; a page-issued key
+already gave a listener's process the same power. `--adapter` and `--env` still require
 an owner login. A saved runtime key is used only for its recorded instance URL;
 an `--instance` override resolving to another URL requires an owner login for
 that instance and receives no fallback runtime-key request.

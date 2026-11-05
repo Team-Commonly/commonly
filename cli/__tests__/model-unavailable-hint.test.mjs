@@ -24,13 +24,14 @@ await jest.unstable_mockModule('../src/lib/pod-focus.js', () => ({
 
 const { createClient } = await import('../src/lib/api.js');
 const { performRun } = await import('../src/commands/agent.js');
-const { recordNotice } = await import('../src/lib/session-store.js');
+const { recordNotice, noticeDue } = await import('../src/lib/session-store.js');
 const { adapterFailure } = await import('../src/lib/upstream-refusal.js');
 const { PUBLIC_TOOL_FAILED_CODE } = await import('../src/lib/public-tool-error.js');
 const {
   MODEL_UNAVAILABLE_HINT_WINDOW_MS,
   modelUnavailableFailure,
   modelUnavailableHint,
+  safeModelName,
 } = await import('../src/lib/model-unavailable.js');
 const stubAdapter = (await import('../src/lib/adapters/stub.js')).default;
 
@@ -55,6 +56,10 @@ const UNRELATED = [
   ['a 403 naming a model but not key scope', adapterFailure('claude', '403: {"error":{"message":"model claude-x: request blocked by policy"}}', { exitCode: 1 })],
   ['a 404 that is not about a model', adapterFailure('codex', 'HTTP 404 Not Found: /v1/responses', { exitCode: 1 })],
   ['a model-shaped line without a 404', new Error('model: claude-x took too long')],
+  ['a 404 on one stderr line and a model shape on another', Object.assign(
+    new Error('codex exited with code 1: model: claude-x'),
+    { stderr: 'HTTP 404 Not Found: /v1/responses' },
+  )],
   ['a quota failure', adapterFailure('claude', "You've hit your weekly limit", { exitCode: 1 })],
   ['a withheld public tool quoting vendor text', Object.assign(
     new Error('tool failed: The requested model x is not available for this API key'),
@@ -70,6 +75,8 @@ describe('modelUnavailableFailure', () => {
     ['codex model_not_found', CODEX_MODEL_NOT_FOUND, 'gpt-9'],
     ['an OpenAI 404 kept to its message', OPENAI_404_KEPT, 'gpt-9-mini'],
     ['a proxy 404 model not found', LITELLM_404, 'qwen-x'],
+    ['a 404 inside one multi-line JSON error body', new Error('claude failed:\n{\n  "type": "error",\n'
+      + '  "error": {\n    "type": "not_found_error",\n    "message": "model: claude-haiku-9"\n  }\n}'), 'claude-haiku-9'],
     ['a 404 whose prose names no id', adapterFailure('codex', 'HTTP 404: model is not found'), 'seat-model'],
   ])('recognises %s', (_label, error, model) => {
     expect(modelUnavailableFailure(error, { fallbackModel: 'seat-model' })).toEqual({ model });
@@ -77,6 +84,17 @@ describe('modelUnavailableFailure', () => {
 
   test.each(UNRELATED)('ignores %s', (_label, error) => {
     expect(modelUnavailableFailure(error, { fallbackModel: 'seat-model' })).toBeNull();
+  });
+
+  test.each(['@evil', '@scope/model-1', 'https://evil.example/m-1', 'x://y-1', 'a-1://b'])('refuses %s as a model name', (name) => {
+    expect(safeModelName(name)).toBeNull();
+    expect(modelUnavailableFailure(adapterFailure('claude', `404: {"error":{"message":"model: ${name}"}}`),
+      { fallbackModel: 'seat-model' })).toEqual({ model: 'seat-model' });
+  });
+
+  test('keeps ordinary ids, including a provider path and an @ inside', () => {
+    expect(safeModelName('openrouter/anthropic/claude-x')).toBe('openrouter/anthropic/claude-x');
+    expect(safeModelName('claude-x@20261101')).toBe('claude-x@20261101');
   });
 
   test('never echoes a name outside the model-id charset', () => {
@@ -143,6 +161,18 @@ describe('performRun posts the model hint', () => {
     expect(podPosts(await runOnce(CLAUDE_403))).toHaveLength(1);
     recordNotice('hint-seat', 'model-unavailable:claude-opus-5-5', Date.now() - MODEL_UNAVAILABLE_HINT_WINDOW_MS + 60_000);
     expect(podPosts(await runOnce(CLAUDE_403))).toHaveLength(0);
+  });
+
+  test('recordNotice writes the notices file 0600 through a temp file and rename', () => {
+    recordNotice('hint-seat', 'model-unavailable:m-1');
+    const dir = path.join(homeDir, '.commonly/sessions');
+    const file = path.join(dir, 'hint-seat.notices.json');
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    expect(fs.readdirSync(dir).filter((name) => name.includes('.tmp'))).toEqual([]);
+    expect(noticeDue('hint-seat', 'model-unavailable:m-1', MODEL_UNAVAILABLE_HINT_WINDOW_MS)).toBe(false);
+    fs.chmodSync(file, 0o644);
+    recordNotice('hint-seat', 'model-unavailable:m-2');
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
   });
 
   test('a skipped delivery is not recorded, so the next turn tries again', async () => {

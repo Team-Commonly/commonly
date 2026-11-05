@@ -21,7 +21,7 @@
  * restart can still suppress a re-delivered event whose ack previously failed.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, renameSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -165,7 +165,17 @@ export const recordNotice = (agentName, key, now = Date.now()) => {
   const state = readNotices(agentName);
   state[key] = new Date(now).toISOString();
   if (!existsSync(sessionsDir())) mkdirSync(sessionsDir(), { recursive: true });
-  writeFileSync(noticesFile(agentName), JSON.stringify(state, null, 2), 'utf8');
+  // Temp file then rename, so a crash mid-write never leaves a torn file, and
+  // 0600 because the record says which models this seat's key cannot use.
+  const file = noticesFile(agentName);
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(state, null, 2), { encoding: 'utf8', mode: 0o600 });
+    renameSync(tmp, file);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
 };
 
 export const clearSessions = (agentName) => {

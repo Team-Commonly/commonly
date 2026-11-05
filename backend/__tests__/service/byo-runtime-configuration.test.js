@@ -193,6 +193,14 @@ describe('page-issued key model configuration', () => {
       expect((await stored(ownInstall)).environment.model).toBe('old-model');
     });
 
+    it('refuses a daemon issuer on the same machine that belongs to another owner', async () => {
+      const othersDaemon = await AgentCredential.create({ tokenHash: hash('cm_daemon_other_owner'), kind: 'daemon',
+        ownerUserId: other._id, machineId: 'machine-config', scopes: [] });
+      await bindKey({ parentId: othersDaemon._id });
+      expect((await patch({ model: 'new-model' })).status).toBe(403);
+      expect((await stored(ownInstall)).environment.model).toBe('old-model');
+    });
+
     it('refuses a spawn child of the machine key', async () => {
       await bindKey();
       const root = await AgentCredential.findOne({ tokenHash: hash(key) });

@@ -15,7 +15,8 @@
  *
  *   1. claude / Anthropic 403: "... model ... is not available for this API key"
  *   2. OpenAI-style error code `model_not_found` (codex, opencode, LiteLLM)
- *   3. a 404 whose text is model-shaped: Anthropic's `not_found_error` body,
+ *   3. a 404 whose text is model-shaped, on the same line or in one JSON
+ *      error body: Anthropic's `not_found_error` body,
  *      kept as "model: <id>" by the adapter's keep-list, or "The model `<id>`
  *      does not exist", or "model <id> not found".
  *
@@ -35,6 +36,30 @@ const MODEL_404_SHAPES = [
   /\bmodel\b[^\n]{0,120}?\bnot found\b/i,
 ];
 const STATUS_404_RE = /(?:^|[^\d])404(?!\d)/;
+const modelShaped = (text) => MODEL_404_SHAPES.some((pattern) => pattern.test(text));
+
+// A 404 counts only when the status and the model shape are one statement: the
+// same line, or one JSON error body. An unrelated 404 on one stderr line must
+// not be joined to a model mentioned on another.
+const sameLine404 = (text) => text.split('\n').some((line) => STATUS_404_RE.test(line) && modelShaped(line));
+
+const jsonBody404 = (text) => {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return false;
+  let parsed;
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return false;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+  const error = parsed.error && typeof parsed.error === 'object' ? parsed.error : parsed;
+  const is404 = [parsed.status, parsed.code, error.status, error.code]
+    .some((value) => String(value) === '404') || error.type === 'not_found_error';
+  const message = error.message ?? parsed.message;
+  return is404 && typeof message === 'string' && modelShaped(message);
+};
 
 // The model id, when the provider named it. Only this charset is ever echoed
 // into a pod, so provider prose and anything redacted (`[redacted]`) cannot be.
@@ -55,6 +80,8 @@ const failureText = (error) => [error?.message, error?.stderr, error?.body?.erro
 
 export const safeModelName = (value) => {
   const text = typeof value === 'string' ? value.trim() : '';
+  // A leading `@` would read as a mention in the pod, and `://` as a link.
+  if (text.startsWith('@') || text.includes('://')) return null;
   return SAFE_MODEL_RE.test(text) ? text : null;
 };
 
@@ -67,10 +94,10 @@ export const modelUnavailableFailure = (error, { fallbackModel = null } = {}) =>
   if (!error || error.code === PUBLIC_TOOL_FAILED_CODE || error.code === PUBLIC_MCP_NOT_READY_CODE) return null;
   const text = failureText(error);
   if (!text) return null;
-  const is404 = error.status === 404 || STATUS_404_RE.test(text);
   const matched = NOT_AVAILABLE_FOR_KEY_RE.test(text)
     || MODEL_NOT_FOUND_CODE_RE.test(text)
-    || (is404 && MODEL_404_SHAPES.some((pattern) => pattern.test(text)));
+    || sameLine404(text)
+    || jsonBody404(text);
   if (!matched) return null;
   for (const pattern of MODEL_NAME_RES) {
     const named = safeModelName(pattern.exec(text)?.[1]);
