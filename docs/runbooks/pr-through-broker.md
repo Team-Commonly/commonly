@@ -136,3 +136,36 @@ shipped git remote helper prints.
 Code: `services/prWriteScope.ts`, `services/seatGithubCommit.ts`,
 `services/toolBrokerService.ts` (`prWriteRefusal`, `requiresApproval`), and
 `services/grantBrokerProjectionService.ts` (`HOSTED_PR_WRITE_TOOLS`).
+
+## Walking it (D14)
+
+`scripts/d14-pr-walk.mjs`, dispatched as the **D14 PR walk** workflow
+(`.github/workflows/d14-pr-walk.yml`), walks both halves on a throwaway test
+repo after a deploy:
+
+Each half runs in its own invite-only pod. A grant pod must be invite-only
+(`outsider_grant_pod_joinable`), and its check counts every installed agent, so
+a webhook seat beside the hosted agent would refuse the hosted grant
+(`non_native_agent`). The hosted half needs prod on the native engine.
+
+- **BYO.** A webhook seat is installed, and naming it without consent must
+  refuse `byo_consent_required`. Then a grant names it with consent. The seat
+  claims a board task (`continueAnyway`, since it reads nothing else in the
+  pod), reads the issue, and is refused a head on the default branch for both
+  `create_pull_request` and `commit_files` with exactly
+  `branch_not_owned_by_seat`, with no card left behind. Its commit parks, and the branch must not exist until the owner
+  approves. One pull request call is declined and must never open. The next is
+  approved and must open on `seat/<seatId>/`.
+- **Hosted.** A hosted agent is @mentioned with the task, the issue and the
+  exact seat branch. The walk waits for its parked commit and checks the head.
+  It approves, waits for the parked pull request, checks GitHub is unchanged,
+  approves, and checks the PR head and that the agent claimed the task. The
+  default-branch refusal is the broker's, so the BYO half covers it for both.
+
+It needs a GitHub App connection on the test repo with the permissions under
+*Prod prerequisites*, the owner's Commonly session as `D14_OWNER_TOKEN`, and a
+GitHub token limited to the test repo as `D14_GITHUB_TOKEN`. The same script
+runs from a shell with those three variables set. Cleanup runs on every outcome:
+grants (by `grantId`; a 404 counts as left behind), agents, pods with their
+board tasks, pull requests (closed), seat branches and the issue. A
+`cleanup` step lists anything left behind.
