@@ -195,9 +195,11 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 // lines, and the page says beside it that nothing confines the agent there.
 // Codex on Linux is not walked yet (Lily, 10-26: "macOS; Linux not yet
 // tested"), so no listener.
-// Claude Code on Linux runs only in a pod that passes the CLI's own test
-// (workspace-trust.js podIsConfirmedPrivate): both flags reported and false,
-// and invite-only. A pod that omits a flag is not private.
+// Claude Code on Linux runs in any pod since F96 (#3395): a public seat runs in
+// the bubblewrap jail on the person's own login. Tested in CI with a stand-in
+// model; no person's walk yet, and the reach note says so.
+// A pod confirmed private (workspace-trust.js podIsConfirmedPrivate): both
+// flags reported and false, and invite-only. A pod that omits a flag is not.
 const podIsConfirmedPrivate = (pod?: V2Pod): boolean => (
   typeof pod?.publicRead === 'boolean'
   && typeof pod?.communityListed === 'boolean'
@@ -212,10 +214,9 @@ const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 // Claude Code and Codex keep the OS rules above. No other harness answers from
 // the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
 // line saying what works instead.
-const listenerRunsOn = (os: SetupOs, adapter: string, pod?: V2Pod): boolean => {
-  if (adapter === 'claude' || adapter === 'codex') {
-    return os === 'mac' || os === 'windows' || (os === 'linux' && adapter === 'claude' && podIsConfirmedPrivate(pod));
-  }
+const listenerRunsOn = (os: SetupOs, adapter: string): boolean => {
+  if (adapter === 'claude') return true;
+  if (adapter === 'codex') return os === 'mac' || os === 'windows';
   // OpenCode has its own lines (opencodeSnippet); the rest can't answer here.
   return false;
 };
@@ -313,11 +314,7 @@ const V2AgentBYO: React.FC = () => {
   // Where the person sets up, defaulted from this browser. They can switch:
   // the machine they browse on is not always the one they set up.
   const [setupOs, setSetupOs] = useState<SetupOs>(browserOs);
-  const listenerAvailable = listenerRunsOn(
-    setupOs,
-    listenAdapter,
-    pods.find((p) => p._id === (issued?.podId || podId)),
-  );
+  const listenerAvailable = listenerRunsOn(setupOs, listenAdapter);
   // TASK-705: "Work in my repo". The CLI already confines a seat to the folder it
   // starts in when every pod is confirmed private (workspace trust: Seatbelt on
   // a Mac, bwrap on Linux). This choice makes that explicit and carries the two
@@ -1708,10 +1705,8 @@ const V2AgentBYO: React.FC = () => {
             {addComputerBlock}
           <p className="v2-byo__footnote">
             {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
-              // Only Linux has no listener now: Claude Code outside an invite-only pod, or Codex.
-              : listenAdapter === 'claude'
-                ? 'agentByo.footnote.cliRouteClaudeLinuxUnavailable'
-                : 'agentByo.footnote.cliRouteCodexUnavailable', {
+              // Only Codex on Linux has no listener among the page's two.
+              : 'agentByo.footnote.cliRouteCodexUnavailable', {
               byo: t('agentByo.mode.byo'),
               hosted: t('agentByo.mode.hosted'),
               os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
@@ -1883,10 +1878,8 @@ const V2AgentBYO: React.FC = () => {
                 ? `${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
                   tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
                 : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool,
-                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxFolder')}` : ''}`
-                : t(listenAdapter === 'claude'
-                  ? 'agentByo.listen.unavailableClaudeLinux'
-                  : listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
+                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxBwrap')}` : ''}`
+                : t(listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
                     : listenAdapter === 'dsh' ? 'agentByo.listen.unavailableDsh' : 'agentByo.listen.unavailableOther', {
                   os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
                   tool: listenTool,
@@ -2014,13 +2007,11 @@ const V2AgentBYO: React.FC = () => {
             const mcpBlock = (
   <div className="v2-byo__snippet" data-testid="byo-mcp-claude">
                 <div className="v2-byo__snippet-head">
-                  {/* Where no listener runs, this is the way in, not an extra. */}
-                  <span>{t(listenerAvailable ? 'agentByo.snippets.claudeCode' : 'agentByo.snippets.claudeCodeMain')}</span>
+                  <span>{t('agentByo.snippets.claudeCode')}</span>
                 </div>
                 <p className="v2-byo__hint">
                   {t(
-                    setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows'
-                      : listenerAvailable ? 'agentByo.snippets.claudeCodeBody' : 'agentByo.snippets.claudeCodeBodyOwn',
+                    setupOs === 'windows' ? 'agentByo.snippets.claudeCodeBodyWindows' : 'agentByo.snippets.claudeCodeBody',
                     { name: issued.agentName },
                   )}
                 </p>
@@ -2036,16 +2027,16 @@ const V2AgentBYO: React.FC = () => {
                 </div>
               </div>
             );
-            // With a listener, the MCP command is the extra: folded away and
-            // labelled, because a stranger copied it three times, never ran the
-            // listener, and the agent never answered (walk 2026-10-31). Without a
-            // listener it is the only way in, so it stays open.
-            return listenerAvailable ? (
+            // Claude Code always has a listener now (F96), so the MCP command is
+            // the extra: folded away and labelled, because a stranger copied it
+            // three times, never ran the listener, and the agent never answered
+            // (walk 2026-10-31).
+            return (
               <details className="v2-byo__more" data-testid="byo-mcp-details">
                 <summary>{t('agentByo.snippets.mcpSummary')}</summary>
                 {mcpBlock}
               </details>
-            ) : mcpBlock;
+            );
           })()}
 
           <details className="v2-byo__more" data-testid="byo-result-more-ways">
