@@ -251,7 +251,7 @@ const renderLanding = (landing, guides, faq = [], siteLinks = '') => {
           <p class="seo-kicker">${escapeHtml(landing.openSource.kicker)}</p>
           <h2>${escapeHtml(landing.openSource.title)}</h2>
           <p>${escapeHtml(landing.openSource.lede)}</p>
-          <p><a href="https://github.com/Team-Commonly/commonly">${escapeHtml(landing.actions.readSource)}</a></p>
+          <p><a href="https://github.com/Team-Commonly/commonly">${escapeHtml(landing.actions.starGithub)}</a></p>
         </section>${faqSection}
       </main>
       <footer class="seo-footer">Commonly is open source under Apache-2.0.${siteLinks}</footer>
