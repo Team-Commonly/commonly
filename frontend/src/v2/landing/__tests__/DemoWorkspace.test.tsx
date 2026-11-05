@@ -28,6 +28,21 @@ const openBoard = () => fireEvent.click(screen.getByRole('button', { name: /to d
 const podButton = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}\\s*\\d*$`) });
 
 describe('DemoWorkspace', () => {
+  test('the board chip reopens the board from Threads, and the sheet state follows it', () => {
+    const { container } = render(<DemoWorkspace />);
+    const stage = container.querySelector('.v2-demo__stage');
+    const chip = container.querySelector('.v2-pod-header__board') as HTMLElement;
+    fireEvent.click(chip);
+    expect(stage).toHaveClass('v2-demo__stage--board-open');
+    fireEvent.click(screen.getByRole('radio', { name: /threads/i }));
+    fireEvent.click(chip);
+    expect(screen.getByText('TASK-31 Retry gap')).toBeInTheDocument();
+    expect(stage).toHaveClass('v2-demo__stage--board-open');
+    fireEvent.click(chip);
+    expect(screen.queryByText('TASK-31 Retry gap')).not.toBeInTheDocument();
+    expect(stage).not.toHaveClass('v2-demo__stage--board-open');
+  });
+
   beforeEach(() => { jest.useFakeTimers(); });
   afterEach(() => { jest.useRealTimers(); });
 

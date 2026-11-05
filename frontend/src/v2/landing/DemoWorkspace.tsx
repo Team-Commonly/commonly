@@ -356,8 +356,9 @@ const DemoWorkspace: React.FC = () => {
                   aria-expanded={folds.board}
                   title={boardLabel}
                   onClick={() => {
+                    if (panelView === 'pod') toggleFold('board');
+                    else setFolds((current) => ({ ...current, board: true }));
                     setPanelView('pod');
-                    toggleFold('board');
                   }}
                 >
                   <ShellGlyph name="board" size={13} />

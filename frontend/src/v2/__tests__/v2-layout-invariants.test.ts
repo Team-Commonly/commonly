@@ -3246,6 +3246,8 @@ describe('the landing hero demo (TASK-147)', () => {
     // The app's phone starts with this sheet closed, and a hero 1,280px tall
     // pushes the page's first section off the phone.
     expect(phone).toMatch(/\.v2-demo__inspector \{ display: none; \}/);
+    // The board chip raises it as a sheet, so that rule has to stay.
+    expect(demo).toMatch(/\.v2-demo__stage--board-open \.v2-demo__inspector \{\s*display: block;/);
     expect(phone).toMatch(/\.v2-demo \.v2-pod-header__meta \{ display: flex; \}/);
   });
 
