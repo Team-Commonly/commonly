@@ -714,6 +714,14 @@ then revalidate them after approval; no provider write occurs on that path now.
 Only an explicit `github.push_branch` tool on an autonomous `write` grant can
 push. A grant for issue comments never implies push authority.
 
+> **Amended 2026-11-05 (TASK-783):** the paragraph above is superseded. A push
+> is now one of the PR-write tools. It needs the grant's `prWrite` scope and
+> parks for the connection owner on every call, whatever the grant's mode. The
+> parked envelope binds repo, ref, base OID, new OID and the bundle bytes by
+> digest. The old OID is still read at execution, under the same lease and
+> ancestry checks, so what lands is exactly the approved new OID or nothing.
+> See [`docs/runbooks/pr-through-broker.md`](../runbooks/pr-through-broker.md).
+
 The backend accepts one bounded bundle request, checks its single advertised
 head and prerequisite against objects fetched from the pinned provider repo,
 and requires exactly one update to the

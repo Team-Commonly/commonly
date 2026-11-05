@@ -58,7 +58,7 @@ export const PROVIDER_GIT_MAX_BUFFER = 64 * 1024;
 // refuses an ordinary push as provider_git_failed.
 const PROTECTED_PATHSPEC = ['--', ':(icase).github', ':(icase,glob)**/CODEOWNERS'];
 
-const PROTECTED_PATH = (name: string) => {
+export const PROTECTED_PATH = (name: string): boolean => {
   const file = name.replace(/^\n+/, '');
   return /^\.github(?:\/(?:workflows|actions)(?:\/|$)|$)/i.test(file)
     || /(?:^|\/)CODEOWNERS$/i.test(file);
