@@ -121,13 +121,14 @@ describe('Scout onboarding knowledge', () => {
   // docs/agents/byo-support-matrix.md: Claude Code and Codex walked as public
   // seats on a Mac (2026-11-04); Claude Code walked on native Windows on prod
   // with the published CLI (D164, run 41926949969), and works there with CLI
-  // 0.1.243 or newer; on Linux or WSL it runs in the bubblewrap jail (F96), CI
-  // only with a stand-in model; Codex off a Mac is untested; the daemon is unverified.
+  // 0.1.243 or newer; on Linux or WSL it runs in the bubblewrap jail (F96),
+  // walked on prod on an API key (run 41945040493) and CI-only on a login;
+  // Codex off a Mac is untested; the daemon is unverified.
   test('says where an agent answers @mentions exactly as the support matrix does', () => {
     expect(prompt).toMatch(/@mentions: Claude Code and Codex on a Mac, with `commonly agent run`\./);
     expect(prompt).toMatch(/with no terminal\. This daemon path is not verified yet\./);
     expect(prompt).toMatch(/Claude Code on native Windows too, with CLI 0\.1\.243 or newer: the connect page gives PowerShell lines that run it with no sandbox, and it gets no connector grants\./);
-    expect(prompt).toMatch(/Claude Code on Linux \(WSL included\) runs in a bubblewrap sandbox on their own Claude Code login: that is checked in CI with a stand-in model, and no person has run it end to end yet, so say so\./);
+    expect(prompt).toMatch(/Claude Code on Linux \(WSL included\) runs in a bubblewrap sandbox\. With an API key \(ANTHROPIC_API_KEY\), in a pod that is not fully private, the page's Linux lines answered an @mention on Commonly from a fresh Ubuntu machine on Nov 5; on their own Claude Code login it is checked only in CI with a stand-in model, so say which\./);
     expect(prompt).not.toMatch(/native Windows is not verified to answer/);
     expect(prompt).toMatch(/with the MCP command on the connect page \(not yet walked on Linux\)/);
     expect(prompt).toMatch(/Codex off a Mac is not tested\./);
@@ -147,8 +148,9 @@ describe('Scout onboarding knowledge', () => {
       /Codex (on|runs on|works on) (native )?(Linux|WSL|Windows)\b(?! or WSL, or any tool)/,
       /daemon (works|is working|is verified)/,
       /does not answer @mentions today/,
-      // Linux Claude Code is CI-tested with a stand-in model, not walked.
-      /Claude Code (works|answers|is verified|is tested) on Linux/,
+      // Linux Claude Code is walked on an API key only (run 41945040493); its
+      // own-login path is CI-only, so no general Linux claim.
+      /Claude Code (works|answers|answered|is verified|is tested) on Linux/,
       /Claude Code on Linux[^.]*\b(is|was|has been) walked\b/,
       /MCP command on the connect page \((on|on native) Windows/,
       /--unsandboxed/,
@@ -236,7 +238,7 @@ describe('Scout onboarding knowledge', () => {
     const zh = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../../../frontend/src/i18n/locales/zh-CN.json'), 'utf8'));
     expect(en.agentByo.listen.unavailableClaudeLinux).toBeUndefined();
     expect(zh.agentByo.listen.unavailableClaudeLinux).toBeUndefined();
-    expect(en.agentByo.listen.reachClaudeLinux).toMatch(/The scratch-folder setup has been checked in CI with a stand-in model; no one has run either setup end to end on Linux yet/);
+    expect(en.agentByo.listen.reachClaudeLinux).toMatch(/On Nov 5 we ran the scratch-folder setup on a fresh Ubuntu machine against Commonly, with an API key, and it answered its first @mention\. On your own login it has been checked only in CI, and no one has run the project-folder setup end to end on Linux yet/);
     expect(en.agentByo.listen.unavailableCodex).toMatch(/has been tested only on a Mac and may not answer @mentions from \{\{os\}\} yet\. Choose “Run it here” for a hosted agent, or run the command on a Mac\./);
   });
 
