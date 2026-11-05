@@ -257,3 +257,73 @@ describe('which chat may flip', () => {
     expect(await Activity.countDocuments({})).toBe(0);
   });
 });
+
+// F132: Discord's webhook send reports failure as an HTTP status with a JSON
+// error code. Its bound surface is `config.channelId`, which the row keeps for
+// good (F90 fixes a Discord binding), so the flip names the reason and leaves
+// the channel in place for a reconnect.
+describe('Discord classification (F132)', () => {
+  const discordFailure = (httpStatus, code, extra = {}) => ({
+    provider: 'discord', delivered: false, httpStatus, code, ...extra,
+  });
+
+  it('is permanent for the four codes that mean the channel cannot be posted to', () => {
+    expect(deliveryFailures.classifyDiscordDeliveryFailure(discordFailure(404, 10003)))
+      .toBe(deliveryFailures.DISCORD_CHANNEL_GONE_REASON);
+    expect(deliveryFailures.classifyDiscordDeliveryFailure(discordFailure(404, 10015)))
+      .toBe(deliveryFailures.DISCORD_WEBHOOK_GONE_REASON);
+    expect(deliveryFailures.classifyDiscordDeliveryFailure(discordFailure(403, 50001)))
+      .toBe(deliveryFailures.DISCORD_NO_ACCESS_REASON);
+    expect(deliveryFailures.classifyDiscordDeliveryFailure(discordFailure(403, 50013)))
+      .toBe(deliveryFailures.DISCORD_NO_PERMISSION_REASON);
+  });
+
+  it('never flips for a rate limit, a server error, content, or a success', () => {
+    [
+      discordFailure(429, 0, { retryAfterMs: 1200 }),
+      discordFailure(429, undefined, { rateLimited: true }),
+      discordFailure(500, undefined),
+      discordFailure(400, 50035),
+      { provider: 'discord', delivered: true, httpStatus: 200, messageId: '1' },
+      null,
+    ].forEach((result) => {
+      expect(deliveryFailures.classifyDiscordDeliveryFailure(result)).toBeNull();
+    });
+  });
+
+  it('sorts a Discord-shaped result to the Discord classifier', () => {
+    expect(deliveryFailures.classifyDeliveryFailure(discordFailure(404, 10003)))
+      .toBe(deliveryFailures.DISCORD_CHANNEL_GONE_REASON);
+  });
+
+  const makeDiscordRow = () => makeIntegration({
+    name: 'Discord',
+    type: 'discord',
+    config: { serverId: '111111111111111111', channelId: '222222222222222222' },
+  });
+
+  it('flips a Discord row on its bound channel and keeps the binding', async () => {
+    const integration = await makeDiscordRow();
+    const flipped = await deliveryFailures.noteBoundChatDeliveryFailure(
+      integration.toObject(), '222222222222222222', discordFailure(403, 50013),
+    );
+    expect(flipped).toBe(true);
+    const stored = await storedIntegration(integration._id);
+    expect(stored.status).toBe('error');
+    expect(stored.errorMessage).toBe(deliveryFailures.DISCORD_NO_PERMISSION_REASON);
+    expect(stored.errorMessageUserFacing).toBe(true);
+    expect(stored.config.channelId).toBe('222222222222222222');
+  });
+
+  it('does not flip a Discord row for a 429, or for a channel it is not bound to', async () => {
+    const integration = await makeDiscordRow();
+    expect(await deliveryFailures.noteBoundChatDeliveryFailure(
+      integration.toObject(), '222222222222222222', discordFailure(429, 0, { retryAfterMs: 500 }),
+    )).toBe(false);
+    expect(await deliveryFailures.noteBoundChatDeliveryFailure(
+      integration.toObject(), '333333333333333333', discordFailure(404, 10003),
+    )).toBe(false);
+    const stored = await storedIntegration(integration._id);
+    expect(stored.status).toBe('connected');
+  });
+});

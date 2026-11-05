@@ -291,7 +291,12 @@ describe('Discord inbound live relay (F131)', () => {
 
   describe('the gateway', () => {
     const target = (overrides = {}) => ({
-      integrationId: 'integration-1', webhookListenerEnabled: true, maxBufferSize: 50, liveRelay: true, ...overrides,
+      integrationId: 'integration-1',
+      webhookListenerEnabled: true,
+      maxBufferSize: 50,
+      liveRelay: true,
+      discordUserId: INSTALLER_DISCORD,
+      ...overrides,
     });
 
     beforeEach(() => {
@@ -325,6 +330,28 @@ describe('Discord inbound live relay (F131)', () => {
       );
 
       expect(Integration.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+      expect(writes()).toHaveLength(0);
+    });
+
+    // F132 review follow-up: the cached proven id pre-filters, so a line from
+    // anyone but the installer costs no row read at all.
+    test('does not read the row for a line from anyone but the cached installer', async () => {
+      discordGatewayService.channelCache.set(`${GUILD}:${CHANNEL}`, [target()]);
+
+      await discordGatewayService.handleMessageCreate(
+        discordMessage({ author: { id: OTHER_DISCORD, username: 'mallory', bot: false } }),
+      );
+
+      expect(Integration.findById).not.toHaveBeenCalled();
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not read the row when the cache holds no proven installer', async () => {
+      discordGatewayService.channelCache.set(`${GUILD}:${CHANNEL}`, [target({ discordUserId: undefined })]);
+
+      await discordGatewayService.handleMessageCreate(discordMessage());
+
+      expect(Integration.findById).not.toHaveBeenCalled();
       expect(writes()).toHaveLength(0);
     });
 

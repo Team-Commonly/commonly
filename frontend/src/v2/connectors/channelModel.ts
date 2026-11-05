@@ -24,6 +24,10 @@ export interface ConnectorConfig {
   liveRelay?: boolean;
   relayAllAgentMessages?: boolean;
   leadAgentUsername?: string;
+  // F131/F132: the Discord account the bot-add proved for this row's creator.
+  // Server-owned, and withheld from every viewer but the creator, so its
+  // presence is what says "you may switch live relay on here".
+  discordUserId?: string;
   gates?: Record<string, ConnectorGate>;
   // Projected by the server as { reason, at } only — the admin is never named.
   adminPause?: { reason?: string; at?: string };
@@ -259,6 +263,14 @@ export const SLACK_REFUSALS: Record<string, { key: string; defaultValue: string 
   slack_lead_invalid: { key: 'connectors.slackLeadInvalid', defaultValue: 'Choose an agent in the active pod.' },
   slack_pod_access_denied: { key: 'connectors.slackPodAccessDenied', defaultValue: 'You no longer have access to this pod.' },
 };
+
+// A Discord row relays to a shared guild channel, and only the installer the
+// bot-add proved may switch that on (backend discordInboundAdapter
+// .liveRelayRefusal). A row without the proof gets no switch, never one the
+// server would refuse.
+export const discordRelayReady = (connector: Connector | null | undefined): boolean => (
+  connector?.type === 'discord' && Boolean(connector.config?.discordUserId)
+);
 
 export const connectorPodId = (connector: Connector | null | undefined): string | null => {
   if (!connector || !connector.podId) return null;

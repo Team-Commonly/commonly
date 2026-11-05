@@ -8,18 +8,30 @@
 // and stored server-side as `config.discordUserId`. Everyone else's lines keep
 // the gateway's buffer-for-summary path, which this module does not touch.
 //
-// Outbound is not here: Discord is not in the outbound relay registry, and an
-// agent's pod message does not reach the channel through this bridge.
+// Outbound (F132): with live relay on, the pod's agent lines reach the bound
+// channel by mode, through the core's hold/mute/escalate ladder, sent by the
+// channel's own webhook. Agent text reaches everyone in the guild, so the send
+// can ping no one (`allowed_mentions: { parse: [] }`), and it is paced to the
+// webhook's rate limit. The webhook's own echo of each line is a webhook-authored
+// message, which `isIgnoredDiscordMessage` drops, so nothing loops back in.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const Integration = require('../models/Integration');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const axios = require('axios');
+// eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+const { isGatedPodTarget } = require('./connectorRelayPolicy');
+import { resolveDiscordWebhookUrl } from '../utils/discordWebhookUrl';
 import {
   claimInboundMessage,
   loadInboundAuthor,
   proveInboundSender,
   writeInboundAsLinkedUser,
 } from './chatRelay/chatRelayCore';
-import type { InboundRelayAdapter, LiveRelayRow } from './chatRelay/chatRelayCore';
+import type {
+  ChatRelayAdapter, InboundRelayAdapter, LiveRelayRow, OutboundRelayOptions,
+} from './chatRelay/chatRelayCore';
+import type { DecisionRelayCard } from './decisionCardRelay';
 
 const LOG = '[discord-bridge]';
 const AUTHOR_LOAD_ATTEMPTS = 3;
@@ -42,6 +54,12 @@ export interface DiscordIntegrationDoc {
     linkedUserId?: string;
     discordUserId?: string;
     adminPause?: unknown;
+    webhookUrlRef?: string;
+    webhookUrl?: string;
+    relayAllAgentMessages?: boolean;
+    relayMutedUntil?: Date | string;
+    leadAgentUsername?: string;
+    gates?: Record<string, { enabled?: boolean; mode?: 'attention' | 'mirror'; lead?: string }>;
   };
 }
 
@@ -100,7 +118,7 @@ const isInboundRelayableIntegration = (
 const LIVE_RELAY_NEEDS_PROOF = 'Live relay on a Discord channel needs the Discord account of the person who '
   + 'added the bot, which the install proves. Add the bot again from Commonly to link it.';
 const LIVE_RELAY_INSTALLER_ONLY = 'Only the person who added the bot can turn on live relay for this channel: '
-  + 'it posts their own Discord messages into the pod as them.';
+  + 'it posts their own Discord messages into the pod as them, and the pod\'s agent messages into the channel.';
 
 export const discordInboundAdapter: InboundRelayAdapter<DiscordIntegrationDoc, DiscordInboundMessage> = {
   provider: 'discord',
@@ -230,8 +248,290 @@ export const relayDiscordMessageForIntegration = async (
   return relayDiscordMessageToPod({ integration, message });
 };
 
+
+// ---------------------------------------------------------------------------
+// Outbound (F132) — agent message → the bound channel, by its webhook.
+// ---------------------------------------------------------------------------
+
+/** Discord rejects a message `content` longer than this. */
+export const DISCORD_CONTENT_LIMIT = 2000;
+
+// The channel webhook the install created, and nothing else: a legacy
+// plaintext `config.webhookUrl` is a field a row has carried from a request
+// body, so the URL must be Discord's own webhook endpoint before agent text is
+// posted to it.
+const DISCORD_WEBHOOK_URL = new RegExp(
+  '^https://(?:(?:ptb|canary)\\.)?discord(?:app)?\\.com/api/(?:v\\d+/)?webhooks/\\d+/[\\w-]+$',
+);
+
+// Same proof as inbound: live relay was switched on by the person whose Discord
+// account the install proved (`linkedUserId` is stamped from that caller, and
+// liveRelayRefusal admits only the creator holding a `discordUserId`). A row
+// that fails it was turned on some other way and stays silent.
+const isRelayableIntegration = (integration: DiscordIntegrationDoc, podId: string): boolean => (
+  isGatedPodTarget(integration, podId)
+  && integration.type === 'discord'
+  && integration.isActive === true
+  && integration.status !== 'error'
+  && integration.config?.liveRelay === true
+  && !integration.config?.adminPause
+  && Boolean(integration.config?.serverId)
+  && Boolean(integration.config?.channelId)
+  && Boolean(integration.config?.discordUserId)
+  && Boolean(integration.config?.linkedUserId)
+  && String(integration.config?.linkedUserId) === idOf(integration.createdBy)
+);
+
+const findLiveIntegration = async (podId: string): Promise<DiscordIntegrationDoc | null> => (
+  Integration.findOne({
+    type: 'discord',
+    isActive: true,
+    status: { $ne: 'error' },
+    podId,
+    'config.liveRelay': true,
+    'config.channelId': { $exists: true, $ne: null },
+    'config.adminPause': { $exists: false },
+  }).lean()
+);
+
+// Bold and the other inline marks would let a display or pod name restyle the
+// prefix; a backslash makes each one literal.
+const escapeDiscordMarkdown = (value: string): string => value.replace(/([\\*_~`|>])/g, '\\$1');
+
+// `allowed_mentions` already stops every ping. This also keeps the words from
+// reading as one: a zero-width space after the @ renders the same and is no
+// longer the mass-mention token.
+const defuseMassMentions = (value: string): string => value.replace(/@(everyone|here)/gi, '@​$1');
+
+/** Cut to `limit` characters with an ellipsis, never leaving half a surrogate pair. */
+const fitWithin = (value: string, limit: number): string => {
+  if (value.length <= limit) return value;
+  if (limit <= 1) return '…'.slice(0, Math.max(0, limit));
+  let cut = value.slice(0, limit - 1);
+  if (/[\ud800-\udbff]$/.test(cut)) cut = cut.slice(0, -1);
+  return `${cut}…`;
+};
+
+const podNameForTag = async (podId: string): Promise<string> => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const Pod = require('../models/Pod');
+    const pod = await Pod.findById(podId).select('name').lean();
+    return String(pod?.name || podId);
+  } catch (error) {
+    console.warn(`${LOG} pod name lookup failed, tagging with the id:`, (error as Error).message);
+    return podId;
+  }
+};
+
+/** `[Pod] **Agent**: text`, the shape the Slack and Telegram lines take, in 2000 characters. */
+export const renderDiscordAgentLine = (opts: { podName: string; name: string; content: string }): string => {
+  const prefix = `[${escapeDiscordMarkdown(opts.podName)}] **${escapeDiscordMarkdown(opts.name)}**: `;
+  return fitWithin(prefix + defuseMassMentions(String(opts.content || '')), DISCORD_CONTENT_LIMIT);
+};
+
+// Discord has no reply-to-rule path yet (no relayMap reader on inbound), so the
+// card sends the reader to the pod rather than asking for a reply here. The
+// link sits in angle brackets so Discord does not unfurl it.
+export const renderDiscordDecisionCard = (opts: {
+  card: DecisionRelayCard;
+  name: string;
+  link: string;
+}): string => {
+  const { card, name, link } = opts;
+  const footer = `\nRule on it in Commonly → <${link}>`;
+  const options = card.options.map((option, index) => {
+    const description = option.description ? `\n   ${fitWithin(String(option.description), 100)}` : '';
+    const star = option.recommended ? ' ★ recommended' : '';
+    return `\n${index + 1}. **${escapeDiscordMarkdown(option.label)}**${star}${description}`;
+  }).join('');
+  const title = `**${escapeDiscordMarkdown(name)} needs a ruling · ${escapeDiscordMarkdown(card.title)}**`;
+  const header = `${title}\n${card.question}`;
+  const optionsBlock = fitWithin(defuseMassMentions(options), Math.floor(DISCORD_CONTENT_LIMIT / 2));
+  const body = fitWithin(
+    defuseMassMentions(header),
+    DISCORD_CONTENT_LIMIT - footer.length - optionsBlock.length,
+  );
+  return body + optionsBlock + footer;
+};
+
+/** What a webhook send hands the core and `connectorDeliveryFailureService`. */
+export interface DiscordDeliveryResult {
+  provider: 'discord';
+  delivered: boolean;
+  httpStatus?: number;
+  code?: number;
+  messageId?: string;
+  retryAfterMs?: number;
+  /** Not sent: the webhook's lane is still cooling down from a 429. */
+  rateLimited?: boolean;
+}
+
+/**
+ * The webhook's rate limit, about 5 messages per 2 seconds per webhook. Each
+ * row's webhook gets one lane: its sends run one at a time, at least
+ * `minIntervalMs` apart. A 429 waits out Discord's `retry_after` once and
+ * retries; a longer wait is not taken inline — the lane cools down for it and
+ * lines arriving meanwhile are dropped and logged, never retried in a loop.
+ * Per process: each backend replica paces its own sends, and Discord's 429 is
+ * the backstop between them.
+ */
+interface WebhookLane { tail: Promise<unknown>; nextAt: number; coolUntil: number }
+export const discordWebhookPacing = {
+  minIntervalMs: 400,
+  maxRetryWaitMs: 5_000,
+  defaultRetryAfterMs: 1_000,
+  now: (): number => Date.now(),
+  sleep: (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); }),
+  lanes: new Map<string, WebhookLane>(),
+  reset(): void { this.lanes.clear(); },
+};
+
+const retryAfterMsOf = (response: { data?: Record<string, unknown>; headers?: Record<string, unknown> }): number => {
+  const body = Number(response?.data?.retry_after);
+  if (Number.isFinite(body) && body >= 0) return Math.ceil(body * 1000);
+  const header = Number(response?.headers?.['retry-after']);
+  if (Number.isFinite(header) && header >= 0) return Math.ceil(header * 1000);
+  return discordWebhookPacing.defaultRetryAfterMs;
+};
+
+const postToWebhook = async (url: string, payload: Record<string, unknown>): Promise<DiscordDeliveryResult> => {
+  const response = await axios.post(url, payload, {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 10_000,
+    validateStatus: () => true,
+  });
+  const status = Number(response?.status);
+  const data = (response?.data || {}) as { id?: unknown; code?: unknown };
+  if (status >= 200 && status < 300 && data.id) {
+    return { provider: 'discord', delivered: true, httpStatus: status, messageId: String(data.id) };
+  }
+  return {
+    provider: 'discord',
+    delivered: false,
+    httpStatus: status,
+    ...(typeof data.code === 'number' ? { code: data.code } : {}),
+    ...(status === 429 ? { retryAfterMs: retryAfterMsOf(response) } : {}),
+  };
+};
+
+const sendThroughLane = (
+  laneKey: string,
+  url: string,
+  payload: Record<string, unknown>,
+): Promise<DiscordDeliveryResult> => {
+  const pacing = discordWebhookPacing;
+  let lane = pacing.lanes.get(laneKey);
+  if (!lane) {
+    lane = { tail: Promise.resolve(), nextAt: 0, coolUntil: 0 };
+    pacing.lanes.set(laneKey, lane);
+  }
+  const current = lane;
+  const run = async (): Promise<DiscordDeliveryResult> => {
+    if (pacing.now() < current.coolUntil) {
+      return {
+        provider: 'discord', delivered: false, httpStatus: 429, rateLimited: true,
+        retryAfterMs: current.coolUntil - pacing.now(),
+      };
+    }
+    const wait = current.nextAt - pacing.now();
+    if (wait > 0) await pacing.sleep(wait);
+    let result = await postToWebhook(url, payload);
+    current.nextAt = pacing.now() + pacing.minIntervalMs;
+    if (result.httpStatus === 429) {
+      const backoff = result.retryAfterMs ?? pacing.defaultRetryAfterMs;
+      if (backoff <= pacing.maxRetryWaitMs) {
+        await pacing.sleep(backoff);
+        result = await postToWebhook(url, payload);
+        current.nextAt = pacing.now() + pacing.minIntervalMs;
+      }
+      if (result.httpStatus === 429) {
+        current.coolUntil = pacing.now() + (result.retryAfterMs ?? pacing.defaultRetryAfterMs);
+      }
+    }
+    return result;
+  };
+  const next = current.tail.then(run);
+  current.tail = next.catch(() => undefined);
+  return next;
+};
+
+const webhookUrlFor = async (integration: DiscordIntegrationDoc): Promise<string | null> => {
+  let legacyPlatformUrl: unknown;
+  if (!integration.config?.webhookUrlRef && !integration.config?.webhookUrl) {
+    // Rows connected before the webhook URL was encrypted kept it on the
+    // platform document; the migration script moves it into the ref.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const DiscordIntegration = require('../models/DiscordIntegration');
+    const platform = await DiscordIntegration.findOne({ integrationId: integration._id }).select('webhookUrl').lean();
+    legacyPlatformUrl = platform?.webhookUrl;
+  }
+  const url = await resolveDiscordWebhookUrl(
+    integration.config?.webhookUrlRef,
+    integration.config?.webhookUrl,
+    legacyPlatformUrl,
+  );
+  if (!url || !DISCORD_WEBHOOK_URL.test(url)) return null;
+  return url;
+};
+
+const withWait = (url: string): string => {
+  const parsed = new URL(url);
+  parsed.searchParams.set('wait', 'true');
+  return parsed.toString();
+};
+
+export const discordRelayAdapter: ChatRelayAdapter<DiscordIntegrationDoc> = {
+  provider: 'discord',
+  relayMapKey: 'externalMessageId',
+  // The OAuth install writes the row; there is no Installable projection.
+  directRows: true,
+  findLiveIntegration,
+  isRelayableIntegration,
+  send: async ({
+    integration, podId, agentUsername, displayName, content, card, link,
+  }: OutboundRelayOptions<DiscordIntegrationDoc> & { integration: DiscordIntegrationDoc; link: string }) => {
+    const webhookUrl = await webhookUrlFor(integration);
+    const chatId = integration.config?.channelId;
+    if (!webhookUrl) {
+      console.warn(`${LOG} outbound skipped integration=${String(integration._id)}: no Discord webhook on the row`);
+      return null;
+    }
+    const name = displayName || agentUsername;
+    const text = card
+      ? renderDiscordDecisionCard({ card, name, link })
+      : renderDiscordAgentLine({ podName: await podNameForTag(podId), name, content });
+    const result = await sendThroughLane(String(integration._id), withWait(webhookUrl), {
+      content: text,
+      // Agent text goes to everyone in the guild: no @everyone, @here, role or
+      // user ping, whatever the text says.
+      allowed_mentions: { parse: [] },
+    });
+    return { chatId, externalMessageId: result.delivered ? result.messageId || null : null, result };
+  },
+  deliveryFailureError: (result) => {
+    const r = (result || {}) as DiscordDeliveryResult;
+    if (r.rateLimited) {
+      return new Error(`webhook lane cooling down after a 429 (${r.retryAfterMs}ms left); line dropped`);
+    }
+    const code = r.code !== undefined ? ` code ${r.code}` : '';
+    return new Error(`webhook send failed: HTTP ${String(r.httpStatus)}${code}`);
+  },
+  logOutboundFailure: (error, opts) => {
+    console.warn(
+      `${LOG} outbound relay failed integration=${String(opts.integration?._id || 'lookup')} `
+      + `channel=${String(opts.integration?.config?.channelId || 'unknown')}: ${error.message}`,
+    );
+  },
+};
+
 module.exports = {
   discordInboundAdapter,
+  discordRelayAdapter,
+  discordWebhookPacing,
+  renderDiscordAgentLine,
+  renderDiscordDecisionCard,
+  DISCORD_CONTENT_LIMIT,
   isIgnoredDiscordMessage,
   renderDiscordInboundContent,
   relayDiscordMessageToPod,

@@ -158,8 +158,42 @@ delivery per update. A gateway socket per replica doesn't.
 Once the claim is held, no other replica writes the line. So the read-only
 author load (`loadInboundAuthor`) is retried up to three times on a thrown
 error, then logged with the same two ids. The write itself is single-attempt.
-Inbound and outbound are separate registries:
-Discord relays inbound only, and is not in `chatRelayAdapters`.
+Inbound and outbound are separate registries (`inboundRelayAdapters` and
+`chatRelayAdapters`); since F132 all three chat platforms are in both.
+
+## Agent lines out to the chat (F132)
+With `liveRelay` on, an agent's pod message reaches the bound chat through the
+core's ladder (`relayAgentMessageThroughAdapter`): card hold, relayable row,
+mute (`relayMutedUntil`), then mode (`connectorRelayPolicy.shouldEscalate`:
+`mirror` sends every line, `attention` only escalations and the lead). Each
+platform is one `ChatRelayAdapter` in its bridge, registered in
+`chatRelay/adapters.ts`. The dispatcher (`installable/eventHandlers.ts`) selects
+rows by the registry's keys, and hands a row with no Installable parent to
+`<type>.relay` only when its adapter declares `directRows` (Telegram's legacy
+binds, and every Discord row, which the OAuth install writes directly).
+
+**Discord** sends through the channel webhook the install created
+(`config.webhookUrlRef`), never a bot token in the browser:
+- `allowed_mentions: { parse: [] }`, so agent text pings nobody in the guild,
+  and `@everyone`/`@here` are defused in the text too;
+- `[Pod] **Agent**: text`, cut to Discord's 2000 characters with an ellipsis
+  (the Telegram and Slack adapters truncate too; none splits a line);
+- one lane per webhook, about 5 sends per 2 s. A 429 waits out `retry_after`
+  once (up to 5 s) and retries; a longer wait cools the lane, and lines that
+  arrive meanwhile are dropped and logged. **An under-delivering guard, by
+  design (rule 19):** the line is still in the pod, and the audience is the
+  operator log, which names the row and channel. Pacing is per replica;
+  Discord's 429 is the backstop between replicas;
+- 10003, 10015, 50001 and 50013 flip the row to `status: 'error'` with a
+  reason written for a person (`connectorDeliveryFailureService`). The flip
+  keeps `config.channelId` (F90 fixes the binding); `POST /:id/connect` sets
+  the row connected again once the bot can post. It does not recreate a
+  deleted webhook (10015) while `webhookUrlRef` is set, so that case needs the
+  bot added again. 429 and 5xx never flip.
+
+The webhook's copy of each line is webhook-authored, and the inbound gateway
+ignores webhook messages, so nothing loops back into the pod. Who may switch
+it on is F131's rule: only the row's creator holding a proven `discordUserId`.
 
 ## Testing contract
 - Shared Jest contract tests under `backend/__tests__/contracts/integrationProvider.test.js`:

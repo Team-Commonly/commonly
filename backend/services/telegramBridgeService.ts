@@ -277,6 +277,8 @@ const podNameForTag = async (podId: string): Promise<string> => {
 export const telegramRelayAdapter: ChatRelayAdapter<TelegramIntegrationDoc> = {
   provider: 'telegram',
   relayMapKey: 'tgMessageId',
+  // Legacy direct binds predate D17 and still relay.
+  directRows: true,
   findLiveIntegration,
   isRelayableIntegration,
   send: async ({

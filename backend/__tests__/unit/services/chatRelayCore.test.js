@@ -269,7 +269,7 @@ describe('the adapter registry drives the dispatcher', () => {
   });
 
   test('every registered platform has a <provider>.relay handler', () => {
-    expect(chatRelayIntegrationTypes()).toEqual(['telegram', 'slack']);
+    expect(chatRelayIntegrationTypes()).toEqual(['telegram', 'slack', 'discord']);
     chatRelayIntegrationTypes().forEach((provider) => {
       expect(typeof eventHandlers[`${provider}.relay`]).toBe('function');
     });
@@ -283,7 +283,20 @@ describe('the adapter registry drives the dispatcher', () => {
       delete chatRelayAdapters.discordish;
     }
     const [[pipeline]] = Integration.aggregate.mock.calls;
-    expect(pipeline[0].$match.type).toEqual({ $in: ['telegram', 'slack', 'discordish'] });
+    expect(pipeline[0].$match.type).toEqual({ $in: ['telegram', 'slack', 'discord', 'discordish'] });
+  });
+
+  test('the direct-row arm reads each adapter’s directRows flag, not a type literal', async () => {
+    chatRelayAdapters.discordish = { provider: 'discordish', directRows: true };
+    try {
+      await activeHandlersForPod(podId);
+    } finally {
+      delete chatRelayAdapters.discordish;
+    }
+    const [[pipeline]] = Integration.aggregate.mock.calls;
+    const projected = JSON.stringify(pipeline.find((stage) => stage.$project && stage.$project.handlers));
+    expect(projected).toContain('["telegram","discord","discordish"]');
+    expect(projected).toContain('"$concat":["internal:","$type",".relay"]');
   });
 });
 
@@ -326,14 +339,14 @@ describe('inbound: only a proven sender reaches the write (F131)', () => {
     expect(Pod.findById).not.toHaveBeenCalled();
   });
 
-  test('every platform that relays inbound declares an inbound adapter; outbound stays telegram and slack', () => {
+  test('every platform that relays inbound declares an inbound adapter; all three relay outbound (F132)', () => {
     expect(Object.keys(inboundRelayAdapters)).toEqual(['telegram', 'slack', 'discord']);
     Object.entries(inboundRelayAdapters).forEach(([provider, adapter]) => {
       expect(adapter.provider).toBe(provider);
       expect(typeof adapter.senderIsLinkedUser).toBe('function');
       expect(typeof adapter.liveRelayRefusal).toBe('function');
     });
-    expect(chatRelayIntegrationTypes()).toEqual(['telegram', 'slack']);
+    expect(chatRelayIntegrationTypes()).toEqual(['telegram', 'slack', 'discord']);
   });
 
   test('Telegram keeps the private-chat live-relay rule; an undeclared type falls back to it', () => {

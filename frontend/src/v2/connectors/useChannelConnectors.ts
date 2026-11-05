@@ -30,6 +30,7 @@ import {
   projectionMissing,
   LINK_INSTALL_PROVIDERS,
   entryOffered,
+  discordRelayReady,
 } from './channelModel';
 import type {
   ConnectorGate,
@@ -728,13 +729,19 @@ export const useChannelConnectors = () => {
       const mirror = connector.config?.relayAllAgentMessages === true;
       const recent = connector.updatedAt && (Date.now() - new Date(connector.updatedAt).getTime()) < RECENT_MS;
       const markName: MarkName = relay ? (mirror ? 'mirror' : 'attention') : 'off';
+      // A Discord channel is shared: everyone in the server reads what lands there.
+      const isDiscord = connector.type === 'discord';
+      const mirrorLabel = isDiscord
+        ? t('connectors.discordRowMirror', { defaultValue: 'every agent line reaches everyone in the channel' })
+        : t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' });
+      const attentionLabel = isDiscord
+        ? t('connectors.discordRowAttention', { defaultValue: 'escalations reach everyone in the channel' })
+        : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' });
       const markLabel = relay
-        ? (mirror
-          ? t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' })
-          : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' }))
+        ? (mirror ? mirrorLabel : attentionLabel)
         : t('connectors.rowRelayOff', { defaultValue: 'messages stay in the pod' });
       return {
-        action: (isTelegram || isSlack) ? 'manage' : null,
+        action: (isTelegram || isSlack || discordRelayReady(connector)) ? 'manage' : null,
         actionLabel: t('connectors.manage', { defaultValue: 'Manage' }),
         detail: '',
         mark: {

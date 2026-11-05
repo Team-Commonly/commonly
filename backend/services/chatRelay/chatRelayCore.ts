@@ -22,7 +22,8 @@
 // proof has passed.
 //
 // Adding a platform is one adapter in its bridge plus one entry in
-// ./adapters.ts — the dispatcher's selector reads the registry's keys.
+// ./adapters.ts — the dispatcher's selector reads the registry's keys, and its
+// `directRows` flag.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const IntegrationModel = require('../../models/Integration');
@@ -190,6 +191,14 @@ export interface ChatRelayAdapter<I extends ChatRelayIntegration = ChatRelayInte
   provider: string;
   /** The relayMap / cards key the inbound reply router reads back. */
   relayMapKey: string;
+  /**
+   * True when the platform's rows can be plain Integration rows with no
+   * Installable parent (`installationId` absent): legacy Telegram binds, and
+   * every Discord row, which the OAuth install writes directly. The dispatcher
+   * hands such a row to `<provider>.relay` itself; an adapter without this flag
+   * is reached only through an installed event-handler component.
+   */
+  directRows?: boolean;
   findLiveIntegration: (podId: string) => Promise<I | null>;
   isRelayableIntegration: (integration: I, podId: string) => boolean;
   /** Render and send. Return null to skip without a send (e.g. no bot token). */

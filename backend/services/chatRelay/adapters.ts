@@ -14,15 +14,21 @@ const { telegramRelayAdapter, telegramInboundAdapter } = require('../telegramBri
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { slackRelayAdapter, slackInboundAdapter } = require('../slackBridgeService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-const { discordInboundAdapter } = require('../discordBridgeService');
+const { discordRelayAdapter, discordInboundAdapter } = require('../discordBridgeService');
 
 export const chatRelayAdapters: Record<string, ChatRelayAdapter<any>> = {
   telegram: telegramRelayAdapter,
   slack: slackRelayAdapter,
+  discord: discordRelayAdapter,
 };
 
 /** Integration.type values the dispatcher selects for outbound relay. */
 export const chatRelayIntegrationTypes = (): string[] => Object.keys(chatRelayAdapters);
+
+/** The types whose rows relay with no Installable parent (see ChatRelayAdapter.directRows). */
+export const chatRelayDirectRowTypes = (): string[] => (
+  Object.entries(chatRelayAdapters).filter(([, adapter]) => adapter.directRows === true).map(([type]) => type)
+);
 
 /** `{ 'telegram.relay': fn, 'slack.relay': fn }` — the dispatcher's handler entries. */
 export const chatRelayEventHandlers = (): Record<string, (opts: OutboundRelayOptions<any>) => Promise<void>> => (
@@ -34,8 +40,8 @@ export const chatRelayEventHandlers = (): Record<string, (opts: OutboundRelayOpt
 
 // ---------------------------------------------------------------------------
 // Inbound — one entry per platform whose bridge relays chat lines INTO a pod.
-// A platform can relay inbound without relaying outbound (Discord, F131), so
-// this registry is separate from the outbound one above.
+// A platform can relay inbound without relaying outbound (Discord did, F131,
+// until F132), so this registry is separate from the outbound one above.
 // ---------------------------------------------------------------------------
 
 export const inboundRelayAdapters: Record<string, InboundRelayAdapter<any, any>> = {

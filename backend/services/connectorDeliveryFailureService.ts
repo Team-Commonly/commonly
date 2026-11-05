@@ -37,6 +37,40 @@ const PERMANENT_SLACK_ERRORS: { [error: string]: string } = {
   is_archived: SLACK_CHANNEL_ARCHIVED_REASON,
 };
 
+// Discord's webhook send (F132) reports failure as an HTTP status carrying a
+// JSON error `code`. These four mean the channel cannot be posted to until a
+// person acts; everything else (429, 5xx, a 400 on content) is transient or
+// content and says nothing about the binding.
+const DISCORD_CHANNEL_GONE_REASON = 'Discord stopped delivering: this channel no longer exists.';
+const DISCORD_WEBHOOK_GONE_REASON = 'Discord stopped delivering: the channel\'s Commonly webhook was deleted.';
+const DISCORD_NO_ACCESS_REASON = 'Discord stopped delivering: the bot can no longer see this channel.';
+const DISCORD_NO_PERMISSION_REASON = 'Discord stopped delivering: the bot is not allowed to post in this channel.';
+
+const PERMANENT_DISCORD_CODES: { [code: number]: string } = {
+  10003: DISCORD_CHANNEL_GONE_REASON, // Unknown Channel
+  10015: DISCORD_WEBHOOK_GONE_REASON, // Unknown Webhook
+  50001: DISCORD_NO_ACCESS_REASON, // Missing Access
+  50013: DISCORD_NO_PERMISSION_REASON, // Missing Permissions
+};
+
+/** What the Discord relay adapter hands over: tagged, so it cannot be mistaken for the other shapes. */
+interface DiscordDeliveryResult {
+  provider?: 'discord';
+  delivered?: boolean;
+  httpStatus?: number;
+  code?: number;
+}
+
+/**
+ * Discord's JSON error `code` → a named reason, or null. A rate limit (429) is
+ * never permanent: the adapter backs off and the next line tries again.
+ */
+const classifyDiscordDeliveryFailure = (result?: DiscordDeliveryResult | null): string | null => {
+  if (!result || result.provider !== 'discord' || result.delivered === true) return null;
+  if (result.httpStatus === 429 || typeof result.code !== 'number') return null;
+  return PERMANENT_DISCORD_CODES[result.code] || null;
+};
+
 interface DeliveryResult {
   success?: boolean;
   errorCode?: number;
@@ -89,6 +123,13 @@ interface FlipInput {
   integrationId: unknown;
   failedChatId: unknown;
   reason: string;
+  /**
+   * The config key that holds the bound surface. `chatId` (Telegram, Slack) is
+   * unset by the flip, which is what lets that connector re-bind. A Discord
+   * row's `channelId` is fixed for the row's life (F90), so it is matched on
+   * and kept: a reconnect clears the error on the same channel.
+   */
+  boundChatKey?: 'chatId' | 'channelId';
 }
 
 /**
@@ -135,13 +176,13 @@ const flipConnectorOnPermanentDeliveryFailure = async ({
   integrationId,
   failedChatId,
   reason,
+  boundChatKey = 'chatId',
 }: FlipInput): Promise<boolean> => {
   const matched = await Integration.findOneAndUpdate(
-    { _id: integrationId, 'config.chatId': String(failedChatId) },
-    {
-      $set: userFacingError(reason),
-      $unset: { 'config.chatId': '' },
-    },
+    { _id: integrationId, [`config.${boundChatKey}`]: String(failedChatId) },
+    boundChatKey === 'chatId'
+      ? { $set: userFacingError(reason), $unset: { 'config.chatId': '' } }
+      : { $set: userFacingError(reason) },
     { new: true },
   );
   if (!matched) return false;
@@ -149,18 +190,26 @@ const flipConnectorOnPermanentDeliveryFailure = async ({
 };
 
 /**
- * The two providers report failure in their own shapes — `{success: false,
- * errorCode}` and `{ok: false, error}` — and the call sites hand over whatever
+ * The providers report failure in their own shapes — `{success: false,
+ * errorCode}`, `{ok: false, error}` and Discord's tagged `{provider: 'discord',
+ * httpStatus, code}` — and the call sites hand over whatever
  * their provider returned, so the entry point sorts them by shape rather than
  * making every caller name its provider.
  */
-const classifyDeliveryFailure = (result?: (DeliveryResult & SlackDeliveryResult) | null): string | null => (
-  result && result.ok === false ? classifySlackDeliveryFailure(result) : classifyTelegramDeliveryFailure(result)
-);
+type AnyDeliveryResult = DeliveryResult & SlackDeliveryResult & DiscordDeliveryResult;
+
+const classifyDeliveryFailure = (result?: AnyDeliveryResult | null): string | null => {
+  if (result && result.provider === 'discord') return classifyDiscordDeliveryFailure(result);
+  return result && result.ok === false ? classifySlackDeliveryFailure(result) : classifyTelegramDeliveryFailure(result);
+};
+
+// Where each provider's row keeps the surface it was bound to. Telegram and
+// Slack store it as `chatId`; a Discord row as `channelId`.
+const boundChatKeyFor = (type: unknown): 'chatId' | 'channelId' => (type === 'discord' ? 'channelId' : 'chatId');
 
 /**
  * Call this only from a send that targeted the connector's own bound chat — for
- * either provider, since both store it in `config.chatId`.
+ * any provider: `boundChatKeyFor` names where its row stores that chat.
  *
  * `sentToChatId` is compared against the stored one on purpose: the sites that
  * may flip all send to `integration.config.chatId`, and the receive-side replies
@@ -169,11 +218,12 @@ const classifyDeliveryFailure = (result?: (DeliveryResult & SlackDeliveryResult)
  * flipping someone else's working connector.
  */
 const noteBoundChatDeliveryFailure = async (
-  integration: { _id?: unknown; config?: { chatId?: unknown } } | null | undefined,
+  integration: { _id?: unknown; type?: unknown; config?: { chatId?: unknown; channelId?: unknown } } | null | undefined,
   sentToChatId: unknown,
-  result?: (DeliveryResult & SlackDeliveryResult) | null,
+  result?: AnyDeliveryResult | null,
 ): Promise<boolean> => {
-  const boundChatId = integration?.config?.chatId;
+  const boundChatKey = boundChatKeyFor(integration?.type);
+  const boundChatId = integration?.config?.[boundChatKey];
   if (!boundChatId || !sentToChatId || String(boundChatId) !== String(sentToChatId)) return false;
 
   const reason = classifyDeliveryFailure(result);
@@ -183,6 +233,7 @@ const noteBoundChatDeliveryFailure = async (
     integrationId: integration?._id,
     failedChatId: boundChatId,
     reason,
+    boundChatKey,
   });
 };
 
@@ -207,6 +258,7 @@ const markConnectorUnavailable = async (
 
 export {
   classifyDeliveryFailure,
+  classifyDiscordDeliveryFailure,
   classifySlackDeliveryFailure,
   classifyTelegramDeliveryFailure,
   flipConnectorOnPermanentDeliveryFailure,
@@ -217,4 +269,8 @@ export {
   SLACK_BOT_REMOVED_REASON,
   SLACK_CHANNEL_ARCHIVED_REASON,
   SLACK_CHANNEL_GONE_REASON,
+  DISCORD_CHANNEL_GONE_REASON,
+  DISCORD_WEBHOOK_GONE_REASON,
+  DISCORD_NO_ACCESS_REASON,
+  DISCORD_NO_PERMISSION_REASON,
 };

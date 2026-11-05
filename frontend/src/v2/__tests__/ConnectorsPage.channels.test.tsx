@@ -1709,3 +1709,81 @@ const ConnectorsPageForRoutes = () => {
   const Page = require('../connectors/ConnectorsPage').default;
   return <Page />;
 };
+
+// F132 (D249): a Discord row relays agent lines out to a SHARED channel, so its
+// relay switch is offered only on a row whose installer the bot-add proved —
+// the server stamps `discordUserId` on the creator's row and withholds it from
+// everyone else's view. The copy says who reads the channel.
+describe('Connectors page: Discord live relay (F132)', () => {
+  const discordRow = (config = {}) => ({
+    _id: 'i-discord',
+    type: 'discord',
+    status: 'connected',
+    createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+    updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    config: { serverId: '111111111111111111', channelId: '222222222222222222', ...config },
+    podId: { _id: 'p2', name: 'Ops' },
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.history.replaceState({}, '', '/v2/connectors');
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('offers the installer the relay switch, and turning it on PATCHes liveRelay', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: false })]);
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).getByText('What the channel sees')).toBeInTheDocument();
+    expect(within(drawer).getByText('Messages stay in the pod.')).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('checkbox', { name: 'Relay' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/integrations/i-discord',
+      { config: { liveRelay: true } },
+      expect.anything(),
+    ));
+  });
+
+  it('says the whole server reads the channel, and switches mode', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: true, relayAllAgentMessages: true })]);
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).getByText(
+      'Every agent message is posted in the Discord channel, where everyone in the server can read it.',
+    )).toBeInTheDocument();
+    expect(within(drawer).getByText('Your own messages in the channel reach the pod as you.')).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Attention' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/integrations/i-discord',
+      { config: { relayAllAgentMessages: false } },
+      expect.anything(),
+    ));
+  });
+
+  it('shows no relay switch on a row whose installer was not proven, and says how to fix it', async () => {
+    mockGets([discordRow({})]);
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).queryByRole('checkbox', { name: 'Relay' })).toBeNull();
+    expect(within(drawer).getByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeInTheDocument();
+  });
+
+  it('renders the shared-channel copy in zh-CN', async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: true, relayAllAgentMessages: false })]);
+      renderPage();
+      const drawer = await openDrawer('Discord');
+      expect(within(drawer).getByText(
+        '只有需要关注的消息和主导智能体的消息会发到这个 Discord 频道，服务器里的每个人都能看到。',
+      )).toBeInTheDocument();
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+});
