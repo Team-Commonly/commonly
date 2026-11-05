@@ -275,8 +275,7 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       }
       // Written past configWriteRefusal, which keeps a client's `config.hosted`
       // out: only `about` changes, and the engine record stays as stored.
-      if (requestedAbout !== undefined && isHostedInstallation(targetInstallation)
-        && hostedEngineInEffect(targetInstallation) === 'native') {
+      if (requestedAbout !== undefined) {
         const { about: _previous, ...hosted } = readHostedConfig(targetInstallation);
         const existing = normalizeConfigMap(targetInstallation.config) || {};
         targetInstallation.config = new Map(Object.entries({
@@ -381,6 +380,14 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
     if (writeRefusal) {
       const { status: refusalStatus, ...refusalBody } = writeRefusal;
       return res.status(refusalStatus).json(refusalBody);
+    }
+    // Every row the description reaches must take it, decided before any is
+    // saved: a row that skipped it while the shared card changed would leave
+    // the card and that agent's prompt saying different things.
+    const takesAbout = (entry: any) => isHostedInstallation(entry) && hostedEngineInEffect(entry) === 'native';
+    if (requestedAbout !== undefined && !installationsToUpdate.every(takesAbout)) {
+      return res.status(400).json({ code: 'about_hosted_only',
+        error: 'Every installation this write reaches must be a hosted agent on the native engine' });
     }
     // An installation can show a different label from its bot User, and a pod
     // lists every installer's card side by side. Guard every active card in

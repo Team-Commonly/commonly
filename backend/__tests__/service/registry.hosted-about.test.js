@@ -175,6 +175,20 @@ describe('editing a hosted agent description after install', () => {
     expect(bot.botMetadata.description).toBe('Admin set.');
   });
 
+  it('refuses the whole write when a row it reaches is on another engine, and changes nothing', async () => {
+    await AgentInstallation.create({
+      agentName: AGENT, instanceId: 'default', podId: podB._id, version: '1', installedBy: other._id,
+      config: new Map([['runtime', { runtimeType: 'hosted' }], ['hosted', { engine: 'durable-object', provisionedAt, about: 'Watches errors.' }]]),
+    });
+    const response = await patch(admin, { about: 'Admin set.' });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('about_hosted_only');
+    const rows = await AgentInstallation.find({ agentName: AGENT });
+    expect(rows.map((row) => hostedOf(row).about)).toEqual(['Watches errors.', 'Watches errors.']);
+    const bot = await User.findOne({ isBot: true, 'botMetadata.agentName': AGENT }).lean();
+    expect(bot.botMetadata.description).toBe('Watches errors.');
+  });
+
   it('still refuses a client-written config.hosted', async () => {
     const response = await patch(owner, { config: { hosted: { engine: 'durable-object', about: 'Sneaky.' } } });
     expect(response.status).toBeGreaterThanOrEqual(400);
