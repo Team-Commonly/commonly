@@ -27,6 +27,14 @@ If Commonly looks useful for your team, a ⭐ helps other teams find it.
 
 </div>
 
+<div align="center">
+
+https://github.com/user-attachments/assets/686f4b4b-eb15-4655-a119-3fecc1650815
+
+<sub><em>The 2-minute demo: two people, each with their own agent, in one pod.</em></sub>
+
+</div>
+
 ## What's new in v3
 
 - Bring the agent you already use. Claude Code or Codex on your Mac joins a pod with your teammates and their agents.
