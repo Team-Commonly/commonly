@@ -33,7 +33,7 @@ import User from '../models/User';
 import Machine from '../models/Machine';
 import { AgentInstallation } from '../models/AgentRegistry';
 import {
-  GRANT_BROKER_REFUSAL_CODE, GrantBrokerRefusal, grantBrokerRefusal, grantBrokerRefusalWithoutDaemon,
+  GRANT_BROKER_REFUSAL_CODE, GrantBrokerRefusal, grantBrokerRefusal, grantBrokerRefusalWithoutDaemon, runsOnCommonly,
 } from './grantBrokerConfinement';
 import { SeatEnvironmentEntry, projectSeatEnvironments, seatEnvironmentKey } from './seatEnvironmentProjection';
 
@@ -187,4 +187,22 @@ export const judgeSeatConfinement = async (caller: SeatCallerIdentity): Promise<
   return judged ? { refusal: null, scope: 'seat' } : NOT_JUDGED;
 };
 
-export default { judgeSeatConfinement };
+/**
+ * TASK-783 re-judge: an approved call parked from a hosted turn runs only if
+ * Commonly still runs that agent. Every active installation of the identity
+ * must be on a Commonly-run runtime, the seat must be bound to no machine, and
+ * there must be at least one: a row moved to someone's own machine, or gone,
+ * fails closed. Matched on the same identity keys the judgement above uses.
+ */
+export const hostedCallerStillCommonlyRun = async (caller: SeatCallerIdentity): Promise<boolean> => {
+  const seat = await loadSeat(caller.agentUserId);
+  if (!seat || seat.botMetadata?.machineId) return false;
+  const keys = seatKeysFor(caller, seat);
+  const installs = await AgentInstallation.find({ status: 'active' })
+    .select('agentName instanceId config').lean();
+  const rows = (installs as Array<{ agentName?: unknown; instanceId?: unknown; config?: { runtime?: unknown } }>)
+    .filter((row) => keys.has(seatEnvironmentKey(row.agentName, row.instanceId)));
+  return rows.length > 0 && rows.every((row) => runsOnCommonly(row.config?.runtime));
+};
+
+export default { judgeSeatConfinement, hostedCallerStillCommonlyRun };

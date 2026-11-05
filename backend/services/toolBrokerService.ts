@@ -12,7 +12,7 @@ import {
 } from './roomGrantService';
 import { GRANT_BROKER_REFUSAL_CODE } from './grantBrokerConfinement';
 import { SessionAccountRefusal, loadSessionAccount, sessionRefusal } from './sessionAccountService';
-import { judgeSeatConfinement } from './seatGrantConfinement';
+import { hostedCallerStillCommonlyRun, judgeSeatConfinement } from './seatGrantConfinement';
 import { findHostedToolDefinition, hostedToolDefinitions } from './hostedMcpToolDefinitions';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import { assertPinnedArgValues } from './hostedMcpArgValues';
@@ -390,8 +390,9 @@ const createPullRequest: GithubToolDefinition = {
 const commitFilesDefinition: GithubToolDefinition = {
   name: 'github.commit_files',
   description: 'Commit text files to your own seat/<your user id>/ branch in the connected GitHub repository, '
-    + 'creating it from `base` if it does not exist. The repository owner approves each call before anything '
-    + 'reaches GitHub. Then open a pull request from that branch.',
+    + 'creating it from `base`, which must be the repository\'s default branch, if it does not exist. '
+    + 'No attribution trailers (Co-authored-by:, Signed-off-by:). The repository owner approves each call '
+    + 'before anything reaches GitHub. Then open a pull request from that branch.',
   requiredWriteMode: 'write-with-confirm',
   connectionType: 'github-app',
   requiresApproval: true,
@@ -1838,13 +1839,20 @@ const assertApprovedCallStillPermitted = async (
   // The caller's half of the write rule is the confinement check below.
   await assertPrWriteRule(grant, definition, false);
   if (definition.connectionType !== 'github-app' || !isPrWriteTool(definition.name)) return;
+  // The park record decides which judgement applies; the agent is judged live.
   const parkedAs = input.callerConfinement;
-  if (parkedAs === 'hosted') return;
   const changed = new RoomGrantError(
     'confinement_changed',
     'the agent\'s sandbox or naming changed since this call was parked; ask again',
     403,
   );
+  if (parkedAs === 'hosted') {
+    // A hosted turn has nothing to confine only while Commonly runs it.
+    if (await hostedCallerStillCommonlyRun({
+      agentName: input.agentName, instanceId: input.instanceId, agentUserId: input.agentUserId,
+    })) return;
+    throw changed;
+  }
   if (parkedAs !== 'confined' && parkedAs !== 'unjudged' && parkedAs !== 'named_unconfined') throw changed;
   const judgement = await judgeSeatConfinement({
     agentName: input.agentName,

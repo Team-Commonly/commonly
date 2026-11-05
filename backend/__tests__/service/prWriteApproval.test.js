@@ -34,6 +34,8 @@ jest.mock('../../services/githubAppService', () => ({
   getBranchHead: jest.fn(async ({ branch }) => (branch === 'main' ? '1'.repeat(40) : null)),
   getCommitTree: jest.fn(), createTextTree: jest.fn(), createCommit: jest.fn(),
   createBranchRef: jest.fn(), fastForwardBranchRef: jest.fn(), getInstallationToken: jest.fn(),
+  getDefaultBranch: jest.fn(async () => 'main'),
+  getTreeEntries: jest.fn(async () => ({ entries: [], truncated: false })),
 }));
 // A seat's own sandbox, as the server judges it. Hosted turns never ask.
 const mockJudge = jest.fn();
@@ -50,7 +52,11 @@ jest.mock('../../services/attentionItemService', () => ({
   resolve: jest.fn(async () => undefined),
   resolveExpired: jest.fn(async () => undefined),
 }));
-jest.mock('../../config/socket', () => ({ getIO: jest.fn(() => null) }));
+// Every room emit, so a test can prove what a socket carried.
+const mockEmits = [];
+jest.mock('../../config/socket', () => ({
+  getIO: jest.fn(() => ({ to: (room) => ({ emit: (event, payload) => mockEmits.push({ room, event, payload }) }) })),
+}));
 jest.mock('../../models/Message', () => ({ updateOne: jest.fn(async () => ({})) }));
 jest.mock('../../services/brokerRecordService', () => ({
   recordBrokerCall: jest.fn(), recordApprovalOutcome: jest.fn(),
@@ -89,11 +95,14 @@ const prArgs = (over = {}) => ({ title: 'Fix #12', head: head(), base: 'main', b
 
 beforeEach(async () => {
   mockTrail.length = 0;
+  mockEmits.length = 0;
   jest.clearAllMocks();
+  github.getBranchHead.mockImplementation(async ({ branch }) => (branch === 'main' ? '1'.repeat(40) : null));
   delete process.env.SEAT_GITHUB_PUSH_ENABLED;
   mockJudge.mockResolvedValue({ refusal: null, scope: 'seat' });
   await Promise.all([User.deleteMany({}), Pod.deleteMany({}), Integration.deleteMany({}),
-    ApprovalAction.deleteMany({}), require('../../models/RoomGrant').deleteMany({})]);
+    ApprovalAction.deleteMany({}), require('../../models/RoomGrant').deleteMany({}),
+    require('../../models/AgentRegistry').AgentInstallation.deleteMany({})]);
   owner = await User.create({ username: 'repo-owner', email: 'repo-owner@example.test', password: 'pw-123456' });
   member = await User.create({ username: 'other-member', email: 'other@example.test', password: 'pw-123456' });
   seat = await User.create({ username: 'helper-seat', email: 'helper@agents.commonly.local', password: 'pw-123456',
@@ -103,6 +112,11 @@ beforeEach(async () => {
   await Integration.create({ type: 'github-app', status: 'connected', createdBy: owner._id,
     podId: pod._id, installationId: 'gh-inst-1',
     config: { installationId: 'gh-inst-1', owner: 'Team-Commonly', repo: 'commonly' } });
+  // The hosted agent: an installation Commonly runs.
+  await require('../../models/AgentRegistry').AgentInstallation.create({
+    agentName: 'helper', instanceId: 'default', podId: pod._id, installedBy: owner._id,
+    version: '1.0.0', status: 'active', config: { runtime: { runtimeType: 'native' } },
+  });
   await new Promise((resolve) => { setTimeout(resolve, 5); });
   grant = await mintGrant({
     connectionId: 'gh-inst-1', installationId: 'gh-inst-1', target: { kind: 'pod', id: String(pod._id) },
@@ -243,6 +257,26 @@ describe('the call is judged again when it is approved', () => {
     expect(mockTrail.at(-1)).toMatchObject({ outcome: 'refused', reason: 'grant_revoked', approvalId });
   });
 
+  test('a hosted agent moved to its owner\'s machine between park and approve: confinement_changed', async () => {
+    const approvalId = await parkOne();
+    await require('../../models/AgentRegistry').AgentInstallation.updateOne(
+      { agentName: 'helper', instanceId: 'default' },
+      { $set: { 'config.runtime': { runtimeType: 'claude-code', adapter: 'claude', host: 'byo' } } },
+    );
+    expect((await resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'approved' })).status).toBe(200);
+    expect(github.createPullRequest).not.toHaveBeenCalled();
+    expect(await ApprovalAction.findById(approvalId).lean())
+      .toMatchObject({ toolCallEnding: 'refused', toolCallCode: 'confinement_changed' });
+  });
+
+  test('a hosted agent whose installation is gone: confinement_changed, fail closed', async () => {
+    const approvalId = await parkOne();
+    await require('../../models/AgentRegistry').AgentInstallation.deleteMany({});
+    await resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'approved' });
+    expect(github.createPullRequest).not.toHaveBeenCalled();
+    expect((await ApprovalAction.findById(approvalId).lean()).toolCallCode).toBe('confinement_changed');
+  });
+
   describe('a BYO seat the grant names', () => {
     const { AgentInstallation } = require('../../models/AgentRegistry');
     let byoGrant;
@@ -364,22 +398,51 @@ describe('the owner\'s card carries a summary, never the payload', () => {
     expect(JSON.stringify(posted)).not.toContain(BUNDLE.slice(0, 64));
   });
 
-  test('a parked commit: repo, base, head, subject, each path with its size, and the count', async () => {
-    const content = 'export const fixed = true;\n'.repeat(10);
+  const parkCommit = async (args) => {
     const answer = await dispatchHostedBrokerTool({
       projection: await hostedBrokerToolsForRun({ identityId: String(seat._id), podId: String(pod._id) }),
-      name: 'github_commit_files',
-      args: { branch: head(), base: 'main', message: 'Fix #12\n\nlonger body', files: [{ path: 'src/a.js', content }] },
-      agentUserId: String(seat._id), agentName: 'helper', runPodId: String(pod._id),
+      name: 'github_commit_files', args, agentUserId: String(seat._id), agentName: 'helper', runPodId: String(pod._id),
     });
     expect(answer.outcome).toBe('pending_approval');
+    return String(answer.content.approvalId);
+  };
+
+  test('a parked commit: the owner sees the full message and the contents; no one else does', async () => {
+    const content = 'export const fixed = true;\n'.repeat(10);
+    const message = 'Fix #12\n\nlonger body';
+    const approvalId = await parkCommit({ branch: head(), base: 'main', message, files: [{ path: 'src/a.js', content }] });
     const [card] = await pending(owner);
-    expect(JSON.stringify(card)).not.toContain('export const fixed');
+    expect(card.toolCall.canonicalArgs).toBeUndefined();
     expect(card.toolCall.summary).toEqual({
       repo: 'Team-Commonly/commonly', base: 'main', head: head(), subject: 'Fix #12',
-      files: [{ path: 'src/a.js', bytes: Buffer.byteLength(content) }], fileCount: 1,
+      lands: `new branch ${head()} from main at 1111111`,
+      message: { label: 'Full commit message, exactly as it will be recorded', text: message, length: message.length, truncated: false },
+      files: [{ path: 'src/a.js', bytes: Buffer.byteLength(content), content, truncated: false }], fileCount: 1,
+      contents: {
+        label: 'File contents, exactly as they will be committed (shown to the connection owner only)',
+        shownBytes: Buffer.byteLength(content), totalBytes: Buffer.byteLength(content), truncated: false,
+      },
       parentSha: '1'.repeat(40), branchExists: false,
     });
+    // Another pod member's read, the room's card message and every socket emit: no contents.
+    const [memberCard] = await pending(member);
+    expect(JSON.stringify(memberCard)).not.toContain('export const fixed');
+    expect(memberCard.toolCall).toEqual({ tool: 'github.commit_files' });
+    for (const [posted] of require('../../services/agentMessageService').postMessage.mock.calls) {
+      expect(JSON.stringify(posted)).not.toContain('export const fixed');
+    }
+    await resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'declined' });
+    expect(mockEmits.length).toBeGreaterThan(0);
+    expect(JSON.stringify(mockEmits)).not.toContain('export const fixed');
+  });
+
+  test('a commit to a seat branch that exists says it adds to that branch, at its tip', async () => {
+    const tip = 'abcdef0'.padEnd(40, '4');
+    github.getBranchHead.mockImplementation(async ({ branch }) => (branch === 'main' ? '1'.repeat(40) : tip));
+    await parkCommit({ branch: head(), base: 'main', message: 'More', files: [{ path: 'src/b.js', content: 'b' }] });
+    const [card] = await pending(owner);
+    expect(card.toolCall.summary).not.toHaveProperty('base');
+    expect(card.toolCall.summary.lands).toBe(`adds to existing branch ${head()} at abcdef0`);
   });
 
   test('a parked pull request: repo, base, head, title and a bounded body preview', async () => {

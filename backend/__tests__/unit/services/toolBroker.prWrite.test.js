@@ -31,6 +31,8 @@ jest.mock('../../../services/githubAppService', () => ({
   createCommit: jest.fn(),
   createBranchRef: jest.fn(),
   fastForwardBranchRef: jest.fn(),
+  getDefaultBranch: jest.fn(),
+  getTreeEntries: jest.fn(),
   getInstallationToken: jest.fn(),
 }));
 const mockProposeAction = jest.fn();
@@ -42,8 +44,10 @@ jest.mock('../../../services/outsiderGrantPodEligibility', () => ({
   outsiderGrantRefusalMessage: jest.fn((reason) => `refused: ${reason}`),
 }));
 const mockSeatConfinement = jest.fn();
+const mockHostedStill = jest.fn();
 jest.mock('../../../services/seatGrantConfinement', () => ({
   judgeSeatConfinement: (...args) => mockSeatConfinement(...args),
+  hostedCallerStillCommonlyRun: (...args) => mockHostedStill(...args),
 }));
 const mockNamingLifts = jest.fn();
 jest.mock('../../../services/byoGrantNaming', () => ({
@@ -127,6 +131,12 @@ beforeEach(() => {
   github.createTextTree.mockResolvedValue('tree-new');
   github.createCommit.mockResolvedValue('2'.repeat(40));
   github.createPullRequest.mockResolvedValue({ number: 77, html_url: 'https://github.com/x/y/pull/77' });
+  github.getDefaultBranch.mockResolvedValue('main');
+  // An earlier test's refusal must not leak: clearAllMocks keeps implementations.
+  github.createBranchRef.mockResolvedValue(undefined);
+  github.fastForwardBranchRef.mockResolvedValue(undefined);
+  github.getTreeEntries.mockResolvedValue({ entries: [], truncated: false });
+  mockHostedStill.mockResolvedValue(true);
 });
 
 describe('the scope', () => {
@@ -423,6 +433,196 @@ describe('github.commit_files', () => {
   });
 });
 
+describe('github.commit_files: the default branch and its protected files (HOLD round 3)', () => {
+  const DEFAULT_TIP = '3'.repeat(40);
+  const blob = (path, sha) => ({ path, type: 'blob', mode: '100644', sha });
+  const tree = (path, sha) => ({ path, type: 'tree', mode: '040000', sha });
+  // The default branch has moved on from the parent the commit was parked on.
+  const defaultMovedOn = (parentEntries, defaultEntries) => {
+    github.getBranchHead.mockImplementation(async ({ branch }) => (branch === 'main' ? DEFAULT_TIP : null));
+    github.getCommitTree.mockImplementation(async ({ sha }) => (sha === DEFAULT_TIP ? 'tree-default' : 'tree-parent'));
+    github.getTreeEntries.mockImplementation(async ({ sha }) => ({
+      entries: sha === 'tree-default' ? defaultEntries : parentEntries, truncated: false,
+    }));
+  };
+  const parkCommit = async (over) => {
+    await expect(hosted('github.commit_files', commitArgs(over))).rejects.toMatchObject({ code: 'approval_required' });
+  };
+  const nothingWritten = () => {
+    expect(github.createTextTree).not.toHaveBeenCalled();
+    expect(github.createCommit).not.toHaveBeenCalled();
+    expect(github.createBranchRef).not.toHaveBeenCalled();
+    expect(github.fastForwardBranchRef).not.toHaveBeenCalled();
+  };
+
+  test('a new branch must start from the repo default branch: any other base refuses before parking', async () => {
+    github.getBranchHead.mockImplementation(async ({ branch }) => (branch === 'release' ? PARENT : null));
+    await expect(hosted('github.commit_files', commitArgs({ base: 'release' })))
+      .rejects.toMatchObject({ code: 'base_not_default' });
+    expect(mockProposeAction).not.toHaveBeenCalled();
+    nothingWritten();
+  });
+
+  test('a default branch renamed between park and approval refuses base_not_default, writing nothing', async () => {
+    await parkCommit();
+    github.getDefaultBranch.mockResolvedValue('trunk');
+    await expect(runParked()).rejects.toMatchObject({ code: 'base_not_default' });
+    nothingWritten();
+  });
+
+  test('a parent whose workflows differ from the default tip refuses at execution, no ref written', async () => {
+    await parkCommit();
+    defaultMovedOn(
+      [tree('.github/workflows', 't-old'), blob('.github/workflows/ci.yml', 'old'), blob('src/a.js', 's1')],
+      [tree('.github/workflows', 't-new'), blob('.github/workflows/ci.yml', 'new'), blob('src/a.js', 's1')],
+    );
+    await expect(runParked()).rejects.toMatchObject({ code: 'protected_path_behind_default' });
+    nothingWritten();
+  });
+
+  test.each([
+    ['a workflow the default branch added', [], [blob('.github/workflows/scan.yml', 'w')]],
+    ['a workflow the default branch removed', [blob('.github/workflows/old.yml', 'w')], []],
+    ['an action that differs', [blob('.github/actions/x/action.yml', 'a1')], [blob('.github/actions/x/action.yml', 'a2')]],
+    ['a nested CODEOWNERS that differs', [blob('docs/CODEOWNERS', 'c1')], [blob('docs/CODEOWNERS', 'c2')]],
+    ['a mode change on a workflow', [{ ...blob('.github/workflows/ci.yml', 'w'), mode: '100755' }], [blob('.github/workflows/ci.yml', 'w')]],
+  ])('%s refuses protected_path_behind_default', async (_label, parentEntries, defaultEntries) => {
+    await parkCommit();
+    defaultMovedOn(parentEntries, defaultEntries);
+    await expect(runParked()).rejects.toMatchObject({ code: 'protected_path_behind_default' });
+    nothingWritten();
+  });
+
+  test('equal protected files pass, whatever else the default branch changed', async () => {
+    await parkCommit();
+    defaultMovedOn(
+      [tree('.github', 'g1'), tree('.github/workflows', 'tw'), blob('.github/workflows/ci.yml', 'w'),
+        blob('.github/ISSUE_TEMPLATE/bug.md', 'i1'), blob('CODEOWNERS', 'c'), blob('src/a.js', 's1')],
+      [tree('.github', 'g2'), tree('.github/workflows', 'tw'), blob('.github/workflows/ci.yml', 'w'),
+        blob('.github/ISSUE_TEMPLATE/bug.md', 'i2'), blob('CODEOWNERS', 'c'), blob('src/a.js', 's2')],
+    );
+    await expect(runParked()).resolves.toMatchObject({ outcome: 'ok' });
+    expect(github.createBranchRef).toHaveBeenCalledTimes(1);
+  });
+
+  test('a listing GitHub truncates cannot be compared, so it refuses', async () => {
+    await parkCommit();
+    defaultMovedOn([], []);
+    github.getTreeEntries.mockResolvedValue({ entries: [], truncated: true });
+    await expect(runParked()).rejects.toMatchObject({ code: 'protected_path_unverifiable' });
+    nothingWritten();
+  });
+
+  test('an existing seat branch is compared too: its tip may carry old workflows', async () => {
+    const tip = '4'.repeat(40);
+    github.getBranchHead.mockImplementation(async ({ branch }) => (branch === 'main' ? DEFAULT_TIP : tip));
+    await parkCommit();
+    github.getCommitTree.mockImplementation(async ({ sha }) => (sha === DEFAULT_TIP ? 'tree-default' : 'tree-tip'));
+    github.getTreeEntries.mockImplementation(async ({ sha }) => ({
+      entries: [blob('.github/workflows/ci.yml', sha === 'tree-default' ? 'new' : 'old')], truncated: false,
+    }));
+    await expect(runParked()).rejects.toMatchObject({ code: 'protected_path_behind_default' });
+    nothingWritten();
+  });
+});
+
+describe('github.commit_files: what an agent may put in a commit (HOLD round 3)', () => {
+  test.each([
+    'Co-authored-by: Sam <sam@example.com>',
+    'co-authored-by: someone',
+    'Signed-off-by: Owner <o@example.com>',
+    'SIGNED-OFF-BY : x',
+    '  Reviewed-by: a reviewer',
+  ])('a trailer that attributes anyone refuses before parking: %s', async (line) => {
+    await expect(hosted('github.commit_files', commitArgs({ message: `Fix #12\n\n${line}` })))
+      .rejects.toMatchObject({ code: 'commit_attribution_trailer' });
+    expect(mockProposeAction).not.toHaveBeenCalled();
+  });
+
+  test('a message that only mentions a trailer mid-line still parks', async () => {
+    await expect(hosted('github.commit_files', commitArgs({ message: 'Fix the Co-authored-by: parser' })))
+      .rejects.toMatchObject({ code: 'approval_required' });
+  });
+
+  test.each([
+    ['right-to-left override', 'src/a‮sj.exe'],
+    ['left-to-right embedding', 'src/‪a.js'],
+    ['first-strong isolate', 'src/⁨a.js'],
+    ['pop directional isolate', 'src/a⁩.js'],
+    ['zero-width space', 'src/a​.js'],
+    ['zero-width joiner', 'src/a‍.js'],
+    ['byte-order mark', '﻿src/a.js'],
+    ['soft hyphen (Cf)', 'src/a­.js'],
+    ['word joiner (Cf)', 'src/a⁠.js'],
+  ])('a path with a %s refuses invalid_path before parking', async (_label, path) => {
+    await expect(hosted('github.commit_files', commitArgs({ files: [{ path, content: 'x' }] })))
+      .rejects.toMatchObject({ code: 'invalid_path' });
+    expect(mockProposeAction).not.toHaveBeenCalled();
+  });
+
+  test('file content with a NUL byte refuses before parking', async () => {
+    await expect(hosted('github.commit_files', commitArgs({ files: [{ path: 'src/a.js', content: 'a\u0000b' }] })))
+      .rejects.toMatchObject({ code: 'invalid_content' });
+    expect(mockProposeAction).not.toHaveBeenCalled();
+  });
+});
+
+describe('the owner card for a parked commit (HOLD round 3)', () => {
+  const { prWriteApprovalSummary, CARD_CONTENTS_MAX } = jest.requireActual('../../../services/prWriteScope');
+  const envelope = (over = {}) => ({
+    owner: 'Team-Commonly', repo: 'commonly', ...commitArgs(), parentSha: PARENT, branchExists: false, ...over,
+  });
+
+  test('a new branch reads as one, from its base', () => {
+    const summary = prWriteApprovalSummary('github.commit_files', envelope());
+    expect(summary.base).toBe('main');
+    expect(summary.lands).toBe(`new branch seat/${SEAT}/fix-12 from main at ${PARENT.slice(0, 7)}`);
+  });
+
+  test('an existing branch reads "adds to existing branch", with no base', () => {
+    const tip = 'abcdef0'.padEnd(40, '9');
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ branchExists: true, parentSha: tip }));
+    expect(summary).not.toHaveProperty('base');
+    expect(summary.lands).toBe(`adds to existing branch seat/${SEAT}/fix-12 at abcdef0`);
+  });
+
+  test('the full message rides on the card, marked as the full message', () => {
+    const message = 'Fix #12\n\nA body line\nanother line';
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ message }));
+    expect(summary.message).toEqual({
+      label: 'Full commit message, exactly as it will be recorded', text: message,
+      length: message.length, truncated: false,
+    });
+  });
+
+  test('a message past the card cap is cut with a marker', () => {
+    const message = `Fix\n\n${'m'.repeat(5000)}`;
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ message }));
+    expect(summary.message.truncated).toBe(true);
+    expect(summary.message.text).toMatch(/\[truncated: the card shows 4096 of 5005 characters\]$/);
+  });
+
+  test('file contents ride on the card up to the cap, then a truncation marker', () => {
+    const big = 'a'.repeat(40 * 1024);
+    const files = [
+      { path: 'src/one.js', content: big },
+      { path: 'src/two.js', content: big },
+      { path: 'src/three.js', content: 'tail' },
+    ];
+    const summary = prWriteApprovalSummary('github.commit_files', envelope({ files }));
+    expect(CARD_CONTENTS_MAX).toBe(64 * 1024);
+    expect(summary.files[0]).toEqual({ path: 'src/one.js', bytes: big.length, content: big, truncated: false });
+    expect(summary.files[1].truncated).toBe(true);
+    expect(summary.files[1].content.startsWith('a'.repeat(24 * 1024))).toBe(true);
+    expect(summary.files[1].content).toMatch(/\[truncated: the card shows 24576 of 40960 bytes\]$/);
+    expect(summary.files[2]).toEqual({ path: 'src/three.js', bytes: 4, content: '', truncated: true });
+    expect(summary.contents).toEqual({
+      label: 'File contents, exactly as they will be committed (shown to the connection owner only)',
+      shownBytes: CARD_CONTENTS_MAX, totalBytes: 80 * 1024 + 4, truncated: true,
+    });
+  });
+});
+
 describe('the hosted projection', () => {
   const RoomGrantModel = require('../../../models/RoomGrant');
   test('offers the hosted PR writes only on a prWrite grant, and never push_branch', async () => {
@@ -461,6 +661,19 @@ describe('the approved call is judged again before it runs', () => {
     mockSeatConfinement.mockClear();
     await expect(runParkedAs('hosted')).resolves.toMatchObject({ outcome: 'ok' });
     expect(mockSeatConfinement).not.toHaveBeenCalled();
+  });
+
+  test('a hosted call re-checks that Commonly still runs the agent', async () => {
+    await expect(hosted('github.create_pull_request', prArgs())).rejects.toMatchObject({ code: 'approval_required' });
+    await expect(runParkedAs('hosted')).resolves.toMatchObject({ outcome: 'ok' });
+    expect(mockHostedStill).toHaveBeenCalledWith({ agentName: 'lily-claude', instanceId: 'default', agentUserId: SEAT });
+  });
+
+  test('a hosted call whose agent moved off Commonly-run compute refuses confinement_changed', async () => {
+    await expect(hosted('github.create_pull_request', prArgs())).rejects.toMatchObject({ code: 'approval_required' });
+    mockHostedStill.mockResolvedValue(false);
+    await expect(runParkedAs('hosted')).rejects.toMatchObject({ code: 'confinement_changed' });
+    nothingReachedGithub();
   });
 
   test('a PR write with no recorded judgement refuses: fail closed', async () => {

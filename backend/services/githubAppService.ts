@@ -424,6 +424,39 @@ class GitHubAppService {
     return String((res.data as { tree?: { sha?: string } })?.tree?.sha || '');
   }
 
+  /** The repository's default branch, as GitHub reports it now. */
+  static async getDefaultBranch({ owner, repo, installationId, forceApp }: GitDataOptions): Promise<string> {
+    const headers = await this._apiHeaders(installationId, forceApp);
+    const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+    return String((res.data as { default_branch?: string })?.default_branch || '');
+  }
+
+  /**
+   * Every entry of a tree, recursively. `truncated` is GitHub's own flag: past
+   * its listing limit the entries are incomplete, and a caller comparing trees
+   * must not read an absent entry as "not there".
+   */
+  static async getTreeEntries({
+    owner, repo, sha, installationId, forceApp,
+  }: GitDataOptions & { sha: string }): Promise<{
+    entries: Array<{ path: string; type: string; mode: string; sha: string }>;
+    truncated: boolean;
+  }> {
+    const headers = await this._apiHeaders(installationId, forceApp);
+    const res = await axios.get(
+      `https://api.github.com/repos/${owner}/${repo}/git/trees/${sha}?recursive=1`,
+      { headers },
+    );
+    const data = (res.data as { tree?: unknown; truncated?: unknown }) || {};
+    const entries = (Array.isArray(data.tree) ? data.tree : []).map((entry: Record<string, unknown>) => ({
+      path: String(entry?.path ?? ''),
+      type: String(entry?.type ?? ''),
+      mode: String(entry?.mode ?? ''),
+      sha: String(entry?.sha ?? ''),
+    }));
+    return { entries, truncated: data.truncated === true };
+  }
+
   /** A tree that is `baseTree` with each file's text written as a regular (100644) blob. */
   static async createTextTree({ owner, repo, baseTree, files, installationId, forceApp }: GitDataOptions & {
     baseTree: string;

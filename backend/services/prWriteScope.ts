@@ -59,12 +59,73 @@ export const prWriteMintRefusal = (input: {
 };
 
 const BODY_PREVIEW = 2000;
+/** The most file text one owner card carries, across every file. */
+export const CARD_CONTENTS_MAX = 64 * 1024;
+const CARD_MESSAGE_MAX = 4096;
 const str = (value: unknown): string => (typeof value === 'string' ? value : '');
+const shortSha = (sha: string): string => sha.slice(0, 7);
+
+/** The commit message as the owner reads it: whole, labelled, and cut only past the cap. */
+const cardMessage = (message: string): Record<string, unknown> => {
+  const truncated = message.length > CARD_MESSAGE_MAX;
+  return {
+    label: 'Full commit message, exactly as it will be recorded',
+    text: truncated
+      ? `${message.slice(0, CARD_MESSAGE_MAX)}\n`
+        + `[truncated: the card shows ${CARD_MESSAGE_MAX} of ${message.length} characters]`
+      : message,
+    length: message.length,
+    truncated,
+  };
+};
 
 /**
- * What the owner's card shows for a parked PR write, in place of its envelope:
- * enough to decide on, and never a push's bundle or a commit's file contents.
- * `null` for any other tool, whose card keeps its arguments.
+ * Each file's text, up to CARD_CONTENTS_MAX bytes across the whole commit. A
+ * file cut short ends in a marker; a file past the cap shows no text at all and
+ * says so. The envelope that runs is never cut.
+ */
+const cardFiles = (files: Array<{ path?: unknown; content?: unknown }>): {
+  files: Array<Record<string, unknown>>;
+  contents: Record<string, unknown>;
+} => {
+  let remaining = CARD_CONTENTS_MAX;
+  let totalBytes = 0;
+  let shownBytes = 0;
+  const shown = files.map((file) => {
+    const content = Buffer.from(str(file.content), 'utf8');
+    totalBytes += content.length;
+    const take = Math.min(content.length, remaining);
+    remaining -= take;
+    shownBytes += take;
+    const truncated = take < content.length;
+    const text = content.subarray(0, take).toString('utf8');
+    return {
+      path: str(file.path),
+      bytes: content.length,
+      content: truncated && take > 0
+        ? `${text}\n[truncated: the card shows ${take} of ${content.length} bytes]`
+        : text,
+      truncated,
+    };
+  });
+  return {
+    files: shown,
+    contents: {
+      label: 'File contents, exactly as they will be committed (shown to the connection owner only)',
+      shownBytes,
+      totalBytes,
+      truncated: shownBytes < totalBytes,
+    },
+  };
+};
+
+/**
+ * What the owner's card shows for a parked PR write, in place of its envelope.
+ * A push shows ids and size, never its bundle. A commit shows its full message
+ * and its file text up to CARD_CONTENTS_MAX: this summary is built ONLY for the
+ * connection owner's own pending read (`buildOwnerCardPayload`), never for the
+ * pod card, a socket emit or another member's read. `null` for any other tool,
+ * whose card keeps its arguments.
  */
 export const prWriteApprovalSummary = (tool: unknown, args: unknown): Record<string, unknown> | null => {
   if (!isPrWriteTool(tool) || !args || typeof args !== 'object') return null;
@@ -79,10 +140,22 @@ export const prWriteApprovalSummary = (tool: unknown, args: unknown): Record<str
   }
   if (tool === 'github.commit_files') {
     const files = Array.isArray(a.files) ? a.files as Array<{ path?: unknown; content?: unknown }> : [];
+    const head = str(a.branch);
+    const parentSha = str(a.parentSha);
+    const branchExists = a.branchExists === true;
+    const message = str(a.message);
     return {
-      repo, base: str(a.base), head: str(a.branch), subject: str(a.message).split('\n', 1)[0],
-      files: files.map((file) => ({ path: str(file.path), bytes: Buffer.byteLength(str(file.content), 'utf8') })),
-      fileCount: files.length, parentSha: str(a.parentSha), branchExists: a.branchExists === true,
+      repo,
+      // An existing branch continues from its own tip; its base names nothing that happens.
+      ...(branchExists ? {} : { base: str(a.base) }),
+      head,
+      lands: branchExists
+        ? `adds to existing branch ${head} at ${shortSha(parentSha)}`
+        : `new branch ${head} from ${str(a.base)} at ${shortSha(parentSha)}`,
+      subject: message.split('\n', 1)[0],
+      message: cardMessage(message),
+      ...cardFiles(files),
+      fileCount: files.length, parentSha, branchExists,
     };
   }
   // github.push_branch. Commit subjects would mean unpacking the bundle to

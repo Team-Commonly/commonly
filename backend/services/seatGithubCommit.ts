@@ -12,6 +12,13 @@
  *
  * The base branch is read for a starting point and never written. Only the seat
  * branch moves, and only forward.
+ *
+ * A new branch starts at the repo's default branch and nowhere else
+ * (`base_not_default`). Before any object is written, the parent's protected
+ * files (`.github/workflows`, `.github/actions`, every CODEOWNERS) must equal
+ * the default tip's (`protected_path_behind_default`), the same rule the bundle
+ * push applies: a seat branch must not run, or ask review from, automation
+ * policy the default branch has since replaced.
  */
 import { RoomGrantError } from './roomGrantService';
 import { PROTECTED_PATH } from './seatGithubPush';
@@ -38,6 +45,21 @@ export const assertOwnedSeatBranch = (head: unknown, agentUserId: string): void 
 };
 
 const invalid = (message: string): RoomGrantError => new RoomGrantError('invalid_tool_args', message, 400);
+
+/**
+ * Characters that change how a path READS without changing what it is: bidi
+ * controls (U+202A-202E, U+2066-2069), zero-width characters (U+200B-200D,
+ * U+FEFF), every other format character (Cf), and the line and paragraph
+ * separators. The owner approves a path by reading it on a card.
+ */
+const DECEPTIVE_PATH_CHARACTER = /[\p{Cf}\p{Zl}\p{Zp}\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069]/u;
+
+/**
+ * A trailer line that attributes the commit to someone: `Co-authored-by:`,
+ * `Signed-off-by:`, `Reviewed-by:` and every other `<Word>-by:`, in any case.
+ * A seat's commit is attributed to the App; it does not get to name people.
+ */
+const ATTRIBUTION_TRAILER = /^[ \t]*[A-Za-z][A-Za-z-]*-by[ \t]*:/im;
 
 const validBranchName = (value: unknown): value is string => typeof value === 'string'
   && /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(value)
@@ -76,6 +98,13 @@ export const parseCommitFilesArgs = (
   if (typeof raw.message !== 'string' || !raw.message.trim() || raw.message.length > MESSAGE_MAX) {
     throw invalid(`message must be a non-empty string of at most ${MESSAGE_MAX} characters`);
   }
+  if (ATTRIBUTION_TRAILER.test(raw.message)) {
+    throw new RoomGrantError(
+      'commit_attribution_trailer',
+      'a commit message may not carry a trailer that attributes anyone (Co-authored-by:, Signed-off-by:, ...)',
+      400,
+    );
+  }
   if (!Array.isArray(raw.files) || raw.files.length < 1 || raw.files.length > COMMIT_FILES_MAX_FILES) {
     throw invalid(`files must hold 1 to ${COMMIT_FILES_MAX_FILES} entries`);
   }
@@ -87,8 +116,14 @@ export const parseCommitFilesArgs = (
       throw invalid('each file is { path, content }');
     }
     const { path, content } = file as { path?: unknown; content?: unknown };
+    if (typeof path === 'string' && DECEPTIVE_PATH_CHARACTER.test(path)) {
+      throw new RoomGrantError('invalid_path', 'a file path holds an invisible or direction-changing character', 400);
+    }
     if (!validPath(path)) throw invalid('a file path is not a plain repository path');
     if (typeof content !== 'string') throw invalid('file content must be text');
+    if (content.includes('\u0000')) {
+      throw new RoomGrantError('invalid_content', 'file content must be text: it holds a NUL byte', 400);
+    }
     // Case-folded, so two spellings of one path on a case-insensitive checkout
     // cannot both ride in one commit.
     if (seen.has(path.toLowerCase())) throw invalid('a file path appears twice');
@@ -114,6 +149,81 @@ const gitData = (connection: Connection) => ({
   forceApp: true,
 });
 
+const baseNotDefault = (): RoomGrantError => new RoomGrantError(
+  'base_not_default', 'a new seat branch must start from the repository\'s default branch', 403,
+);
+
+/** Read the default branch now; a new branch starts there and nowhere else. */
+const defaultBranchOf = async (connection: Connection): Promise<string> => {
+  const name = await GitHubAppService.getDefaultBranch(gitData(connection));
+  if (typeof name !== 'string' || !name) {
+    throw new RoomGrantError('base_not_found', 'the connected repository reports no default branch', 404);
+  }
+  return name;
+};
+
+const assertBaseIsDefault = async (base: string, connection: Connection): Promise<void> => {
+  if (base !== await defaultBranchOf(connection)) throw baseNotDefault();
+};
+
+type TreeEntry = { path: string; type: string; mode: string; sha: string };
+
+/**
+ * The protected entries of a tree, keyed by path: every blob and subtree
+ * `PROTECTED_PATH` names, except the bare `.github` directory, whose id also
+ * covers files nothing protects (issue templates and the like).
+ */
+const protectedEntriesOf = async (connection: Connection, treeSha: string): Promise<Map<string, string>> => {
+  const listing = await GitHubAppService.getTreeEntries({ ...gitData(connection), sha: treeSha });
+  if (!listing || listing.truncated === true || !Array.isArray(listing.entries)) {
+    throw new RoomGrantError(
+      'protected_path_unverifiable',
+      'the repository tree is too large to compare its protected files; push through a reviewed branch instead',
+      409,
+    );
+  }
+  const entries = new Map<string, string>();
+  for (const entry of listing.entries as TreeEntry[]) {
+    if (!PROTECTED_PATH(entry.path)) continue;
+    if (entry.type === 'tree' && entry.path.toLowerCase() === '.github') continue;
+    entries.set(entry.path, `${entry.type} ${entry.mode} ${entry.sha}`);
+  }
+  return entries;
+};
+
+/**
+ * The parent must carry the default tip's protected files exactly. Compared at
+ * execution, against the default tip as it is NOW, and before any object is
+ * written.
+ */
+const assertProtectedFilesMatchDefault = async (
+  connection: Connection,
+  parentSha: string,
+  parentTree: string,
+  defaultBranch: string,
+): Promise<void> => {
+  const defaultTip = await GitHubAppService.getBranchHead({ ...gitData(connection), branch: defaultBranch });
+  if (typeof defaultTip !== 'string' || !OID.test(defaultTip)) {
+    throw new RoomGrantError('base_not_found', 'the default branch was not found in the connected repository', 404);
+  }
+  if (defaultTip === parentSha) return;
+  const defaultTree = await GitHubAppService.getCommitTree({ ...gitData(connection), sha: defaultTip });
+  if (defaultTree && defaultTree === parentTree) return;
+  const [ours, theirs] = await Promise.all([
+    protectedEntriesOf(connection, parentTree),
+    protectedEntriesOf(connection, defaultTree),
+  ]);
+  const same = ours.size === theirs.size && [...ours].every(([path, id]) => theirs.get(path) === id);
+  if (!same) {
+    throw new RoomGrantError(
+      'protected_path_behind_default',
+      'the branch carries workflow, action or CODEOWNERS files that differ from the default branch; '
+        + 'start a new seat branch from the default branch',
+      409,
+    );
+  }
+};
+
 /**
  * Park time: the agent's arguments plus the commit the new one will sit on.
  * A branch that already exists continues from its tip; a new one starts at the
@@ -126,6 +236,7 @@ export const prepareCommitFiles = async (
 ): Promise<Record<string, unknown>> => {
   const args = parseCommitFilesArgs(raw, agentUserId);
   const branchHead = await GitHubAppService.getBranchHead({ ...gitData(connection), branch: args.branch });
+  if (!branchHead) await assertBaseIsDefault(args.base, connection);
   const parentSha = branchHead || await GitHubAppService.getBranchHead({ ...gitData(connection), branch: args.base });
   if (typeof parentSha !== 'string' || !OID.test(parentSha)) {
     throw new RoomGrantError('base_not_found', 'base branch not found in the connected repository', 404);
@@ -154,7 +265,12 @@ export const commitSeatFiles = async (
   if (branchExists ? current !== parentSha : current !== null) {
     throw new RoomGrantError('stale_branch', 'the branch moved since approval; ask again', 409);
   }
+  const defaultBranch = await defaultBranchOf(connection);
+  // A new branch is held to the default base again: it may have been renamed
+  // since the owner approved.
+  if (!branchExists && args.base !== defaultBranch) throw baseNotDefault();
   const baseTree = await GitHubAppService.getCommitTree({ ...gitData(connection), sha: parentSha });
+  await assertProtectedFilesMatchDefault(connection, parentSha, baseTree, defaultBranch);
   const tree = await GitHubAppService.createTextTree({ ...gitData(connection), baseTree, files: args.files });
   const commitSha = await GitHubAppService.createCommit({
     ...gitData(connection), message: args.message, tree, parents: [parentSha],
