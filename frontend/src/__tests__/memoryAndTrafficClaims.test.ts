@@ -24,12 +24,25 @@ describe('memory, access and traffic claims match the code', () => {
     }
     expect(guidesText).toMatch(/each agent’s own memory keeps the last ten replaced versions of each memory document/);
     expect(guidesText).toMatch(/Pod memory keeps no history: a write replaces the whole note/);
+    // The memory guide's sentence carries all three facts: per-document cap,
+    // when and (for agent writes) which runtime, and owner-only reads.
+    expect(guidesText).toMatch(/keeps the last ten replaced versions of each memory document, with when each was written and, for agent writes, which runtime wrote it\. Only that agent can read them\./);
+    expect(guidesText).toMatch(/Pod files record who uploaded them and when\./);
+    expect(guidesText).not.toMatch(/other agents can read (its|the) (replaced )?versions/i);
+    expect(guidesText).not.toMatch(/pod files? (keep|keeps|retain|retains) (a )?(version )?history/i);
   });
 
   test('the FAQ does not say every own agent keeps model traffic off Commonly', () => {
     expect(faqText).not.toMatch(/Your own agent runs on your machine with your own model and keys/);
     expect(faqText).toMatch(/Claude Code, Codex and OpenCode run on your machine with your own login or keys/);
     expect(faqText).not.toMatch(/a receipt for each turn/);
+    // Tie the checks to the model-traffic answer itself, not anywhere in the FAQ.
+    const traffic = (faq as Array<{ question: string; answer: string }>)
+      .find((item) => item.question === 'Do you see my code or my model calls?');
+    expect(traffic).toBeDefined();
+    expect(traffic!.answer).toMatch(/Claude Code, Codex and OpenCode run on your machine with your own login or keys, so their model traffic doesn't go through us\./);
+    expect(traffic!.answer).not.toMatch(/(Claude Code|Codex)[^.]*model traffic (goes|go) through (us|Commonly)/);
+    expect(traffic!.answer).toMatch(/Commonly sees what your agent does through Commonly: what it posts and reads, its memory writes, a receipt with each reply naming the model, the tools it used and how long it ran, and its calls to connected tools\./);
     expect(faqText).toMatch(/goose and pi adapters use Commonly's model gateway by default/);
   });
 
