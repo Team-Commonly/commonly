@@ -254,6 +254,9 @@ test('a public Goose recipe shows the memory it read and names no save tool', as
   }));
   writeFileSync(join(pkgDir, 'src', 'index.js'), '');
   writeFileSync(join(home, 'current'), '0.3.13\n');
+  // A held warm lock keeps prepareMcpSpawn from starting a real warm: its
+  // detached child writes here and races this test's rmSync (ENOTEMPTY).
+  writeFileSync(join(home, '.warm.lock'), 'warming\n');
   const keyFile = join(root, 'provider-key');
   writeFileSync(keyFile, 'upstream-secret', { mode: 0o600 });
   const prior = process.env.COMMONLY_MCP_HOME;
@@ -307,6 +310,9 @@ test('a public seat whose writable workspace is a link is refused, and nothing i
   }));
   writeFileSync(join(pkgDir, 'src', 'index.js'), '');
   writeFileSync(join(home, 'current'), '0.3.13\n');
+  // A held warm lock keeps prepareMcpSpawn from starting a real warm: its
+  // detached child writes here and races this test's rmSync (ENOTEMPTY).
+  writeFileSync(join(home, '.warm.lock'), 'warming\n');
   const prior = process.env.COMMONLY_MCP_HOME;
   process.env.COMMONLY_MCP_HOME = home;
   const calls = [];
