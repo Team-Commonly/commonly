@@ -60,16 +60,18 @@ const pick = (source: any, fields: string[]) => Object.fromEntries(
 // Reservation metadata is used only by username availability checks. It is
 // not part of a profile response: historical message text remains the only
 // public record of the previous handle.
-const INTERNAL_USER_FIELDS = ['previousUsernames', 'accountDeletionRequestedAt'];
+// `labelKeys` are the folded copies the case-insensitive label checks match
+// (models/accountLabelKeys.ts), internal like the reservations they key.
+const INTERNAL_USER_FIELDS = ['previousUsernames', 'labelKeys', 'accountDeletionRequestedAt'];
 
 const isValidAccountLabel = (value: unknown) => typeof value === 'string'
   && value.trim().length > 0
   && value.trim().length <= 80;
 
 // The chat author slot renders a single human label. Match its identity rule
-// with an indexed, case-insensitive lookup so two accounts cannot save labels
-// that appear identical there. `strength: 2` keeps accent distinctions while
-// folding case (for example, `Lily` and `lIlY`).
+// with an indexed, case-insensitive lookup (the folded label keys of
+// models/accountLabelKeys.ts) so two accounts cannot save labels that appear
+// identical there (for example, `Lily` and `lIlY`).
 
 /**
  * Serialize a user for a response.

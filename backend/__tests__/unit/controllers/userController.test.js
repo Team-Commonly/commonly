@@ -42,6 +42,22 @@ describe('User Controller', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ _id: 'u1', username: 'test' }));
     });
 
+    it("leaves the internal label keys and reservations out of the owner's own profile", async () => {
+      const mockUser = mockUserDoc({
+        _id: 'u1',
+        username: 'test',
+        previousUsernames: ['old'],
+        labelKeys: { username: 'test', previousUsernames: ['old'], displayName: null, botDisplayName: null },
+      });
+      User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(mockUser) });
+      const res = { json: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn() };
+      await userController.getCurrentProfile({ user: { id: 'u1' } }, res);
+      const body = res.json.mock.calls[0][0];
+      expect(body.username).toBe('test');
+      expect(body).not.toHaveProperty('labelKeys');
+      expect(body).not.toHaveProperty('previousUsernames');
+    });
+
     it('returns 404 when user does not exist', async () => {
       User.findById = jest.fn().mockReturnValue({ select: jest.fn().mockResolvedValueOnce(null) });
       const req = { user: { id: 'missing' } };

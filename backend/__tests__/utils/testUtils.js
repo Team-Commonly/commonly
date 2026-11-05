@@ -82,7 +82,10 @@ const setupMongoDb = async () => {
     // FerretDB). Each suite gets its own database and drops it on close.
     if (process.env.TEST_MONGO_URI) {
       const db = `t${require('crypto').randomBytes(6).toString('hex')}`; // eslint-disable-line global-require
-      await mongoose.connect(`${process.env.TEST_MONGO_URI.replace(/\/+$/, '')}/${db}`);
+      // dbName picks the database without editing the URI, so a path (which
+      // also stays the default authSource), a ?query and a multi-host list all
+      // pass through as given. new URL() rejects a multi-host mongodb:// URI.
+      await mongoose.connect(process.env.TEST_MONGO_URI, { dbName: db });
       return;
     }
     mongoServer = await createMongoServer();

@@ -8,9 +8,11 @@
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
 const { AgentInstallation } = require('../../../models/AgentRegistry');
-const { accountLabelClause, labelKeysFor } = require('../../../models/accountLabelKeys');
+const {
+  accountLabelClause, labelKey, labelKeysFor, LABEL_KEY_PATHS, TRIMMED_LABEL_FIELDS,
+} = require('../../../models/accountLabelKeys');
 const { isFreeUsername } = require('../../../services/derivedUsername');
-const { backfillUserLabelKeys } = require('../../../scripts/backfill-user-label-keys');
+const { backfillUserLabelKeys, runBackfillCli } = require('../../../scripts/backfill-user-label-keys');
 const { setupMongoDb, closeMongoDb } = require('../../utils/testUtils');
 
 jest.mock('../../../services/agentIdentityService', () => ({
@@ -73,6 +75,172 @@ describe('account label keys', () => {
     });
   });
 
+  describe('a save writes only the keys of the labels it writes (B1)', () => {
+    it('a user loaded with a partial select and saved keeps every key, and the checks still find it', async () => {
+      const user = await User.create(human({
+        username: 'Partial',
+        displayName: 'Part Ial',
+        previousUsernames: ['OldPart'],
+        botMetadata: { displayName: 'P Bot' },
+      }));
+      const before = await keysOf(user._id);
+      expect(before).toEqual({
+        username: 'partial', previousUsernames: ['oldpart'], displayName: 'part ial', botDisplayName: 'p bot',
+      });
+
+      // As follow/unfollow does (userController): no label is in memory.
+      const slim = await User.findById(user._id).select('_id username following');
+      slim.following.push(new mongoose.Types.ObjectId());
+      await slim.save();
+      const slimmer = await User.findById(user._id).select('_id followedThreads');
+      slimmer.followedThreads.push({ postId: new mongoose.Types.ObjectId() });
+      await slimmer.save();
+
+      expect(await keysOf(user._id)).toEqual(before);
+      expect(await isFreeUsername('PARTIAL')).toBe(false);
+      expect(await isFreeUsername('oldPART')).toBe(false);
+      expect(await User.findOne(accountLabelClause('displayName', 'PART IAL')).lean()).not.toBeNull();
+      expect(await User.findOne(accountLabelClause('botMetadata.displayName', 'p BOT')).lean()).not.toBeNull();
+    });
+
+    it('a partial save that writes one label rekeys that label alone, trimmed as the schema stores it', async () => {
+      const user = await User.create(human({
+        username: 'Solo', displayName: 'Before', botMetadata: { displayName: 'Bot' },
+      }));
+      const named = await User.findById(user._id).select('_id displayName');
+      named.displayName = '  After Name  ';
+      await named.save();
+      expect(await keysOf(user._id)).toEqual({
+        username: 'solo', previousUsernames: [], displayName: 'after name', botDisplayName: 'bot',
+      });
+
+      const nested = await User.findById(user._id).select('_id botMetadata.displayName');
+      nested.botMetadata.displayName = 'Nested Bot';
+      await nested.save();
+      expect((await keysOf(user._id)).botDisplayName).toBe('nested bot');
+
+      // The whole botMetadata replaced carries its displayName key.
+      const whole = await User.findById(user._id).select('_id botMetadata.description');
+      whole.botMetadata = { displayName: 'Whole Bot', description: 'd' };
+      await whole.save();
+      expect(await keysOf(user._id)).toEqual({
+        username: 'solo', previousUsernames: [], displayName: 'after name', botDisplayName: 'whole bot',
+      });
+    });
+  });
+
+  describe('the key folds what the old collation folded (S1)', () => {
+    it('full-width, combining vs precomposed accents, ligatures and Greek final sigma', () => {
+      expect(labelKey('Ｌｉｌｙ')).toBe(labelKey('lily'));
+      expect(labelKey('é')).toBe(labelKey('é'));
+      expect(labelKey('Café')).toBe(labelKey('CAFÉ'));
+      expect(labelKey('ﬁx')).toBe(labelKey('FIX')); // the ﬁ ligature
+      expect(labelKey('ς')).toBe(labelKey('σ')); // ς and σ
+      expect(labelKey('Σ')).toBe(labelKey('ς')); // Σ too
+      expect(labelKey('lily')).not.toBe(labelKey('lilly'));
+    });
+
+    it('a check finds the holder across those forms', async () => {
+      const holder = await User.create(human({ username: 'wide', displayName: 'Ｌｉｌｙ Οδός' }));
+      const hit = await User.findOne(accountLabelClause('displayName', 'lily οδόσ')).select('_id').lean();
+      expect(String(hit?._id)).toBe(String(holder._id));
+    });
+
+    it('the regex fallback matches a legacy label in its composed or decomposed spelling', async () => {
+      await User.collection.insertOne({ ...human({ username: 'legacycafe', displayName: 'Café' }) });
+      expect(await User.findOne(accountLabelClause('displayName', 'CAFÉ')).lean()).not.toBeNull();
+    });
+  });
+
+  describe('the write paths that could leave a wrong key (S2)', () => {
+    it('(a) TRIMMED_LABEL_FIELDS is exactly the labels the User schema trims', () => {
+      const trimmedInSchema = Object.keys(LABEL_KEY_PATHS).filter((field) => {
+        const path = User.schema.path(field);
+        return Boolean(path.options.trim || path.caster?.options?.trim);
+      });
+      expect(trimmedInSchema.sort()).toEqual([...TRIMMED_LABEL_FIELDS].sort());
+    });
+
+    it('(a) an update keys the trimmed display name the schema stores', async () => {
+      const user = await User.create(human({ username: 'trimmer' }));
+      await User.updateOne({ _id: user._id }, { $set: { displayName: '  Spaced Out  ' } });
+      const stored = await User.findById(user._id).lean();
+      expect(stored.displayName).toBe('Spaced Out');
+      expect(stored.labelKeys.displayName).toBe('spaced out');
+      expect(await User.findOne(accountLabelClause('displayName', 'SPACED OUT')).lean()).not.toBeNull();
+    });
+
+    it('(b) replaceOne and findOneAndReplace key the replacement', async () => {
+      const user = await User.create(human({ username: 'Replaced', displayName: 'Old' }));
+      await User.replaceOne({ _id: user._id }, human({ username: 'NewHandle', previousUsernames: ['Replaced'] }));
+      expect(await keysOf(user._id)).toEqual({
+        username: 'newhandle', previousUsernames: ['replaced'], displayName: null, botDisplayName: null,
+      });
+      await User.findOneAndReplace({ _id: user._id }, human({ username: 'Third', displayName: ' Three ' }));
+      expect(await keysOf(user._id)).toEqual({
+        username: 'third', previousUsernames: [], displayName: 'three', botDisplayName: null,
+      });
+      await expect(User.replaceOne({ _id: user._id }, { ...human({ username: 'x' }), labelKeys: { username: 'y' } }))
+        .rejects.toThrow(/labelKeys/);
+    });
+
+    it('(c) bulkWrite keys inserts, updates and replaces, and refuses what it cannot key', async () => {
+      const existing = await User.create(human({ username: 'bulky' }));
+      await User.bulkWrite([
+        { insertOne: { document: human({ username: 'BulkIn', displayName: 'Bulk In' }) } },
+        { updateOne: { filter: { _id: existing._id }, update: { $set: { displayName: ' Bulk Up ' } } } },
+      ]);
+      const inserted = await User.findOne({ username: 'BulkIn' }).lean();
+      expect(inserted.labelKeys).toMatchObject({ username: 'bulkin', displayName: 'bulk in' });
+      expect((await keysOf(existing._id)).displayName).toBe('bulk up');
+
+      await User.bulkWrite([
+        { replaceOne: { filter: { _id: existing._id }, replacement: human({ username: 'BulkRep' }) } },
+      ]);
+      expect((await keysOf(existing._id)).username).toBe('bulkrep');
+
+      await expect(User.bulkWrite([
+        { updateOne: { filter: { _id: existing._id }, update: { $pull: { previousUsernames: 'x' } } } },
+      ])).rejects.toThrow(/\$pull/);
+    });
+
+    it('(d) refuses positional label writes and a $rename into or out of a label', async () => {
+      const user = await User.create(human({ username: 'posy', previousUsernames: ['a1'] }));
+      const id = { _id: user._id };
+      await expect(User.updateOne(id, { $set: { 'previousUsernames.0': 'B1' } })).rejects.toThrow(/positional/);
+      await expect(User.updateOne({ ...id, previousUsernames: 'a1' }, { $set: { 'previousUsernames.$': 'B1' } }))
+        .rejects.toThrow(/positional/);
+      await expect(User.updateOne(id, { $unset: { 'previousUsernames.0': 1 } })).rejects.toThrow(/positional/);
+      await expect(User.updateOne(id, { $rename: { username: 'handle' } })).rejects.toThrow(/\$rename/);
+      await expect(User.updateOne(id, { $rename: { bio: 'displayName' } })).rejects.toThrow(/\$rename/);
+      await expect(User.updateOne(id, { $set: { 'labelKeys.username': 'forged' } })).rejects.toThrow(/labelKeys/);
+      // A positive control: a non-label nested botMetadata write still goes through.
+      await User.updateOne(id, { $set: { 'botMetadata.description': 'fine' } });
+      expect(await keysOf(user._id)).toMatchObject({ username: 'posy', previousUsernames: ['a1'] });
+    });
+
+    it('(e) refuses $pull, $pullAll, $pop and a $push $slice on previousUsernames', async () => {
+      const user = await User.create(human({ username: 'pully', previousUsernames: ['p1', 'p2'] }));
+      const id = { _id: user._id };
+      await expect(User.updateOne(id, { $pull: { previousUsernames: 'p1' } })).rejects.toThrow(/\$pull/);
+      await expect(User.updateOne(id, { $pullAll: { previousUsernames: ['p1'] } })).rejects.toThrow(/\$pullAll/);
+      await expect(User.updateOne(id, { $pop: { previousUsernames: 1 } })).rejects.toThrow(/\$pop/);
+      await expect(User.updateOne(id, { $push: { previousUsernames: { $each: ['p3'], $slice: -1 } } }))
+        .rejects.toThrow(/modifier/);
+      expect(await keysOf(user._id)).toMatchObject({ previousUsernames: ['p1', 'p2'] });
+    });
+
+    it('an upsert keys a label it takes from the filter', async () => {
+      await User.updateOne(
+        { username: 'Upsy' },
+        { $setOnInsert: { email: 'upsy@example.test', password: 'x'.repeat(60) } },
+        { upsert: true },
+      );
+      expect((await User.findOne({ username: 'Upsy' }).lean()).labelKeys.username).toBe('upsy');
+      expect(await isFreeUsername('upsy')).toBe(false);
+    });
+  });
+
   describe('a case-variant duplicate is refused', () => {
     it('isFreeUsername: a username or a previous username in any case', async () => {
       await User.create(human({ username: 'Sam', previousUsernames: ['Samuel'] }));
@@ -111,7 +279,7 @@ describe('account label keys', () => {
       await User.collection.updateOne({ _id: keyed._id }, { $set: { 'labelKeys.username': 'stale' } });
 
       expect(await backfillUserLabelKeys()).toMatchObject({
-        scanned: 3, missing: 2, stale: 1, written: 0, 
+        scanned: 3, missing: 2, stale: 1, written: 0,
       });
       expect(await backfillUserLabelKeys({ apply: true })).toMatchObject({ written: 3, raced: 0 });
       expect(await backfillUserLabelKeys()).toMatchObject({ missing: 0, stale: 0 });
@@ -121,6 +289,18 @@ describe('account label keys', () => {
         username: 'old1', previousUsernames: ['p1'], displayName: 'ünïcode näme', botDisplayName: null,
       });
       expect((await keysOf(keyed._id)).username).toBe('kept');
+    });
+  });
+
+  describe('the backfill CLI', () => {
+    it('--verify fails on missing keys; --apply --verify writes, then verifies the fresh counts', async () => {
+      await User.collection.insertOne(human({ username: 'Unkeyed' }));
+      const lines = [];
+      expect(await runBackfillCli(['--verify'], (line) => lines.push(line))).toBe(1);
+      expect(await runBackfillCli(['--apply', '--verify'], (line) => lines.push(line))).toBe(0);
+      expect(JSON.parse(lines[1])).toMatchObject({ mode: 'apply', missing: 1, written: 1 });
+      expect(JSON.parse(lines[2])).toMatchObject({ mode: 'verify', missing: 0, stale: 0 });
+      expect(await runBackfillCli(['--verify'], () => {})).toBe(0);
     });
   });
 
