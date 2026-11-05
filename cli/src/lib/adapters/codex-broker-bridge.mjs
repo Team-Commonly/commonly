@@ -77,6 +77,9 @@ export const createBrokerBridge = ({
 }) => {
   let sessionId = null;
   let protocolVersion = null;
+  let lastToken = null;
+  // Nothing the bridge writes back may hold the token, whatever produced it.
+  const scrub = (text) => (lastToken ? String(text).split(lastToken).join('[token]') : String(text));
 
   const readToken = () => {
     if (!tokenFile) throw new Error(`no credential file (${CREDENTIAL_FILE_VAR} is unset)`);
@@ -87,6 +90,7 @@ export const createBrokerBridge = ({
       throw new Error(`cannot read the credential file: ${error?.code || error?.message || error}`);
     }
     if (!token) throw new Error('the credential file is empty');
+    lastToken = token;
     return token;
   };
 
@@ -102,11 +106,13 @@ export const createBrokerBridge = ({
     };
   };
 
+  // The timer covers the whole exchange, body included: a stream that never
+  // closes still ends in an error answer, not a request codex waits on forever.
   const post = async (body) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      return await fetchImpl(url, {
+      const res = await fetchImpl(url, {
         method: 'POST',
         headers: headers(),
         body,
@@ -115,6 +121,7 @@ export const createBrokerBridge = ({
         // redirect may point at another origin (same rule as connectHttpMcp).
         redirect: 'error',
       });
+      return { res, text: await res.text() };
     } finally {
       clearTimeout(timer);
     }
@@ -132,14 +139,13 @@ export const createBrokerBridge = ({
     const id = message?.id;
     const isRequest = id !== undefined && id !== null && typeof message?.method === 'string';
     const fail = (text) => {
-      if (isRequest) write(JSON.stringify(rpcError(id, -32000, `grant broker: ${text}`)));
-      else process.stderr.write(`[commonly-broker-bridge] ${text}\n`);
+      if (isRequest) write(JSON.stringify(rpcError(id, -32000, `grant broker: ${scrub(text)}`)));
+      else process.stderr.write(`[commonly-broker-bridge] ${scrub(text)}\n`);
     };
     let res;
     let text;
     try {
-      res = await post(line);
-      text = await res.text();
+      ({ res, text } = await post(line));
     } catch (error) {
       fail(error?.name === 'AbortError' ? `timed out after ${timeoutMs}ms` : (error?.message || String(error)));
       return;
@@ -193,7 +199,8 @@ if (isMain()) {
     url,
     headerTemplates,
     tokenFile: process.env[CREDENTIAL_FILE_VAR],
-    write: (line) => process.stdout.write(`${line}\n`),
+    // A closed stdout (codex gone) must not become an unhandled rejection.
+    write: (line) => { try { process.stdout.write(`${line}\n`); } catch { /* codex has gone */ } },
   });
   const pending = new Set();
   const lines = createInterface({ input: process.stdin });

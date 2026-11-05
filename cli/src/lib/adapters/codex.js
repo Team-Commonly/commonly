@@ -157,6 +157,11 @@ const substitutePlaceholders = (value, ctx) => {
 const toml = (s) => JSON.stringify(String(s));
 
 const HTTP_TRANSPORTS = new Set(['http', 'streamable-http']);
+// A server name becomes a TOML key path, so it must not hold a dot.
+const SERVER_NAME = /^[A-Za-z0-9_-]+$/;
+// What fetch accepts in a header: Latin-1, no CR, LF or NUL.
+// eslint-disable-next-line no-control-regex
+const HEADER_TEXT = /^[^\r\n\0\u0100-\uffff]*$/;
 
 // F175b: the grant broker is a Streamable HTTP server and codex runs stdio
 // servers here, so the broker is wired as OUR stdio bridge
@@ -171,18 +176,38 @@ const bridgeGrantBroker = (server, ctx) => {
     console.warn(`[codex] grant broker ${server.name}: ${why}, so it is not wired for this spawn.`);
     return null;
   };
+  if (!SERVER_NAME.test(server.name)) return skip('its name is not a plain config key');
   if (!ctx.credentialFile) return skip('there is no seat credential to read');
   // Resolve the instance placeholders only: the token placeholder stays in the
   // header template and is filled by the bridge from the file.
   const resolve = (value) => substitutePlaceholders(value, { instanceUrl: ctx.instanceUrl });
-  const url = resolve(server.url);
+  const resolvedUrl = resolve(server.url);
   const headers = Object.fromEntries(Object.entries(server.headers || {})
-    .map(([name, value]) => [name, resolve(String(value))]));
+    .map(([name, value]) => [String(name), resolve(String(value))]));
   const carriesToken = (value) => !!ctx.runtimeToken && value.includes(ctx.runtimeToken);
-  if (carriesToken(url) || Object.values(headers).some(carriesToken)) {
+  if (carriesToken(resolvedUrl)
+    || Object.entries(headers).some(([name, value]) => carriesToken(name) || carriesToken(value))) {
     return skip('the entry holds the seat token as a literal, which would ride argv');
   }
-  if (url.includes('${')) return skip('its url holds a placeholder this host cannot resolve');
+  if (resolvedUrl.includes('${')) return skip('its url holds a placeholder this host cannot resolve');
+  // A header fetch would reject quotes its value in the error, and that value
+  // holds the token once the bridge fills it, so such an entry is not wired.
+  if (Object.entries(headers).some(([name, value]) => !HEADER_TEXT.test(name) || !HEADER_TEXT.test(value))) {
+    return skip('a header holds a control or non-Latin-1 character');
+  }
+  // The url the guard judged (isOurGrantBroker) is normalised: resolved against
+  // the instance, with doubled slashes collapsed. The bridge fetches that same
+  // url, on the instance's own origin, or nothing.
+  let url;
+  try {
+    const instance = new URL(ctx.instanceUrl);
+    const parsed = new URL(resolvedUrl, instance);
+    if (parsed.origin !== instance.origin) return skip('its url is not on this instance');
+    parsed.pathname = parsed.pathname.replace(/\/{2,}/g, '/');
+    url = parsed.href;
+  } catch {
+    return skip('its url does not resolve against this instance');
+  }
   const env = [
     [BRIDGE_URL_VAR, url],
     [BRIDGE_HEADERS_VAR, JSON.stringify(headers)],

@@ -133,6 +133,36 @@ describe('createBrokerBridge', () => {
     expect(out[0].error.message).toMatch(/credential/);
   });
 
+  test('an error that quotes the filled header never carries the token back to codex', async () => {
+    const fetchImpl = jest.fn(async (_url, init) => {
+      throw new TypeError(`Headers.append: "${init.headers.Authorization}\r\nX: y" is an invalid header value.`);
+    });
+    const { bridge, out } = await bridgeWith(fetchImpl);
+
+    await bridge.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call' }));
+
+    expect(out[0].id).toBe(5);
+    expect(JSON.stringify(out)).not.toContain('cm_agent_secret');
+    expect(out[0].error.message).toContain('Bearer [token]');
+  });
+
+  test('the timeout covers the body too: a stream that never ends gets an error answer', async () => {
+    const fetchImpl = jest.fn(async (_url, init) => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'text/event-stream' },
+      text: () => new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+      }),
+    }));
+    const { bridge, out } = await bridgeWith(fetchImpl, { timeoutMs: 20 });
+
+    await bridge.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 6, method: 'tools/call' }));
+
+    expect(out[0].id).toBe(6);
+    expect(out[0].error.message).toMatch(/timed out after 20ms/);
+  });
+
   test('a line that is not JSON gets a parse error and nothing is sent', async () => {
     const fetchImpl = jest.fn();
     const { bridge, out } = await bridgeWith(fetchImpl);

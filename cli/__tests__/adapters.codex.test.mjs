@@ -620,6 +620,42 @@ describe('codex adapter — spawn()', () => {
       expect(args.join(' ')).not.toContain('cm_agent_secret');
     });
 
+    const brokerUrlOf = (args) => {
+      const envFlag = cFlagsOf(args).find((f) => f.startsWith('mcp_servers.commonly-grant-broker.env='));
+      return envFlag && new RegExp(`${BRIDGE_URL_VAR} = "([^"]+)"`).exec(envFlag)[1];
+    };
+
+    test('the bridge fetches the url the guard judged: a trailing-slash instance does not double the slash', async () => {
+      const { args } = await spawnWith([brokerEntry()], { instanceUrl: 'https://api.example.test/' });
+      expect(brokerUrlOf(args)).toBe('https://api.example.test/api/mcp/grants/g1');
+    });
+
+    test('a schemeless broker path is resolved against the instance', async () => {
+      const { args } = await spawnWith([brokerEntry({ url: '/api/mcp/grants/g1' })]);
+      expect(brokerUrlOf(args)).toBe('https://api.example.test/api/mcp/grants/g1');
+    });
+
+    test('a url that keeps a placeholder this host cannot resolve is not wired', async () => {
+      const { args } = await spawnWith([brokerEntry({ url: '${COMMONLY_API_URL}/api/mcp/grants/${COMMONLY_GRANT_ID}' })]);
+      expect(args.filter((a) => a.startsWith('mcp_servers.commonly-grant-broker'))).toEqual([]);
+    });
+
+    test('a header with a control character is not wired, so no fetch error can quote the filled token', async () => {
+      const { args } = await spawnWith([brokerEntry({ headers: { Authorization: 'Bearer ${COMMONLY_AGENT_TOKEN}\r\nX: y' } })]);
+      expect(args.filter((a) => a.startsWith('mcp_servers.commonly-grant-broker'))).toEqual([]);
+    });
+
+    test('a header NAME holding the literal token is refused too', async () => {
+      const { args } = await spawnWith([brokerEntry({ headers: { cm_agent_secret: 'x' } })]);
+      expect(args.filter((a) => a.startsWith('mcp_servers.commonly-grant-broker'))).toEqual([]);
+      expect(args.join(' ')).not.toContain('cm_agent_secret');
+    });
+
+    test('a server name that is not a plain config key is not wired', async () => {
+      const { args } = await spawnWith([brokerEntry({ name: 'commonly.command' })]);
+      expect(args.filter((a) => a.startsWith('mcp_servers.'))).toEqual([]);
+    });
+
     test('with no seat token there is no file to read, so the broker is not wired', async () => {
       const { args } = await spawnWith([brokerEntry()], { runtimeToken: null, env: process.env });
 
