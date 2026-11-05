@@ -14,6 +14,10 @@ name: Bring your own on Windows
 # "READY: listening in <podId>", a person in that pod posts it, and the run
 # passes when the agent's reply is in the pod and the @mention is acked, or
 # fails 10 minutes after READY. The two secrets reach only the walk step.
+# With adapter=codex (prod only) it walks the page's Codex line instead: Codex
+# reaches the gateway through a provider in its Windows system config
+# (%ProgramData%\OpenAI\Codex\config.toml), since a public seat skips the
+# user's config.toml and Codex ignores OPENAI_BASE_URL.
 
 on:
   pull_request:
@@ -25,6 +29,7 @@ on:
       - 'cli/scripts/windows-byo-smoke.mjs'
       - 'cli/scripts/windows-byo-verdict.mjs'
       - 'cli/scripts/windows-byo-prod.mjs'
+      - 'cli/scripts/linux-byo-prod.mjs'
       - 'cli/scripts/windows-byo-ack-recorder.mjs'
       - 'frontend/src/v2/components/V2AgentBYO.tsx'
       - '.github/workflows/byo-windows.yml'
@@ -47,6 +52,11 @@ on:
         description: 'prod: the pod the @mention is posted in'
         type: string
         default: ''
+      adapter:
+        description: 'prod: the CLI the page line runs (the stub walk is Claude Code only)'
+        type: choice
+        options: [claude, codex]
+        default: claude
 
 permissions:
   contents: read
@@ -65,6 +75,10 @@ jobs:
       # The same Claude Code the other real-Claude smokes pin.
       - name: Install Claude Code
         run: npm i -g @anthropic-ai/claude-code@2.1.318
+      # Codex at the version the Linux walk passed on.
+      - name: Install Codex
+        if: inputs.target == 'prod' && inputs.adapter == 'codex'
+        run: npm i -g @openai/codex@0.164.0
       - name: Pack this checkout's CLI
         if: inputs.target != 'prod'
         id: pack
@@ -86,6 +100,7 @@ jobs:
           COMMONLY_BYO_PROD_AGENT: ${{ inputs.agent_name }}
           COMMONLY_BYO_PROD_INSTANCE: ${{ inputs.instance_id }}
           COMMONLY_BYO_PROD_POD: ${{ inputs.pod_id }}
+          COMMONLY_BYO_PROD_ADAPTER: ${{ inputs.adapter || 'claude' }}
           COMMONLY_BYO_PROD_AGENT_TOKEN: ${{ inputs.target == 'prod' && secrets.BYO_WIN_PROD_AGENT_TOKEN || '' }}
           COMMONLY_BYO_PROD_LLM_KEY: ${{ inputs.target == 'prod' && secrets.BYO_WIN_PROD_LLM_KEY || '' }}
         run: |

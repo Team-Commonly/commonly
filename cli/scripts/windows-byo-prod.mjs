@@ -1,6 +1,6 @@
 /**
  * D164 prod walk (byo-windows.yml, target=prod): the Bring your own page's
- * Windows lines for Claude Code, pasted into one PowerShell process against
+ * Windows lines for Claude Code or Codex (the dispatch's `adapter`), pasted into one PowerShell process against
  * the live API with a real model, as a Windows user would. Only the published
  * CLI is walked (the page's `@latest` install line, verbatim).
  *
@@ -18,13 +18,20 @@
  * same place the stub walk names its stub: a public seat's environment is an
  * allowlist that drops ANTHROPIC_*. On a person's machine that is their own
  * sign-in. The file holds the gateway key, so it is deleted when the walk ends.
+ *
+ * Codex ignores OPENAI_BASE_URL and a public seat skips the user's
+ * config.toml, so its gateway provider goes in Codex's Windows system layer,
+ * %ProgramData%\OpenAI\Codex\config.toml (no key in it), and the key rides
+ * as LITELLM_API_KEY, which a Codex seat keeps. A person's own ChatGPT login
+ * or OpenAI key is not walked.
  */
 import { spawn, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
+import { codexSystemConfig, walkAdapter } from './linux-byo-prod.mjs';
 import {
   installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, redact,
 } from './windows-byo-verdict.mjs';
@@ -38,11 +45,36 @@ const ANSWER_TIMEOUT_MS = 10 * 60_000;
 const POLL_MS = 10_000;
 const MANAGED_DIRS = ['C:\\Program Files\\ClaudeCode', 'C:\\ProgramData\\ClaudeCode'];
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
+const ADAPTER_LABEL = { claude: 'Claude Code', codex: 'Codex' };
+
+/** Codex's Windows system config, the layer a public seat still reads. */
+export const windowsCodexConfigPath = (env) => `${env.ProgramData || 'C:\\ProgramData'}\\OpenAI\\Codex\\config.toml`;
+
+/** The gateway key in the walk's env: Codex keeps its env; Claude Code's goes in managed settings. */
+export const windowsWalkEnv = (adapter, llmKey) => (adapter === 'codex' ? { LITELLM_API_KEY: llmKey } : {});
+
+/**
+ * Where the walk's fresh profile goes: beside the runner user's own, never
+ * under the temp dir, where Codex refuses to create its sandbox helpers.
+ */
+export const windowsProfileRoot = () => homedir();
+
+/** What is wrong with the page's Windows lines for this adapter, if anything. */
+export const windowsLineProblems = (lines, { agentName, adapter }) => {
+  if (lines.length !== 4) return [`the page's Windows lines are ${lines.length} lines, not 4: ${JSON.stringify(lines)}`];
+  const problems = [];
+  if (!/^npm i -g \S+$/.test(lines[0])) problems.push(`line 1 is not an npm install: ${lines[0]}`);
+  const run = `commonly agent run ${agentName} --adapter ${adapter}${adapter === 'codex' ? '' : ' --unsandboxed'}`;
+  if (lines[3] !== run) problems.push(`line 4 is not the ${ADAPTER_LABEL[adapter] || adapter} run: ${lines[3]}`);
+  return problems;
+};
 
 export const runProdWalk = async ({ pageConnectSnippet }) => {
   let inputs;
+  let adapter;
   try {
     inputs = prodInputs(process.env);
+    adapter = walkAdapter(process.env);
   } catch (err) {
     console.log(`::error::prod walk: ${err.message}`);
     return 1;
@@ -93,20 +125,32 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
       DISABLE_AUTOUPDATER: '1',
     },
   }, null, 2);
-  MANAGED_DIRS.forEach((dir) => {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'managed-settings.json'), managed);
-  });
-  const forgetKey = () => MANAGED_DIRS.forEach((dir) => rmSync(join(dir, 'managed-settings.json'), { force: true }));
+  const codexConfig = windowsCodexConfigPath(process.env);
+  if (adapter === 'codex') {
+    mkdirSync(dirname(codexConfig), { recursive: true });
+    writeFileSync(codexConfig, codexSystemConfig(MODEL_GATEWAY));
+  } else {
+    MANAGED_DIRS.forEach((dir) => {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'managed-settings.json'), managed);
+    });
+  }
+  const forgetKey = () => {
+    MANAGED_DIRS.forEach((dir) => rmSync(join(dir, 'managed-settings.json'), { force: true }));
+    rmSync(codexConfig, { force: true });
+  };
 
-  const lines = pageConnectSnippet({ os: 'windows', apiUrl: API, token, agentName, adapter: 'claude' }).split('\n');
-  if (lines.length !== 4 || !/^npm i -g \S+$/.test(lines[0]) || !/^commonly agent run /.test(lines[3])) {
-    fail(`the page's Windows lines changed shape: ${JSON.stringify(lines)}`);
+  const lines = pageConnectSnippet({
+    os: 'windows', apiUrl: API, token, agentName, adapter,
+  }).split('\n');
+  const problems = windowsLineProblems(lines, { agentName, adapter });
+  if (problems.length) {
+    problems.forEach(fail);
     forgetKey();
     return 1;
   }
   const script = pasteScript(lines);
-  const profile = mkdtempSync(join(tmpdir(), 'byo-prod-profile-'));
+  const profile = mkdtempSync(join(windowsProfileRoot(), 'byo-prod-profile-'));
   const ackLog = join(mkdtempSync(join(tmpdir(), 'byo-prod-acks-')), 'acks.jsonl');
   log(`pasting into PowerShell, profile ${profile}:\n  ${script.join('\n  ')}`);
 
@@ -114,11 +158,13 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
     ...process.env,
     USERPROFILE: profile,
     HOME: profile,
+    ...windowsWalkEnv(adapter, llmKey),
     NODE_OPTIONS: `--import=${pathToFileURL(resolve(HERE, 'windows-byo-ack-recorder.mjs')).href}`,
     COMMONLY_BYO_ACK_LOG: ackLog,
   };
-  // The token reaches the CLI through the page's own line; neither secret
-  // rides in the environment as well.
+  // The token reaches the CLI through the page's own line, and the key through
+  // managed settings (Claude Code) or LITELLM_API_KEY (Codex); neither secret
+  // rides under its own name as well.
   delete env.COMMONLY_BYO_PROD_AGENT_TOKEN;
   delete env.COMMONLY_BYO_PROD_LLM_KEY;
   const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script.join('\n')], {
@@ -183,7 +229,9 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
     log(`@mention ${outcome.mention.id} by ${outcome.mention.username} answered by message ${outcome.reply.id} `
       + `in ${outcome.answerSeconds} s, event ${outcome.ack.eventId} acked HTTP ${outcome.ack.status}`);
     log(`the reply${/windows-ok/i.test(said) ? ' says windows-ok' : ' does not say windows-ok'}: ${JSON.stringify(said.slice(0, 300))}`);
-    log(`PASS: published @commonlyai/cli ${cliVersion} on Windows answered an @mention on ${API} with Claude Code`);
+    log(`PASS: published @commonlyai/cli ${cliVersion} on Windows answered an @mention on ${API} with `
+      + `${ADAPTER_LABEL[adapter]}${adapter === 'codex'
+        ? ', on an API key through the model gateway (provider set in the machine\'s system Codex config)' : ''}`);
     return 0;
   }
   (outcome?.problems || ['the walk ended before the pod was read']).forEach((problem) => fail(problem));
