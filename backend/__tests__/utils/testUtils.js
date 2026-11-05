@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 // The server installs this from config/db; suites that use this harness get the
-// same upsert retry, so their upserts behave as they do in production.
+// same upsert retry. It switches itself on only when the connected server is
+// FerretDB (buildInfo, read on connect), so a TEST_MONGO_URI pointing at
+// FerretDB gets it and in-memory Mongo keeps the plain path.
 require('../../config/mongooseUpsertRetry');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const { newDb } = require('pg-mem');

@@ -1,12 +1,20 @@
 // An upsert racing another upsert on a unique key is retried by MongoDB
 // itself; FerretDB (self-hosted, Postgres-backed) surfaces the race to the
 // client as E11000 or a Postgres deadlock instead. config/mongooseUpsertRetry
-// retries those upserts in one place, and must never retry anything else.
+// retries those upserts in one place, only on FerretDB, and must never retry
+// anything else. These tests turn the retry on explicitly; the gate's own
+// tests (detection, env, off) are at the bottom.
 const mongoose = require('mongoose');
 const { setupMongoDb, closeMongoDb, clearMongoDb } = require('../../utils/testUtils');
 const {
   installUpsertRetry,
+  configureUpsertRetry,
+  enableUpsertRetry,
+  disableUpsertRetry,
+  resetUpsertRetry,
+  isUpsertRetryEnabled,
   MAX_UPSERT_ATTEMPTS,
+  UPSERT_RETRY_BUDGET_MS,
   FERRETDB_DEADLOCK_CODE,
 } = require('../../../config/mongooseUpsertRetry');
 
@@ -29,8 +37,14 @@ describe('mongooseUpsertRetry', () => {
     await Counter.init();
   });
 
+  beforeEach(() => {
+    enableUpsertRetry();
+  });
+
   afterEach(async () => {
     jest.restoreAllMocks();
+    resetUpsertRetry();
+    delete process.env.MONGO_UPSERT_RETRY;
     await clearMongoDb();
   });
 
@@ -122,6 +136,45 @@ describe('mongooseUpsertRetry', () => {
     expect(caught.code).toBe(FERRETDB_DEADLOCK_CODE);
   });
 
+  it('starts no new attempt once the time budget is spent, and rethrows that attempt\'s error', async () => {
+    // A FerretDB stall: the attempt takes longer than the whole budget, then fails.
+    const realNow = Date.now;
+    let clock = realNow();
+    jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    const stalled = serverError(FERRETDB_DEADLOCK_CODE, 'deadlock detected after a stall');
+    const spy = jest.spyOn(Counter.collection, 'updateOne').mockImplementation(() => {
+      clock += UPSERT_RETRY_BUDGET_MS + 1;
+      return Promise.reject(stalled);
+    });
+
+    let caught;
+    try {
+      await Counter.updateOne({ k: 'slow' }, { $inc: { n: 1 } }, { upsert: true });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(UPSERT_RETRY_BUDGET_MS).toBe(2000);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(caught).toBe(stalled);
+  });
+
+  it('still retries a fast lost race inside the budget', async () => {
+    const realNow = Date.now;
+    let clock = realNow();
+    jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    const original = Counter.collection.updateOne;
+    const spy = jest.spyOn(Counter.collection, 'updateOne')
+      .mockImplementationOnce(() => {
+        clock += UPSERT_RETRY_BUDGET_MS - 500;
+        return Promise.reject(serverError(11000, 'Duplicate key violation'));
+      })
+      .mockImplementation(function passthrough(...args) { return original.apply(this, args); });
+
+    await Counter.updateOne({ k: 'fast' }, { $inc: { n: 1 } }, { upsert: true });
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('never retries a non-upsert write: its E11000 is a real uniqueness violation', async () => {
     const spy = jest.spyOn(Counter.collection, 'updateOne')
       .mockImplementation(() => Promise.reject(serverError(11000, 'E11000 duplicate key error')));
@@ -171,9 +224,10 @@ describe('mongooseUpsertRetry', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  // In-memory MongoDB passes this without the retry (it retries internally).
-  // It is here for the FerretDB CI leg, where one round of 20 loses the race
-  // only some of the time; five rounds on fresh keys make a regression show.
+  // On in-memory MongoDB this passes with or without the wrapper (Mongo retries
+  // internally). It is here for the FerretDB CI leg (PR #3492, TEST_MONGO_URI),
+  // where one round of 20 loses the race only some of the time; five rounds on
+  // fresh keys make a regression show.
   it('20 concurrent $inc upserts on one unique key end as one doc with n=20', async () => {
     for (let round = 0; round < 5; round += 1) {
       const k = `race-${round}`;
@@ -188,5 +242,105 @@ describe('mongooseUpsertRetry', () => {
       expect(docs).toHaveLength(1);
       expect(docs[0].n).toBe(20);
     }
+  });
+  it('never retries updateMany: it is not all-or-nothing, and a replay double-applies $inc', async () => {
+    const spy = jest.spyOn(Counter.collection, 'updateMany')
+      .mockImplementation(() => Promise.reject(serverError(11000, 'Duplicate key violation')));
+
+    await expect(Counter.updateMany({ k: 'm' }, { $inc: { n: 1 } }, { upsert: true }))
+      .rejects.toMatchObject({ code: 11000 });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('never retries inside a transaction: the error aborted it, and the caller owns the retry', async () => {
+    const spy = jest.spyOn(Counter.collection, 'updateOne')
+      .mockImplementation(() => Promise.reject(serverError(11000, 'Duplicate key violation')));
+    const session = { inTransaction: () => true };
+
+    await expect(Counter.updateOne({ k: 't' }, { $inc: { n: 1 } }, { upsert: true }).session(session))
+      .rejects.toMatchObject({ code: 11000 });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps orFail across a retry', async () => {
+    const original = Counter.collection.updateOne;
+    const spy = jest.spyOn(Counter.collection, 'updateOne')
+      .mockImplementationOnce(() => Promise.reject(serverError(11000, 'Duplicate key violation')))
+      .mockImplementation(function passthrough(...args) { return original.apply(this, args); });
+
+    // The retry inserts (matchedCount 0), so orFail must throw on that attempt's result.
+    await expect(Counter.updateOne({ k: 'of' }, { $inc: { n: 1 } }, { upsert: true }).orFail())
+      .rejects.toMatchObject({ name: 'DocumentNotFoundError' });
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect((await Counter.findOne({ k: 'of' }).lean()).n).toBe(1);
+  });
+
+  it('does not retry a bulkWrite whose filter matches on a field its $set writes', async () => {
+    const spy = jest.spyOn(Counter.collection, 'bulkWrite')
+      .mockImplementation((ops, opts, cb) => {
+        const err = serverError(11000, 'Duplicate key violation');
+        if (typeof cb === 'function') return cb(err);
+        return Promise.reject(err);
+      });
+
+    await expect(Counter.bulkWrite([
+      { updateOne: { filter: { k: 'o1' }, update: { $set: { k: 'o2' } }, upsert: true } },
+    ])).rejects.toMatchObject({ code: 11000 });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  describe('the gate', () => {
+    it('is off by default against MongoDB: a lease-style loser makes exactly one attempt', async () => {
+      resetUpsertRetry();
+      await configureUpsertRetry(mongoose.connection);
+      expect(isUpsertRetryEnabled()).toBe(false);
+
+      // A held lease: the filter cannot match it, so the upsert's insert takes
+      // a real E11000. Mongo already retried internally; ours must not.
+      const leaseId = new mongoose.Types.ObjectId();
+      await Counter.collection.insertOne({ _id: leaseId, k: 'lease', n: 9 });
+      const spy = jest.spyOn(Counter.collection, 'findOneAndUpdate');
+
+      await expect(Counter.findOneAndUpdate(
+        { _id: leaseId, n: { $lte: 0 } },
+        { $set: { n: 1 } },
+        { upsert: true, new: true },
+      )).rejects.toMatchObject({ code: 11000 });
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('disableUpsertRetry turns a retryable upsert into one attempt', async () => {
+      disableUpsertRetry();
+      const spy = jest.spyOn(Counter.collection, 'updateOne')
+        .mockImplementation(() => Promise.reject(serverError(11000, 'Duplicate key violation')));
+
+      await expect(Counter.updateOne({ k: 'off' }, { $inc: { n: 1 } }, { upsert: true }))
+        .rejects.toMatchObject({ code: 11000 });
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('detection turns it on when buildInfo reports ferretdb, and off when it does not', async () => {
+      resetUpsertRetry();
+      const fake = (info) => ({ db: { admin: () => ({ command: async () => info }) } });
+
+      await expect(configureUpsertRetry(fake({ version: '7.0.77', ferretdb: { version: 'v2.7.0' } })))
+        .resolves.toBe(true);
+      expect(isUpsertRetryEnabled()).toBe(true);
+      await expect(configureUpsertRetry(fake({ version: '7.0.14' }))).resolves.toBe(false);
+      expect(isUpsertRetryEnabled()).toBe(false);
+      await expect(configureUpsertRetry({ db: { admin: () => ({ command: async () => { throw new Error('x'); } }) } }))
+        .resolves.toBe(false);
+      expect(isUpsertRetryEnabled()).toBe(false);
+    });
+
+    it('MONGO_UPSERT_RETRY wins over detection and the explicit switch', async () => {
+      resetUpsertRetry();
+      await configureUpsertRetry(mongoose.connection);
+      process.env.MONGO_UPSERT_RETRY = '1';
+      expect(isUpsertRetryEnabled()).toBe(true);
+      process.env.MONGO_UPSERT_RETRY = 'false';
+      enableUpsertRetry();
+      expect(isUpsertRetryEnabled()).toBe(false);
+    });
   });
 });

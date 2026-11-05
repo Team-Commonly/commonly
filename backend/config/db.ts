@@ -1,7 +1,8 @@
 // eslint-disable-next-line global-require
 const mongoose = require('mongoose');
-// Every upsert retries a lost unique-key race, as MongoDB does internally and
-// FerretDB does not (see mongooseUpsertRetry). Installed before any query runs.
+// On FerretDB, every upsert retries a lost unique-key race, as MongoDB does
+// internally (see mongooseUpsertRetry). Installed before any query runs; it
+// probes buildInfo on connect and stays off against MongoDB.
 require('./mongooseUpsertRetry');
 
 const connectDB = async (): Promise<void> => {
