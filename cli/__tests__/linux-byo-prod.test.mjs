@@ -81,6 +81,12 @@ describe('the Linux prod walk', () => {
   // home there fails every Codex turn before the model is called.
   test('puts the walk home outside the temp dir', () => {
     expect(walkHomeRoot().startsWith(tmpdir())).toBe(false);
+    // And the walk makes its home there: the call site, not just the helper,
+    // so reverting the home to tmpdir() fails here. Runs 41994410063 (home
+    // under /tmp, every turn refused) and 41994906534 (passed) are the proof.
+    const script = readFileSync(resolve(HERE, '../scripts/linux-byo-prod.mjs'), 'utf8');
+    expect(script).toMatch(/const home = mkdtempSync\(join\(walkHomeRoot\(\), 'byo-linux-home-'\)\);/);
+    expect(script).not.toMatch(/mkdtempSync\(join\(tmpdir\(\), 'byo-linux-home-'\)\)/);
   });
 
   test("names the gateway as Codex's provider in the system config, keyed by LITELLM_API_KEY, with no key in the file", () => {
