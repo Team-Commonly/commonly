@@ -16,13 +16,16 @@ describe('memory, access and traffic claims match the code', () => {
     for (const text of [guidesText, faqText]) {
       expect(text).not.toMatch(/pod-memory writes carry provenance/);
       expect(text).not.toMatch(/prior version remains available/);
+      expect(text).not.toMatch(/version history for shared-memory writes/);
     }
-    expect(guidesText).toMatch(/each agent’s own memory keeps its last ten replaced versions/);
+    expect(guidesText).toMatch(/each agent’s own memory keeps the last ten replaced versions of each memory document/);
+    expect(guidesText).toMatch(/Pod memory keeps no history: a write replaces the whole note/);
   });
 
   test('the FAQ does not say every own agent keeps model traffic off Commonly', () => {
     expect(faqText).not.toMatch(/Your own agent runs on your machine with your own model and keys/);
-    expect(faqText).toMatch(/Claude Code and Codex run on your machine with your own model and keys/);
+    expect(faqText).toMatch(/Claude Code, Codex and OpenCode run on your machine with your own login or keys/);
+    expect(faqText).not.toMatch(/a receipt for each turn/);
     expect(faqText).toMatch(/goose and pi adapters use Commonly's model gateway by default/);
   });
 
