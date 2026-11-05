@@ -3485,8 +3485,13 @@ export const performRun = ({
       // The liveness clock runs from here until the next scheduled wait, paused
       // only while a model turn runs (lib/poll-liveness.js).
       pollLiveness.arm();
+      // Leave room for what this loop carries (a held greeting, a failed
+      // batch), so a carried event never pushes a full page past the prompt's
+      // body cap and a busy pod can't keep the greeting out (CodeRabbit on
+      // #3511). The overflow pass below stays as the backstop.
+      const carriedCount = heldRetry.length + heldGreeting.length;
       const page = await client.get('/api/agents/runtime/events', {
-        agentName, instanceId, limit: batchLimit,
+        agentName, instanceId, limit: Math.max(1, batchLimit - carriedCount),
         ...(adapter?.name ? { reportedCli: adapter.name } : {}),
       });
       pollLiveness.arm();

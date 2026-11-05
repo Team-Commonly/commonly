@@ -93,13 +93,15 @@ const runTicks = async ({ arrivals, ticks = 2, spawn, runOptions = {} }) => {
   const acked = [];
   let pending = [];
   let poll = 0;
-  const mockGet = jest.fn(async (routePath) => {
+  const mockGet = jest.fn(async (routePath, params = {}) => {
     if (String(routePath).includes('/events')) {
       pending = pending.concat(arrivals[poll] || []);
       poll += 1;
-      const claimed = pending;
-      pending = [];
-      return { events: claimed, inboxCount: claimed.length };
+      // claimPage honors the requested limit; the rest stays pending.
+      const limit = Number.isFinite(params.limit) ? params.limit : pending.length;
+      const claimed = pending.slice(0, limit);
+      pending = pending.slice(limit);
+      return { events: claimed, inboxCount: claimed.length + pending.length };
     }
     return {};
   });
@@ -304,6 +306,32 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
       else expect(prompts).toContain(`question ${id.replace('evt-m', '')}`);
     }
     expect(acked.sort()).toEqual(['evt-join', 'evt-m1', 'evt-m2', 'evt-m3']);
+  });
+
+  // CodeRabbit on #3511: with a full page arriving on every poll, re-carrying
+  // an overflowing greeting kept it back far past the window. The poll now
+  // asks for fewer events while some are carried, so the carry always fits.
+  test('consecutive full pages: the greeting still runs, in a turn within the body cap', async () => {
+    const LIMIT = 3;
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const fullPage = (poll) => [1, 2, 3].map((n) => ({
+      ...mentionEvent, _id: `evt-p${poll}-${n}`, payload: { content: `q ${poll}.${n}`, messageId: `msg-${poll}-${n}` },
+    }));
+    const arrivals = [[joinEvent], ...Array.from({ length: 6 }, (_, i) => fullPage(i + 1))];
+    const { acked, mockGet } = await runTicks({
+      arrivals, ticks: 8, spawn, runOptions: { inboxBatchLimit: LIMIT },
+    });
+
+    expect(acked).toContain('evt-join');
+    for (const [prompt] of spawn.mock.calls) {
+      expect((prompt.match(/^Event \d+\/\d+:/gm) || []).length).toBeLessThanOrEqual(LIMIT);
+    }
+    // While the greeting was carried, the poll left room for it.
+    const limits = mockGet.mock.calls
+      .filter(([route]) => String(route).includes('/events'))
+      .map(([, params]) => params.limit);
+    expect(limits[0]).toBe(LIMIT);
+    expect(limits[1]).toBe(LIMIT - 1);
   });
 
   test('only the connect-time greeting is held: once it has run, a later one is not carried', async () => {
