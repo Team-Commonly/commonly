@@ -222,6 +222,73 @@ real('grant and broker lines on real PostgreSQL and MongoDB', () => {
       .toEqual(['tool.call', 'permission.requested', 'decided:timed_out', 'tool.update']);
   });
 
+  it('a retried decline hits the derived trail id\'s primary key and leaves one refusal row', async () => {
+    const grant = await mint();
+    const parked = await call(grant, 'github.create_issue', { title: 'decline twice' }).catch((error) => error);
+    const approvalId = String(parked.details.approvalId);
+    await approvals.resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'declined' });
+    // A crash after the trail row but before the marker.
+    await ApprovalAction.updateOne({ _id: approvalId }, { $unset: { expirySideEffectsDoneAt: 1 } });
+    await approvals.sweepExpiredToolCallApprovals(new Date(Date.now() + approvals.EXPIRY_RETRY_GRACE_MS + 60 * 1000));
+
+    const stored = await ApprovalAction.findById(approvalId).lean();
+    expect(stored).toMatchObject({ expiryRetryCount: 1 });
+    expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+    const { rows } = await pool.query(
+      "SELECT call_id FROM tool_calls WHERE approval_id = $1 AND outcome = 'refused' AND reason = 'approval_declined'",
+      [approvalId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].call_id).toBe(stored.toolCallTrailId);
+    // The record dedupes on its own key, so the retry adds no second decision line.
+    await flushAll();
+    const { lines } = await readPod();
+    expect(kinds(lines.filter((l) => l.data.toolCallId === parked.details.callId)))
+      .toEqual(['tool.call', 'permission.requested', 'decided:rejected', 'tool.update']);
+  });
+
+  it('a crash between the call and its marker recovers the ending from the real trail, and the call runs once', async () => {
+    const grant = await mint();
+    const parked = await call(grant, 'github.create_issue', { title: 'approve then die' }).catch((error) => error);
+    const approvalId = String(parked.details.approvalId);
+    await approvals.resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'approved' });
+    expect(mockGithub.createIssue).toHaveBeenCalledTimes(1);
+    const before = await ApprovalAction.findById(approvalId).lean();
+    // The broker's row is in the trail; the approval row never got its ending.
+    await ApprovalAction.updateOne({ _id: approvalId }, {
+      $unset: {
+        toolCallEnding: 1, toolCallTrailId: 1, expirySideEffectsDoneAt: 1, executedAt: 1,
+      },
+    });
+    await approvals.sweepExpiredToolCallApprovals(new Date(Date.now() + approvals.APPROVED_CALL_SETTLE_MS + 60 * 1000));
+
+    const stored = await ApprovalAction.findById(approvalId).lean();
+    expect(stored).toMatchObject({ toolCallEnding: 'ran', toolCallTrailId: before.toolCallTrailId, expiryRetryCount: 1 });
+    expect(stored.expirySideEffectsDoneAt).toBeInstanceOf(Date);
+    expect(mockGithub.createIssue).toHaveBeenCalledTimes(1);
+    const { rows } = await pool.query(
+      "SELECT outcome FROM tool_calls WHERE approval_id = $1 AND outcome <> 'pending_approval'",
+      [approvalId],
+    );
+    expect(rows.map((r) => r.outcome)).toEqual(['ok']);
+  });
+
+  it('findApprovedRun reads the resolved row of one approval, never the parked one or another approval', async () => {
+    const ToolCall = require('../../models/ToolCall').default;
+    const grant = await mint();
+    const parked = await call(grant, 'github.create_issue', { title: 'parked only' }).catch((error) => error);
+    const approvalId = String(parked.details.approvalId);
+    // Parked and undecided: only the pending_approval row exists.
+    await expect(ToolCall.findApprovedRun(grant.grantId, approvalId)).resolves.toBeNull();
+    await approvals.resolveApproval({ approvalId, callerUserId: String(owner._id), decision: 'approved' });
+    const stored = await ApprovalAction.findById(approvalId).lean();
+    await expect(ToolCall.findApprovedRun(grant.grantId, approvalId)).resolves.toEqual({
+      callId: stored.toolCallTrailId, outcome: 'ok', reason: null, at: expect.any(Date),
+    });
+    await expect(ToolCall.findApprovedRun(grant.grantId, '507f1f77bcf86cd799439011')).resolves.toBeNull();
+    await expect(ToolCall.findApprovedRun('another-grant', approvalId)).resolves.toBeNull();
+  });
+
   it('the pod chain keeps the task route\'s gate: outsiders 404, admin non-members 403', async () => {
     await mint();
     await flushAll();

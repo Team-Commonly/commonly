@@ -135,6 +135,23 @@ test('the record of an executed approval names the credential owner', async () =
   }));
 });
 
+test('a trail write that fails after the provider ran keeps the call as run, for the approval to re-write', async () => {
+  mockToolCall.create.mockRejectedValueOnce(new Error('trail store down'));
+  const warn = jest.spyOn(console, 'error').mockImplementation(() => {});
+  const result = await broker.executeApprovedToolCall({
+    grantId: 'grant-1',
+    agentUserId: 'agent-1',
+    tool: 'github.create_issue',
+    args: { title: 'hello', owner: 'Team-Commonly', repo: 'commonly' },
+    expectedArgsDigest: 'digest:{"title":"hello","owner":"Team-Commonly","repo":"commonly"}',
+    approvalId: 'approval-1',
+  });
+  warn.mockRestore();
+  expect(result).toMatchObject({ outcome: 'ok', callId: expect.any(String), trailUnwritten: true });
+  // Not reported as a failure, and no second row claims the call failed.
+  expect(mockToolCall.create).toHaveBeenCalledTimes(1);
+});
+
 test('approved receipts contain only declared, shape-checked fields', async () => {
   const input = {
     grantId: 'grant-1', agentUserId: 'agent-1', tool: 'github.create_issue',

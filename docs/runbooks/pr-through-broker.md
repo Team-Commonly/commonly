@@ -238,7 +238,9 @@ shipped git remote helper prints.
   6 MiB) before anything parks.
 - The trail records each call (`tool_calls`): parked (`pending_approval`), then
   `ok`/`failed`/`refused` with the `approvalId`, or `approval_declined` /
-  `approval_expired`.
+  `approval_expired`. `approval_outcome_unknown` means the process died after an
+  approval and left no record of the call, so it may have run. Check the branch
+  or PR before approving it again.
 
 ## What the owner should know
 

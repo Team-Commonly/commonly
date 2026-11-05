@@ -16,6 +16,8 @@ import type { CallerConfinement } from './ToolCall';
  *     approved action ran)
  *   - expiresAt is advisory AGE for legacy actions; tool_call actions close
  *     as `expired` and scrub their envelope when the deadline passes.
+ *   - a closed tool_call's side effects are retried by the sweep, which never
+ *     runs the call: a retry has neither the path nor the scrubbed arguments.
  *
  * The resolved row IS the AuthorizedAction record from ADR-020 D2: it links
  * the approving user, the executing agent identity, and the action + params.
@@ -113,36 +115,55 @@ export interface IApprovalAction extends Document {
   toolCallCode?: string;
   toolCallTrailId?: string;
   /**
-   * tool_call only (F202): how many times the expiry sweep has re-run this
-   * row's expiry side effects (trail, card, wake). Set to 0 by the same write
-   * that flips the row to `expired`, so a row without it (a legacy expiry, or
-   * any other ending) is never re-selected. Retries stop at
-   * MAX_EXPIRY_RETRIES in approvalActionService.
+   * tool_call only: the broker's receipt for a call that ran, saved with its
+   * ending so a retried wake still carries it. Declared numeric fields only.
+   */
+  toolCallReceipt?: Record<string, number>;
+  /**
+   * tool_call only: the provider ran but the broker could not write its trail
+   * row, so the approval's retry writes it under `toolCallTrailId`. Cleared
+   * once written.
+   */
+  toolCallTrailUnwritten?: boolean;
+  /**
+   * tool_call only (F202): how many times the sweep has re-run this row's side
+   * effects after it closed. Despite the `expiry` prefix these five fields
+   * cover every closing write: expiry, decline and approve. Set to 0 by the
+   * same write that closes the row, so a row without it (one closed before
+   * this existed) is never re-selected. Retries stop at MAX_EXPIRY_RETRIES in
+   * approvalActionService.
    */
   expiryRetryCount?: number;
   /**
-   * tool_call only (F202): when every expiry side effect last succeeded. Unset
-   * means the trail, card or wake may be missing, and the sweep retries it.
+   * tool_call only (F202): when every side effect last succeeded. Unset means
+   * the trail, card or wake may be missing, and the sweep retries it.
    */
   expirySideEffectsDoneAt?: Date;
   /**
-   * tool_call only (F202): when the expiry's `approval.resolved` wake was
-   * enqueued. A retried expiry skips the wake once it is set.
+   * tool_call only (F202): when the row's `approval.resolved` wake was
+   * enqueued. A retry skips the wake once it is set.
    */
   expiryEventSentAt?: Date;
   /**
-   * tool_call only (F202): one attempt's lease on sending the expiry wake,
-   * taken before the send and cleared if the send fails. Another attempt may
-   * take it once it is EXPIRY_WAKE_CLAIM_LEASE_MS old, so a crashed sender
-   * never loses the wake.
+   * tool_call only (F202): one attempt's lease on sending the wake, taken
+   * before the send and cleared if the send fails. Another attempt may take it
+   * once it is EXPIRY_WAKE_CLAIM_LEASE_MS old, so a crashed sender never loses
+   * the wake.
    */
   expiryEventClaimedAt?: Date;
   /**
-   * tool_call only (F202): when the expiry sweep last claimed this row for a
-   * retry. The row is held for EXPIRY_RETRY_GRACE_MS after it, as after
-   * `resolvedAt`, so a second sweeper does not take it meanwhile.
+   * tool_call only (F202): when the sweep last claimed this row for a retry.
+   * The row is held for EXPIRY_RETRY_GRACE_MS after it, as after `resolvedAt`,
+   * so a second sweeper does not take it meanwhile.
    */
   expiryRetryClaimedAt?: Date;
+  /**
+   * tool_call only: when an approved call's room receipt was posted, and one
+   * attempt's lease on posting it. They work as `expiryEventSentAt` and
+   * `expiryEventClaimedAt` do for the wake.
+   */
+  toolCallReceiptPostedAt?: Date;
+  toolCallReceiptClaimedAt?: Date;
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -192,11 +213,15 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     toolCallEnding: { type: String, enum: ['ran', 'failed', 'refused', 'declined', 'expired'] },
     toolCallCode: { type: String },
     toolCallTrailId: { type: String },
+    toolCallReceipt: { type: Schema.Types.Mixed },
+    toolCallTrailUnwritten: { type: Boolean },
     expiryRetryCount: { type: Number },
     expirySideEffectsDoneAt: { type: Date },
     expiryEventSentAt: { type: Date },
     expiryEventClaimedAt: { type: Date },
     expiryRetryClaimedAt: { type: Date },
+    toolCallReceiptPostedAt: { type: Date },
+    toolCallReceiptClaimedAt: { type: Date },
     // Plain Date — deliberately NOT a Mongo TTL index: expiry is a lifecycle
     // STATE (the card renders "expired"), not a deletion.
     expiresAt: { type: Date, default: () => new Date(Date.now() + DEFAULT_TTL_MS) },
@@ -236,8 +261,8 @@ ApprovalActionSchema.index(
   { unique: true, name: 'tool_call_open_slot', partialFilterExpression: OPEN_TOOL_CALL_SLOT },
 );
 
-// F202: the expiry sweep's retry lookup. Partial on `expiryRetryCount`, which
-// only the F202 expiry write sets, so legacy and non-expired rows stay out.
+// F202: the sweep's retry lookup. Partial on `expiryRetryCount`, which only the
+// closing writes of a parked call set, so older rows and legacy actions stay out.
 ApprovalActionSchema.index(
   { status: 1, actionType: 1, resolvedAt: 1 },
   { name: 'tool_call_expiry_retry', partialFilterExpression: { expiryRetryCount: { $exists: true } } },

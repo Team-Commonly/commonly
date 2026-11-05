@@ -376,21 +376,25 @@ and pod" or "one open row per identical request" has to hold under concurrent wr
 
 ### Pattern: a terminal transition whose side effects can be retried
 
-`ApprovalAction` expiry (F202) shows the pattern. Use it when one conditional write closes a
-row and several side effects (an audit row, a card, an event) must follow it, and a waiter
-depends on the last of them.
+Closing a parked `ApprovalAction` tool call shows the pattern, and all three closings use it:
+expiry (F202), decline and approve. Use it when one conditional write closes a row and several
+side effects (an audit row, a card, an event) must follow it, and a waiter depends on the last
+of them. All three share `completeToolCallClosure` and `retryIncompleteToolCallClosures` in
+`backend/services/approvalActionService.ts`. The field names say `expiry` because expiry came
+first; they cover every closing.
 
-- **The flip stays the decision.** `findOneAndUpdate({ _id, status: 'flagged' }, { status:
-  'expired', … })` decides who expires the row. The side effects come after it and cannot
-  undo it.
-- **Steps run independently; a marker is written last.** The trail, the wake and the card each
-  run whether or not another failed, so a failing card never holds back the wake the parked
-  runs wait on. `expirySideEffectsDoneAt` is set only when all of them succeeded; otherwise the
-  attempt throws one error naming every failed step. A row that is `expired` without the marker
-  crashed or failed midway.
+- **The flip stays the decision.** `findOneAndUpdate({ _id, status: 'flagged' }, { status: … })`
+  decides who closes the row. The side effects come after it and cannot undo it: a decline stays
+  declined, and an approved call that ran stays recorded as run.
+- **Steps run independently; a marker is written last.** The trail, the receipt (approve only),
+  the wake and the card each run whether or not another failed, so a failing card never holds
+  back the wake the parked runs wait on. `expirySideEffectsDoneAt` is set only when all of them
+  succeeded; otherwise the attempt throws one error naming every failed step. A closed row
+  without the marker crashed or failed midway. The caller still gets its answer: a failed side
+  effect never turns a decision into a 500.
 - **Opt rows in with the flip.** The same flip writes `expiryRetryCount: 0`. The retry selects
   `expiryRetryCount: { $lt: MAX_EXPIRY_RETRIES }`, which a missing field never matches, so rows
-  closed before F202 are never re-run.
+  closed before this and legacy `create_pod`/`connect_local_agent` actions are never re-run.
 - **Backoff, and a lease from it.** A row is due once `max(resolvedAt, expiryRetryClaimedAt)` is
   older than `EXPIRY_RETRY_GRACE_MS * 2^expiryRetryCount` (1 min, doubling, at most an hour per
   step); `expiryRetryDueAt` computes it. The claim is one conditional write on the count and the
@@ -398,26 +402,62 @@ depends on the last of them.
   sweeper that read the same row loses the claim, and one that reads it afterwards finds it not
   yet due. An attempt slower than its wait can overlap the next one; that is tolerable only
   because every step is safe to repeat. `MAX_EXPIRY_RETRIES` (11) spans about six hours, then the
-  sweep logs an error and stops selecting the row.
+  sweep logs an error and stops selecting the row, so a step that can never succeed is not sent
+  on every sweep.
 - **An operator way back from the cap.** `backend/scripts/retry-capped-approval-expiries.ts`
-  lists capped rows (expired, no marker, count at the cap) on a dry run, and with an explicit
-  `--apply` resets their count to 0 so the next sweep retries them. It refuses any other argument.
-- **Every side effect must be safe to repeat.** The trail row's id is derived from the approval
-  and the reason, so a second insert hits the primary key. The record dedupes on its event key.
-  The card rewrites the same payload. The wake is sent at least once, with a narrow overlap
-  window. An attempt takes a lease on it (`expiryEventClaimedAt`, set by a conditional write while
-  `expiryEventSentAt` is null and the lease is unset or older than `EXPIRY_WAKE_CLAIM_LEASE_MS`,
-  2 min), enqueues, then stamps `expiryEventSentAt`. A failed enqueue clears the lease only if it
-  is still that attempt's. A crashed sender's lease expires and a later retry sends. While another
-  attempt holds a fresh lease the step fails, so the row is not marked done before the wake is
-  known sent. A crash after the send but before the stamp is covered by an existing
-  `approval.resolved` event for the approval; the overlap window is a send that stalls past its
-  lease, or that crash found after the event row is collected (about 30 minutes). The stamp
-  itself does not depend on `AgentEvent` retention.
+  lists capped rows (expired or resolved, no marker, count at the cap) on a dry run, and with an
+  explicit `--apply` resets their count to 0 so the next sweep retries them. It refuses any other
+  argument.
+- **Every side effect must be safe to repeat.** A decision's trail row id is derived from the
+  approval and the reason, so a second insert hits the primary key. The record dedupes on its
+  event key. The card rewrites the same payload. The wake and the room receipt are sent at least
+  once, with a narrow overlap window, through `sendUnderLease`. An attempt takes a lease
+  (`expiryEventClaimedAt` for the wake, `toolCallReceiptClaimedAt` for the receipt), set by a
+  conditional write while the stamp (`expiryEventSentAt`, `toolCallReceiptPostedAt`) is null and
+  the lease is unset or older than `EXPIRY_WAKE_CLAIM_LEASE_MS` (2 min), then sends, then stamps.
+  A failed send clears the lease only if it is still that attempt's. A crashed sender's lease
+  expires and a later retry sends. While another attempt holds a fresh lease the step fails, so
+  the row is not marked done before the send is known done. A crash after a wake's send but
+  before its stamp is covered by an existing `approval.resolved` event for the approval; the
+  overlap window is a send that stalls past its lease, or that crash found after the event row is
+  collected (about 30 minutes). The receipt has no such check, so the same crash can post a
+  second receipt line. The stamp itself does not depend on `AgentEvent` retention.
+
+#### Approve: a side effect that must not repeat
+
+The approved tool call is the one step that is not safe to repeat, so it is not a step. The rule
+is structural: the sweep never calls the broker. `resolveApproval` is the only caller, it runs
+once for the write that won the flip, and that write scrubs `toolCall.canonicalArgs`, so a retry
+has nothing to run with.
+
+- **The marker is the ending, on the row, straight after the call.** `toolCallEnding`,
+  `toolCallCode`, `toolCallTrailId`, `toolCallReceipt` and `executedAt` are saved before any side
+  effect, so a retry knows what happened and a retried wake still carries the receipt.
+- **If the call ran and the marker write fails,** the request carries on from memory: the caller
+  is told the real ending, and the trail step's save tries the write again. If that also fails,
+  or the process died, the row is `resolved`, `approved` and has no ending.
+- **The sweep then establishes what happened, and never re-runs it.** It waits
+  `APPROVED_CALL_SETTLE_MS` (15 min, far past any broker call, so a live call is not judged), then
+  reads the broker's row with `ToolCall.findApprovedRun`. A row gives the ending. No row means
+  the call may never have started, or reached the provider and died before the trail write, and
+  nothing can tell those apart. The row then ends `failed` with `approval_outcome_unknown`, gets a
+  trail row of its own, and the wake tells the agent the call may have run. A later identical call
+  needs a new human approval. A trail read that fails settles nothing; the attempt fails and a
+  later one reads again.
+- **A live call that outlasts the settle** still saves its real ending, over the unknown one,
+  and rewrites the card. The wake that already went out is not re-sent.
+- **The trail write can fail after the provider ran.** The broker then reports the call as run,
+  with `trailUnwritten`, instead of letting its catch record a failure. The row stores
+  `toolCallTrailUnwritten` and the trail step writes the row under the broker's call id.
+- **What a crash can cost.** A trail recovered by the sweep has no receipt numbers, so that wake
+  goes out without them.
 
 Fields, on `tool_call` rows only: `expiryRetryCount` (Number), `expiryRetryClaimedAt` (Date),
-`expirySideEffectsDoneAt` (Date), `expiryEventSentAt` (Date) and `expiryEventClaimedAt` (Date). Index `tool_call_expiry_retry`:
-`{ status, actionType, resolvedAt }`, partial on `expiryRetryCount: { $exists: true }`.
+`expirySideEffectsDoneAt` (Date), `expiryEventSentAt` (Date), `expiryEventClaimedAt` (Date),
+`toolCallReceiptPostedAt` (Date), `toolCallReceiptClaimedAt` (Date), `toolCallReceipt` (Mixed,
+declared numeric fields only) and `toolCallTrailUnwritten` (Boolean). Index
+`tool_call_expiry_retry`: `{ status, actionType, resolvedAt }`, partial on `expiryRetryCount:
+{ $exists: true }`; it covers `resolved` rows as well as `expired` ones.
 
 ### PostgreSQL Indexes
 

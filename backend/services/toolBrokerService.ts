@@ -142,6 +142,12 @@ export interface BrokerCallResult {
   outcome: 'ok' | 'failed';
   untrustedSourceTitle?: string;
   receipt?: Record<string, number>;
+  /**
+   * Approved path only: the provider ran but this call's trail row was not
+   * written. The approval still records the call as run and writes the row,
+   * under `callId`, on its retry.
+   */
+  trailUnwritten?: boolean;
 }
 
 const issueView = (issue: Record<string, unknown>): Record<string, unknown> => ({
@@ -2083,13 +2089,23 @@ export const executeApprovedToolCall = async (
       );
     }
     const result = await runDefinition(definition, executionArgs, connection, input.agentUserId);
-    const recorded = await recordExecutionResult(
-      { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
-      grant,
-      result,
-      startedAt,
-      { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
-    );
+    // From here the provider has acted, so nothing below may report the call as
+    // not run: a failed trail write must not reach the catch, which would
+    // record this call as failed.
+    let recorded: { callId: string; outcome: 'ok' | 'failed'; trailUnwritten?: boolean };
+    try {
+      recorded = await recordExecutionResult(
+        { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
+        grant,
+        result,
+        startedAt,
+        { callId, approvalId: input.approvalId, args: input.args, credentialOwnerId },
+      );
+    } catch (trailError) {
+      console.error(`[broker] approved call ran but its trail row failed approval=${input.approvalId}:`,
+        (trailError as Error).name);
+      recorded = { callId, outcome: isToolErrorResult(result) ? 'failed' : 'ok', trailUnwritten: true };
+    }
     const receipt = recorded.outcome === 'ok' ? approvedCallReceipt(definition, result) : undefined;
     return {
       ...recorded,
