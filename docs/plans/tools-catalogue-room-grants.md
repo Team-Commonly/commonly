@@ -51,6 +51,7 @@ The shape is ADR-001 §3 as amended, and this section names only what the builde
 
 - **Attenuation is computed at mint, by the server.** A delegating agent *requests* a child grant with `{parentGrantId, tools?, writeMode?, budget?, expiresAt?}`; the server loads the parent and refuses unless `tools ⊆ parent.tools`, `writeMode` no stronger than the parent's (narrowest to widest: `read`, then `write-with-confirm`, then `write` — a child may add the confirm, never remove it), `budget ≤ parent.budget`, `expiresAt ≤ parent.expiresAt`, and `audience ⊆ parent.audience`. Any field the request omits inherits the parent's value. The child is minted by the server from the checked values; the request body is never copied to the row. (Vera 67402.)
 - **Revocation cascades.** Revoking a grant sets `revokedAt` on it and on every descendant in the same write. A child cannot outlive its parent because its `expiresAt` was capped at mint. (Vera 67403.)
+- **The agent is told, once (F181).** After a revoke moves a live grant, every agent in its effective audience gets an inline line on its next mention: the connector's name, that access was removed, and that there is nothing to reconnect. Taking one named agent off a grant cues only that agent. A re-grant on the same connector before that mention cancels the line. See `services/grantRemovalCueService.ts` and [agent-runtime-quick-rules.md](../agents/agent-runtime-quick-rules.md).
 
 **Named tests** — these are the acceptance instrument for the piece, and the PR lists them by name:
 

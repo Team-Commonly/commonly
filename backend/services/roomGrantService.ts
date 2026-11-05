@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { recordGrantExpired, recordGrantsRevoked } from './brokerRecordService';
+import { noteRevokedGrants } from './grantRemovalCueService';
 import { Types } from 'mongoose';
 import Task from '../models/Task';
 import Pod from '../models/Pod';
@@ -652,13 +653,32 @@ export const attenuateGrant = async (input: RoomGrantAttenuationInput): Promise<
  */
 export const SYSTEM_REVOKER = SERVER_ACTOR.id;
 
-export const revokeGrant = async (grantId: string, revokedBy: string): Promise<number> => {
+export interface RevokeGrantOptions {
+  /**
+   * F181: false when the owner is reconnecting (an OAuth account change, a
+   * re-pasted key), so the agents are not told the owner removed the connector.
+   */
+  cue?: boolean;
+}
+
+export const revokeGrant = async (
+  grantId: string,
+  revokedBy: string,
+  options: RevokeGrantOptions = {},
+): Promise<number> => {
   const id = asId(grantId, 'grantId');
   const actor = asId(revokedBy, 'revokedBy');
   const root = await RoomGrant.findOne({ grantId: id }).select('grantId').lean();
   if (!root) throw new RoomGrantError('grant_not_found', 'grant not found', 404);
   const moved = await RoomGrant.revokeCascadeMoved(id, actor);
   recordGrantsRevoked(id, moved, actor);
+  // F181: every agent that held one of these grants is told on its next
+  // mention that the connector was taken away. The revoke has already
+  // committed, so a failure here costs the cue, never the revoke.
+  if (options.cue === false) return moved.length;
+  await noteRevokedGrants(moved.map((grant) => grant.grantId), actor).catch((error: Error) => {
+    console.error('[room-grant] removal cue not recorded:', error.message);
+  });
   return moved.length;
 };
 
@@ -743,6 +763,8 @@ export const revokeConnectionGrants = async (options: {
   ownerId?: string;
   /** Only grants minted before this moment (F174: a takeover never sweeps the new owner's grants). */
   createdBefore?: Date;
+  /** F181: false on a reconnect revoke; see `RevokeGrantOptions.cue`. */
+  cue?: boolean;
 }): Promise<number> => {
   const connection = options.connection;
   const rowId = connection?._id ? String(connection._id) : '';
@@ -788,7 +810,7 @@ export const revokeConnectionGrants = async (options: {
     try {
       // revokeGrant cascades the lineage and counts only the rows it moved, so
       // a child reached twice or already revoked contributes nothing.
-      revoked += await revokeGrant(String(grant.grantId), options.revokedBy);
+      revoked += await revokeGrant(String(grant.grantId), options.revokedBy, { cue: options.cue });
     } catch (error) {
       // A grant deleted between this read and that write is already gone;
       // removal must not fail on it. Anything else is real.

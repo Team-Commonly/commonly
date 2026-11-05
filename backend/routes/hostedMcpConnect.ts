@@ -693,7 +693,8 @@ const finishCallback = async (req: Request, res: Response, flow: CallbackFlow) =
   // vendor page to decide whether an older authorization still needs removing.
   const accountChanged = hasPreviousCredential && (!subjectsComparable || subjectChanged);
   if (accountChanged) {
-    await revokeConnectionGrants({ connection: consumed, revokedBy: owner });
+    // The owner is here reconnecting, so the agents get no removal cue (F181).
+    await revokeConnectionGrants({ connection: consumed, revokedBy: owner, cue: false });
   }
 
   let manualRevokeAt: string | undefined;

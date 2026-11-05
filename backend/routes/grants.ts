@@ -34,6 +34,7 @@ import {
   byoNamingRefusalMessage, checkByoNaming, listByoCandidates, byoPodExemptAgentIds, namedByoAgentIds,
 } from '../services/byoGrantNaming';
 import { recordGrantIssued } from '../services/brokerRecordService';
+import { grantConnector, noteAgentRemovedFromGrant } from '../services/grantRemovalCueService';
 import { prWriteMintRefusal, prWriteMintRefusalMessage } from '../services/prWriteScope';
 import { TOOL_DEFINITIONS } from '../services/toolBrokerService';
 import { agentActor, humanActor, requestActor } from '../services/recordService';
@@ -109,26 +110,6 @@ interface AuthenticatedRequest extends express.Request {
  */
 type GrantRow = Pick<IRoomGrant, 'binding' | 'revocationReason' | 'grantId' | 'installationId' | 'target' | 'tools' | 'writeMode' | 'budget'
   | 'expiresAt' | 'revokedAt' | 'revokedBy' | 'parentGrantId' | 'rootGrantId' | 'createdAt' | 'byoAgents' | 'byoConsent'> & { audience?: string[]; connectionId?: string };
-
-/**
- * The connector a grant belongs to, read from its tool names (TASK-753). The
- * page matches a grant to a catalogue row by those same names, so a grant
- * whose entry is hidden, or whose connection is gone, matched no row and
- * rendered as "Unknown connector" with no way to tell what it was. Every name
- * carries its entry's namespace (`hostedMcpToolName`), so the namespace still
- * names the connector. This adds nothing the row did not already say: the tool
- * names it carries spell the same namespace. A grant naming two namespaces, or
- * one no entry claims, is not guessed at.
- */
-const GITHUB_CONNECTOR = { id: 'github', label: 'GitHub' };
-const grantConnector = (tools: string[] | undefined): { id: string; label: string } | null => {
-  const namespaces = new Set((tools || []).map((name) => (name.includes('.') ? name.slice(0, name.indexOf('.')) : '')));
-  if (namespaces.size !== 1) return null;
-  const [id] = [...namespaces];
-  if (id === GITHUB_CONNECTOR.id) return GITHUB_CONNECTOR;
-  const entry = id ? findHostedMcpEntry(HOSTED_MCP_ENTRIES, id) : undefined;
-  return entry ? { id: entry.id, label: entry.title } : null;
-};
 
 const projectGrant = (
   grant: GrantRow,
@@ -692,6 +673,11 @@ router.delete('/:grantId/byo-agents/:agentId', grantRateLimit, auth, async (
       { $or: [{ grantId: grant.grantId }, { rootGrantId: grant.grantId }] },
       { $pull: { byoAgents: agentId, audience: agentId, 'byoConsent.agents': { userId: agentId } } },
     );
+    // F181: the agent's next mention says its owner took this connector away,
+    // so it does not ask anyone to reconnect it.
+    await noteAgentRemovedFromGrant(grant, agentId).catch((error: Error) => {
+      console.error('[grants] removal cue not recorded:', error.message);
+    });
     // Only what changed: the raw row carries connectionId and brokerId, which
     // no grant read returns.
     const updated = await RoomGrant.findOne({ grantId: grant.grantId }).select('grantId byoAgents byoConsent').lean();
