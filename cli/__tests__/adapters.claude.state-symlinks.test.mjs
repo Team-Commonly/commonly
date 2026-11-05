@@ -138,6 +138,31 @@ describe('a Seatbelt Claude seat\'s state folder (F153)', () => {
     });
   });
 
+  // A Seatbelt write rule on the state folder covers the folder itself, so the
+  // child can remove it and leave a link in its place (verified with
+  // sandbox-exec). The next turn must refuse before it chmods, creates or links
+  // anything through it.
+  describe.each([
+    ['keychain login', false],
+    ['API key through the proxy', true],
+  ])('a seat on its %s whose state folder the child replaced with a link', (_label, key) => {
+    test('refuses the turn, names the link, and leaves the link target as it was', async () => {
+      fs.rmdirSync(state);
+      fs.symlinkSync(decoyDir, state);
+      const { impl, calls } = okImpl();
+      const error = await seatbeltSpawn(impl, { key }).catch((err) => err);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toContain(state);
+      expect(error.message).toMatch(/symbolic link/);
+      expect(error.message).toMatch(/remove the link/i);
+      expect(calls).toHaveLength(0);
+      expect(modeOf(decoyDir)).toBe(0o755);
+      // No tmp or Library made there, so no Keychains link inside it either.
+      expect(fs.readdirSync(decoyDir)).toEqual(['target.json']);
+      expect(lstatOrNull(path.join(decoyDir, 'Library', 'Keychains'))).toBeNull();
+    });
+  });
+
   test('a seat with no key that is not logged in is told how to give it one', async () => {
     const { impl } = okImpl({ code: 1, stdout: 'Not logged in · Please run /login' });
     const error = await seatbeltSpawn(impl).catch((err) => err);
@@ -282,6 +307,41 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
     expect(fs.readFileSync(unrelated, 'utf8')).toBe('{}\n');
   });
 
+  test('the next turn refuses a state folder replaced with a link, before making or chmodding anything through it', async () => {
+    fs.rmdirSync(state);
+    fs.symlinkSync(decoyDir, state);
+    fs.chmodSync(decoyDir, 0o755);
+    const calls = [];
+    const error = await bwrapSpawn((cmd, args, opts) => { calls.push({ cmd, args, opts }); return fakeChild(); })
+      .catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/symbolic link/);
+    expect(error.message).toMatch(/remove the link/i);
+    expect(calls).toHaveLength(0);
+    expect(modeOf(decoyDir)).toBe(0o755);
+    expect(fs.readdirSync(decoyDir).sort()).toEqual(['.claude.json', '.credentials.json']);
+    expect(modeOf(path.join(decoyDir, '.claude.json'))).toBe(0o644);
+    expect(fs.readFileSync(path.join(decoyDir, '.credentials.json'), 'utf8')).toBe(DECOY_TEXT);
+  });
+
+  // A child can leave a directory under a staged copy's name. Removing the
+  // login after the turn skips it rather than failing on it, and still removes
+  // the login copy itself.
+  test('a directory named like a staged login copy does not break the removal of the login', async () => {
+    const configDir = path.join(state, '.claude');
+    const stagedDir = path.join(configDir, '..credentials.json.0b5e9a4c-1111-4222-8333-944455556666.tmp');
+    const calls = [];
+    await bwrapSpawn((cmd, args, opts) => {
+      fs.mkdirSync(stagedDir);
+      fs.writeFileSync(path.join(stagedDir, 'inside'), 'x');
+      calls.push({ cmd, args, opts });
+      return fakeChild({ stdout: 'ok' });
+    });
+    expect(calls).toHaveLength(1);
+    expect(lstatOrNull(path.join(configDir, '.credentials.json'))).toBeNull();
+    expect(fs.lstatSync(stagedDir).isDirectory()).toBe(true);
+  });
+
   test('the next turn refuses a .claude link, before copying the login anywhere', async () => {
     fs.symlinkSync(decoyDir, path.join(state, '.claude'));
     const calls = [];
@@ -362,6 +422,39 @@ describe('the host\'s writes into a child-writable folder (F153)', () => {
     await ensurePrivateDir(created);
     expect(fs.lstatSync(created).isDirectory()).toBe(true);
     expect(modeOf(created)).toBe(0o700);
+  });
+
+  // The staged copy sits in a folder a concurrent child of the same seat can
+  // write. A link swapped in for it after the exclusive create must not carry a
+  // chmod to the link's target.
+  test('a staged copy swapped for a link after its create is not chmodded through', async () => {
+    const dir = path.join(root, 'state');
+    fs.mkdirSync(dir, { mode: 0o700 });
+    const decoyFile = path.join(decoyDir, 'target.json');
+    fs.writeFileSync(decoyFile, 'decoy\n');
+    fs.chmodSync(decoyFile, 0o644);
+    const swappingWrite = async (file, content, opts) => {
+      await fs.promises.writeFile(file, content, opts);
+      fs.rmSync(file);
+      fs.symlinkSync(decoyFile, file);
+    };
+    await replacePrivateFile(dir, '.claude.json', '{}\n', { _writeFile: swappingWrite }).catch(() => {});
+    expect(modeOf(decoyFile)).toBe(0o644);
+    expect(fs.readFileSync(decoyFile, 'utf8')).toBe('decoy\n');
+  });
+
+  test('the written file is 0600 from its create, even under a permissive umask', async () => {
+    const dir = path.join(root, 'state');
+    fs.mkdirSync(dir, { mode: 0o700 });
+    const previous = process.umask(0);
+    try {
+      await replacePrivateFile(dir, '.claude.json', '{}\n');
+    } finally {
+      process.umask(previous);
+    }
+    const written = fs.lstatSync(path.join(dir, '.claude.json'));
+    expect(written.isFile()).toBe(true);
+    expect(written.mode & 0o777).toBe(0o600);
   });
 
   // The staged copy holds what the host is writing (the access token, for the

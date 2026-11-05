@@ -261,6 +261,23 @@ export const ensurePrivateDir = async (dir, { _afterCheck } = {}) => {
   }
 };
 
+// The seat's state folder itself. A Seatbelt rule that lets the child write
+// below a folder lets it write the folder too, so a child can remove it and
+// leave a link in its place. Every later step of the next turn walks below this
+// path (chmod, tmp, Library, the Keychains link, the auth metadata), so a link
+// here refuses the turn before any of them runs. The parent is made by path;
+// the folder is made and chmodded through a handle that does not follow a link.
+const ensureStateFolder = async (statePath) => {
+  await mkdir(dirname(statePath), { recursive: true, mode: 0o700 });
+  const existing = await statOrNull(statePath);
+  if (existing?.isSymbolicLink()) {
+    throw new Error(`refusing Claude state folder that is a symbolic link: ${statePath}. `
+      + 'A confined turn can replace its own state folder; remove the link (it is the seat\'s state, '
+      + 'not the place it points to) and run the turn again, which recreates the folder.');
+  }
+  await ensurePrivateDir(statePath);
+};
+
 // Removes files the host put in a child-writable folder: the one named, or
 // every name `match` accepts. The folder is checked first, and nothing is
 // removed if the child swapped it for a link (to the person's own ~/.claude,
@@ -277,7 +294,17 @@ const removePrivateFile = async (dir, name, { match } = {}) => {
     return;
   }
   const names = match ? (await readdir(dir)).filter(match) : [name];
-  for (const entry of names) await rm(join(dir, entry), { force: true });
+  for (const entry of names) {
+    try {
+      await rm(join(dir, entry), { force: true });
+    } catch (err) {
+      // A directory under the name is the child's, not a copy the host wrote:
+      // it is left, and the rest of the removal goes on.
+      if (!['ERR_FS_EISDIR', 'EISDIR'].includes(err?.code)) throw err;
+      // eslint-disable-next-line no-console
+      console.warn(`[claude] not removing ${join(dir, entry)}: it is not a file`);
+    }
+  }
 };
 
 // The staged name `replacePrivateFile` writes beside its target.
@@ -334,10 +361,10 @@ const preparePublicClaudeState = async (ctx, { keychain = true } = {}) => {
   const stateKeychains = join(stateLibrary, 'Keychains');
   const operatorKeychains = join(homedir(), 'Library', 'Keychains');
 
-  // The jail writes inside this folder, so a subfolder may be a link a prior
-  // turn left: each is checked before the host chmods or links inside it.
-  await mkdir(statePath, { recursive: true, mode: 0o700 });
-  await chmod(statePath, 0o700);
+  // The jail writes inside this folder, so the folder or a subfolder may be a
+  // link a prior turn left: each is checked before the host chmods or links
+  // inside it.
+  await ensureStateFolder(statePath);
   await ensurePrivateDir(tmpPath);
   await ensurePrivateDir(stateLibrary);
 
@@ -384,8 +411,9 @@ export const replacePrivateFile = async (dir, name, content, { _writeFile = writ
   const target = join(dir, name);
   const staged = join(dir, stagedName(name));
   try {
+    // `wx` creates the file 0600 or fails; no chmod by path after it, which
+    // would follow a link a concurrent child swapped in for the staged name.
     await _writeFile(staged, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-    await chmod(staged, 0o600);
     await rename(staged, target);
   } catch (err) {
     await rm(staged, { force: true });
@@ -544,8 +572,7 @@ const prepareWorkspaceBwrapClaudeState = async (ctx, { login = 'carry', seat = '
   const statePath = bwrapClaudeStatePath(ctx, seat);
   const tmpPath = join(statePath, 'tmp');
   const configDir = join(statePath, '.claude');
-  await mkdir(statePath, { recursive: true, mode: 0o700 });
-  await chmod(statePath, 0o700);
+  await ensureStateFolder(statePath);
   for (const dir of [tmpPath, configDir]) await ensurePrivateDir(dir);
 
   const configPath = await replacePrivateFile(
