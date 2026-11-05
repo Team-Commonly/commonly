@@ -917,6 +917,8 @@ export default {
           executablePath: binary,
           statePath: openCodeHome.root,
           mcpConfigDir: tempDir,
+          // Public seat: the CLI made this workspace, so it is pinned (F197).
+          pinWorkspace: true,
           loopbackNetworkPorts: providerProxy ? [providerProxy.port] : [],
           readOnlyPaths: [],
           readOnlyDirectories: mcpReadDirectories,

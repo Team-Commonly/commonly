@@ -163,6 +163,84 @@ describe('a Seatbelt Claude seat\'s state folder (F153)', () => {
     });
   });
 
+  // The state folder is checked when it is prepared, and again where the
+  // profile grants it: a process left from an earlier turn can replace it in
+  // between. Here it is replaced after preparation, while the provider proxy
+  // starts, which is the last step before the profile is built.
+  test('a state folder replaced with a link after it was prepared is refused at the profile, by name', async () => {
+    const { impl, calls } = okImpl();
+    const swapThenStart = async () => {
+      fs.renameSync(state, path.join(root, 'state-moved'));
+      fs.symlinkSync(decoyDir, state);
+      return proxyStart();
+    };
+    const error = await claude.spawn('hi', {
+      agentName: 'f153-seat',
+      sessionId: null,
+      cwd,
+      skillMountDir: root,
+      env: { PATH: process.env.PATH, ANTHROPIC_API_KEY: 'sk-ant-f153-host-only' },
+      environment: { model: 'test-model', sandbox: { mode: 'workspace', trust: 'public' } },
+      _publicClaudeState: state,
+      _spawnImpl: impl,
+      _startProviderProxy: swapThenStart,
+    }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain(state);
+    expect(error.message).toMatch(/refusing a confined turn: its writable state folder/);
+    expect(calls).toHaveLength(0);
+    expect(fs.readdirSync(decoyDir)).toEqual(['target.json']);
+  });
+
+  test('an unchanged state folder is granted to the turn as before', async () => {
+    const { impl, calls } = okImpl();
+    await seatbeltSpawn(impl, { key: true });
+    expect(calls).toHaveLength(1);
+    const profile = calls[0].args[calls[0].args.indexOf('-p') + 1];
+    expect(profile).toContain(`file-write* (subpath "${fs.realpathSync(state)}"))`);
+  });
+
+  // A workspace seat's folder is the operator's choice and may be a link; a
+  // public seat's is a scratch folder the CLI made, and is pinned (F197).
+  const linkCwdTo = () => {
+    const project = path.join(root, 'project');
+    fs.mkdirSync(project);
+    fs.rmdirSync(cwd);
+    fs.symlinkSync(project, cwd);
+    return project;
+  };
+
+  test('a workspace seat whose writable folder is the operator\'s link runs, granted at the link target', async () => {
+    const project = linkCwdTo();
+    const { impl, calls } = okImpl();
+    await claude.spawn('hi', {
+      agentName: 'f197-workspace-seat',
+      sessionId: null,
+      cwd,
+      skillMountDir: root,
+      env: { PATH: process.env.PATH, ANTHROPIC_API_KEY: 'sk-ant-f197-host-only' },
+      environment: { model: 'test-model', sandbox: { mode: 'workspace', trust: 'workspace', allow: ['write'] } },
+      _publicClaudeState: state,
+      _spawnImpl: impl,
+      _startProviderProxy: proxyStart,
+    });
+    expect(calls).toHaveLength(1);
+    const profile = calls[0].args[calls[0].args.indexOf('-p') + 1];
+    expect(profile).toContain(
+      `(allow file-read* file-test-existence file-write* (subpath "${fs.realpathSync(project)}"))`,
+    );
+  });
+
+  test('a public seat whose writable folder is a link is refused, by name', async () => {
+    linkCwdTo();
+    const { impl, calls } = okImpl();
+    const error = await seatbeltSpawn(impl, { key: true }).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain(cwd);
+    expect(error.message).toMatch(/its writable workspace/);
+    expect(calls).toHaveLength(0);
+  });
+
   test('a seat with no key that is not logged in is told how to give it one', async () => {
     const { impl } = okImpl({ code: 1, stdout: 'Not logged in · Please run /login' });
     const error = await seatbeltSpawn(impl).catch((err) => err);

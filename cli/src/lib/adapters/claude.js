@@ -913,11 +913,12 @@ const runClaude = ({
   cmd, args, cwd, env, timeoutMs, credentials = [], spawnImpl = childSpawn, onSpawn, controls = {}, ownGroup = false,
   transcriptPath = null, firstOutputMs = firstOutputWindowMs(), lockProbe, stallKillGraceMs = STALL_KILL_GRACE_MS,
   processTable = readProcessTable, survivorIo, modelStream = true, turnReap = turnReapEnabled(),
-  commandResolution = {},
+  commandResolution = {}, confined = false,
 }) => new Promise((resolve, reject) => {
   // Every process the turn starts inherits this marker however it detaches,
-  // so what it leaves running is stopped once the turn has closed.
-  const turn = markTurn(env ?? process.env, { enabled: turnReap });
+  // so what it leaves running is stopped once the turn has closed. A confined
+  // seat's turn keeps nothing: COMMONLY_KEEP_PROCESS is not honoured there.
+  const turn = markTurn(env ?? process.env, { enabled: turnReap, confined });
   // On Windows an npm `claude.cmd` is read, not run through cmd.exe: the
   // prompt in `args` is pod content (#2141). Off Windows this is identity.
   const launch = resolveLaunch(cmd, args, { env: turn.env, ...commandResolution });
@@ -1452,6 +1453,9 @@ const prepareArgv = async (innerArgv, ctx) => {
       workspaceAccess: sandboxMode === 'read-only'
         || (sandboxTrust === 'workspace' && !grants.includes('write')) ? 'read' : 'write',
       readOnlyWorkspaceEntries: sandboxTrust === 'workspace' ? ['.git'] : [],
+      // A public seat's workspace is the scratch folder the CLI made; a
+      // workspace seat's is the operator's own folder, which may be a link.
+      pinWorkspace: sandboxTrust === 'public',
       executablePath: claudeBin,
       statePath: ctx.publicClaudeState.statePath,
       mcpConfigDir: ctx.mcpConfigDir,
@@ -1646,6 +1650,10 @@ export default {
     // confined too, but it answers its own team, and an outage it narrates
     // there is a signal, not a leak.
     const witnessedMcp = ctx.environment?.sandbox?.trust === 'public' ? ctx.environment?.mcp : null;
+    // A stranger-facing seat keeps nothing a turn leaves running, whatever the
+    // turn set (F197). A workspace seat keeps the setting for its own team's
+    // long-running work in its own project.
+    const reapEverything = ctx.environment?.sandbox?.trust === 'public';
     const workCues = publicTrust ? [] : WORK_CUES;
     // F118: a public seat reads its memory but is not offered a write.
     const memoryReadOnly = ctx.environment?.sandbox?.trust === 'public';
@@ -1869,6 +1877,7 @@ export default {
         survivorIo: ctx._survivorIo,
         turnReap: ctx._turnReap,
         commandResolution: ctx._commandResolution, // test seam only
+        confined: reapEverything,
       });
       // TASK-440: the context this turn left, read from the transcript the
       // child wrote under its own env (an isolated HOME for public seats).
@@ -1944,6 +1953,7 @@ export default {
           survivorIo: ctx._survivorIo,
           turnReap: ctx._turnReap,
           commandResolution: ctx._commandResolution, // test seam only
+          confined: reapEverything,
         });
         const contextTokens = claudeContextTokens({
           cwd: physicalPath(ctx.cwd), sessionId: freshId,

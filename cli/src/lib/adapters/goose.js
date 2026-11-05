@@ -372,6 +372,8 @@ export default {
           [executable, ...spawnArgs] = (ctx._wrapArgvWithSeatbelt || wrapArgvWithSeatbelt)([binary, ...args], {
             workspacePath: ctx.cwd, workspaceAccess: mode === 'read-only' ? 'read' : 'write',
             executablePath: binary, statePath: home, mcpConfigDir: home,
+            // Public seat: the CLI made this workspace, so it is pinned (F197).
+            pinWorkspace: true,
             loopbackNetworkPorts: [proxy.port], readOnlyDirectories: mcpReadDirectories,
           });
         }
