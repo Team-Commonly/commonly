@@ -27,8 +27,12 @@ jest.setTimeout(30 * 60 * 1000);
 (process.env.BENCH_URI ? it : it.skip)('auth hot path', async () => {
   const db = `bench${Math.random().toString(16).slice(2, 10)}`;
   await mongoose.connect(`${process.env.BENCH_URI}/${db}`);
-  await User.init();
-  await Pod.init();
+  // The indexes these reads use, built by hand: Model.init() would also build
+  // main's collation index on username, which collides with the unique one on
+  // MongoDB and is refused by FerretDB.
+  await User.collection.createIndex({ username: 1 }, { unique: true });
+  await User.collection.createIndex({ email: 1 }, { unique: true });
+  await Pod.collection.createIndex({ members: 1 });
   const now = new Date();
   const users = Array.from({ length: USERS }, (_, i) => ({
     _id: new mongoose.Types.ObjectId(),
