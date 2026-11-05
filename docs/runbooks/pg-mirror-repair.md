@@ -115,8 +115,9 @@ SRE's alerts pod (`spendAlarmService.pageSre`, `SPEND_ALARM_POD_ID`) when a
 category grows by more than 20 over the previous run, there is any repeat, the
 ghost floor trips, or the run fails, including a failure before the run row
 exists (connection, lock, previous-run read, run-row insert), which then
-rethrows. A page that takes longer than 10 s (`PAGE_TIMEOUT_MS`) is abandoned
-so it cannot hold the advisory lock; the log line stands. Stored keys are
+rethrows. After 10 s (`PAGE_TIMEOUT_MS`) the repair stops waiting for a page
+so it cannot hold the advisory lock; the log line stands, and the page itself
+may still arrive late, since the wait does not cancel it. Stored keys are
 capped at 5,000 per run, but `created_by` keys are never cut, so a cap cannot
 make a standing mismatch look new. With no pod configured the log line
 stands alone.

@@ -33,7 +33,7 @@ const MEMBER_MUTATION = [
 const POD_CREATE = [/\bPod\.create\(/, /\bnew Pod\(/];
 const USER_CREATE = [/\bUser\.create\(/, /\bnew User\(/, /\bUser\.insertMany\(/];
 const USER_WINDOW = 40;
-const FUNCTION_START = /^(\s{2}(static\s+)?(async\s+)?[a-zA-Z_]+\s*\([^)]*\)[^;]*\{\s*$|(export\s+)?(async\s+)?function\b|(export\s+)?const\s+\w+\s*=\s*async\b|^\s*(export\s+)?(const|let)\s+\w+\s*=\s*(async\s+)?(\([^)]*\)|\w+)\s*(:[^=]*)?=>|exports\.\w+\s*=|router\.(get|post|put|patch|delete)\()/;
+const FUNCTION_START = /^(\s{2}(static\s+)?(async\s+)?[a-zA-Z_]+\s*\([^)]*\)[^;]*\{\s*$|(export\s+)?(async\s+)?function\b|(export\s+)?const\s+\w+\s*=\s*async\b|^\s*(export\s+)?(const|let)\s+\w+\s*=\s*(async\s+)?(\([^)]*\)|\w+)\s*(:[^=]*)?=>|^\s*(export\s+)?(const|let)\s+\w+\s*=\s*(async\s+)?\(\s*$|exports\.\w+\s*=|router\.(get|post|put|patch|delete)\()/;
 const MIRROR = /mirrorMember(Added|Removed)|mirrorPodCreated|syncPgDmMembers|syncPodFromMongo|PGPod\.(addMember|removeMember|create)|pod_members|ensureGlobalPodPostgresSync/;
 const USER_MIRROR = /mirrorUser\(|syncUserToPostgreSQL\(/;
 
@@ -155,6 +155,16 @@ describe('PG mirror write-site detector', () => {
       'const join = (podId, userId) => {',
       '  return mirrorMemberAdded(podId, userId);',
       '};',
+    ].join('\n'))).toHaveLength(1);
+    // Parameters split across lines: the declaration line ends at the open paren.
+    expect(flagged([
+      'const leave = async (pod, userId) => {',
+      '  pod.members.push(userId);',
+      '};',
+      'const join = (',
+      '  podId: string,',
+      '  userId: string,',
+      ') => mirrorMemberAdded(podId, userId);',
     ].join('\n'))).toHaveLength(1);
     expect(flagged([
       'export const leave = async (pod: Pod, userId: string): Promise<void> => {',
