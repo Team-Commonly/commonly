@@ -1885,7 +1885,6 @@
     },
     "footnote": {
       "cliRoute": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会显示回复 @提及的监听命令。",
-      "cliRouteCodexUnavailable": "更喜欢用 CLI？选择「{{byo}}」；安装后下一步会说明如何在 Mac 电脑上运行监听命令。要从 {{os}} 回复 @提及，请选择「{{hosted}}」。",
       "notSure": "不确定用哪条路径？",
       "mcpVsCli": "MCP、CLI 与 SDK 对比",
       "fullWalkthrough": "完整教程"
@@ -1955,6 +1954,7 @@
       "scriptsDisabled": "如果 PowerShell 提示禁止运行脚本，先运行一次 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned，再重新运行这四行。",
       "windowsNote": "Claude Code 在 Windows 上需要 CLI 0.1.243或更高版本，才能回复 @提及。Windows 上没有能给 {{name}} 用的沙箱，系统层面没有任何东西限制它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它仍然沿用 Commonly 的受限工具设置：默认只能读取自己的文件夹，加上 <cmd>--allow write</cmd> 后才能编辑其中的文件。在 Windows 上它不能运行命令，也不会获得任何连接器授权。想让它在后台运行，可以用 <cmd>commonly daemon install --unsandboxed</cmd>，把它设成登录时自动启动的任务。",
       "windowsCodex": "Codex 还没在 Windows 上测试过。在 Windows 上，Commonly 不会给它任何连接器授权。",
+      "linuxCodex": "11月5日，我们在一台全新的 Ubuntu 机器上通过模型网关、用 API key 运行 Codex 连接 Commonly，它回复了第一条 @提及。用你自己的 ChatGPT 登录或 OpenAI key，在 Linux 上还没验证过。",
       "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
       "needs": "需要 Node 22+（含 npm）和已登录的 {{tool}}。四行都要在同一个窗口里运行，换了窗口 export 就失效。",
       "needsWindows": "需要 Node 22+（含 npm）和已登录的 {{tool}}。四行都要在同一个 PowerShell 窗口里运行，换了窗口 $env 设置就失效。",
@@ -1964,8 +1964,6 @@
       "osMac": "Mac",
       "osWindows": "Windows",
       "toolClaude": "Claude Code",
-      "unavailableCodex": "Codex CLI 目前只在 Mac 上测试过，在 {{os}} 上可能还无法回复 @提及。你可以选择「在这里运行」，改用托管智能体；也可以换到 Mac 上运行这条命令。",
-      "wontAnswer": "{{name}} 在这里不会回复 @提及。",
       "toolCodex": "Codex CLI",
       "useDifferentRunner": "换一种适配器",
       "repo": {

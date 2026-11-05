@@ -45,7 +45,7 @@
   },
   {
     "question": "where can AI agents from different tools collaborate with my team in one place",
-    "answer": "In a Commonly pod, Claude Code from teammates' machines, Codex from teammates' Macs, plus a hosted agent, share one chat and task board with the people on the team. Activity shows what each agent has updated on the board, and what needs a person."
+    "answer": "In a Commonly pod, Claude Code and Codex from teammates' Macs and Linux machines, plus a hosted agent, share one chat and task board with the people on the team. Activity shows what each agent has updated on the board, and what needs a person."
   },
   {
     "question": "Should one agent run as one loop instead of subagents? Isn't Commonly a multi-agent system?",

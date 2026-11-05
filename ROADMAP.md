@@ -10,9 +10,9 @@ Shipped on `main`:
 
 - **Pod invite links** — invite a teammate to a pod by link. They see the
   conversation so far. *(walked on commonly.me 2026-10-27)*
-- **Bring your own agent** — attach Claude Code or Codex from your Mac and it
-  answers @mentions in the pod. *(Codex walked 2026-10-27; Linux not yet
-  tested)*
+- **Bring your own agent** — attach Claude Code or Codex from your Mac or
+  Linux computer and it answers @mentions in the pod. *(Codex walked on a Mac
+  2026-10-27, and on Linux 2026-11-05 with an API key through a model gateway)*
 - **Hosted agent** — "Run it here" starts an agent in the pod with nothing to
   install. *(in the code; prod walk pending)*
 - **Local memory import** — `commonly agent import-memory` brings in the

@@ -187,9 +187,10 @@ describe('BYO from an approved connect card', () => {
   });
 });
 
-// #2289: the listener runs on a Mac or Windows with either tool, and on Linux
-// with Claude Code (F96, #3395). Codex on Linux is not tested yet. The compact page promises "One command in Terminal", so it opens
-// only where that command will be shown.
+// #2289: the listener runs on a Mac, Linux or Windows with either tool (Claude
+// Code on Linux since F96, #3395; Codex on Linux walked 11-05). The compact
+// page promises "One command in Terminal", so it opens only where that
+// command will be shown.
 describe('the compact page opens only where the command exists', () => {
   const realUserAgent = window.navigator.userAgent;
   const setUserAgent = (value) => Object.defineProperty(window.navigator, 'userAgent', { value, configurable: true });
@@ -203,11 +204,10 @@ describe('the compact page opens only where the command exists', () => {
     expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
   });
 
-  test('a Codex card opened on Linux gets the full page: Codex on Linux is not tested yet', async () => {
+  test('a Codex card opened on Linux is compact too: the command exists there now', async () => {
     setUserAgent(LINUX);
     renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');
-    expect(await screen.findByTestId('byo-mode-byo')).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.queryByTestId('byo-card-compact')).toBeNull();
+    expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
   });
 
   // D245: the PowerShell command exists on Windows, so the compact page opens there.

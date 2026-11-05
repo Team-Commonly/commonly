@@ -155,9 +155,8 @@ type MachineAdapter = string;
 
 // Where the listener runs (cli 0.1.106 stops elsewhere, with directions):
 // Commonly runs it in a sandbox. Seatbelt runs Claude Code and Codex on a Mac.
-// On Linux (WSL included) bubblewrap runs Codex, and Claude Code only as a
-// workspace seat, which the CLI allows only while every pod it answers in is
-// invite-only (TASK-027); a public Claude Code seat there is refused. Native
+// On Linux (WSL included) bubblewrap runs both (Claude Code in any pod since
+// F96, #3395; Codex walked on prod 11-05, run 41994906534). Native
 // Windows has no sandbox for either, so there the listener runs unconfined and
 // the page says so (D245). PowerShell has no `export`, so a Windows visitor
 // gets PowerShell lines for both commands (windows-latest, 2026-10-16).
@@ -194,8 +193,10 @@ const SETUP_OS_OPTIONS: Array<{ os: SetupOs; labelKey: string }> = [
 ];
 // Windows runs either CLI without a sandbox (D245): the command is PowerShell
 // lines, and the page says beside it that nothing confines the agent there.
-// Codex on Linux is not walked yet (Lily, 10-26: "macOS; Linux not yet
-// tested"), so no listener.
+// Codex on Linux walked on prod 11-05 (run 41994906534: published CLI, Codex
+// 0.164.0, a fresh Ubuntu runner, an API key through a model gateway). A
+// person's own ChatGPT sign-in or OpenAI key is not walked there; the Linux
+// Codex note says so beside the command.
 // Claude Code on Linux runs in any pod since F96 (#3395): a public seat runs in
 // the bubblewrap jail on the person's own login. Tested in CI with a stand-in
 // model; no person's walk yet, and the reach note says so.
@@ -216,8 +217,9 @@ const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 // the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
 // line saying what works instead.
 const listenerRunsOn = (os: SetupOs, adapter: string): boolean => {
-  if (adapter === 'claude') return true;
-  if (adapter === 'codex') return os === 'mac' || os === 'windows';
+  // Claude Code and Codex answer from every OS the page offers. Other runners
+  // never reach the command (byoAlternative replaces the install button).
+  if (adapter === 'claude' || adapter === 'codex') return true;
   // OpenCode has its own lines (opencodeSnippet); the rest can't answer here.
   return false;
 };
@@ -1729,13 +1731,7 @@ const V2AgentBYO: React.FC = () => {
             <summary>{t('agentByo.otherWays.title')}</summary>
             {addComputerBlock}
           <p className="v2-byo__footnote">
-            {t(listenerAvailable ? 'agentByo.footnote.cliRoute'
-              // Only Codex on Linux has no listener among the page's two.
-              : 'agentByo.footnote.cliRouteCodexUnavailable', {
-              byo: t('agentByo.mode.byo'),
-              hosted: t('agentByo.mode.hosted'),
-              os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
-            })}{' '}
+            {t('agentByo.footnote.cliRoute', { byo: t('agentByo.mode.byo') })}{' '}
             {t('agentByo.footnote.notSure')}{' '}
             <a className="v2-byo__link" href="https://github.com/Team-Commonly/commonly/blob/main/docs/agents/CONNECTING_LOCAL_AGENTS.md" target="_blank" rel="noopener noreferrer">{t('agentByo.footnote.mcpVsCli')}</a>
             {' · '}
@@ -1888,37 +1884,11 @@ const V2AgentBYO: React.FC = () => {
                 </button>
               ))}
             </p>
-            {!listenerAvailable && (
-              <p className="v2-byo__needs" data-testid="byo-listen-wont-answer">
-                <strong>{t('agentByo.listen.wontAnswer', { name: issued.agentName })}</strong>
-                {hosting?.configured && (
-                  <>
-                    {' '}
-                    <button
-                      type="button"
-                      className="v2-byo__secondary"
-                      data-testid="byo-listen-run-here"
-                      disabled={submitting}
-                      onClick={startHostedInstead}
-                    >
-                      {t('agentByo.mode.hosted')}
-                    </button>
-                  </>
-                )}
-                {error && <span className="v2-byo__error" role="alert"> {error}</span>}
-              </p>
-            )}
-            <p className="v2-byo__needs" data-testid={listenerAvailable ? 'byo-listen-needs' : 'byo-listen-unavailable'}>
-              {listenerAvailable
-                ? `${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
-                  tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
-                : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool,
-                })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxBwrap')}` : ''}`
-                : t(listenAdapter === 'codex' ? 'agentByo.listen.unavailableCodex'
-                    : listenAdapter === 'dsh' ? 'agentByo.listen.unavailableDsh' : 'agentByo.listen.unavailableOther', {
-                  os: t(SETUP_OS_OPTIONS.find((o) => o.os === setupOs)?.labelKey || 'agentByo.listen.osMac'),
-                  tool: listenTool,
-                })}{' '}
+            <p className="v2-byo__needs" data-testid="byo-listen-needs">
+              {`${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
+                tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
+                  : listenAdapter === 'claude' ? t('agentByo.listen.toolClaude') : listenTool,
+              })}${setupOs === 'linux' ? ` ${t('agentByo.listen.needsLinuxBwrap')}` : ''}`}{' '}
               <button
                 type="button"
                 className="v2-byo__link"
@@ -1930,6 +1900,11 @@ const V2AgentBYO: React.FC = () => {
             </p>
             {/* Directly above the lines it explains. Claude Code's last line
                 carries --unsandboxed; Codex keeps its own profile and no flag. */}
+            {listenerAvailable && setupOs === 'linux' && listenAdapter === 'codex' && (
+              <p className="v2-byo__listen-note" data-testid="byo-listen-linux-codex">
+                {t('agentByo.listen.linuxCodex')}
+              </p>
+            )}
             {listenerAvailable && setupOs === 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
                 {listenAdapter === 'codex' ? t('agentByo.listen.windowsCodex') : (
