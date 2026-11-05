@@ -76,6 +76,20 @@ export interface IApprovalAction extends Document {
   actionType: ApprovalActionType;
   params: Record<string, unknown>;
   toolCall?: ApprovalToolCall;
+  /**
+   * tool_call only (F184): which of the seat's open-card slots in this pod the
+   * row holds, 0..MAX_OPEN_TOOL_CALL_APPROVALS-1. Two partial unique indexes
+   * read it: one makes the cap atomic, the other makes reuse of an identical
+   * open call atomic. A row stops holding its slot when it leaves `flagged`.
+   * Absent on rows written before F184, which neither index sees.
+   */
+  toolCallSlot?: number;
+  /**
+   * tool_call only (F184): later runs that called the identical tool while
+   * this approval was open and were parked on it instead of getting a card of
+   * their own. The decision event names them beside `runId`.
+   */
+  waitingRuns?: Array<{ runId: Types.ObjectId; runPodId?: Types.ObjectId }>;
   summary: string;
   status: ApprovalStatus;
   decision?: ApprovalDecision;
@@ -120,6 +134,15 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
     // Mixed keeps this optional for legacy action rows. The service validates
     // the required envelope fields before a tool_call row is created.
     toolCall: { type: Schema.Types.Mixed },
+    toolCallSlot: { type: Number },
+    waitingRuns: {
+      type: [{
+        _id: false,
+        runId: { type: Schema.Types.ObjectId, ref: 'AgentRun', required: true },
+        runPodId: { type: Schema.Types.ObjectId, ref: 'Pod' },
+      }],
+      default: undefined,
+    },
     summary: { type: String, required: true, maxlength: 500 },
     status: {
       type: String,
@@ -147,6 +170,35 @@ const ApprovalActionSchema = new Schema<IApprovalAction>(
 
 ApprovalActionSchema.index({ podId: 1, status: 1 });
 ApprovalActionSchema.index({ ownerUserId: 1, status: 1 });
+
+// F184: the broker's open-card guards, enforced by the store rather than by a
+// read before the write. Both are PARTIAL on `toolCallSlot` existing, so they
+// see only rows written by F184 code: rows already in the collection (which
+// can hold duplicates, since nothing deduped tool calls before F180) are not
+// indexed, and the boot-time autoIndex build cannot fail on them. Those rows
+// leave `flagged` within their 24-hour deadline. The filters use equality and
+// `$exists` only, the operators FerretDB accepts in a partial index (ADR-034).
+const OPEN_TOOL_CALL_SLOT = {
+  actionType: 'tool_call',
+  status: 'flagged',
+  toolCallSlot: { $exists: true },
+};
+// One open approval per identical call: the key is the reuse lookup's key.
+// A missing definitionDigest indexes as null, so GitHub App calls key alike.
+ApprovalActionSchema.index(
+  {
+    podId: 1, agentUserId: 1, ownerUserId: 1, 'toolCall.grantId': 1, 'toolCall.tool': 1,
+    'toolCall.argsDigest': 1, 'toolCall.definitionDigest': 1,
+  },
+  { unique: true, name: 'tool_call_open_identity', partialFilterExpression: OPEN_TOOL_CALL_SLOT },
+);
+// At most one open row per (pod, seat, slot), and slots run 0..cap-1, so the
+// cap holds under any interleaving. Closing a row frees its slot by dropping
+// it out of the partial index: there is no counter to release or drift.
+ApprovalActionSchema.index(
+  { podId: 1, agentUserId: 1, toolCallSlot: 1 },
+  { unique: true, name: 'tool_call_open_slot', partialFilterExpression: OPEN_TOOL_CALL_SLOT },
+);
 
 export const ApprovalAction: Model<IApprovalAction> =
   (mongoose.models.ApprovalAction as Model<IApprovalAction>)

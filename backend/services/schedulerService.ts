@@ -564,13 +564,23 @@ class SchedulerService {
     const approvalToolCallSweepJob: CronJob = cron.schedule(
       '*/5 * * * *',
       async () => {
+        // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
+        const {
+          sweepExpiredToolCallApprovals, sweepCardlessToolCallApprovals,
+        } = require('./approvalActionService');
+        // Each sweep frees slots on its own, so one failing never skips the other.
         try {
-          // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-          const { sweepExpiredToolCallApprovals } = require('./approvalActionService');
           const expired = await sweepExpiredToolCallApprovals();
           if (expired) console.log(`[approval] expired tool calls=${expired}`);
         } catch (error) {
           console.error('[approval] tool-call expiry sweep failed:', error);
+        }
+        try {
+          // F184: a row whose card never posted holds a seat's open slot.
+          const mooted = await sweepCardlessToolCallApprovals();
+          if (mooted) console.log(`[approval] mooted cardless tool calls=${mooted}`);
+        } catch (error) {
+          console.error('[approval] tool-call cardless sweep failed:', error);
         }
       },
       { scheduled: false, timezone: 'UTC' },
