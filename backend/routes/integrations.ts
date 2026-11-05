@@ -502,16 +502,22 @@ router.get('/:podId', listIntegrationsRateLimit, auth, async (req: AuthReq, res:
 const retireDroppedDiscordRows = async (
   keepId: unknown, podId: unknown, userId: string, serverId: string, channelId: string,
 ): Promise<void> => {
+  // Every value comes from the request path: pin each to the shape it must
+  // have, so the filter can only ever hold plain strings.
+  const guild = String(serverId);
+  const channel = String(channelId);
+  const pod = String(podId);
+  if (!/^\d{17,20}$/.test(guild) || !/^\d{17,20}$/.test(channel) || !/^[a-f0-9]{24}$/i.test(pod)) return;
   let dropped: Array<{ _id: unknown }> = [];
   try {
     dropped = await Integration.find({
-      _id: { $ne: keepId },
+      _id: { $ne: String(keepId) },
       type: 'discord',
       isActive: true,
-      podId,
-      createdBy: userId,
-      'config.serverId': serverId,
-      'config.channelId': channelId,
+      podId: pod,
+      createdBy: String(userId),
+      'config.serverId': guild,
+      'config.channelId': channel,
       status: { $in: ['error', 'disconnected'] },
     }) as Array<{ _id: unknown }>;
   } catch (error) {
