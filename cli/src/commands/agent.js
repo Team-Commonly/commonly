@@ -1494,15 +1494,29 @@ export const runMemoryImport = async ({
 const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is exactly NO_REPLY. '
   + 'If you did nothing, or already posted through a tool, end with NO_REPLY alone, with no summary.';
 
-// Prod walk, 2026-11-05: a person @mentioned a Claude Code seat in the main
-// channel and the seat answered through commonly_post_message with
+// Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
+// top-level message, and the seat answered through commonly_post_message with
 // threadRootId set to that message, so the answer sat in a collapsed thread
 // under it. The kernel's mention cue teaches threadRootId as a verb but never
-// says which messages it is for. A `chat.mention` is a main-channel message by
-// construction (a thread mention is `thread.mention`), so each one says where
-// its answer goes, beside the message it answers.
-const ANSWER_IN_CHANNEL = '[This message is in the main channel, not a thread: answer it in the main channel. '
-  + 'If you post through commonly_post_message, leave threadRootId unset.]';
+// says which messages it is for, so each top-level mention says where its
+// answer goes, beside the message it answers.
+//
+// `chat.mention` alone is not "top-level": the kernel sends a chat-thread
+// mention as chat.mention with `payload.threadRootId`, a 1:1 DM as chat.mention
+// with `source: 'dm'`, and some wakes (open-work reminders) as chat.mention
+// with no message at all. Only a message with no thread, outside a DM, gets it.
+// The line still allows the overflow rule (post the point, continue under your
+// own root): only threading under the person's message is ruled out.
+const ANSWER_IN_CHANNEL = '[This message is top-level in the channel, not in a thread: post your answer top-level. '
+  + 'Never set threadRootId to this message\'s id; a long answer may continue under your own top-level post.]';
+
+export const answersInChannel = (entry) => {
+  const payload = entry?.event?.payload || {};
+  return entry?.event?.type === 'chat.mention' && !entry.readOnly
+    && Boolean(payload.messageId)
+    && (payload.threadRootId === undefined || payload.threadRootId === null || payload.threadRootId === '')
+    && payload.source !== 'dm' && !payload.dmKind;
+};
 
 const extractPrompt = (event) => {
   const p = event.payload || {};
@@ -2865,7 +2879,7 @@ export const performRun = ({
           + '[This item is read-only context: a peer won its binding claim. Do not act on it.]\n'
         : (entry.peerFrame ? `${entry.peerFrame}\n` : '');
       const body = entry.prompt || '[No usable prompt was delivered for this item.]';
-      const channelLine = entry.event.type === 'chat.mention' && !entry.readOnly ? `\n${ANSWER_IN_CHANNEL}` : '';
+      const channelLine = answersInChannel(entry) ? `\n${ANSWER_IN_CHANNEL}` : '';
       const deliveryId = entry.event.payload?.deliveryId;
       const checkpoint = typeof deliveryId === 'string' && deliveryId
         ? `\n[After completed tool-side work or intentional NO_REPLY for only this item, call commonly_checkpoint_event(${JSON.stringify({

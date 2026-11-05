@@ -1457,32 +1457,41 @@ describe('performRun', () => {
     expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
   });
 
-  // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat in the main
-  // channel, and the seat answered through commonly_post_message with
+  // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat with a
+  // top-level message, and the seat answered through commonly_post_message with
   // threadRootId set to that message, so the answer sat in a collapsed thread.
-  // The kernel's cue teaches threadRootId as a verb but never says a main-channel
-  // message is answered in the main channel; the wrapper names it per item.
-  const ANSWER_IN_CHANNEL = '[This message is in the main channel, not a thread: answer it in the main channel. '
-    + 'If you post through commonly_post_message, leave threadRootId unset.]';
+  // The wrapper names, per item, where a top-level mention's answer goes. The
+  // kernel also sends chat-thread mentions and 1:1 DMs as chat.mention, so the
+  // payload decides, not the type (gate review of this change).
+  const ANSWER_IN_CHANNEL = '[This message is top-level in the channel, not in a thread: post your answer top-level. '
+    + "Never set threadRootId to this message's id; a long answer may continue under your own top-level post.]";
 
-  test('a main-channel mention is answered in the main channel, never threaded under it', async () => {
-    const prompt = await firstPromptFor([makeEvent({ _id: 'evt-mention-channel' })]);
+  test('a top-level mention is answered top-level, never threaded under it', async () => {
+    const prompt = await firstPromptFor([makeEvent({
+      _id: 'evt-mention-channel', payload: { content: '@seat what folder are you in?', messageId: '129285' },
+    })]);
     expect(prompt).toContain(ANSWER_IN_CHANNEL);
   });
 
-  test('an ambient message, a DM and a heartbeat get no main-channel line', async () => {
-    const ambient = await firstPromptFor([makeEvent({
+  test.each([
+    ['a mention inside a chat thread', {
+      _id: 'evt-mention-thread', payload: { content: '@seat in here', messageId: '200', threadRootId: '41' },
+    }],
+    ['a 1:1 DM, which the kernel also sends as chat.mention', {
+      _id: 'evt-mention-dm', payload: { content: 'hi', messageId: '201', source: 'dm', dmKind: 'agent-room' },
+    }],
+    ['a chat.mention wake that names no message', {
+      _id: 'evt-mention-nomsg', payload: { content: 'You have open work.' },
+    }],
+    ['an ambient message', {
       _id: 'evt-ambient-channel', type: 'message.posted', payload: { content: 'chatter', threadRootId: '41' },
-    })]);
-    expect(ambient).not.toContain(ANSWER_IN_CHANNEL);
-    const dm = await firstPromptFor([makeEvent({
-      _id: 'evt-dm-channel', type: 'dm.message', payload: { content: 'hi in the DM' },
-    })]);
-    expect(dm).not.toContain(ANSWER_IN_CHANNEL);
-    const heartbeat = await firstPromptFor([makeEvent({
+    }],
+    ['a heartbeat', {
       _id: 'evt-hb-channel', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' },
-    })]);
-    expect(heartbeat).not.toContain(ANSWER_IN_CHANNEL);
+    }],
+  ])('%s gets no top-level line', async (_label, overrides) => {
+    const prompt = await firstPromptFor([makeEvent(overrides)]);
+    expect(prompt).not.toContain(ANSWER_IN_CHANNEL);
   });
 
   test('the agent.ask.response prompt says its final text is posted unless it is exactly NO_REPLY', async () => {
