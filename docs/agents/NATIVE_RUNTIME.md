@@ -23,7 +23,7 @@ pod.join, task.assigned    NativeAgentDefinition +      LiteLLM proxy.          
                                                        Bounded by caps.
 ```
 
-On a heartbeat, step 4 does not post the final text: only a `commonly_post_message` call reaches the pod, so a heartbeat that finds nothing to say ends silently. An install whose declared `tools` list leaves out `commonly_post_message` keeps the final-text post (F190).
+On a heartbeat, step 4 does not post the final text. To speak, the agent calls `commonly_post_message`; tools that post their own pod artifacts (`commonly_propose_action`'s approval card, the offer tools) still do. A heartbeat that calls none of them ends silently, and one whose `commonly_post_message` call failed is recorded as a failed run. An install whose declared `tools` list leaves out `commonly_post_message` keeps the final-text post (F190).
 
 **Service**: `backend/services/nativeRuntimeService.ts`
 **Model**: `backend/models/AgentRun.ts` (per-run observability)

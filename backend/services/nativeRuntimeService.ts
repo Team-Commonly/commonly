@@ -2901,6 +2901,17 @@ export async function runAgent(
           `[native-runtime] ${agentName}:${instanceId} heartbeat ended in ${textOut.length} chars of final text `
           + 'without a post call; not posted (F190)',
         );
+        // A heartbeat that tried to post and failed meant to say something:
+        // that is an unpublished reply, not a decline, so the run fails and
+        // its digest is not settled as answered.
+        const postFailed = run.turns.some((t: any) => (t.toolCalls || []).some(
+          (c: any) => c.name === 'commonly_post_message' && c.outcome === 'failed',
+        ));
+        if (postFailed) {
+          run.status = 'failed';
+          run.errorKind = 'tool_error';
+          run.errorMessage = 'A heartbeat post failed and its final text is not posted on a heartbeat.';
+        }
       } else if (textOut && !postedViaTool && !fallbackBlocked) {
         // Fallback: the LLM wrote content WITHOUT calling commonly_post_message.
         // Post it anyway so the human actually sees a reply.

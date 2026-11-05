@@ -704,6 +704,18 @@ describe('nativeRuntimeService — hosted installs on the native engine', () => 
         }));
       });
 
+      test('a heartbeat whose post call failed is a failed run, not a silent decline', async () => {
+        AgentMessageService.postMessage.mockRejectedValueOnce(new Error('pod write failed'));
+        axios.post
+          .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_post_message', { podId: POD, content: 'Standup moved to 3pm.' })))
+          .mockResolvedValueOnce(finalText('I tried to post the standup change.'));
+        const result = await runAgent(hostedInstall(), heartbeat);
+        expect(result.status).toBe('failed');
+        expect(savedRun.errorKind).toBe('tool_error');
+        // The failed tool attempt only: the heartbeat's final text is not a fallback post.
+        expect(AgentMessageService.postMessage).toHaveBeenCalledTimes(1);
+      });
+
       test('a heartbeat that calls commonly_post_message posts exactly that, once', async () => {
         axios.post
           .mockResolvedValueOnce(toolCalls(call('c1', 'commonly_post_message', { podId: POD, content: 'Standup moved to 3pm.' })))
