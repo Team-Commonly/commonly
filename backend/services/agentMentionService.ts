@@ -1463,7 +1463,7 @@ const followMentionedThreadUsers = async (
  */
 const enqueueWakeOnMessage = async ({
   podId, message, rawContent, userId, username, source, installations, sender, excludeKeys, authorFrame, resolvedBotUserIds,
-  replyToMessageId = null,
+  replyToMessageId = null, addressedElsewhere = false,
 }: {
   podId: string;
   message: EnqueueMentionsOptions['message'];
@@ -1477,6 +1477,10 @@ const enqueueWakeOnMessage = async ({
   authorFrame: { username: string; createdAt: unknown; messageId: string | undefined };
   resolvedBotUserIds?: Map<string, string>;
   replyToMessageId?: string | null;
+  // A person @mentioned one or more agents in this message. Those agents got
+  // the mention; for everyone else the message was addressed elsewhere, so it
+  // is a digest, not an ambient turn.
+  addressedElsewhere?: boolean;
 }): Promise<string[]> => {
   const woken: string[] = [];
   const senderKey = sender?.isBot
@@ -1619,6 +1623,7 @@ const enqueueWakeOnMessage = async ({
     if (excludeKeys?.has(key)) return;
     const addressed = addressedTargets.has(key);
     let deliveryMode = addressed || (wakeOnMessageEnabled(inst)
+      && !addressedElsewhere
       && (!humanOnlyWake(inst) || sender?.isBot === false)) ? 'wake' : 'digest';
     // Loop controls suppress a model turn, not receipt. The update remains
     // available in the next digest for this seat.
@@ -2354,6 +2359,9 @@ const enqueueMentions = async ({
     try {
       woken = await enqueueWakeOnMessage({
         podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: enqueuedIdentityKeys, authorFrame, resolvedBotUserIds, replyToMessageId,
+        // Explicit @mentions only: a reply edge to one agent is addressing
+        // too, but it has always left the room's opt-ins their ambient turn.
+        addressedElsewhere: sender?.isBot === false && deliveredAgentMentionTargets.size > 0,
       });
     } catch (error) {
       console.warn('[wake-on-message] fan-out failed:', (error as Error).message);

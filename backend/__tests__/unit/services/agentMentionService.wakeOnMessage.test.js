@@ -216,7 +216,7 @@ describe('wake-on-message (ADR-018 D8)', () => {
     }
   });
 
-  test('a mention-enqueued target is not double-delivered; other opt-ins still wake', async () => {
+  test('a mention-enqueued target is not double-delivered', async () => {
     mockInstallations([
       install('seat-a', { optIn: true }),
       install('seat-b', { optIn: true }),
@@ -230,9 +230,63 @@ describe('wake-on-message (ADR-018 D8)', () => {
     });
 
     expect(res.enqueued).toEqual(['seat-a']);
-    expect(res.woken).toEqual(['seat-b']);
     expect(mentionCalls().map((c) => c.agentName)).toEqual(['seat-a']);
     expect(wakeCalls().map((c) => c.agentName)).toEqual(['seat-b']);
+  });
+
+  describe('a person @mentioning other agents has addressed them, not the room', () => {
+    test('an opt-in who was not mentioned gets the message as a digest, not a turn', async () => {
+      mockInstallations([
+        install('seat-a', { optIn: true }),
+        install('scout', { optIn: true }),
+      ]);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: '@seat-a can you look at the deploy', id: 'msg-o1' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      expect(mentionCalls().map((c) => c.agentName)).toEqual(['seat-a']);
+      expect(res.woken).toEqual([]);
+      expect(wakeCalls().map((c) => [c.agentName, c.deliveryMode])).toEqual([['scout', 'digest']]);
+    });
+
+    test('the same holds for a human-only opt-in (Scout\'s own config)', async () => {
+      mockInstallations([
+        install('seat-a'),
+        {
+          agentName: 'scout',
+          instanceId: 'default',
+          displayName: 'Scout',
+          config: { wakeOnMessage: { enabled: true, humanOnly: true } },
+        },
+      ]);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: '@seat-a hello', id: 'msg-o2' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      expect(mentionCalls().map((c) => c.agentName)).toEqual(['seat-a']);
+      expect(res.woken).toEqual([]);
+    });
+
+    test('a plain line from a person, mentioning no one, still wakes the opt-in', async () => {
+      mockInstallations([install('seat-a'), install('scout', { optIn: true })]);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1',
+        message: { content: 'what should I do first here', id: 'msg-o3' },
+        userId: 'user-1',
+        username: 'alice',
+      });
+
+      expect(res.woken).toEqual(['scout']);
+    });
   });
 
   test('an agent never wakes on its own post', async () => {
@@ -406,17 +460,21 @@ describe('wake-on-message (ADR-018 D8)', () => {
       // qualifies under isCollaborativePod — and the mention half proves it
       // did. Without that control, `not.toContain` would also pass on a pod
       // that simply failed the heuristic, which is not what is being tested.
-      mockPod('chat', ['user-1', 'seat-a', 'seat-b']);
+      // An agent author: a person's @mention now leaves the other opt-ins a
+      // digest, so only an agent's message raises a mention and a wake at once.
+      mockPod('chat', ['user-1', 'seat-a', 'seat-b', 'seat-c']);
+      mockBotSender('seat-c');
       mockInstallations([
         install('seat-a', { optIn: true }),
         install('seat-b', { optIn: true }),
+        install('seat-c'),
       ]);
 
       await AgentMentionService.enqueueMentions({
         podId: 'pod-1',
         message: { content: 'hey @seat-a can you look', id: 'msg-c' },
-        userId: 'user-1',
-        username: 'alice',
+        userId: 'bot-1',
+        username: 'seat-c',
       });
 
       const mention = mentionCalls().find((c) => c.agentName === 'seat-a');

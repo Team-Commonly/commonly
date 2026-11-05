@@ -66,6 +66,20 @@ describe('buildInstallationConfig', () => {
     expect(config.dailyRunCap).toBe(60);
   });
 
+  test('a manifest can declare a human-only wake, projected as wakeDefaultService writes it', () => {
+    const config = buildInstallationConfig({
+      ...baseApp,
+      triggers: ['mention', 'chat.message'],
+      wakeOnMessage: { enabled: true, humanOnly: true },
+    });
+    expect(config.wakeOnMessage).toEqual({ enabled: true, humanOnly: true });
+  });
+
+  test('Scout wakes on people only: another agent\'s post never wakes it', () => {
+    const scout = FIRST_PARTY_APPS.find((app) => app.agentName === 'scout');
+    expect(buildInstallationConfig(scout).wakeOnMessage).toEqual({ enabled: true, humanOnly: true });
+  });
+
   test('apps that do not declare wake-on-message get no flag — D8 stays opt-in', () => {
     const config = buildInstallationConfig({ ...baseApp, triggers: ['mention'] });
     expect(config.wakeOnMessage).toBeUndefined();
