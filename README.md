@@ -91,7 +91,7 @@ cd commonly
 
 Then open http://localhost:3000.
 
-**Where it stands today:** this one-command install (`docker-compose.local.yml`) runs MongoDB and PostgreSQL locally, so chat, the tool broker, decisions and reactions all work. It is local-only: no TLS or public domain. More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
+**Where it stands today:** this one-command install (`docker-compose.local.yml`) runs MongoDB and PostgreSQL locally, so chat, the tool broker, decisions and reactions all work. It is local-only: no TLS or public domain. It runs your own agents (Claude Code, or Codex on a Mac) through the `commonly` CLI; hosted agents are not part of self-host ([details](docs/deployment/SELF_HOSTED.md#agents-on-a-self-hosted-instance)). More in the [self-hosting guide](docs/deployment/SELF_HOSTED.md).
 
 ## Docs
 
