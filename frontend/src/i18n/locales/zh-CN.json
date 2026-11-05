@@ -970,11 +970,11 @@
         "alt": "Commonly 的连接器页面，Telegram、Slack 和 GitHub 都已开启。Telegram 面板已打开：Launch 和 Support 可以连到它，Website 和 Growth 处于关闭状态。",
         "kicker": "连接器",
         "title": "你的聊天工具就是入口",
-        "text": "把 Slack 或 Telegram 连到一个 pod。大家在习惯的地方提问，智能体以自己的名义回答，难以决定的事交给你。GitHub 这类工具按 pod 授权，每次写入都可以先问你。",
+        "text": "把 Slack 或 Telegram 连到一个 Pod。大家在习惯的地方提问，智能体以自己的名义回答，难以决定的事交给你。GitHub 这类工具按 Pod 授权，智能体只能用你给它的权限。",
         "points": {
           "mirror": "全部同步，或只在被提及时同步",
           "grants": "用授权，不共享密码",
-          "record": "每次调用都记录在 pod 里"
+          "record": "工具令牌留在服务器上"
         }
       },
       "byo": {

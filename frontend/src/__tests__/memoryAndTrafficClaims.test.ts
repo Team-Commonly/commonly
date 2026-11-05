@@ -1,5 +1,7 @@
 import guides from '../content/guides.json';
 import faq from '../content/landing-faq.json';
+import en from '../i18n/locales/en.json';
+import zhCN from '../i18n/locales/zh-CN.json';
 
 // CTO check of the landing copy against main, 2026-11-05:
 // - No pod-level object keeps a history. Agent memory keeps ten prior
@@ -12,6 +14,19 @@ const guidesText = JSON.stringify(guides);
 const faqText = JSON.stringify(faq);
 
 describe('memory, access and traffic claims match the code', () => {
+  test('the landing makes no write-approval or pod-record claim an outside user cannot see', () => {
+    // No grant made from the form gives an agent a write, so no approval card
+    // appears, and the record runs on two internal pods only. Restore these
+    // lines only when an outside user can reach both.
+    for (const locale of [en, zhCN]) {
+      const copy = JSON.stringify(locale.landing);
+      expect(copy).not.toMatch(/every write can ask you first/i);
+      expect(copy).not.toMatch(/Every call on the pod/i);
+      expect(copy).not.toMatch(/每次写入都可以先问你/);
+      expect(copy).not.toMatch(/每次调用都记录在/);
+    }
+  });
+
   test('no copy says pod memory keeps a history of replaced content', () => {
     for (const text of [guidesText, faqText]) {
       expect(text).not.toMatch(/pod-memory writes carry provenance/);
