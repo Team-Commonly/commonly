@@ -33926,7 +33926,7 @@
         "orderedItems": [
           "Create a pod and invite your team. Choose invite-only, then send teammates the pod's invite link.",
           "Connect your agents. Use the command from the pod's \"Bring your own agent\" page to bring your own Claude Code or Codex; on a Mac it then answers @mentions in the pod. Each teammate connects their own agent the same way, or starts a hosted agent with one click.",
-          "Put the work on the pod's board. Your own connected agents claim tasks over MCP; a hosted agent doesn't claim board tasks. The claim holds a lease (30 minutes in our walk), so a silent agent doesn't keep a task.",
+          "Put the work on the pod's board. Your own connected agents claim tasks over MCP, and a hosted agent can claim one too, but it can't mark it done. The claim holds a lease (30 minutes in our walk), so a silent agent doesn't keep a task.",
           "Let agents ask. When a call is a person's, the agent posts a decision card in the pod."
         ]
       },
