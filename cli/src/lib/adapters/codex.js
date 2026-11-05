@@ -79,6 +79,7 @@ import { resolveSkillSource, skillsAsText } from '../skill-prompt.js';
 import { isLegacySandboxTrust, normalizeSandboxTrust, refuseWorkspaceTrust } from '../environment.js';
 import { adapterFailure, spawnCredentials } from '../upstream-refusal.js';
 import { PUBLIC_SEAT_WITHHELD_TOOLS } from '../public-withheld-tools.js';
+import { startProviderProxy } from '../provider-proxy.js';
 import { resolveLaunch, resolveMcpCommand, resolveWindowsCommandWithReason } from '../windows-command.js';
 
 // Default timeout for a single codex spawn (exec mode).
@@ -623,6 +624,37 @@ const publicPermissionProfileFlags = (
   ];
 };
 
+// D250: a public seat's route to a provider gateway. `--ignore-user-config`
+// leaves no config.toml provider, and codex-cli 0.162.1 ignores
+// OPENAI_BASE_URL, so before this a public seat could reach only OpenAI. With
+// CODEX_API_KEY in the seat's environment (codex's own name for an exec key),
+// the key stays on the host behind the per-turn loopback proxy, as a Claude
+// seat's ANTHROPIC_API_KEY does, and codex gets a provider entry naming the
+// proxy plus a per-turn token in an env var of our own. Measured on 0.162.1
+// with `--ignore-user-config`: these two `-c` overrides sent
+// `POST <base_url>/responses` with `Authorization: Bearer $<env_key>`.
+// Without the key the seat keeps the person's Codex login, as before.
+const CODEX_PROXY_PROVIDER = 'commonly_proxy';
+const CODEX_PROVIDER_TOKEN_ENV = 'COMMONLY_CODEX_PROVIDER_TOKEN';
+const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+
+const publicProviderRoute = (source = {}) => {
+  const key = source.CODEX_API_KEY;
+  if (typeof key !== 'string' || !key) return null;
+  return { baseURL: source.OPENAI_BASE_URL || OPENAI_DEFAULT_BASE_URL, key };
+};
+
+const providerRouteFlags = (proxy) => {
+  if (!proxy) return [];
+  // codex appends `/responses` itself, so a trailing slash would double it.
+  const baseUrl = proxy.baseURL.replace(/\/+$/, '');
+  return [
+    '-c', `model_provider=${toml(CODEX_PROXY_PROVIDER)}`,
+    '-c', `model_providers.${CODEX_PROXY_PROVIDER}={name=${toml('Commonly host proxy')},`
+      + `base_url=${toml(baseUrl)},env_key=${toml(CODEX_PROVIDER_TOKEN_ENV)},wire_api="responses"}`,
+  ];
+};
+
 // Build the argv after the `codex` binary. Resume vs new turn is a
 // subcommand-level distinction in modern codex, not an option flag — keep
 // that detail isolated here so the spawn path stays linear.
@@ -637,6 +669,7 @@ const buildArgs = ({
   commitAttributionEnv = null,
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
+  providerProxy = null,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -662,6 +695,7 @@ const buildArgs = ({
         mcpReadDirectories,
         codexHelperReadPaths,
       ),
+      ...providerRouteFlags(providerProxy),
     ]
     : ['--dangerously-bypass-approvals-and-sandbox'];
   const common = [
@@ -871,6 +905,7 @@ export default {
       root: dir,
     });
 
+    let providerProxy = null;
     try {
       const mcp = buildMcpOverrideArgs(ctx.environment?.mcp, {
         runtimeToken: ctx.runtimeToken,
@@ -901,6 +936,26 @@ export default {
       const publicCodexHome = publicSandboxMode !== null
         ? await preparePublicCodexHome(ctx, childEnv)
         : null;
+      if (publicSandboxMode !== null) {
+        const source = ctx.env || process.env;
+        const route = publicProviderRoute(source);
+        if (route) {
+          providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
+            provider: { baseURL: route.baseURL },
+            keyMaterial: route.key,
+            wire: 'openai-responses',
+            adapterLabel: 'Codex',
+          });
+          // codex talks to the proxy alone, so no provider key of any name
+          // stays in its environment; it gets the per-turn token instead.
+          for (const name of CODEX_PROVIDER_KEY_ENVS) delete childEnv[name];
+          childEnv[CODEX_PROVIDER_TOKEN_ENV] = providerProxy.token;
+        } else if (source.OPENAI_BASE_URL) {
+          // eslint-disable-next-line no-console
+          console.warn('[codex] OPENAI_BASE_URL is set, but a public Codex seat routes through it only with '
+            + 'CODEX_API_KEY beside it; this turn uses your Codex login.');
+        }
+      }
       const args = buildArgs({
         sessionId: ctx.sessionId || null,
         prompt: fullPrompt,
@@ -912,6 +967,7 @@ export default {
         effort: ctx.environment?.effort,
         commitAttributionEnv: ctx.commitAttributionEnv,
         codexHelperReadPaths: publicCodexHome?.helperReadPaths || [],
+        providerProxy,
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
@@ -947,7 +1003,8 @@ export default {
         // authenticates with. Snapshot HERE — `withholdRuntimeCredential` above
         // already removed the token from the child copy, and after that there is
         // nothing left to compare a tail against.
-        credentials: spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS),
+        // The per-turn proxy token is one too: codex was handed it in place of the key.
+        credentials: [...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), providerProxy?.token].filter(Boolean),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,
@@ -976,6 +1033,7 @@ export default {
         ...(typeof effort === 'string' && effort ? { effort } : {}) };
       return { text, newSessionId, ...(Object.keys(stats).length ? { stats } : {}) };
     } finally {
+      try { await providerProxy?.close(); } catch { /* ignore */ }
       try { await rm(dir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
   },

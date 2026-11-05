@@ -1,8 +1,16 @@
 /**
  * The Linux prod walk (byo-linux.yml): the Bring your own page's Linux lines
- * for Claude Code, pasted into one bash process on a GitHub-hosted Ubuntu
- * runner against the live API with a real model, as a Linux user would. Only
- * the published CLI is walked (the page's `@latest` install line, verbatim).
+ * for one harness, Claude Code or Codex (COMMONLY_BYO_HARNESS, D250), pasted
+ * into one bash process on a GitHub-hosted Ubuntu runner against the live API
+ * with a real model, as a Linux user would. Only the published CLI is walked
+ * (the page's `@latest` install line, verbatim).
+ *
+ * A Codex seat takes the same gateway on CODEX_API_KEY and OPENAI_BASE_URL:
+ * the CLI keeps the key behind its per-turn proxy on the Responses wire, and
+ * codex runs under its own permission profile. The model is still the agent's
+ * saved model, reached through the gateway's Responses bridge. A failed walk
+ * names whose failure it was (prodOutcome's `cause`): the model route, the
+ * harness, or Commonly's delivery.
  *
  * The CLI runs a public Claude Code seat in the bubblewrap jail (F96). This
  * walk takes the API-key path: ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL sit in
@@ -40,7 +48,9 @@ import { tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
-import { parseRecorderLog, prodInputs, prodOutcome, redact } from './windows-byo-verdict.mjs';
+import {
+  codexRouteEnv, describeCause, HARNESS_LABELS, parseRecorderLog, prodInputs, prodOutcome, redact, walkHarness,
+} from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const API = 'https://api.commonly.me';
@@ -74,18 +84,27 @@ export const liftConnectSnippet = (pageSource) => {
   ].join('\n'))();
 };
 
-/** What is wrong with the page's Linux lines for Claude Code, if anything. */
-export const linuxLineProblems = (lines, { agentName, apiUrl, token }) => {
+/** What is wrong with the page's Linux lines for the walked harness, if anything. */
+export const linuxLineProblems = (lines, { agentName, apiUrl, token, adapter = 'claude' }) => {
   const problems = [];
   if (lines.length !== 4) return [`the page's Linux lines are ${lines.length} lines, not 4: ${JSON.stringify(lines)}`];
   if (!/^npm i -g \S+$/.test(lines[0])) problems.push(`line 1 is not an npm install: ${lines[0]}`);
   if (lines[1] !== `export COMMONLY_API_URL=${apiUrl}`) problems.push(`line 2 does not set COMMONLY_API_URL: ${lines[1]}`);
   if (lines[2] !== `export COMMONLY_AGENT_TOKEN=${token}`) problems.push('line 3 does not set COMMONLY_AGENT_TOKEN');
-  if (lines[3] !== `commonly agent run ${agentName} --adapter claude`) {
-    problems.push(`line 4 is not a sandboxed Claude Code run: ${lines[3]}`);
+  if (lines[3] !== `commonly agent run ${agentName} --adapter ${adapter}`) {
+    problems.push(`line 4 is not a sandboxed ${HARNESS_LABELS[adapter] || adapter} run: ${lines[3]}`);
   }
   return problems;
 };
+
+/**
+ * Where the gateway and its key go for each harness: Claude Code on
+ * ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL, Codex on CODEX_API_KEY and
+ * OPENAI_BASE_URL (D250). Either way the CLI keeps the key behind its proxy.
+ */
+export const linuxRouteEnv = (harness, { gateway, key }) => (harness === 'codex'
+  ? codexRouteEnv(gateway, key)
+  : { ANTHROPIC_API_KEY: key, ANTHROPIC_BASE_URL: gateway });
 
 /**
  * The lines as pasted, with one guard: a failed install stops the paste, so
@@ -115,13 +134,21 @@ const pageSnippet = () => liftConnectSnippet(
   readFileSync(resolve(HERE, '../../frontend/src/v2/components/V2AgentBYO.tsx'), 'utf8'),
 );
 
+// Every harness a dispatch can name, so a pull request checks the lines each walk pastes.
 const check = () => {
   const sample = { agentName: 'linux-walk', apiUrl: API, token: 'cm_agent_linux_walk_check' };
-  const lines = pageSnippet()({ os: 'linux', ...sample, adapter: 'claude' }).split('\n');
-  const problems = linuxLineProblems(lines, sample);
-  problems.forEach((p) => console.log(`::error::linux walk check: ${p}`));
-  if (!problems.length) console.log(`the page's Linux lines have the shape the walk pastes:\n  ${lines.join('\n  ').replace(sample.token, '***')}`);
-  return problems.length ? 1 : 0;
+  let failed = 0;
+  Object.keys(HARNESS_LABELS).forEach((adapter) => {
+    const lines = pageSnippet()({ os: 'linux', ...sample, adapter }).split('\n');
+    const problems = linuxLineProblems(lines, { ...sample, adapter });
+    problems.forEach((p) => console.log(`::error::linux walk check (${adapter}): ${p}`));
+    if (!problems.length) {
+      console.log(`the page's Linux lines for ${HARNESS_LABELS[adapter]} have the shape the walk pastes:\n  `
+        + `${lines.join('\n  ').replace(sample.token, '***')}`);
+    }
+    failed += problems.length;
+  });
+  return failed ? 1 : 0;
 };
 
 export const runLinuxProdWalk = async () => {
@@ -130,13 +157,16 @@ export const runLinuxProdWalk = async () => {
     return 2;
   }
   let inputs;
+  let harness;
   try {
     inputs = prodInputs(process.env, { secrets: 'BYO_LINUX_PROD' });
+    harness = walkHarness(process.env);
   } catch (err) {
     console.log(`::error::linux walk: ${err.message}`);
     return 1;
   }
   const { agentName, instanceId, podId, token, llmKey } = inputs;
+  const label = HARNESS_LABELS[harness];
   const secrets = [token, llmKey];
   const log = (line) => console.log(redact(`${new Date().toISOString()} ${line}`, secrets));
   const fail = (line) => console.log(redact(`::error::linux walk: ${line}`, secrets));
@@ -166,8 +196,9 @@ export const runLinuxProdWalk = async () => {
   }
   log(`agent token is ${agentName}/${instanceId}, installed in ${podId}`);
   if (runsAtWorkspaceTrust(who.body.installations || [])) {
-    fail('every pod this agent is in is private and invite-only, so the CLI would run it on a copied login, '
-      + 'not the API key this walk gives it. Walk it in a pod open to join or publicly readable.');
+    fail('every pod this agent is in is private and invite-only, so the CLI would run it at workspace trust '
+      + '(Claude Code on a copied login, not the API key this walk gives it; Codex not at all). '
+      + 'Walk it in a pod open to join or publicly readable.');
     return 1;
   }
 
@@ -179,29 +210,28 @@ export const runLinuxProdWalk = async () => {
     return 1;
   }
 
-  const lines = pageSnippet()({ os: 'linux', apiUrl: API, token, agentName, adapter: 'claude' }).split('\n');
-  const problems = linuxLineProblems(lines, { agentName, apiUrl: API, token });
+  const lines = pageSnippet()({ os: 'linux', apiUrl: API, token, agentName, adapter: harness }).split('\n');
+  const problems = linuxLineProblems(lines, { agentName, apiUrl: API, token, adapter: harness });
   if (problems.length) {
     problems.forEach(fail);
     return 1;
   }
   const script = linuxPasteScript(lines);
-  // A fresh home: no Claude login on it, so the CLI takes the API-key path.
+  // A fresh home: no Claude or Codex login on it, so the CLI takes the API-key path.
   const home = mkdtempSync(join(tmpdir(), 'byo-linux-home-'));
   const ackLog = join(mkdtempSync(join(tmpdir(), 'byo-linux-acks-')), 'acks.jsonl');
-  log(`pasting into bash, home ${home}:\n  ${script.join('\n  ')}`);
+  log(`pasting into bash for ${label}, home ${home}:\n  ${script.join('\n  ')}`);
 
   const env = {
     ...process.env,
     HOME: home,
-    ANTHROPIC_API_KEY: llmKey,
-    ANTHROPIC_BASE_URL: MODEL_GATEWAY,
+    ...linuxRouteEnv(harness, { gateway: MODEL_GATEWAY, key: llmKey }),
     DISABLE_AUTOUPDATER: '1',
     NODE_OPTIONS: `--import=${pathToFileURL(resolve(HERE, 'windows-byo-ack-recorder.mjs')).href}`,
     COMMONLY_BYO_ACK_LOG: ackLog,
   };
   // The token reaches the CLI through the page's own line, the key through
-  // ANTHROPIC_API_KEY; neither rides under its secret's name as well.
+  // the harness's own variable; neither rides under its secret's name as well.
   delete env.COMMONLY_BYO_PROD_AGENT_TOKEN;
   delete env.COMMONLY_BYO_PROD_LLM_KEY;
   const child = spawn('bash', ['--noprofile', '--norc', '-c', script.join('\n')], {
@@ -258,31 +288,40 @@ export const runLinuxProdWalk = async () => {
   // and cannot change what the agent's next post is told it has seen.
   let outcome = null;
   let lastRead = null;
+  let lastMessages = [];
   while (Date.now() - readyAt < ANSWER_TIMEOUT_MS && exited === null && !/circuit open; releasing/.test(out)) {
     // eslint-disable-next-line no-await-in-loop
     const page = await api(`/api/agents/runtime/pods/${podId}/messages?limit=20&before=${encodeURIComponent(new Date(Date.now() + 86_400_000).toISOString())}`)
       .catch((err) => ({ status: 0, body: {}, error: err.message }));
     lastRead = page.error || `HTTP ${page.status}`;
+    lastMessages = page.body.messages || lastMessages;
     const recorded = parseRecorderLog(existsSync(ackLog) ? readFileSync(ackLog, 'utf8') : '');
     outcome = prodOutcome({
-      messages: page.body.messages || [], agentName, readyAt, events: recorded.events, acks: recorded.acks,
+      messages: lastMessages, agentName, readyAt, events: recorded.events, acks: recorded.acks, output: out,
     });
     if (outcome.passed) break;
     // eslint-disable-next-line no-await-in-loop
     await sleep(POLL_MS);
   }
   const recorded = parseRecorderLog(existsSync(ackLog) ? readFileSync(ackLog, 'utf8') : '');
+  // Read once more after the loop: a refusal the CLI logged on its way out still names the cause.
+  if (outcome && !outcome.passed) {
+    outcome = prodOutcome({
+      messages: lastMessages, agentName, readyAt, events: recorded.events, acks: recorded.acks, output: out,
+    });
+  }
   await stop();
   if (outcome?.passed) {
     const said = String(outcome.reply.content || '');
     log(`@mention ${outcome.mention.id} by ${outcome.mention.username} answered by message ${outcome.reply.id} `
       + `in ${outcome.answerSeconds} s, event ${outcome.ack.eventId} acked HTTP ${outcome.ack.status}`);
     log(`the reply: ${JSON.stringify(said.slice(0, 300))}`);
-    log(`PASS: published @commonlyai/cli ${cliVersion} on Linux answered an @mention on ${API} with Claude Code `
-      + 'in the bubblewrap jail, on an API key');
+    log(`PASS: published @commonlyai/cli ${cliVersion} on Linux answered an @mention on ${API} with ${label} `
+      + `${harness === 'codex' ? 'under its permission profile, through the gateway' : 'in the bubblewrap jail'}, on an API key`);
     return 0;
   }
   (outcome?.problems || ['the walk ended before the pod was read']).forEach((problem) => fail(problem));
+  if (outcome?.cause) log(describeCause(outcome.cause, label));
   log(`the last read of the pod: ${lastRead || 'none'}`);
   log(`events the CLI was handed: ${JSON.stringify(recorded.events)}`);
   log(`acks the CLI sent: ${JSON.stringify(recorded.acks)}`);

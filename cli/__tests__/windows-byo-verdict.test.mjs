@@ -5,7 +5,8 @@
 // a package npm cannot install must fail the PR, not warn.
 
 import {
-  INSTALL_GUARD, installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, publishedOutcome, redact,
+  codexRouteEnv, describeCause, INSTALL_GUARD, installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, publishedOutcome,
+  redact, walkHarness,
 } from '../scripts/windows-byo-verdict.mjs';
 
 const PAGE = [
@@ -158,5 +159,103 @@ describe('the prod walk', () => {
     });
     expect(outcome.reply).toBeNull();
     expect(outcome.problems).toContain('no reply from the agent after the @mention');
+  });
+});
+
+// D250: a Codex seat reaches claude-haiku-5-5 through the gateway's Responses
+// bridge, which no walk had run before. So a failed walk says whose failure it
+// was: the model route (the gateway or model refused), the harness (the turn
+// failed with no model refusal), or Commonly (the turn never failed, but the
+// reply or the ack did not happen).
+describe('the prod verdict names whose failure it was', () => {
+  const READY = Date.parse('2026-11-05T03:00:00Z');
+  const at = (s) => new Date(READY + s * 1000).toISOString();
+  const mention = { id: '300', self: false, username: 'lily-shen', createdAt: at(20), content: '@codex-walk reply with the word codex-ok' };
+  const reply = { id: '301', self: true, username: 'codex-walk', createdAt: at(45), content: 'codex-ok' };
+  const event = { kind: 'event', eventId: 'e3', type: 'chat.mention', podId: 'p1', messageId: '300' };
+  const ack = { kind: 'ack', eventId: 'e3', status: 200, outcome: 'posted' };
+  const base = { agentName: 'codex-walk', readyAt: READY, events: [event] };
+  const failedTurn = (failureClass, message) => `2026-11-05T03:00:30Z [codex-walk] chat.mention processing failed (${failureClass}; 1 consecutive) `
+    + `— event e3 unacked; next poll in 30s: ${message}\n`;
+
+  test('a pass names no cause, and neither does a walk nobody has posted in yet', () => {
+    expect(prodOutcome({ ...base, messages: [mention, reply], acks: [ack] })).toMatchObject({ passed: true, cause: null });
+    expect(prodOutcome({ ...base, messages: [], acks: [] })).toMatchObject({ passed: false, cause: null });
+  });
+
+  test('a content refusal the CLI acked is the model route, and its notice in the pod is not a reply', () => {
+    const outcome = prodOutcome({
+      ...base, messages: [mention, reply], acks: [{ ...ack, outcome: 'no_action', reason: 'provider-refused' }],
+    });
+    expect(outcome.passed).toBe(false);
+    expect(outcome.cause).toBe('model');
+    expect(outcome.problems[0]).toMatch(/model provider refused the @mention's content/);
+  });
+
+  test('an upstream refusal the CLI acked with its status is the model route', () => {
+    const outcome = prodOutcome({
+      ...base, messages: [mention], acks: [{ ...ack, outcome: 'no_action', reason: 'upstream-refused-401', refusedStatus: 401 }],
+    });
+    expect(outcome.cause).toBe('model');
+    expect(outcome.problems[0]).toMatch(/gateway or model refused the turn \(upstream 401\)/);
+  });
+
+  test('an unacked turn the model refused is the model route, read from the CLI\'s log', () => {
+    const outcome = prodOutcome({
+      ...base, messages: [mention], acks: [],
+      output: failedTurn('configuration', 'codex turn failed (upstream 400): model claude-haiku-5-5 is not allowed'),
+    });
+    expect(outcome.cause).toBe('model');
+    expect(outcome.problems[0]).toMatch(/gateway or model refused the turn \(configuration, upstream 400\)/);
+    expect(outcome.problems).toContain('the @mention was never acknowledged');
+    // The failure's own text stays in the dump; the verdict names only its class and status.
+    expect(outcome.problems.join('\n')).not.toMatch(/not allowed/);
+  });
+
+  test('the host proxy refusing a route codex called is the model route', () => {
+    const outcome = prodOutcome({
+      ...base, messages: [mention], acks: [],
+      output: '[codex] provider proxy refused POST /v1/chat/completions\n',
+    });
+    expect(outcome.cause).toBe('model');
+  });
+
+  test('a turn that failed with no model refusal is the harness', () => {
+    const outcome = prodOutcome({
+      ...base, messages: [mention], acks: [],
+      output: failedTurn('runtime', 'codex: windows sandbox setup failed'),
+    });
+    expect(outcome.cause).toBe('harness');
+    expect(outcome.problems[0]).toMatch(/the agent's turn failed \(runtime\) without a model refusal/);
+  });
+
+  test('the log line names each cause in words, and none for a pass', () => {
+    expect(describeCause('model', 'Codex')).toMatch(/model route failed .*not Commonly/);
+    expect(describeCause('harness', 'Codex')).toMatch(/^verdict: Codex's turn failed without a model refusal/);
+    expect(describeCause('commonly', 'Codex')).toMatch(/Commonly's delivery/);
+    expect(describeCause(null)).toBeNull();
+  });
+
+  test('with no failed turn in the log, a missing reply or ack is Commonly\'s delivery', () => {
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: 'polling https://api.commonly.me for events\n' }))
+      .toMatchObject({ passed: false, cause: 'commonly' });
+    expect(prodOutcome({ ...base, messages: [mention, reply], acks: [] }))
+      .toMatchObject({ passed: false, cause: 'commonly', problems: ['the @mention was never acknowledged'] });
+  });
+});
+
+// D250: each walk runs one harness, named by the dispatch.
+describe('the walk\'s harness', () => {
+  test('comes from the dispatch, Claude Code by default, and nothing else is walked', () => {
+    expect(walkHarness({})).toBe('claude');
+    expect(walkHarness({ COMMONLY_BYO_HARNESS: '' })).toBe('claude');
+    expect(walkHarness({ COMMONLY_BYO_HARNESS: 'codex' })).toBe('codex');
+    expect(() => walkHarness({ COMMONLY_BYO_HARNESS: 'goose' })).toThrow(/harness must be claude or codex/);
+  });
+
+  test('Codex reaches the gateway on CODEX_API_KEY and OPENAI_BASE_URL, at its /v1 path', () => {
+    expect(codexRouteEnv('https://litellm.commonly.me', 'sk-k'))
+      .toEqual({ CODEX_API_KEY: 'sk-k', OPENAI_BASE_URL: 'https://litellm.commonly.me/v1' });
+    expect(codexRouteEnv('http://127.0.0.1:9/', 'sk-k').OPENAI_BASE_URL).toBe('http://127.0.0.1:9/v1');
   });
 });

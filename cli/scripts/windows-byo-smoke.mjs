@@ -31,6 +31,12 @@
  * API with a real model instead, and a person posts the @mention: see
  * windows-byo-prod.mjs.
  *
+ * COMMONLY_BYO_HARNESS=codex walks the page's Codex lines instead (D250): the
+ * same four lines with `--adapter codex` and no `--unsandboxed`, and a stub
+ * Responses API as the model, named by CODEX_API_KEY beside OPENAI_BASE_URL
+ * in the CLI's environment (the CLI keeps the key behind its proxy). Codex is
+ * the real one, installed from npm by the workflow.
+ *
  * It installs global packages and writes Claude Code's managed settings.
  * Never run it on a machine you use.
  */
@@ -42,13 +48,23 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import { runProdWalk } from './windows-byo-prod.mjs';
-import { installExitFrom, pasteScript, publishedOutcome } from './windows-byo-verdict.mjs';
+import {
+  codexRouteEnv, HARNESS_LABELS, installExitFrom, pasteScript, publishedOutcome, walkHarness,
+} from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOKEN = 'cm_agent_windows_byo_smoke';
 const AGENT = 'win-byo';
 const POD = '6a0000000000000000000164';
-const REPLY = 'Hello from Claude Code on Windows (D164 stub model).';
+let HARNESS;
+try {
+  HARNESS = walkHarness(process.env);
+} catch (err) {
+  console.error(`windows-byo-smoke: ${err.message}`);
+  process.exit(1);
+}
+const LABEL = HARNESS_LABELS[HARNESS];
+const REPLY = `Hello from ${LABEL} on Windows (D164 stub model).`;
 const LEG_TIMEOUT_MS = 8 * 60_000;
 
 // ── the page's lines ──────────────────────────────────────────────────────
@@ -85,7 +101,7 @@ if (!process.env.CI) {
   process.exit(2);
 }
 if (process.env.COMMONLY_BYO_TARGET === 'prod') {
-  process.exit(await runProdWalk({ pageConnectSnippet }));
+  process.exit(await runProdWalk({ pageConnectSnippet, harness: HARNESS }));
 }
 
 const log = (line) => console.log(`${new Date().toISOString()} ${line}`);
@@ -99,7 +115,8 @@ const readBody = (req) => new Promise((r) => {
 });
 
 // ── the stub model ────────────────────────────────────────────────────────
-// Every Messages call gets the same one-line answer, streamed when asked.
+// Every Messages call gets the same one-line answer, streamed when asked, and
+// so does every Responses call (Codex, which always streams).
 const model = { paths: [] };
 const sse = (res, modelName) => {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -117,10 +134,31 @@ const sse = (res, modelName) => {
   send('message_stop', {});
   res.end();
 };
+// The Responses stream codex-cli 0.162.1 completes a turn on (measured against
+// a stub like this one before it was written here).
+const responsesSse = (res) => {
+  res.writeHead(200, { 'content-type': 'text/event-stream' });
+  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify({ type: event, ...data })}\n\n`);
+  send('response.created', { response: { id: 'resp_stub' } });
+  send('response.output_item.done', {
+    item: { type: 'message', role: 'assistant', id: 'msg_stub', content: [{ type: 'output_text', text: REPLY }] },
+  });
+  send('response.completed', {
+    response: {
+      id: 'resp_stub',
+      usage: { input_tokens: 1, input_tokens_details: null, output_tokens: 1, output_tokens_details: null, total_tokens: 2 },
+    },
+  });
+  res.end();
+};
 const modelServer = createServer(async (req, res) => {
   const raw = await readBody(req);
   const { pathname } = new URL(req.url, 'http://stub');
   model.paths.push(`${req.method} ${pathname}`);
+  if (req.method === 'POST' && pathname.endsWith('/v1/responses')) {
+    responsesSse(res);
+    return;
+  }
   if (pathname.endsWith('/v1/messages/count_tokens')) {
     res.writeHead(200, { 'content-type': 'application/json' }).end('{"input_tokens":1}');
     return;
@@ -155,10 +193,14 @@ const managed = JSON.stringify({
     DISABLE_AUTOUPDATER: '1',
   },
 }, null, 2);
-for (const dir of ['C:\\Program Files\\ClaudeCode', 'C:\\ProgramData\\ClaudeCode']) {
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'managed-settings.json'), managed);
+if (HARNESS === 'claude') {
+  for (const dir of ['C:\\Program Files\\ClaudeCode', 'C:\\ProgramData\\ClaudeCode']) {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'managed-settings.json'), managed);
+  }
 }
+// Codex is named the stub by the CLI's environment, as a person names a gateway.
+const harnessEnv = HARNESS === 'codex' ? codexRouteEnv(MODEL_URL, 'sk-windows-byo-smoke-codex') : {};
 
 // ── the stub Commonly API ─────────────────────────────────────────────────
 // What `agent run` calls, from cli/src/commands/agent.js: the token's
@@ -234,9 +276,10 @@ const counts = (list) => Object.entries(list.reduce((acc, p) => ({ ...acc, [p]: 
   .map(([p, n]) => `${p} x${n}`).join('\n  ');
 
 const walk = async (label, installLine) => {
-  const lines = pageConnectSnippet({ os: 'windows', apiUrl: API, token: TOKEN, agentName: AGENT, adapter: 'claude' })
+  const lines = pageConnectSnippet({ os: 'windows', apiUrl: API, token: TOKEN, agentName: AGENT, adapter: HARNESS })
     .split('\n');
-  if (lines.length !== 4 || !/^npm i -g \S+$/.test(lines[0]) || !/^commonly agent run /.test(lines[3])) {
+  if (lines.length !== 4 || !/^npm i -g \S+$/.test(lines[0])
+    || !lines[3].startsWith(`commonly agent run ${AGENT} --adapter ${HARNESS}`)) {
     console.error(`windows-byo-smoke: the page's Windows lines changed shape: ${JSON.stringify(lines)}`);
     process.exit(1);
   }
@@ -247,13 +290,13 @@ const walk = async (label, installLine) => {
   const apiBefore = api.calls.length;
   // The install line is followed by a guard that stops the paste when it fails.
   const script = pasteScript(lines);
-  log(`${label}: pasting into PowerShell, profile ${profile}:\n  ${script.join('\n  ')}`);
+  log(`${label}: pasting into PowerShell for ${LABEL}, profile ${profile}:\n  ${script.join('\n  ')}`);
 
-  // A fresh profile is a machine that has never run Commonly or Claude Code:
-  // no token record, no prepared tools, no Claude Code state.
+  // A fresh profile is a machine that has never run Commonly or the harness:
+  // no token record, no prepared tools, no Claude Code or Codex state.
   const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script.join('\n')], {
     cwd: profile,
-    env: { ...process.env, USERPROFILE: profile, HOME: profile },
+    env: { ...process.env, USERPROFILE: profile, HOME: profile, ...harnessEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -277,7 +320,7 @@ const walk = async (label, installLine) => {
 
   const problems = [];
   if (!leg.delivered) problems.push('the agent never polled for its @mention');
-  else if (model.paths.length === modelBefore) problems.push('Claude Code never reached the model');
+  else if (model.paths.length === modelBefore) problems.push(`${LABEL} never reached the model`);
   if (!replied()) problems.push(`no reply came back to the pod within ${seconds} s`);
   if (!leg.acked) problems.push('the @mention was never acknowledged');
   if (leg.badAuth.length) problems.push(`calls without the page's token: ${leg.badAuth.join(', ')}`);
@@ -315,5 +358,5 @@ apiServer.close();
 modelServer.close();
 if (failed) process.exit(1);
 log(publishedReportsOnly
-  ? 'this tree\'s CLI answered an @mention from the page\'s Windows lines'
-  : 'the page\'s Windows lines answered an @mention, published and from this tree');
+  ? `this tree's CLI answered an @mention from the page's Windows lines for ${LABEL}`
+  : `the page's Windows lines for ${LABEL} answered an @mention, published and from this tree`);

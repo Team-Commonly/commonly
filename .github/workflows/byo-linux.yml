@@ -18,6 +18,12 @@ name: Bring your own on Linux
 # open to join or publicly readable: when every pod is private and invite-only,
 # the CLI runs it on a copied login, not the key. The two secrets reach only
 # the walk step. See cli/scripts/linux-byo-prod.mjs.
+#
+# D250: `harness` picks the lines walked. codex walks the page's Codex lines
+# on the same gateway key, given as CODEX_API_KEY beside OPENAI_BASE_URL: the
+# CLI keeps it behind its proxy on the Responses wire, and codex runs under
+# its own permission profile. The pull-request check reads both harnesses'
+# lines.
 
 on:
   pull_request:
@@ -29,6 +35,11 @@ on:
       - '.github/workflows/byo-linux.yml'
   workflow_dispatch:
     inputs:
+      harness:
+        description: 'the lines to walk: claude (Claude Code) or codex (Codex)'
+        type: choice
+        options: [claude, codex]
+        default: claude
       agent_name:
         description: 'the agent the token belongs to'
         type: string
@@ -61,14 +72,21 @@ jobs:
       - name: Check the page's Linux lines
         if: github.event_name != 'workflow_dispatch'
         run: node cli/scripts/linux-byo-prod.mjs --check
-      # What the page tells a Linux user to have: bubblewrap and Claude Code
-      # (the version the other real-Claude smokes pin).
-      - name: Install bubblewrap and Claude Code
+      # What the page tells a Linux user to have: bubblewrap and the harness
+      # (the Claude Code the other real-Claude smokes pin, or the Codex whose
+      # provider route the CLI was measured on).
+      - name: Install bubblewrap and the harness
         if: github.event_name == 'workflow_dispatch'
+        env:
+          HARNESS: ${{ inputs.harness }}
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap
-          npm i -g @anthropic-ai/claude-code@2.1.318
+          if [ "$HARNESS" = codex ]; then
+            npm i -g @openai/codex@0.162.1
+          else
+            npm i -g @anthropic-ai/claude-code@2.1.318
+          fi
       - name: Walk the page's Linux lines
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -76,6 +94,7 @@ jobs:
           COMMONLY_BYO_PROD_AGENT: ${{ inputs.agent_name }}
           COMMONLY_BYO_PROD_INSTANCE: ${{ inputs.instance_id }}
           COMMONLY_BYO_PROD_POD: ${{ inputs.pod_id }}
+          COMMONLY_BYO_HARNESS: ${{ inputs.harness }}
           COMMONLY_BYO_PROD_AGENT_TOKEN: ${{ secrets.BYO_LINUX_PROD_AGENT_TOKEN }}
           COMMONLY_BYO_PROD_LLM_KEY: ${{ secrets.BYO_LINUX_PROD_LLM_KEY }}
         run: |

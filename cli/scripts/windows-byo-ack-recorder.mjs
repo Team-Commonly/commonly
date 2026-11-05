@@ -6,13 +6,27 @@
  *
  * Observation only: it wraps the global fetch, records the event poll's ids
  * and each ack's status to COMMONLY_BYO_ACK_LOG as JSON lines, and passes
- * every response through untouched. It never records a header, a body other
- * than the event ids, or message content. Claude Code never loads it: a
- * public seat's environment is an allowlist that drops NODE_OPTIONS.
+ * every response through untouched. Of an ack's body it keeps only the turn's
+ * class (outcome, reason, refused status), so the verdict can tell a model
+ * refusal the CLI acked from a reply (D250). It never records a header, the
+ * result's free-text detail, the delivery id, or message content. Claude Code
+ * never loads it: a public seat's environment is an allowlist that drops
+ * NODE_OPTIONS.
  */
 import { appendFileSync } from 'fs';
 
 const out = process.env.COMMONLY_BYO_ACK_LOG;
+
+// The labels of an ack's result, and nothing else from its body.
+const ackClass = (body) => {
+  let result;
+  try { result = JSON.parse(typeof body === 'string' ? body : '')?.result; } catch { return {}; }
+  const label = (value) => (typeof value === 'string' && /^[a-z0-9_-]{1,64}$/i.test(value) ? value : undefined);
+  const refusedStatus = Number.isInteger(result?.refused?.status) ? result.refused.status : undefined;
+  return Object.fromEntries(Object.entries({
+    outcome: label(result?.outcome), reason: label(result?.reason), refusedStatus,
+  }).filter(([, value]) => value !== undefined));
+};
 const realFetch = globalThis.fetch;
 
 if (out && typeof realFetch === 'function') {
@@ -28,7 +42,7 @@ if (out && typeof realFetch === 'function') {
       const method = String(init?.method || input?.method || 'GET').toUpperCase();
       const ack = /^\/api\/agents\/runtime\/events\/([^/]+)\/ack$/.exec(url.pathname);
       if (method === 'POST' && ack) {
-        record({ kind: 'ack', eventId: decodeURIComponent(ack[1]), status: res.status });
+        record({ kind: 'ack', eventId: decodeURIComponent(ack[1]), status: res.status, ...ackClass(init?.body) });
       } else if (method === 'GET' && url.pathname === '/api/agents/runtime/events' && res.ok) {
         res.clone().json().then((body) => {
           (Array.isArray(body?.events) ? body.events : []).forEach((event) => record({

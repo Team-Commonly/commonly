@@ -3,7 +3,7 @@ import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import {
-  installExitFromBash, liftConnectSnippet, linuxLineProblems, linuxPasteScript, runsAtWorkspaceTrust,
+  installExitFromBash, liftConnectSnippet, linuxLineProblems, linuxPasteScript, linuxRouteEnv, runsAtWorkspaceTrust,
 } from '../scripts/linux-byo-prod.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -15,6 +15,23 @@ describe('the Linux prod walk', () => {
     const lines = liftConnectSnippet(page)({ os: 'linux', ...sample, adapter: 'claude' }).split('\n');
     expect(linuxLineProblems(lines, sample)).toEqual([]);
     expect(lines[3]).toBe('commonly agent run linux-walk --adapter claude');
+  });
+
+  test('reads the page\'s Linux lines for Codex in the shape it pastes (D250)', () => {
+    const lines = liftConnectSnippet(page)({ os: 'linux', ...sample, adapter: 'codex' }).split('\n');
+    expect(linuxLineProblems(lines, { ...sample, adapter: 'codex' })).toEqual([]);
+    expect(lines[3]).toBe('commonly agent run linux-walk --adapter codex');
+    // A Codex walk handed Claude Code's line says so rather than walk the wrong harness.
+    const claude = liftConnectSnippet(page)({ os: 'linux', ...sample, adapter: 'claude' }).split('\n');
+    expect(linuxLineProblems(claude, { ...sample, adapter: 'codex' }))
+      .toEqual([expect.stringMatching(/line 4 is not a sandboxed Codex run/)]);
+  });
+
+  test('routes each harness to the gateway its own way, the key under its own name only', () => {
+    expect(linuxRouteEnv('claude', { gateway: 'https://gw.example', key: 'sk-k' }))
+      .toEqual({ ANTHROPIC_API_KEY: 'sk-k', ANTHROPIC_BASE_URL: 'https://gw.example' });
+    expect(linuxRouteEnv('codex', { gateway: 'https://gw.example', key: 'sk-k' }))
+      .toEqual({ CODEX_API_KEY: 'sk-k', OPENAI_BASE_URL: 'https://gw.example/v1' });
   });
 
   test('stops when the page\'s lines change shape', () => {

@@ -1,8 +1,9 @@
 /**
  * D164 prod walk (byo-windows.yml, target=prod): the Bring your own page's
- * Windows lines for Claude Code, pasted into one PowerShell process against
- * the live API with a real model, as a Windows user would. Only the published
- * CLI is walked (the page's `@latest` install line, verbatim).
+ * Windows lines for one harness, Claude Code or Codex (COMMONLY_BYO_HARNESS,
+ * D250), pasted into one PowerShell process against the live API with a real
+ * model, as a Windows user would. Only the published CLI is walked (the
+ * page's `@latest` install line, verbatim).
  *
  * The run does not post the @mention. When the CLI is polling, it logs
  * `READY: listening in <podId>`, and a person in the pod posts the @mention.
@@ -14,10 +15,16 @@
  * and the gateway key come from the step env and are never logged: every
  * line this prints passes through redact().
  *
- * The model route sits in Claude Code's machine-wide managed settings, the
- * same place the stub walk names its stub: a public seat's environment is an
- * allowlist that drops ANTHROPIC_*. On a person's machine that is their own
+ * For Claude Code the model route sits in its machine-wide managed settings,
+ * the same place the stub walk names its stub: a public seat's environment is
+ * an allowlist that drops ANTHROPIC_*. On a person's machine that is their own
  * sign-in. The file holds the gateway key, so it is deleted when the walk ends.
+ *
+ * Codex takes the route from the CLI's environment instead, CODEX_API_KEY
+ * beside OPENAI_BASE_URL: the CLI keeps the key behind its per-turn proxy on
+ * the Responses wire and hands codex only the proxy. The model is the agent's
+ * saved model, through the gateway's Responses bridge. A failed walk names
+ * whose failure it was (prodOutcome's `cause`).
  */
 import { spawn, spawnSync } from 'child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
@@ -26,7 +33,8 @@ import { dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
 import {
-  installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome, redact,
+  codexRouteEnv, describeCause, HARNESS_LABELS, installExitFrom, parseRecorderLog, pasteScript, prodInputs, prodOutcome,
+  redact,
 } from './windows-byo-verdict.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -39,7 +47,8 @@ const POLL_MS = 10_000;
 const MANAGED_DIRS = ['C:\\Program Files\\ClaudeCode', 'C:\\ProgramData\\ClaudeCode'];
 const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
-export const runProdWalk = async ({ pageConnectSnippet }) => {
+export const runProdWalk = async ({ pageConnectSnippet, harness = 'claude' }) => {
+  const label = HARNESS_LABELS[harness];
   let inputs;
   try {
     inputs = prodInputs(process.env);
@@ -93,27 +102,32 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
       DISABLE_AUTOUPDATER: '1',
     },
   }, null, 2);
-  MANAGED_DIRS.forEach((dir) => {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'managed-settings.json'), managed);
-  });
+  // Only Claude Code reads it; a Codex walk writes no key to disk.
+  if (harness === 'claude') {
+    MANAGED_DIRS.forEach((dir) => {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'managed-settings.json'), managed);
+    });
+  }
   const forgetKey = () => MANAGED_DIRS.forEach((dir) => rmSync(join(dir, 'managed-settings.json'), { force: true }));
 
-  const lines = pageConnectSnippet({ os: 'windows', apiUrl: API, token, agentName, adapter: 'claude' }).split('\n');
-  if (lines.length !== 4 || !/^npm i -g \S+$/.test(lines[0]) || !/^commonly agent run /.test(lines[3])) {
-    fail(`the page's Windows lines changed shape: ${JSON.stringify(lines)}`);
+  const lines = pageConnectSnippet({ os: 'windows', apiUrl: API, token, agentName, adapter: harness }).split('\n');
+  if (lines.length !== 4 || !/^npm i -g \S+$/.test(lines[0])
+    || !lines[3].startsWith(`commonly agent run ${agentName} --adapter ${harness}`)) {
+    fail(`the page's Windows lines for ${label} changed shape: ${JSON.stringify(lines)}`);
     forgetKey();
     return 1;
   }
   const script = pasteScript(lines);
   const profile = mkdtempSync(join(tmpdir(), 'byo-prod-profile-'));
   const ackLog = join(mkdtempSync(join(tmpdir(), 'byo-prod-acks-')), 'acks.jsonl');
-  log(`pasting into PowerShell, profile ${profile}:\n  ${script.join('\n  ')}`);
+  log(`pasting into PowerShell for ${label}, profile ${profile}:\n  ${script.join('\n  ')}`);
 
   const env = {
     ...process.env,
     USERPROFILE: profile,
     HOME: profile,
+    ...(harness === 'codex' ? codexRouteEnv(MODEL_GATEWAY, llmKey) : {}),
     NODE_OPTIONS: `--import=${pathToFileURL(resolve(HERE, 'windows-byo-ack-recorder.mjs')).href}`,
     COMMONLY_BYO_ACK_LOG: ackLog,
   };
@@ -163,30 +177,39 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
   // and cannot change what the agent's next post is told it has seen.
   let outcome = null;
   let lastRead = null;
+  let lastMessages = [];
   while (Date.now() - readyAt < ANSWER_TIMEOUT_MS && exited === null && !/circuit open; releasing/.test(out)) {
     // eslint-disable-next-line no-await-in-loop
     const page = await api(`/api/agents/runtime/pods/${podId}/messages?limit=20&before=${encodeURIComponent(new Date(Date.now() + 86_400_000).toISOString())}`)
       .catch((err) => ({ status: 0, body: {}, error: err.message }));
     lastRead = page.error || `HTTP ${page.status}`;
+    lastMessages = page.body.messages || lastMessages;
     const recorded = parseRecorderLog(existsSync(ackLog) ? readFileSync(ackLog, 'utf8') : '');
     outcome = prodOutcome({
-      messages: page.body.messages || [], agentName, readyAt, events: recorded.events, acks: recorded.acks,
+      messages: lastMessages, agentName, readyAt, events: recorded.events, acks: recorded.acks, output: out,
     });
     if (outcome.passed) break;
     // eslint-disable-next-line no-await-in-loop
     await sleep(POLL_MS);
   }
   const recorded = parseRecorderLog(existsSync(ackLog) ? readFileSync(ackLog, 'utf8') : '');
+  // Read once more after the loop: a refusal the CLI logged on its way out still names the cause.
+  if (outcome && !outcome.passed) {
+    outcome = prodOutcome({
+      messages: lastMessages, agentName, readyAt, events: recorded.events, acks: recorded.acks, output: out,
+    });
+  }
   stop();
   if (outcome?.passed) {
     const said = String(outcome.reply.content || '');
     log(`@mention ${outcome.mention.id} by ${outcome.mention.username} answered by message ${outcome.reply.id} `
       + `in ${outcome.answerSeconds} s, event ${outcome.ack.eventId} acked HTTP ${outcome.ack.status}`);
     log(`the reply${/windows-ok/i.test(said) ? ' says windows-ok' : ' does not say windows-ok'}: ${JSON.stringify(said.slice(0, 300))}`);
-    log(`PASS: published @commonlyai/cli ${cliVersion} on Windows answered an @mention on ${API} with Claude Code`);
+    log(`PASS: published @commonlyai/cli ${cliVersion} on Windows answered an @mention on ${API} with ${label}`);
     return 0;
   }
   (outcome?.problems || ['the walk ended before the pod was read']).forEach((problem) => fail(problem));
+  if (outcome?.cause) log(describeCause(outcome.cause, label));
   log(`the last read of the pod: ${lastRead || 'none'}`);
   log(`events the CLI was handed: ${JSON.stringify(recorded.events)}`);
   log(`acks the CLI sent: ${JSON.stringify(recorded.acks)}`);

@@ -43,6 +43,28 @@ export const publishedOutcome = ({ problems = [], installExit = null, delivered 
   return { fail: all, warn: [] };
 };
 
+// ── the harness (D250) ────────────────────────────────────────────────────
+// Each run walks one harness, named by the dispatch's `harness` input.
+export const HARNESS_LABELS = Object.freeze({ claude: 'Claude Code', codex: 'Codex' });
+
+export const walkHarness = (env = {}) => {
+  const harness = String(env.COMMONLY_BYO_HARNESS || 'claude');
+  if (!Object.prototype.hasOwnProperty.call(HARNESS_LABELS, harness)) {
+    throw new Error(`harness must be claude or codex, got ${JSON.stringify(harness)}`);
+  }
+  return harness;
+};
+
+/**
+ * How a public Codex seat reaches a gateway: CODEX_API_KEY beside
+ * OPENAI_BASE_URL in the CLI's environment. The CLI keeps the key on the host
+ * behind its per-turn proxy, and codex calls `<base>/responses` through it.
+ */
+export const codexRouteEnv = (gateway, key) => ({
+  CODEX_API_KEY: key,
+  OPENAI_BASE_URL: `${String(gateway).replace(/\/+$/, '')}/v1`,
+});
+
 // ── the prod walk (target=prod) ───────────────────────────────────────────
 // The page's lines against the live API with a real model. A person in the
 // pod posts the @mention; the walk reads the pod with the agent's own token
@@ -92,13 +114,46 @@ export const parseRecorderLog = (text) => {
 const timeOf = (m) => Date.parse(m?.createdAt);
 const idOf = (m) => String(m?.id ?? m?._id ?? '');
 
+// The model route refused: the gateway, the model, or the host proxy in front
+// of them. Read from the CLI's own words, so a walk on a route no walk has run
+// before (Codex through the gateway's Responses bridge, D250) says whose
+// failure it was. These are the run loop's lines (cli/src/commands/agent.js):
+// a turn left unacked names its failure class, a turn acked as refused names
+// its reason, and the host proxy names a route it refused.
+const MODEL_FAILURE_CLASSES = new Set(['content_refused', 'quota', 'rate_limit', 'configuration']);
+const isRefusalReason = (reason) => reason === 'provider-refused' || /^upstream-refused/.test(String(reason || ''));
+
+/** The turns the CLI's log says failed, with the class and upstream status each named. */
+export const failedTurnsFrom = (output) => {
+  const text = String(output || '');
+  const turns = [];
+  const failed = /processing failed \(([a-z_]+);[^\n]*/g;
+  let m;
+  // eslint-disable-next-line no-cond-assign
+  while ((m = failed.exec(text)) !== null) {
+    const upstream = /\(upstream (\d{3})\)|upstream refused (\d{3})/.exec(m[0]);
+    turns.push({ failureClass: m[1], upstreamStatus: upstream ? Number(upstream[1] || upstream[2]) : null });
+  }
+  if (/the model provider refused the content of event/.test(text)) turns.push({ failureClass: 'content_refused', upstreamStatus: null });
+  if (/provider proxy refused /.test(text)) turns.push({ failureClass: 'proxy_refused', upstreamStatus: null });
+  return turns;
+};
+
 /**
  * Whether the prod walk has passed: a person's @mention of the agent posted
  * after the agent was listening, the agent's own message after it (`self`
  * is the server's mark for the token's own posts), and a 2xx ack for the
- * chat.mention event that carried that message.
+ * chat.mention event that carried that message, acked as anything but a
+ * refusal (a content refusal's notice in the pod is the CLI's, not a reply).
+ *
+ * `cause` says whose failure a failed walk was: `model` (the gateway, the
+ * model or the host proxy refused), `harness` (the turn failed with no model
+ * refusal), or `commonly` (no turn failed, yet the reply or the ack did not
+ * happen). Null on a pass, and before anyone has posted the @mention.
  */
-export const prodOutcome = ({ messages = [], agentName, readyAt, events = [], acks = [] } = {}) => {
+export const prodOutcome = ({
+  messages = [], agentName, readyAt, events = [], acks = [], output = '',
+} = {}) => {
   const handle = `@${agentName}`.toLowerCase();
   const sorted = messages
     .filter((m) => m && Number.isFinite(timeOf(m)))
@@ -113,12 +168,36 @@ export const prodOutcome = ({ messages = [], agentName, readyAt, events = [], ac
     : [];
   const ack = acks.find((a) => a.status >= 200 && a.status < 300
     && mentionEvents.some((e) => e.eventId === a.eventId)) || null;
+  const refusedAck = ack && isRefusalReason(ack.reason) ? ack : null;
+  const failed = failedTurnsFrom(output);
+  const modelFailure = failed.find((t) => MODEL_FAILURE_CLASSES.has(t.failureClass)
+    || t.failureClass === 'proxy_refused' || t.upstreamStatus !== null) || null;
+
   const problems = [];
+  let cause = null;
+  if (mention && refusedAck) {
+    cause = 'model';
+    const status = refusedAck.refusedStatus ?? (refusedAck.reason.replace(/^upstream-refused-?/, '') || 'status unknown');
+    problems.push(refusedAck.reason === 'provider-refused'
+      ? 'the model provider refused the @mention\'s content, and the CLI acked it as refused: the gateway or model, not Commonly'
+      : `the gateway or model refused the turn (upstream ${status}), and the CLI acked it as refused: the model route, not Commonly`);
+  } else if (mention && (!reply || !ack) && modelFailure) {
+    cause = 'model';
+    const named = [modelFailure.failureClass, modelFailure.upstreamStatus !== null ? `upstream ${modelFailure.upstreamStatus}` : null]
+      .filter(Boolean).join(', ');
+    problems.push(`the gateway or model refused the turn (${named}): the model route, not Commonly`);
+  } else if (mention && (!reply || !ack) && failed.length) {
+    cause = 'harness';
+    problems.push(`the agent's turn failed (${failed[0].failureClass}) without a model refusal: the harness, not Commonly`);
+  } else if (mention && (!reply || !ack)) {
+    cause = 'commonly';
+  }
   if (!mention) problems.push(`no ${handle} mention from a person yet`);
   else if (!reply) problems.push('no reply from the agent after the @mention');
   if (!ack) problems.push('the @mention was never acknowledged');
   return {
     passed: problems.length === 0,
+    cause,
     mention,
     reply,
     ack,
@@ -126,3 +205,10 @@ export const prodOutcome = ({ messages = [], agentName, readyAt, events = [], ac
     problems,
   };
 };
+
+/** One line naming a failed walk's cause, for the log. */
+export const describeCause = (cause, harnessLabel = 'the harness') => ({
+  model: 'verdict: the model route failed (the gateway, the model, or the CLI\'s proxy in front of them), not Commonly',
+  harness: `verdict: ${harnessLabel}'s turn failed without a model refusal, not Commonly and not the gateway`,
+  commonly: 'verdict: no turn failed, so the missing reply or ack is Commonly\'s delivery',
+}[cause] || null);
