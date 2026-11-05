@@ -79,6 +79,7 @@ describe('webSearchService', () => {
           },
           { title: 'No URL', description: 'dropped' },
           { title: 'S', url: 'https://example.com/s', snippet: 'y'.repeat(5000) },
+          { title: 'D', url: 'https://example.com/d', description: 'only desc' },
         ],
       },
     });
@@ -91,9 +92,10 @@ describe('webSearchService', () => {
     expect(options.headers).toEqual({ 'X-Keenable-Title': 'Commonly' });
     expect(outcome.provider).toBe('keenable');
     expect(outcome.results.map((r) => r.url))
-      .toEqual(['https://example.com/k', 'https://example.com/s']);
-    expect(outcome.results[0].text).toBe('desc');
+      .toEqual(['https://example.com/k', 'https://example.com/s', 'https://example.com/d']);
+    expect(outcome.results[0].text).toBe('long');
     expect(outcome.results[1].text.length).toBeLessThanOrEqual(1501);
+    expect(outcome.results[2].text).toBe('only desc');
   });
 
   test('SEARCH_PROVIDER=keenable with a key uses the keyed endpoint', async () => {

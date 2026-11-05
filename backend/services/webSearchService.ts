@@ -90,7 +90,7 @@ const keenable: Adapter = async (query, apiKey) => {
   return (Array.isArray(data?.results) ? data.results : []).map((row: any) => ({
     title: clip(row?.title, 200),
     url: httpUrl(row?.url) || '',
-    text: clip(row?.description || row?.snippet, TEXT_LIMIT),
+    text: clip(row?.snippet || row?.description, TEXT_LIMIT),
   }));
 };
 
