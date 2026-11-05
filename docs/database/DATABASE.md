@@ -366,12 +366,11 @@ and pod" or "one open row per identical request" has to hold under concurrent wr
 - **Identity gets its own index.** Identical concurrent callers walk the slots in the same
   order and usually collide on the same slot. They don't when a lower slot frees mid-race, so
   a second partial unique index on the identity key is what guarantees one open row.
-- **Decide which index refused by reading the data, not the error.** The stored rows say which
-  guarantee was hit; an error's `keyPattern` is a detail of one server.
+- **Decide what a refusal means by reading the data, not the error.** A slot refusal doesn't say
+  whether an identical open row exists; only the rows do.
 - **Adding a unique index to a collection that already has data:** make it partial on a field
   only new code writes (`toolCallSlot: { $exists: true }`). Older rows, including any existing
   duplicates, are never indexed, so the boot-time `autoIndex` build cannot fail on them.
-  Keep partial filters to equality and `$exists`.
 
 ### Pattern: a terminal transition whose side effects can be retried
 

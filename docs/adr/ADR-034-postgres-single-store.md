@@ -9,8 +9,10 @@ too strict for models with clock-derived fields).
 
 **Amended 2026-11-05 (D7: considered, not adopted).** Running self-host's Mongo layer on FerretDB
 was measured and walked, and the founder dropped it the same day: FerretDB's last release is v2.7.0
-(2025-11-10). **Self-host is MongoDB plus Postgres**, and that path is walked nightly. All
-Postgres-only work, D1 to D7, is paused until the founder reopens it. D7 stays below as the record.
+(2025-11-10). **Self-host is MongoDB plus Postgres**, and that path is walked nightly. The
+migration to Postgres only is paused until the founder reopens it, so the open waves in D6 are not
+work in progress. What already shipped stays enforced: the D4 freeze on new Mongo models fails CI,
+and `requirePgConfigured` stands. D7 stays below as the record.
 
 **Deciders:** founder (direction), eng lead (plan).
 
@@ -184,11 +186,11 @@ pick it. FerretDB has had no release since v2.7.0 (2025-11-10). The DocumentDB p
 result. What follows records what was measured, in the present tense of that day.
 
 FerretDB 2.7 (Apache-2.0) speaks the Mongo wire protocol and keeps the data in Postgres through
-the DocumentDB extension (MIT). A self-hoster then runs Postgres alone: the chat tables and the
+the DocumentDB extension (MIT). A self-hoster would then run Postgres alone: the chat tables and the
 Mongo layer on one engine. Production stays on MongoDB.
 
 **Measured.** The backend suite, run on both stores through the same harness (each suite gets its
-own database on a real server; `TEST_MONGO_URI`, `.github/workflows/backend-ferretdb.yml`), at
+own database on a real server; `JEST_EXTERNAL_MONGO_URI`, `.github/workflows/backend-ferretdb.yml`), at
 `20c6bfb4` (main as of 2026-11-05 plus that harness, #3492), without the fixes below. CI run
 42001537424; #3492 lists every suite:
 
@@ -223,15 +225,13 @@ missing collection errors. The rest of what Commonly leans on behaves the same: 
 **Rules proposed for new Mongo-layer code, which don't bind now that D7 isn't adopted:** no collation, no `$in` (or other
 operator) in a partial index filter, and every check for a lost race goes through
 `isDuplicateKeyError`. A known gap: existing refusals that read `keyPattern` (signup, username
-change and a few others) still surface a code-1 refusal as a 500 on FerretDB (#3495 lists them). The
-The FerretDB CI workflow (#3492) was removed when D7 was not adopted.
+change and a few others) still surface a code-1 refusal as a 500 on FerretDB (#3495 lists them). The FerretDB CI workflow (#3492) was removed when D7 was not adopted.
 
 **Constraints.** The DocumentDB extension needs a superuser and `shared_preload_libraries`
 (`pg_cron`, `documentdb`), so it runs on a Postgres the instance owns, not on a managed one. The
 `ferretdb/postgres-documentdb` image also bundles PostGIS (GPL-2.0-or-later). Commonly references
-that image by tag only in that CI workflow and did not redistribute it. Compose and Helm
-support is not built yet; when it lands it references the image the same way, and a self-hoster
-pulls it from its publisher.
+that image by tag only in that CI workflow and did not redistribute it. Compose and Helm support
+was drafted in #3506 and not merged.
 
 **Auth hot path** (CI bench `backend/__tests__/bench/authHotPath.bench.js`: 5,000 users, 2,000 pods,
 3,000 timed runs after 200 warm-up, the same three hand-built indexes on both stores, each store on
@@ -246,7 +246,7 @@ trip, not a cold read:
 | User by username (login) | 0.94 / 1.07 / 1.70 | 0.63 / 0.69 / 0.90 |
 
 FerretDB adds about 0.3 to 1 ms at p95 per query, the write the most: inside a request's budget for
-a self-hosted instance, and the reason production stays on MongoDB until the Postgres port.
+a self-hosted instance.
 
 **Clean-install walk, 2026-11-05.** The local compose profile with the unmerged FerretDB override
 reached sign-up, pods and messages. A bring-your-own agent failed at attach, because issuing a
