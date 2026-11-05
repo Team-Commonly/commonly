@@ -7,6 +7,17 @@ import { hostedRunsNative, IN_PROCESS_RUNTIME_FILTER } from './hostedEngine';
 import { noteUnansweredMention, PERSON_WAITING_EVENT_TYPES } from './unansweredMentionService';
 import { digestConversationFrame } from './digestFrame';
 import { prependGrantRemovalCue as prependGrantRemovalLines } from './grantRemovalCueService';
+import {
+  LIVE_MENTION_LIMIT,
+  MAX_COALESCED,
+  RUNNING_TURN_WINDOW_MS,
+  carriesMessage,
+  coalescedEntry,
+  isCoalescibleMention,
+  midTurnFrame,
+  samePlaceFilter,
+  withCoalesced,
+} from './mentionCoalesce';
 
 // eslint-disable-next-line global-require
 const AgentEvent = require('../models/AgentEvent');
@@ -18,6 +29,8 @@ const Integration = require('../models/Integration');
 const Gateway = require('../models/Gateway');
 // eslint-disable-next-line global-require
 const AgentIdentityService = require('./agentIdentityService');
+// eslint-disable-next-line global-require
+const User = require('../models/User');
 // eslint-disable-next-line global-require
 const {
   getAgentSessionSizes,
@@ -1905,6 +1918,9 @@ class AgentEventService {
       // here rather than inside runAgent keeps the terminal transition next
       // to the non-terminal state that created it.
       const runWithDigest = async () => {
+        // A hosted row is born claimed, so nothing joins it then. It can still
+        // go back to pending through a drain or a requeue, and be joined there.
+        const turnPayload = withCoalesced(event.payload);
         const folded = await this.attachFoldedDigest(event).catch((digestErr: Error) => {
           console.warn('[native-runtime] folded digest lookup failed:', digestErr.message);
           return null;
@@ -1921,14 +1937,14 @@ class AgentEventService {
         } catch (digestErr) {
           console.warn('[native-runtime] digest lookup failed:', (digestErr as Error).message);
         }
-        const baseContent = String(event.payload?.content || event.payload?.prompt || event.payload?.text || '');
+        const baseContent = String(turnPayload?.content || turnPayload?.prompt || turnPayload?.text || '');
         const summary = digest.length || folded?.unreadCount
           ? digestConversationFrame(digest, (folded?.unreadCount || 0) + olderDigest, folded?.conversations)
           : null;
         const payload = summary ? {
-          ...event.payload,
+          ...turnPayload,
           content: `${baseContent}\n\n${summary}`,
-        } : event.payload;
+        } : turnPayload;
         if (this.inProcessDraining) {
           await this.requeueInProcess(event);
           return { status: 'drained' };
@@ -2011,12 +2027,128 @@ class AgentEventService {
     return this.trackInProcessWork(() => this.enqueueEvent(options));
   }
 
+  /**
+   * ADR-018 D6.5, for a mention about to get a row. Returns the row it joined,
+   * or the payload its own row should carry. Null is an ordinary row: any
+   * failure lands here, because a mention delivered twice is better than one
+   * delivered never.
+   */
+  private static async coalesceMention({
+    agentName, instanceId, podId, type, payload,
+  }: {
+    agentName: string;
+    instanceId: string;
+    podId: EnqueueOptions['podId'];
+    type: string;
+    payload: Record<string, unknown>;
+  }): Promise<{ joined?: EventDoc; payload?: Record<string, unknown> } | null> {
+    const scope = { agentName: agentName.toLowerCase(), instanceId, podId };
+    const live = await AgentEvent.find({
+      ...scope,
+      type,
+      deliveryMode: { $ne: 'digest' },
+      status: { $in: ['pending', 'delivered'] },
+      ...samePlaceFilter(payload),
+    }).sort({ createdAt: -1 }).limit(LIVE_MENTION_LIMIT).lean() as EventDoc[];
+    if (live.length === 0) return null;
+
+    const alreadyCarrying = live.find((row) => carriesMessage(row.payload, payload.messageId));
+    if (alreadyCarrying) return { joined: alreadyCarrying };
+
+    const principal = async (userId: unknown): Promise<{ id: string; isBot: boolean } | null> => {
+      const user = await User.findById(userId).select('isBot botMetadata').lean() as {
+        isBot?: boolean; botMetadata?: { agentName?: string; instanceId?: string };
+      } | null;
+      if (!user) return null;
+      if (!user.isBot) return { id: String(userId), isBot: false };
+      const install = await AgentInstallation.findOne({
+        agentName: String(user.botMetadata?.agentName || '').toLowerCase(),
+        instanceId: user.botMetadata?.instanceId || 'default',
+        podId,
+      }).select('installedBy').lean() as { installedBy?: unknown } | null;
+      return { id: String(install?.installedBy || userId), isBot: true };
+    };
+    const sender = await principal(payload.userId);
+    const sameAsker = (author: { id: string } | null): boolean => Boolean(sender && author && author.id === sender.id);
+
+    // A webhook row went out when it was created, even while it reads
+    // 'pending'. A message added to it would never reach the endpoint.
+    const installs = await AgentInstallation.find({ ...scope, status: 'active' })
+      .select('config').lean() as InstallationDoc[];
+    const postsAtEnqueue = installs.some((install) => (
+      Boolean((normalizeConfig(install.config)?.runtime as { webhookUrl?: unknown } | undefined)?.webhookUrl)
+    ));
+
+    if (!postsAtEnqueue) {
+      for (const row of live.filter((candidate) => candidate.status === 'pending')) {
+        // eslint-disable-next-line no-await-in-loop -- bounded by LIVE_MENTION_LIMIT
+        const author = await principal(row.payload?.userId);
+        // A person's message never joins an agent's row. The row's author
+        // prices the turn, so the cascade cap could refuse it with the person
+        // inside (ADR-018 D3: only a person outranks the cap).
+        if (sameAsker(author) && !(author?.isBot && !sender?.isBot)) {
+          // eslint-disable-next-line no-await-in-loop
+          const joined = await AgentEvent.findOneAndUpdate(
+            {
+              _id: row._id,
+              status: 'pending',
+              [`payload.coalesced.${MAX_COALESCED - 1}`]: { $exists: false },
+            },
+            { $push: { 'payload.coalesced': coalescedEntry(payload) } },
+            { new: true },
+          ).lean() as EventDoc | null;
+          if (joined) {
+            this.logEventLifecycle('coalesced', {
+              eventId: String(joined._id), agentName: scope.agentName, instanceId, podId: String(podId), type,
+            });
+            return { joined };
+          }
+        }
+      }
+    }
+
+    // Own row. It still names the turn ahead of it, so the reply it follows is
+    // known to be written without this message. A pending row is not that turn:
+    // a poller takes the two in one batch, unless it went out at enqueue. A
+    // delivered row past the window is a dead driver's.
+    const stillLive = await AgentEvent.find({
+      _id: { $in: live.map((row) => row._id) },
+      $or: [
+        ...(postsAtEnqueue ? [{ status: 'pending' }] : []),
+        { status: 'delivered', deliveredAt: { $gte: new Date(Date.now() - RUNNING_TURN_WINDOW_MS) } },
+      ],
+    }).sort({ createdAt: 1 }).lean() as EventDoc[];
+    const earlier = stillLive[0];
+    if (!earlier) return null;
+    const asker = await principal(earlier.payload?.userId);
+    return {
+      payload: {
+        ...payload,
+        content: `${midTurnFrame({
+          earlier: earlier.payload || {}, sameAsker: sameAsker(asker), username: payload.username,
+        })}\n${String(payload.content)}`,
+        arrivedMidTurn: { eventId: String(earlier._id), messageId: earlier.payload?.messageId },
+      },
+    };
+  }
+
   private static async enqueueEvent({
-    agentName, podId, type, payload = {}, instanceId = 'default', deliveryMode = 'wake',
+    agentName, podId, type, payload: givenPayload = {}, instanceId = 'default', deliveryMode = 'wake',
   }: EnqueueOptions): Promise<EventDoc> {
     if (!agentName || !podId || !type) {
       throw new Error('agentName, podId, and type are required');
     }
+
+    const coalesced = deliveryMode === 'wake' && isCoalescibleMention(type, givenPayload)
+      ? await this.coalesceMention({
+        agentName, instanceId, podId, type, payload: givenPayload,
+      }).catch((err: Error) => {
+        console.warn('[agent-event] mention coalesce failed, enqueueing its own turn:', err.message);
+        return null;
+      })
+      : null;
+    if (coalesced?.joined) return coalesced.joined;
+    const payload = coalesced?.payload || givenPayload;
 
     const baseEventPayload = type === 'heartbeat'
       ? await this.enrichHeartbeatPayload({
@@ -2369,7 +2501,7 @@ class AgentEventService {
       : null;
     const events = claimed.map((event) => {
       const messageId = event?.payload?.messageId;
-      const basePayload = event?.payload || {};
+      const basePayload = withCoalesced(event?.payload) || {};
       // Spread digest bundle into payload. Each sub-field is undefined when
       // empty so JSON.stringify omits it — agents on un-adopted runtimes see
       // a payload that's structurally unchanged.
