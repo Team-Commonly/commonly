@@ -30,7 +30,7 @@ import type { IRoomGrantRemovalCue } from '../models/RoomGrant';
 import Pod from '../models/Pod';
 import User from '../models/User';
 import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
-import { GRANT_BROKER_ID } from './installable/toolInstallables';
+import { GRANT_BROKER_ID } from './installable/grantBrokerId';
 import { seatEnvironmentKey } from './seatEnvironmentProjection';
 
 export type GrantConnector = { id: string; label: string };
@@ -56,6 +56,9 @@ export const GRANT_REMOVAL_CUE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 type RemovedGrant = {
   grantId: string;
+  brokerId?: string;
+  expiresAt?: Date | string | null;
+  revokedAt?: Date | string | null;
   tools?: string[];
   audience?: unknown[];
   target?: { kind?: string; id?: unknown };
@@ -84,11 +87,17 @@ const entriesFor = async (agentIds: string[], byOwner: boolean): Promise<IRoomGr
     }));
 };
 
-/** Replaces any earlier entry for the same agent, so a second removal refreshes it. */
+/**
+ * Replaces any earlier entry for the same agent, so a second removal refreshes
+ * it, and clears entries too old to be shown, so an unread note cannot linger.
+ */
 const writeEntries = async (grantId: string, entries: IRoomGrantRemovalCue[]): Promise<number> => {
   if (!entries.length) return 0;
   const userIds = entries.map((entry) => entry.userId);
-  await RoomGrant.updateOne({ grantId }, { $pull: { removalCuePending: { userId: { $in: userIds } } } });
+  const staleBefore = new Date(Date.now() - GRANT_REMOVAL_CUE_MAX_AGE_MS);
+  await RoomGrant.updateOne({ grantId }, {
+    $pull: { removalCuePending: { $or: [{ userId: { $in: userIds } }, { at: { $lt: staleBefore } }] } },
+  });
   await RoomGrant.updateOne({ grantId }, { $push: { removalCuePending: { $each: entries } } });
   return entries.length;
 };
@@ -123,8 +132,14 @@ export const noteRevokedGrants = async (grantIds: string[], revokedBy: string): 
   return written;
 };
 
-/** The granter took one named agent off a grant (F94). Only that agent is told. */
+/**
+ * The granter took one named agent off a grant (F94). Only that agent is told,
+ * and only when the grant was still live on the broker: a revoked or expired
+ * grant was already lost, and `noteRevokedGrants` applies the same test.
+ */
 export const noteAgentRemovedFromGrant = async (grant: RemovedGrant, agentId: string): Promise<number> => {
+  if (grant.brokerId !== GRANT_BROKER_ID || grant.revokedAt) return 0;
+  if (!grant.expiresAt || new Date(grant.expiresAt).getTime() <= Date.now()) return 0;
   if (!grantConnector(grant.tools)) return 0;
   return writeEntries(grant.grantId, await entriesFor([agentId], true));
 };
@@ -166,10 +181,10 @@ export const consumeGrantRemovalCues = async (agentName: string, instanceId: str
     const connector = grantConnector(grant.tools);
     // Only this agent's entries: a grant two agents held carries one for each.
     for (const entry of (grant.removalCuePending || []).filter((pending) => pending.seat === seat)) {
-      // eslint-disable-next-line no-await-in-loop
       // The filter names the entry, so a build that finds it already pulled by
       // a concurrent one matches no row. The filter is the claim: RoomGrant has
       // timestamps, so an unfiltered update always reports a modification.
+      // eslint-disable-next-line no-await-in-loop
       const claimed = await RoomGrant.updateOne(
         { _id: grant._id, 'removalCuePending.userId': entry.userId },
         { $pull: { removalCuePending: { userId: entry.userId } } },

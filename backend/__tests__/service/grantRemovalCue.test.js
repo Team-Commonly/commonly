@@ -31,6 +31,7 @@ const RoomGrant = model(require('../../models/RoomGrant'));
 const AgentEvent = model(require('../../models/AgentEvent'));
 const AgentEventService = model(require('../../services/agentEventService'));
 const grantRoutes = model(require('../../routes/grants'));
+const { revokeConnectionGrants } = require('../../services/roomGrantService');
 
 jest.setTimeout(60000);
 
@@ -161,6 +162,64 @@ describe('F181: a removed connector is cued on the agent\'s next mention', () =>
     );
 
     expect(await mention('quill', fixture.pod)).not.toContain('[access:');
+  });
+
+  test('a reconnect revoke (cue: false) leaves no note; a plain connection revoke does', async () => {
+    const fixture = await seed();
+    const rowId = '6a8f6de2a1dccf2e02f31099';
+    await githubGrant(fixture, [fixture.seat._id], { connectionId: rowId });
+    // The OAuth account-change and key re-paste paths: the owner is reconnecting.
+    const owner = String(fixture.owner._id);
+    expect(await revokeConnectionGrants({ connection: { _id: rowId }, revokedBy: owner, cue: false })).toBe(1);
+    expect(await RoomGrant.countDocuments({ 'removalCuePending.0': { $exists: true } })).toBe(0);
+    expect(await mention('quill', fixture.pod)).not.toContain('[access:');
+
+    await githubGrant(fixture, [fixture.seat._id], { connectionId: rowId });
+    expect(await revokeConnectionGrants({ connection: { _id: rowId }, revokedBy: owner })).toBe(1);
+    expect(await mention('quill', fixture.pod)).toContain(CUE);
+  });
+
+  test.each([
+    ['already revoked', { revokedAt: new Date() }],
+    ['expired', { expiresAt: new Date(Date.now() - 1000) }],
+    ['on another broker', { brokerId: 'some-other-broker' }],
+  ])('taking an agent off a grant that is %s writes no note', async (_label, extra) => {
+    const fixture = await seed();
+    const grant = await githubGrant(fixture, [fixture.seat._id], { ...named(fixture.owner, fixture.seat), ...extra });
+    const res = await request(app)
+      .delete(`/api/grants/${grant.grantId}/byo-agents/${fixture.seat._id}`)
+      .set('x-test-user', String(fixture.owner._id));
+    expect(res.status).toBe(200);
+    expect(await RoomGrant.countDocuments({ 'removalCuePending.0': { $exists: true } })).toBe(0);
+  });
+
+  test('taking an agent off a grant already revoked writes no second note', async () => {
+    const fixture = await seed();
+    const grant = await githubGrant(fixture, [fixture.seat._id], named(fixture.owner, fixture.seat));
+    expect((await revoke(grant, fixture.owner)).status).toBe(200);
+    expect(await mention('quill', fixture.pod)).toContain(CUE);
+
+    const res = await request(app)
+      .delete(`/api/grants/${grant.grantId}/byo-agents/${fixture.seat._id}`)
+      .set('x-test-user', String(fixture.owner._id));
+    expect(res.status).toBe(200);
+    expect(await mention('quill', fixture.pod)).not.toContain('[access:');
+  });
+
+  test('writing a note also clears notes on that grant older than 30 days', async () => {
+    const fixture = await seed();
+    const grant = await githubGrant(fixture, [fixture.seat._id], {
+      removalCuePending: [{
+        userId: 'stale-agent',
+        seat: 'gone\u0000default',
+        byOwner: true,
+        at: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+      }],
+    });
+    expect((await revoke(grant, fixture.owner)).status).toBe(200);
+
+    const row = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
+    expect(row.removalCuePending.map((entry) => entry.userId)).toEqual([String(fixture.seat._id)]);
   });
 
   test('the pending note is not part of a grant read', async () => {

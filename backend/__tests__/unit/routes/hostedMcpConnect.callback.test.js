@@ -942,6 +942,8 @@ describe('hosted-mcp connect: callback', () => {
     expect(revokeConnectionGrants).toHaveBeenCalledWith({
       connection: expect.objectContaining({ _id: 'row-1' }),
       revokedBy: 'user-1',
+      // F181: the owner is reconnecting, so no removal cue is written.
+      cue: false,
     });
     // ORDER is the claim §2 makes: the old grant is gone before the new pair
     // exists, or a grant could be made against the new account's reach while
