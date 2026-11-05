@@ -25,7 +25,7 @@ describe('the walk\'s ack recorder', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test('an ack is recorded with its outcome, reason and refused status, and nothing else from its body', async () => {
+  test('an ack is recorded with its outcome and reason, and nothing else from its body', async () => {
     await globalThis.fetch('https://api.example/api/agents/runtime/events/e1/ack', {
       method: 'POST',
       headers: { authorization: 'Bearer cm_agent_secret' },
@@ -33,7 +33,6 @@ describe('the walk\'s ack recorder', () => {
         result: {
           outcome: 'no_action',
           reason: 'upstream-refused-401',
-          refused: { reason: 'upstream-refused', status: 401 },
           details: { status: 401, detail: 'invalid key sk-gateway-secret' },
         },
         deliveryId: 'delivery-secret',
@@ -43,7 +42,7 @@ describe('the walk\'s ack recorder', () => {
     const [row] = text.trim().split('\n').map((line) => JSON.parse(line));
     expect(row).toEqual({
       at: expect.any(String), kind: 'ack', eventId: 'e1', status: 200,
-      outcome: 'no_action', reason: 'upstream-refused-401', refusedStatus: 401,
+      outcome: 'no_action', reason: 'upstream-refused-401',
     });
     expect(text).not.toMatch(/sk-gateway-secret|delivery-secret|cm_agent_secret/);
   });

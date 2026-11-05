@@ -165,8 +165,15 @@ export const failedTurnsFrom = (output, { since } = {}) => {
  * `cause` says whose failure a failed walk was: `model` (the gateway or the
  * model refused, or the host proxy refused an unpinned model), `harness` (the
  * turn failed with no model refusal, including a route the host proxy doesn't
- * serve), or `commonly` (no turn failed, yet the reply or the ack did not
- * happen). Null on a pass, and before anyone has posted the @mention.
+ * serve), `commonly` (the CLI was never handed the event, or it replied and
+ * the ack did not land), or `unfinished` (the CLI was handed the event and no
+ * line says what became of the turn: it hung, it outlasted the walk, whose
+ * limit is shorter than the adapter's, or the CLI died). Null on a pass, and
+ * before anyone has posted the @mention.
+ *
+ * A Commonly API call that throws mid-turn reaches the same failed line, and
+ * nothing in its text marks it. So a model-class line with no upstream status
+ * says what it most likely was, and doesn't clear Commonly.
  */
 export const prodOutcome = ({
   messages = [], agentName, readyAt, events = [], acks = [], output = '',
@@ -196,20 +203,28 @@ export const prodOutcome = ({
   if (mention && refusedAck) {
     cause = 'model';
     // The run loop writes `upstream-refused-undefined` when it saw no status.
-    const status = refusedAck.refusedStatus ?? /^upstream-refused-(\d{3})$/.exec(refusedAck.reason)?.[1] ?? 'status unknown';
+    const status = /^upstream-refused-(\d{3})$/.exec(refusedAck.reason)?.[1] ?? 'status unknown';
     problems.push(refusedAck.reason === 'provider-refused'
       ? 'the model provider refused the @mention\'s content, and the CLI acked it as refused: the gateway or model, not Commonly'
       : `the gateway or model refused the turn (upstream ${status}), and the CLI acked it as refused: the model route, not Commonly`);
   } else if (mention && (!reply || !ack) && modelFailure) {
     cause = 'model';
-    const named = [modelFailure.failureClass, modelFailure.upstreamStatus !== null ? `upstream ${modelFailure.upstreamStatus}` : null]
-      .filter(Boolean).join(', ');
-    problems.push(`the gateway or model refused the turn (${named}): the model route, not Commonly`);
+    const { failureClass, upstreamStatus } = modelFailure;
+    const certain = upstreamStatus !== null || failureClass === 'proxy_refused' || failureClass === 'content_refused';
+    problems.push(certain
+      ? `the gateway or model refused the turn (${[failureClass, upstreamStatus !== null ? `upstream ${upstreamStatus}` : null]
+        .filter(Boolean).join(', ')}): the model route, not Commonly`
+      : `the turn failed as ${failureClass} with no upstream status: most likely the model route, though a failed `
+        + 'Commonly API call reads the same, so check the failed line in the log');
   } else if (mention && (!reply || !ack) && failed.length) {
     cause = 'harness';
     problems.push(failed.some((t) => t.failureClass === 'proxy_route_refused')
       ? "the CLI's provider proxy refused a route the harness called: a mismatch between the harness and the CLI's provider route, not the gateway or the model"
       : `the agent's turn failed (${failed[0].failureClass}) without a model refusal: the harness, not Commonly`);
+  } else if (mention && !reply && mentionEvents.length) {
+    cause = 'unfinished';
+    problems.push('the CLI was handed the @mention, but its turn never finished and it logged no failure: '
+      + 'it hung, outlasted the walk, or the CLI exited');
   } else if (mention && (!reply || !ack)) {
     cause = 'commonly';
   }
@@ -229,7 +244,8 @@ export const prodOutcome = ({
 
 /** One line naming a failed walk's cause, for the log. */
 export const describeCause = (cause, harnessLabel = 'the harness') => ({
-  model: 'verdict: the model route failed (the gateway, the model, or the CLI\'s proxy in front of them), not Commonly',
+  model: 'verdict: the model route failed (the gateway, the model, or the CLI\'s proxy in front of them)',
   harness: `verdict: ${harnessLabel}'s turn failed without a model refusal, not Commonly and not the gateway`,
   commonly: 'verdict: no turn failed, so the missing reply or ack is Commonly\'s delivery',
+  unfinished: `verdict: ${harnessLabel} was handed the @mention, but the turn never finished and no line says why`,
 }[cause] || null);

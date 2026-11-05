@@ -218,7 +218,7 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
     }
   });
 
-  test('no credential of any name stays in codex\'s environment on the proxy route', async () => {
+  test('none of the names codex or its gateway read stays in its environment on the proxy route', async () => {
     const { impl, calls } = makeSpawnImpl();
     await codex.spawn('hello', await publicSeat({
       CODEX_API_KEY: REAL_KEY,
@@ -226,10 +226,20 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
       OPENAI_API_KEY: 'sk-openai-other-0123456789abcdef',
       LITELLM_API_KEY: 'sk-litellm-0123456789abcdef',
       OPENAI_BASE_URL: 'https://gateway.example/v1',
+      // Windows env names are case-insensitive, so this one is the same variable.
+      codex_api_key: REAL_KEY,
     }, { _startProviderProxy: fakeProxy([]), _spawnImpl: impl }));
-    for (const name of ['CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_API_KEY', 'LITELLM_API_KEY', 'OPENAI_BASE_URL']) {
+    for (const name of ['CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_API_KEY', 'LITELLM_API_KEY', 'OPENAI_BASE_URL', 'codex_api_key']) {
       expect(calls[0].opts.env).not.toHaveProperty(name);
     }
+  });
+
+  test('a key pasted with a trailing newline reaches the proxy without it', async () => {
+    const started = [];
+    const { impl } = makeSpawnImpl();
+    await codex.spawn('hello', await publicSeat({ CODEX_API_KEY: `${REAL_KEY}\n` },
+      { _startProviderProxy: fakeProxy(started), _spawnImpl: impl }));
+    expect(started[0].keyMaterial).toBe(REAL_KEY);
   });
 
   test('a private seat is untouched: codex reads its own config, no proxy starts', async () => {
@@ -266,14 +276,20 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
   test('a gateway URL carrying credentials is refused before the proxy or codex starts, and is not echoed', async () => {
     const started = [];
     const { impl, calls } = makeSpawnImpl();
-    const err = await codex.spawn('hello', await publicSeat({
+    const ctx = await publicSeat({
       CODEX_API_KEY: REAL_KEY,
       OPENAI_BASE_URL: 'https://user:pass@gateway.example/v1',
-    }, { _startProviderProxy: fakeProxy(started), _spawnImpl: impl })).catch((e) => e);
+    }, { _startProviderProxy: fakeProxy(started), _spawnImpl: impl });
+    // A refused route changes nothing: the link an earlier turn left stays.
+    const operatorAuth = join(ctx.env.CODEX_HOME, 'auth.json');
+    await writeFile(operatorAuth, '{"test":true}', 'utf8');
+    await symlink(operatorAuth, join(ctx._publicCodexHome, 'auth.json'));
+    const err = await codex.spawn('hello', ctx).catch((e) => e);
     expect(err.message).toMatch(/OPENAI_BASE_URL must be a plain http\(s\) URL/);
     expect(err.message).not.toContain('user:pass');
     expect(started).toEqual([]);
     expect(calls).toEqual([]);
+    expect((await lstat(join(ctx._publicCodexHome, 'auth.json'))).isSymbolicLink()).toBe(true);
   });
 
   test('end to end through the real proxy: the request codex would send reaches the gateway with the real key', async () => {

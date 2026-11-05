@@ -7,9 +7,9 @@
  * Observation only: it wraps the global fetch, records the event poll's ids
  * and each ack's status to COMMONLY_BYO_ACK_LOG as JSON lines, and passes
  * every response through untouched. Of an ack's body it keeps only the turn's
- * class (outcome, reason, refused status), so the verdict can tell a model
- * refusal the CLI acked from a reply (D250). It never records a header, the
- * result's free-text detail, the delivery id, or message content. Claude Code
+ * class (outcome, reason), so the verdict can tell a model refusal the CLI
+ * acked from a reply (D250). It never records a header, the result's free-text
+ * detail, the delivery id, or message content. Claude Code
  * never loads it: a public Claude seat's environment is an allowlist that
  * drops NODE_OPTIONS. A public Codex seat's environment keeps NODE_OPTIONS, so
  * codex's Node launcher loads it as well. It records nothing there, because
@@ -25,9 +25,8 @@ const ackClass = (body) => {
   let result;
   try { result = JSON.parse(typeof body === 'string' ? body : '')?.result; } catch { return {}; }
   const label = (value) => (typeof value === 'string' && /^[a-z0-9_-]{1,64}$/i.test(value) ? value : undefined);
-  const refusedStatus = Number.isInteger(result?.refused?.status) ? result.refused.status : undefined;
   return Object.fromEntries(Object.entries({
-    outcome: label(result?.outcome), reason: label(result?.reason), refusedStatus,
+    outcome: label(result?.outcome), reason: label(result?.reason),
   }).filter(([, value]) => value !== undefined));
 };
 const realFetch = globalThis.fetch;

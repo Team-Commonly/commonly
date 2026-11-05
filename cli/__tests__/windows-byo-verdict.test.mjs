@@ -220,7 +220,7 @@ describe('the prod verdict names whose failure it was', () => {
   test('a failure logged before the @mention is not blamed on it', () => {
     const earlier = '2026-11-05T03:00:10.000Z [codex-walk] inbox batch processing failed (rate_limit; 1 consecutive) '
       + '— retrying 1 held event in 5.9s: codex turn failed (upstream 429)\n';
-    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: earlier }).cause).toBe('commonly');
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: earlier }).cause).toBe('unfinished');
     expect(prodOutcome({ ...base, messages: [mention], acks: [], output: earlier + failedTurn('runtime', 'codex: exited 1') }).cause)
       .toBe('harness');
   });
@@ -232,7 +232,7 @@ describe('the prod verdict names whose failure it was', () => {
       + '[codex] provider proxy refused a completion for an unpinned model\n';
     const after = '2026-11-05T03:00:25.000Z [codex-walk] [inbox.batch] spawning codex\n'
       + '[codex] provider proxy refused a completion for an unpinned model\n';
-    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: before }).cause).toBe('commonly');
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: before }).cause).toBe('unfinished');
     expect(prodOutcome({ ...base, messages: [mention], acks: [], output: before + after }).cause).toBe('model');
     // With no CLI line before it, nothing places a refusal, so it still counts.
     expect(prodOutcome({ ...base, messages: [mention], acks: [], output: '[codex] provider proxy refused POST /v1/x\n' }).cause)
@@ -268,15 +268,15 @@ describe('the prod verdict names whose failure it was', () => {
   });
 
   // CONFIGURATION_RE (cli/src/lib/spawn-retry.js) also classes a rejected key
-  // as configuration, with no upstream status on the line. That is the model
-  // route's answer, not a missing binary or login.
+  // as configuration, with no upstream status on the line. That is most likely
+  // the model route's answer, not a missing binary or login.
   test('a configuration failure that names a rejected key is the model route, though it carries no status', () => {
     for (const text of [
       'codex: invalid API key', 'codex: authentication failed', 'codex turn failed: 401 Unauthorized', 'gateway said Forbidden',
     ]) {
       const outcome = prodOutcome({ ...base, messages: [mention], acks: [], output: failedTurn('configuration', text) });
       expect({ text, cause: outcome.cause }).toEqual({ text, cause: 'model' });
-      expect(outcome.problems[0]).toMatch(/gateway or model refused the turn \(configuration\): the model route/);
+      expect(outcome.problems[0]).toMatch(/failed as configuration with no upstream status: most likely the model route/);
     }
   });
 
@@ -301,17 +301,37 @@ describe('the prod verdict names whose failure it was', () => {
   });
 
   test('the log line names each cause in words, and none for a pass', () => {
-    expect(describeCause('model', 'Codex')).toMatch(/model route failed .*not Commonly/);
+    expect(describeCause('model', 'Codex')).toMatch(/model route failed/);
     expect(describeCause('harness', 'Codex')).toMatch(/^verdict: Codex's turn failed without a model refusal/);
     expect(describeCause('commonly', 'Codex')).toMatch(/Commonly's delivery/);
     expect(describeCause(null)).toBeNull();
   });
 
-  test('with no failed turn in the log, a missing reply or ack is Commonly\'s delivery', () => {
-    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: 'polling https://api.commonly.me for events\n' }))
+  test('an @mention the CLI was never handed is Commonly\'s delivery, and so is a reply that was never acked', () => {
+    expect(prodOutcome({ ...base, messages: [mention], events: [], acks: [], output: 'polling https://api.commonly.me for events\n' }))
       .toMatchObject({ passed: false, cause: 'commonly' });
     expect(prodOutcome({ ...base, messages: [mention, reply], acks: [] }))
       .toMatchObject({ passed: false, cause: 'commonly', problems: ['the @mention was never acknowledged'] });
+  });
+
+  // The walk gives up before the adapter's own timeout, so a gateway that
+  // accepts /responses and never finishes leaves no failed line at all.
+  test('a turn the CLI was handed and never finished blames nobody', () => {
+    const outcome = prodOutcome({ ...base, messages: [mention], acks: [], output: 'spawning codex for chat.mention\n' });
+    expect(outcome).toMatchObject({ passed: false, cause: 'unfinished' });
+    expect(outcome.problems[0]).toMatch(/handed the @mention, but its turn never finished/);
+    expect(describeCause('unfinished', 'Codex')).toMatch(/^verdict: Codex was handed the @mention/);
+    expect(describeCause('unfinished', 'Codex')).not.toMatch(/Commonly's delivery/);
+  });
+
+  // A Commonly API call that throws mid-turn reaches the same line, and nothing
+  // in its text marks it, so a line with no upstream status can't say "not Commonly".
+  test('a model-class failure with no upstream status does not clear Commonly', () => {
+    const outcome = prodOutcome({ ...base, messages: [mention], acks: [], output: failedTurn('rate_limit', 'Too many requests') });
+    expect(outcome.cause).toBe('model');
+    expect(outcome.problems[0]).toMatch(/rate_limit with no upstream status/);
+    expect(outcome.problems[0]).not.toMatch(/not Commonly/);
+    expect(describeCause('model', 'Codex')).not.toMatch(/not Commonly/);
   });
 });
 

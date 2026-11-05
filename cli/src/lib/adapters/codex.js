@@ -756,9 +756,10 @@ export const publicModelRouteBaseUrl = (source = {}) => {
 // it is kept or logged. Only "apikey" counts as a key; a file with any other
 // mode, no mode, or that does not parse is treated as a login and fails closed,
 // whatever OPENAI_API_KEY says, since codex prefers its stored login. With no
-// auth.json, an OPENAI_API_KEY or CODEX_API_KEY in the env is the key. A
-// CODEX_ACCESS_TOKEN in the env is a token codex sends in place of either, so
-// it counts as a login whatever auth.json says.
+// auth.json, an OPENAI_API_KEY in the env is the key (a CODEX_API_KEY never gets
+// here: it takes the proxy route below). A CODEX_ACCESS_TOKEN in the env is a
+// token codex sends in place of a key, so it counts as a login whatever
+// auth.json says.
 const CODEX_OWN_AUTH_ENVS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_BASE_URL'];
 
 const CHATGPT_ROUTE_IGNORED = 'OPENAI_BASE_URL is ignored while Codex is signed in with ChatGPT; '
@@ -775,7 +776,7 @@ export const codexAuthKind = async (operatorHome, source = {}) => {
     if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') return 'login';
   }
   if (text === null) {
-    return envSet(source, 'OPENAI_API_KEY') || envSet(source, 'CODEX_API_KEY') ? 'apikey' : 'none';
+    return envSet(source, 'OPENAI_API_KEY') ? 'apikey' : 'none';
   }
   let mode = null;
   try { mode = JSON.parse(text)?.auth_mode ?? null; } catch { /* unreadable: a login */ }
@@ -799,7 +800,7 @@ const publicProviderRoute = (source = {}) => {
   if (!envSet(source, 'CODEX_API_KEY')) return null;
   return {
     baseURL: publicModelRouteBaseUrl(source) || OPENAI_DEFAULT_BASE_URL,
-    key: source.CODEX_API_KEY,
+    key: source.CODEX_API_KEY.trim(),
   };
 };
 
@@ -1119,9 +1120,14 @@ export default {
           wire: 'openai-responses',
           adapterLabel: 'Codex',
         });
-        // codex talks to the proxy alone, so no credential of any name stays in
-        // its environment; it gets the per-turn token instead.
-        for (const name of [...CODEX_PROVIDER_KEY_ENVS, ...CODEX_OWN_AUTH_ENVS]) delete childEnv[name];
+        // codex talks to the proxy alone, so none of the names it or its gateway
+        // read stays in its environment; it gets the per-turn token instead. In
+        // upper case, as above: Windows env names are case-insensitive, and this
+        // is a plain copy of them.
+        const routeNames = new Set([...CODEX_PROVIDER_KEY_ENVS, ...CODEX_OWN_AUTH_ENVS]);
+        for (const name of Object.keys(childEnv)) {
+          if (routeNames.has(name.toUpperCase())) delete childEnv[name];
+        }
         childEnv[CODEX_PROVIDER_TOKEN_ENV] = providerProxy.token;
       }
       const args = buildArgs({
