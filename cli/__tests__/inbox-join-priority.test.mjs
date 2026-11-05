@@ -88,7 +88,7 @@ const drainMicrotasks = async () => {
 // A claim-once inbox: each /events call returns everything currently pending
 // and marks it taken, exactly like claimPage. `arrivals[i]` is what lands in
 // the inbox before tick i.
-const runTicks = async ({ arrivals, ticks = 2, spawn }) => {
+const runTicks = async ({ arrivals, ticks = 2, spawn, runOptions = {} }) => {
   const delays = [];
   const acked = [];
   let pending = [];
@@ -129,6 +129,7 @@ const runTicks = async ({ arrivals, ticks = 2, spawn }) => {
     instanceId: 'default',
     intervalMs: INTERVAL,
     setTimeoutImpl,
+    ...runOptions,
   });
   for (let i = 0; i < ticks; i += 1) {
     // eslint-disable-next-line no-await-in-loop
@@ -261,6 +262,48 @@ describe('a waiting person outranks the seat\'s own join turn', () => {
 
     expect(spawn).not.toHaveBeenCalled();
     expect(acked).toEqual([]);
+  });
+
+  // CodeRabbit on #3511: a digest row from the same pod made the greeting's
+  // group mixed, so it ran at once instead of being held.
+  test('a digest row beside the greeting does not stop the hold', async () => {
+    const spawn = jest.fn(async () => ({ text: 'hello' }));
+    const digestRow = {
+      _id: 'evt-digest', type: 'chat.message', deliveryMode: 'digest', podId: POD,
+      agentName: 'my-stub', instanceId: 'default', payload: { content: 'ambient chatter', messageId: 'msg-d' },
+    };
+    const { acked } = await runTicks({ arrivals: [[joinEvent, digestRow]], ticks: HOLD_POLLS, spawn });
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(acked).toEqual([]);
+  });
+
+  // CodeRabbit on #3511: a carried greeting joining a full page from the same
+  // pod made the group one longer than the prompt's body cap, and the last
+  // event was acked without the model seeing it.
+  test('a carried greeting never pushes a full page past the body cap', async () => {
+    const LIMIT = 3;
+    const spawn = jest.fn(async () => ({ text: 'ok' }));
+    const page = [1, 2, 3].map((n) => ({
+      ...mentionEvent, _id: `evt-m${n}`, payload: { content: `question ${n}`, messageId: `msg-${n}` },
+    }));
+    const { acked } = await runTicks({
+      arrivals: [[joinEvent], page],
+      ticks: HOLD_POLLS + 3,
+      spawn,
+      runOptions: { inboxBatchLimit: LIMIT },
+    });
+
+    for (const [prompt] of spawn.mock.calls) {
+      const bodies = (prompt.match(/^Event \d+\/\d+:/gm) || []).length;
+      expect(bodies).toBeLessThanOrEqual(LIMIT);
+    }
+    const prompts = spawn.mock.calls.map(([prompt]) => prompt).join('\n');
+    for (const id of acked) {
+      if (id === 'evt-join') expect(prompts).toContain('A human just added you to this workspace.');
+      else expect(prompts).toContain(`question ${id.replace('evt-m', '')}`);
+    }
+    expect(acked.sort()).toEqual(['evt-join', 'evt-m1', 'evt-m2', 'evt-m3']);
   });
 
   test('only the connect-time greeting is held: once it has run, a later one is not carried', async () => {

@@ -3008,6 +3008,7 @@ export const performRun = ({
   let greetingHoldSpent = false;
   // Polls the connect-time greeting has been carried, against the window.
   let greetingHeldPolls = 0;
+  let greetingHoldStartedAt = null;
   const greetingHoldPolls = Math.max(1, Math.ceil(GREETING_HOLD_MS / Math.max(1, Number(intervalMs) || 1)));
 
   // The same is true of a batch whose turn FAILED: its events are claimed, so
@@ -3533,7 +3534,19 @@ export const performRun = ({
         group.push(event);
         eventGroups.set(key, group);
       }
-      const groups = [...eventGroups.values()];
+      // A carried greeting must not push a full page past the prompt's body
+      // cap: an event past the cap gets no body yet is acked with the batch
+      // (CodeRabbit on #3511). Carry the greeting again instead.
+      for (const [key, group] of eventGroups) {
+        const wakeCount = group.filter((event) => event.deliveryMode !== 'digest').length;
+        if (wakeCount <= batchLimit) continue;
+        const overflow = group.filter((event) => carriedIds.has(String(event._id))
+          && DEFERRABLE_SOLO_EVENT_TYPES.has(event.type));
+        if (!overflow.length) continue;
+        heldGreeting = [...heldGreeting, ...overflow];
+        eventGroups.set(key, group.filter((event) => !overflow.includes(event)));
+      }
+      const groups = [...eventGroups.values()].filter((group) => group.length > 0);
       // The greeting window is counted once per poll, however many pods'
       // greetings this page carries (gate review of #3511).
       let greetingCarriedThisPoll = false;
@@ -3557,8 +3570,15 @@ export const performRun = ({
           // agent in that window is answered first, in the same turn, instead
           // of behind a greeting. Only the connect-time greeting is held: once
           // a turn has carried one, later greetings run as they arrive.
-          if (!greetingHoldSpent && (greetingCarriedThisPoll || greetingHeldPolls < greetingHoldPolls)
-            && group.every((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))) {
+          // Digest rows ride along with a greeting without counting as a
+          // person waiting (CodeRabbit on #3511). The window is bounded by the
+          // clock too, so turns run for other pods between polls can't stretch
+          // the carry past its delivery lease (CodeRabbit on #3511).
+          if (!greetingHoldSpent
+            && (greetingCarriedThisPoll || (greetingHeldPolls < greetingHoldPolls
+              && (greetingHoldStartedAt === null || Date.now() - greetingHoldStartedAt < GREETING_HOLD_MS)))
+            && group.some((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type))
+            && group.every((event) => DEFERRABLE_SOLO_EVENT_TYPES.has(event.type) || event.deliveryMode === 'digest')) {
             if (greetingHeldPolls === 0 && !greetingCarriedThisPoll) {
               log(`[inbox.batch] carrying ${group.length} greeting event(s) for up to `
                 + `${Math.round(GREETING_HOLD_MS / 1000)} s, so a person who mentions this agent is answered first`);
@@ -3566,6 +3586,7 @@ export const performRun = ({
             if (!greetingCarriedThisPoll) {
               greetingCarriedThisPoll = true;
               greetingHeldPolls += 1;
+              if (greetingHoldStartedAt === null) greetingHoldStartedAt = Date.now();
             }
             // Appended, never assigned: two pods' greetings can be carried in
             // the same window, and an overwrite left the first unacked until
