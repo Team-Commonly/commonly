@@ -400,13 +400,10 @@ describe('L2 / M1: the proof reads every page, refuses what it cannot read, and 
     expect(await Integration.countDocuments({ type: 'github-app' })).toBe(0);
   });
 
-  test('the owner\'s own disconnected row comes back on a fresh proof; another person\'s stays 409', async () => {
+  test('the owner\'s own disconnected row comes back on a fresh proof', async () => {
     await giveUserToken(alice, 'alice-user-token');
-    await giveUserToken(bob, 'bob-user-token');
     const first = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
     await Integration.updateOne({ _id: first.body.integration._id }, { $set: { status: 'disconnected' } });
-    const bobs = await connectRepo(bob, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
-    expect(bobs.status).toBe(409);
     const again = await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' });
     expect(again.status).toBe(200);
     const row = await Integration.findById(first.body.integration._id).lean();
@@ -417,6 +414,72 @@ describe('L2 / M1: the proof reads every page, refuses what it cannot read, and 
     mockGithub.byToken['alice-user-token'].repositories[INSTALL][0].permissions = { push: false, pull: true };
     expect((await connectRepo(alice, { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' })).status).toBe(403);
     expect((await Integration.findById(row._id).lean()).status).toBe('disconnected');
+  });
+});
+
+describe('F173: a disconnected or revoked row no longer blocks someone else', () => {
+  const WIDGET = { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' };
+  const grantFor = (row, user) => createGrant({
+    connectionId: String(row._id), connectionRowId: String(row._id), installationId: INSTALL,
+    target: { kind: 'pod', id: '6a8f6de2a1dccf2e02f31499' }, tools: ['github.get_issue'], writeMode: 'read',
+    audience: [String(bot._id)], expiresAt: new Date(Date.now() + 86400000),
+    brokerId: GRANT_BROKER_ID, ownerId: String(user._id),
+  });
+  const isRevoked = async (g) => Boolean((await RoomGrant.findOne({ grantId: g.grantId }).lean()).revokedAt);
+
+  test.each([
+    ['disconnected', { status: 'disconnected' }],
+    ['revoked', { revokedAt: new Date() }],
+  ])('a %s row owned by someone else is taken over on a fresh proof, and the old owner\'s grants end', async (_label, stale) => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+    const first = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesGrant = await grantFor(first, alice);
+    await Integration.updateOne({ _id: first._id }, { $set: stale });
+    const widgetForBob = mockGithub.byToken['bob-user-token'].repositories[INSTALL]
+      .find((r) => r.full_name === 'Outside-Team/Widget');
+
+    const bobs = await connectRepo(bob, WIDGET);
+    expect(bobs.status).toBe(200);
+    const row = await Integration.findById(first._id).lean();
+    expect(String(row._id)).toBe(String(first._id));
+    expect(String(row.createdBy)).toBe(String(bob._id));
+    expect(row.status).toBe('connected');
+    expect(row.revokedAt || null).toBeNull();
+    expect(row.config.repositoryId).toBe(String(widgetForBob.id));
+    expect(await isRevoked(alicesGrant)).toBe(true);
+    expect(await Integration.countDocuments({ type: 'github-app' })).toBe(1);
+    // Identity and memory are untouched: both people and their GitHub rows remain.
+    expect(await User.countDocuments({ _id: { $in: [alice._id, bob._id] } })).toBe(2);
+    expect(await Integration.countDocuments({ type: 'hosted-mcp' })).toBe(2);
+  });
+
+  test('a connected row owned by someone else still answers 409, and its grants live', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+    const first = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesGrant = await grantFor(first, alice);
+    const bobs = await connectRepo(bob, WIDGET);
+    expect(bobs.status).toBe(409);
+    expect(bobs.body.integrationId).toBeUndefined();
+    const row = await Integration.findById(first._id).lean();
+    expect(String(row.createdBy)).toBe(String(alice._id));
+    expect(await isRevoked(alicesGrant)).toBe(false);
+  });
+
+  test('a takeover still needs the new caller\'s own proof', async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+    const first = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesGrant = await grantFor(first, alice);
+    await Integration.updateOne({ _id: first._id }, { $set: { status: 'disconnected' } });
+    mockGithub.byToken['bob-user-token'].repositories[INSTALL]
+      .find((r) => r.full_name === 'Outside-Team/Widget').permissions = { push: false, pull: true };
+    expect((await connectRepo(bob, WIDGET)).status).toBe(403);
+    const row = await Integration.findById(first._id).lean();
+    expect(String(row.createdBy)).toBe(String(alice._id));
+    expect(row.status).toBe('disconnected');
+    expect(await isRevoked(alicesGrant)).toBe(false);
   });
 });
 

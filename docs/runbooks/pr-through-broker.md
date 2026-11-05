@@ -44,21 +44,26 @@ token with that App's id and key only:
   is the admin. The same repository twice answers `409 connection_exists`;
   before F172 a repeated POST for the same repository answered `200` with the
   existing row, so a script that re-POSTs must treat 409 as "already there".
-- **Access is proved again on every Connect write.** Before a write parks, and
-  again (never from cache) before an approved write runs, the broker re-runs
-  the create-time proof with the owner's CURRENT user token: the installation
-  is visible and is Connect's, not suspended, the repository is listed with
-  the same GitHub repository id recorded at create (so a rename, transfer or
-  delete-and-recreate does not carry over), and the owner can push. A passing
-  park proof is cached for 60 s per row. Any failure refuses
-  `connection_unproven` (the proof's code in `details.reason`) and nothing is
-  written to GitHub. Tools rows are not re-proved.
+- **Access is proved again on every Connect call, read or write** (F172,
+  F173). The broker re-runs the create-time proof with the owner's CURRENT
+  user token: the installation is visible and is Connect's, not suspended, the
+  repository is listed with the same GitHub repository id recorded at create
+  (so a rename, transfer or delete-and-recreate does not carry over), and the
+  owner can push. Reads and a write that parks may use a passing proof cached
+  for 60 s per row; an approved write at execute, and a write that runs with no
+  parked approval (a reversible tool on a full `write` grant), always prove
+  fresh. Any failure refuses `connection_unproven` (the proof's code in
+  `details.reason`) before GitHub is called. Tools rows are not re-proved.
 - **Removing the owner's GitHub connection** (the hosted-MCP `github-mcp` row)
   disconnects every Connect row they own and revokes those rows' grants,
   before any provider step. A retry after a failed revoke still reaches rows
-  the first attempt already disconnected. The rows are kept, so the owner sees them; posting
-  the same repository again with a fresh proof reconnects their own row (its
-  old grants stay revoked).
+  the first attempt already disconnected. The rows are kept.
+- **A disconnected or revoked Connect row holds nothing.** Posting the same
+  repository with a fresh proof takes the row: its own owner reconnects it, or
+  another person becomes its owner (F173). Either way every grant on the row
+  is revoked first and stays revoked, and the row records the new proof
+  (owner, repository id). People's accounts, agents and memory are untouched.
+  A connected row owned by someone else still answers `409 connection_exists`.
 - **Connect tokens are narrowed** to the connection's repository
   (`repository_ids` on the token request). A Connect token request with no
   valid repository id (absent, not plain digits, zero, or past the safe-integer

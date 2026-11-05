@@ -46,6 +46,11 @@ jest.mock('../../services/githubAppService', () => ({
   getInstallationToken: jest.fn(),
   getDefaultBranch: jest.fn(async () => 'main'),
   getTreeEntries: jest.fn(async () => ({ entries: [], truncated: false })),
+  getIssue: jest.fn(async () => ({ number: 12, title: 'Bug', state: 'open', html_url: 'https://github.com/o/r/issues/12' })),
+  listOpenIssues: jest.fn(async () => []),
+  getPullRequest: jest.fn(async () => ({ number: 5, title: 'PR', state: 'open', html_url: 'https://github.com/o/r/pull/5' })),
+  listPullRequestFiles: jest.fn(async () => []),
+  closeIssue: jest.fn(async () => ({ number: 12, state: 'closed', html_url: 'https://github.com/o/r/issues/12' })),
 }));
 // A seat's own sandbox, as the server judges it. Hosted turns never ask.
 const mockJudge = jest.fn();
@@ -451,4 +456,106 @@ test('an approved commit_files on Connect signs every Git Data call with Connect
   for (const [, options] of gitCalls) {
     expect(options).toMatchObject({ installationId: '7001', app: 'connect', repositoryId: '555', forceApp: true });
   }
+});
+
+// ─── F173: reads are re-proved too; an unparked write never uses the cache ───
+
+const fullWriteGrantOn = async (row) => {
+  await new Promise((resolve) => { setTimeout(resolve, 5); });
+  return mintGrant({
+    connectionId: String(row._id),
+    connectionRowId: String(row._id),
+    installationId: '7001',
+    target: { kind: 'pod', id: String(pod._id) },
+    tools: ['github.get_issue', 'github.list_issues', 'github.get_pull_request', 'github.list_pull_request_files', 'github.close_issue'],
+    writeMode: 'write',
+    audience: [String(seat._id)],
+    expiresAt: new Date(Date.now() + 7 * 86400000),
+    brokerId: GRANT_BROKER_ID,
+    ownerId: String(owner._id),
+  });
+};
+
+const callTool = async (name, args) => dispatchHostedBrokerTool({
+  projection: await hostedBrokerToolsForRun({ identityId: String(seat._id), podId: String(pod._id) }),
+  name,
+  args,
+  agentUserId: String(seat._id),
+  agentName: 'helper',
+  instanceId: 'default',
+  runPodId: String(pod._id),
+});
+
+const READS = [
+  ['github_get_issue', { issueNumber: 12 }, 'getIssue'],
+  ['github_list_issues', {}, 'listOpenIssues'],
+  ['github_get_pull_request', { pullNumber: 5 }, 'getPullRequest'],
+  ['github_list_pull_request_files', { pullNumber: 5 }, 'listPullRequestFiles'],
+];
+
+describe('F173: Connect reads re-prove the owner', () => {
+  test.each(READS)('%s runs on a proven Connect row and re-proves first', async (name, args, method) => {
+    await fullWriteGrantOn(await connectRow('connect'));
+    const answer = await callTool(name, args);
+    expect(answer.outcome).not.toBe('refused');
+    expect(mockView.calls).toBeGreaterThan(0);
+    expect(github[method]).toHaveBeenCalled();
+  });
+
+  test.each(READS)('%s refuses after the owner loses push, before GitHub is touched', async (name, args, method) => {
+    await fullWriteGrantOn(await connectRow('connect'));
+    mockView.push = false;
+    const answer = await callTool(name, args);
+    expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'connection_unproven' } });
+    expect(github[method]).not.toHaveBeenCalled();
+  });
+
+  test.each(READS)('%s refuses when the repository is gone from the installation', async (name, args, method) => {
+    await fullWriteGrantOn(await connectRow('connect'));
+    mockView.listed = false;
+    const answer = await callTool(name, args);
+    expect(answer).toMatchObject({ outcome: 'refused', content: { error: 'connection_unproven' } });
+    expect(github[method]).not.toHaveBeenCalled();
+  });
+
+  test('a read on a tools row is not re-proved', async () => {
+    await fullWriteGrantOn(await connectRow(undefined));
+    const answer = await callTool('github_get_issue', { issueNumber: 12 });
+    expect(answer.outcome).not.toBe('refused');
+    expect(mockView.calls).toBe(0);
+  });
+
+  test('reads share the 60s cache: a second read inside the window does not ask GitHub again', async () => {
+    await fullWriteGrantOn(await connectRow('connect'));
+    await callTool('github_get_issue', { issueNumber: 12 });
+    const after = mockView.calls;
+    await callTool('github_get_issue', { issueNumber: 12 });
+    expect(mockView.calls).toBe(after);
+  });
+});
+
+describe('F173: a write that runs without a parked approval proves fresh', () => {
+  // A hosted turn only gets reads and the PR writes, which always park; a
+  // reversible write on a full-write grant runs unattended from a seat.
+  const closeDirect = (grant) => require('../../services/toolBrokerService').callTool({
+    grantId: grant.grantId, agentUserId: String(seat._id), agentName: 'helper', instanceId: 'default',
+    tool: 'github.close_issue', args: { issueNumber: 12 },
+  });
+
+  test('a full-write close_issue runs directly, re-proved', async () => {
+    const grant = await fullWriteGrantOn(await connectRow('connect'));
+    await closeDirect(grant);
+    expect(mockView.calls).toBeGreaterThan(0);
+    expect(github.closeIssue).toHaveBeenCalled();
+    expect(await ApprovalAction.countDocuments({})).toBe(0);
+  });
+
+  test('an unparked write ignores a proof cached a moment ago', async () => {
+    const grant = await fullWriteGrantOn(await connectRow('connect'));
+    // A read caches a passing proof for this row.
+    expect((await callTool('github_get_issue', { issueNumber: 12 })).outcome).not.toBe('refused');
+    mockView.push = false;
+    await expect(closeDirect(grant)).rejects.toMatchObject({ code: 'connection_unproven' });
+    expect(github.closeIssue).not.toHaveBeenCalled();
+  });
 });
