@@ -188,7 +188,7 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
   test('a caller declaring an adapter that cannot confine gets a refusal and no broker, named or not', async () => {
     const fixture = await seed();
     await namedGrant(fixture);
-    const responses = await Promise.all(['pi', 'goose', 'qwen', 'opencode'].map((adapter) => read(SEAT_TOKEN, adapter)));
+    const responses = await Promise.all(['pi', 'goose', 'qwen', 'dsh', 'hermes'].map((adapter) => read(SEAT_TOKEN, adapter)));
     responses.forEach((res) => {
       expect(res.status).toBe(200);
       expect(res.body.servers).toEqual([]);
@@ -196,6 +196,27 @@ describe('GET /api/agents/runtime/grant-brokers (F150)', () => {
         code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: 'adapter_cannot_confine',
       });
     });
+  });
+
+  // F175a: OpenCode confines a public seat on the same three modes as claude
+  // and keeps the credential out of its own tools' reach, so it is admitted.
+  test('an OpenCode caller on a confined seat gets its grant; on an unconfined one, a refusal', async () => {
+    const fixture = await seed({ seatEnvironment: { sandbox: { mode: 'workspace', trust: 'public' } } });
+    await grantFor({
+      grantId: 'grant_unnamed',
+      target: { kind: 'seat', id: String(fixture.seat._id) },
+      audience: [String(fixture.seat._id)],
+    });
+    const admitted = await read(SEAT_TOKEN, 'opencode');
+    expect(admitted.body.refusal).toBeNull();
+    expect(admitted.body.servers).toEqual([expect.objectContaining({ name: expect.any(String), url: brokerUrl('grant_unnamed') })]);
+
+    await AgentInstallation.updateOne({ agentName: 'quill' }, {
+      $set: { 'config.environment': { sandbox: { mode: 'none', trust: 'public' } } },
+    });
+    const refused = await read(SEAT_TOKEN, 'opencode');
+    expect(refused.body.servers).toEqual([]);
+    expect(refused.body.refusal).toMatchObject({ reason: 'sandbox_mode_none' });
   });
 
   test('the installation\'s own unproven adapter still refuses when the caller claims claude', async () => {

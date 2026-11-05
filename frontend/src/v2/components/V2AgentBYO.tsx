@@ -36,7 +36,7 @@ import { readPodVisits } from '../lib/podRecency';
 import { AgentConnection, connectionLabel } from '../utils/agentConnection';
 import cursorMcpInstallLink from '../utils/cursorMcpInstallLink';
 import {
-  FALLBACK_HARNESSES, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, harnessDeviceNote, harnessLabel,
+  FALLBACK_HARNESSES, HarnessCatalogEntry, HarnessDeviceRow, KNOWN_HARNESS_IDS, connectorGrantBlock, harnessDeviceNote, harnessLabel,
   orderHarnessIds,
 } from '../utils/harnessCatalog';
 import V2HarnessChoice from './V2HarnessChoice';
@@ -143,6 +143,9 @@ type MachineRow = {
   agentStates?: { agentName: string; instanceId: string; state: string }[];
   // What the daemon found installed there (D247): marks and sorts the adapter list.
   runtimeInventory?: HarnessDeviceRow[];
+  // D245: the daemon runs with no sandbox. Only a native Windows daemon reports
+  // this (cli hostSandboxReport), and the CLI gives its seats no grant broker.
+  hostUnconfined?: boolean;
 };
 const MACHINE_STATUS_POLL_MS = 4000;
 const MACHINE_STATUS_MAX_TICKS = 30;
@@ -1322,11 +1325,29 @@ const V2AgentBYO: React.FC = () => {
     if (reason === 'goose') return t('agentByo.refused.goose', values);
     return t('agentByo.refused.public', values);
   };
+  // F175a: a harness that can't take a connector says so rather than leaving it
+  // unmentioned: no sandbox (dsh, Hermes), not on the grant list yet (pi, Goose,
+  // Qwen), or a grant harness on native Windows, where the CLI withholds the
+  // broker. `os` is null where the page doesn't know the computer's platform.
+  const connectorLine = (harness: string, os: SetupOs | null) => {
+    const block = connectorGrantBlock(harness, os);
+    if (!block) return null;
+    const tool = harnessLabel(harnessCatalog, harness);
+    const text = block === 'never'
+      ? t('harness.noConnectors', { tool })
+      : block === 'windows'
+        ? t('harness.noConnectorsWindows')
+        : t('harness.noConnectorsYet', { tool });
+    return <p className="v2-byo__hint" data-testid="byo-no-connectors">{text}</p>;
+  };
   const opencodeName = sanitizeAgentName(name) || DEFAULT_AGENT_NAME;
   const opencodeLines = podId ? opencodeSnippet({ agentName: opencodeName, podId, model: model.trim() }) : '';
   const byoAlternative = mode === 'byo' && listenAdapter !== 'claude' && listenAdapter !== 'codex' ? (
     listenAdapter !== 'opencode' ? (
-      <p className="v2-byo__needs" data-testid="byo-runner-refused">{refusedLine(listenAdapter)}</p>
+      <>
+        <p className="v2-byo__needs" data-testid="byo-runner-refused">{refusedLine(listenAdapter)}</p>
+        {connectorLine(listenAdapter, setupOs)}
+      </>
     ) : setupOs !== 'mac' ? (
       <p className="v2-byo__needs" data-testid="byo-opencode-unavailable">
         {t('agentByo.listen.unavailableOther', {
@@ -1629,6 +1650,9 @@ const V2AgentBYO: React.FC = () => {
                 : refusedLine(adapter)}
             </p>
           )}
+          {/* No OS field on a machine: hostUnconfined is reported from native
+              Windows only, so it stands for 'windows'; anything else is unknown. */}
+          {mode === 'machine' && connectorLine(adapter, selectedMachine?.hostUnconfined === true ? 'windows' : null)}
           {mode === 'machine' && (
             <V2HarnessChoice
               key={`machine:${adapter}`}
@@ -1714,6 +1738,8 @@ const V2AgentBYO: React.FC = () => {
               })()}
             </button>
           )}
+          {mode === 'byo' && (listenAdapter === 'claude' || listenAdapter === 'codex')
+            && connectorLine(listenAdapter, setupOs)}
           {/* The run command is the quick try; it dies with its Terminal. The
               daemon is the one that keeps the agent running (TASK-645 item 3). */}
           {mode === 'byo' && machines.length === 0 && listenerAvailable && (

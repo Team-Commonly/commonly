@@ -60,6 +60,9 @@ const OPAQUE_PLACEHOLDERS = [
   'woken',
   // podChat.claimRun.label names the first and last task of a claim run (Latin task ids).
   'last',
+  // tools.byo.*adapterUnsupported names the grant harnesses as a list
+  // ("Claude Code、Codex 或 OpenCode", grantHarnessNames): Latin at both ends.
+  'harnesses',
 ];
 
 // The exception runs the safe way: a name that is usually opaque and is a number

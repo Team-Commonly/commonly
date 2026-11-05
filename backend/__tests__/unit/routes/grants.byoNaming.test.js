@@ -238,6 +238,9 @@ describe('POST /api/grants naming a BYO agent', () => {
     const res = await withCatalog([ENTRY], () => mint());
     expect(res.status).toBe(403);
     expect(res.body.error).toBe('byo_adapter_unsupported');
+    // F175a: the message names every harness that can hold a grant, from the
+    // server's own confining-adapter list.
+    expect(res.body.message).toBe('Only a Claude Code, Codex or OpenCode agent can be named on a grant.');
     expect(await RoomGrant.countDocuments({})).toBe(0);
   });
 

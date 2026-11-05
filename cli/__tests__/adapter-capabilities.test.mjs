@@ -12,7 +12,7 @@ const expected = {
   claude: { sandbox: true, mcp: true, broker: true, provider: false },
   codex: { sandbox: true, mcp: true, broker: true, provider: false },
   pi: { sandbox: false, mcp: true, broker: false, provider: false },
-  opencode: { sandbox: true, mcp: true, broker: false, provider: true },
+  opencode: { sandbox: true, mcp: true, broker: true, provider: true },
   qwen: { sandbox: true, mcp: true, broker: false, provider: true },
   dsh: { sandbox: false, mcp: true, broker: false, provider: true },
   goose: { sandbox: false, mcp: true, broker: false, provider: true },

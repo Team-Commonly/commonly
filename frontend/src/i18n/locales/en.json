@@ -2892,7 +2892,7 @@
       "consentNoSandbox": "{{agent}} runs on your computer, outside Commonly, with no sandbox. Anything it reads through this grant can leave through it, and text it reads can be written by other people and tell it what to do.",
       "readOnlyHint": "An agent on your computer can only read.",
       "reasonUnconfinedHost": "Runs on native Windows, where no grant can be used.",
-      "reasonAdapterUnsupported": "Only Claude Code or Codex agents can be named.",
+      "reasonAdapterUnsupported": "Connectors need a sandboxed harness: only {{harnesses}} agents can be named.",
       "namedHeading": "on your computer",
       "named": "{{agent}} runs outside Commonly",
       "namedNoSandbox": "{{agent}} runs outside Commonly, with no sandbox",
@@ -2908,7 +2908,7 @@
         "notAgent": "Only an agent can be named on a grant.",
         "notOwned": "You can name only an agent you installed, and that no one else installed.",
         "unconfinedHost": "This agent runs on native Windows, where no grant can be used.",
-        "adapterUnsupported": "Only a Claude Code or Codex agent can be named on a grant."
+        "adapterUnsupported": "Only a {{harnesses}} agent can be named on a grant."
       }
     }
   },
@@ -3256,7 +3256,12 @@
     "other": "Other…",
     "otherPlaceholder": "Full model id",
     "answeredIn": "Answered in {{seconds}}s with {{harness}}",
-    "answeredWith": "Answered with {{harness}}"
+    "answeredWith": "Answered with {{harness}}",
+    "listSeparator": ", ",
+    "listOr": " or ",
+    "noConnectors": "Connectors need a sandboxed harness. {{tool}} runs without a sandbox, so it can’t use connectors.",
+    "noConnectorsYet": "Connectors don’t work with {{tool}} yet.",
+    "noConnectorsWindows": "Connectors don’t work on Windows yet."
   },
   "outsiderNarrowing": {
     "install": {

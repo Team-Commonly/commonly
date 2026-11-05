@@ -1,6 +1,6 @@
 /**
  * F94: a grant may name the granter's own agents that run outside Commonly
- * (Claude Code or Codex through the `commonly` daemon), read-only.
+ * (any harness in CONFINING_ADAPTERS, through the `commonly` daemon), read-only.
  *
  * The threat is plain: connector text can be written by outsiders (a Jira
  * comment, a shared Notion page, a Sentry event), and an agent with its own
@@ -22,6 +22,17 @@ import type { IRoomGrant, IRoomGrantByoConsent } from '../models/RoomGrant';
 import { LIMITED_USE_ENTRIES, isLimitedUseTool } from './limitedUseConnectors';
 import { ownsRuntimeIdentity } from './runtimeIdentityOwnership';
 import { judgeSeatConfinement } from './seatGrantConfinement';
+import { CONFINING_ADAPTERS } from './grantBrokerConfinement';
+import { harnessCatalogEntry } from '../config/harnessCatalog';
+
+/**
+ * "Claude Code, Codex or OpenCode": the harnesses that can hold a grant, by
+ * their catalogue names, from the one list the confinement check reads.
+ */
+export const grantHarnessNames = (): string => {
+  const names = [...CONFINING_ADAPTERS.keys()].map((id) => harnessCatalogEntry(id)?.label || id);
+  return names.length > 1 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : names.join('');
+};
 
 export type ByoNamingRefusal = 'byo_read_only' | 'byo_limited_use' | 'byo_not_audience'
   | 'byo_not_agent' | 'byo_agent_not_owned' | 'byo_unconfined_host' | 'byo_adapter_unsupported'
@@ -35,7 +46,7 @@ export const byoNamingRefusalMessage = (reason: ByoNamingRefusal): string => ({
   byo_not_agent: 'Only an agent can be named on a grant.',
   byo_agent_not_owned: 'You can name only an agent you installed, and that no one else installed.',
   byo_unconfined_host: 'This agent runs on native Windows, where no grant can be used.',
-  byo_adapter_unsupported: 'Only a Claude Code or Codex agent can be named on a grant.',
+  byo_adapter_unsupported: `Only a ${grantHarnessNames()} agent can be named on a grant.`,
   byo_consent_required: 'Confirm that what this agent reads can leave through it.',
 }[reason]);
 

@@ -34,13 +34,14 @@ describe('grant broker confinement predicate', () => {
   it('pins the host-independent sets to what the adapters implement', () => {
     // 2026-10-09: the denylist became an allowlist of adapters that prove they confine,
     // keyed to the modes each enforces. pi is refused because it is absent, not listed.
-    expect([...CONFINING_ADAPTERS.keys()].sort()).toEqual(['claude', 'codex']);
+    expect([...CONFINING_ADAPTERS.keys()].sort()).toEqual(['claude', 'codex', 'opencode']);
     expect([...CONFINING_ADAPTERS.get('claude')].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
     expect([...CONFINING_ADAPTERS.get('codex')].sort()).toEqual(['read-only', 'workspace']);
+    // F175a: OpenCode enforces Seatbelt workspace/read-only on macOS and bwrap
+    // on Linux (cli adapters/opencode.js refuses a public seat on any other).
+    expect([...CONFINING_ADAPTERS.get('opencode')].sort()).toEqual(['bwrap', 'read-only', 'workspace']);
     expect(CONFINING_ADAPTERS.has('pi')).toBe(false);
-    // OpenCode implements host sandboxes locally, but this server map is the
-    // separate broker-admission gate and remains closed until that proof lands.
-    expect(CONFINING_ADAPTERS.has('opencode')).toBe(false);
+    for (const unconfined of ['dsh', 'hermes', 'goose', 'qwen']) expect(CONFINING_ADAPTERS.has(unconfined)).toBe(false);
     // Mirror of CLOUD_RUNTIME_TYPES + the BYO kinds + what install paths write;
     // runtimeType values outside this set are adapter-shaped and judged.
     expect([...RUNTIME_KINDS].sort()).toEqual([
@@ -126,9 +127,14 @@ describe('grant broker confinement predicate', () => {
     ['a pi seat with no sandbox block', undefined, { adapter: 'pi' }, 'adapter_cannot_confine'],
     ['a pi seat declaring a confined mode', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'pi' }, 'adapter_cannot_confine'],
     ['a pi seat with no environment at all', undefined, { adapter: 'pi' }, 'adapter_cannot_confine'],
-    ['an OpenCode seat with no sandbox declaration stays refused', undefined, { adapter: 'opencode' }, 'adapter_cannot_confine'],
-    ['an OpenCode seat with a locally supported sandbox stays refused pending server admission', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'opencode' }, 'adapter_cannot_confine'],
-    ['an OpenCode runtimeType without explicit adapter remains refused', undefined, { runtimeType: 'opencode', host: 'byo' }, 'adapter_cannot_confine'],
+    // F175a: OpenCode is admitted on its three modes and nowhere else.
+    ['an OpenCode seat with no sandbox block — the daemon derives the baseline', undefined, { adapter: 'opencode' }, null],
+    ['an OpenCode workspace seat', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'opencode' }, null],
+    ['an OpenCode read-only seat', { sandbox: { mode: 'read-only', trust: 'public' } }, { adapter: 'opencode' }, null],
+    ['an OpenCode bwrap seat', { sandbox: { mode: 'bwrap', trust: 'public' } }, { adapter: 'opencode' }, null],
+    ['an OpenCode runtimeType without explicit adapter', { sandbox: { mode: 'workspace', trust: 'public' } }, { runtimeType: 'opencode', host: 'byo' }, null],
+    ['a dsh seat, which runs no sandbox', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'dsh' }, 'adapter_cannot_confine'],
+    ['a hermes seat, which runs no sandbox', { sandbox: { mode: 'workspace', trust: 'public' } }, { adapter: 'hermes' }, 'adapter_cannot_confine'],
     ['a claude seat with no sandbox block — the daemon derives the baseline', undefined, { adapter: 'claude' }, null],
     ['a codex seat declaring a confined mode', { sandbox: { mode: 'read-only', trust: 'public' } }, { adapter: 'codex' }, null],
     ['a row that names no adapter — the daemon detects it locally', undefined, { model: 'gpt-5.4' }, null],
@@ -163,6 +169,17 @@ describe('grant broker confinement predicate', () => {
     expect(refusal).toMatchObject({ code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: expected });
     // The remedy names the thing to change: the adapter, not the sandbox.
     expect(refusal.detail).toContain('adapter');
+  });
+
+  // F175a: an admitted OpenCode seat is still judged on its declaration, the
+  // same way claude is: admission is per mode, never a blanket pass.
+  it.each([
+    ['mode none', { sandbox: { mode: 'none', trust: 'public' } }, 'sandbox_mode_none'],
+    ['a mode it does not enforce', { sandbox: { mode: 'firejail', trust: 'public' } }, 'sandbox_mode_unenforceable'],
+    ['a private trust', { sandbox: { mode: 'workspace', trust: 'private' } }, 'sandbox_trust_not_public'],
+  ])('refuses an OpenCode seat on %s', (_label, environment, expected) => {
+    expect(grantBrokerRefusal(environment, { adapter: 'opencode' }))
+      .toMatchObject({ code: GRANT_BROKER_REFUSAL_CODE, decidedBy: 'server', reason: expected });
   });
 
   // The write-time schema (environment.js ALLOWED_SANDBOX_MODES) accepts modes

@@ -44,9 +44,9 @@ describe('defaultMcpServers', () => {
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('goose')).toBe(false);
   });
 
-  test('OpenCode sandbox support does not yet authorize the grant broker', () => {
-    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex']);
-    expect(ADAPTERS_WITH_GRANT_BROKER.has('opencode')).toBe(false);
+  test('the grant broker reaches exactly the adapters that confine its credential (F175a)', () => {
+    expect([...ADAPTERS_WITH_GRANT_BROKER].sort()).toEqual(['claude', 'codex', 'opencode']);
+    expect(ADAPTERS_WITH_GRANT_BROKER.has('pi')).toBe(false);
   });
 });
 
@@ -235,10 +235,10 @@ describe('seatBaseline', () => {
     expect(ADAPTERS_WITH_GRANT_BROKER.has('goose')).toBe(false);
   });
 
-  test('derives OpenCode public confinement while withholding grant-broker eligibility', () => {
+  test('derives OpenCode public confinement, and with it grant-broker eligibility (F175a)', () => {
     const derived = seatBaseline(null, 'opencode', { sandbox: true });
     expect(derived.sandbox).toEqual({ trust: 'public' });
     expect(ADAPTERS_WITH_DEFAULT_SANDBOX.has('opencode')).toBe(true);
-    expect(ADAPTERS_WITH_GRANT_BROKER.has('opencode')).toBe(false);
+    expect(ADAPTERS_WITH_GRANT_BROKER.has('opencode')).toBe(true);
   });
 });
