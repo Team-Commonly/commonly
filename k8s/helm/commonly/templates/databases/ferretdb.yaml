@@ -1,0 +1,223 @@
+{{- if and .Values.mongodb.enabled (eq (include "commonly.mongodb.engine" .) "ferretdb") }}
+{{- $ns := include "commonly.namespace" . }}
+{{- $f := .Values.mongodb.ferretdb }}
+{{- $d := $f.documentdb }}
+# Mongo layer on FerretDB (ADR-034 D7, docs/self-hosting/ferretdb.md), rendered
+# instead of the mongodb StatefulSet when mongodb.engine=ferretdb:
+#   documentdb  Postgres with the DocumentDB extension (StatefulSet + Service)
+#   ferretdb    the Mongo wire endpoint in front of it (Deployment + Service)
+# The DocumentDB extension needs a superuser and shared_preload_libraries
+# (pg_cron, documentdb), which the image sets on first init, so it runs on a
+# Postgres this release owns, never a managed one.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: documentdb-init
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.documentdb.labels" . | nindent 4 }}
+data:
+  # The image creates the extension in the `postgres` database (pg_cron's
+  # cron.database_name). Chat, if pointed here, gets its own database.
+  30-commonly-chat-db.sh: |
+    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -v db={{ .Values.postgresql.database | quote }} <<'EOSQL'
+    SELECT format('CREATE DATABASE %I', :'db')
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db')\gexec
+    EOSQL
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: documentdb
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.documentdb.labels" . | nindent 4 }}
+spec:
+  serviceName: documentdb
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "commonly.documentdb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.documentdb.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: documentdb
+        image: "{{ $d.image.repository }}:{{ $d.image.tag }}"
+        imagePullPolicy: {{ $d.image.pullPolicy }}
+        ports:
+        - containerPort: {{ $d.service.port }}
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: postgres
+        - name: POSTGRES_USER
+          value: {{ .Values.postgresql.username | quote }}
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: postgres-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: documentdb-data
+          mountPath: /var/lib/postgresql/data
+        - name: documentdb-init
+          mountPath: /docker-entrypoint-initdb.d/30-commonly-chat-db.sh
+          subPath: 30-commonly-chat-db.sh
+        resources:
+          {{- toYaml $d.resources | nindent 10 }}
+        # TCP, not the socket: the image restarts Postgres during first init,
+        # and only the final server listens on TCP.
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -h 127.0.0.1 -U {{ .Values.postgresql.username }} -d postgres
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -h 127.0.0.1 -U {{ .Values.postgresql.username }} -d postgres
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: documentdb-init
+        configMap:
+          name: documentdb-init
+      {{- if not $d.persistence.enabled }}
+      - name: documentdb-data
+        emptyDir: {}
+      {{- end }}
+      {{- if and .Values.mongodb.nodeSelector (gt (len .Values.mongodb.nodeSelector) 0) }}
+      nodeSelector:
+        {{- toYaml .Values.mongodb.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.mongodb.tolerations (gt (len .Values.mongodb.tolerations) 0) }}
+      tolerations:
+        {{- toYaml .Values.mongodb.tolerations | nindent 8 }}
+      {{- end }}
+  {{- if $d.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: documentdb-data
+    spec:
+      accessModes:
+      - {{ $d.persistence.accessMode }}
+      storageClassName: {{ $d.persistence.storageClass }}
+      resources:
+        requests:
+          storage: {{ $d.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: documentdb
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.documentdb.labels" . | nindent 4 }}
+spec:
+  ports:
+  - port: {{ $d.service.port }}
+    targetPort: postgres
+    protocol: TCP
+    name: postgres
+  selector:
+    {{- include "commonly.documentdb.selectorLabels" . | nindent 4 }}
+  clusterIP: None  # Headless service for StatefulSet
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ferretdb
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.ferretdb.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "commonly.ferretdb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "commonly.ferretdb.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: ferretdb
+        image: "{{ $f.image.repository }}:{{ $f.image.tag }}"
+        imagePullPolicy: {{ $f.image.pullPolicy }}
+        ports:
+        - containerPort: 27017
+          name: mongodb
+        env:
+        # Authentication stays on: clients sign in with the documentdb
+        # superuser's credentials. The password goes into a URL, so keep it
+        # URL-safe (letters, digits, - _ . ~).
+        - name: DOCUMENTDB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: database-credentials
+              key: postgres-password
+        - name: FERRETDB_POSTGRESQL_URL
+          value: "postgres://{{ .Values.postgresql.username }}:$(DOCUMENTDB_PASSWORD)@documentdb.{{ $ns }}.svc.cluster.local:{{ $d.service.port }}/postgres"
+        - name: FERRETDB_TELEMETRY
+          value: disable
+        resources:
+          {{- toYaml $f.resources | nindent 10 }}
+        livenessProbe:
+          exec:
+            command:
+            - /ferretdb
+            - ping
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - /ferretdb
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      {{- if and .Values.mongodb.nodeSelector (gt (len .Values.mongodb.nodeSelector) 0) }}
+      nodeSelector:
+        {{- toYaml .Values.mongodb.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if and .Values.mongodb.tolerations (gt (len .Values.mongodb.tolerations) 0) }}
+      tolerations:
+        {{- toYaml .Values.mongodb.tolerations | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ferretdb
+  namespace: {{ $ns }}
+  labels:
+    {{- include "commonly.ferretdb.labels" . | nindent 4 }}
+spec:
+  type: {{ $f.service.type }}
+  ports:
+  - port: {{ $f.service.port }}
+    targetPort: mongodb
+    protocol: TCP
+    name: mongodb
+  selector:
+    {{- include "commonly.ferretdb.selectorLabels" . | nindent 4 }}
+{{- end }}

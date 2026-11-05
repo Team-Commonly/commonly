@@ -1,0 +1,97 @@
+# Self-host on one engine: run Commonly's Mongo layer on FerretDB, which speaks
+# the Mongo wire protocol and stores the documents in Postgres through the
+# DocumentDB extension. Chat stays in plain Postgres tables, in its own
+# database on the same server. Nothing else changes; production stays on MongoDB.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ferretdb.yml up
+#
+# It layers the same way on the one-command local profile (what ./install.sh runs):
+#
+#   docker compose --env-file .env -f docker-compose.local.yml -f docker-compose.ferretdb.yml up -d --build
+#
+# Guide, constraints and required Commonly version: docs/self-hosting/ferretdb.md
+# Needs Docker Compose 2.24+ (the !override / !reset tags below).
+#
+# The service names stay `postgres` and `mongo` so the backend's hostnames and
+# depends_on are unchanged: `postgres` becomes Postgres with DocumentDB, and
+# `mongo` becomes FerretDB in front of it.
+#
+# The postgres-documentdb image bundles PostGIS (GPL-2.0-or-later). This file
+# references it by tag; Docker pulls it from its publisher, and Commonly does
+# not redistribute it.
+
+services:
+  postgres:
+    image: ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0
+    environment:
+      # The DocumentDB extension and pg_cron live in the `postgres` database:
+      # the image sets cron.database_name = 'postgres' and creates the extension
+      # in POSTGRES_DB, so this must stay `postgres`. Chat gets its own database
+      # (PG_DATABASE) from the init script below.
+      POSTGRES_DB: postgres
+      POSTGRES_USER: ${PG_USER:-postgres}
+      COMMONLY_CHAT_DB: ${PG_DATABASE:-commonly}
+    # A fresh volume, not the base file's postgres-data: an existing data
+    # directory skips the image's init (shared_preload_libraries, CREATE
+    # EXTENSION documentdb), and FerretDB would then fail on every command.
+    volumes: !override
+      - documentdb-data:/var/lib/postgresql/data
+    configs:
+      - source: commonly-chat-db
+        target: /docker-entrypoint-initdb.d/30-commonly-chat-db.sh
+    # TCP, not the socket: the image restarts Postgres during init, and only
+    # the final server listens on TCP.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  mongo:
+    image: ghcr.io/ferretdb/ferretdb:2.7.0
+    environment:
+      # Authentication is on: clients sign in with the Postgres credentials.
+      FERRETDB_POSTGRESQL_URL: postgres://${PG_USER:-postgres}:${PG_PASSWORD:-postgres}@postgres:5432/postgres
+      FERRETDB_TELEMETRY: disable
+    # FerretDB keeps no data of its own; drop the base file's /data/db volume.
+    volumes: !reset []
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/ferretdb", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    environment:
+      # PG_USER / PG_PASSWORD go into a URL here: keep them URL-safe
+      # (letters, digits, - _ . ~), or percent-encode them in this line.
+      - MONGO_URI=mongodb://${PG_USER:-postgres}:${PG_PASSWORD:-postgres}@mongo:27017/commonly
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - PG_USER=${PG_USER:-postgres}
+      - PG_PASSWORD=${PG_PASSWORD:-postgres}
+      - PG_DATABASE=${PG_DATABASE:-commonly}
+      - TEST_MONGO_URI=mongodb://${PG_USER:-postgres}:${PG_PASSWORD:-postgres}@mongo:27017/commonly-test
+
+configs:
+  commonly-chat-db:
+    content: |
+      #!/bin/sh
+      # Create the chat database beside the DocumentDB one (first init only).
+      psql -v ON_ERROR_STOP=1 -U "$${POSTGRES_USER}" -d postgres -v db="$${COMMONLY_CHAT_DB}" <<'EOSQL'
+      SELECT format('CREATE DATABASE %I', :'db')
+      WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = :'db')\gexec
+      EOSQL
+
+volumes:
+  documentdb-data:

@@ -1,4 +1,4 @@
-{{- if .Values.mongodb.enabled }}
+{{- if and .Values.mongodb.enabled (eq (include "commonly.mongodb.engine" .) "mongodb") }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

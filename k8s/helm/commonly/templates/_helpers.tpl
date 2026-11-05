@@ -108,6 +108,45 @@ app: mongodb
 {{- end }}
 
 {{/*
+Which server answers the Mongo wire protocol: "mongodb" (default) or
+"ferretdb" (FerretDB on Postgres with the DocumentDB extension; ADR-034 D7,
+docs/self-hosting/ferretdb.md). Any other value fails the render.
+*/}}
+{{- define "commonly.mongodb.engine" -}}
+{{- $engine := .Values.mongodb.engine | default "mongodb" -}}
+{{- if not (has $engine (list "mongodb" "ferretdb")) -}}
+{{- fail (printf "mongodb.engine must be \"mongodb\" or \"ferretdb\", got %q" $engine) -}}
+{{- end -}}
+{{- $engine -}}
+{{- end }}
+
+{{/*
+FerretDB labels (the Mongo wire endpoint when mongodb.engine=ferretdb)
+*/}}
+{{- define "commonly.ferretdb.labels" -}}
+{{ include "commonly.labels" . }}
+app: ferretdb
+{{- end }}
+
+{{- define "commonly.ferretdb.selectorLabels" -}}
+{{ include "commonly.selectorLabels" . }}
+app: ferretdb
+{{- end }}
+
+{{/*
+DocumentDB labels (the Postgres behind FerretDB when mongodb.engine=ferretdb)
+*/}}
+{{- define "commonly.documentdb.labels" -}}
+{{ include "commonly.labels" . }}
+app: documentdb
+{{- end }}
+
+{{- define "commonly.documentdb.selectorLabels" -}}
+{{ include "commonly.selectorLabels" . }}
+app: documentdb
+{{- end }}
+
+{{/*
 PostgreSQL labels
 */}}
 {{- define "commonly.postgresql.labels" -}}

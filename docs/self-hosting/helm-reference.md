@@ -156,6 +156,10 @@ backend:
     pgSslEnabled: "true"
 ```
 
+**Option C: Postgres only, with the Mongo layer on FerretDB** (self-host only). Set
+`mongodb.engine: ferretdb`. Constraints, the Commonly version it needs and the known gaps
+are in the [FerretDB guide](ferretdb.md).
+
 ### URLs
 
 ```yaml

@@ -1,4 +1,4 @@
-{{- if or .Values.backup.mongodb.enabled .Values.backup.postgresql.enabled }}
+{{- if or (and .Values.backup.mongodb.enabled (eq (include "commonly.mongodb.engine" .) "mongodb")) .Values.backup.postgresql.enabled }}
 ---
 apiVersion: v1
 kind: ServiceAccount

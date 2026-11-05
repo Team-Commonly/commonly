@@ -1,4 +1,4 @@
-{{- if .Values.backup.mongodb.enabled }}
+{{- if and .Values.backup.mongodb.enabled (eq (include "commonly.mongodb.engine" .) "mongodb") }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
