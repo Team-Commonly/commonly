@@ -262,7 +262,9 @@ const claudeAuthMetadata = async () => {
 // it. Never bind or copy the operator's full file: it contains project paths,
 // MCP configuration, usage history, and other host-private metadata. Public
 // wrappers get a per-identity 0700 HOME carrying only this whitelist.
-const preparePublicClaudeState = async (ctx) => {
+// A seat that reaches the model through the provider proxy (F151) needs no
+// keychain, so its HOME gets no link to one.
+const preparePublicClaudeState = async (ctx, { keychain = true } = {}) => {
   const identity = ctx.agentName || ctx.cwd || 'anonymous';
   const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
   const statePath = ctx._publicClaudeState
@@ -283,17 +285,20 @@ const preparePublicClaudeState = async (ctx) => {
   // Keep HOME isolated while pointing that one standard location at the
   // operator's encrypted keychain database. Seatbelt admits the keychain
   // directory read-only; no bearer credential is copied into agent state.
+  // A key seat creates no link. One a keyless turn of the same agent left is
+  // kept for that turn: the key seat's profile admits no keychain file, so the
+  // link leads nowhere it can read.
   const keychainLink = await statOrNull(stateKeychains);
   if (keychainLink && !keychainLink.isSymbolicLink()) {
     throw new Error(`refusing to replace non-symlink Claude keychain path: ${stateKeychains}`);
   }
-  if (keychainLink) {
+  if (keychain && keychainLink) {
     const target = await readlink(stateKeychains);
     if (target !== operatorKeychains) {
       await unlink(stateKeychains);
       await symlink(operatorKeychains, stateKeychains);
     }
-  } else {
+  } else if (keychain) {
     await symlink(operatorKeychains, stateKeychains);
   }
 
@@ -1201,6 +1206,14 @@ const policyOnlyHost = (ctx) => ctx.hostUnconfined === true
   && (ctx._platform || process.platform) === 'win32'
   && isConfinedTrust(ctx.environment?.sandbox?.trust);
 
+// The loopback port a provider proxy listens on, for the Seatbelt rule that
+// admits it. Taken from its base URL when the proxy does not report one.
+const proxyPort = (proxy) => {
+  if (!proxy) return null;
+  const port = Number(proxy.port ?? new URL(proxy.baseURL).port);
+  return Number.isInteger(port) && port > 0 ? port : null;
+};
+
 const prepareArgv = async (innerArgv, ctx) => {
   const env = ctx.environment;
   const claudeEnv = withClaudePath(ctx.claudeEnv);
@@ -1332,7 +1345,11 @@ const prepareArgv = async (innerArgv, ctx) => {
         ...commitHookExecutables,
         ...originalHookExecutables,
       ],
-      allowClaudeRuntimeAccess: true,
+      // F151: a key seat reaches the model only through the host's loopback
+      // proxy, so its profile admits that port and no keychain; a login seat
+      // keeps the keychain rules and needs no port.
+      allowClaudeRuntimeAccess: !ctx.providerProxyPort,
+      loopbackNetworkPorts: ctx.providerProxyPort ? [ctx.providerProxyPort] : [],
       readOnlyDirectories: [
         ...(ctx.mcpReadDirectories || []),
         ...(ctx.workspaceGit?.readDirectories || []),
@@ -1590,7 +1607,23 @@ export default {
       // bwrap seat needs a host-prepared build exactly as a Seatbelt one does
       // (#2247).
       if (publicNativeSandbox) {
-        publicClaudeState = await preparePublicClaudeState(ctx);
+        // F151: Seatbelt strips the environment to the safe list, so a seat
+        // configured with an API key used to start with neither key nor login
+        // ("Not logged in"). The key stays on the host behind a per-turn
+        // loopback proxy, as on bwrap; the jail gets the proxy's address and
+        // token, and no keychain. Without a key, the keychain login as before.
+        const source = ctx.env || process.env;
+        if (source.ANTHROPIC_API_KEY) {
+          publicClaudeState = await preparePublicClaudeState(ctx, { keychain: false });
+          providerProxy = await (ctx._startProviderProxy || startProviderProxy)({
+            provider: { baseURL: source.ANTHROPIC_BASE_URL || 'https://api.anthropic.com' },
+            keyMaterial: source.ANTHROPIC_API_KEY,
+            wire: 'anthropic-messages',
+            adapterLabel: 'Claude',
+          });
+        } else {
+          publicClaudeState = await preparePublicClaudeState(ctx);
+        }
       } else if (workspaceBwrapSandbox) {
         // Checked before the state is prepared, so a host that cannot run the
         // jail never gets a copy of the login.
@@ -1684,6 +1717,7 @@ export default {
         mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
         publicClaudeState,
         publicSkillArgs,
+        providerProxyPort: proxyPort(providerProxy),
         claudeEnv,
       };
       const { cmd, args, env, childHome } = await prepareArgv(baseArgs, spawnCtx);
@@ -1751,6 +1785,7 @@ export default {
           mcpReadDirectories: mcpConfig?.mcpReadDirectories || [],
           publicClaudeState,
           publicSkillArgs,
+          providerProxyPort: proxyPort(providerProxy),
           claudeEnv: withProvider(buildClaudeEnv(
             ctx.env,
             publicClaudeState,
