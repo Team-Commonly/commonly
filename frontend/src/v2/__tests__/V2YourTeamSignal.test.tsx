@@ -216,7 +216,7 @@ describe('Your Team (direction C)', () => {
     // The card once showed a bare `npx @commonlyai/cli agent attach claude`,
     // which exits 1 on a clean machine (it needs --pod and --name). It names
     // the walked setup steps instead and carries no command of its own.
-    expect(own).toHaveTextContent('On the next page, choose “Use my own agent”, then “Get my connect command”.');
+    expect(own).toHaveTextContent('On the next page, choose “Use my own agent” if it’s offered, then “Get my connect command”.');
     expect(own.textContent).not.toMatch(/agent attach|npx |commonly agent/);
     expect(own.querySelector('code, pre')).toBeNull();
     fireEvent.click(within(own).getByRole('button', { name: 'Set it up' }));
