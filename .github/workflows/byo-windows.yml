@@ -57,6 +57,11 @@ on:
         type: choice
         options: [claude, codex]
         default: claude
+      cli:
+        description: "prod: published (the page's install line) or tree (this checkout's CLI, to walk a fix before it publishes)"
+        type: choice
+        options: [published, tree]
+        default: published
 
 permissions:
   contents: read
@@ -80,7 +85,7 @@ jobs:
         if: inputs.target == 'prod' && inputs.adapter == 'codex'
         run: npm i -g @openai/codex@0.164.0
       - name: Pack this checkout's CLI
-        if: inputs.target != 'prod'
+        if: inputs.target != 'prod' || inputs.cli == 'tree'
         id: pack
         shell: bash
         working-directory: cli
@@ -101,6 +106,7 @@ jobs:
           COMMONLY_BYO_PROD_INSTANCE: ${{ inputs.instance_id }}
           COMMONLY_BYO_PROD_POD: ${{ inputs.pod_id }}
           COMMONLY_BYO_PROD_ADAPTER: ${{ inputs.adapter || 'claude' }}
+          COMMONLY_BYO_PROD_CLI: ${{ inputs.cli || 'published' }}
           COMMONLY_BYO_PROD_AGENT_TOKEN: ${{ inputs.target == 'prod' && secrets.BYO_WIN_PROD_AGENT_TOKEN || '' }}
           COMMONLY_BYO_PROD_LLM_KEY: ${{ inputs.target == 'prod' && secrets.BYO_WIN_PROD_LLM_KEY || '' }}
         run: |

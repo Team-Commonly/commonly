@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 
 import { liftConnectSnippet } from '../scripts/linux-byo-prod.mjs';
 import {
-  windowsCodexConfigPath, windowsLineProblems, windowsProfileRoot, windowsWalkEnv,
+  walkInstallLines, windowsCodexConfigPath, windowsLineProblems, windowsProfileRoot, windowsWalkEnv,
 } from '../scripts/windows-byo-prod.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -41,6 +41,15 @@ describe('the Windows prod walk', () => {
     expect(windowsWalkEnv('codex', 'k')).toEqual({ LITELLM_API_KEY: 'k' });
     // Claude Code's key goes in its managed settings, since a public seat drops ANTHROPIC_*.
     expect(windowsWalkEnv('claude', 'k')).toEqual({});
+  });
+
+  test("installs the page's line, or with cli=tree this checkout's tarball in its place", () => {
+    const lines = ['npm i -g @commonlyai/cli@latest', 'a', 'b', 'commonly agent run x --adapter codex'];
+    expect(walkInstallLines(lines)).toBe(lines);
+    expect(walkInstallLines(lines, { cli: 'published', tarball: 'C:\\t\\cli.tgz' })).toBe(lines);
+    expect(walkInstallLines(lines, { cli: 'tree', tarball: 'C:\\t\\cli.tgz' }))
+      .toEqual(['npm i -g C:\\t\\cli.tgz', 'a', 'b', 'commonly agent run x --adapter codex']);
+    expect(() => walkInstallLines(lines, { cli: 'tree' })).toThrow(/packed/);
   });
 
   // Codex will not create its sandbox helpers under the temp dir (run 41994410063 on Linux).

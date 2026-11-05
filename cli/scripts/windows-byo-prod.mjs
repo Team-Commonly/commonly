@@ -69,6 +69,18 @@ export const windowsLineProblems = (lines, { agentName, adapter }) => {
   return problems;
 };
 
+/**
+ * The CLI the walk installs: the page's own line (the published CLI), or,
+ * with `cli: tree`, this checkout's packed CLI in its place, so a CLI fix can
+ * be walked before it merges and publishes. The rest of the page's lines
+ * stand either way.
+ */
+export const walkInstallLines = (lines, { cli = 'published', tarball = '' } = {}) => {
+  if (cli !== 'tree') return lines;
+  if (!tarball) throw new Error('cli=tree needs this checkout packed (COMMONLY_BYO_TREE_TARBALL)');
+  return [`npm i -g ${tarball}`, ...lines.slice(1)];
+};
+
 export const runProdWalk = async ({ pageConnectSnippet }) => {
   let inputs;
   let adapter;
@@ -149,7 +161,17 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
     forgetKey();
     return 1;
   }
-  const script = pasteScript(lines);
+  const cli = process.env.COMMONLY_BYO_PROD_CLI === 'tree' ? 'tree' : 'published';
+  let installLines;
+  try {
+    installLines = walkInstallLines(lines, { cli, tarball: process.env.COMMONLY_BYO_TREE_TARBALL });
+  } catch (err) {
+    fail(err.message);
+    forgetKey();
+    return 1;
+  }
+  const cliLabel = cli === 'tree' ? "this checkout's" : 'published';
+  const script = pasteScript(installLines);
   const profile = mkdtempSync(join(windowsProfileRoot(), 'byo-prod-profile-'));
   const ackLog = join(mkdtempSync(join(tmpdir(), 'byo-prod-acks-')), 'acks.jsonl');
   log(`pasting into PowerShell, profile ${profile}:\n  ${script.join('\n  ')}`);
@@ -201,7 +223,7 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
   let cliVersion = 'unknown';
   try { cliVersion = JSON.parse(version.stdout).dependencies['@commonlyai/cli'].version; } catch { /* reported as unknown */ }
   const readyAt = Date.now();
-  log(`published @commonlyai/cli ${cliVersion}, installed by the page's line, is polling ${API}`);
+  log(`${cliLabel} @commonlyai/cli ${cliVersion}, installed by ${cli === 'tree' ? 'its packed tarball' : "the page's line"}, is polling ${API}`);
   console.log(`READY: listening in ${podId}`);
   console.log(`::notice::READY: listening in ${podId}. Post the @${agentName} mention now; the walk fails at ${new Date(readyAt + ANSWER_TIMEOUT_MS).toISOString()}.`);
 
@@ -229,7 +251,7 @@ export const runProdWalk = async ({ pageConnectSnippet }) => {
     log(`@mention ${outcome.mention.id} by ${outcome.mention.username} answered by message ${outcome.reply.id} `
       + `in ${outcome.answerSeconds} s, event ${outcome.ack.eventId} acked HTTP ${outcome.ack.status}`);
     log(`the reply${/windows-ok/i.test(said) ? ' says windows-ok' : ' does not say windows-ok'}: ${JSON.stringify(said.slice(0, 300))}`);
-    log(`PASS: published @commonlyai/cli ${cliVersion} on Windows answered an @mention on ${API} with `
+    log(`PASS: ${cliLabel} @commonlyai/cli ${cliVersion} on Windows answered an @mention on ${API} with `
       + `${ADAPTER_LABEL[adapter]}${adapter === 'codex'
         ? ', on an API key through the model gateway (provider set in the machine\'s system Codex config)' : ''}`);
     return 0;
