@@ -26,7 +26,9 @@ await jest.unstable_mockModule('child_process', () => ({
   spawn: jest.fn(),
 }));
 
-const claude = (await import('../src/lib/adapters/claude.js')).default;
+const claudeModule = await import('../src/lib/adapters/claude.js');
+const claude = claudeModule.default;
+const { ensurePrivateDir, replacePrivateFile } = claudeModule;
 const { spawnSync } = await import('child_process');
 
 const DECOY_TEXT = 'the person\'s own file — the host must never write here\n';
@@ -239,6 +241,47 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
     expect(lstatOrNull(path.join(state, '.claude')).isSymbolicLink()).toBe(true);
   });
 
+  // The structural fix for the check-then-use race: inside the jail .claude and
+  // tmp are mount points of their own, which the child cannot rename or replace
+  // (EBUSY), so the host's check of them holds for the whole turn.
+  test.each([
+    ['public', {}],
+    ['public', { ANTHROPIC_API_KEY: 'sk-ant-f153-bw-key' }],
+    ['workspace', {}],
+  ])('a %s seat binds .claude and tmp on their own, after the state folder', async (trust, env) => {
+    const calls = [];
+    await bwrapSpawn((cmd, args, opts) => { calls.push({ cmd, args, opts }); return fakeChild({ stdout: 'ok' }); }, { trust, env });
+    expect(calls).toHaveLength(1);
+    const { args } = calls[0];
+    const bindAt = (p) => args.findIndex((arg, i) => arg === '--bind' && args[i + 1] === p && args[i + 2] === p);
+    const stateBind = bindAt(state);
+    expect(stateBind).toBeGreaterThanOrEqual(0);
+    for (const name of ['.claude', 'tmp']) {
+      expect(bindAt(path.join(state, name))).toBeGreaterThan(stateBind);
+    }
+    // Both exist as real directories before the jail starts, or bwrap fails.
+    for (const name of ['.claude', 'tmp']) {
+      expect(fs.lstatSync(path.join(state, name)).isDirectory()).toBe(true);
+    }
+  });
+
+  // A staged copy of the login a crashed turn left behind holds the access
+  // token. The removal after the turn takes it with the login copy.
+  test('a staged login copy left in .claude is removed with the login after the turn', async () => {
+    const configDir = path.join(state, '.claude');
+    const staged = path.join(configDir, '..credentials.json.0b5e9a4c-1111-4222-8333-944455556666.tmp');
+    const unrelated = path.join(configDir, 'settings.json');
+    await bwrapSpawn(() => {
+      fs.writeFileSync(staged, '{"claudeAiOauth":{"accessToken":"left-behind"}}\n', { mode: 0o600 });
+      fs.writeFileSync(unrelated, '{}\n');
+      return fakeChild({ stdout: 'ok' });
+    });
+    expect(lstatOrNull(path.join(configDir, '.credentials.json'))).toBeNull();
+    expect(lstatOrNull(staged)).toBeNull();
+    // Only the login's own files go.
+    expect(fs.readFileSync(unrelated, 'utf8')).toBe('{}\n');
+  });
+
   test('the next turn refuses a .claude link, before copying the login anywhere', async () => {
     fs.symlinkSync(decoyDir, path.join(state, '.claude'));
     const calls = [];
@@ -276,5 +319,62 @@ describe('a bwrap Claude seat\'s state folder (F153)', () => {
     expect(JSON.stringify(calls[0].opts.env)).not.toContain('sk-ant-f153-ws');
     expect(calls[0].args.join('\n')).not.toContain('sk-ant-f153-ws');
     expect(JSON.parse(calls[0].login).claudeAiOauth.accessToken).toBe('operator-only');
+  });
+});
+
+describe('the host\'s writes into a child-writable folder (F153)', () => {
+  let root;
+  let decoyDir;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-claude-f153-fs-'));
+    decoyDir = path.join(root, 'decoy');
+    fs.mkdirSync(decoyDir);
+    fs.chmodSync(decoyDir, 0o755);
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  // Seatbelt has no PID namespace, so a process an earlier turn left running
+  // can swap the folder for a link after the host checked it. The chmod goes
+  // through a handle opened without following a link, so it never reaches the
+  // link's target.
+  test('a folder swapped for a link after the check is refused, and the link target keeps its mode', async () => {
+    const dir = path.join(root, 'tmp');
+    fs.mkdirSync(dir, { mode: 0o755 });
+    await expect(ensurePrivateDir(dir, {
+      _afterCheck: async () => {
+        fs.renameSync(dir, path.join(root, 'tmp-moved'));
+        fs.symlinkSync(decoyDir, dir);
+      },
+    })).rejects.toThrow(/not a directory/);
+    expect(modeOf(decoyDir)).toBe(0o755);
+  });
+
+  test('a real folder is made 0700, and a missing one is created 0700', async () => {
+    const existing = path.join(root, 'existing');
+    fs.mkdirSync(existing);
+    fs.chmodSync(existing, 0o755);
+    await ensurePrivateDir(existing);
+    expect(modeOf(existing)).toBe(0o700);
+    const created = path.join(root, 'created');
+    await ensurePrivateDir(created);
+    expect(fs.lstatSync(created).isDirectory()).toBe(true);
+    expect(modeOf(created)).toBe(0o700);
+  });
+
+  // The staged copy holds what the host is writing (the access token, for the
+  // login), so a write that fails partway must not leave it beside the target.
+  test('a write that fails partway leaves no staged copy behind', async () => {
+    const dir = path.join(root, 'state');
+    fs.mkdirSync(dir, { mode: 0o700 });
+    const failingWrite = async (file, content, opts) => {
+      fs.writeFileSync(file, String(content).slice(0, 8), opts);
+      throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+    };
+    await expect(replacePrivateFile(dir, '.credentials.json', 'secret-access-token', { _writeFile: failingWrite }))
+      .rejects.toThrow(/ENOSPC/);
+    expect(fs.readdirSync(dir)).toEqual([]);
   });
 });

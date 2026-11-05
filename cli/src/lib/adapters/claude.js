@@ -75,7 +75,7 @@ import {
 } from 'fs/promises';
 import { homedir, tmpdir } from 'os';
 import {
-  basename, delimiter, dirname, isAbsolute, join,
+  delimiter, dirname, isAbsolute, join,
 } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -236,20 +236,39 @@ const statOrNull = async (path) => {
 
 // A subfolder of a seat's state, which the confined child can also write: it
 // must be a real directory (created 0700 if absent), never a link the child
-// left, which the host's chmod and later writes would follow out of the folder.
-const ensurePrivateDir = async (dir) => {
+// left. The chmod goes through a handle opened with O_NOFOLLOW|O_DIRECTORY, so
+// a link swapped in after the check (Seatbelt has no PID namespace, and a
+// process a prior turn left can still run) fails the open instead of being
+// followed out of the folder. `_afterCheck` is a test seam for that swap.
+export const ensurePrivateDir = async (dir, { _afterCheck } = {}) => {
+  const refuse = () => new Error(`refusing Claude state path that is not a directory: ${dir}`);
   const existing = await statOrNull(dir);
-  if (existing && (existing.isSymbolicLink() || !existing.isDirectory())) {
-    throw new Error(`refusing Claude state path that is not a directory: ${dir}`);
-  }
+  if (existing && (existing.isSymbolicLink() || !existing.isDirectory())) throw refuse();
   if (!existing) await mkdir(dir, { mode: 0o700 });
-  await chmod(dir, 0o700);
+  await _afterCheck?.();
+  let handle;
+  try {
+    handle = await open(dir, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_DIRECTORY);
+  } catch (err) {
+    if (['ELOOP', 'ENOTDIR', 'ENOENT'].includes(err?.code)) throw refuse();
+    throw err;
+  }
+  try {
+    if (!(await handle.stat()).isDirectory()) throw refuse();
+    await handle.chmod(0o700);
+  } finally {
+    await handle.close();
+  }
 };
 
-// Removes a file the host put in a child-writable folder. The folder is checked
-// first: if the child swapped it for a link (to the person's own ~/.claude, say),
-// removing through it would delete the person's file, so nothing is removed.
-const removePrivateFile = async (dir, name) => {
+// Removes files the host put in a child-writable folder: the one named, or
+// every name `match` accepts. The folder is checked first, and nothing is
+// removed if the child swapped it for a link (to the person's own ~/.claude,
+// say). The check is a path check, so it holds only while no confined process
+// can swap the folder: on bwrap the folders the host removes from (.claude)
+// are mount points inside every jail of the seat, which the child cannot
+// rename or replace (EBUSY), and between turns no child of the seat runs.
+const removePrivateFile = async (dir, name, { match } = {}) => {
   const dirStat = await statOrNull(dir);
   if (!dirStat) return;
   if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
@@ -257,7 +276,21 @@ const removePrivateFile = async (dir, name) => {
     console.warn(`[claude] not removing ${name}: ${dir} is no longer a directory`);
     return;
   }
-  await rm(join(dir, name), { force: true });
+  const names = match ? (await readdir(dir)).filter(match) : [name];
+  for (const entry of names) await rm(join(dir, entry), { force: true });
+};
+
+// The staged name `replacePrivateFile` writes beside its target.
+const stagedName = (name) => `.${name}.${randomUUID()}.tmp`;
+const STAGED_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const isStagedCopyOf = (name) => (entry) => entry.startsWith(`.${name}.`) && entry.endsWith('.tmp')
+  && STAGED_UUID.test(entry.slice(name.length + 2, -4));
+
+// The login copy and any staged copy of it a failed or killed turn left: both
+// hold the access token.
+const removeLoginCopy = async (configDir) => {
+  await removePrivateFile(configDir, '.credentials.json');
+  await removePrivateFile(configDir, '.credentials.json', { match: isStagedCopyOf('.credentials.json') });
 };
 
 // The non-secret account metadata Claude needs from ~/.claude.json to find its
@@ -338,16 +371,20 @@ const preparePublicClaudeState = async (ctx, { keychain = true } = {}) => {
 // Writes a 0600 file into a directory the confined child can also write. The
 // directory must still be a real directory, and the file is written beside the
 // target and renamed over it, so a symlink the child left at either name is
-// replaced, never followed into another of the person's files.
-const replacePrivateFile = async (dir, name, content) => {
+// replaced, never followed into another of the person's files. The directory
+// check is a path check: it holds while no confined process can swap the
+// directory, which on bwrap the .claude mount point inside the jail ensures.
+// A failed write or rename removes the staged copy, which holds the content.
+// `_writeFile` is a test seam.
+export const replacePrivateFile = async (dir, name, content, { _writeFile = writeFile } = {}) => {
   const dirStat = await statOrNull(dir);
   if (!dirStat || dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
     throw new Error(`refusing to write Claude state into a non-directory: ${dir}`);
   }
   const target = join(dir, name);
-  const staged = join(dir, `.${name}.${randomUUID()}.tmp`);
-  await writeFile(staged, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+  const staged = join(dir, stagedName(name));
   try {
+    await _writeFile(staged, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
     await chmod(staged, 0o600);
     await rename(staged, target);
   } catch (err) {
@@ -406,7 +443,7 @@ const releaseLoginTurn = async (marker, loginPath) => {
     else await rm(join(dir, name), { force: true });
   }
   if (!live) {
-    await removePrivateFile(dirname(loginPath), basename(loginPath));
+    await removeLoginCopy(dirname(loginPath));
     // Only an empty folder goes: a turn registering at this moment keeps it.
     try { await rmdir(dir); } catch { /* not empty, or already gone */ }
   }
@@ -470,7 +507,7 @@ const carryClaudeLogin = async (env, configDir, { accessOnly = false, mustOutlas
     handle = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   } catch (err) {
     if (err?.code === 'ENOENT') {
-      await removePrivateFile(configDir, '.credentials.json');
+      await removeLoginCopy(configDir);
       return null;
     }
     if (err?.code === 'ELOOP') throw refuse();
@@ -515,7 +552,7 @@ const prepareWorkspaceBwrapClaudeState = async (ctx, { login = 'carry', seat = '
     statePath, '.claude.json', `${JSON.stringify(await claudeAuthMetadata(), null, 2)}\n`,
   );
   if (login === 'none') {
-    await removePrivateFile(configDir, '.credentials.json');
+    await removeLoginCopy(configDir);
     return { statePath, tmpPath, configPath, loginPath: null };
   }
   const loginPath = await carryClaudeLogin(ctx.env, configDir, login === 'access-only'
@@ -1422,7 +1459,12 @@ const prepareArgv = async (innerArgv, ctx) => {
       workspaceReadOnly: !grants.includes('write'),
       readOnlyWorkspaceEntries: ['.git'],
       homePath: statePath,
-      writablePaths: [statePath],
+      // .claude (the login copy) and tmp are bound again on their own, after
+      // the state folder: a mount point cannot be renamed or replaced from
+      // inside the jail (EBUSY), so a child, this turn's or a concurrent one's,
+      // cannot swap either for a link while the host writes or removes the
+      // login there. The state preparation made both real directories.
+      writablePaths: [statePath, join(statePath, '.claude'), join(statePath, 'tmp')],
       readOnlyPaths: [
         ctx.mcpConfigDir, commitHooksPath, originalHooksPath,
         ...(ctx.mcpReadDirectories || []),
@@ -1863,7 +1905,7 @@ export default {
       // turn of the agent to finish removes it.
       if (publicBwrapSandbox && !workspaceBwrapSandbox && publicClaudeState?.loginPath) {
         if (loginTurn) await releaseLoginTurn(loginTurn, publicClaudeState.loginPath);
-        else await removePrivateFile(dirname(publicClaudeState.loginPath), basename(publicClaudeState.loginPath));
+        else await removeLoginCopy(dirname(publicClaudeState.loginPath));
       }
     }
   },
