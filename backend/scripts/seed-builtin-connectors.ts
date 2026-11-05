@@ -101,13 +101,30 @@ const migrateInstallationIndex = async (): Promise<void> => {
   await InstallableInstallation.syncIndexes();
 };
 
+/**
+ * One model's index sync, logged rather than thrown. A store can refuse one
+ * index (FerretDB refuses the legacy `$in` partial index, so syncIndexes()
+ * rejects after building the others); that must not keep the connectors from
+ * seeding or the other models from getting theirs.
+ */
+const syncLogged = async (what: string, sync: () => Promise<unknown>): Promise<void> => {
+  try {
+    await sync();
+  } catch (error) {
+    console.warn(`[builtin-connectors] ${what} index sync incomplete:`, (error as Error).message);
+  }
+};
+
 export const seedBuiltinConnectors = async (): Promise<void> => {
   try {
-    await migrateInstallationIndex();
+    await syncLogged('installation', migrateInstallationIndex);
     // These models are first reached through asynchronous Slack callbacks;
     // create their uniqueness/TTL indexes during the deterministic boot seed
     // rather than discovering a missing index on the first external request.
-    await Promise.all([ConnectorSecret.syncIndexes(), WebhookDelivery.syncIndexes()]);
+    await Promise.all([
+      syncLogged('connector secret', () => ConnectorSecret.syncIndexes()),
+      syncLogged('webhook delivery', () => WebhookDelivery.syncIndexes()),
+    ]);
     await Promise.all([TELEGRAM_CONNECTOR, SLACK_CONNECTOR].map((connector) => (
       Installable.findOneAndUpdate(
         { installableId: connector.installableId },
