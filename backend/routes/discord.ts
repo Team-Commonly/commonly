@@ -26,6 +26,7 @@ import { listIntegrationsRateLimit, writeIntegrationsRateLimit } from '../middle
 import { platformIpRateLimit } from '../middleware/platformRateLimit';
 import { invalidDiscordIdError, isDiscordSnowflake, isSupplied } from '../utils/discordBinding';
 import { assertCanBindSurface, SurfaceBindRefusedError } from '../services/chatRelay/bindSurface';
+import { discordApplicationCommands, handleDiscordRelayCommand, isDiscordRelayCommand } from '../services/discordRelayCommandService';
 import {
   mintDiscordInstallProof, mintDiscordInstallState, readDiscordInstallProof, readDiscordInstallState,
 } from '../utils/discordInstallProof';
@@ -176,6 +177,25 @@ router.post('/interactions', async (req: AuthReq & { body: Buffer }, res: Res) =
     return res.status(500).json({ type: 4, data: { content: 'Failed to process installation' } });
   }
 
+  // The Commonly bridge commands (F133). They share the core's semantics with
+  // Telegram's and act only on the row bound to this exact channel, so they
+  // never reach the guild-wide fallback the legacy commands below keep.
+  if (type === 2 && isDiscordRelayCommand(data?.name)) {
+    try {
+      const { response, after } = await handleDiscordRelayCommand(interaction);
+      res.json(response);
+      if (after) {
+        after().catch((error: Error) => {
+          console.error('[discord-commands] deferred reply failed:', error.message);
+        });
+      }
+      return undefined;
+    } catch (error) {
+      console.error('[discord-commands] command failed:', (error as Error).message);
+      return res.json({ type: 4, data: { content: '❌ That command did not run. Try again shortly.', flags: 64 } });
+    }
+  }
+
   if (type === 2 && data?.type === 1) {
     const channelId = (interaction as { channel_id?: string }).channel_id;
     try {
@@ -324,7 +344,7 @@ router.get('/health', async (_req: AuthReq, res: Res) => {
     const response = await axios.get(url, { headers: { Authorization: `Bot ${botToken}` } });
     if (response.status === 200) {
       const registeredCommands = (response.data as Array<{ name: string }>).map((cmd) => cmd.name);
-      const expectedCommands = ['commonly-summary', 'discord-status', 'discord-enable', 'discord-disable'];
+      const expectedCommands = discordApplicationCommands().map((cmd) => cmd.name);
       const missingCommands = expectedCommands.filter((cmd) => !registeredCommands.includes(cmd));
       return res.json({ timestamp: new Date().toISOString(), status: missingCommands.length === 0 ? 'healthy' : 'degraded', globalCommands: { registered: registeredCommands, missing: missingCommands, total: expectedCommands.length }, summary: { total: expectedCommands.length, registered: registeredCommands.length, failed: missingCommands.length } });
     }

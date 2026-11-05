@@ -97,6 +97,36 @@ class DiscordCommandService {
     this.integration = null;
   }
 
+  /**
+   * The pod's latest chat summary, as a bound Discord channel may see it. The
+   * read behind both `/commonly-summary` and `/tldr` (F133).
+   *
+   * F143: the summary goes to everyone in the guild channel, so the row must
+   * have been bound by someone with authority over the pod (its creator or an
+   * admin). Rows plain members bound before #3436 are refused until the pod's
+   * creator reconnects them.
+   */
+  static async latestPodSummaryFor(
+    integration: Pick<IntegrationDoc, 'podId' | 'createdBy' | 'config'>,
+  ): Promise<{ kind: 'refused' } | { kind: 'none' } | { kind: 'summary'; summary: SummaryLike }> {
+    const podRef = integration.podId as unknown as { _id?: unknown } | null;
+    const podId = podRef?._id ?? podRef;
+    const pod = await Pod.findById(podId).lean();
+    try {
+      await assertCanBindSurface({
+        userId: integration.createdBy, pod, type: 'discord', config: integration.config || {},
+      });
+    } catch (error) {
+      if (!(error instanceof SurfaceBindRefusedError)) throw error;
+      return { kind: 'refused' };
+    }
+    const summary = await Summary.findOne({
+      type: 'chats',
+      podId,
+    }).sort({ createdAt: -1 }) as SummaryLike | null;
+    return summary ? { kind: 'summary', summary } : { kind: 'none' };
+  }
+
   async initialize(): Promise<boolean> {
     try {
       if (this.integrationId) {
@@ -154,37 +184,21 @@ class DiscordCommandService {
         };
       }
 
-      // F143: the summary goes to everyone in the guild channel, so the row
-      // must have been bound by someone with authority over the pod (its
-      // creator or an admin). Rows plain members bound before #3436 get this
-      // refusal and no summary until the pod's creator reconnects them.
-      const podRef = this.integration.podId as unknown as { _id?: unknown } | null;
-      const podId = podRef?._id ?? podRef;
-      const pod = await Pod.findById(podId).lean();
-      try {
-        await assertCanBindSurface({
-          userId: this.integration.createdBy, pod, type: 'discord', config: this.integration.config || {},
-        });
-      } catch (error) {
-        if (!(error instanceof SurfaceBindRefusedError)) throw error;
+      const found = await DiscordCommandService.latestPodSummaryFor(this.integration);
+      if (found.kind === 'refused') {
         return {
           success: false,
           refused: true,
           content: "Only the pod's creator can share this pod's summary with a channel. Ask them to reconnect it.",
         };
       }
-
-      const latestSummary = await Summary.findOne({
-        type: 'chats',
-        podId,
-      }).sort({ createdAt: -1 }) as SummaryLike | null;
-
-      if (!latestSummary) {
+      if (found.kind === 'none') {
         return {
           success: true,
           content: '📝 No recent summaries available for this chat pod.',
         };
       }
+      const latestSummary = found.summary;
 
       const formattedSummary = this.formatSummaryForDiscord(latestSummary);
 

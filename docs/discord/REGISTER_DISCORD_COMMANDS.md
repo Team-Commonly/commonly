@@ -2,6 +2,38 @@
 
 This guide shows you how to register Discord slash commands for your Commonly integrations.
 
+## Bridge commands (F133): what is current
+
+The command set lives in one file, `backend/config/discordApplicationCommands.json`:
+the seven bridge commands (`/mode`, `/status`, `/mute`, `/unmute`, `/tldr`,
+`/summary`, `/help`, the ones a Telegram chat has) plus the five legacy ones.
+`backend/start.sh` registers that whole set as **global** commands on every boot,
+with one bulk-overwrite `PUT /applications/{id}/commands`
+(`scripts/deploy-discord-commands.js`). It runs only when `DISCORD_CLIENT_ID`,
+`DISCORD_BOT_TOKEN` and `DISCORD_PUBLIC_KEY` are all set. To run it by hand:
+`npm run discord:deploy`, then `npm run discord:verify`. Global commands can
+take up to an hour to show in every guild.
+
+- **Transport.** Commands arrive at `POST /api/discord/interactions`, which
+  verifies `X-Signature-Ed25519` / `X-Signature-Timestamp` before anything else
+  and answers PING. The application's *Interactions Endpoint URL* in the Developer
+  Portal must point there (`https://<api host>/api/discord/interactions`). The
+  gateway does not handle `INTERACTION_CREATE`: while an endpoint URL is set,
+  Discord doesn't send interactions over the gateway anyway.
+- **Semantics** come from the shared relay core (`services/chatRelay/chatRelayCore.ts`:
+  `parseRelayCommand`, `applyRelayCommand`). Only the Discord wording, the
+  channel binding and the authority proof are in `services/discordRelayCommandService.ts`.
+- **Authority.** `/mode <choice>`, `/mute` and `/unmute` write the row, so they
+  need the caller's Discord id (`member.user.id`) to equal the row's
+  `config.discordUserId`, the installer the OAuth callback proved. Everyone else
+  gets an ephemeral refusal naming that person. Reads are open to anyone in the
+  bound channel.
+- **Binding.** A command acts only on rows whose `serverId` and `channelId` are
+  the ones it was typed in. Unlike the legacy commands, it has no guild-wide fallback.
+- **Scope.** The install link asks for `applications.commands` already. A guild
+  that added the bot before that scope was on the link must add the bot again
+  before commands show up there.
+
 ## 🚀 **Quick Start (Recommended)**
 
 ### **Method 1: Using the Registration Script**
