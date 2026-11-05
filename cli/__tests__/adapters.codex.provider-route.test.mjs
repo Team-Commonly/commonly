@@ -242,6 +242,19 @@ describe('codex adapter — a public seat on a provider gateway (D250)', () => {
     expect(started[0].keyMaterial).toBe(REAL_KEY);
   });
 
+  test('a failure tail is scrubbed of the trimmed key, not only the value as pasted', async () => {
+    const { impl } = makeSpawnImpl({
+      stdoutChunks: [
+        '{"type":"thread.started","thread_id":"sid-1"}\n',
+        `{"type":"turn.failed","error":{"message":"401 from gateway: bad key ${REAL_KEY} end"}}\n`,
+      ],
+    });
+    const err = await codex.spawn('hello', await publicSeat({ CODEX_API_KEY: `${REAL_KEY}\n` },
+      { _startProviderProxy: fakeProxy([]), _spawnImpl: impl })).catch((e) => e);
+    expect(err.message).toContain('from gateway: bad key');
+    expect(err.message).not.toContain(REAL_KEY);
+  });
+
   test('a private seat is untouched: codex reads its own config, no proxy starts', async () => {
     const started = [];
     const { impl, calls } = makeSpawnImpl();

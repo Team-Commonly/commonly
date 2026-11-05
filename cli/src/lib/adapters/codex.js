@@ -1179,7 +1179,7 @@ export default {
         // already removed the token from the child copy, and after that there is
         // nothing left to compare a tail against.
         // The per-turn proxy token is one too: codex was handed it in place of the key.
-        credentials: [...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), providerProxy?.token].filter(Boolean),
+        credentials: [...spawnCredentials(ctx, CODEX_PROVIDER_KEY_ENVS), route?.key, providerProxy?.token].filter(Boolean),
         spawnImpl: ctx._spawnImpl, onSpawn: ctx.onSpawn, controls: controlsFromArguments(args.slice(args.indexOf('exec') + (args[args.indexOf('exec') + 1] === 'resume' ? 3 : 1), -1), { modelFlag: '--model', valueFlags: ['-c', '-o', '--permission-profile'], codex: true }), // test seam only — do not use in production
         ownGroup: wantsOwnProcessGroup(ctx),
         turnReap: ctx._turnReap,

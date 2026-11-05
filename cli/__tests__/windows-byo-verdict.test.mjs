@@ -135,7 +135,7 @@ describe('the prod walk', () => {
 
   test('a reply without the ack, or an ack that failed, is not a pass', () => {
     const base = { messages: [mention, reply], agentName: 'win-walk-1104', readyAt: READY, events: [event] };
-    expect(prodOutcome({ ...base, acks: [] }).problems).toEqual(['the @mention was never acknowledged']);
+    expect(prodOutcome({ ...base, acks: [] }).problems).toContain('the @mention was never acknowledged');
     expect(prodOutcome({ ...base, acks: [{ ...ack, status: 500 }] }).passed).toBe(false);
     // An ack for some other event does not acknowledge this mention.
     expect(prodOutcome({ ...base, acks: [{ ...ack, eventId: 'e9' }] }).passed).toBe(false);
@@ -194,7 +194,7 @@ describe('the prod verdict names whose failure it was', () => {
 
   test('an upstream refusal the CLI acked with its status is the model route', () => {
     const outcome = prodOutcome({
-      ...base, messages: [mention], acks: [{ ...ack, outcome: 'no_action', reason: 'upstream-refused-401', refusedStatus: 401 }],
+      ...base, messages: [mention], acks: [{ ...ack, outcome: 'no_action', reason: 'upstream-refused-401' }],
     });
     expect(outcome.cause).toBe('model');
     expect(outcome.problems[0]).toMatch(/gateway or model refused the turn \(upstream 401\)/);
@@ -220,7 +220,7 @@ describe('the prod verdict names whose failure it was', () => {
   test('a failure logged before the @mention is not blamed on it', () => {
     const earlier = '2026-11-05T03:00:10.000Z [codex-walk] inbox batch processing failed (rate_limit; 1 consecutive) '
       + '— retrying 1 held event in 5.9s: codex turn failed (upstream 429)\n';
-    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: earlier }).cause).toBe('unfinished');
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: earlier }).cause).toBe('unclear');
     expect(prodOutcome({ ...base, messages: [mention], acks: [], output: earlier + failedTurn('runtime', 'codex: exited 1') }).cause)
       .toBe('harness');
   });
@@ -232,7 +232,7 @@ describe('the prod verdict names whose failure it was', () => {
       + '[codex] provider proxy refused a completion for an unpinned model\n';
     const after = '2026-11-05T03:00:25.000Z [codex-walk] [inbox.batch] spawning codex\n'
       + '[codex] provider proxy refused a completion for an unpinned model\n';
-    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: before }).cause).toBe('unfinished');
+    expect(prodOutcome({ ...base, messages: [mention], acks: [], output: before }).cause).toBe('unclear');
     expect(prodOutcome({ ...base, messages: [mention], acks: [], output: before + after }).cause).toBe('model');
     // With no CLI line before it, nothing places a refusal, so it still counts.
     expect(prodOutcome({ ...base, messages: [mention], acks: [], output: '[codex] provider proxy refused POST /v1/x\n' }).cause)
@@ -298,30 +298,54 @@ describe('the prod verdict names whose failure it was', () => {
     });
     expect(outcome.cause).toBe('harness');
     expect(outcome.problems[0]).toMatch(/the agent's turn failed \(runtime\) without a model refusal/);
+    expect(outcome.problems[0]).not.toMatch(/not Commonly/);
   });
 
   test('the log line names each cause in words, and none for a pass', () => {
     expect(describeCause('model', 'Codex')).toMatch(/model route failed/);
     expect(describeCause('harness', 'Codex')).toMatch(/^verdict: Codex's turn failed without a model refusal/);
+    expect(describeCause('harness', 'Codex')).not.toMatch(/not Commonly/);
     expect(describeCause('commonly', 'Codex')).toMatch(/Commonly's delivery/);
     expect(describeCause(null)).toBeNull();
   });
 
-  test('an @mention the CLI was never handed is Commonly\'s delivery, and so is a reply that was never acked', () => {
+  test('an @mention the CLI was never handed, or an ack the server wouldn\'t take, is Commonly\'s', () => {
     expect(prodOutcome({ ...base, messages: [mention], events: [], acks: [], output: 'polling https://api.commonly.me for events\n' }))
       .toMatchObject({ passed: false, cause: 'commonly' });
-    expect(prodOutcome({ ...base, messages: [mention, reply], acks: [] }))
+    expect(prodOutcome({ ...base, messages: [mention, reply], acks: [{ ...ack, status: 409 }] }))
       .toMatchObject({ passed: false, cause: 'commonly', problems: ['the @mention was never acknowledged'] });
+    expect(prodOutcome({ ...base, messages: [mention], acks: [{ ...ack, status: 500 }] }).cause).toBe('commonly');
   });
 
   // The walk gives up before the adapter's own timeout, so a gateway that
   // accepts /responses and never finishes leaves no failed line at all.
   test('a turn the CLI was handed and never finished blames nobody', () => {
     const outcome = prodOutcome({ ...base, messages: [mention], acks: [], output: 'spawning codex for chat.mention\n' });
-    expect(outcome).toMatchObject({ passed: false, cause: 'unfinished' });
+    expect(outcome).toMatchObject({ passed: false, cause: 'unclear' });
     expect(outcome.problems[0]).toMatch(/handed the @mention, but its turn never finished/);
-    expect(describeCause('unfinished', 'Codex')).toMatch(/^verdict: Codex was handed the @mention/);
-    expect(describeCause('unfinished', 'Codex')).not.toMatch(/Commonly's delivery/);
+    expect(describeCause('unclear', 'Codex')).toMatch(/^verdict: Codex was handed the @mention/);
+    expect(describeCause('unclear', 'Codex')).not.toMatch(/Commonly's delivery/);
+  });
+
+  test('a turn acked with no reply says how it ended, instead of saying it never finished', () => {
+    for (const [fields, said] of [
+      [{ outcome: 'no_action', reason: 'empty-output' }, /acked it as no_action, empty-output/],
+      [{ outcome: 'no_action' }, /acked it as no_action/],
+      [{}, /acked it/],
+    ]) {
+      const outcome = prodOutcome({ ...base, messages: [mention], acks: [{ ...ack, ...fields }] });
+      expect(outcome).toMatchObject({ passed: false, cause: 'unclear' });
+      expect(outcome.problems[0]).toMatch(/the turn ended without a reply/);
+      expect(outcome.problems[0]).toMatch(said);
+      expect(outcome.problems.join('\n')).not.toMatch(/never finished/);
+    }
+  });
+
+  // The agent can post through its MCP tool mid-turn and then hang or die.
+  test('a reply whose ack the CLI never sent does not blame Commonly, which was never asked', () => {
+    const outcome = prodOutcome({ ...base, messages: [mention, reply], acks: [] });
+    expect(outcome).toMatchObject({ passed: false, cause: 'unclear' });
+    expect(outcome.problems[0]).toMatch(/the agent replied, but the CLI never sent the ack/);
   });
 
   // A Commonly API call that throws mid-turn reaches the same line, and nothing

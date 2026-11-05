@@ -165,15 +165,16 @@ export const failedTurnsFrom = (output, { since } = {}) => {
  * `cause` says whose failure a failed walk was: `model` (the gateway or the
  * model refused, or the host proxy refused an unpinned model), `harness` (the
  * turn failed with no model refusal, including a route the host proxy doesn't
- * serve), `commonly` (the CLI was never handed the event, or it replied and
- * the ack did not land), or `unfinished` (the CLI was handed the event and no
- * line says what became of the turn: it hung, it outlasted the walk, whose
- * limit is shorter than the adapter's, or the CLI died). Null on a pass, and
- * before anyone has posted the @mention.
+ * serve), `commonly` (the CLI was never handed the event, or the server would
+ * not take its ack), or `unclear` (the CLI was handed the event and nothing
+ * names a party: the turn hung, outlasted the walk, whose limit is shorter than
+ * the adapter's, or the CLI died; or it was acked with no reply; or the agent
+ * replied and the CLI never tried to ack). Null on a pass, and before anyone
+ * has posted the @mention.
  *
  * A Commonly API call that throws mid-turn reaches the same failed line, and
- * nothing in its text marks it. So a model-class line with no upstream status
- * says what it most likely was, and doesn't clear Commonly.
+ * nothing in its text marks it. So those two causes say what a failed line most
+ * likely was, and don't clear Commonly, unless it names an upstream status.
  */
 export const prodOutcome = ({
   messages = [], agentName, readyAt, events = [], acks = [], output = '',
@@ -220,13 +221,22 @@ export const prodOutcome = ({
     cause = 'harness';
     problems.push(failed.some((t) => t.failureClass === 'proxy_route_refused')
       ? "the CLI's provider proxy refused a route the harness called: a mismatch between the harness and the CLI's provider route, not the gateway or the model"
-      : `the agent's turn failed (${failed[0].failureClass}) without a model refusal: the harness, not Commonly`);
-  } else if (mention && !reply && mentionEvents.length) {
-    cause = 'unfinished';
-    problems.push('the CLI was handed the @mention, but its turn never finished and it logged no failure: '
-      + 'it hung, outlasted the walk, or the CLI exited');
+      : `the agent's turn failed (${failed[0].failureClass}) without a model refusal: most likely the harness`);
   } else if (mention && (!reply || !ack)) {
-    cause = 'commonly';
+    // Commonly's only when it was asked and didn't deliver: an event never
+    // handed over, or an ack the server wouldn't take. The recorder has a row
+    // for every ack the CLI tried.
+    const ackRefused = !ack && acks.some((a) => mentionEvents.some((e) => e.eventId === a.eventId));
+    cause = !mentionEvents.length || ackRefused ? 'commonly' : 'unclear';
+    if (cause === 'unclear' && ack) {
+      const how = [ack.outcome, ack.reason].filter(Boolean).join(', ');
+      problems.push(`the turn ended without a reply, and the CLI acked it${how ? ` as ${how}` : ''}`);
+    } else if (cause === 'unclear' && reply) {
+      problems.push('the agent replied, but the CLI never sent the ack: it hung or exited after the reply');
+    } else if (cause === 'unclear') {
+      problems.push('the CLI was handed the @mention, but its turn never finished and it logged no failure: '
+        + 'it hung, outlasted the walk, or the CLI exited');
+    }
   }
   if (!mention) problems.push(`no ${handle} mention from a person yet`);
   else if (!reply) problems.push('no reply from the agent after the @mention');
@@ -245,7 +255,7 @@ export const prodOutcome = ({
 /** One line naming a failed walk's cause, for the log. */
 export const describeCause = (cause, harnessLabel = 'the harness') => ({
   model: 'verdict: the model route failed (the gateway, the model, or the CLI\'s proxy in front of them)',
-  harness: `verdict: ${harnessLabel}'s turn failed without a model refusal, not Commonly and not the gateway`,
+  harness: `verdict: ${harnessLabel}'s turn failed without a model refusal`,
   commonly: 'verdict: no turn failed, so the missing reply or ack is Commonly\'s delivery',
-  unfinished: `verdict: ${harnessLabel} was handed the @mention, but the turn never finished and no line says why`,
+  unclear: `verdict: ${harnessLabel} was handed the @mention, and nothing names whose failure this was; read the lines above`,
 }[cause] || null);
