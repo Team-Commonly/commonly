@@ -1039,15 +1039,14 @@ export default {
         ? sandbox?.mode ?? 'workspace'
         : null;
       // Checked before the public home is prepared, so a refused route changes nothing.
-      let modelBaseUrl = publicSandboxMode !== null
-        ? publicModelRouteBaseUrl(ctx.env || process.env)
-        : null;
-      if (modelBaseUrl) {
-        const authKind = await codexAuthKind(operatorCodexHome(ctx), ctx.env || process.env);
-        if (authKind !== 'apikey') {
-          if (authKind === 'login') process.stderr.write(`[codex] ${CHATGPT_ROUTE_IGNORED}\n`);
-          modelBaseUrl = null;
-        }
+      // Only a seat that will forward the URL validates it: a ChatGPT host with an
+      // OPENAI_BASE_URL set for some other tool keeps running, as it did before.
+      let modelBaseUrl = null;
+      const routeEnv = ctx.env || process.env;
+      if (publicSandboxMode !== null && String(routeEnv.OPENAI_BASE_URL || '').trim()) {
+        const authKind = await codexAuthKind(operatorCodexHome(ctx), routeEnv);
+        if (authKind === 'apikey') modelBaseUrl = publicModelRouteBaseUrl(routeEnv);
+        else if (authKind === 'login') process.stderr.write(`[codex] ${CHATGPT_ROUTE_IGNORED}\n`);
       }
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
       const publicCodexHome = publicSandboxMode !== null

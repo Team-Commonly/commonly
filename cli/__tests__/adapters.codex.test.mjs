@@ -1584,7 +1584,7 @@ describe('codex adapter — a public seat keeps the host model route (F188)', ()
     [`https://litellm.example.test/v1?api_key=${KEY}`, 'a query'],
     ['https://litellm.example.test/v1#frag', 'a fragment'],
   ])('a malformed route %s (%s) is refused before codex runs, without echoing it', async (value) => {
-    await writeFile(join(operatorHome, 'auth.json'), '{"test":true}', 'utf8');
+    await writeFile(join(operatorHome, 'auth.json'), '{"auth_mode":"apikey"}', 'utf8');
     const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
     const err = await codex.spawn('hi', {
       sessionId: null,
@@ -1636,6 +1636,13 @@ describe('codex adapter — a public seat keeps the host model route (F188)', ()
         expect(line).not.toContain(ROUTE);
         expect(line).not.toContain('chatgpt-session-secret');
       }
+    });
+
+    test('a ChatGPT host whose OPENAI_BASE_URL has a query still runs: the URL is checked only when it would be forwarded', async () => {
+      await writeAuth({ auth_mode: 'chatgpt', tokens: { access_token: 'chatgpt-session-secret' } });
+      const calls = await runPublic({ env: hostEnv({ OPENAI_BASE_URL: 'https://azure.example.test/openai?api-version=1' }) });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
     });
 
     test('an auth.json that does not parse is treated as a login', async () => {
