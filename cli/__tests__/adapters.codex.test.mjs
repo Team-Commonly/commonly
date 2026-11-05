@@ -1254,6 +1254,28 @@ describe('codex: the carve-out for a reference the file channel cannot carry (TA
     expect(warned.join('\n')).toMatch(/wants the seat credential as a command argument/);
   });
 
+  test.each(['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_BASE_URL', 'codex_api_key', 'Openai_Api_Key'])(
+    'an MCP entry that puts the token under codex\'s own credential name %s is refused before codex runs',
+    async (name) => {
+      const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+      const err = await codex.spawn('hi', {
+        sessionId: null,
+        _spawnImpl: impl,
+        env: spawnEnv(),
+        runtimeToken: 'cm_agent_secret',
+        instanceUrl: 'https://api.example.test',
+        environment: {
+          model: 'test-model',
+          mcp: [{ name: 'legacy', transport: 'stdio', command: ['legacy-bin'], env: { [name]: '${COMMONLY_AGENT_TOKEN}' } }],
+        },
+      }).then(() => null, (e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toContain(name);
+      expect(err.message).not.toContain('cm_agent_secret');
+      expect(calls).toHaveLength(0);
+    },
+  );
+
   test('an env value that merely contains the token is forwarded too', async () => {
     const { flags, env, warned } = await spawnCapturingWarnings([{
       name: 'legacy',
@@ -1493,5 +1515,203 @@ describe('codexNativeBinary — the binary `codex` on PATH runs', () => {
     await writeFile(join(root, 'bin', 'codex'), '', { mode: 0o755 });
     expect(codexNativeBinary({ PATH: join(root, 'bin') })).toBe(realpathSync(join(root, 'bin', 'codex')));
     expect(codexNativeBinary({ PATH: '/nonexistent' })).toBeNull();
+  });
+});
+
+// F188 (Growth's D252 walk, 11-05, codex-cli 0.162.1): a public seat runs
+// codex with `--ignore-user-config`, which drops config.toml's
+// `openai_base_url`, and 0.162.1 no longer reads the OPENAI_BASE_URL env, so a
+// host routed at LiteLLM or another OpenAI-compatible endpoint 401'd at
+// api.openai.com on every turn. The adapter now carries the host's declared
+// OPENAI_BASE_URL into the argv as `-c openai_base_url=...`, after `exec` (or
+// `exec resume <id>`), where codex parses it. The key never rides argv.
+describe('codex adapter — a public seat keeps the host model route (F188)', () => {
+  const ROUTE = 'https://litellm.example.test/v1';
+  const KEY = 'sk-f188-provider-key-never-in-argv';
+  let operatorHome;
+  let publicHome;
+  beforeEach(async () => {
+    operatorHome = await mkdtemp(join(tmpdir(), 'commonly-codex-f188-operator-'));
+    publicHome = await mkdtemp(join(tmpdir(), 'commonly-codex-f188-public-'));
+  });
+  afterEach(async () => {
+    await rm(operatorHome, { recursive: true, force: true });
+    await rm(publicHome, { recursive: true, force: true });
+  });
+
+  const hostEnv = (extra = {}) => {
+    const env = { ...process.env, CODEX_HOME: operatorHome, OPENAI_API_KEY: KEY, ...extra };
+    for (const name of ['OPENAI_BASE_URL', 'CODEX_ACCESS_TOKEN', 'CODEX_API_KEY']) {
+      if (!(name in extra)) delete env[name];
+    }
+    return env;
+  };
+  const runPublic = async ({ sessionId = null, env, trust = 'public' }) => {
+    const { impl, calls } = makeSpawnImpl({
+      stdoutChunks: ['{"type":"thread.started","thread_id":"sid-f188"}\n'],
+      outputContents: 'ok',
+    });
+    await codex.spawn('hi', {
+      sessionId,
+      environment: { model: 'test-model', sandbox: { mode: 'workspace', trust } },
+      env,
+      agentName: 'f188-agent',
+      _publicCodexHome: publicHome,
+      _spawnImpl: impl,
+    });
+    return calls;
+  };
+  const routeFlag = (args) => args.findIndex((a, i) => a === '-c' && String(args[i + 1]).startsWith('openai_base_url='));
+
+  test('a fresh public turn carries the declared route after `exec`, and the key stays in env', async () => {
+    const calls = await runPublic({ env: hostEnv({ OPENAI_BASE_URL: ROUTE }) });
+    const { args, opts } = calls[0];
+    const at = routeFlag(args);
+    expect(at).toBeGreaterThan(args.indexOf('exec'));
+    expect(args[at + 1]).toBe(`openai_base_url=${JSON.stringify(ROUTE)}`);
+    expect(args.filter((a) => String(a).includes('openai_base_url'))).toHaveLength(1);
+    expect(args.some((a) => String(a).includes(KEY))).toBe(false);
+    expect(opts.env.OPENAI_API_KEY).toBe(KEY);
+  });
+
+  test('a resumed public turn carries it after `exec resume <id>`', async () => {
+    const calls = await runPublic({ sessionId: 'sid-f188', env: hostEnv({ OPENAI_BASE_URL: ROUTE }) });
+    const { args } = calls[0];
+    expect(args.slice(0, 5)).toEqual(['--ask-for-approval', 'never', 'exec', 'resume', 'sid-f188']);
+    const at = routeFlag(args);
+    expect(at).toBeGreaterThan(args.indexOf('sid-f188'));
+    expect(args[at + 1]).toBe(`openai_base_url=${JSON.stringify(ROUTE)}`);
+    expect(args.some((a) => String(a).includes(KEY))).toBe(false);
+  });
+
+  test.each([null, 'sid-f188'])('a host that declares no route keeps today\'s argv exactly (session %s)', async (sessionId) => {
+    const without = (await runPublic({ sessionId, env: hostEnv() }))[0].args;
+    const withRoute = (await runPublic({ sessionId, env: hostEnv({ OPENAI_BASE_URL: ROUTE }) }))[0].args;
+    expect(without.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+    const at = routeFlag(withRoute);
+    const stripped = [...withRoute.slice(0, at), ...withRoute.slice(at + 2)];
+    const outputOf = (args) => args[args.indexOf('-o') + 1];
+    const normalize = (args) => args.map((a) => (a === outputOf(args) ? '<out>' : a));
+    expect(normalize(without)).toEqual(normalize(stripped));
+  });
+
+  test('an empty OPENAI_BASE_URL declares nothing', async () => {
+    const calls = await runPublic({ env: hostEnv({ OPENAI_BASE_URL: '  ' }) });
+    expect(calls[0].args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+  });
+
+  test.each([
+    ['not a url', 'not a URL'],
+    ['ftp://litellm.example.test/v1', 'not http(s)'],
+    ['file:///etc/passwd', 'not http(s)'],
+    [`https://user:${KEY}@litellm.example.test/v1`, 'credentials in the URL'],
+    [`https://litellm.example.test/v1?api_key=${KEY}`, 'a query'],
+    ['https://litellm.example.test/v1#frag', 'a fragment'],
+  ])('a malformed route %s (%s) is refused before codex runs, without echoing it', async (value) => {
+    await writeFile(join(operatorHome, 'auth.json'), '{"auth_mode":"apikey"}', 'utf8');
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    const err = await codex.spawn('hi', {
+      sessionId: null,
+      environment: { model: 'test-model', sandbox: { mode: 'workspace', trust: 'public' } },
+      env: hostEnv({ OPENAI_BASE_URL: value }),
+      agentName: 'f188-agent',
+      _publicCodexHome: publicHome,
+      _spawnImpl: impl,
+    }).then(() => null, (e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toMatch(/OPENAI_BASE_URL must be a plain http\(s\) URL/);
+    expect(err.message).not.toContain(KEY);
+    expect(calls).toHaveLength(0);
+    // Refused before the public home is prepared: no credential link was made.
+    expect(existsSync(join(publicHome, 'auth.json'))).toBe(false);
+  });
+
+  describe('the route follows an API key only, never a ChatGPT login', () => {
+    let stderr;
+    beforeEach(() => { stderr = jest.spyOn(process.stderr, 'write').mockImplementation(() => true); });
+    afterEach(() => { stderr.mockRestore(); });
+    const LINE = 'OPENAI_BASE_URL is ignored while Codex is signed in with ChatGPT; use an API key for a custom route';
+    const writeAuth = (body) => writeFile(join(operatorHome, 'auth.json'), JSON.stringify(body), 'utf8');
+    const loggedLines = () => stderr.mock.calls.map(([chunk]) => String(chunk));
+
+    test('an API-key auth.json plus a URL forwards, with no key in the env', async () => {
+      await writeAuth({ auth_mode: 'apikey', OPENAI_API_KEY: KEY });
+      const env = hostEnv({ OPENAI_BASE_URL: ROUTE });
+      delete env.OPENAI_API_KEY;
+      const { args } = (await runPublic({ env }))[0];
+      expect(args[routeFlag(args) + 1]).toBe(`openai_base_url=${JSON.stringify(ROUTE)}`);
+      expect(args.some((a) => String(a).includes(KEY))).toBe(false);
+      expect(loggedLines().some((l) => l.includes(LINE))).toBe(false);
+    });
+
+    test.each([
+      ['chatgpt', { auth_mode: 'chatgpt', tokens: { access_token: 'chatgpt-session-secret' } }],
+      ['chatgptAuthTokens', { auth_mode: 'chatgptAuthTokens', tokens: { access_token: 'chatgpt-session-secret' } }],
+      ['no auth_mode', { tokens: { access_token: 'chatgpt-session-secret' } }],
+    ])('a ChatGPT login (%s) plus a URL does not forward, even beside OPENAI_API_KEY, and says why once', async (_mode, body) => {
+      await writeAuth(body);
+      for (const sessionId of [null, 'sid-f188']) {
+        const { args } = (await runPublic({ sessionId, env: hostEnv({ OPENAI_BASE_URL: ROUTE }) }))[0];
+        expect(args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+      }
+      const lines = loggedLines().filter((l) => l.includes(LINE));
+      expect(lines).toHaveLength(2);
+      for (const line of loggedLines()) {
+        expect(line).not.toContain(ROUTE);
+        expect(line).not.toContain('chatgpt-session-secret');
+      }
+    });
+
+    test('a ChatGPT host whose OPENAI_BASE_URL has a query still runs: the URL is checked only when it would be forwarded', async () => {
+      await writeAuth({ auth_mode: 'chatgpt', tokens: { access_token: 'chatgpt-session-secret' } });
+      const calls = await runPublic({ env: hostEnv({ OPENAI_BASE_URL: 'https://azure.example.test/openai?api-version=1' }) });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+    });
+
+    test('a CODEX_ACCESS_TOKEN in the env is a login even beside an API-key auth.json', async () => {
+      await writeAuth({ auth_mode: 'apikey', OPENAI_API_KEY: KEY });
+      for (const sessionId of [null, 'sid-f188']) {
+        const env = hostEnv({ OPENAI_BASE_URL: ROUTE, CODEX_ACCESS_TOKEN: 'codex-access-token-secret' });
+        const { args } = (await runPublic({ sessionId, env }))[0];
+        expect(args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+      }
+      expect(loggedLines().filter((l) => l.includes(LINE))).toHaveLength(2);
+      for (const line of loggedLines()) expect(line).not.toContain('codex-access-token-secret');
+    });
+
+    test('with no auth.json, a CODEX_API_KEY in the env is the key and the route is forwarded', async () => {
+      const env = hostEnv({ OPENAI_BASE_URL: ROUTE, CODEX_API_KEY: KEY });
+      delete env.OPENAI_API_KEY;
+      const { args } = (await runPublic({ env }))[0];
+      expect(args[routeFlag(args) + 1]).toBe(`openai_base_url=${JSON.stringify(ROUTE)}`);
+      expect(args.some((a) => String(a).includes(KEY))).toBe(false);
+    });
+
+    test('an auth.json that does not parse is treated as a login', async () => {
+      await writeFile(join(operatorHome, 'auth.json'), '{not json', 'utf8');
+      const { args } = (await runPublic({ env: hostEnv({ OPENAI_BASE_URL: ROUTE }) }))[0];
+      expect(args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+    });
+
+    test('no auth.json and no key: nothing to route, nothing forwarded, no ChatGPT line', async () => {
+      const env = hostEnv({ OPENAI_BASE_URL: ROUTE });
+      delete env.OPENAI_API_KEY;
+      const { args } = (await runPublic({ env }))[0];
+      expect(args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
+      expect(loggedLines().some((l) => l.includes(LINE))).toBe(false);
+    });
+  });
+
+  test('a private seat reads its own config.toml, so its argv is untouched by the env', async () => {
+    const { impl, calls } = makeSpawnImpl({ outputContents: 'ok' });
+    await codex.spawn('hi', {
+      sessionId: null,
+      environment: { model: 'test-model' },
+      env: hostEnv({ OPENAI_BASE_URL: ROUTE }),
+      _spawnImpl: impl,
+    });
+    expect(calls[0].args).not.toContain('--ignore-user-config');
+    expect(calls[0].args.some((a) => String(a).includes('openai_base_url'))).toBe(false);
   });
 });

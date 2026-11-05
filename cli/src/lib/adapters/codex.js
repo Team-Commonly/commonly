@@ -324,6 +324,16 @@ const buildMcpOverrideArgs = (mcpServers, ctx = {}) => {
         && typeof value === 'string'
         && value.includes(ctx.runtimeToken);
       if (carriesRuntimeToken) {
+        // Codex reads these as its own credential or model route, so a value
+        // forwarded under one of these names would be sent to the model endpoint.
+        // Compared in upper case on every platform: Windows env names are
+        // case-insensitive, and refusing a lower-case spelling elsewhere costs nothing.
+        if (CODEX_OWN_AUTH_ENVS.includes(key.toUpperCase())) {
+          throw new Error(
+            `codex MCP server ${server.name} sets ${key} to the seat token; codex reads ${key} `
+            + 'as its own credential, so declare the token under another name',
+          );
+        }
         if (forwardedEnv[key] !== undefined && forwardedEnv[key] !== value) {
           throw new Error(
             `codex MCP servers declare conflicting token-bearing values for env var ${key}`,
@@ -431,10 +441,12 @@ const realpathOfNearest = async (path) => {
   }
 };
 
+const operatorCodexHome = (ctx) => ctx.env?.CODEX_HOME
+  || process.env.CODEX_HOME
+  || join(homedir(), '.codex');
+
 const preparePublicCodexHome = async (ctx, childEnv) => {
-  const operatorHome = ctx.env?.CODEX_HOME
-    || process.env.CODEX_HOME
-    || join(homedir(), '.codex');
+  const operatorHome = operatorCodexHome(ctx);
   const identity = ctx.agentName || ctx.cwd || 'anonymous';
   const identityHash = createHash('sha256').update(identity).digest('hex').slice(0, 20);
   const homesRoot = publicCodexHomesRoot(ctx);
@@ -704,6 +716,66 @@ const publicPermissionProfileFlags = (
   ];
 };
 
+// F188: the host's OpenAI-compatible model route, for a public seat. That seat
+// runs with `--ignore-user-config`, so config.toml's `openai_base_url` never
+// loads, and codex-cli 0.162.1 does not read the OPENAI_BASE_URL env either
+// (Growth's D252 walk, 11-05): a host routed at LiteLLM or another
+// OpenAI-compatible endpoint sent every turn to api.openai.com and got a 401.
+// The env is the declaration, as ANTHROPIC_BASE_URL is for the claude adapter;
+// buildArgs passes it on as `-c openai_base_url=...`, the top-level key the
+// 0.162.1 binary carries. Only a plain http(s) URL: one carrying credentials,
+// a query or a fragment could put a key into argv, so it is refused rather
+// than trimmed, and the refusal does not echo the value. The key itself stays
+// where codex already reads it (auth.json in the public home, or the env).
+export const publicModelRouteBaseUrl = (source = {}) => {
+  const raw = typeof source.OPENAI_BASE_URL === 'string' ? source.OPENAI_BASE_URL.trim() : '';
+  if (!raw) return null;
+  let url = null;
+  try { url = new URL(raw); } catch { /* refused below */ }
+  if (!url || !['http:', 'https:'].includes(url.protocol) || !url.hostname
+    || url.username || url.password || /[?#\s]/.test(raw)) {
+    throw new Error('codex adapter: OPENAI_BASE_URL must be a plain http(s) URL with no credentials, '
+      + 'query or fragment (e.g. https://litellm.example.com/v1); fix or unset it before a public seat runs.');
+  }
+  return raw;
+};
+
+// F188 guard: `openai_base_url` moves wherever the seat's credential goes, a
+// ChatGPT session included (the built-in provider swaps only its default base
+// for a ChatGPT login). So the route is forwarded only to a seat that signs in
+// with an API key, and a ChatGPT session token is never pointed at a URL from
+// the env. The public home links the operator's auth.json, so that file decides:
+// its `auth_mode` alone is read (codex-cli 0.162.1 writes "apikey", "chatgpt",
+// "chatgptAuthTokens", ...), the parsed object is dropped, and nothing else from
+// it is kept or logged. Only "apikey" counts as a key; a file with any other
+// mode, no mode, or that does not parse is treated as a login and fails closed,
+// whatever OPENAI_API_KEY says, since codex prefers its stored login. With no
+// auth.json, an OPENAI_API_KEY or CODEX_API_KEY in the env is the key. A
+// CODEX_ACCESS_TOKEN in the env is a token codex sends in place of either, so
+// it counts as a login whatever auth.json says.
+const CODEX_OWN_AUTH_ENVS = ['OPENAI_API_KEY', 'CODEX_API_KEY', 'CODEX_ACCESS_TOKEN', 'OPENAI_BASE_URL'];
+
+const CHATGPT_ROUTE_IGNORED = 'OPENAI_BASE_URL is ignored while Codex is signed in with ChatGPT; '
+  + 'use an API key for a custom route';
+
+const envSet = (source, name) => typeof source[name] === 'string' && source[name].trim() !== '';
+
+export const codexAuthKind = async (operatorHome, source = {}) => {
+  if (envSet(source, 'CODEX_ACCESS_TOKEN')) return 'login';
+  let text = null;
+  try {
+    text = await readFile(join(operatorHome, 'auth.json'), 'utf8');
+  } catch (err) {
+    if (err?.code !== 'ENOENT' && err?.code !== 'ENOTDIR') return 'login';
+  }
+  if (text === null) {
+    return envSet(source, 'OPENAI_API_KEY') || envSet(source, 'CODEX_API_KEY') ? 'apikey' : 'none';
+  }
+  let mode = null;
+  try { mode = JSON.parse(text)?.auth_mode ?? null; } catch { /* unreadable: a login */ }
+  return mode === 'apikey' ? 'apikey' : 'login';
+};
+
 // Build the argv after the `codex` binary. Resume vs new turn is a
 // subcommand-level distinction in modern codex, not an option flag — keep
 // that detail isolated here so the spawn path stays linear.
@@ -718,6 +790,7 @@ const buildArgs = ({
   commitAttributionEnv = null,
   mcpReadDirectories = [],
   codexHelperReadPaths = [],
+  modelBaseUrl = null,
 }) => {
   const publicSandbox = publicSandboxMode !== null;
   // `--dangerously-bypass-approvals-and-sandbox` disables codex CLI's
@@ -749,6 +822,10 @@ const buildArgs = ({
     '--json',
     '--skip-git-repo-check',
     ...executionPolicy,
+    // F188: only a public seat drops config.toml; a private one keeps its own
+    // route there. In `common`, so it lands after `exec` / `exec resume <id>`,
+    // the only position codex parses it from.
+    ...(publicSandbox && modelBaseUrl ? ['-c', `openai_base_url=${toml(modelBaseUrl)}`] : []),
     ...(model ? ['--model', String(model)] : []),
     ...(effort ? ['-c', 'model_reasoning_effort=' + toml(effort)] : []),
     ...mcpFlags,
@@ -978,6 +1055,16 @@ export default {
       const publicSandboxMode = sandbox?.trust === 'public'
         ? sandbox?.mode ?? 'workspace'
         : null;
+      // Checked before the public home is prepared, so a refused route changes nothing.
+      // Only a seat that will forward the URL validates it: a ChatGPT host with an
+      // OPENAI_BASE_URL set for some other tool keeps running, as it did before.
+      let modelBaseUrl = null;
+      const routeEnv = ctx.env || process.env;
+      if (publicSandboxMode !== null && String(routeEnv.OPENAI_BASE_URL || '').trim()) {
+        const authKind = await codexAuthKind(operatorCodexHome(ctx), routeEnv);
+        if (authKind === 'apikey') modelBaseUrl = publicModelRouteBaseUrl(routeEnv);
+        else if (authKind === 'login') process.stderr.write(`[codex] ${CHATGPT_ROUTE_IGNORED}\n`);
+      }
       const childEnv = { ...(ctx.env || process.env), ...mcp.forwardedEnv };
       const publicCodexHome = publicSandboxMode !== null
         ? await preparePublicCodexHome(ctx, childEnv)
@@ -993,6 +1080,7 @@ export default {
         effort: ctx.environment?.effort,
         commitAttributionEnv: ctx.commitAttributionEnv,
         codexHelperReadPaths: publicCodexHome?.helperReadPaths || [],
+        modelBaseUrl,
       });
       // childEnv is derived from the process environment, so the bootstrap export has to be
       // taken back out: the declaration above moved our server onto the file,
