@@ -147,6 +147,21 @@ router.get('/funnel', adminReadLimiter, auth, adminAuth, async (req: any, res: a
   }
 });
 
+// GET /api/admin/analytics/machines (TASK-784, D164)
+// Daemon machines by platform and by CLI version, and per platform how many
+// had an agent answer a person (an @mention or a DM). Counts only. A
+// foreground `commonly agent run` registers no machine, so it is not counted.
+router.get('/machines', adminReadLimiter, auth, adminAuth, async (_req: any, res: any) => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+    const { readMachinePlatformStats } = require('../../services/machineService');
+    return res.json(await readMachinePlatformStats());
+  } catch (error) {
+    console.error('[machine-stats] read failed:', (error as Error).message);
+    return res.status(503).json({ error: 'machine_stats_unavailable' });
+  }
+});
+
 // GET /api/admin/analytics/usage?days=30
 // Instance-level activity for the admin dashboard: signups/day (Mongo,
 // humans), messages/day + distinct human posters/day (PG), rolling DAU/WAU

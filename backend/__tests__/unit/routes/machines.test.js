@@ -151,7 +151,7 @@ describe('machine lifecycle routes', () => {
     // service owns validation.
     expect(mockRecordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'daemon-machine',
-    }), agents, undefined, undefined);
+    }), agents, undefined, undefined, undefined);
     expect(mockFindMachine).toHaveBeenCalledWith({
       _id: '0123456789abcdef01234567',
       machineId: 'daemon-machine',
@@ -167,7 +167,19 @@ describe('machine lifecycle routes', () => {
     expect(res.status).toBe(200);
     expect(mockRecordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
       machineId: 'daemon-machine',
-    }), [], undefined, 'unsandboxed-opted-in');
+    }), [], undefined, 'unsandboxed-opted-in', undefined);
+  });
+
+  it('TASK-784: hands the host report to the service verbatim', async () => {
+    mockRecordMachineHeartbeat.mockResolvedValue({ id: '0123456789abcdef01234567', status: 'online' });
+    const host = { platform: 'win32', osMajor: 10, arch: 'x64', cliVersion: '0.1.245' };
+    const res = await request(app)
+      .post('/api/machines/0123456789abcdef01234567/heartbeat')
+      .send({ agents: [], host });
+    expect(res.status).toBe(200);
+    expect(mockRecordMachineHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
+      machineId: 'daemon-machine',
+    }), [], undefined, undefined, host);
   });
 
   it('returns only the credential-bound machine through daemon status', async () => {
