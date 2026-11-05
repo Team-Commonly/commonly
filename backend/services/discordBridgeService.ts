@@ -304,15 +304,15 @@ const findLiveIntegration = async (podId: string): Promise<DiscordIntegrationDoc
 // Bold and the other inline marks would let a display or pod name restyle the
 // prefix, and brackets and parentheses would let `x](https://evil) [y` close
 // the tag and open a masked link; a backslash makes each one literal.
-const escapeDiscordMarkdown = (value: string): string => value.replace(/([\\*_~`|>[\]()])/g, '\\$1');
+export const escapeDiscordMarkdown = (value: string): string => value.replace(/([\\*_~`|>[\]()])/g, '\\$1');
 
 // `allowed_mentions` already stops every ping. This also keeps the words from
 // reading as one: a zero-width space after the @ renders the same and is no
 // longer the mass-mention token.
-const defuseMassMentions = (value: string): string => value.replace(/@(everyone|here)/gi, '@​$1');
+export const defuseMassMentions = (value: string): string => value.replace(/@(everyone|here)/gi, '@​$1');
 
 /** Cut to `limit` characters with an ellipsis, never leaving half a surrogate pair. */
-const fitWithin = (value: string, limit: number): string => {
+export const fitWithin = (value: string, limit: number): string => {
   if (value.length <= limit) return value;
   if (limit <= 1) return '…'.slice(0, Math.max(0, limit));
   let cut = value.slice(0, limit - 1);
@@ -562,6 +562,9 @@ module.exports = {
   renderDiscordAgentLine,
   renderDiscordDecisionCard,
   DISCORD_CONTENT_LIMIT,
+  escapeDiscordMarkdown,
+  defuseMassMentions,
+  fitWithin,
   isIgnoredDiscordMessage,
   renderDiscordInboundContent,
   relayDiscordMessageToPod,

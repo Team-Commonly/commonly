@@ -1,4 +1,5 @@
 const axios = require("axios");
+const DISCORD_APPLICATION_COMMANDS = require("../config/discordApplicationCommands.json");
 
 /**
  * Discord Command Deployment Script
@@ -66,34 +67,10 @@ class DiscordCommandDeployment {
   async registerGlobalCommands() {
     const { DISCORD_CLIENT_ID, DISCORD_BOT_TOKEN } = process.env;
 
-    // Define the slash commands
-    const commands = [
-      {
-        name: "commonly-summary",
-        description: "Get the most recent summary from the linked chat pod",
-        type: 1, // CHAT_INPUT
-      },
-      {
-        name: "discord-status",
-        description: "Show the status of Discord integration",
-        type: 1,
-      },
-      {
-        name: "discord-enable",
-        description: "Enable webhook listener for Discord channel",
-        type: 1,
-      },
-      {
-        name: "discord-disable",
-        description: "Disable webhook listener for Discord channel",
-        type: 1,
-      },
-      {
-        name: "discord-push",
-        description: "Push Discord activity from last hour to Commonly pod now",
-        type: 1,
-      },
-    ];
+    // The full command set, one bulk overwrite (PUT): the Commonly bridge
+    // commands (F133) and the legacy ones. The same file is what the
+    // interactions route answers, so the menu and the handler cannot drift.
+    const commands = DISCORD_APPLICATION_COMMANDS;
 
     console.log(`🔧 Registering ${commands.length} global commands...`);
 
@@ -223,13 +200,9 @@ class DiscordCommandDeployment {
 
       if (response.status === 200) {
         const registeredCommands = response.data;
-        const expectedCommands = [
-          "commonly-summary",
-          "discord-status",
-          "discord-enable",
-          "discord-disable",
-          "discord-push",
-        ];
+        const expectedCommands = DISCORD_APPLICATION_COMMANDS.map(
+          (cmd) => cmd.name,
+        );
         const foundCommands = registeredCommands.map((cmd) => cmd.name);
 
         const missingCommands = expectedCommands.filter(

@@ -19,7 +19,7 @@ const {
 } = require('../../services/webhookDeliveryService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const { cloudflareIpRateLimitKeyGenerator } = require('../../middleware/ipRateLimit');
-import { applyRelayCommand } from '../../services/chatRelay/chatRelayCore';
+import { applyRelayCommand, parseRelayCommand } from '../../services/chatRelay/chatRelayCore';
 import { assertCanBindSurface, SurfaceBindRefusedError, surfaceAudienceOf } from '../../services/chatRelay/bindSurface';
 import type { RelayCommand, RelayCommandOutcome } from '../../services/chatRelay/chatRelayCore';
 
@@ -50,16 +50,12 @@ const HELP_COMMAND = '/help';
 
 const normalizeCommand = (raw = '') => raw.split('@')[0].toLowerCase();
 
-// Telegram's spelling of the shared bridge commands. `/mode` accepts any case
-// of its argument; `/mute` hands its argument to parseInt as typed.
-const parseTelegramRelayCommand = (command: string | null, arg?: string): RelayCommand | null => {
-  if (command === MODE_COMMAND) return { name: 'mode', arg: (arg || '').toLowerCase() };
-  if (command === STATUS_COMMAND) return { name: 'status' };
-  if (command === MUTE_COMMAND) return { name: 'mute', arg };
-  if (command === UNMUTE_COMMAND) return { name: 'unmute' };
-  if (command === HELP_COMMAND) return { name: 'help' };
-  return null;
-};
+// Telegram's spelling of the shared bridge commands is a leading slash on the
+// core's names; the parse itself is the core's, shared with Discord.
+const TELEGRAM_RELAY_COMMANDS = new Set([MODE_COMMAND, STATUS_COMMAND, MUTE_COMMAND, UNMUTE_COMMAND, HELP_COMMAND]);
+const parseTelegramRelayCommand = (command: string | null, arg?: string): RelayCommand | null => (
+  command && TELEGRAM_RELAY_COMMANDS.has(command) ? parseRelayCommand(command.slice(1), arg) : null
+);
 
 const getMessageFromUpdate = (update: any) => update?.message || update?.channel_post || null;
 

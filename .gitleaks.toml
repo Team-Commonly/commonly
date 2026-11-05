@@ -41,6 +41,9 @@ regexes = [
   # ANCHORED to the exact captured value, so any other id still fails.
   '''^345678901234567890$''',
   '''^456789012345678901$''',
+  # A made-up Discord application id an intermediate #3469 commit carried in
+  # discord.relayCommands.test.js (the scan reads every commit in a PR).
+  '''^123456789012345678$''',
 ]
 
 paths = [
