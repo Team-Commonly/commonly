@@ -83,9 +83,11 @@ const setupMongoDb = async () => {
     // name is new on purpose: the compose files already set TEST_MONGO_URI,
     // and `./dev.sh test` must stay in-memory.
     if (process.env.JEST_EXTERNAL_MONGO_URI) {
-      const url = new URL(process.env.JEST_EXTERNAL_MONGO_URI);
-      url.pathname = `/t${require('crypto').randomBytes(6).toString('hex')}`; // eslint-disable-line global-require
-      await mongoose.connect(url.toString());
+      /* eslint-disable global-require */
+      const { withDatabase } = require('./externalMongoMemoryServer');
+      const db = `t${require('crypto').randomBytes(6).toString('hex')}`;
+      /* eslint-enable global-require */
+      await mongoose.connect(withDatabase(process.env.JEST_EXTERNAL_MONGO_URI, db));
       return;
     }
     mongoServer = await createMongoServer();

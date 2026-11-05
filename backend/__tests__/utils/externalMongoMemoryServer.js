@@ -16,8 +16,17 @@ const crypto = require('crypto');
 // eslint-disable-next-line import/no-extraneous-dependencies
 const real = require('mongodb-memory-server-core');
 
+// The driver's own parser: a seed list (`host1,host2/?replicaSet=rs0`) is not
+// a WHATWG URL. A URI with credentials and no authSource authenticates against
+// `admin`; naming a test database in the path would move that, so it is pinned.
+// eslint-disable-next-line import/no-extraneous-dependencies
+const ConnectionString = require('mongodb-connection-string-url').default;
+
 const withDatabase = (base, db) => {
-  const url = new URL(base);
+  const url = new ConnectionString(base);
+  if (url.username && !url.searchParams.has('authSource')) {
+    url.searchParams.set('authSource', url.pathname.replace(/^\//, '') || 'admin');
+  }
   url.pathname = `/${db}`;
   return url.toString();
 };
@@ -59,4 +68,4 @@ class MongoMemoryServer extends real.MongoMemoryServer {
   }
 }
 
-module.exports = { ...real, MongoMemoryServer };
+module.exports = { ...real, MongoMemoryServer, withDatabase };
