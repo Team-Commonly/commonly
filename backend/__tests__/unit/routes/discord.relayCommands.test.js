@@ -8,7 +8,7 @@ const nacl = require('tweetnacl');
 
 const keyPair = nacl.sign.keyPair();
 process.env.DISCORD_PUBLIC_KEY = Buffer.from(keyPair.publicKey).toString('hex');
-process.env.DISCORD_APPLICATION_ID = 'app-1';
+process.env.DISCORD_APPLICATION_ID = '123456789012345678';
 
 // A Mongo stand-in that honours the query it is given: equality on dotted
 // paths and `$exists: false`. The binding check is then tested against a
@@ -92,11 +92,14 @@ const send = (body, { secretKey = keyPair.secretKey } = {}) => {
     .send(raw);
 };
 
-const command = (name, { actor = INSTALLER, channel = CHANNEL, guild = GUILD, options } = {}) => send({
+const command = (name, {
+  actor = INSTALLER, channel = CHANNEL, guild = GUILD, options,
+  token = 'interaction-token', applicationId = '123456789012345678',
+} = {}) => send({
   type: 2,
   id: 'interaction-1',
-  token: 'interaction-token',
-  application_id: 'app-1',
+  token,
+  application_id: applicationId,
   guild_id: guild,
   channel_id: channel,
   member: { user: { id: actor } },
@@ -258,10 +261,23 @@ test('/summary defers, then edits the reply with the result', async () => {
   await new Promise((resolve) => { setImmediate(resolve); });
   expect(runCommandForIntegration).toHaveBeenCalledWith(expect.objectContaining({ commandName: 'discord-push' }));
   expect(axios.patch).toHaveBeenCalledWith(
-    'https://discord.com/api/v10/webhooks/app-1/interaction-token/messages/@original',
+    'https://discord.com/api/v10/webhooks/123456789012345678/interaction-token/messages/@original',
     { content: '✅ Queued 4 Discord message(s).', allowed_mentions: { parse: [] } },
     expect.any(Object),
   );
+});
+
+test.each([
+  ['an application id that is not a snowflake', { applicationId: '../../evil' }],
+  ['a token carrying a path', { token: 'tok/../../x' }],
+])('/summary never edits a reply through %s', async (_label, overrides) => {
+  mockRows[0] = row({ webhookListenerEnabled: true });
+  runCommandForIntegration.mockResolvedValue({ result: { success: true, content: 'ok' } });
+  const res = await command('summary', { actor: STRANGER, ...overrides });
+  expect(res.body).toEqual({ type: 5, data: { flags: 64 } });
+  await new Promise((resolve) => { setImmediate(resolve); });
+  await new Promise((resolve) => { setImmediate(resolve); });
+  expect(axios.patch).not.toHaveBeenCalled();
 });
 
 test('/help answers anywhere, ephemerally', async () => {

@@ -25,6 +25,7 @@ describe('parseRelayCommand', () => {
 
 test.each([
   ['30m', 30], ['30 min', 30], ['2h', 120], ['1 hour', 60], ['48h', 1440], ['45', 45], ['0m', 60],
+  [' 2h ', 120], ['0' + '\t'.repeat(50000) + 'x', 60],
 ])('mute %p is %i minutes', (arg, minutes) => {
   const outcome = applyRelayCommand({ name: 'mute', arg }, integration, NOW);
   expect(outcome).toMatchObject({ kind: 'mute', minutes, until: new Date(NOW.getTime() + minutes * MIN) });

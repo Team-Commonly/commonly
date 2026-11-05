@@ -274,15 +274,21 @@ const runTldr = async (rows: DiscordCommandRow[]): Promise<InteractionReply> => 
   return reply(joinPerPod(blocks), { ephemeral: false });
 };
 
+const DISCORD_SNOWFLAKE = /^\d{17,20}$/;
+const INTERACTION_TOKEN = /^[A-Za-z0-9_.-]{1,512}$/;
+
 // Edit the deferred reply. The interaction token is the credential, so the URL
 // carries no bot token; the application id comes from config.
 const editDeferredReply = async (interaction: DiscordInteraction, content: string): Promise<void> => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
   const config = require('../config/discord');
-  const applicationId = interaction.application_id || config.applicationId;
-  if (!applicationId || !interaction.token) return;
+  const applicationId = String(interaction.application_id || config.applicationId || '');
+  const token = String(interaction.token || '');
+  // Both come from a signed payload, but they are still path segments: pin
+  // them to Discord's shapes so the request can only reach this endpoint.
+  if (!DISCORD_SNOWFLAKE.test(applicationId) || !INTERACTION_TOKEN.test(token)) return;
   await axios.patch(
-    `https://discord.com/api/v10/webhooks/${applicationId}/${interaction.token}/messages/@original`,
+    `https://discord.com/api/v10/webhooks/${encodeURIComponent(applicationId)}/${encodeURIComponent(token)}/messages/@original`,
     { content: fitWithin(content, DISCORD_CONTENT_LIMIT), allowed_mentions: NO_MENTIONS },
     { headers: { 'Content-Type': 'application/json' }, timeout: 10_000 },
   );

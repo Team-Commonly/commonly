@@ -137,7 +137,10 @@ export const parseRelayCommand = (name: string | null | undefined, arg?: string)
   return null;
 };
 
-const MUTE_DURATION = /^\s*(\d+)\s*(m|min|mins|minutes?|h|hr|hrs|hours?)?\s*$/i;
+// Read against a trimmed argument of at most 16 characters, with no
+// adjacent optional whitespace, so the match is linear.
+const MUTE_DURATION = /^(\d{1,5}) ?(m|min|mins|minutes?|h|hr|hrs|hours?)?$/i;
+const MUTE_ARG_MAX = 16;
 
 /**
  * The minutes a `/mute` argument asks for: a bare number is minutes, and `30m`
@@ -146,10 +149,11 @@ const MUTE_DURATION = /^\s*(\d+)\s*(m|min|mins|minutes?|h|hr|hrs|hours?)?\s*$/i;
  * the default.
  */
 const muteMinutesOf = (arg?: string): number => {
-  const match = MUTE_DURATION.exec(arg || '');
+  const trimmed = String(arg || '').trim().slice(0, MUTE_ARG_MAX);
+  const match = MUTE_DURATION.exec(trimmed);
   const asked = match
     ? parseInt(match[1], 10) * (match[2] && /^h/i.test(match[2]) ? 60 : 1)
-    : parseInt(arg || String(DEFAULT_MUTE_MINUTES), 10);
+    : parseInt(trimmed || String(DEFAULT_MUTE_MINUTES), 10);
   return Math.min(Math.max(asked || DEFAULT_MUTE_MINUTES, 1), MAX_MUTE_MINUTES);
 };
 
