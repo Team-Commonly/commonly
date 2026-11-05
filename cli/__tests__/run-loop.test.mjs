@@ -1467,7 +1467,9 @@ describe('performRun', () => {
   // kernel also sends chat-thread mentions and 1:1 DMs as chat.mention, so the
   // payload decides, not the type (gate review of this change).
   const ANSWER_IN_CHANNEL = '[This message is top-level in the channel, not in a thread: post your answer top-level. '
-    + "Never set threadRootId to this message's id; a long answer may continue under your own top-level post.]";
+    + "Do not pass this message's id as threadRootId or as replyToMessageId: a reply is filed in the thread of "
+    + 'the message it replies to, so either one hides your answer under it. '
+    + 'A long answer may continue under your own top-level post.]';
 
   test('a top-level mention is answered top-level, never threaded under it', async () => {
     const prompt = await firstPromptFor([makeEvent({

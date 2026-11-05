@@ -1517,8 +1517,16 @@ const FINAL_TEXT_IS_POSTED = 'Your final text is posted to the pod unless it is 
 // with no message at all. Only a message with no thread, outside a DM, gets it.
 // The line still allows the overflow rule (post the point, continue under your
 // own root): only threading under the person's message is ruled out.
+//
+// The same walk on 0.1.258, with the mention sharing a turn with the greeting:
+// the seat obeyed that line about threadRootId and passed replyToMessageId
+// instead. The kernel files a reply in its parent's thread
+// (COALESCE(parent.thread_root_id, parent.id) in models/pg/Message.ts), so
+// that threads it too. The line names both fields.
 const ANSWER_IN_CHANNEL = '[This message is top-level in the channel, not in a thread: post your answer top-level. '
-  + 'Never set threadRootId to this message\'s id; a long answer may continue under your own top-level post.]';
+  + 'Do not pass this message\'s id as threadRootId or as replyToMessageId: a reply is filed in the thread of '
+  + 'the message it replies to, so either one hides your answer under it. '
+  + 'A long answer may continue under your own top-level post.]';
 
 export const answersInChannel = (entry) => {
   const payload = entry?.event?.payload || {};
