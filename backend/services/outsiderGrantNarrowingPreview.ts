@@ -59,12 +59,17 @@ const objectId = (value: unknown): string | null => {
   return /^[a-f\d]{24}$/i.test(id) ? id.toLowerCase() : null;
 };
 
-const identityInstallationPodIds = async (agentName: string, instanceId: string): Promise<string[]> => {
+const identityInstallations = async (
+  agentName: string, instanceId: string,
+): Promise<{ podIds: string[]; allInProcess: boolean }> => {
   const rows = await AgentInstallation.find({
     ...installationIdentityFilter(agentName, instanceId || 'default'),
     status: 'active',
-  }).select('podId').lean() as Array<{ podId?: unknown }>;
-  return [...new Set(rows.map((row) => objectId(row.podId)).filter((id): id is string => Boolean(id)))];
+  }).select('podId config').lean() as Array<{ podId?: unknown; config?: unknown }>;
+  return {
+    podIds: [...new Set(rows.map((row) => objectId(row.podId)).filter((id): id is string => Boolean(id)))],
+    allInProcess: rows.every((row) => runsInNarrowedProcess(row)),
+  };
 };
 
 /** Split pods into the ones the viewer may see by name and a count of the rest. */
@@ -105,13 +110,15 @@ export const previewInstallNarrowing = async ({
   runtimeType?: unknown;
   hostedEngine?: unknown;
 }): Promise<InstallNarrowingResult> => {
-  if (runsInNarrowedProcess({ config: { runtime: { runtimeType }, hosted: { engine: hostedEngine } } })) {
-    return { status: 'clear' };
-  }
+  const newInProcess = runsInNarrowedProcess({ config: { runtime: { runtimeType }, hosted: { engine: hostedEngine } } });
   const target = objectId(targetPodId);
   if (!target) return { status: 'clear' };
   try {
-    const current = (await identityInstallationPodIds(agentName, instanceId)).filter((id) => id !== target);
+    const installs = await identityInstallations(agentName, instanceId);
+    // The guard's census covers every active install of the identity, so the
+    // install is clear only when no install, new or current, holds a token.
+    if (newInProcess && installs.allInProcess) return { status: 'clear' };
+    const current = installs.podIds.filter((id) => id !== target);
     // A new seat has no other pod to lose, and alone in one pod it writes there.
     if (!current.length) return { status: 'clear' };
     // The same principal the install's ensureAgentInPod adds to the pod.
@@ -119,7 +126,6 @@ export const previewInstallNarrowing = async ({
       username: AgentIdentityService.buildAgentUsername(
         AgentIdentityService.resolveAgentType(agentName), instanceId || 'default',
       ),
-      isBot: true,
     }).select('_id').lean() as { _id?: unknown } | null;
     const before = await podsWithOutsiderWritableGrants(current);
     const after = await podsWithOutsiderWritableGrants([...current, target], agentUser?._id

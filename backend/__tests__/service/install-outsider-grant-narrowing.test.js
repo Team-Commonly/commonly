@@ -27,7 +27,7 @@ const { previewInstallNarrowing } = require('../../services/outsiderGrantNarrowi
 const registryRoutes = require('../../routes/registry');
 const agentsRuntimeRoutes = require('../../routes/agentsRuntime');
 
-const JWT_SECRET = 'test-jwt-secret-f164-narrowing';
+const JWT_SECRET = 'test-jwt-secret';
 const model = (m) => m.default || m;
 const SEAT = 'my-lead';
 
@@ -216,15 +216,26 @@ describe('install-time warning for the outsider-grant narrowing', () => {
     });
   });
 
-  it('is clear for an install Commonly runs in-process, which holds no runtime token', async () => {
+  const previewNative = () => previewInstallNarrowing({
+    agentName: SEAT,
+    instanceId: 'default',
+    targetPodId: String(target._id),
+    viewerId: owner._id,
+    runtimeType: 'native',
+  });
+
+  it('still warns for an in-process install when the identity\'s other installs hold a runtime token', async () => {
+    // The guard takes its census over every active install of the identity, so
+    // a token held by the webhook installs is narrowed whatever runs the new one.
     await grantReachingSeatIn(target);
-    const result = await previewInstallNarrowing({
-      agentName: SEAT,
-      instanceId: 'default',
-      targetPodId: String(target._id),
-      viewerId: owner._id,
-      runtimeType: 'native',
-    });
-    expect(result).toEqual({ status: 'clear' });
+    const result = await previewNative();
+    expect(result.status).toBe('warn');
+    expect(result.preview.losesWrites).toEqual([{ podId: String(hq._id), name: 'Team HQ' }]);
+  });
+
+  it('is clear when the new install and every current one run in Commonly\'s process, which holds no token', async () => {
+    await grantReachingSeatIn(target);
+    await AgentInstallation.updateMany({}, { $set: { 'config.runtime.runtimeType': 'native' } });
+    expect(await previewNative()).toEqual({ status: 'clear' });
   });
 });

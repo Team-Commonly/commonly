@@ -611,27 +611,6 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
       }
       throw joinError;
     }
-    // F164: joining this pod can confine the seat's writes everywhere else
-    // (agentRuntimeAuth's outsider-grant narrowing). Say so, naming the pods
-    // the installer can see, before anything is written; the installer
-    // confirms with `confirmNarrowing: true`. The guard itself is unchanged.
-    if (req.body.confirmNarrowing !== true) {
-      const narrowing = await previewInstallNarrowing({
-        agentName: safeAgentName,
-        instanceId: normalizedInstanceId,
-        targetPodId: String(podId),
-        viewerId: userId,
-        runtimeType: effectiveRuntimeType,
-        hostedEngine: newHostedEngine,
-      });
-      if (narrowing.status !== 'clear') {
-        return res.status(409).json({
-          code: NARROWING_CONFIRM_CODE,
-          message: installNarrowingMessage(safeAgentName, narrowing),
-          narrowing: narrowing.status === 'warn' ? narrowing.preview : { unavailable: true },
-        });
-      }
-    }
     if (AgentIdentityService.isCloudRuntime({
       runtimeType: effectiveRuntimeType,
       host: runtimeConfig.host,
@@ -653,6 +632,31 @@ installRouter.post('/install', logAgentInstallRefusal('/api/registry/install'), 
     if (effectiveRuntimeType === HostedRuntime.HOSTED_RUNTIME_TYPE && !isAdminInstaller && !hostedCapChecked) {
       const refusal = await hostedCapRefusal(userId);
       if (refusal) return res.status(403).json(refusal);
+    }
+
+    // F164: joining this pod can confine the seat's writes everywhere else
+    // (agentRuntimeAuth's outsider-grant narrowing). Say so, naming the pods
+    // the installer can see, before the installation or pod membership is
+    // written; the installer confirms with `confirmNarrowing: true`. The guard
+    // itself is unchanged. This runs after every other refusal, so it answers
+    // only an install that would otherwise go ahead, and cannot be used to
+    // probe grants on an identity the caller could not install.
+    if (req.body.confirmNarrowing !== true) {
+      const narrowing = await previewInstallNarrowing({
+        agentName: safeAgentName,
+        instanceId: normalizedInstanceId,
+        targetPodId: String(podId),
+        viewerId: userId,
+        runtimeType: effectiveRuntimeType,
+        hostedEngine: newHostedEngine,
+      });
+      if (narrowing.status !== 'clear') {
+        return res.status(409).json({
+          code: NARROWING_CONFIRM_CODE,
+          message: installNarrowingMessage(safeAgentName, narrowing),
+          narrowing: narrowing.status === 'warn' ? narrowing.preview : { unavailable: true },
+        });
+      }
     }
 
     // `config.hosted` is the kernel's record of where a hosted agent runs
