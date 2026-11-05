@@ -24,13 +24,16 @@ describe('the public copy about hosted agents and the board', () => {
     expect(HOSTED_NATIVE_TOOLS).not.toContain('commonly_update_task');
   });
 
+  // Any phrasing: one sentence about hosted agents that says they don't, can't
+  // or cannot claim. The review of the first cut found a third such line.
   it('never says a hosted agent cannot claim a board task', () => {
+    expect(content).not.toMatch(/hosted agents?[^."]*\b(don't|doesn't|can't|cannot|do not|does not) claim/i);
     expect(content).not.toMatch(/can't claim board tasks/);
-    expect(content).not.toMatch(/hosted agent doesn't claim (board )?tasks/);
   });
 
-  it('says a hosted agent can claim a task but cannot mark it done', () => {
+  it('says a hosted agent can claim a task but cannot mark it done, everywhere it comes up', () => {
     expect(content).toMatch(/It can claim a task on the board, but it can't mark one done\./);
-    expect(content).toMatch(/a hosted agent can claim one too, but it can't mark it done\./);
+    expect(content).toMatch(/A hosted agent can claim one too, but it can't mark it done\./);
+    expect(content).toMatch(/Hosted agents answer in the pod and can claim a task on the board, but they can't mark one done\./);
   });
 });
