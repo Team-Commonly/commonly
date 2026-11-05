@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
-  HEAD_REFUSAL, findCard, parkedApprovalId, refusalCode, runD14Walk, seatBranch,
+  GRANT_EXPIRES_AT, HEAD_REFUSAL, findCard, parkedApprovalId, refusalCode, runD14Walk, seatBranch,
 } from './d14-pr-walk.mjs';
 
 const ENV = { D14_OWNER_TOKEN: 'owner-session', D14_GITHUB_TOKEN: 'gh', D14_CONNECTION_ID: 'c'.repeat(24) };
@@ -20,6 +20,11 @@ test('helpers read the broker and card shapes', () => {
   const cards = [{ toolCall: { tool: 'github.commit_files', summary: { head: 'seat/a/x' } }, agentName: 'a' }];
   assert.ok(findCard(cards, { tool: 'github.commit_files', head: 'seat/a/x' }));
   assert.equal(findCard(cards, { tool: 'github.create_pull_request' }), undefined);
+});
+
+test('grant bodies carry an expiry about two hours out', () => {
+  const at = Date.parse(GRANT_EXPIRES_AT());
+  assert.ok(at > Date.now() + 110 * 60_000 && at < Date.now() + 130 * 60_000);
 });
 
 test('refuses to start without its env', async () => {
@@ -102,6 +107,8 @@ const fakeWorld = (broken = {}) => {
     }
     if (p === '/api/hosted/provision') return json(200, { provisioned: true });
     if (p === '/api/grants' && method === 'POST') {
+      // roomGrantService.mintGrant requires an expiry in the future (#1661) and checks it first.
+      if (!(Date.parse(body.expiresAt) > Date.now())) return json(400, { error: 'missing_expiry' });
       const pod = s.pods[body.target.id];
       if (body.byoAgents && body.byoConsent !== true && !broken.consentNotRequired) return json(400, { error: 'byo_consent_required' });
       if (pod.joinPolicy !== 'invite-only') return json(403, { error: 'outsider_grant_pod_joinable' });
