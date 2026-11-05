@@ -38,6 +38,8 @@ const POLL_MS = 5_000;
 /** seatGithubCommit's refusal for a head outside seat/<caller>/, raised before parking. */
 export const HEAD_REFUSAL = 'branch_not_owned_by_seat';
 export const PR_TOOLS = ['github.get_issue', 'github.get_pull_request', 'github.commit_files', 'github.create_pull_request'];
+/** Grants require an expiry (roomGrantService.mintGrant, since #1661); the walk's live for two hours. */
+export const GRANT_EXPIRES_AT = () => new Date(Date.now() + 2 * 3600_000).toISOString();
 
 export const seatBranch = (agentUserId, stamp, half) => `seat/${agentUserId}/d14-${half}-${stamp}`;
 
@@ -251,7 +253,7 @@ export const runD14Walk = async ({
         token: ownerToken,
         body: {
           connectionId, target: { kind: 'pod', id: podId }, audience,
-          writeMode: 'write-with-confirm', prWrite: true, tools: PR_TOOLS, ...extra,
+          writeMode: 'write-with-confirm', prWrite: true, tools: PR_TOOLS, expiresAt: GRANT_EXPIRES_AT(), ...extra,
         },
       });
       expect(r.status === 201 || r.status === 200, `grant ${r.status}: ${JSON.stringify(r.data)}`);
@@ -291,7 +293,7 @@ export const runD14Walk = async ({
         seatId = await agentUserIdFor(podId, agentName);
         const unnamed = await api('POST', '/api/grants', {
           token: ownerToken,
-          body: { connectionId, target: { kind: 'pod', id: podId }, audience: [seatId], writeMode: 'write-with-confirm', prWrite: true, tools: PR_TOOLS, byoAgents: [seatId] },
+          body: { connectionId, target: { kind: 'pod', id: podId }, audience: [seatId], writeMode: 'write-with-confirm', prWrite: true, tools: PR_TOOLS, expiresAt: GRANT_EXPIRES_AT(), byoAgents: [seatId] },
         });
         expect(unnamed.status >= 400 && unnamed.data?.error === 'byo_consent_required', `naming without consent was not refused: ${unnamed.status} ${JSON.stringify(unnamed.data)}`);
         grantId = await mintGrant(podId, [seatId], { byoAgents: [seatId], byoConsent: true });
