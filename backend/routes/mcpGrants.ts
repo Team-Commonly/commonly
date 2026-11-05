@@ -50,7 +50,7 @@ export const pushBodyRateLimit = rateLimit({
   handler: (_req, res) => res.status(429).json({ error: 'push_body_rate_limited' }),
 });
 
-const errorPayload = (error: unknown): Record<string, unknown> => {
+export const errorPayload = (error: unknown): Record<string, unknown> => {
   const e = error as { code?: string; message?: string; details?: unknown };
   return {
     error: e.code || 'broker_error',

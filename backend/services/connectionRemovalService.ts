@@ -169,7 +169,7 @@ export interface RemovalDeps {
   retireConnectRepositories: (input: {
     ownerUserId: string;
     revokedBy: string;
-    revokeGrants: (input: { connection: RemovableConnection; revokedBy: string }) => Promise<number>;
+    revokeGrants: (input: { connection: RemovableConnection; revokedBy: string; ownerId?: string }) => Promise<number>;
   }) => Promise<number>;
 }
 
@@ -385,10 +385,16 @@ export const defaultDeps = (): RemovalDeps => ({
     let revoked = 0;
     for (const row of rows) {
       // Disconnect first, so the broker refuses the row even if a revoke fails.
+      // Both writes are scoped to this owner (F174): a row someone else took
+      // over after the read above is not theirs to disconnect, and only the
+      // grants this owner minted are theirs to end.
       // eslint-disable-next-line no-await-in-loop
-      await Integration.updateOne({ _id: row._id, status: 'connected' }, { $set: { status: 'disconnected' } });
+      await Integration.updateOne(
+        { _id: row._id, createdBy: ownerUserId, status: 'connected' },
+        { $set: { status: 'disconnected' } },
+      );
       // eslint-disable-next-line no-await-in-loop
-      revoked += await revokeGrants({ connection: row, revokedBy });
+      revoked += await revokeGrants({ connection: row, revokedBy, ownerId: ownerUserId });
     }
     return revoked;
   },
@@ -655,7 +661,7 @@ const revokeThenSweep = async (input: {
 export const removeConnection = async (options: {
   connection: RemovableConnection;
   removedBy: string;
-  revokeGrants: (input: { connection: RemovableConnection; revokedBy: string }) => Promise<number>;
+  revokeGrants: (input: { connection: RemovableConnection; revokedBy: string; ownerId?: string }) => Promise<number>;
   deps?: Partial<RemovalDeps>;
 }): Promise<RemovalResult> => {
   const deps: RemovalDeps = { ...defaultDeps(), ...options.deps };

@@ -1087,6 +1087,19 @@ const resolveConnection = async (
       503,
     );
   }
+  // A Connect row can change owner (a takeover of a dead row, F173). A grant
+  // runs only for the owner who minted it, whatever order the takeover's
+  // revoke and update land in (F174).
+  if (app === 'connect') {
+    const grantOwner = String((grant as { ownerId?: unknown }).ownerId || '');
+    if (!grantOwner || grantOwner !== String(row.createdBy || '')) {
+      throw new RoomGrantError(
+        'connection_owner_changed',
+        'this GitHub connection now belongs to someone else; this grant no longer works on it',
+        403,
+      );
+    }
+  }
 
   return {
     type: 'github-app',
@@ -1250,6 +1263,8 @@ export const listToolsForGrant = async (input: {
   const offered: ToolDefinition[] = [];
   let hostedListFailed = false;
   for (const definition of allowed) {
+    // A Connect row cannot write issues (F174): never offered, so never tried.
+    if (connectCannotUse(definition, connections.get(definition.connectionType)!)) continue;
     if (definition.connectionType === 'hosted-mcp' && !hostedListFailed) {
       try {
         await definition.assess(asHostedConnection(connections.get('hosted-mcp')!));
@@ -1387,6 +1402,32 @@ const assertConnectProven = async (
   if (definition.connectionType !== 'github-app' || connection.type !== 'github-app') return;
   if (connection.app !== 'connect') return;
   await assertConnectStillProven(connection, options);
+};
+
+/**
+ * Commonly Connect is installed with `issues: read` only, by decision (F174).
+ * The issue writes would fail at GitHub after an owner approved them, so they
+ * refuse here, before anything parks, in words an agent cannot read as a
+ * transient failure or a partial success. Tools rows are unchanged.
+ */
+export const CONNECT_UNSUPPORTED_TOOLS: ReadonlySet<string> = new Set([
+  'github.create_issue',
+  'github.close_issue',
+  'github.comment_on_issue',
+]);
+export const CONNECT_CANNOT_WRITE_ISSUES_MESSAGE = 'This GitHub connection can read issues but can\'t create, '
+  + 'close or comment on them. Nothing was changed on GitHub.';
+
+const connectCannotUse = (definition: ToolDefinition, connection: ToolConnection): boolean => (
+  connection.type === 'github-app' && connection.app === 'connect'
+  && CONNECT_UNSUPPORTED_TOOLS.has(definition.name)
+);
+
+const assertConnectCanUse = (definition: ToolDefinition, connection: ToolConnection): void => {
+  if (!connectCannotUse(definition, connection)) return;
+  throw new RoomGrantError('connection_cannot_write_issues', CONNECT_CANNOT_WRITE_ISSUES_MESSAGE, 403, {
+    retryable: false,
+  });
 };
 
 const asHostedConnection = (connection: ToolConnection): HostedToolConnection => {
@@ -1681,6 +1722,7 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
 
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
+    assertConnectCanUse(definition, connection);
     if (input.tool === 'github.push_branch' && connection.type === 'github-app') {
       providerRepo = `${connection.owner}/${connection.repo}`;
     }
@@ -1977,6 +2019,7 @@ export const executeApprovedToolCall = async (
     await assertApprovedCallStillPermitted(grant, definition, input);
     const connection = await resolveConnection(grant, definition);
     credentialOwnerId = connection.ownerUserId;
+    assertConnectCanUse(definition, connection);
     if (definition.connectionType === 'hosted-mcp') {
       await definition.assess(asHostedConnection(connection));
     }

@@ -483,6 +483,114 @@ describe('F173: a disconnected or revoked row no longer blocks someone else', ()
   });
 });
 
+describe('F174: takeover and delete act only on the row as it is now', () => {
+  const WIDGET = { installationId: INSTALL, owner: 'Outside-Team', repo: 'Widget' };
+  const grantFor = (row, user) => createGrant({
+    connectionId: String(row._id), connectionRowId: String(row._id), installationId: INSTALL,
+    target: { kind: 'pod', id: '6a8f6de2a1dccf2e02f31499' }, tools: ['github.get_issue'], writeMode: 'read',
+    audience: [String(bot._id)], expiresAt: new Date(Date.now() + 86400000),
+    brokerId: GRANT_BROKER_ID, ownerId: String(user._id),
+  });
+  const grantRow = (g) => RoomGrant.findOne({ grantId: g.grantId }).lean();
+  // Answer the next github-app lookup with `stale` instead of the row as stored.
+  const staleOnce = (method, stale, match) => {
+    const original = Integration[method].bind(Integration);
+    let used = false;
+    return jest.spyOn(Integration, method).mockImplementation((...args) => {
+      if (!used && match(args)) {
+        used = true;
+        return method === 'find' ? { lean: async () => [stale] } : Promise.resolve(stale);
+      }
+      return original(...args);
+    });
+  };
+
+  beforeEach(async () => {
+    await giveUserToken(alice, 'alice-user-token');
+    await giveUserToken(bob, 'bob-user-token');
+  });
+
+  test('item 3: a takeover that read a stale row loses to the owner\'s revival, and revokes nothing', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    // Alice's row looked disconnected when Bob's request read it, but she has
+    // revived it since and minted a fresh grant.
+    const stale = { ...(await Integration.findById(row._id).lean()), status: 'disconnected' };
+    const alicesFresh = await grantFor(row, alice);
+    const spy = staleOnce('find', stale, ([q]) => q?.type === 'github-app');
+    let res;
+    try { res = await connectRepo(bob, WIDGET); } finally { spy.mockRestore(); }
+    expect(res.status).toBe(409);
+    expect((await grantRow(alicesFresh)).revokedAt).toBeFalsy();
+    expect(String((await Integration.findById(row._id).lean()).createdBy)).toBe(String(alice._id));
+  });
+
+  test('item 4: a takeover revokes the old owner\'s grants as the system, not as the taker', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesGrant = await grantFor(row, alice);
+    await Integration.updateOne({ _id: row._id }, { $set: { status: 'disconnected' } });
+    expect((await connectRepo(bob, WIDGET)).status).toBe(200);
+    const revoked = await grantRow(alicesGrant);
+    expect(revoked.revokedAt).toBeTruthy();
+    expect(revoked.revokedBy).toBe('commonly');
+  });
+
+  test('item 3: a grant the new owner mints after the takeover is not swept by it', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    await Integration.updateOne({ _id: row._id }, { $set: { status: 'disconnected' } });
+    expect((await connectRepo(bob, WIDGET)).status).toBe(200);
+    const bobsGrant = await grantFor(row, bob);
+    // Bob posts again: his row is connected, so nothing is taken or revoked.
+    expect((await connectRepo(bob, WIDGET)).status).toBe(409);
+    expect((await grantRow(bobsGrant)).revokedAt).toBeFalsy();
+  });
+
+  test('item 3: a grant the new owner mints in the instant after winning the row is not revoked', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesGrant = await grantFor(row, alice);
+    await Integration.updateOne({ _id: row._id }, { $set: { status: 'disconnected' } });
+    // Bob mints right after the conditional update lands, before the revoke runs.
+    const original = Integration.findOneAndUpdate.bind(Integration);
+    let bobsGrant;
+    const spy = jest.spyOn(Integration, 'findOneAndUpdate').mockImplementation(async (...args) => {
+      const won = await original(...args);
+      if (won && !bobsGrant) {
+        await new Promise((resolve) => { setTimeout(resolve, 5); });
+        bobsGrant = await grantFor(row, bob);
+      }
+      return won;
+    });
+    try { expect((await connectRepo(bob, WIDGET)).status).toBe(200); } finally { spy.mockRestore(); }
+    expect((await grantRow(alicesGrant)).revokedAt).toBeTruthy();
+    expect((await grantRow(bobsGrant)).revokedAt).toBeFalsy();
+  });
+
+  test('item 2: a delete that read the row before a takeover leaves the taken row and its grants alone', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const stale = await Integration.findById(row._id);
+    await Integration.updateOne({ _id: row._id }, { $set: { createdBy: bob._id } });
+    const bobsGrant = await grantFor(row, bob);
+    const spy = staleOnce('findById', stale, ([id]) => String(id) === String(row._id));
+    let res;
+    try {
+      res = await request(app).delete(`/api/integrations/${row._id}`).set('x-test-user', String(alice._id));
+    } finally { spy.mockRestore(); }
+    expect(res.status).toBe(404);
+    const kept = await Integration.findById(row._id).lean();
+    expect(kept).not.toBeNull();
+    expect(String(kept.createdBy)).toBe(String(bob._id));
+    expect((await grantRow(bobsGrant)).revokedAt).toBeFalsy();
+  });
+
+  test('item 2: an ordinary delete by the owner still removes the row and ends its grants', async () => {
+    const row = (await connectRepo(alice, WIDGET)).body.integration;
+    const alicesGrant = await grantFor(row, alice);
+    const res = await request(app).delete(`/api/integrations/${row._id}`).set('x-test-user', String(alice._id));
+    expect(res.status).toBe(200);
+    expect(await Integration.findById(row._id).lean()).toBeNull();
+    expect((await grantRow(alicesGrant)).revokedAt).toBeTruthy();
+  });
+});
+
 describe('L1: removing a legacy row revokes only its own grants', () => {
   test('a per-repository row on the same installation keeps its grant', async () => {
     const legacy = await Integration.create({

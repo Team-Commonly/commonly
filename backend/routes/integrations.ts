@@ -49,7 +49,7 @@ const {
 // eslint-disable-next-line global-require
 const { projectIntegrationForViewer, withoutConnectCode } = require('../models/integrationPublicConfig');
 // eslint-disable-next-line global-require
-const { revokeConnectionGrants } = require('../services/roomGrantService');
+const { revokeConnectionGrants, SYSTEM_REVOKER } = require('../services/roomGrantService');
 // eslint-disable-next-line global-require
 const { removeConnection, HOSTED_MCP_TYPE } = require('../services/connectionRemovalService');
 import { isGithubAppConfigured } from '../services/githubAppNames';
@@ -437,7 +437,13 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
       // connected row is never taken.
       const stale = existing.status !== 'connected' || Boolean(existing.revokedAt);
       if (stale) {
-        await revokeConnectionGrants({ connection: existing, revokedBy: userId });
+        // Win the row first, conditionally on it still being dead and still
+        // held by the owner this request read (F174). A request that read a
+        // row its owner has since revived loses here and revokes nothing.
+        // Grants minted before the takeover then end, as the system: the
+        // broker already refuses them, because a Connect grant runs only for
+        // the row's current owner (connection_owner_changed).
+        const takenAt = new Date();
         const taken = await Integration.findOneAndUpdate(
           {
             _id: existing._id,
@@ -456,7 +462,10 @@ router.post('/github-app/repositories', writeIntegrationsRateLimit, auth, async 
           },
           { new: true },
         );
-        if (taken) return res.json({ integration: taken });
+        if (taken) {
+          await revokeConnectionGrants({ connection: taken, revokedBy: SYSTEM_REVOKER, createdBefore: takenAt });
+          return res.json({ integration: taken });
+        }
       }
       return res.status(409).json({
         error: 'connection_exists',
@@ -1300,6 +1309,19 @@ router.delete('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res
     // reads the owner bound on each grant at mint, not the row, so the order no
     // longer decides who may revoke. It still matters: removal ends these grants
     // here, while the row they were minted against is still present (TASK-145).
+    //
+    // A per-repository GitHub App row can change owner (F174 takeover). The
+    // delete is scoped to the owner read above, so a row taken over since is
+    // left alone, and so are the grants its new owner minted.
+    const perRepositoryGithubRow = integration.type === 'github-app' && !integration.installationId;
+    const readOwner = integration.createdBy ? String(integration.createdBy) : '';
+    if (perRepositoryGithubRow) {
+      if (!readOwner) return res.status(404).json({ message: 'Integration not found' });
+      await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy, ownerId: readOwner });
+      const deleted = await Integration.findOneAndDelete({ _id: id, createdBy: readOwner });
+      if (!deleted) return res.status(404).json({ message: 'Integration not found' });
+      return res.json({ message: 'Integration deleted successfully' });
+    }
     await revokeConnectionGrants({ connection: integration, revokedBy: deletedBy });
     const service = integration.type === 'discord' ? new DiscordService(id) : null;
     try { if (service) await service.disconnect(); } catch (error) { console.warn('Error disconnecting service during deletion:', error); }
