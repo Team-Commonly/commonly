@@ -341,6 +341,43 @@ describe('installable event dispatcher', () => {
     expect(relay.mock.calls[0][0].podId).toBe(podId);
   });
 
+  // F132: a Discord row is a direct row (the OAuth install writes it; there is
+  // no Installable projection), so the selector's direct-row arm must hand it
+  // to `discord.relay` — and only while its live relay is on.
+  it('dispatches a direct Discord row with live relay on, and nothing for one without it', async () => {
+    const podId = freshId();
+    const ownerId = freshId();
+    await createPod(podId, ownerId, [ownerId]);
+    const discordConfig = {
+      serverId: '111111111111111111', channelId: '222222222222222222', discordUserId: '345678901234567890',
+    };
+    const live = await Integration.create({
+      podId, type: 'discord', status: 'connected', createdBy: ownerId, isActive: true,
+      config: { ...discordConfig, liveRelay: true, linkedUserId: ownerId },
+    });
+    const otherPodId = freshId();
+    await createPod(otherPodId, ownerId, [ownerId]);
+    await Integration.create({
+      podId: otherPodId, type: 'discord', status: 'connected', createdBy: ownerId, isActive: true,
+      config: { ...discordConfig, liveRelay: false },
+    });
+    const originalDiscordHandler = eventHandlers['discord.relay'];
+    const relay = jest.fn().mockResolvedValue(undefined);
+    eventHandlers['discord.relay'] = relay;
+    try {
+      await dispatch('chat.message', {
+        podId, agentUsername: 'kai', displayName: 'Kai', content: 'to the channel', podMessageId: 'm-1',
+      });
+      await dispatch('chat.message', {
+        podId: otherPodId, agentUsername: 'kai', displayName: 'Kai', content: 'stays home', podMessageId: 'm-2',
+      });
+    } finally {
+      eventHandlers['discord.relay'] = originalDiscordHandler;
+    }
+    expect(relay).toHaveBeenCalledTimes(1);
+    expect(String(relay.mock.calls[0][0].integration._id)).toBe(String(live._id));
+  });
+
   // TASK-267a: a post from a native turn that read web results
   // carries noOutboundRelay, and the dispatcher refuses it where bridges are
   // selected, so a live bridge (here enabled before dispatch, as if during the

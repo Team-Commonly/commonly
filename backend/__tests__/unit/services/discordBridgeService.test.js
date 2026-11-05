@@ -291,7 +291,12 @@ describe('Discord inbound live relay (F131)', () => {
 
   describe('the gateway', () => {
     const target = (overrides = {}) => ({
-      integrationId: 'integration-1', webhookListenerEnabled: true, maxBufferSize: 50, liveRelay: true, ...overrides,
+      integrationId: 'integration-1',
+      webhookListenerEnabled: true,
+      maxBufferSize: 50,
+      liveRelay: true,
+      discordUserId: INSTALLER_DISCORD,
+      ...overrides,
     });
 
     beforeEach(() => {
@@ -328,6 +333,54 @@ describe('Discord inbound live relay (F131)', () => {
       expect(writes()).toHaveLength(0);
     });
 
+    // F132 review follow-up: the cached proven id pre-filters, so a line from
+    // anyone but the installer costs no row read at all.
+    test('does not read the row for a line from anyone but the cached installer', async () => {
+      discordGatewayService.channelCache.set(`${GUILD}:${CHANNEL}`, [target()]);
+
+      await discordGatewayService.handleMessageCreate(
+        discordMessage({ author: { id: OTHER_DISCORD, username: 'mallory', bot: false } }),
+      );
+
+      expect(Integration.findById).not.toHaveBeenCalled();
+      expect(Integration.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    // CodeRabbit nitpick: the pre-filter is only as good as the cache refresh's
+    // projection. This runs the real refresh over a find() that drops every
+    // field the projection does not name.
+    test('the real cache refresh carries discordUserId, so the installer still relays', async () => {
+      discordGatewayService.ensureChannelCache.mockRestore();
+      discordGatewayService.cacheExpiresAt = 0;
+      const stored = row();
+      Integration.find.mockReturnValue({
+        select: (projection) => ({
+          lean: async () => {
+            const fields = String(projection).split(/\s+/);
+            const config = Object.fromEntries(Object.entries(stored.config)
+              .filter(([key]) => fields.includes(`config.${key}`)));
+            return [{ _id: 'integration-1', config }];
+          },
+        }),
+      });
+      try {
+        await discordGatewayService.handleMessageCreate(discordMessage());
+        expect(Integration.findById).toHaveBeenCalledWith('integration-1');
+        expect(writes()).toHaveLength(1);
+      } finally {
+        jest.spyOn(discordGatewayService, 'ensureChannelCache').mockResolvedValue();
+      }
+    });
+
+    test('does not read the row when the cache holds no proven installer', async () => {
+      discordGatewayService.channelCache.set(`${GUILD}:${CHANNEL}`, [target({ discordUserId: undefined })]);
+
+      await discordGatewayService.handleMessageCreate(discordMessage());
+
+      expect(Integration.findById).not.toHaveBeenCalled();
+      expect(writes()).toHaveLength(0);
+    });
+
     test('does not hand a non-live row to the bridge', async () => {
       discordGatewayService.channelCache.set(`${GUILD}:${CHANNEL}`, [target({ liveRelay: false })]);
 
@@ -361,9 +414,22 @@ describe('Discord inbound live relay (F131)', () => {
     });
 
     test('refuses anyone but the installer, whose id linkedUserId would be stamped from', () => {
-      const proven = { config: { discordUserId: INSTALLER_DISCORD }, createdBy: { toString: () => INSTALLER } };
+      const proven = {
+        config: { discordUserId: INSTALLER_DISCORD },
+        createdBy: { toString: () => INSTALLER },
+        pod: { members: [INSTALLER, 'pod-creator'] },
+      };
       expect(discordInboundAdapter.liveRelayRefusal(proven, 'pod-creator')).toMatch(/Only the person who added the bot/);
       expect(discordInboundAdapter.liveRelayRefusal(proven, INSTALLER)).toBeNull();
+    });
+
+    test('refuses an installer who is no longer a listed member of the pod', () => {
+      const left = {
+        config: { discordUserId: INSTALLER_DISCORD },
+        createdBy: { toString: () => INSTALLER },
+        pod: { members: ['someone-else'] },
+      };
+      expect(discordInboundAdapter.liveRelayRefusal(left, INSTALLER)).toMatch(/member of this pod/);
     });
   });
 });

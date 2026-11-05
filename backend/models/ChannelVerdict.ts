@@ -6,7 +6,8 @@ import mongoose, { Document, Model, Schema, Types } from 'mongoose';
  * administrator action): it records what a particular channel did with a
  * workspace event.
  */
-export const CHANNEL_VERDICT_PROVIDERS = ['telegram', 'slack'] as const;
+// Every chat-relay adapter that records card verdicts (chatRelayCore), Discord since F132.
+export const CHANNEL_VERDICT_PROVIDERS = ['telegram', 'slack', 'discord'] as const;
 export type ChannelVerdictProvider = typeof CHANNEL_VERDICT_PROVIDERS[number];
 
 export const CHANNEL_VERDICTS = ['interrupt', 'digest', 'hold'] as const;

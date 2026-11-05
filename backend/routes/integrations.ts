@@ -575,7 +575,7 @@ router.post('/', writeIntegrationsRateLimit, auth, async (req: AuthReq, res: Res
     // as it will be stored, before the row or any webhook exists.
     if (nextConfig.liveRelay === true) {
       const refusal = liveRelayRefusalFor(
-        type, { config: nextConfig, createdBy: req.user?.id }, String(req.user?.id || ''),
+        type, { config: nextConfig, createdBy: req.user?.id, pod: targetPod }, String(req.user?.id || ''),
       );
       if (refusal) return res.status(400).json({ message: refusal });
     }
@@ -980,10 +980,15 @@ router.patch('/:id', writeIntegrationsRateLimit, auth, async (req: AuthReq, res:
       // Relay authors inbound as linkedUserId, which is stamped from this caller.
       // Each platform declares when that is honest (its inbound adapter's
       // liveRelayRefusal): a 1:1 private chat for Telegram and Slack (#1289
-      // inbound, F2 outbound), the proven installer for Discord (F131).
+      // inbound, F2 outbound), the proven installer for Discord (F131), who must
+      // still be a listed member of the pod the row serves (F132 review).
       const refusal = liveRelayRefusalFor(
         integration.type,
-        { config: nextConfig, createdBy: integration.createdBy },
+        {
+          config: nextConfig,
+          createdBy: integration.createdBy,
+          pod: integration.podId ? await Pod.findById(String(integration.podId)) : null,
+        },
         requesterId,
       );
       if (refusal) return res.status(400).json({ message: refusal });

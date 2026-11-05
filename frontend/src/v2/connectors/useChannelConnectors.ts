@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useV2Api } from '../hooks/useV2Api';
+import { useAuth } from '../../context/AuthContext';
 import { useRelativeNow } from '../hooks/useRelativeNow';
 import { V2Pod } from '../hooks/useV2Pods';
 import type { MarkName } from '../icons/glyphs';
@@ -30,6 +31,7 @@ import {
   projectionMissing,
   LINK_INSTALL_PROVIDERS,
   entryOffered,
+  discordRelayReady,
 } from './channelModel';
 import type {
   ConnectorGate,
@@ -46,6 +48,8 @@ import type {
 export const useChannelConnectors = () => {
   const { t, i18n } = useTranslation();
   const api = useV2Api();
+  const { currentUser } = useAuth();
+  const viewerId = currentUser?._id ? String(currentUser._id) : '';
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null);
   const [hostedCatalog, setHostedCatalog] = useState<CatalogEntry[] | null>(null);
@@ -626,6 +630,11 @@ export const useChannelConnectors = () => {
     try {
       if (connector.installationId) {
         await api.del(installableLifecyclePath(connector.type));
+      } else if (connector.type === 'discord') {
+        // A Discord row is written by the OAuth install, with no Installable
+        // parent. The full DELETE removes its channel webhook as well; the
+        // isActive PATCH below would leave that webhook able to post.
+        await api.del(`/api/integrations/${connector._id}`);
       } else {
         await api.patch(`/api/integrations/${connector._id}`, { isActive: false });
       }
@@ -728,13 +737,21 @@ export const useChannelConnectors = () => {
       const mirror = connector.config?.relayAllAgentMessages === true;
       const recent = connector.updatedAt && (Date.now() - new Date(connector.updatedAt).getTime()) < RECENT_MS;
       const markName: MarkName = relay ? (mirror ? 'mirror' : 'attention') : 'off';
+      // A Discord channel is shared: everyone in the server reads what lands there.
+      const isDiscord = connector.type === 'discord';
+      const mirrorLabel = isDiscord
+        ? t('connectors.discordRowMirror', { defaultValue: 'every agent line reaches everyone in the channel' })
+        : t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' });
+      const attentionLabel = isDiscord
+        ? t('connectors.discordRowAttention', {
+          defaultValue: 'escalations and the lead agent’s lines reach everyone in the channel',
+        })
+        : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' });
       const markLabel = relay
-        ? (mirror
-          ? t('connectors.rowMirror', { defaultValue: 'every agent line reaches the channel' })
-          : t('connectors.rowAttention', { defaultValue: 'escalations reach the channel' }))
+        ? (mirror ? mirrorLabel : attentionLabel)
         : t('connectors.rowRelayOff', { defaultValue: 'messages stay in the pod' });
       return {
-        action: (isTelegram || isSlack) ? 'manage' : null,
+        action: (isTelegram || isSlack || discordRelayReady(connector, viewerId)) ? 'manage' : null,
         actionLabel: t('connectors.manage', { defaultValue: 'Manage' }),
         detail: '',
         mark: {
@@ -1065,6 +1082,7 @@ export const useChannelConnectors = () => {
   const busyFor = (item: ListItem): boolean => busyId === item.key || (item.connector !== null && busyId === item.connector._id);
 
   return {
+    viewerId,
     connectors,
     setConnectors,
     catalog,

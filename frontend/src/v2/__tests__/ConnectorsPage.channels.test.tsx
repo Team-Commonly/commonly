@@ -11,7 +11,7 @@ import en from '../../i18n/locales/en.json';
 import i18n, { i18nReady } from '../../i18n';
 import {
   axios, authValue, mockApi, renderPage, renderWithRoutes, pageReady, tileNode, findTile, clickTile,
-  openDrawer, openPopover, findDrawer, expandOff,
+  openDrawer, openPopover, findDrawer, expandOff, adminAuth,
 } from '../__testkit__/connectorsKit';
 
 jest.mock('axios', () => require('../__testkit__/axiosMock').axiosFactory());
@@ -1709,3 +1709,128 @@ const ConnectorsPageForRoutes = () => {
   const Page = require('../connectors/ConnectorsPage').default;
   return <Page />;
 };
+
+// F132 (D249): a Discord row relays agent lines out to a SHARED channel, so its
+// relay switch is offered only on a row whose installer the bot-add proved —
+// the server stamps `discordUserId` on the creator's row and withholds it from
+// everyone else's view. The copy says who reads the channel.
+describe('Connectors page: Discord live relay (F132)', () => {
+  const discordRow = (config = {}, over = {}) => ({
+    _id: 'i-discord',
+    type: 'discord',
+    status: 'connected',
+    createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+    updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
+    config: { serverId: '111111111111111111', channelId: '222222222222222222', ...config },
+    podId: { _id: 'p2', name: 'Ops' },
+    createdBy: 'u1',
+    ...over,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.history.replaceState({}, '', '/v2/connectors');
+  });
+
+  // Review finding 2: the server withholds `discordUserId` from everyone but the
+  // creator, so its absence on someone else's row says nothing about proof.
+  it('shows a viewer who is not the creator neither the switch nor the add-the-bot-again note', async () => {
+    mockGets([discordRow({ liveRelay: true, relayAllAgentMessages: true }, { createdBy: 'u2' })]);
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).getByText(
+      'Every agent message is posted in the Discord channel, where everyone in the server can read it.',
+    )).toBeInTheDocument();
+    expect(within(drawer).queryByRole('checkbox', { name: 'Relay' })).toBeNull();
+    expect(within(drawer).queryByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeNull();
+  });
+
+  it('shows an admin who is not the creator no switch, even though the row reaches them whole', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: false }, { createdBy: { _id: 'u2' } })]);
+    renderPage({ auth: adminAuth() });
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).queryByRole('checkbox', { name: 'Relay' })).toBeNull();
+    expect(within(drawer).queryByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeNull();
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('offers the installer the relay switch, and turning it on PATCHes liveRelay', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: false })]);
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).getByText('What the channel sees')).toBeInTheDocument();
+    expect(within(drawer).getByText('Messages stay in the pod.')).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('checkbox', { name: 'Relay' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/integrations/i-discord',
+      { config: { liveRelay: true } },
+      expect.anything(),
+    ));
+  });
+
+  it('says the whole server reads the channel, and switches mode', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: true, relayAllAgentMessages: true })]);
+    axios.patch.mockResolvedValue({ data: {} });
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).getByText(
+      'Every agent message is posted in the Discord channel, where everyone in the server can read it.',
+    )).toBeInTheDocument();
+    expect(within(drawer).getByText('Your own messages in the channel reach the pod as you.')).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Attention' }));
+    await waitFor(() => expect(axios.patch).toHaveBeenCalledWith(
+      '/api/integrations/i-discord',
+      { config: { relayAllAgentMessages: false } },
+      expect.anything(),
+    ));
+  });
+
+  it('shows no relay switch on a row whose installer was not proven, and says how to fix it', async () => {
+    mockGets([discordRow({})]);
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    expect(within(drawer).queryByRole('checkbox', { name: 'Relay' })).toBeNull();
+    expect(within(drawer).getByText('Add the bot again from Commonly to turn on relay for this channel.')).toBeInTheDocument();
+  });
+
+  // CodeRabbit 4475336552: the drawer is the only removal control, so a
+  // connected Discord row must keep Remove. It goes through the full DELETE
+  // route, which deletes the channel webhook too, not the isActive PATCH.
+  it('removes a connected Discord row through DELETE /api/integrations/:id', async () => {
+    mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: true })]);
+    axios.delete.mockResolvedValue({ data: {} });
+    renderPage();
+    const drawer = await openDrawer('Discord');
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Really remove — the channel goes quiet' }));
+    await waitFor(() => expect(axios.delete).toHaveBeenCalledWith('/api/integrations/i-discord', expect.anything()));
+    expect(axios.patch).not.toHaveBeenCalled();
+  });
+
+  // CodeRabbit (body, minor): attention mode also sends every lead-agent line.
+  // The row mark has no renderer on the v2 page, so the copy is asserted where
+  // it lives, in both locales.
+  it('says the lead agent’s lines reach a Discord channel in attention mode, in en and zh-CN', () => {
+    // eslint-disable-next-line global-require
+    const zh = require('../../i18n/locales/zh-CN.json');
+    expect(en.connectors.discordRowAttention).toMatch(/lead agent/);
+    expect(zh.connectors.discordRowAttention).toMatch(/主导智能体/);
+  });
+
+  it('renders the shared-channel copy in zh-CN', async () => {
+    await i18nReady;
+    await act(async () => { await i18n.changeLanguage('zh-CN'); });
+    try {
+      mockGets([discordRow({ discordUserId: '345678901234567890', liveRelay: true, relayAllAgentMessages: false })]);
+      renderPage();
+      const drawer = await openDrawer('Discord');
+      expect(within(drawer).getByText(
+        '只有需要关注的消息和主导智能体的消息会发到这个 Discord 频道，服务器里的每个人都能看到。',
+      )).toBeInTheDocument();
+    } finally {
+      await act(async () => { await i18n.changeLanguage('en'); });
+    }
+  });
+});
