@@ -29,7 +29,6 @@ import RoomGrant from '../models/RoomGrant';
 import type { IRoomGrantRemovalCue } from '../models/RoomGrant';
 import Pod from '../models/Pod';
 import User from '../models/User';
-import { HOSTED_MCP_ENTRIES, findHostedMcpEntry } from '../integrations/hostedMcp/entries';
 import { GRANT_BROKER_ID } from './installable/grantBrokerId';
 import { seatEnvironmentKey } from './seatEnvironmentProjection';
 
@@ -42,12 +41,21 @@ export type GrantConnector = { id: string; label: string };
  * gone. A grant naming two namespaces, or one no entry claims, is not guessed at.
  */
 const GITHUB_CONNECTOR: GrantConnector = { id: 'github', label: 'GitHub' };
+
+// Resolved on first use, not at import: the catalogue loads the hosted-MCP
+// entry service, which reaches the tool broker and from there roomGrantService,
+// which imports this module. A load-time import closes that loop.
+const hostedEntry = (id: string): { id: string; title: string } | undefined => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
+  const { HOSTED_MCP_ENTRIES, findHostedMcpEntry } = require('../integrations/hostedMcp/entries');
+  return findHostedMcpEntry(HOSTED_MCP_ENTRIES, id);
+};
 export const grantConnector = (tools: string[] | undefined): GrantConnector | null => {
   const namespaces = new Set((tools || []).map((name) => (name.includes('.') ? name.slice(0, name.indexOf('.')) : '')));
   if (namespaces.size !== 1) return null;
   const [id] = [...namespaces];
   if (id === GITHUB_CONNECTOR.id) return GITHUB_CONNECTOR;
-  const entry = id ? findHostedMcpEntry(HOSTED_MCP_ENTRIES, id) : undefined;
+  const entry = id ? hostedEntry(id) : undefined;
   return entry ? { id: entry.id, label: entry.title } : null;
 };
 
@@ -146,16 +154,27 @@ export const noteAgentRemovedFromGrant = async (grant: RemovedGrant, agentId: st
 
 const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Whether the agent holds a live broker grant on this connector again. */
-const stillHoldsConnector = async (agentUserId: string, connectorId: string): Promise<boolean> => Boolean(
-  await RoomGrant.exists({
+/**
+ * Whether the agent can use a live broker grant on this connector again. A pod
+ * grant counts only while the agent is still a member of that pod (its
+ * effective audience is the snapshot narrowed to current members); a seat
+ * grant counts on its audience.
+ */
+const stillHoldsConnector = async (agentUserId: string, connectorId: string): Promise<boolean> => {
+  const live = await RoomGrant.find({
     brokerId: GRANT_BROKER_ID,
     revokedAt: null,
     expiresAt: { $gt: new Date() },
     audience: agentUserId,
     tools: { $regex: `^${escapeRegex(connectorId)}\\.` },
-  }),
-);
+  }).select('target').lean() as Array<{ target?: { kind?: string; id?: unknown } }>;
+  for (const grant of live) {
+    if (grant.target?.kind !== 'pod') return true;
+    // eslint-disable-next-line no-await-in-loop
+    if (await Pod.exists({ _id: String(grant.target.id), members: agentUserId })) return true;
+  }
+  return false;
+};
 
 export const grantRemovalCueLine = (connectorLabel: string, byOwner: boolean): string => (byOwner
   ? `[access: ${connectorLabel} access was removed by its owner. `
@@ -181,6 +200,14 @@ export const consumeGrantRemovalCues = async (agentName: string, instanceId: str
     const connector = grantConnector(grant.tools);
     // Only this agent's entries: a grant two agents held carries one for each.
     for (const entry of (grant.removalCuePending || []).filter((pending) => pending.seat === seat)) {
+      // Read-only checks first, so a failure there cannot lose a claimed entry.
+      // A failed lookup counts as "does not hold": a cue shown once too often
+      // costs a line, a cue lost is the silence this module exists to end.
+      const stale = Date.now() - new Date(entry.at).getTime() > GRANT_REMOVAL_CUE_MAX_AGE_MS;
+      // eslint-disable-next-line no-await-in-loop
+      const holds = connector && !stale
+        ? await stillHoldsConnector(entry.userId, connector.id).catch(() => false)
+        : false;
       // The filter names the entry, so a build that finds it already pulled by
       // a concurrent one matches no row. The filter is the claim: RoomGrant has
       // timestamps, so an unfiltered update always reports a modification.
@@ -189,10 +216,7 @@ export const consumeGrantRemovalCues = async (agentName: string, instanceId: str
         { _id: grant._id, 'removalCuePending.userId': entry.userId },
         { $pull: { removalCuePending: { userId: entry.userId } } },
       );
-      if (!claimed.modifiedCount || !connector || lines.has(connector.id)) continue;
-      if (Date.now() - new Date(entry.at).getTime() > GRANT_REMOVAL_CUE_MAX_AGE_MS) continue;
-      // eslint-disable-next-line no-await-in-loop
-      if (await stillHoldsConnector(entry.userId, connector.id)) continue;
+      if (!claimed.modifiedCount || !connector || stale || holds || lines.has(connector.id)) continue;
       lines.set(connector.id, grantRemovalCueLine(connector.label, entry.byOwner));
     }
   }

@@ -35,6 +35,8 @@ const { revokeConnectionGrants } = require('../../services/roomGrantService');
 
 jest.setTimeout(60000);
 
+const LINEAR_CUE = '[access: Linear access was removed by its owner. '
+  + 'There is nothing to reconnect; ask them if you need it again.]';
 const CUE = '[access: GitHub access was removed by its owner. '
   + 'There is nothing to reconnect; ask them if you need it again.]';
 
@@ -91,9 +93,9 @@ const named = (owner, agent) => ({
   },
 });
 
-const mention = async (agentName, pod, text = `@${agentName} can you check the issues?`) => {
+const mention = async (agentName, pod, text = `@${agentName} can you check the issues?`, extra = {}) => {
   const event = await AgentEventService.enqueue({
-    agentName, instanceId: 'default', podId: pod._id, type: 'chat.mention', payload: { content: text },
+    agentName, instanceId: 'default', podId: pod._id, type: 'chat.mention', payload: { content: text }, ...extra,
   });
   return (await AgentEvent.findById(event._id).lean()).payload.content;
 };
@@ -109,7 +111,10 @@ describe('F181: a removed connector is cued on the agent\'s next mention', () =>
     app.use(express.json());
     app.use('/api/grants', grantRoutes);
   });
-  afterEach(clearMongoDb);
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await clearMongoDb();
+  });
   afterAll(closeMongoDb);
 
   test('revoke: the next mention carries the cue once, naming only the connector', async () => {
@@ -220,6 +225,106 @@ describe('F181: a removed connector is cued on the agent\'s next mention', () =>
 
     const row = await RoomGrant.findOne({ grantId: grant.grantId }).lean();
     expect(row.removalCuePending.map((entry) => entry.userId)).toEqual([String(fixture.seat._id)]);
+  });
+
+  test('a failed holds lookup still delivers the cue, and keeps lines already collected', async () => {
+    const fixture = await seed();
+    const github = await githubGrant(fixture, [fixture.seat._id]);
+    const linear = await githubGrant(fixture, [fixture.seat._id], { tools: ['linear.list_issues'] });
+    expect((await revoke(github, fixture.owner)).status).toBe(200);
+    expect((await revoke(linear, fixture.owner)).status).toBe(200);
+    // Only the "does it hold this connector again" lookup for Linear fails.
+    const failsForLinear = (original) => function lookup(filter, ...rest) {
+      if (String(filter?.tools?.$regex || '').startsWith('^linear')) throw new Error('lookup failed');
+      return original.call(this, filter, ...rest);
+    };
+    const { exists, find } = RoomGrant;
+    jest.spyOn(RoomGrant, 'exists').mockImplementation(failsForLinear(exists));
+    jest.spyOn(RoomGrant, 'find').mockImplementation(failsForLinear(find));
+
+    const content = await mention('quill', fixture.pod);
+    expect(content).toContain(CUE);
+    expect(content).toContain(LINEAR_CUE);
+  });
+
+  test('a live grant in a pod the agent has left does not hide the cue', async () => {
+    const fixture = await seed();
+    const elsewhere = await Pod.create({
+      name: `left${seq}`, createdBy: fixture.owner._id, members: [fixture.owner._id],
+    });
+    // Grant B is live and its audience snapshot still lists quill, but quill left that pod.
+    await githubGrant({ owner: fixture.owner, pod: elsewhere }, [fixture.seat._id]);
+    const grant = await githubGrant(fixture, [fixture.seat._id]);
+    expect((await revoke(grant, fixture.owner)).status).toBe(200);
+
+    expect(await mention('quill', fixture.pod)).toContain(CUE);
+  });
+
+  test('a live seat-target grant on the connector still counts as holding it', async () => {
+    const fixture = await seed();
+    await githubGrant(fixture, [fixture.seat._id], { target: { kind: 'seat', id: String(fixture.seat._id) } });
+    const grant = await githubGrant(fixture, [fixture.seat._id]);
+    expect((await revoke(grant, fixture.owner)).status).toBe(200);
+
+    expect(await mention('quill', fixture.pod)).not.toContain('[access:');
+  });
+
+  test('a digest mention leaves the note for the next wake mention', async () => {
+    const fixture = await seed();
+    const grant = await githubGrant(fixture, [fixture.seat._id]);
+    expect((await revoke(grant, fixture.owner)).status).toBe(200);
+
+    expect(await mention('quill', fixture.pod, 'folded later', { deliveryMode: 'digest' })).not.toContain('[access:');
+    expect(await RoomGrant.countDocuments({ 'removalCuePending.0': { $exists: true } })).toBe(1);
+    expect(await mention('quill', fixture.pod)).toContain(CUE);
+  });
+
+  test('a thread mention carries the cue too', async () => {
+    const fixture = await seed();
+    const grant = await githubGrant(fixture, [fixture.seat._id]);
+    expect((await revoke(grant, fixture.owner)).status).toBe(200);
+
+    const event = await AgentEventService.enqueue({
+      agentName: 'quill',
+      instanceId: 'default',
+      podId: fixture.pod._id,
+      type: 'thread.mention',
+      payload: { content: 'in a thread' },
+    });
+    expect((await AgentEvent.findById(event._id).lean()).payload.content.startsWith(`${CUE}\n\n`)).toBe(true);
+  });
+
+  test('an audience agent that left the pod before the revoke gets no note', async () => {
+    const fixture = await seed();
+    const grant = await githubGrant(fixture, [fixture.seat._id, fixture.other._id]);
+    await Pod.updateOne({ _id: fixture.pod._id }, { $pull: { members: fixture.other._id } });
+    expect((await revoke(grant, fixture.owner)).status).toBe(200);
+
+    expect(await RoomGrant.countDocuments({ 'removalCuePending.userId': String(fixture.other._id) })).toBe(0);
+    expect(await RoomGrant.countDocuments({ 'removalCuePending.userId': String(fixture.seat._id) })).toBe(1);
+  });
+
+  test('a failure writing the note does not fail the revoke', async () => {
+    const fixture = await seed();
+    const grant = await githubGrant(fixture, [fixture.seat._id]);
+    jest.spyOn(User, 'find').mockImplementation(() => { throw new Error('users unavailable'); });
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect((await revoke(grant, fixture.owner)).status).toBe(200);
+    expect((await RoomGrant.findOne({ grantId: grant.grantId }).lean()).revokedAt).toBeTruthy();
+  });
+
+  test('a failure writing the note does not fail taking the agent off a grant', async () => {
+    const fixture = await seed();
+    const grant = await githubGrant(fixture, [fixture.seat._id], named(fixture.owner, fixture.seat));
+    jest.spyOn(User, 'find').mockImplementation(() => { throw new Error('users unavailable'); });
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await request(app)
+      .delete(`/api/grants/${grant.grantId}/byo-agents/${fixture.seat._id}`)
+      .set('x-test-user', String(fixture.owner._id));
+    expect(res.status).toBe(200);
+    expect((await RoomGrant.findOne({ grantId: grant.grantId }).lean()).audience).toEqual([]);
   });
 
   test('the pending note is not part of a grant read', async () => {

@@ -2035,8 +2035,9 @@ class AgentEventService {
       ? await this.prependMemoryCue(agentName, instanceId, baseEventPayload)
       : baseEventPayload;
     // F181: a connector its owner took away since the agent's last turn is
-    // named inline, so the agent does not ask anyone to reconnect it.
-    const accessCuedPayload = isMention
+    // named inline, so the agent does not ask anyone to reconnect it. Only on a
+    // wake: a digest mention is not a turn, and would spend the one-time cue.
+    const accessCuedPayload = isMention && deliveryMode === 'wake'
       ? await this.prependGrantRemovalCue(agentName, instanceId, memoryCuedPayload)
       : memoryCuedPayload;
     const eventPayload = type === 'heartbeat'
