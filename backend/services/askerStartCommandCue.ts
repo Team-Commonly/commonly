@@ -117,7 +117,8 @@ export function formatStartCommandCue(agents: NeverConnectedAgent[]): string {
     'export COMMONLY_AGENT_TOKEN=<from that page>',
     ...agents.map((a) => `${a.fixCommand} --adapter <as on that page>`),
   ].join('\n');
-  // Scout wakes on every message in a workspace and may stay silent, so this
+  // Scout wakes on every person's message in a workspace (an @mention of a
+  // connected agent goes to that agent instead) and may stay silent, so this
   // note shapes a reply it was going to send. It never asks for one.
   return `[Their own agent has never connected] The person writing to you set up ${names}, `
     + `and ${one ? 'it has' : 'they have'} never connected, so ${one ? 'it cannot' : 'they cannot'} answer anyone yet. `

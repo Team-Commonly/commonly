@@ -8,6 +8,50 @@ const { AgentInstallation } = require('../models/AgentRegistry');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const AgentIdentityService = require('./agentIdentityService');
 
+type NeverConnectedAgent = {
+  _id: unknown; username?: string; profilePicture?: string | null;
+  botMetadata?: { displayName?: string; instanceId?: string };
+  agentRuntimeTokens?: Array<{ lastListenedAt?: Date | string | null }>;
+};
+
+/**
+ * The agent's bot row when its active install in this pod has never polled
+ * (`deriveAgentState` → `never-connected`), else null. The one derivation the
+ * notice below and the wake fan-out (agentMentionService) both read.
+ */
+async function neverConnectedAgent({
+  podId, agentName, instanceId, now = new Date(),
+}: {
+  podId: string; agentName: string; instanceId: string; now?: Date;
+}): Promise<NeverConnectedAgent | null> {
+  const install = await AgentInstallation.findOne({
+    podId, agentName, instanceId, status: 'active',
+  }).lean() as Record<string, unknown> | null;
+  if (!install) return null;
+
+  const agent = await User.findOne({
+    isBot: true,
+    'botMetadata.agentName': agentName,
+    'botMetadata.instanceId': instanceId,
+  }).select('username profilePicture botMetadata agentRuntimeTokens').lean() as NeverConnectedAgent | null;
+  if (!agent) return null;
+
+  const derived = deriveAgentState(
+    install as Parameters<typeof deriveAgentState>[0],
+    agent.agentRuntimeTokens || [],
+    '',
+    now.getTime(),
+  );
+  return derived.state === 'never-connected' ? agent : null;
+}
+
+/** Has this agent's install in this pod never connected? */
+export async function isNeverConnectedAgent(args: {
+  podId: string; agentName: string; instanceId: string; now?: Date;
+}): Promise<boolean> {
+  return Boolean(await neverConnectedAgent(args));
+}
+
 /**
  * TASK-655 item 3. A person @mentions a Bring your own agent that has never
  * polled. The mention still queues (it is delivered the moment the agent
@@ -42,29 +86,8 @@ export async function noteNeverConnectedMention({
   const sender = await User.findById(senderId).select('isBot').lean() as { isBot?: boolean } | null;
   if (!sender || sender.isBot) return false;
 
-  const install = await AgentInstallation.findOne({
-    podId, agentName, instanceId, status: 'active',
-  }).lean() as Record<string, unknown> | null;
-  if (!install) return false;
-
-  const agent = await User.findOne({
-    isBot: true,
-    'botMetadata.agentName': agentName,
-    'botMetadata.instanceId': instanceId,
-  }).select('username profilePicture botMetadata agentRuntimeTokens').lean() as {
-    _id: unknown; username?: string; profilePicture?: string | null;
-    botMetadata?: { displayName?: string; instanceId?: string };
-    agentRuntimeTokens?: Array<{ lastListenedAt?: Date | string | null }>;
-  } | null;
+  const agent = await neverConnectedAgent({ podId, agentName, instanceId, now });
   if (!agent) return false;
-
-  const derived = deriveAgentState(
-    install as Parameters<typeof deriveAgentState>[0],
-    agent.agentRuntimeTokens || [],
-    '',
-    now.getTime(),
-  );
-  if (derived.state !== 'never-connected') return false;
 
   const agentKey = `${agentName}:${instanceId}`;
   // The day check is read-then-insert, so two mentions racing in one process

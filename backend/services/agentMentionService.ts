@@ -19,11 +19,12 @@ const { assertAgentRuntimeMayJoinPod } = require('./outsiderGrantAgentJoinPolicy
 // eslint-disable-next-line global-require
 const chatSummarizerService = require('./chatSummarizerService');
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-const { noteNeverConnectedMention } = require('./neverConnectedMentionService') as {
+const { noteNeverConnectedMention, isNeverConnectedAgent } = require('./neverConnectedMentionService') as {
   noteNeverConnectedMention: (args: {
     podId: string; agentName: string; instanceId: string; senderId: string;
     messageId: string | null; threadRootId?: string | number | null;
   }) => Promise<boolean>;
+  isNeverConnectedAgent: (args: { podId: string; agentName: string; instanceId: string }) => Promise<boolean>;
 };
 // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
 const { maybeFireWelcomeWake } = require('./welcomeWakeService') as {
@@ -1459,7 +1460,8 @@ const followMentionedThreadUsers = async (
  * delivery would burn a second model turn on the same trigger), and DM-shaped
  * pods (enqueueDmEvent already routes every message there).
  *
- * Unaddressed activity for seats without wake-on-message becomes digest work.
+ * Unaddressed activity for seats without wake-on-message becomes digest work,
+ * and so does a message a person addressed to other agents (`addressedElsewhere`).
  */
 const enqueueWakeOnMessage = async ({
   podId, message, rawContent, userId, username, source, installations, sender, excludeKeys, authorFrame, resolvedBotUserIds,
@@ -1887,6 +1889,11 @@ const enqueueMentions = async ({
   // also records a reply-edge delivery, which is addressing but not an
   // explicit @mention and therefore must not create a follow.
   const deliveredAgentMentionTargets = new Map<string, MentionTarget>();
+  // Mentioned agents that have never connected. A person @mentioning one is
+  // still waiting on an answer nobody can give yet, so that mention does not
+  // count as addressing the message away from the room's opt-ins: Scout keeps
+  // the turn where it hands over the start command (F46).
+  const neverConnectedMentionKeys = new Set<string>();
   const identityKey = (target: MentionTarget): string => (
     `${target.agentName.toLowerCase()}:${(target.instanceId || 'default').toLowerCase()}`
   );
@@ -2069,6 +2076,14 @@ const enqueueMentions = async ({
         // TASK-655: a person mentioning a never-connected BYO agent is told
         // once a day, in the room. The mention still queues below.
         if (sender?.isBot === false) {
+          try {
+            if (await isNeverConnectedAgent({
+              podId, agentName: directMatch.agentName, instanceId: directMatch.instanceId || 'default',
+            })) neverConnectedMentionKeys.add(identityKey(directMatch));
+          } catch (error) {
+            // Unknown state counts as connected: the opt-ins get a digest.
+            console.warn('[not-connected] state lookup failed:', (error as Error).message);
+          }
           try {
             await noteNeverConnectedMention({
               podId,
@@ -2343,17 +2358,20 @@ const enqueueMentions = async ({
     }
   }
 
-  // D8: after the mention path has spoken for its targets, wake the opt-ins
-  // it did not reach. A mention-enqueued agent is excluded — the mention is
-  // the stronger cue, and double delivery would burn a second model turn on
-  // the same trigger message.
+  // D8: after the mention path has spoken for its targets, deliver to the
+  // opt-ins it did not reach. A mention-enqueued agent is excluded — the
+  // mention is the stronger cue, and double delivery would burn a second model
+  // turn on the same trigger message. When a person explicitly @mentioned an
+  // agent (one that has connected), the message is addressed to it, so the
+  // other opt-ins get a digest rather than a turn; addressed targets (thread
+  // author, claimant) still wake.
   //
   // SECOND OF TWO CALL SITES; the first is behind `if (!isRouted)` above. So
   // a ROUTED message does have an ambient fan-out, and anything scoping that
   // fan-out (thread scoping, W-T 3/4) applies here too. That is correct
   // rather than incidental: an addressed message must always deliver its
-  // chat.mention, while the ambient companion has no stronger claim here than
-  // it does on an unrouted message.
+  // chat.mention, while the ambient companion has at most the claim it has on
+  // an unrouted message, and none when a person @mentioned someone else.
   let woken: string[] = [];
   if (!onlyExplicitMentions) {
     try {
@@ -2361,7 +2379,8 @@ const enqueueMentions = async ({
         podId, message, rawContent, userId, username, source, installations, sender, excludeKeys: enqueuedIdentityKeys, authorFrame, resolvedBotUserIds, replyToMessageId,
         // Explicit @mentions only: a reply edge to one agent is addressing
         // too, but it has always left the room's opt-ins their ambient turn.
-        addressedElsewhere: sender?.isBot === false && deliveredAgentMentionTargets.size > 0,
+        addressedElsewhere: sender?.isBot === false
+          && [...deliveredAgentMentionTargets.keys()].some((key) => !neverConnectedMentionKeys.has(key)),
       });
     } catch (error) {
       console.warn('[wake-on-message] fan-out failed:', (error as Error).message);

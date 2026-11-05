@@ -58,6 +58,11 @@ jest.mock('../../../models/pg/Message', () => ({
   findPreviousTopLevel: jest.fn().mockResolvedValue(null),
 }));
 
+jest.mock('../../../services/neverConnectedMentionService', () => ({
+  noteNeverConnectedMention: jest.fn().mockResolvedValue(false),
+  isNeverConnectedAgent: jest.fn().mockResolvedValue(false),
+}));
+
 jest.mock('../../../services/welcomeWakeService', () => ({
   maybeFireWelcomeWake: jest.fn(),
 }));
@@ -70,6 +75,7 @@ const Pod = require('../../../models/Pod');
 const User = require('../../../models/User');
 const AgentEvent = require('../../../models/AgentEvent');
 const messageDeliveryModeService = require('../../../services/messageDeliveryModeService');
+const neverConnectedMentionService = require('../../../services/neverConnectedMentionService');
 
 const install = (agentName, { optIn = false, instanceId = 'default' } = {}) => ({
   agentName,
@@ -231,7 +237,8 @@ describe('wake-on-message (ADR-018 D8)', () => {
 
     expect(res.enqueued).toEqual(['seat-a']);
     expect(mentionCalls().map((c) => c.agentName)).toEqual(['seat-a']);
-    expect(wakeCalls().map((c) => c.agentName)).toEqual(['seat-b']);
+    // seat-b still receives the message, as a digest: a person addressed seat-a.
+    expect(wakeCalls().map((c) => [c.agentName, c.deliveryMode])).toEqual([['seat-b', 'digest']]);
   });
 
   describe('a person @mentioning other agents has addressed them, not the room', () => {
@@ -273,6 +280,77 @@ describe('wake-on-message (ADR-018 D8)', () => {
 
       expect(mentionCalls().map((c) => c.agentName)).toEqual(['seat-a']);
       expect(res.woken).toEqual([]);
+    });
+
+    test('an @mention of the opt-in itself delivers its mention, with no second ambient turn', async () => {
+      mockInstallations([
+        install('seat-a'),
+        {
+          agentName: 'scout',
+          instanceId: 'default',
+          displayName: 'Scout',
+          config: { wakeOnMessage: { enabled: true, humanOnly: true } },
+        },
+      ]);
+
+      await AgentMentionService.enqueueMentions({
+        podId: 'pod-1', message: { content: '@scout hi', id: 'msg-o4' }, userId: 'user-1', username: 'alice',
+      });
+
+      expect(mentionCalls().map((c) => c.agentName)).toEqual(['scout']);
+      expect(wakeCalls().filter((c) => c.agentName === 'scout')).toEqual([]);
+    });
+
+    test('a target this message addresses (thread author, claimant) still wakes', async () => {
+      const lookup = jest.spyOn(messageDeliveryModeService, 'addressedMessageTargets')
+        .mockResolvedValue(new Set(['seat-b:default']));
+      try {
+        mockInstallations([install('seat-a'), install('seat-b'), install('scout', { optIn: true })]);
+
+        const res = await AgentMentionService.enqueueMentions({
+          podId: 'pod-1', message: { content: '@seat-a over to you', id: 'msg-o5' }, userId: 'user-1', username: 'alice',
+        });
+
+        expect(res.woken).toEqual(['seat-b']);
+        expect(wakeCalls().find((c) => c.agentName === 'scout').deliveryMode).toBe('digest');
+      } finally {
+        lookup.mockRestore();
+      }
+    });
+
+    test('an agent\'s @mention leaves the other opt-ins on their usual path', async () => {
+      mockBotSender('seat-c');
+      mockInstallations([install('seat-a'), install('seat-b', { optIn: true }), install('seat-c')]);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1', message: { content: '@seat-a your turn', id: 'msg-o6' }, userId: 'bot-1', username: 'seat-c',
+      });
+
+      expect(mentionCalls().map((c) => c.agentName)).toEqual(['seat-a']);
+      expect(res.woken).toEqual(['seat-b']);
+    });
+
+    test('an @handle that names no agent (a person, or nobody) still wakes the opt-in', async () => {
+      mockInstallations([install('seat-a'), install('scout', { optIn: true })]);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1', message: { content: '@bob and @nobody, thoughts?', id: 'msg-o7' }, userId: 'user-1', username: 'alice',
+      });
+
+      expect(mentionCalls()).toEqual([]);
+      expect(res.woken).toEqual(['scout']);
+    });
+
+    test('an @mention of an agent that has never connected still wakes Scout, which can hand over its start command', async () => {
+      neverConnectedMentionService.isNeverConnectedAgent.mockResolvedValueOnce(true);
+      mockInstallations([install('my-claude'), install('scout', { optIn: true })]);
+
+      const res = await AgentMentionService.enqueueMentions({
+        podId: 'pod-1', message: { content: '@my-claude are you there', id: 'msg-o8' }, userId: 'user-1', username: 'alice',
+      });
+
+      expect(mentionCalls().map((c) => c.agentName)).toEqual(['my-claude']);
+      expect(res.woken).toEqual(['scout']);
     });
 
     test('a plain line from a person, mentioning no one, still wakes the opt-in', async () => {
