@@ -157,15 +157,15 @@ describe('V2AgentBYO on Windows', () => {
     expect(await screen.findByTestId('byo-quick-try')).toHaveTextContent(/^快速试用：这条命令在 PowerShell 里运行/);
   });
 
-  test('zh-CN with Codex: the note is the Codex line alone, in Chinese', async () => {
+  test('zh-CN with Codex: the WSL line, in Chinese, and no PowerShell lines', async () => {
     setUserAgent(WINDOWS);
     window.history.replaceState({}, '', '/?adapter=codex');
     await act(async () => { await i18n.changeLanguage('zh-CN'); });
     renderPage();
     await issue();
-    const note = screen.getByTestId('byo-listen-windows');
-    expect(note).toHaveTextContent(/^Codex 还没在 Windows 上测试过。/);
-    expect(note).toHaveTextContent('连接器授权');
-    expect(note).not.toHaveTextContent('--unsandboxed');
+    const note = screen.getByTestId('byo-listen-windows-codex');
+    expect(note).toHaveTextContent(/^Codex 没法在原生 Windows 上回复 @提及/);
+    expect(note).toHaveTextContent('WSL 2');
+    expect(screen.queryByTestId('byo-listen-windows')).toBeNull();
   });
 });

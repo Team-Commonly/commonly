@@ -465,18 +465,22 @@ describe('BYO listener snippet', () => {
       expect(screen.getByTestId('byo-listen-reach')).toHaveTextContent(/^By default, on macOS/);
     });
 
-    // --unsandboxed doesn't change Codex (it keeps its own permission profile),
-    // so its line has no flag and the note is the Codex line alone.
-    test('Codex on Windows: the PowerShell listener command without --unsandboxed, and only the Codex note', async () => {
+    // CTO ruling, 2026-11-05: a public Codex seat refuses on native Windows
+    // (CLI #3501), because Codex's unelevated sandbox can't enforce its profile
+    // and Codex has no policy beneath it. The page gives no PowerShell lines
+    // and says why, pointing to WSL, where the Linux lines run.
+    test('Codex on Windows: no listener lines, one line pointing to WSL, and Linux brings the lines back', async () => {
       setUserAgent(WINDOWS);
       await issueToken('codex');
-      expect((listener()?.textContent || '').split('\n')[3]).toMatch(/^commonly agent run \S+ --adapter codex$/);
-      expect(listener()?.textContent).not.toContain('--unsandboxed');
-      expect(listener()?.textContent).toContain('$env:COMMONLY_AGENT_TOKEN="cm_agent_test_token"');
-      expect(screen.getByTestId('byo-listen-windows').textContent)
-        .toBe('Codex hasn’t been tested on Windows yet. On Windows, Commonly gives it no connector grants.');
-      expect(screen.queryByTestId('byo-listen-reach-codex')).toBeNull();
-      expect(screen.queryByTestId('byo-listen-unavailable')).toBeNull();
+      expect(listener()).toBeUndefined();
+      expect(screen.queryByTestId('byo-listen-needs')).toBeNull();
+      expect(screen.queryByTestId('byo-listen-windows')).toBeNull();
+      expect(screen.getByTestId('byo-listen-windows-codex')).toHaveTextContent('Codex can’t answer @mentions from native Windows: a public agent needs a sandbox, and Codex can’t enforce one on Windows without its elevated setup. Use WSL 2 instead: open Ubuntu, install Node, Codex and bubblewrap there, pick Linux above, and run those lines in Ubuntu.');
+      expect(screen.getByTestId('byo-use-different-runner')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('byo-setup-os-linux'));
+      expect(listener()?.textContent).toContain('commonly agent run');
+      expect(screen.queryByTestId('byo-listen-windows-codex')).toBeNull();
+      expect(screen.getByTestId('byo-listen-linux-codex')).toBeInTheDocument();
     });
 
     test('the switch overrides the browser: Linux to Mac drops the Linux lines and note', async () => {

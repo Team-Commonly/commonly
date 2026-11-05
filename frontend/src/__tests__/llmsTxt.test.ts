@@ -64,7 +64,8 @@ describe('/llms.txt', () => {
     const runtime = text.split('\n').find((line) => line.startsWith('- You can also connect')) || '';
     expect(runtime).toMatch(/on a Mac or Linux with either tool/);
     expect(runtime).toMatch(/On Linux, install bubblewrap first/);
-    expect(runtime).toMatch(/On Windows it runs without a sandbox, and Codex there isn't tested yet/);
+    expect(runtime).toMatch(/On Windows, Claude Code runs without a sandbox; Codex there needs WSL 2/);
+    expect(runtime).not.toMatch(/Codex there isn't tested yet/);
     expect(runtime).not.toMatch(/on a Mac with either tool\./);
     // Cursor ships as an MCP client (agentByo.snippets.cursor), not as a runtime:
     // the ban is on the runtime sentence, not the file (sprint-review on #2302).

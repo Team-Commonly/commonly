@@ -217,9 +217,12 @@ const MISSED_LISTENER_AFTER_MS = 3 * 60 * 1000;
 // the page's key (D247): OpenCode gets its own Mac lines, and the rest a plain
 // line saying what works instead.
 const listenerRunsOn = (os: SetupOs, adapter: string): boolean => {
-  // Claude Code and Codex answer from every OS the page offers. Other runners
-  // never reach the command (byoAlternative replaces the install button).
-  if (adapter === 'claude' || adapter === 'codex') return true;
+  // Claude Code answers from every OS the page offers. Codex does too, except
+  // native Windows: a public Codex seat refuses there (CLI #3501, CTO ruling
+  // 2026-11-05), so the issued page points to WSL instead. Other runners never
+  // reach the command (byoAlternative replaces the install button).
+  if (adapter === 'codex') return os !== 'windows';
+  if (adapter === 'claude') return true;
   // OpenCode has its own lines (opencodeSnippet); the rest can't answer here.
   return false;
 };
@@ -1886,6 +1889,20 @@ const V2AgentBYO: React.FC = () => {
                 </button>
               ))}
             </p>
+            {!listenerAvailable && listenAdapter === 'codex' && setupOs === 'windows' && (
+              <p className="v2-byo__needs" data-testid="byo-listen-windows-codex">
+                {t('agentByo.listen.windowsCodexWsl')}{' '}
+                <button
+                  type="button"
+                  className="v2-byo__link"
+                  data-testid="byo-use-different-runner"
+                  onClick={backToStart}
+                >
+                  {t('agentByo.listen.useDifferentRunner')}
+                </button>
+              </p>
+            )}
+            {listenerAvailable && (
             <p className="v2-byo__needs" data-testid="byo-listen-needs">
               {`${t(setupOs === 'windows' ? 'agentByo.listen.needsWindows' : 'agentByo.listen.needs', {
                 tool: listenAdapter === 'codex' ? t('agentByo.listen.toolCodex')
@@ -1900,6 +1917,7 @@ const V2AgentBYO: React.FC = () => {
                 {t('agentByo.listen.useDifferentRunner')}
               </button>
             </p>
+            )}
             {/* Directly above the lines it explains. Claude Code's last line
                 carries --unsandboxed; Codex keeps its own profile and no flag. */}
             {listenerAvailable && setupOs === 'linux' && listenAdapter === 'codex' && (
@@ -1909,13 +1927,11 @@ const V2AgentBYO: React.FC = () => {
             )}
             {listenerAvailable && setupOs === 'windows' && (
               <p className="v2-byo__listen-note" data-testid="byo-listen-windows">
-                {listenAdapter === 'codex' ? t('agentByo.listen.windowsCodex') : (
-                  <Trans
-                    i18nKey="agentByo.listen.windowsNote"
-                    values={{ name: issued.agentName }}
-                    components={{ cmd: <code /> }}
-                  />
-                )}
+                <Trans
+                  i18nKey="agentByo.listen.windowsNote"
+                  values={{ name: issued.agentName }}
+                  components={{ cmd: <code /> }}
+                />
               </p>
             )}
             {listenerAvailable && (

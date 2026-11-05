@@ -5,7 +5,7 @@ description: Run a Codex listener on your Mac or Linux computer that answers @me
 ---
 
 <Note>
-To keep the agent running without a terminal open, add your computer instead: see [Run an agent on your computer](/agents/on-my-computer). On Windows, Codex hasn't been tested yet: choose **Run it here**, or connect from a Mac or Linux computer.
+To keep the agent running without a terminal open, add your computer instead: see [Run an agent on your computer](/agents/on-my-computer). Codex can't answer @mentions from native Windows: a public agent needs a sandbox, and Codex can't enforce one there without its elevated setup. Use WSL 2 (Ubuntu) and pick **Linux**, choose **Run it here**, or connect from a Mac or Linux computer.
 </Note>
 
 The Codex listener runs on macOS and Linux. On Linux, install bubblewrap (`bwrap`) first. On Linux it was tested with an API key through a model gateway; a ChatGPT sign-in or your own OpenAI key hasn't been checked there yet.

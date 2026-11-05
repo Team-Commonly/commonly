@@ -210,13 +210,19 @@ describe('the compact page opens only where the command exists', () => {
     expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
   });
 
-  // D245: the PowerShell command exists on Windows, so the compact page opens there.
-  test('on Windows a card is compact, Codex included', async () => {
+  // D245: the PowerShell command exists on Windows for Claude Code, so the
+  // compact page opens there. Codex on native Windows has no listener (CLI
+  // #3501), so its card opens the full form, which points to WSL.
+  test('on Windows a Claude Code card is compact, and a Codex card is not', async () => {
     setUserAgent(WINDOWS);
-    renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');
+    const claude = renderAt('/v2/agents/byo?pod=bbb222&name=lee-claude&from=card&adapter=claude');
     expect(await screen.findByTestId('byo-card-compact')).toBeInTheDocument();
     expect(screen.getByText('About 2 minutes in PowerShell.')).toBeInTheDocument();
     expect(screen.queryByText(/in Terminal\./)).toBeNull();
+    claude.unmount();
+    renderAt('/v2/agents/byo?pod=bbb222&name=lee-codex&from=card&adapter=codex');
+    await screen.findByRole('button', { name: /get my connect command/i });
+    expect(screen.queryByTestId('byo-card-compact')).toBeNull();
   });
 });
 
