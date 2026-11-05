@@ -1954,7 +1954,7 @@
       "scriptsDisabled": "如果 PowerShell 提示禁止运行脚本，先运行一次 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned，再重新运行这四行。",
       "windowsNote": "Claude Code 在 Windows 上需要 CLI 0.1.243或更高版本，才能回复 @提及。Windows 上没有能给 {{name}} 用的沙箱，系统层面没有任何东西限制它。加上 <cmd>--unsandboxed</cmd> 就表示你接受这一点，最后一行已经带上了。它仍然沿用 Commonly 的受限工具设置：默认只能读取自己的文件夹，加上 <cmd>--allow write</cmd> 后才能编辑其中的文件。在 Windows 上它不能运行命令，也不会获得任何连接器授权。想让它在后台运行，可以用 <cmd>commonly daemon install --unsandboxed</cmd>，把它设成登录时自动启动的任务。",
       "windowsCodex": "Codex 还没在 Windows 上测试过。在 Windows 上，Commonly 不会给它任何连接器授权。",
-      "linuxCodex": "11月5日，我们在一台全新的 Ubuntu 机器上通过模型网关、用 API key 运行 Codex 连接 Commonly，它回复了第一条 @提及。用你自己的 ChatGPT 登录或 OpenAI key，在 Linux 上还没验证过。",
+      "linuxCodex": "11月5日，我们在一台全新的 Ubuntu 机器上跑了 Codex（经模型网关，用 API 密钥），它回复了第一条 @提及。改用你自己的 ChatGPT 登录或 OpenAI 密钥，在 Linux 上还没验证过。",
       "ctaWarning": "{{name}} 尚未监听：上面的命令运行起来之前，它不会回复 @提及。",
       "needs": "需要 Node 22+（含 npm）和已登录的 {{tool}}。四行都要在同一个窗口里运行，换了窗口 export 就失效。",
       "needsWindows": "需要 Node 22+（含 npm）和已登录的 {{tool}}。四行都要在同一个 PowerShell 窗口里运行，换了窗口 $env 设置就失效。",

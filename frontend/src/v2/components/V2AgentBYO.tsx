@@ -1691,7 +1691,9 @@ const V2AgentBYO: React.FC = () => {
             <div className="v2-byo__unchosen" data-testid="byo-mode-unchosen">
               {t('agentByo.actions.chooseFirst')}
             </div>
-          ) : canReconnect ? (
+          ) : canReconnect && !byoAlternative ? (
+              // A runner the page has no listener for shows its own way first:
+              // a reconnected key would land in a command view with nothing to run.
               <button type="button" className="v2-byo__submit" disabled={submitting || !podId}
                 onMouseDown={(event) => event.preventDefault()} onClick={() => {
                 if (existingConnection.runtimeType === 'wrapper') void requestMachineReconnect(sanitizeAgentName(name));
