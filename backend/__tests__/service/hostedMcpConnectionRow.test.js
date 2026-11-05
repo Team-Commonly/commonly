@@ -49,6 +49,8 @@ const RECORD_KEYS = {
   'config.intake': 'oauth',
   'config.clientId': 'https://api.commonly.me/api/integrations/connect/hosted-mcp/linear/client-metadata',
   'config.providerSubject': 'subject-1',
+  // TASK-782: the callback's reach answer, which the grant step reads back.
+  'config.reach.projects': 0,
   'config.grantedScope': 'read openid',
   'config.expiresAt': new Date('2026-09-27T15:00:00.000Z'),
   'config.credentialRef': 'secret-access-1',

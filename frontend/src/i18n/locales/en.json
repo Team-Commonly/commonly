@@ -2555,6 +2555,7 @@
     "hostedMcpAppInstalledFinish": "{{provider}} App installed. Press Connect on {{provider}} to finish.",
     "hostedMcpAccessNext": "Choose 'Only select repositories' to limit which private repos {{provider}} can read. Public repos are always readable.",
     "hostedMcpAccessOpen": "Open {{provider}}",
+    "hostedMcpReachNone": "{{provider}} is connected, but this account can't see any projects, so searches will come back empty. Add a project in {{provider}}, or connect an account that has one.",
     "hostedMcpManualRevoke": "Your previous {{provider}} account may still have Commonly connected. Switch to it on {{provider}}, then remove Commonly there.",
     "hostedMcpManualRevoke_linear": "Your previous Linear account may still have an MCP grant connected. Switch to it in Linear, then revoke the MCP grant under Linear's connected apps.",
     "hostedMcpManualRevoke_sentry": "Your previous Sentry account may still have Sentry's MCP server app connected. Switch to it in Sentry, then revoke that app there. Revoking it ends every client that server holds for the account, not only Commonly.",
@@ -2701,6 +2702,7 @@
   },
   "tools": {
     "linearWriteReconnect": "If you connected Linear before it could write, disconnect it and connect it again to turn on writes. Each write asks for your approval first.",
+    "reachNone": "When it was connected, this {{label}} account could see no projects, so searches come back empty. Reconnect after you add one.",
     "granted": "Granted",
     "beta": "beta",
     "adminOnce": "An admin installs this once",

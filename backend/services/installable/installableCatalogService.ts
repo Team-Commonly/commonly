@@ -122,6 +122,8 @@ const publicConnection = (integration: any) => ({
   ...(integration.type === 'hosted-mcp' ? {
     ...(integration.createdAt ? { connectedAt: new Date(integration.createdAt).toISOString() } : {}),
     ...(integration.config?.agentId ? { agentId: String(integration.config.agentId) } : {}),
+    // TASK-782: only a probe that read everything and found nothing says so.
+    ...(integration.config?.reach?.projects === 0 ? { reach: 'none' } : {}),
   } : {}),
 });
 

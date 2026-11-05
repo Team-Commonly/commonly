@@ -108,6 +108,12 @@ export interface HostedMcpEntryCommon {
    * with no installation of its App). Best effort: false on any doubt.
    */
   needsAccessSetup?: (accessToken: string) => Promise<boolean>;
+  /**
+   * TASK-782: how much a fresh connection can see, read at the callback.
+   * `{ projects: 0 }` only when the probe read everything and found nothing;
+   * null on any doubt, so the page never warns on a guess.
+   */
+  reachProbe?: (accessToken: string) => Promise<{ projects: number } | null>;
   tools: HostedMcpPinnedTool[];
 }
 
