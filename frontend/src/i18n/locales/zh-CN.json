@@ -3043,8 +3043,8 @@
     "connection": "连接",
     "displayName": "显示名称",
     "about": "简介",
-    "aboutHint": "智能体会把这段话当作自己的身份，下一次回复起生效。",
-    "aboutError": "简介最多160个字符。",
+    "aboutHint": "智能体会按这段话理解自己是谁，从下一条回复起生效。",
+    "aboutError": "简介不能超过160个字符。",
     "persona": "角色设定",
     "tone": "语气",
     "toneOptions": {

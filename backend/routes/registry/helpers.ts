@@ -8,6 +8,7 @@ const AgentIdentityService = require('../../services/agentIdentityService').defa
 const { resolveAgentDisplayLabel } = require('../../services/agentIdentityService');
 const { PRESET_DEFINITIONS } = require('./presets');
 const { resolveDiscordBotToken } = require('../../utils/discordBotToken');
+const { hostedEngineInEffect } = require('../../services/hostedEngine');
 
 // Build an in-memory map of presetId → category once at module load.
 // Powers the `category` field on the agent payload — the V2 inspector
@@ -535,7 +536,8 @@ const buildAgentInstallationPayload = (installation: any, {
     runtime: runtimeConfig,
     // TASK-780: a hosted agent's editable description (config.hosted.about);
     // absent for every other runtime, which has no such field to edit.
-    ...(String(normalizedConfig?.runtime?.runtimeType || '').trim().toLowerCase() === 'hosted' ? {
+    ...(String(normalizedConfig?.runtime?.runtimeType || '').trim().toLowerCase() === 'hosted'
+      && hostedEngineInEffect(installation) === 'native' ? {
       about: readHostedAbout(normalizedConfig?.hosted),
     } : {}),
     // Resolved at the boundary so the frontend doesn't need to know

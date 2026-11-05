@@ -22,7 +22,7 @@ const hostedOf = (installation) => {
 };
 
 describe('editing a hosted agent description after install', () => {
-  let app; let owner; let other; let podA; let podB;
+  let app; let owner; let other; let admin; let podA; let podB;
   const provisionedAt = new Date('2026-11-01T00:00:00Z');
 
   beforeAll(async () => {
@@ -34,6 +34,7 @@ describe('editing a hosted agent description after install', () => {
     app.use('/api/registry', podAgents);
     owner = await User.create({ username: 'about-owner', email: 'about-owner@test.com', password: 'password123' });
     other = await User.create({ username: 'about-other', email: 'about-other@test.com', password: 'password123' });
+    admin = await User.create({ username: 'about-admin', email: 'about-admin@test.com', password: 'password123', role: 'admin' });
     podA = await Pod.create({ name: 'About A', type: 'chat', createdBy: owner._id, members: [owner._id, other._id] });
     podB = await Pod.create({ name: 'About B', type: 'chat', createdBy: other._id, members: [owner._id, other._id] });
   });
@@ -133,6 +134,45 @@ describe('editing a hosted agent description after install', () => {
     expect(hostedOf(theirs).about).toBe('Watches errors.');
     const bot = await User.findOne({ isBot: true, 'botMetadata.agentName': AGENT }).lean();
     expect(bot.botMetadata.description).toBe('Watches errors.');
+  });
+
+  it('refuses a hosted row still on the Durable Object, which never reads it', async () => {
+    await AgentInstallation.updateOne({ agentName: AGENT, podId: podA._id }, { $set: { config: new Map([
+      ['runtime', { runtimeType: 'hosted' }], ['hosted', { engine: 'durable-object', provisionedAt, about: 'Watches errors.' }],
+    ]) } });
+    const response = await patch(owner, { about: 'Unused.' });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('about_hosted_only');
+    const read = await request(app).get(`/api/registry/pods/${podA._id}/agents/${AGENT}?instanceId=default`)
+      .set('Authorization', `Bearer ${token(owner)}`);
+    expect(read.body.agent).not.toHaveProperty('about');
+  });
+
+  it('keeps migration fields and applies a config change sent alongside', async () => {
+    const migratedFrom = { engine: 'durable-object', at: new Date('2026-10-20T00:00:00Z') };
+    await AgentInstallation.updateOne({ agentName: AGENT, podId: podA._id }, { $set: { config: new Map([
+      ['runtime', { runtimeType: 'hosted' }],
+      ['hosted', { engine: 'native', provisionedAt, about: 'Watches errors.', migratedFrom }],
+    ]) } });
+    const response = await patch(owner, { about: 'New line.', config: { heartbeatChecklist: 'check sentry' } });
+    expect(response.status).toBe(200);
+    const saved = await AgentInstallation.findOne({ agentName: AGENT, podId: podA._id });
+    expect(hostedOf(saved)).toEqual(expect.objectContaining({ engine: 'native', about: 'New line.' }));
+    expect(hostedOf(saved).migratedFrom.engine).toBe('durable-object');
+    expect(Object.fromEntries(saved.config).heartbeatChecklist).toBe('check sentry');
+  });
+
+  it('an instance admin edits every installation, so the card follows', async () => {
+    await AgentInstallation.create({
+      agentName: AGENT, instanceId: 'default', podId: podB._id, version: '1', installedBy: other._id,
+      config: new Map([['runtime', { runtimeType: 'hosted' }], ['hosted', { engine: 'native', provisionedAt, about: 'Watches errors.' }]]),
+    });
+    const response = await patch(admin, { about: 'Admin set.' });
+    expect(response.status).toBe(200);
+    const rows = await AgentInstallation.find({ agentName: AGENT });
+    expect(rows.map((row) => hostedOf(row).about)).toEqual(['Admin set.', 'Admin set.']);
+    const bot = await User.findOne({ isBot: true, 'botMetadata.agentName': AGENT }).lean();
+    expect(bot.botMetadata.description).toBe('Admin set.');
   });
 
   it('still refuses a client-written config.hosted', async () => {

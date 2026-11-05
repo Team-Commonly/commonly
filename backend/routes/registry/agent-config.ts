@@ -153,9 +153,13 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       return res.status(400).json({ code: 'invalid_about',
         error: `Description must be text of at most ${HOSTED_ABOUT_MAX} characters` });
     }
-    if (requestedAbout !== undefined && !isHostedInstallation(installation)) {
+    // Only the native engine reads `about` (hostedNativeRunConfig); a row still
+    // on the Durable Object would take the text and never use it, and its
+    // migration rewrites config.hosted from the card.
+    if (requestedAbout !== undefined && (!isHostedInstallation(installation)
+      || hostedEngineInEffect(installation) !== 'native')) {
       return res.status(400).json({ code: 'about_hosted_only',
-        error: 'Only a hosted agent takes a description here' });
+        error: 'Only a hosted agent on the native engine takes a description here' });
     }
     if (normalizedContextPolicy) {
       const numbers = ['maxTokens', 'compactionThreshold', 'summaryHours'];
@@ -271,7 +275,8 @@ agentConfigRouter.patch('/pods/:podId/agents/:name', auth, async (req: any, res:
       }
       // Written past configWriteRefusal, which keeps a client's `config.hosted`
       // out: only `about` changes, and the engine record stays as stored.
-      if (requestedAbout !== undefined && isHostedInstallation(targetInstallation)) {
+      if (requestedAbout !== undefined && isHostedInstallation(targetInstallation)
+        && hostedEngineInEffect(targetInstallation) === 'native') {
         const { about: _previous, ...hosted } = readHostedConfig(targetInstallation);
         const existing = normalizeConfigMap(targetInstallation.config) || {};
         targetInstallation.config = new Map(Object.entries({

@@ -143,12 +143,13 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
           <span className="vl">
             <span className="field field--area">
               <textarea id="agent-identity-about" value={about} rows={2} maxLength={ABOUT_MAX}
-                aria-invalid={aboutError || undefined} aria-describedby="agent-identity-about-hint"
+                aria-invalid={aboutError || undefined}
+                aria-describedby={aboutError ? 'agent-identity-about-hint agent-identity-about-error' : 'agent-identity-about-hint'}
                 onChange={(event) => setAbout(event.target.value)} />
               <span className="mu" aria-hidden="true">{about.length} / {ABOUT_MAX}</span>
             </span>
             <span id="agent-identity-about-hint" className="mu">{t('agentSettings.aboutHint')}</span>
-            {aboutError && <span role="alert" className="v2-agent-settings-page__fielderror">{t('agentSettings.aboutError')}</span>}
+            {aboutError && <span id="agent-identity-about-error" role="alert" className="v2-agent-settings-page__fielderror">{t('agentSettings.aboutError')}</span>}
           </span>
           <span className="ac" />
         </div>}
