@@ -79,6 +79,7 @@ jobs:
         env:
           ADAPTER: ${{ inputs.adapter }}
         run: |
+          set -o pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq bubblewrap
           if [ "$ADAPTER" = codex ]; then

@@ -44,7 +44,7 @@
  */
 import { spawn, spawnSync } from 'child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
@@ -91,6 +91,15 @@ export const walkAdapter = (env) => {
   if (!ADAPTERS.includes(adapter)) throw new Error(`adapter must be claude or codex, not ${adapter}`);
   return adapter;
 };
+
+/**
+ * Where the walk's fresh home goes: beside the runner user's own home, never
+ * under the temp dir. Codex refuses to create its sandbox helper binaries
+ * under a temp dir ("Refusing to create helper binaries under temporary dir
+ * /tmp"), then bwrap cannot exec the helper and every turn fails before the
+ * model is called (run 41994410063). A person's home is not in /tmp either.
+ */
+export const walkHomeRoot = () => homedir();
 
 /**
  * The gateway key (and, for Claude Code, its address) under the names each
@@ -247,7 +256,7 @@ export const runLinuxProdWalk = async () => {
   }
   const script = linuxPasteScript(lines);
   // A fresh home: no Claude or Codex login on it, so the CLI takes the API-key path.
-  const home = mkdtempSync(join(tmpdir(), 'byo-linux-home-'));
+  const home = mkdtempSync(join(walkHomeRoot(), 'byo-linux-home-'));
   const ackLog = join(mkdtempSync(join(tmpdir(), 'byo-linux-acks-')), 'acks.jsonl');
   log(`pasting into bash, home ${home}:\n  ${script.join('\n  ')}`);
 

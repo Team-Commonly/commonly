@@ -1,10 +1,11 @@
 import { readFileSync } from 'fs';
+import { tmpdir } from 'os';
 import { dirname, resolve } from 'path';
 import { fileURLToPath } from 'url';
 
 import {
   installExitFromBash, liftConnectSnippet, linuxLineProblems, linuxPasteScript, runsAtWorkspaceTrust,
-  walkAdapter, walkModelEnv, codexSystemConfig,
+  walkAdapter, walkModelEnv, codexSystemConfig, walkHomeRoot,
 } from '../scripts/linux-byo-prod.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -74,6 +75,12 @@ describe('the Linux prod walk', () => {
     expect(walkModelEnv('claude', 'k', 'https://gw')).toEqual({ ANTHROPIC_API_KEY: 'k', ANTHROPIC_BASE_URL: 'https://gw' });
     // Codex ignores OPENAI_BASE_URL, so its key rides under the provider's env_key.
     expect(walkModelEnv('codex', 'k', 'https://gw')).toEqual({ LITELLM_API_KEY: 'k' });
+  });
+
+  // Codex will not create its sandbox helpers under the temp dir, so a walk
+  // home there fails every Codex turn before the model is called.
+  test('puts the walk home outside the temp dir', () => {
+    expect(walkHomeRoot().startsWith(tmpdir())).toBe(false);
   });
 
   test("names the gateway as Codex's provider in the system config, keyed by LITELLM_API_KEY, with no key in the file", () => {
