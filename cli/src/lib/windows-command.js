@@ -16,6 +16,7 @@
 // runs as itself; anything else is refused with a reason, never handed to a
 // shell. On every other platform this module is a passthrough.
 
+import { spawnSync as realSpawnSync } from 'child_process';
 import { existsSync as realExistsSync, readFileSync as realReadFileSync } from 'fs';
 import { win32 } from 'path';
 
@@ -113,44 +114,79 @@ const programIsNode = (token, shimDir, text) => {
   return false;
 };
 
-const envValue = (env, name) => {
-  const key = Object.keys(env || {}).find((k) => k.toLowerCase() === name.toLowerCase());
-  return key ? env[key] : undefined;
-};
-
 // npm's own `npm.cmd` / `npx.cmd` (npm/bin/*.cmd, which the Node installer
 // copies next to node.exe) is hand-written, not a cmd-shim:
 //
 //   SET "NODE_EXE=%~dp0\node.exe"            (else `node`)
+//   SET "NPM_PREFIX_JS=%~dp0\node_modules\npm\bin\npm-prefix.js"
 //   SET "NPX_CLI_JS=%~dp0\node_modules\npm\bin\npx-cli.js"
 //   FOR /F … ('CALL "%NODE_EXE%" "%NPM_PREFIX_JS%"') … SET "NPM_PREFIX_NPX_CLI_JS=%%F\node_modules\npm\bin\npx-cli.js"
 //   IF EXIST "%NPM_PREFIX_NPX_CLI_JS%" ( SET "NPX_CLI_JS=%NPM_PREFIX_NPX_CLI_JS%" )
 //   "%NODE_EXE%" "%NPX_CLI_JS%" %*
 //
-// The FOR line runs npm-prefix.js to find the global prefix, so an npm the
-// person upgraded with `npm i -g npm` wins over the bundled one. That prefix
-// is %APPDATA%\npm unless an npmrc says otherwise; it is checked here, and a
-// custom prefix falls back to the npm that shipped with node.
+// The FOR line asks npm for its global prefix (older npm: `npm-cli.js prefix
+// -g`), so an npm the person upgraded with `npm i -g npm` wins over the
+// bundled one. That prefix is %APPDATA%\npm unless an npmrc or
+// `npm_config_prefix` says otherwise, and npm's config loader is the only
+// thing that knows which. So the same script is asked the same way, as
+// `node.exe <script>` with no shell, in the child's env, and in its folder
+// when the caller passes `cwd` (a project .npmrc counts there). An answer that names no npm, or no answer at all,
+// leaves the bundled npm, as npm.cmd does.
 const NPM_LAUNCH = /^"%NODE_EXE%"\s+"%(NP[MX]_CLI_JS)%"\s+%\*$/i;
+const NPM_PREFIX_FOR = /^FOR\s+\/F\s+"delims="\s+%%F\s+IN\s+\('CALL\s+"%NODE_EXE%"\s+"%([A-Z_]+)%"((?:\s+[A-Za-z0-9-]+)*)'\)\s+DO\s+\($/i;
+const PREFIX_TIMEOUT_MS = 10000;
 
-const parseNpmLauncher = (lines, shimPath, { existsSync, execPath, env }) => {
+const declaredBesideShim = (lines, variable, shimDir) => {
+  const declared = lines
+    .map((line) => line.match(new RegExp(`^SET\\s+"${variable}=([^"]*)"$`, 'i')))
+    .find((match) => match && DP0_PREFIX.test(match[1]));
+  return declared ? fromShimDir(declared[1], shimDir) : null;
+};
+
+// The npm script npm.cmd would switch to after asking for the prefix, or
+// null to keep the bundled one.
+const npmFromPrefix = (lines, variable, shimDir, node, deps) => {
+  const forLine = lines.map((line) => line.match(NPM_PREFIX_FOR)).find(Boolean);
+  if (!forLine) return null;
+  const script = declaredBesideShim(lines, forLine[1], shimDir);
+  if (!script || !deps.existsSync(script)) return null;
+  const target = lines
+    .map((line) => line.match(new RegExp(`^SET\\s+"NPM_PREFIX_${variable}=%%F\\\\([^"%]+)"$`, 'i')))
+    .find(Boolean);
+  if (!target) return null;
+  let result;
+  try {
+    result = deps.spawnSync(node, [script, ...forLine[2].trim().split(/\s+/).filter(Boolean)], {
+      env: deps.env,
+      cwd: deps.cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: PREFIX_TIMEOUT_MS,
+      windowsHide: true,
+    });
+  } catch {
+    return null;
+  }
+  if (!result || result.status !== 0) return null;
+  // FOR /F runs its body once per line, so the last line is the one that sticks.
+  const prefix = String(result.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop();
+  if (!prefix || !win32.isAbsolute(prefix)) return null;
+  const upgraded = win32.join(prefix, target[1]);
+  return deps.existsSync(upgraded) ? upgraded : null;
+};
+
+const parseNpmLauncher = (lines, shimPath, deps) => {
   const launch = lines.map((line) => line.match(NPM_LAUNCH)).find(Boolean);
   if (!launch) return null;
   const variable = launch[1];
   const shimDir = win32.dirname(shimPath);
-  const declared = lines
-    .map((line) => line.match(new RegExp(`^SET\\s+"${variable}=([^"]*)"$`, 'i')))
-    .find((match) => match && DP0_PREFIX.test(match[1]));
-  const bundled = declared ? fromShimDir(declared[1], shimDir) : null;
+  const bundled = declaredBesideShim(lines, variable, shimDir);
   if (!bundled) return { command: null, reason: `${shimPath} does not name npm's script beside itself` };
-  const appData = envValue(env, 'APPDATA');
-  const upgraded = appData
-    ? win32.join(appData, 'npm', 'node_modules', 'npm', 'bin', win32.basename(bundled))
-    : null;
-  const script = upgraded && existsSync(upgraded) ? upgraded : bundled;
-  if (!existsSync(script)) return { command: null, reason: `${shimPath} points at ${script}, which does not exist` };
   const nodeBeside = win32.join(shimDir, 'node.exe');
-  return { command: existsSync(nodeBeside) ? nodeBeside : execPath, args: [script] };
+  const node = deps.existsSync(nodeBeside) ? nodeBeside : deps.execPath;
+  const script = npmFromPrefix(lines, variable, shimDir, node, deps) || bundled;
+  if (!deps.existsSync(script)) return { command: null, reason: `${shimPath} points at ${script}, which does not exist` };
+  return { command: node, args: [script] };
 };
 
 /**
@@ -166,14 +202,14 @@ const parseNpmLauncher = (lines, shimPath, { existsSync, execPath, env }) => {
  * @returns {{ command: string, args: string[] } | { command: null, reason: string }}
  */
 export const parseCmdShim = (text, shimPath, {
-  existsSync = realExistsSync, execPath = process.execPath, env = {},
+  existsSync = realExistsSync, execPath = process.execPath, env = {}, spawnSync = realSpawnSync, cwd,
 } = {}) => {
   const shimDir = win32.dirname(shimPath);
   const lines = String(text)
     .split(/\r?\n/)
     .map((line) => line.trim().replace(/^@/, ''))
     .filter(Boolean);
-  const npmLauncher = parseNpmLauncher(lines, shimPath, { existsSync, execPath, env });
+  const npmLauncher = parseNpmLauncher(lines, shimPath, { existsSync, execPath, env, spawnSync, cwd });
   if (npmLauncher) return npmLauncher;
   // The launch line is the one that forwards the caller's arguments. The
   // legacy shape has two (node beside the shim, else node on PATH) that name
@@ -256,7 +292,8 @@ const classify = (file, deps) => {
  * it cannot be. On anything but win32, `{ command: name, args: [] }`.
  * On win32, `source` is the file found on PATH (the shim, or the .exe).
  * `cwd` is the child's working directory; relative PATH entries are read
- * against it (unset: this process's, as before).
+ * against it (unset: this process's, as before), and npm's own launcher asks
+ * npm for its prefix there.
  *
  * @returns {{ command: string, args: string[], source?: string }
  *   | { command: null, reason: string, source?: string }}
@@ -267,10 +304,11 @@ export const resolveWindowsCommandWithReason = (name, {
   existsSync = realExistsSync,
   readFileSync = realReadFileSync,
   execPath = process.execPath,
+  spawnSync = realSpawnSync,
   cwd,
 } = {}) => {
   if (platform !== 'win32') return { command: name, args: [] };
-  const deps = { existsSync, readFileSync, execPath, env };
+  const deps = { existsSync, readFileSync, execPath, env, spawnSync, cwd };
   const exts = pathExtensions(env);
   const hasKnownExt = [...BINARY_EXTS, ...SHIM_EXTS].includes(extOf(name));
   // PATHEXT is upper case by convention and NTFS ignores case, so the

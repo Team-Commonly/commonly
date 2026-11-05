@@ -91,6 +91,30 @@ describe('the warm runs npm on Windows', () => {
     expect(spawnMock.mock.calls[0][1][0]).toBe(`${home}\\node_modules\\npm\\bin\\npm-cli.js`);
   });
 
+  // TASK-775 (CodeRabbit on #3437): npm.cmd asks npm for its global prefix
+  // and runs the npm there, so the warm must too. An npm left in
+  // %APPDATA%\npm is not the one a configured prefix names.
+  test('the warm runs the npm in npm\'s configured prefix, not one left in %APPDATA%\\npm', async () => {
+    const home = 'C:\\Users\\me\\.commonly';
+    const appData = 'C:\\Users\\me\\AppData\\Roaming';
+    const configured = 'D:\\npm-global\\node_modules\\npm\\bin\\npm-cli.js';
+    const prefixJs = `${NODEJS}\\node_modules\\npm\\bin\\npm-prefix.js`;
+    const resolution = windows({
+      [`${NODEJS}\\npm.cmd`]: NPM_NPM_CMD,
+      [NODE]: 'MZ',
+      [NPM_CLI]: '',
+      [prefixJs]: '',
+      [`${appData}\\npm\\node_modules\\npm\\bin\\npm-cli.js`]: '',
+      [configured]: '',
+    });
+    resolution.env.APPDATA = appData;
+    resolution.spawnSync = jest.fn(() => ({ status: 0, stdout: 'D:\\npm-global\r\n' }));
+    await runCommand('npm', ['view', '@commonlyai/mcp'], { cwd: home, resolution });
+    expect(resolution.spawnSync.mock.calls[0].slice(0, 2)).toEqual([NODE, [prefixJs]]);
+    expect(resolution.spawnSync.mock.calls[0][2].cwd).toBe(home);
+    expect(spawnMock.mock.calls[0].slice(0, 2)).toEqual([NODE, [configured, 'view', '@commonlyai/mcp']]);
+  });
+
   test('off Windows the name is spawned as given', async () => {
     const res = await runCommand('npm', ['view', '@commonlyai/mcp'], { resolution: { platform: 'linux' } });
     expect(res.ok).toBe(true);
