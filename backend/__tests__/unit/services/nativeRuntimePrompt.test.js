@@ -174,6 +174,22 @@ describe('a native turn\'s digest names only tools a native turn has', () => {
     expect(out).not.toContain(DIGEST_PULL_LINE);
   });
 
+  // CodeRabbit on #3460: an install that declares its tools may leave out
+  // commonly_read_context, and then the rewritten line names a tool that
+  // agent is not given either. The counts stay; only the pointer goes.
+  it('drops the pointer, and keeps the counts, when the agent is not given commonly_read_context', () => {
+    const out = nativeCueFromKernel(
+      buildUserMessage({ type: 'message.posted', payload: { content: `hello\n\n${digest}` } }, POD),
+      podId,
+      NATIVE_TOOL_NAMES,
+      { readContextOffered: false },
+    );
+    expect(toolsNamed(out)).toEqual([]);
+    expect(out).toContain('- thread 129000: 2 unread');
+    expect(out).toContain('context only, no reply needed');
+    expect(out.endsWith('- pod conversation: 1 unread')).toBe(true);
+  });
+
   it('leaves a person\'s own words alone when they name the tool', () => {
     const said = 'why did commonly_get_messages fail for you?';
     const out = native('chat.mention', `${said}\n\n${digest}`);
