@@ -1,0 +1,110 @@
+name: Backend on FerretDB
+
+# Self-hosted Commonly can run its Mongo layer on FerretDB, which speaks the
+# Mongo wire protocol and stores the data in Postgres (the DocumentDB
+# extension). Prod stays on MongoDB. This leg runs the backend unit tier
+# against FerretDB, and the same harness against MongoDB beside it, so a change
+# that only works on Mongo shows up here instead of on a self-hoster's box.
+#
+# Not a required check: a FerretDB-only failure is reported, not merge-blocking.
+# The step summary lists every failing suite per store.
+#
+# The image bundles PostGIS (GPL-2.0). We pull it by reference as a CI service
+# and do not redistribute it.
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ferretdb.yml'
+  schedule:
+    - cron: '30 8 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: backend-ferretdb-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend on ${{ matrix.store }} (${{ matrix.shard }}/3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        store: [ferretdb, mongo]
+        shard: [1, 2, 3]
+    services:
+      documentdb:
+        image: ghcr.io/ferretdb/postgres-documentdb:17-0.107.0-ferretdb-2.7.0
+        env:
+          POSTGRES_USER: ferret
+          POSTGRES_PASSWORD: ferret
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U ferret"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      ferretdb:
+        image: ghcr.io/ferretdb/ferretdb:2.7.0
+        env:
+          FERRETDB_POSTGRESQL_URL: postgres://ferret:ferret@documentdb:5432/postgres
+          FERRETDB_AUTH: 'false'
+        ports:
+          - 27018:27017
+      mongo:
+        image: mongo:7.0.14
+        ports:
+          - 27017:27017
+    env:
+      JWT_SECRET: test-jwt-secret
+      FRONTEND_URL: http://localhost:3000
+      # Read by __tests__/utils/testUtils.js: each suite gets its own database
+      # on this server instead of an in-memory mongod.
+      TEST_MONGO_URI: ${{ matrix.store == 'ferretdb' && 'mongodb://localhost:27018' || 'mongodb://localhost:27017' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: cd backend && npm ci --include=dev
+      # Backend service suites exercise the real CLI in a subprocess.
+      - run: cd cli && npm ci --include=dev
+      - name: Wait for the store
+        run: |
+          cd backend
+          for i in $(seq 1 60); do
+            node -e "require('mongoose').connect(process.env.TEST_MONGO_URI + '/ping').then(() => process.exit(0), () => process.exit(1))" && exit 0
+            sleep 2
+          done
+          echo "store at $TEST_MONGO_URI never answered"; exit 1
+      - name: Run backend tests
+        run: |
+          cd backend
+          npx jest --forceExit --shard=${{ matrix.shard }}/3 --json --outputFile=jest-results.json
+      - name: List failing suites
+        if: always()
+        run: |
+          cd backend
+          [ -f jest-results.json ] || exit 0
+          node -e "
+            const r = require('./jest-results.json');
+            const failed = r.testResults.filter((t) => t.status === 'failed');
+            const lines = ['### ${{ matrix.store }} shard ${{ matrix.shard }}: ' + failed.length + ' failing suites of ' + r.numTotalTestSuites, ''];
+            for (const t of failed) {
+              const first = (t.message || '').split('\n').find((l) => /Error|Expected|MongoServerError/.test(l)) || '';
+              lines.push('- ' + t.name.replace(process.cwd() + '/', '') + ': ' + first.trim().slice(0, 200).replace(/\u001b\[[0-9;]*m/g, ''));
+            }
+            require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          "
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-${{ matrix.store }}-${{ matrix.shard }}
+          path: backend/jest-results.json
+          if-no-files-found: ignore
