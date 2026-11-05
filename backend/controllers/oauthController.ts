@@ -392,9 +392,10 @@ exports.oauthCallback = async (req: any, res: any) => {
         }],
       });
       await user.save();
-      // F183: mirror the new account into PG `users` now. Best-effort; never fails sign-in.
+      // F183: start the PG `users` mirror now. Not awaited: a hung PG must not
+      // hold the sign-in, and mirrorUser never rejects.
       // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
-      await require('../services/pgMirrorWrite').mirrorUser(user);
+      void require('../services/pgMirrorWrite').mirrorUser(user);
       createdNewUser = true;
       await createDefaultWorkspacePod(user._id);
       joinCommunityPodBestEffort(user._id);

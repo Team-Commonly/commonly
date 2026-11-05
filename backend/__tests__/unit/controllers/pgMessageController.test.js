@@ -297,6 +297,31 @@ describe('pgMessageController', () => {
       expect(PGMessage.delete).not.toHaveBeenCalled();
     });
 
+    // CodeRabbit on #3500: an outage is not a verdict. A failed owner read
+    // still refuses (fail closed) but says 503, so the client retries rather
+    // than telling the real owner they are not allowed.
+    it('answers 503 and deletes nothing when the Mongo owner read fails', async () => {
+      const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+      MongoPod.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockRejectedValue(new Error('mongo down')) }),
+      });
+      const res = await del('real-owner');
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.status).not.toHaveBeenCalledWith(401);
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+      err.mockRestore();
+    });
+
+    it('refuses with 401 a pod id Mongo cannot parse: no pod, no owner', async () => {
+      const castError = Object.assign(new Error('Cast to ObjectId failed'), { name: 'CastError' });
+      MongoPod.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue({ lean: jest.fn().mockRejectedValue(castError) }),
+      });
+      const res = await del('someone');
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(PGMessage.delete).not.toHaveBeenCalled();
+    });
+
     it('still lets the author delete without consulting either owner', async () => {
       mongoOwner('real-owner');
       const res = await del('author');

@@ -23,14 +23,21 @@ Every Mongo write that adds or removes a pod member, or creates a pod, follows
 with a best-effort mirror write from `services/pgMirrorWrite.ts`:
 `mirrorMemberAdded`, `mirrorMemberRemoved`, `mirrorPodCreated`,
 `mirrorPodRenamed`, and `mirrorUser` after every User creation (signup, OAuth
-signup, `getOrCreateAgentUser`, local dev login). They never throw; a PG failure is logged as `[pg-mirror]`
-and the nightly job converges it. User label changes go through
+signup, `getOrCreateAgentUser`, local dev login). They never throw and never
+take longer than `MIRROR_TIMEOUT_MS` (1500 ms); a PG failure or hang is logged as `[pg-mirror]`
+and the nightly job converges it. On the signup and OAuth paths the user
+mirror is started but not awaited (`void mirrorUser(user)`), so a hung PG
+cannot hold the 201 or the redirect. Signup's workspace pod is mirrored once,
+by the queued `finishWorkspaceOnboarding` tail, not on the response path. User label changes go through
 `AgentIdentityService.syncUserToPostgreSQL`.
 
 `__tests__/unit/services/pgMirrorWriteSites.test.js` scans `controllers/`,
 `routes/` and `services/` for Mongo member mutations and pod creations without a
 mirror write nearby, and for User creations without `mirrorUser` /
-`syncUserToPostgreSQL`. A new site fails it until it mirrors, or until it is added
+`syncUserToPostgreSQL`. Comments are stripped before matching (a mirror call
+in a comment does not count), and patterns match across lines, so a `$pull: {`
+whose `members` sits on the next line is caught. Fixture tests in the same file
+pin each shape the detector must catch and one it must pass. A new site fails it until it mirrors, or until it is added
 to `ALLOWED` with the reason the mirror may lag.
 
 ## What caused the 2026-11-05 drift
@@ -68,21 +75,38 @@ to `ALLOWED` with the reason the mirror may lag.
   as explained.
 - Ghost memberships are deleted only through the fail-closed classifier in
   `services/podMemberClassifier.ts` (`classifyMemberRows`, shared with `scripts/cleanup-ghost-pod-members.ts`); if any pod
-  cannot be read, no ghost is deleted.
+  cannot be read, no ghost is deleted. If more than 20% of all `pod_members`
+  rows (and more than 10) classify as ghosts, none is deleted and SRE is paged:
+  that many ghosts means a Mongo read or classifier fault, not a night's drift.
+- **Works against a minutes-old snapshot, so it re-reads before each write.**
+  A pod field fix re-reads the Mongo pod and skips a field that changed since
+  (a rename in between is not reverted). A user sync re-reads the Mongo user and
+  the PG row: an account deleted since is not written, and a row already
+  anonymized (`Deleted user`, no picture) is never overwritten. A tombstone
+  beside a live Mongo user is a deletion in flight, counted as `users_deleting`.
+- A value PG cannot hold (a pod name over `VARCHAR(100)`, a label over 100) is
+  counted as `unrepairable` and left alone. It is neither a failed repair nor a
+  repeat; it needs a data or schema decision.
 - One `[pg-mirror-repair] repair …` line per change with the before-value. Pod
   fields are logged verbatim so a bad run can be undone; user labels and
   pictures are fingerprinted (`sha256:…`). No email is read.
 - One row per run in `pg_mirror_repair_runs` (migration 0008): `counts` (drift
-  observed before repair), `unexplained`, `mismatch_keys`, `error`. A row with
+  observed before repair), `unexplained`, `mismatch_keys` (every key seen),
+  `repaired_keys` (only the keys actually repaired), `error`. A row with
   `finished_at` NULL is an interrupted run.
 
 **Unexplained** = orphan pods + non-tombstone orphan users + failed repairs +
 unreadable pods + **repeats**: a `table:id:field` that differs again the night
-after an *applied* run, which means a live writer bypasses the mirror. Find it
+after the previous run *repaired* it (it is in that run's `repaired_keys`),
+which means a live writer bypasses the mirror. A key the previous run failed
+to repair, or only reported, is the same drift, not a repeat. Find it
 with the id and field in the `repeat` log line.
 
 **Alerts** go out as an ERROR line tagged `[pg-mirror-alert]` and a post to
-SRE's alerts pod (`spendAlarmService.pageSre`, `SPEND_ALARM_POD_ID`) when any
-`created_by` differs, any category grows by more than 20 over the previous run,
-there is any repeat, or the run fails. With no pod configured the log line
+SRE's alerts pod (`spendAlarmService.pageSre`, `SPEND_ALARM_POD_ID`) when a
+`created_by` mismatch appears that the previous run did not already see, any
+category grows by more than 20 over the previous run, there is any repeat, the
+ghost floor trips, or the run fails, including a failure before the run row
+exists (connection, lock, previous-run read, run-row insert), which then
+rethrows. With no pod configured the log line
 stands alone.

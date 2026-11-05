@@ -20,17 +20,22 @@
  *     account-deletion tombstone (accountDeletionService) and counts as
  *     explained.
  *   - Ghost memberships are deleted only through the fail-closed classifier
- *     in services/podMemberClassifier (shared with scripts/cleanup-ghost-pod-members); if any pod cannot be read
- *     no ghost is deleted.
+ *     in services/podMemberClassifier (shared with scripts/cleanup-ghost-pod-members);
+ *     if any pod cannot be read, or ghosts exceed GHOST_FLOOR_RATIO of all
+ *     rows, no ghost is deleted.
+ *   - The snapshot is minutes old by write time: each pod field fix and user
+ *     sync re-reads Mongo first, and a PG tombstone is never overwritten.
  *   - Every change logs one line with the before-value. Pod fields are logged
  *     verbatim (needed to undo a bad run); user labels and pictures are
  *     fingerprinted, and no email is ever read.
  *
  * Each run writes one row to `pg_mirror_repair_runs` (migration 0008) and one
  * summary log line. It alerts (an ERROR `[pg-mirror-alert]` log line, plus the
- * SRE alerts pod via spendAlarmService.pageSre) when any `created_by` differs,
- * when a category grows by more than 20 against the previous run, when a field
- * drifts again the night after an applied repair, or when the run fails.
+ * SRE alerts pod via spendAlarmService.pageSre) when a `created_by` mismatch
+ * appears that the previous run did not see, when a category grows by more
+ * than 20 against the previous run, when a key the previous run repaired
+ * drifts again, when the ghost floor trips, or when the run fails (before or
+ * after its run row exists).
  */
 import { createHash } from 'crypto';
 
@@ -85,14 +90,22 @@ export interface RepairReport {
 export const LOCK_KEYS = [313, 183];
 export const JUMP_THRESHOLD = 20;
 const TOMBSTONE_USERNAME = 'Deleted user';
+const USER_FIELDS = '_id username displayName isBot botMetadata profilePicture createdAt';
 const MAX_STORED_KEYS = 5000;
 const MAX_DETAIL_LINES = 200;
+/** Ghost deletes stop when more than this share of all pod_members rows are ghosts... */
+export const GHOST_FLOOR_RATIO = 0.2;
+/** ...and there are more than this many: a small instance's handful of ghosts is still repaired. */
+export const GHOST_FLOOR_MIN = 10;
+/** PG column widths (config/migrations/0001). A longer Mongo value cannot be mirrored. */
+const POD_FIELD_LIMITS: Record<string, number> = { name: 100, type: 50, created_by: 24 };
+const USERNAME_LIMIT = 100;
 
 const COUNT_KEYS = [
   'pods_missing', 'pods_name', 'pods_description', 'pods_type', 'pods_created_by', 'pods_orphan',
   'members_missing', 'members_ghost', 'members_orphan_pod', 'members_unreadable',
   'users_missing', 'users_username', 'users_profile_picture', 'users_is_bot', 'users_orphan', 'users_tombstone',
-  'repairs_failed', 'repeats',
+  'users_deleting', 'unrepairable', 'repairs_failed', 'repeats',
 ] as const;
 
 const TAG = '[pg-mirror-repair]';
@@ -147,30 +160,52 @@ export async function runPgMirrorRepair(options: RepairOptions = {}): Promise<Re
     return { ...report, skipped: 'no-pg' };
   }
 
-  const lockClient = await pool.connect();
-  let locked = false;
   try {
-    const lock = await lockClient.query(
-      'SELECT pg_try_advisory_lock($1::integer, $2::integer) AS acquired', LOCK_KEYS,
-    );
-    locked = lock.rows[0]?.acquired === true;
-    if (!locked) {
-      logger.warn(`${TAG} skipped: another run holds the advisory lock`);
-      return { ...report, skipped: 'locked' };
-    }
-    return await runLocked(pool, report, logger, page);
-  } finally {
+    const lockClient = await pool.connect();
+    let locked = false;
     try {
-      if (locked) await lockClient.query('SELECT pg_advisory_unlock($1::integer, $2::integer)', LOCK_KEYS);
-      lockClient.release();
-    } catch {
-      // A session that cannot unlock may still hold the lock: destroy it.
-      lockClient.release(true);
+      const lock = await lockClient.query(
+        'SELECT pg_try_advisory_lock($1::integer, $2::integer) AS acquired', LOCK_KEYS,
+      );
+      locked = lock.rows[0]?.acquired === true;
+      if (!locked) {
+        logger.warn(`${TAG} skipped: another run holds the advisory lock`);
+        return { ...report, skipped: 'locked' };
+      }
+      return await runLocked(pool, report, logger, page);
+    } finally {
+      try {
+        if (locked) await lockClient.query('SELECT pg_advisory_unlock($1::integer, $2::integer)', LOCK_KEYS);
+        lockClient.release();
+      } catch {
+        // A session that cannot unlock may still hold the lock: destroy it.
+        lockClient.release(true);
+      }
     }
+  } catch (error) {
+    // Anything that escapes runLocked's own recording: the connection, the
+    // lock, the previous-run read, the run-row insert. No run row says so, so
+    // the alert line and the page are the only record.
+    const message = ((error as Error)?.message || String(error)).slice(0, 200);
+    logger.error(`${ALERT_TAG} ${JSON.stringify({ run: report.runId ?? null, applied, alerts: [`run failed: ${message}`] })}`);
+    try {
+      await page(`[pg mirror] run failed before it could record itself (${applied ? 'applied' : 'report-only'}): `
+        + `${message}. Details: backend log tag ${TAG}.`);
+    } catch (pageError) {
+      logger.warn(`${TAG} SRE page failed; the ${ALERT_TAG} log line stands: ${(pageError as Error)?.message}`);
+    }
+    throw error;
   }
 }
 
-interface PreviousRun { applied: boolean; counts: Record<string, number>; keys: Set<string> }
+interface PreviousRun {
+  applied: boolean;
+  counts: Record<string, number>;
+  /** Every drift key the previous run observed. */
+  keys: Set<string>;
+  /** The keys it actually repaired. Only these can come back as a repeat. */
+  repairedKeys: Set<string>;
+}
 
 async function runLocked(
   pool: PgPool,
@@ -180,7 +215,7 @@ async function runLocked(
 ): Promise<RepairReport> {
   const { counts, applied } = report;
   const prevRow = (await pool.query(
-    `SELECT applied, counts, mismatch_keys FROM pg_mirror_repair_runs
+    `SELECT applied, counts, mismatch_keys, repaired_keys FROM pg_mirror_repair_runs
       WHERE finished_at IS NOT NULL AND error IS NULL
       ORDER BY started_at DESC, id DESC LIMIT 1`,
   )).rows[0];
@@ -188,6 +223,7 @@ async function runLocked(
     applied: prevRow.applied === true,
     counts: (prevRow.counts || {}) as Record<string, number>,
     keys: new Set((prevRow.mismatch_keys || []) as string[]),
+    repairedKeys: new Set((prevRow.repaired_keys || []) as string[]),
   } : null;
 
   const runId = Number((await pool.query(
@@ -196,6 +232,7 @@ async function runLocked(
   report.runId = runId;
 
   const keys: string[] = [];
+  const repaired: string[] = [];
   // One line per change, uncapped: the before-value is what undoes a bad run.
   const repairLine = (text: string) => {
     logger.info(`${TAG} ${applied ? 'repair' : 'would-repair'} ${text}`);
@@ -204,6 +241,15 @@ async function runLocked(
     counts.repairs_failed += 1;
     logger.warn(`${TAG} repair failed ${what}: ${(error as Error)?.message || String(error)}`);
   };
+  // A value PG cannot hold (wider than its column). Not a failure to retry and
+  // not a repeat: it needs a schema or data decision, so it is its own count.
+  const unrepairable = (what: string) => {
+    counts.unrepairable += 1;
+    logger.warn(`${TAG} unrepairable ${what}`);
+  };
+  const skippedChanged = (what: string) => {
+    logger.info(`${TAG} skip ${what}: changed since the snapshot; left as it now is`);
+  };
 
   try {
     // ── Read both sides first. A Mongo read failure aborts before any write.
@@ -211,8 +257,7 @@ async function runLocked(
       .select('_id name description type createdBy members').lean() as Array<{
         _id: unknown; name?: string; description?: string; type?: string; createdBy?: unknown; members?: unknown[];
       }>;
-    const mongoUsers = await User.find({})
-      .select('_id username displayName isBot botMetadata profilePicture createdAt');
+    const mongoUsers = await User.find({}).select(USER_FIELDS);
     const pgPods = (await pool.query('SELECT id, name, description, type, created_by FROM pods')).rows;
     const pgMembers = (await pool.query('SELECT pod_id, user_id FROM pod_members')).rows
       .map((r) => ({ podId: String(r.pod_id), userId: String(r.user_id) }));
@@ -231,9 +276,27 @@ async function runLocked(
       if (!applied) continue;
       try {
         // syncPodFromMongo takes the owner from Mongo and copies every member.
-        await syncPodFromMongo(podId, str(mp.createdBy));
+        if (!(await syncPodFromMongo(podId, str(mp.createdBy)))) {
+          skippedChanged(`pods id=${podId} insert (deleted from Mongo)`);
+          continue;
+        }
+        repaired.push(`pods:${podId}:row`);
       } catch (error) {
         failed(`pods id=${podId} insert`, error);
+        continue;
+      }
+      // syncPodFromMongo settles each member insert and never throws for one,
+      // so check which landed against Mongo's members as they are now.
+      try {
+        const fresh = await MongoPod.findById(podId).select('members').lean() as { members?: unknown[] } | null;
+        const landed = new Set((await pool.query('SELECT user_id FROM pod_members WHERE pod_id = $1', [podId]))
+          .rows.map((r) => String(r.user_id)));
+        for (const member of fresh?.members || []) {
+          const userId = String(member);
+          if (!landed.has(userId)) failed(`pod_members pod=${podId} user=${userId} add`, 'not written by the pod sync');
+        }
+      } catch (error) {
+        failed(`pods id=${podId} member check`, error);
       }
     }
 
@@ -246,26 +309,41 @@ async function runLocked(
       // A Mongo pod without an owner cannot fill a NOT NULL column: skip it.
       { field: 'created_by', want: (mp) => (mp.createdBy ? String(mp.createdBy) : null) },
     ];
+    const podFieldSelect = '_id name description type createdBy';
     for (const pp of pgPods) {
       const podId = String(pp.id);
       const mp = mongoPodById.get(podId);
       if (!mp) continue;
+      // Read once per pod, only when a write is due: the snapshot is minutes
+      // old by now, and a rename in between landed in both stores.
+      let fresh: typeof mongoPods[0] | null | undefined;
       for (const { field, want } of podFields) {
         const after = want(mp);
         if (after === null) continue;
         const before = pp[field];
         if (str(before) === after) continue;
-        counts[`pods_${field}`] += 1;
         keys.push(`pods:${podId}:${field}`);
+        if (after.length > POD_FIELD_LIMITS[field]) {
+          unrepairable(`pods id=${podId} field=${field} len=${after.length} limit=${POD_FIELD_LIMITS[field]}`);
+          continue;
+        }
+        counts[`pods_${field}`] += 1;
         repairLine(`pods id=${podId} field=${field} before=${verbatim(before)} after=${verbatim(after)}`);
         if (!applied) continue;
         try {
+          if (fresh === undefined) fresh = await MongoPod.findById(podId).select(podFieldSelect).lean();
+          const now = fresh ? want(fresh) : null;
+          if (now === null || now === str(before) || now.length > POD_FIELD_LIMITS[field]) {
+            skippedChanged(`pods id=${podId} field=${field}`);
+            continue;
+          }
           const res = await pool.query(
             `UPDATE pods SET ${field} = $1, updated_at = CURRENT_TIMESTAMP
               WHERE id = $2 AND ${field} IS NOT DISTINCT FROM $3`,
-            [after, podId, before ?? null],
+            [now, podId, before ?? null],
           );
           if (!res.rowCount) throw new Error('row changed during the run; left for the next run');
+          repaired.push(`pods:${podId}:${field}`);
         } catch (error) {
           failed(`pods id=${podId} field=${field}`, error);
         }
@@ -300,6 +378,7 @@ async function runLocked(
         if (!applied) continue;
         try {
           await PGPod.addMember(podId, userId);
+          repaired.push(`pod_members:${podId}:${userId}:missing`);
         } catch (error) {
           failed(`pod_members pod=${podId} user=${userId} add`, error);
         }
@@ -311,11 +390,21 @@ async function runLocked(
     counts.members_ghost = classified.ghostRows.length;
     counts.members_orphan_pod = classified.orphanRows.length;
     counts.members_unreadable = classified.unreadable;
-    const refuseGhostDeletes = classified.unreadable > 0;
-    if (refuseGhostDeletes) {
+    const ghostFloor = classified.ghostRows.length > GHOST_FLOOR_MIN
+      && classified.ghostRows.length > pgMembers.length * GHOST_FLOOR_RATIO;
+    const refuseGhostDeletes = classified.unreadable > 0 || ghostFloor;
+    if (classified.unreadable > 0) {
       counts.repairs_failed += classified.ghostRows.length;
       logger.warn(`${TAG} ghost deletes refused: ${classified.unreadable} row(s) on unreadable pods `
         + `(${classified.unreadablePodIds.slice(0, 20).join(',')})`);
+    }
+    if (ghostFloor) {
+      // A fifth of all memberships does not go stale overnight; a Mongo read
+      // or classifier fault does. Delete nothing and ask a human.
+      const what = `ghost deletes refused: ${classified.ghostRows.length} of ${pgMembers.length} pod_members rows `
+        + `classify as ghosts (over ${GHOST_FLOOR_RATIO * 100}%)`;
+      logger.warn(`${TAG} ${what}`);
+      report.alerts.push(what);
     }
     for (const row of classified.ghostRows as Array<{ podId: string; userId: string }>) {
       keys.push(`pod_members:${row.podId}:${row.userId}:ghost`);
@@ -323,6 +412,7 @@ async function runLocked(
       if (!applied || refuseGhostDeletes) continue;
       try {
         await pool.query('DELETE FROM pod_members WHERE pod_id = $1 AND user_id = $2', [row.podId, row.userId]);
+        repaired.push(`pod_members:${row.podId}:${row.userId}:ghost`);
       } catch (error) {
         failed(`pod_members pod=${row.podId} user=${row.userId} delete`, error);
       }
@@ -335,10 +425,18 @@ async function runLocked(
       const userId = String(user._id);
       mongoUserIds.add(userId);
       const pu = pgUserById.get(userId);
+      // accountDeletionService anonymizes the PG row before it deletes the
+      // Mongo user, so a tombstone beside a live Mongo row is a deletion in
+      // flight. Writing the real label back would un-anonymize the account.
+      if (pu && pu.username === TOMBSTONE_USERNAME && pu.profile_picture == null) {
+        counts.users_deleting += 1;
+        continue;
+      }
       const changes: string[] = [];
+      const changeKeys: string[] = [];
       if (!pu) {
         counts.users_missing += 1;
-        keys.push(`users:${userId}:row`);
+        changeKeys.push(`users:${userId}:row`);
         changes.push(`users id=${userId} field=row before=absent after=present`);
       } else {
         const want = {
@@ -348,28 +446,47 @@ async function runLocked(
         };
         if (str(pu.username) !== str(want.username)) {
           counts.users_username += 1;
-          keys.push(`users:${userId}:username`);
+          changeKeys.push(`users:${userId}:username`);
           changes.push(`users id=${userId} field=username before=${fingerprint(pu.username)}`
             + ` after=${fingerprint(want.username)}`);
         }
         if ((pu.profile_picture ?? null) !== want.profile_picture) {
           counts.users_profile_picture += 1;
-          keys.push(`users:${userId}:profile_picture`);
+          changeKeys.push(`users:${userId}:profile_picture`);
           changes.push(`users id=${userId} field=profile_picture before=${fingerprint(pu.profile_picture)}`
             + ` after=${fingerprint(want.profile_picture)}`);
         }
         if ((pu.is_bot === true) !== want.is_bot) {
           counts.users_is_bot += 1;
-          keys.push(`users:${userId}:is_bot`);
+          changeKeys.push(`users:${userId}:is_bot`);
           changes.push(`users id=${userId} field=is_bot before=${pu.is_bot === true} after=${want.is_bot}`);
         }
       }
       if (!changes.length) continue;
+      keys.push(...changeKeys);
+      const label = str(AgentIdentityService.chatUsernameFor(user));
+      if (label.length > USERNAME_LIMIT) {
+        unrepairable(`users id=${userId} field=username len=${label.length} limit=${USERNAME_LIMIT}`);
+        continue;
+      }
       changes.forEach(repairLine);
       if (!applied) continue;
       try {
-        const ok = await AgentIdentityService.syncUserToPostgreSQL(user);
+        // The snapshot is minutes old. Sync what Mongo holds now, and nothing
+        // for an account deleted (or being deleted) in between.
+        const current = await User.findById(userId).select(USER_FIELDS);
+        if (!current) {
+          skippedChanged(`users id=${userId} (deleted from Mongo)`);
+          continue;
+        }
+        const row = (await pool.query('SELECT username, profile_picture FROM users WHERE _id = $1', [userId])).rows[0];
+        if (row && row.username === TOMBSTONE_USERNAME && row.profile_picture == null) {
+          skippedChanged(`users id=${userId} (account deletion in flight)`);
+          continue;
+        }
+        const ok = await AgentIdentityService.syncUserToPostgreSQL(current);
         if (!ok) throw new Error('syncUserToPostgreSQL returned false');
+        repaired.push(...changeKeys);
       } catch (error) {
         failed(`users id=${userId} sync`, error);
       }
@@ -386,8 +503,8 @@ async function runLocked(
     }
 
     // ── a field that drifts again after an applied repair points at a live bypass writer
-    if (previous?.applied) {
-      report.repeats = [...new Set(keys)].filter((k) => previous.keys.has(k)).sort();
+    if (previous) {
+      report.repeats = [...new Set(keys)].filter((k) => previous.repairedKeys.has(k)).sort();
     }
     counts.repeats = report.repeats.length;
     report.repeats.slice(0, MAX_DETAIL_LINES).forEach((k) => {
@@ -398,8 +515,13 @@ async function runLocked(
       + counts.repeats + counts.members_unreadable;
 
     // ── alerts
-    if (counts.pods_created_by > 0) {
-      report.alerts.push(`created_by mismatches=${counts.pods_created_by} (${applied ? 'repaired' : 'report-only'})`);
+    // Page on created_by only for a pod the previous run did not already
+    // report; a standing mismatch on report-only nights pages once, not nightly.
+    const newCreatedBy = [...new Set(keys)]
+      .filter((k) => k.endsWith(':created_by') && !previous?.keys.has(k));
+    if (newCreatedBy.length > 0) {
+      report.alerts.push(`created_by mismatches=${counts.pods_created_by} (new=${newCreatedBy.length}) `
+        + `(${applied ? 'repaired' : 'report-only'})`);
     }
     if (previous) {
       for (const key of COUNT_KEYS) {
@@ -411,9 +533,12 @@ async function runLocked(
 
     await pool.query(
       `UPDATE pg_mirror_repair_runs
-          SET finished_at = CURRENT_TIMESTAMP, counts = $2::jsonb, unexplained = $3, mismatch_keys = $4::jsonb
+          SET finished_at = CURRENT_TIMESTAMP, counts = $2::jsonb, unexplained = $3, mismatch_keys = $4::jsonb,
+              repaired_keys = $5::jsonb
         WHERE id = $1`,
-      [runId, JSON.stringify(counts), report.unexplained, JSON.stringify([...new Set(keys)].slice(0, MAX_STORED_KEYS))],
+      [runId, JSON.stringify(counts), report.unexplained,
+        JSON.stringify([...new Set(keys)].slice(0, MAX_STORED_KEYS)),
+        JSON.stringify([...new Set(repaired)].slice(0, MAX_STORED_KEYS))],
     );
   } catch (error) {
     report.error = (error as Error)?.message || String(error);
@@ -448,4 +573,6 @@ async function runLocked(
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-module.exports = { runPgMirrorRepair, LOCK_KEYS, JUMP_THRESHOLD };
+module.exports = {
+  runPgMirrorRepair, LOCK_KEYS, JUMP_THRESHOLD, GHOST_FLOOR_RATIO, GHOST_FLOOR_MIN,
+};

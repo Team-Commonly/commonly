@@ -238,13 +238,19 @@ exports.deleteMessage = async (req: AuthRequest, res: Response): Promise<void> =
       // 2026-11-05), so trusting it let a wrong owner delete other people's
       // messages and refused the real one. A pod Mongo does not have, or a
       // malformed id, has no owner who may delete someone else's message.
+      // A failed read is an outage, not a verdict: it still deletes nothing,
+      // but answers 503 so the real owner is not told they lack the right.
       let ownerId = '';
       try {
         const mongoPod = await MongoPod.findById(message.pod_id).select('createdBy').lean() as
           { createdBy?: { toString(): string } } | null;
         ownerId = mongoPod?.createdBy ? String(mongoPod.createdBy) : '';
-      } catch {
-        ownerId = '';
+      } catch (ownerErr) {
+        if ((ownerErr as { name?: string })?.name !== 'CastError') {
+          console.error('Error in PG deleteMessage owner lookup:', (ownerErr as Error)?.message);
+          res.status(503).json({ msg: 'Could not check the pod owner; try again' });
+          return;
+        }
       }
       if (!ownerId || ownerId !== String(userId)) {
         res.status(401).json({ msg: 'Not authorized to delete this message' });

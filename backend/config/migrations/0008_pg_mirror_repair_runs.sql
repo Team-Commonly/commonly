@@ -8,8 +8,10 @@
 -- counts         drift per category, as observed before any repair
 -- unexplained    orphan pods + non-tombstone orphan users + failed repairs +
 --                fields that differed again the night after an applied repair
--- mismatch_keys  'table:id:field' keys seen this run; the next run compares
---                against them to spot a live writer that bypasses the mirror
+-- mismatch_keys  'table:id:field' keys seen this run; the next run pages on a
+--                created_by key that is not among them
+-- repaired_keys  the keys this run actually repaired; the same key drifting
+--                again the next night is a repeat (a live bypass writer)
 --
 -- Self-contained on purpose: no dependency on another migration's tables, so
 -- the file can be renumbered at merge time without edits.
@@ -21,6 +23,7 @@ CREATE TABLE IF NOT EXISTS pg_mirror_repair_runs (
   counts JSONB NOT NULL DEFAULT '{}'::jsonb,
   unexplained INTEGER NOT NULL DEFAULT 0,
   mismatch_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+  repaired_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
   error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pg_mirror_repair_runs_started_at

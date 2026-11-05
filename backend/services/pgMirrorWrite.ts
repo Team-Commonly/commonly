@@ -7,8 +7,9 @@
 // pgMirrorRepairService now repairs. These helpers close the known bypasses at
 // the source.
 //
-// Contract: call AFTER the Mongo write has succeeded. Never throws — a PG
-// failure is logged and returned as `false`, and the request answers from
+// Contract: call AFTER the Mongo write has succeeded. Never throws, and never
+// takes longer than MIRROR_TIMEOUT_MS — a PG failure or hang is logged and
+// returned as `false`, and the request answers from
 // Mongo as before. Nothing reads these rows for a permission decision (see
 // pgMessageController.deleteMessage and podWriteAccessService), so a missed
 // mirror write costs freshness until the nightly repair, never access.
@@ -20,14 +21,35 @@ const pgConfigured = (): boolean => Boolean(process.env.PG_HOST);
 // eslint-disable-next-line @typescript-eslint/no-require-imports, global-require
 const pgPod = () => require('../models/pg/Pod');
 
+/**
+ * The longest a request waits on a mirror write. Join, leave and install await
+ * these on the request path, so a hung PG would otherwise hang the request.
+ * On timeout the write keeps running in the background and the caller gets
+ * `false`; the nightly repair catches it if it never lands.
+ */
+export const MIRROR_TIMEOUT_MS = 1500;
+
 const attempt = async (label: string, write: () => Promise<unknown>): Promise<boolean> => {
   if (!pgConfigured()) return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await write();
+    const running = Promise.resolve().then(write);
+    // A write that rejects after the timeout must not surface as unhandled.
+    running.catch(() => {});
+    await Promise.race([
+      running,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`timed out after ${MIRROR_TIMEOUT_MS} ms`)), MIRROR_TIMEOUT_MS);
+        timer.unref?.();
+      }),
+    ]);
     return true;
   } catch (error) {
-    console.warn(`[pg-mirror] ${label} failed:`, (error as Error)?.message || String(error));
+    // The label carries request ids: keep it out of the format-string position.
+    console.warn('[pg-mirror] %s failed: %s', label, (error as Error)?.message || String(error));
     return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 };
 
@@ -102,5 +124,5 @@ export const mirrorPodRenamed = (
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  mirrorMemberAdded, mirrorMemberRemoved, mirrorPodRenamed, mirrorPodCreated, mirrorUser,
+  mirrorMemberAdded, mirrorMemberRemoved, mirrorPodRenamed, mirrorPodCreated, mirrorUser, MIRROR_TIMEOUT_MS,
 };

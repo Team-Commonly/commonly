@@ -12,6 +12,7 @@
 const { Pool } = require('pg');
 const Pod = require('../../models/Pod');
 const User = require('../../models/User');
+const PGPod = require('../../models/pg/Pod');
 const {
   setupMongoDb, closeMongoDb, clearMongoDb, setupPgDb, closePgDb,
 } = require('../utils/testUtils');
@@ -66,6 +67,8 @@ real('pgMirrorRepairService on real PostgreSQL and MongoDB', () => {
     const { pool: appPool } = require('../../config/db-pg');
     if (appPool?.end) await appPool.end();
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   beforeEach(async () => {
     await clearMongoDb();
@@ -198,12 +201,34 @@ real('pgMirrorRepairService on real PostgreSQL and MongoDB', () => {
     expect(repairs.some((l) => l.includes('alice-old'))).toBe(false);
   });
 
-  it('alerts SRE on any created_by mismatch, repaired or not', async () => {
+  it('alerts SRE on a created_by mismatch the previous run did not see', async () => {
     const report = await run();
     expect(report.alerts).toEqual(expect.arrayContaining([expect.stringMatching(/created_by/)]));
     expect(page).toHaveBeenCalledTimes(1);
-    expect(page.mock.calls[0][0]).toMatch(/created_by mismatches=1/);
+    expect(page.mock.calls[0][0]).toMatch(/created_by mismatches=1 \(new=1\)/);
     expect(lines.some(([level, l]) => level === 'error' && l.startsWith('[pg-mirror-alert]'))).toBe(true);
+  });
+
+  // #3500 review: report-only nights would otherwise page for the same 39 pods
+  // every night until someone turned apply on.
+  it('does not page again for a created_by mismatch the previous run already reported', async () => {
+    await run();
+    page.mockClear();
+    const report = await run();
+    expect(report.counts.pods_created_by).toBe(1);
+    expect(report.alerts.filter((a) => /created_by/.test(a))).toEqual([]);
+    expect(page).not.toHaveBeenCalled();
+  });
+
+  it('pages for a new created_by mismatch even while an old one persists', async () => {
+    await run();
+    // podB is missing from PG in the fixture; a bypass writer adds it with the wrong owner.
+    await pg.query(`INSERT INTO pods (id, name, description, type, created_by)
+      VALUES ($1, 'Pod B', '', 'chat', $2) ON CONFLICT (id) DO NOTHING`, [String(podB._id), String(bob._id)]);
+    page.mockClear();
+    const report = await run();
+    expect(report.counts.pods_created_by).toBe(2);
+    expect(page).toHaveBeenCalledWith(expect.stringMatching(/created_by mismatches=2 \(new=1\)/));
   });
 
   it('raises no alert on a run with nothing alarming', async () => {
@@ -252,6 +277,177 @@ real('pgMirrorRepairService on real PostgreSQL and MongoDB', () => {
     // orphan pod + orphan user + the repeat
     expect(report.unexplained).toBe(3);
     expect(lines.some(([level, l]) => level === 'error' && l.includes('repeat') && l.includes(String(podA._id)))).toBe(true);
+  });
+
+  // #3500 review: a repeat means a repair landed and the drift came back. A
+  // key the previous run tried and failed to fix is still the same drift.
+  it('does not call it a repeat when the previous run failed to repair that key', async () => {
+    const id = (x) => String(x._id);
+    const realAdd = PGPod.addMember.bind(PGPod);
+    jest.spyOn(PGPod, 'addMember').mockImplementation((podId, userId) => (
+      podId === id(podA) && userId === id(alice) ? Promise.reject(new Error('pg hiccup')) : realAdd(podId, userId)));
+    const first = await run({ apply: true });
+    expect(first.counts.repairs_failed).toBe(1);
+    PGPod.addMember.mockRestore();
+    const report = await run({ apply: true });
+    expect(report.counts.members_missing).toBe(1);
+    expect(report.repeats).toEqual([]);
+  });
+
+  // A value PG cannot hold (pods.name is VARCHAR(100)) is reported in its own
+  // category: it is not a failed repair, and not a repeat the next night.
+  it('reports a value PG cannot hold as unrepairable, not as a failure or a repeat', async () => {
+    const long = 'L'.repeat(101);
+    await Pod.updateOne({ _id: podA._id }, { $set: { name: long } });
+    const first = await run({ apply: true });
+    expect(first.counts.unrepairable).toBe(1);
+    expect(first.counts.repairs_failed).toBe(0);
+    expect((await pg.query('SELECT name FROM pods WHERE id = $1', [String(podA._id)])).rows[0].name).toBe('Old A');
+    expect(lines.some(([, l]) => l.includes(`unrepairable pods id=${String(podA._id)} field=name`))).toBe(true);
+    const second = await run({ apply: true });
+    expect(second.counts.unrepairable).toBe(1);
+    expect(second.repeats).toEqual([]);
+  });
+
+  // #3500 review (HIGH): the users loop works from a snapshot. An account
+  // deleted after it is taken has its PG row anonymized ("Deleted user", no
+  // picture) and its Mongo row removed; re-syncing from the stale snapshot
+  // would put the real name back.
+  it('does not re-sync a user deleted after the snapshot, so the tombstone stays', async () => {
+    const id = (x) => String(x._id);
+    const realFind = User.find.bind(User);
+    jest.spyOn(User, 'find').mockImplementationOnce(() => ({
+      select: async (fields) => {
+        const docs = await realFind({}).select(fields);
+        await pg.query("UPDATE users SET username = 'Deleted user', profile_picture = NULL WHERE _id = $1", [id(alice)]);
+        await User.deleteOne({ _id: alice._id });
+        return docs;
+      },
+    }));
+    const report = await run({ apply: true });
+    const row = (await pg.query('SELECT username, profile_picture FROM users WHERE _id = $1', [id(alice)])).rows[0];
+    expect(row).toEqual({ username: 'Deleted user', profile_picture: null });
+    expect(report.counts.repairs_failed).toBe(0);
+  });
+
+  // Each user guard alone: Mongo deleted after the snapshot, PG not yet
+  // anonymized. Syncing the snapshot would insert a row for a gone account.
+  it('does not write a user that left Mongo after the snapshot', async () => {
+    const id = (x) => String(x._id);
+    const realFind = User.find.bind(User);
+    jest.spyOn(User, 'find').mockImplementationOnce(() => ({
+      select: async (fields) => {
+        const docs = await realFind({}).select(fields);
+        await User.deleteOne({ _id: bob._id });
+        return docs;
+      },
+    }));
+    const report = await run({ apply: true });
+    expect((await pg.query('SELECT _id FROM users WHERE _id = $1', [id(bob)])).rows).toEqual([]);
+    expect(report.counts.repairs_failed).toBe(0);
+  });
+
+  it('syncs the label Mongo holds at write time, not the snapshot\'s', async () => {
+    const id = (x) => String(x._id);
+    const realFind = User.find.bind(User);
+    jest.spyOn(User, 'find').mockImplementationOnce(() => ({
+      select: async (fields) => {
+        const docs = await realFind({}).select(fields);
+        await User.updateOne({ _id: alice._id }, { $set: { displayName: 'Alice Now' } });
+        return docs;
+      },
+    }));
+    await run({ apply: true });
+    expect((await pg.query('SELECT username FROM users WHERE _id = $1', [id(alice)])).rows[0].username).toBe('Alice Now');
+  });
+
+  // PG anonymized after the snapshot while the Mongo row still exists (the
+  // deletion flow's own order): the in-loop PG re-read is the only guard.
+  it('does not overwrite a tombstone written after the snapshot', async () => {
+    const id = (x) => String(x._id);
+    const realFindById = User.findById.bind(User);
+    jest.spyOn(User, 'findById').mockImplementation((userId) => {
+      const query = realFindById(userId);
+      if (String(userId) !== id(alice)) return query;
+      return {
+        select: async (fields) => {
+          const doc = await query.select(fields);
+          await pg.query("UPDATE users SET username = 'Deleted user', profile_picture = NULL WHERE _id = $1", [id(alice)]);
+          return doc;
+        },
+      };
+    });
+    await run({ apply: true });
+    const row = (await pg.query('SELECT username, profile_picture FROM users WHERE _id = $1', [id(alice)])).rows[0];
+    expect(row).toEqual({ username: 'Deleted user', profile_picture: null });
+  });
+
+  it('never overwrites a tombstone row, even while the Mongo user still exists', async () => {
+    const id = (x) => String(x._id);
+    // accountDeletionService anonymizes PG before it deletes the Mongo row.
+    await pg.query("UPDATE users SET username = 'Deleted user', profile_picture = NULL WHERE _id = $1", [id(alice)]);
+    const reported = await run();
+    expect(reported.counts.users_deleting).toBe(1);
+    expect(reported.counts.users_username).toBe(0);
+    await run({ apply: true });
+    const row = (await pg.query('SELECT username, profile_picture FROM users WHERE _id = $1', [id(alice)])).rows[0];
+    expect(row).toEqual({ username: 'Deleted user', profile_picture: null });
+  });
+
+  // #3500 review (HIGH): a rename between the Mongo snapshot and the PG read
+  // lands in both stores; the stale snapshot must not revert it.
+  it('does not revert a pod renamed after the Mongo snapshot', async () => {
+    const id = (x) => String(x._id);
+    const stale = await Pod.find({}).select('_id name description type createdBy members').lean();
+    await Pod.updateOne({ _id: podA._id }, { $set: { name: 'Renamed' } });
+    await pg.query("UPDATE pods SET name = 'Renamed' WHERE id = $1", [id(podA)]);
+    jest.spyOn(Pod, 'find').mockImplementationOnce(() => ({ select: () => ({ lean: async () => stale }) }));
+    const report = await run({ apply: true });
+    expect((await pg.query('SELECT name FROM pods WHERE id = $1', [id(podA)])).rows[0].name).toBe('Renamed');
+    expect(report.counts.repairs_failed).toBe(0);
+    // the other drifted fields on the same pod are still repaired
+    expect((await pg.query('SELECT created_by FROM pods WHERE id = $1', [id(podA)])).rows[0].created_by).toBe(id(owner));
+  });
+
+  // CodeRabbit on #3500: syncPodFromMongo settles member inserts and never
+  // throws for one, so a missing pod's repair must check its members landed.
+  it('counts a member insert that failed while repairing a missing pod', async () => {
+    const id = (x) => String(x._id);
+    const realAdd = PGPod.addMember.bind(PGPod);
+    jest.spyOn(PGPod, 'addMember').mockImplementation((podId, userId) => (
+      podId === id(podB) && userId === id(bob) ? Promise.reject(new Error('pg hiccup')) : realAdd(podId, userId)));
+    const report = await run({ apply: true });
+    expect(report.counts.repairs_failed).toBe(1);
+    expect(lines.some(([, l]) => l.includes(`repair failed pod_members pod=${id(podB)} user=${id(bob)}`))).toBe(true);
+  });
+
+  // #3500 review (LOW): a mass of ghosts means the classifier or Mongo is
+  // wrong, not that a fifth of all memberships went stale overnight.
+  it('deletes no ghost and pages when more than 20% of pod_members rows classify as ghosts', async () => {
+    const id = (x) => String(x._id);
+    const values = Array.from({ length: 12 }, (_, i) => `('${id(podA)}', '${String(i).padStart(24, 'd')}')`);
+    await pg.query(`INSERT INTO pod_members (pod_id, user_id) VALUES ${values.join(', ')}`);
+    const before = (await pg.query('SELECT count(*)::int n FROM pod_members')).rows[0].n;
+    const report = await run({ apply: true });
+    expect(report.counts.members_ghost).toBe(13);
+    // podB's members were added; no row was deleted
+    const after = (await pg.query('SELECT count(*)::int n FROM pod_members WHERE pod_id <> $1', [id(podB)])).rows[0].n;
+    expect(after).toBe(before + 1);
+    expect(report.alerts).toEqual(expect.arrayContaining([expect.stringMatching(/ghost deletes refused/)]));
+    expect(page).toHaveBeenCalledWith(expect.stringMatching(/ghost deletes refused/));
+  });
+
+  // #3500 review (LOW) + CodeRabbit: a failure before the run row exists (the
+  // previous-run read, the run-row insert, the lock) used to escape silently.
+  it('logs an alert and pages when the run fails before it starts, then rethrows', async () => {
+    await pg.query('ALTER TABLE pg_mirror_repair_runs RENAME TO pg_mirror_repair_runs_away');
+    try {
+      await expect(run({ apply: true })).rejects.toThrow(/pg_mirror_repair_runs/);
+      expect(lines.some(([level, l]) => level === 'error' && l.startsWith('[pg-mirror-alert]'))).toBe(true);
+      expect(page).toHaveBeenCalledWith(expect.stringMatching(/failed/));
+    } finally {
+      await pg.query('ALTER TABLE pg_mirror_repair_runs_away RENAME TO pg_mirror_repair_runs');
+    }
   });
 
   it('does not call it a repeat when the previous run only reported', async () => {

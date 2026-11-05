@@ -23,10 +23,11 @@ const MEMBER_WINDOW = 30;
 const CREATE_WINDOW = 50;
 
 const MEMBER_MUTATION = [
-  /\$addToSet:\s*\{\s*members\b/,
-  /\$push:\s*\{\s*members\b/,
-  /\$pull:\s*\{\s*members\b/,
-  /\.members\.push\(/,
+  /\$addToSet:\s*\{\s*['"]?members\b/,
+  /\$push:\s*\{\s*['"]?members\b/,
+  /\$pull:\s*\{\s*['"]?members\b/,
+  /\$set:\s*\{\s*['"]?members\b/,
+  /\.members\s*\.\s*(push|pull|addToSet|splice)\(/,
   /\.members\s*=(?!=)/,
 ];
 const POD_CREATE = [/\bPod\.create\(/, /\bnew Pod\(/];
@@ -41,6 +42,9 @@ const ALLOWED = {
   'services/accountDeletionService.ts: { $pull: { members: userId } });':
     'Mirrored in the same deletion flow by anonymizeChatAuthor, a separate function'
     + ' (DELETE FROM pod_members for the non-DM pods this $pull covers).',
+  'controllers/authController.ts: const pod = await Pod.create({':
+    'Mirrored by the queued finishWorkspaceOnboarding tail (syncUserToPostgreSQL, then'
+    + ' syncPodFromMongo), off the signup response path by design (TASK-149, #3500 review).',
 };
 
 const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -49,27 +53,107 @@ const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((entr
   return entry.name.endsWith('.ts') ? [full] : [];
 });
 
+// Blanks comments but keeps every newline, so line numbers still match the
+// file. Strings are skipped over so a `//` inside a URL is not a comment.
+const stripComments = (text) => text.replace(
+  /(`(?:\\.|[^`\\])*`|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*")|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
+  (match, str) => (str !== undefined ? str : match.replace(/[^\n]/g, ' ')),
+);
+
+// Patterns match across newlines (`\s*` spans them), so a mutation split over
+// lines is caught at the line it starts on. A mirror call only counts when it
+// is code, never when it is a comment.
+const scanSource = (text, patterns, window, mirror = MIRROR) => {
+  const code = stripComments(text);
+  const lines = code.split('\n');
+  const starts = new Set();
+  patterns.forEach((re) => {
+    const global = new RegExp(re.source, 'g');
+    let m = global.exec(code);
+    while (m) {
+      starts.add(code.slice(0, m.index).split('\n').length - 1);
+      m = global.exec(code);
+    }
+  });
+  const hits = [];
+  [...starts].sort((a, b) => a - b).forEach((i) => {
+    const line = lines[i];
+    if (/PGPod|pg\/Pod/.test(line)) return;
+    // The window ends at the next function boundary, so a mirror write in
+    // the following method cannot vouch for this one.
+    const tail = lines.slice(i + 1, i + window);
+    const end = tail.findIndex((l) => FUNCTION_START.test(l));
+    const after = [line, ...(end === -1 ? tail : tail.slice(0, end))].join('\n');
+    if (mirror.test(after)) return;
+    hits.push(line.trim());
+  });
+  return hits;
+};
+
 const unmirrored = (patterns, window, mirror = MIRROR) => {
   const found = [];
   for (const dir of DIRS) {
     for (const file of walk(path.join(ROOT, dir))) {
-      const lines = fs.readFileSync(file, 'utf8').split('\n');
-      lines.forEach((line, i) => {
-        if (/^\s*(\/\/|\*)/.test(line)) return;
-        if (/PGPod|pg\/Pod/.test(line)) return;
-        if (!patterns.some((re) => re.test(line))) return;
-        // The window ends at the next function boundary, so a mirror write in
-        // the following method cannot vouch for this one.
-        const tail = lines.slice(i + 1, i + window);
-        const end = tail.findIndex((l) => FUNCTION_START.test(l));
-        const after = [line, ...(end === -1 ? tail : tail.slice(0, end))].join('\n');
-        if (mirror.test(after)) return;
-        found.push(`${path.relative(ROOT, file)}: ${line.trim()}`);
-      });
+      scanSource(fs.readFileSync(file, 'utf8'), patterns, window, mirror)
+        .forEach((hit) => found.push(`${path.relative(ROOT, file)}: ${hit}`));
     }
   }
   return found;
 };
+
+// #3500 review: the detector itself, on fixtures. Each case is a shape the
+// line-by-line scan used to miss, so the scan below could pass while a real
+// bypass slipped through.
+describe('PG mirror write-site detector', () => {
+  const flagged = (src) => scanSource(src, MEMBER_MUTATION, MEMBER_WINDOW);
+
+  it('catches a $pull whose members key sits on the next line', () => {
+    expect(flagged([
+      'async function leave() {',
+      '  await Pod.updateOne({ _id: id }, { $pull: {',
+      '    members: userId } });',
+      '}',
+    ].join('\n'))).toHaveLength(1);
+  });
+
+  it('catches $set: { members, .members.pull(, .members.addToSet( and .members.push(', () => {
+    ['  await Pod.updateOne({ _id: id }, { $set: { members: next } });',
+      '  pod.members.pull(userId);',
+      '  pod.members.addToSet(userId);',
+      '  pod.members.push(userId);',
+    ].forEach((line) => {
+      expect(flagged(`async function f() {\n${line}\n}`)).toHaveLength(1);
+    });
+  });
+
+  it('does not let a mirror call that is only in a comment vouch for a mutation', () => {
+    expect(flagged([
+      'async function join() {',
+      '  pod.members.push(userId);',
+      '  // mirrorMemberAdded is not needed here',
+      '  /* PGPod.addMember(podId, userId) */',
+      '}',
+    ].join('\n'))).toHaveLength(1);
+  });
+
+  it('ignores a mutation that is itself commented out', () => {
+    expect(flagged([
+      'async function f() {',
+      '  const x = 1; // pod.members.push(userId);',
+      '  /* await Pod.updateOne({}, { $pull: { members: u } }); */',
+      '}',
+    ].join('\n'))).toEqual([]);
+  });
+
+  it('accepts a real mirror call after the mutation', () => {
+    expect(flagged([
+      'async function join() {',
+      '  pod.members.push(userId);',
+      '  await mirrorMemberAdded(podId, userId);',
+      '}',
+    ].join('\n'))).toEqual([]);
+  });
+});
 
 describe('PG mirror write sites (F183)', () => {
   it('every Mongo pod-member mutation writes the PG mirror or is allowed with a reason', () => {
