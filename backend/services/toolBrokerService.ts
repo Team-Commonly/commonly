@@ -23,8 +23,11 @@ import { parseSeatPushArgs, pushSeatBranch, SeatPushError } from './seatGithubPu
 import { assertOwnedSeatBranch, commitSeatFiles, prepareCommitFiles } from './seatGithubCommit';
 import { grantHoldsPrWrite, isPrWriteTool } from './prWriteScope';
 
+// Typed, so tsc refuses a call that names an installation without its App (F172).
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const GitHubAppService = require('./githubAppService');
+const GitHubAppService: typeof import('./githubAppService').default = require('./githubAppService');
+import { githubAppOfConfig, isGithubAppConfigured, type GitHubAppName } from './githubAppNames';
+import { assertConnectStillProven } from './githubConnectReproof';
 
 export interface ToolDefinitionBase {
   name: string;
@@ -45,9 +48,15 @@ export interface ToolDefinitionBase {
 export interface GithubToolConnection {
   type: 'github-app';
   installationId: string;
+  /** The GitHub App that signs for `installationId` (F172). Required, so no path can drop it to a default. */
+  app: GitHubAppName;
   owner: string;
   repo: string;
   ownerUserId?: string;
+  /** The Integration row (F172): the key of the per-call Connect re-proof. */
+  rowId?: string;
+  /** GitHub's repository id recorded at proof. A Connect token is narrowed to it. */
+  repositoryId?: string;
 }
 
 /**
@@ -232,10 +241,12 @@ const listIssues: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       perPage,
     });
-    return { issues: (issues || []).map((issue: Record<string, unknown>) => issueView(issue)) };
+    return { issues: ((issues || []) as unknown as Array<Record<string, unknown>>).map((issue) => issueView(issue)) };
   },
 };
 
@@ -273,12 +284,14 @@ const createIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       title,
       body: rawArgs.body as string | undefined,
       labels: rawArgs.labels as string[] | undefined,
     });
-    return issueView(issue as Record<string, unknown>);
+    return issueView(issue as unknown as Record<string, unknown>);
   },
 };
 
@@ -299,10 +312,12 @@ const getIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       issueNumber: positiveInteger(rawArgs.issueNumber, 'issueNumber'),
     });
-    return issueView(issue as Record<string, unknown>);
+    return issueView(issue as unknown as Record<string, unknown>);
   },
 };
 
@@ -323,6 +338,8 @@ const getPullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
@@ -376,6 +393,8 @@ const createPullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       title,
       head,
@@ -485,6 +504,8 @@ const commentPullRequest: GithubToolDefinition = {
         owner: connection.owner,
         repo: connection.repo,
         installationId: connection.installationId,
+        app: connection.app,
+        repositoryId: connection.repositoryId,
         forceApp: true,
         pullNumber,
       });
@@ -499,6 +520,8 @@ const commentPullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       issueNumber: pullNumber,
       body,
@@ -534,6 +557,8 @@ const reviewPullRequestComment: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       pullNumber,
       event: 'COMMENT',
@@ -606,12 +631,14 @@ const listPullRequestFiles: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
     });
     let remaining = PR_FILES_PATCH_TOTAL_MAX_BYTES;
     return {
-      files: (files || []).map((file: Record<string, unknown>) => {
+      files: ((files || []) as Array<Record<string, unknown>>).map((file) => {
         const view = prFileView(file, remaining);
         if (typeof view.patch === 'string') remaining -= Buffer.byteLength(view.patch, 'utf8');
         return view;
@@ -643,6 +670,8 @@ const commentIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       issueNumber,
       body,
@@ -677,10 +706,12 @@ const closeIssue: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       issueNumber,
     });
-    return issueView(issue as Record<string, unknown>);
+    return issueView(issue as unknown as Record<string, unknown>);
   },
 };
 
@@ -707,6 +738,8 @@ const mergePullRequest: GithubToolDefinition = {
       owner: connection.owner,
       repo: connection.repo,
       installationId: connection.installationId,
+      app: connection.app,
+      repositoryId: connection.repositoryId,
       forceApp: true,
       pullNumber,
     }) as Record<string, unknown>;
@@ -737,6 +770,8 @@ const mergePullRequest: GithubToolDefinition = {
         owner: connection.owner,
         repo: connection.repo,
         installationId: connection.installationId,
+        app: connection.app,
+        repositoryId: connection.repositoryId,
         forceApp: true,
         pullNumber: positiveInteger(rawArgs.pullNumber, 'pullNumber'),
         mergeMethod: mergeMethod as 'merge' | 'squash' | 'rebase' | undefined,
@@ -996,7 +1031,8 @@ const resolveConnection = async (
     revokedAt?: Date | null;
     createdBy?: unknown;
     createdAt?: unknown;
-    config?: { installationId?: string; owner?: string; repo?: string };
+    _id?: unknown;
+    config?: { installationId?: string; owner?: string; repo?: string; app?: unknown; repositoryId?: unknown };
   } | null;
   const config = row?.config;
   if (
@@ -1037,12 +1073,30 @@ const resolveConnection = async (
     );
   }
 
+  // The App that signs is the row's, never the grant's or the caller's. A row
+  // naming no App predates F172 and is the tools App's; a value that names no
+  // App at all is refused rather than signed with either key.
+  const app = githubAppOfConfig(config.app);
+  if (!app) {
+    throw new RoomGrantError('connection_mismatch', 'grant connection names an unknown GitHub App', 403);
+  }
+  if (app === 'connect' && !isGithubAppConfigured('connect')) {
+    throw new RoomGrantError(
+      'github_app_not_configured',
+      'the Commonly Connect GitHub App is not configured on this instance',
+      503,
+    );
+  }
+
   return {
     type: 'github-app',
     installationId: String(config.installationId),
+    app,
     owner: String(config.owner),
     repo: String(config.repo),
     ownerUserId: row.createdBy ? String(row.createdBy) : undefined,
+    rowId: row._id ? String(row._id) : undefined,
+    ...(app === 'connect' && config.repositoryId ? { repositoryId: String(config.repositoryId) } : {}),
   };
 };
 
@@ -1306,6 +1360,8 @@ const providerConnection = (connection: ToolConnection): ToolConnection => (conn
   : {
     type: 'github-app',
     installationId: connection.installationId,
+    app: connection.app,
+    ...(connection.repositoryId ? { repositoryId: connection.repositoryId } : {}),
     owner: connection.owner,
     repo: connection.repo,
   });
@@ -1315,6 +1371,17 @@ const asGithubConnection = (connection: ToolConnection): GithubToolConnection =>
     throw new RoomGrantError('connection_mismatch', 'grant connection is not a GitHub App installation', 403);
   }
   return connection;
+};
+
+/** F172 HOLD 1: every non-read call on a Connect connection re-proves the owner's access. */
+const assertConnectWriteProven = async (
+  definition: ToolDefinition,
+  connection: ToolConnection,
+  options: { fresh?: boolean } = {},
+): Promise<void> => {
+  if (definition.connectionType !== 'github-app' || connection.type !== 'github-app') return;
+  if (definition.requiredWriteMode === 'read' || connection.app !== 'connect') return;
+  await assertConnectStillProven(connection, options);
 };
 
 const asHostedConnection = (connection: ToolConnection): HostedToolConnection => {
@@ -1632,6 +1699,10 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       assertPinnedArgValues(definition, parsedArgs);
     }
 
+    // F172 HOLD 1: a Connect write runs on the owner's CURRENT access, proved
+    // before it parks or runs. A short per-row cache absorbs bursts.
+    await assertConnectWriteProven(definition, connection);
+
     const irreversible = typeof definition.irreversible === 'function'
       ? definition.irreversible(parsedArgs)
       : definition.irreversible === true;
@@ -1904,6 +1975,9 @@ export const executeApprovedToolCall = async (
       ? providerArgsFromApprovedEnvelope(input.args, asGithubConnection(connection))
       : input.args;
     if (input.tool === 'github.push_branch') parseSeatPushArgs(executionArgs, input.agentUserId);
+    // Proved again at the moment of the write, never from the cache: an
+    // approval can land long after the park.
+    await assertConnectWriteProven(definition, connection, { fresh: true });
     const budgetEntries = await budgetEntriesFor(grant);
     if (input.tool === 'github.push_branch') budgetEntries.push(...seatPushBudgetEntries(input));
     if (budgetEntries.length > 0 && !await reserveBudgetLineage(budgetEntries)) {

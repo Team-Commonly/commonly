@@ -175,6 +175,26 @@ describe('installable catalog service', () => {
     expect(Integration.find).not.toHaveBeenCalled();
   });
 
+  it('per-repository GitHub rows (F172) are offered by their row id, never by the installation they share', async () => {
+    process.env.GITHUB_APP_ID = 'app-1';
+    process.env.GITHUB_APP_PRIVATE_KEY = 'pem';
+    mockInstallables([], [githubTool()]);
+    InstallableInstallation.find.mockReturnValue(lean([]));
+    Integration.find.mockReturnValue(lean([
+      { _id: 'row-widget', type: 'github-app', status: 'connected', createdBy: userId,
+        config: { app: 'connect', installationId: '7001', owner: 'Outside-Team', repo: 'Widget' } },
+      { _id: 'row-gadget', type: 'github-app', status: 'connected', createdBy: userId,
+        config: { app: 'connect', installationId: '7001', owner: 'Outside-Team', repo: 'Gadget' } },
+    ]));
+    const tool = (await catalogFor(userId)).installables.find((entry) => entry.list === 'tools');
+    expect(tool.connections).toEqual([
+      { connectionId: 'row-widget', owner: 'Outside-Team', repo: 'Widget' },
+      { connectionId: 'row-gadget', owner: 'Outside-Team', repo: 'Gadget' },
+    ]);
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
+  });
+
   it('the catalogue returns the GitHub tool Installable with its tools, broker and the caller\'s connections, on the tools list', async () => {
     process.env.GITHUB_APP_ID = 'app-1';
     process.env.GITHUB_APP_PRIVATE_KEY = 'pem';

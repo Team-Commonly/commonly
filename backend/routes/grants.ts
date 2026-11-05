@@ -1,4 +1,5 @@
 import dualAuth, { resolveDualAuthCredential } from '../middleware/dualAuth';
+import { githubAppOfConfig, isGithubAppConfigured } from '../services/githubAppNames';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { cloudflareIpRateLimitKeyGenerator } from '../middleware/ipRateLimit';
@@ -402,6 +403,22 @@ router.post('/', grantRateLimit, auth, async (req: AuthenticatedRequest, res: ex
       }
     } else if (connection.type !== 'github-app' || !isConnected || !installationId) {
       return res.status(403).json({ error: 'connection_mismatch', message: 'connection is not a connected GitHub App installation' });
+    }
+    if (!hosted) {
+      // F172: the App that signs is the row's. A row naming no App is a tools
+      // row; one naming neither App is not a connection the broker can run.
+      const githubApp = githubAppOfConfig(connection.config?.app);
+      if (!githubApp) {
+        return res.status(403).json({ error: 'connection_mismatch', message: 'connection names an unknown GitHub App' });
+      }
+      // A Connect grant is not minted while this instance cannot sign for
+      // Connect, so an owner never holds a grant every call would refuse.
+      if (githubApp === 'connect' && !isGithubAppConfigured('connect')) {
+        return res.status(503).json({
+          error: 'github_app_not_configured',
+          message: 'the Commonly Connect GitHub App is not configured on this instance',
+        });
+      }
     }
     if (body.installationId !== undefined) {
       return res.status(400).json({ error: 'invalid_installation', message: 'installationId is set by the server from the connection, not the caller' });

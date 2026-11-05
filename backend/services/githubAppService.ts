@@ -1,5 +1,8 @@
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
+import {
+  GITHUB_APP_NAMES, githubAppCredentials, githubAppOfConfig, type GitHubAppName,
+} from './githubAppNames';
 
 export interface GitHubToken {
   token: string;
@@ -28,59 +31,71 @@ export interface GitHubIssue {
   milestone?: { title: string } | null;
 }
 
-interface ListIssuesOptions {
+/**
+ * An installation, named together with the App that signs for it (F172), and
+ * for a Connect row the one repository its token is narrowed to. The App is
+ * required wherever an installation is: tsc refuses a call that names an
+ * installation and drops its App.
+ */
+export interface InstallationSigner {
+  installationId: string;
+  app: GitHubAppName;
+  /** GitHub's repository id. A Connect token is minted for this repository only. */
+  repositoryId?: string;
+}
+
+/** Either no installation (the instance default, or the PAT), or an installation with its App. */
+type InstallationTarget =
+  | { installationId?: undefined; app?: undefined; repositoryId?: undefined }
+  | InstallationSigner;
+
+type ListIssuesOptions = InstallationTarget & {
   owner?: string;
   repo?: string;
   perPage?: number;
-  installationId?: string;
   forceApp?: boolean;
 }
 
-interface CreateIssueOptions {
+type CreateIssueOptions = InstallationTarget & {
   owner?: string;
   repo?: string;
   title: string;
   body?: string;
   labels?: string[];
-  installationId?: string;
   forceApp?: boolean;
 }
 
-interface IssueCommentOptions {
+type IssueCommentOptions = InstallationTarget & {
   owner?: string;
   repo?: string;
   issueNumber: number;
   body: string;
-  installationId?: string;
   forceApp?: boolean;
 }
 
-interface CloseIssueOptions {
+type CloseIssueOptions = InstallationTarget & {
   owner?: string;
   repo?: string;
   issueNumber: number;
   comment?: string;
-  installationId?: string;
   forceApp?: boolean;
 }
 
-interface IssueNumberOptions {
+type IssueNumberOptions = InstallationTarget & {
   owner?: string;
   repo?: string;
   issueNumber: number;
-  installationId?: string;
   forceApp?: boolean;
 }
 
-interface PullRequestOptions {
+type PullRequestOptions = InstallationTarget & {
   owner?: string;
   repo?: string;
   pullNumber: number;
-  installationId?: string;
   forceApp?: boolean;
 }
 
-interface MergePullRequestOptions extends PullRequestOptions {
+type MergePullRequestOptions = PullRequestOptions & {
   mergeMethod?: 'merge' | 'squash' | 'rebase';
   commitTitle?: string;
   commitMessage?: string;
@@ -95,17 +110,16 @@ interface PullDiffOptions {
   pullNumber: number;
 }
 
-interface PullReviewOptions {
+type PullReviewOptions = InstallationTarget & {
   owner?: string;
   repo?: string;
   pullNumber: number;
   event: PullReviewEvent;
   body?: string;
-  installationId?: string;
   forceApp?: boolean;
 }
 
-interface CreatePullRequestOptions {
+type CreatePullRequestOptions = InstallationTarget & {
   owner?: string;
   repo?: string;
   title: string;
@@ -113,53 +127,122 @@ interface CreatePullRequestOptions {
   base: string;
   body?: string;
   draft?: boolean;
-  installationId?: string;
   forceApp?: boolean;
 }
 
 /** Git Data API calls the broker's `github.commit_files` makes. App-only: every caller passes an installation. */
-interface GitDataOptions {
+type GitDataOptions = InstallationSigner & {
   owner: string;
   repo: string;
-  installationId: string;
   forceApp?: boolean;
-}
+};
 
 /** One path segment at a time, so a `/` in a branch stays a separator and nothing else is read as one. */
 const refPath = (branch: string): string => branch.split('/').map(encodeURIComponent).join('/');
+
+export { GITHUB_APP_NAMES, githubAppOfConfig, type GitHubAppName };
+
+export class GitHubAppNotConfiguredError extends Error {
+  code = 'github_app_not_configured';
+
+  constructor(public app: GitHubAppName) {
+    super('github_app_not_configured');
+  }
+}
+
+/** A Connect token request that names no single, valid repository id. */
+export class GitHubRepositoryRequiredError extends Error {
+  code = 'github_repository_required';
+
+  constructor() {
+    super('github_repository_required');
+  }
+}
+
+/** GitHub's repository id as a positive safe integer, or null. Digits only, no sign, no fraction. */
+const repositoryIdNumber = (value: unknown): number | null => {
+  if (typeof value !== 'string' || !/^\d{1,16}$/.test(value)) return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+};
+
+/**
+ * Reuse a cached installation token only while it has this long left, so a
+ * caller that runs several requests (or a slow git push) never starts on a
+ * token about to expire. GitHub issues them for an hour.
+ */
+export const TOKEN_REUSE_MARGIN_MS = 10 * 60 * 1000;
+
+/** Keyed `${app}:${installationId}`, so one App's token is never served for the other's installation. */
+const installationTokenCache = new Map<string, GitHubToken>();
 
 /**
  * GitHubAppService — generates short-lived installation access tokens
  * using a GitHub App's private key (RS256 JWT).
  *
- * Required env vars:
- *   GITHUB_APP_ID                         — numeric app ID from GitHub App settings
- *   GITHUB_APP_PRIVATE_KEY                — PEM private key (from GCP SM)
- *   GITHUB_APP_INSTALLATION_ID_COMMONLY   — pre-known installation ID for Team-Commonly/commonly
+ * Env vars:
+ *   GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY                   — the tools App
+ *   GITHUB_CONNECT_APP_ID / GITHUB_CONNECT_APP_PRIVATE_KEY   — the Connect App (optional)
+ *   GITHUB_APP_INSTALLATION_ID_COMMONLY   — pre-known tools installation for Team-Commonly/commonly
  */
 class GitHubAppService {
+  /** The App's id and key, or null when either is unset. */
+  static appCredentials(app: GitHubAppName = 'tools'): { id: string; key: string } | null {
+    return githubAppCredentials(app);
+  }
+
+  /** Whether this App can sign. */
+  static isAppConfigured(app: GitHubAppName): boolean {
+    return this.appCredentials(app) !== null;
+  }
+
   /**
    * Generate a short-lived JWT to authenticate as the GitHub App itself (valid 10 min).
    * Used as a stepping stone to get installation access tokens.
    */
-  static generateAppJWT(): string {
+  static generateAppJWT(app: GitHubAppName = 'tools'): string {
+    const credentials = this.appCredentials(app);
+    // The tools App keeps its old behaviour (jwt.sign reports the missing
+    // key). Connect refuses by name and never reaches for another key.
+    if (!credentials && app !== 'tools') throw new GitHubAppNotConfiguredError(app);
     const now = Math.floor(Date.now() / 1000);
     return jwt.sign(
-      { iat: now - 60, exp: now + 600, iss: process.env.GITHUB_APP_ID },
-      process.env.GITHUB_APP_PRIVATE_KEY as string,
+      { iat: now - 60, exp: now + 600, iss: credentials ? credentials.id : process.env.GITHUB_APP_ID },
+      (credentials ? credentials.key : process.env.GITHUB_APP_PRIVATE_KEY) as string,
       { algorithm: 'RS256' },
     );
   }
 
   /**
    * Exchange an installation ID for a short-lived installation access token (valid 1 hour).
-   * This token is what agents use with `gh` CLI and `git`.
+   * This token is what agents use with `gh` CLI and `git`. Cached per (App, installation).
    */
-  static async getInstallationToken(installationId: string | number): Promise<GitHubToken> {
-    const appJWT = this.generateAppJWT();
+  static async getInstallationToken(
+    installationId: string | number,
+    app: GitHubAppName,
+    repositoryId?: string,
+    options: { fresh?: boolean } = {},
+  ): Promise<GitHubToken> {
+    if (!GITHUB_APP_NAMES.includes(app)) throw new GitHubAppNotConfiguredError(app);
+    // A Connect token is narrowed to the connection's one repository (F172 M1),
+    // defence in depth under the per-call proof. Tools tokens are unchanged.
+    // A Connect request with no valid repository id refuses: it must never
+    // mint an installation-wide token.
+    let narrowTo: number | null = null;
+    if (app === 'connect') {
+      narrowTo = repositoryIdNumber(repositoryId);
+      if (narrowTo === null) throw new GitHubRepositoryRequiredError();
+    }
+    const cacheKey = `${app}:${installationId}:${narrowTo ?? '*'}`;
+    const cached = installationTokenCache.get(cacheKey);
+    if (!options.fresh && cached && cached.expiresAt
+      && Date.parse(cached.expiresAt) - Date.now() > TOKEN_REUSE_MARGIN_MS) {
+      return cached;
+    }
+    const appJWT = this.generateAppJWT(app);
     const res = await axios.post(
       `https://api.github.com/app/installations/${installationId}/access_tokens`,
-      {},
+      narrowTo !== null ? { repository_ids: [narrowTo] } : {},
       {
         headers: {
           Authorization: `Bearer ${appJWT}`,
@@ -168,7 +251,14 @@ class GitHubAppService {
         },
       },
     );
-    return { token: res.data.token, expiresAt: res.data.expires_at };
+    const token: GitHubToken = { token: res.data.token, expiresAt: res.data.expires_at };
+    if (token.token && token.expiresAt) installationTokenCache.set(cacheKey, token);
+    return token;
+  }
+
+  /** Tests only: forget every cached installation token. */
+  static _resetTokenCache(): void {
+    installationTokenCache.clear();
   }
 
   /**
@@ -245,23 +335,41 @@ class GitHubAppService {
    * Supplying an installationId (or forceApp) is an app-only request, so a
    * broker tool stays fail-closed even if its caller forgets to pass forceApp.
    */
-  static async _apiHeaders(installationId?: string, forceApp = false): Promise<Record<string, string>> {
+  static async _apiHeaders(
+    installationId?: string,
+    forceApp = false,
+    appName?: GitHubAppName,
+    repositoryId?: string,
+  ): Promise<Record<string, string>> {
+    // An installation is signed only by the App the caller names with it. A
+    // JS caller that names one without an App is refused, never defaulted.
+    if (installationId !== undefined && appName === undefined) throw new Error('github_app_required');
+    const app: GitHubAppName = appName ?? 'tools';
     // An explicit installationId is app-only even when it is empty, so a blank
     // value can neither pick the default installation nor reach the PAT.
-    const appOnly = forceApp || installationId !== undefined;
+    const appOnly = forceApp || installationId !== undefined || app !== 'tools';
     if (installationId !== undefined && !installationId) throw new Error('github_not_configured');
-    const resolvedInstallationId = installationId || process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY;
-    const appConfigured = !!(
-      process.env.GITHUB_APP_ID
-      && process.env.GITHUB_APP_PRIVATE_KEY
-      && resolvedInstallationId
-    );
     let credential: string | undefined;
-    if (appConfigured) {
-      credential = (await this.getInstallationToken(resolvedInstallationId as string)).token;
-    } else if (!appOnly && process.env.GITHUB_PAT) {
-      console.warn('[github] GitHub App not configured; falling back to GITHUB_PAT');
-      credential = process.env.GITHUB_PAT;
+    if (app !== 'tools') {
+      // A Connect call names its own installation and is signed by its own
+      // App or not at all: no default installation, no PAT, no tools key.
+      if (!GITHUB_APP_NAMES.includes(app)) throw new GitHubAppNotConfiguredError(app);
+      if (!installationId) throw new Error('github_not_configured');
+      if (!this.isAppConfigured(app)) throw new GitHubAppNotConfiguredError(app);
+      credential = (await this.getInstallationToken(installationId, app, repositoryId)).token;
+    } else {
+      const resolvedInstallationId = installationId || process.env.GITHUB_APP_INSTALLATION_ID_COMMONLY;
+      const appConfigured = !!(
+        process.env.GITHUB_APP_ID
+        && process.env.GITHUB_APP_PRIVATE_KEY
+        && resolvedInstallationId
+      );
+      if (appConfigured) {
+        credential = (await this.getInstallationToken(resolvedInstallationId as string, 'tools')).token;
+      } else if (!appOnly && process.env.GITHUB_PAT) {
+        console.warn('[github] GitHub App not configured; falling back to GITHUB_PAT');
+        credential = process.env.GITHUB_PAT;
+      }
     }
     if (!credential) throw new Error('github_not_configured');
     return {
@@ -274,8 +382,8 @@ class GitHubAppService {
   /**
    * List open issues for a repo (excludes pull requests).
    */
-  static async listOpenIssues({ owner = 'Team-Commonly', repo = 'commonly', perPage = 20, installationId, forceApp }: ListIssuesOptions = {}): Promise<GitHubIssue[]> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+  static async listOpenIssues({ owner = 'Team-Commonly', repo = 'commonly', perPage = 20, installationId, forceApp, app, repositoryId }: ListIssuesOptions = {}): Promise<GitHubIssue[]> {
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/issues?state=open&per_page=${perPage}`,
       { headers },
@@ -286,8 +394,8 @@ class GitHubAppService {
   /**
    * Create a new GitHub issue.
    */
-  static async createIssue({ owner = 'Team-Commonly', repo = 'commonly', title, body, labels, installationId, forceApp }: CreateIssueOptions): Promise<GitHubIssue> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+  static async createIssue({ owner = 'Team-Commonly', repo = 'commonly', title, body, labels, installationId, forceApp, app, repositoryId }: CreateIssueOptions): Promise<GitHubIssue> {
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const payload: Record<string, unknown> = { title };
     if (body) payload.body = body;
     if (labels?.length) payload.labels = labels;
@@ -302,8 +410,8 @@ class GitHubAppService {
   /**
    * Add a comment to an existing issue.
    */
-  static async addIssueComment({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, body, installationId, forceApp }: IssueCommentOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+  static async addIssueComment({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, body, installationId, forceApp, app, repositoryId }: IssueCommentOptions): Promise<unknown> {
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.post(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`,
       { body },
@@ -315,11 +423,12 @@ class GitHubAppService {
   /**
    * Close an issue (optionally with a final comment).
    */
-  static async closeIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, comment, installationId, forceApp }: CloseIssueOptions): Promise<unknown> {
+  static async closeIssue(options: CloseIssueOptions): Promise<unknown> {
+    const { owner = 'Team-Commonly', repo = 'commonly', issueNumber, comment, forceApp } = options;
     if (comment) {
-      await this.addIssueComment({ owner, repo, issueNumber, body: comment, installationId, forceApp });
+      await this.addIssueComment({ ...options, owner, repo, issueNumber, body: comment });
     }
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(options.installationId, forceApp, options.app, options.repositoryId);
     const res = await axios.patch(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
       { state: 'closed' },
@@ -329,8 +438,8 @@ class GitHubAppService {
   }
 
   /** Fetch one issue without exposing the server credential to the caller. */
-  static async getIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, installationId, forceApp }: IssueNumberOptions): Promise<GitHubIssue> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+  static async getIssue({ owner = 'Team-Commonly', repo = 'commonly', issueNumber, installationId, forceApp, app, repositoryId }: IssueNumberOptions): Promise<GitHubIssue> {
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`,
       { headers },
@@ -339,8 +448,8 @@ class GitHubAppService {
   }
 
   /** Fetch one pull request. */
-  static async getPullRequest({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId, forceApp }: PullRequestOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+  static async getPullRequest({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId, forceApp, app, repositoryId }: PullRequestOptions): Promise<unknown> {
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}`,
       { headers },
@@ -351,9 +460,9 @@ class GitHubAppService {
   /** Create a pull request without returning the App credential to the seat. */
   static async createPullRequest({
     owner = 'Team-Commonly', repo = 'commonly', title, head, base, body, draft,
-    installationId, forceApp,
+    installationId, forceApp, app, repositoryId,
   }: CreatePullRequestOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.post(
       `https://api.github.com/repos/${owner}/${repo}/pulls`,
       { title, head, base, ...(body !== undefined ? { body } : {}), ...(draft !== undefined ? { draft } : {}) },
@@ -363,8 +472,8 @@ class GitHubAppService {
   }
 
   /** List files changed by one pull request. */
-  static async listPullRequestFiles({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId, forceApp }: PullRequestOptions): Promise<unknown[]> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+  static async listPullRequestFiles({ owner = 'Team-Commonly', repo = 'commonly', pullNumber, installationId, forceApp, app, repositoryId }: PullRequestOptions): Promise<unknown[]> {
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/files`,
       { headers },
@@ -375,9 +484,9 @@ class GitHubAppService {
   /** Merge one pull request using the connected GitHub App installation. */
   static async mergePullRequest({
     owner = 'Team-Commonly', repo = 'commonly', pullNumber, mergeMethod, commitTitle, commitMessage,
-    installationId, forceApp, sha,
+    installationId, forceApp, app, repositoryId, sha,
   }: MergePullRequestOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const payload: Record<string, unknown> = {};
     if (sha) payload.sha = sha;
     if (mergeMethod) payload.merge_method = mergeMethod;
@@ -395,9 +504,9 @@ class GitHubAppService {
 
   /** The commit a branch points at, or null when the branch does not exist. */
   static async getBranchHead({
-    owner, repo, branch, installationId, forceApp,
+    owner, repo, branch, installationId, forceApp, app, repositoryId,
   }: GitDataOptions & { branch: string }): Promise<string | null> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     try {
       const res = await axios.get(
         `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${refPath(branch)}`,
@@ -417,16 +526,16 @@ class GitHubAppService {
 
   /** The tree a commit records. */
   static async getCommitTree({
-    owner, repo, sha, installationId, forceApp,
+    owner, repo, sha, installationId, forceApp, app, repositoryId,
   }: GitDataOptions & { sha: string }): Promise<string> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}/git/commits/${sha}`, { headers });
     return String((res.data as { tree?: { sha?: string } })?.tree?.sha || '');
   }
 
   /** The repository's default branch, as GitHub reports it now. */
-  static async getDefaultBranch({ owner, repo, installationId, forceApp }: GitDataOptions): Promise<string> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+  static async getDefaultBranch({ owner, repo, installationId, forceApp, app, repositoryId }: GitDataOptions): Promise<string> {
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}`, { headers });
     return String((res.data as { default_branch?: string })?.default_branch || '');
   }
@@ -437,12 +546,12 @@ class GitHubAppService {
    * must not read an absent entry as "not there".
    */
   static async getTreeEntries({
-    owner, repo, sha, installationId, forceApp,
+    owner, repo, sha, installationId, forceApp, app, repositoryId,
   }: GitDataOptions & { sha: string }): Promise<{
     entries: Array<{ path: string; type: string; mode: string; sha: string }>;
     truncated: boolean;
   }> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.get(
       `https://api.github.com/repos/${owner}/${repo}/git/trees/${sha}?recursive=1`,
       { headers },
@@ -458,11 +567,11 @@ class GitHubAppService {
   }
 
   /** A tree that is `baseTree` with each file's text written as a regular (100644) blob. */
-  static async createTextTree({ owner, repo, baseTree, files, installationId, forceApp }: GitDataOptions & {
+  static async createTextTree({ owner, repo, baseTree, files, installationId, forceApp, app, repositoryId }: GitDataOptions & {
     baseTree: string;
     files: Array<{ path: string; content: string }>;
   }): Promise<string> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.post(
       `https://api.github.com/repos/${owner}/${repo}/git/trees`,
       {
@@ -474,12 +583,12 @@ class GitHubAppService {
     return String((res.data as { sha?: string })?.sha || '');
   }
 
-  static async createCommit({ owner, repo, message, tree, parents, installationId, forceApp }: GitDataOptions & {
+  static async createCommit({ owner, repo, message, tree, parents, installationId, forceApp, app, repositoryId }: GitDataOptions & {
     message: string;
     tree: string;
     parents: string[];
   }): Promise<string> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const res = await axios.post(
       `https://api.github.com/repos/${owner}/${repo}/git/commits`,
       { message, tree, parents },
@@ -489,11 +598,11 @@ class GitHubAppService {
   }
 
   /** Create a branch. GitHub refuses (422) when it already exists. */
-  static async createBranchRef({ owner, repo, branch, sha, installationId, forceApp }: GitDataOptions & {
+  static async createBranchRef({ owner, repo, branch, sha, installationId, forceApp, app, repositoryId }: GitDataOptions & {
     branch: string;
     sha: string;
   }): Promise<void> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     await axios.post(
       `https://api.github.com/repos/${owner}/${repo}/git/refs`,
       { ref: `refs/heads/${branch}`, sha },
@@ -502,11 +611,11 @@ class GitHubAppService {
   }
 
   /** Move a branch forward. Never forced: GitHub refuses (422) anything but a fast-forward. */
-  static async fastForwardBranchRef({ owner, repo, branch, sha, installationId, forceApp }: GitDataOptions & {
+  static async fastForwardBranchRef({ owner, repo, branch, sha, installationId, forceApp, app, repositoryId }: GitDataOptions & {
     branch: string;
     sha: string;
   }): Promise<void> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     await axios.patch(
       `https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${refPath(branch)}`,
       { sha, force: false },
@@ -537,9 +646,9 @@ class GitHubAppService {
    * non-empty `body` for REQUEST_CHANGES and COMMENT (the route enforces this).
    */
   static async createPullReview({
-    owner = 'Team-Commonly', repo = 'commonly', pullNumber, event, body, installationId, forceApp,
+    owner = 'Team-Commonly', repo = 'commonly', pullNumber, event, body, installationId, forceApp, app, repositoryId,
   }: PullReviewOptions): Promise<unknown> {
-    const headers = await this._apiHeaders(installationId, forceApp);
+    const headers = await this._apiHeaders(installationId, forceApp, app, repositoryId);
     const payload: Record<string, unknown> = { event };
     if (body) payload.body = body;
     const res = await axios.post(

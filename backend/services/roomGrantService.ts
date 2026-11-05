@@ -727,27 +727,46 @@ export const assertGrantUsable = async (
 export const revokeConnectionGrants = async (options: {
   connection?: {
     _id?: unknown;
+    type?: unknown;
     installationId?: unknown;
     config?: { installationId?: unknown };
   } | null;
   revokedBy: string;
 }): Promise<number> => {
-  const identifiers = new Set<string>();
   const connection = options.connection;
-  if (connection?._id) identifiers.add(String(connection._id));
-  // Both slots independently: they are written together today, but the
+  const rowId = connection?._id ? String(connection._id) : '';
+  // A per-repository GitHub App row (F172) carries its installation only in
+  // `config` and shares it with every other repository on that installation.
+  // Its grants name the row `_id` (the only id that finds it), so removing
+  // one repository must not reach a sibling's grants through the shared id.
+  const perRepositoryRow = connection?.type === 'github-app' && !connection?.installationId;
+  // Both slots independently: they are written together on legacy rows, but the
   // top-level one is request-supplied on some rows and the config one is
   // server-owned, so a grant may have been minted against either (Vera 74451).
-  if (connection?.installationId) identifiers.add(String(connection.installationId));
-  if (connection?.config?.installationId) identifiers.add(String(connection.config.installationId));
-  if (identifiers.size === 0) return 0;
+  const installationIds = new Set<string>();
+  if (!perRepositoryRow) {
+    if (connection?.installationId) installationIds.add(String(connection.installationId));
+    if (connection?.config?.installationId) installationIds.add(String(connection.config.installationId));
+  }
+  if (!rowId && installationIds.size === 0) return 0;
 
-  const addressed = [...identifiers];
+  const clauses: Array<Record<string, unknown>> = [];
+  if (rowId) clauses.push({ connectionId: rowId }, { connectionRowId: rowId });
+  if (installationIds.size > 0) {
+    const addressed = [...installationIds];
+    // L1: a grant reached through the installation id belongs to THIS row only
+    // when it is bound to no row (minted before binding existed) or to this
+    // one. A grant bound to a newer per-repository row on the same
+    // installation also stores the installation id, and is not this row's.
+    clauses.push({
+      $and: [
+        { $or: [{ connectionId: { $in: addressed } }, { installationId: { $in: addressed } }] },
+        { $or: [{ connectionRowId: null }, ...(rowId ? [{ connectionRowId: rowId }] : [])] },
+      ],
+    });
+  }
   const grants = await RoomGrant.find({
-    $or: [
-      { connectionId: { $in: addressed } },
-      { installationId: { $in: addressed } },
-    ],
+    $or: clauses,
   }).select('grantId').lean() as Array<{ grantId?: string }>;
 
   let revoked = 0;

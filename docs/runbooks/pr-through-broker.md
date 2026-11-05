@@ -5,9 +5,107 @@ names (F94), opens a pull request on the connected repository through the
 grant broker. It never holds git or a GitHub token. The connection owner
 approves every call.
 
+## The two GitHub Apps (F172)
+
+A `github-app` connection is one repository on one installation of one App.
+The row's `config.app` names the App, and the broker signs that installation's
+token with that App's id and key only:
+
+| `config.app` | App | Who can install it | Key (env) | How the connection is made |
+|---|---|---|---|---|
+| `tools`, or absent | commonly-tools (private) | our own org only | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY` | admin route `POST /api/integrations/github-app` |
+| `connect` | Commonly Connect (public, slug `GITHUB_MCP_APP_SLUG`) | anyone | `GITHUB_CONNECT_APP_ID`, `GITHUB_CONNECT_APP_PRIVATE_KEY` | self-serve `POST /api/integrations/github-app/repositories` |
+
+- A row with no `app` was written before F172 and is a tools row.
+- A Connect row is never signed with the tools key. Without the Connect key,
+  the self-serve route answers `503 github_app_not_configured` and creates
+  nothing, `POST /api/grants` refuses `503 github_app_not_configured` on a
+  Connect row (so an owner never holds a grant that cannot run), and a call on
+  an existing Connect grant refuses `github_app_not_configured` before it
+  parks. A row whose `app` names neither
+  App refuses `connection_mismatch`, at the mint and at the call.
+- Installation tokens are cached per (App, installation, narrowed repository)
+  and reused only while they have more than 10 minutes left. A bundle push
+  never uses the cache: it mints a fresh token at its start and again right
+  before the write.
+- Uniqueness is per (App, installation, repository), so one installation can
+  back many connections. Rows written since F172 keep the installation in
+  `config.installationId` only and leave the top-level `installationId` unset,
+  because that field is unique per installation and still holds the older rows.
+  A partial unique index (`unique_github_app_repository`) enforces it, and the
+  routes check the older rows by query. Grants on these rows name the row
+  `_id`: the Tools catalogue offers that `_id` as the row's `connectionId`, and
+  `POST /api/grants` with the bare installation id answers
+  `connection_not_found` (there is deliberately no installation-only fallback,
+  since one installation now backs several repositories). Removing one row revokes only its own grants, not a
+  sibling repository's.
+- The admin route binds tools installations only. It takes an optional
+  `ownerUserId`, which must name an existing human account; the default owner
+  is the admin. The same repository twice answers `409 connection_exists`;
+  before F172 a repeated POST for the same repository answered `200` with the
+  existing row, so a script that re-POSTs must treat 409 as "already there".
+- **Access is proved again on every Connect write.** Before a write parks, and
+  again (never from cache) before an approved write runs, the broker re-runs
+  the create-time proof with the owner's CURRENT user token: the installation
+  is visible and is Connect's, not suspended, the repository is listed with
+  the same GitHub repository id recorded at create (so a rename, transfer or
+  delete-and-recreate does not carry over), and the owner can push. A passing
+  park proof is cached for 60 s per row. Any failure refuses
+  `connection_unproven` (the proof's code in `details.reason`) and nothing is
+  written to GitHub. Tools rows are not re-proved.
+- **Removing the owner's GitHub connection** (the hosted-MCP `github-mcp` row)
+  disconnects every Connect row they own and revokes those rows' grants,
+  before any provider step. A retry after a failed revoke still reaches rows
+  the first attempt already disconnected. The rows are kept, so the owner sees them; posting
+  the same repository again with a fresh proof reconnects their own row (its
+  old grants stay revoked).
+- **Connect tokens are narrowed** to the connection's repository
+  (`repository_ids` on the token request). A Connect token request with no
+  valid repository id (absent, not plain digits, zero, or past the safe-integer
+  range) refuses `github_repository_required`; it never mints an
+  installation-wide token. Tools tokens are unchanged.
+- Removing an older row (one with a top-level `installationId`) revokes only
+  grants bound to no row or to that row, never a newer per-repository row's
+  grants on the same installation.
+
+### What an outside team does
+
+1. **Connect GitHub** on the Tools page (the hosted-MCP GitHub entry, D248).
+   This stores the person's Commonly Connect user token.
+2. **Install Commonly Connect** on their account or org, and pick the
+   repositories (the install page is `github.com/apps/<slug>/installations/new`).
+3. **Connect a repository:** `POST /api/integrations/github-app/repositories`
+   with `{ installationId, owner, repo }`. The server reads
+   `GET /user/installations` and `GET /user/installations/{id}/repositories`
+   with the person's own user token, and creates the connection only when the
+   installation belongs to the Connect App (`app_id` equals
+   `GITHUB_CONNECT_APP_ID`), is not suspended, lists the repository, and the
+   person can push to it. The body's installation id and repository are never
+   trusted on their own. Refusals: `github_connect_required` (no or expired
+   user token; the body carries the connect path), `installation_not_visible`,
+   `installation_suspended`, `repository_not_visible`,
+   `repository_write_required`, and `connection_exists` (409). The person is the
+   connection's owner, and `DELETE /api/integrations/:id` removes it.
+4. **Grant `prWrite`** on that connection as below. Every rule in this runbook
+   applies to a Connect connection unchanged.
+
+### What ops sets
+
+- On the Commonly Connect App: **Contents: Read and write** and **Pull
+  requests: Read and write**, and generate a private key.
+- Two Secret Manager keys with an enabled version:
+  `<prefix>github-connect-app-id` and `<prefix>github-connect-app-private-key`.
+  Then set `githubConnectApp.enabled: true` in the environment's values. The
+  ExternalSecret maps them to `GITHUB_CONNECT_APP_ID` and
+  `GITHUB_CONNECT_APP_PRIVATE_KEY` in `api-keys`, and the backend and ops-runner refs are
+  optional. Enabling the flag before both keys exist stalls `api-keys`.
+- No migration is needed. The old unique index on `installationId` stays and
+  blocks nothing new; Mongoose builds `unique_github_app_repository` at boot
+  (`autoIndex`), and no existing row carries `config.repoKey`.
+
 ## What the owner grants
 
-A pod grant on a **GitHub App** connection with:
+A pod grant on a **GitHub App** connection (tools or Connect) with:
 
 - `writeMode: "write-with-confirm"`;
 - `prWrite: true`. It is off unless the body says exactly `true`;
@@ -123,8 +221,9 @@ shipped git remote helper prints.
 
 ## Prod prerequisites
 
-- **GitHub App permissions.** Only an App owner can change these in GitHub,
-  and each installation must accept the new permissions:
+- **GitHub App permissions**, on commonly-tools and on Commonly Connect. Only
+  an App owner can change these in GitHub, and each installation must accept
+  the new permissions:
   - **Contents: Read and write**, for `git/refs`, `git/trees`, `git/commits`
     and the bundle push;
   - **Pull requests: Read and write**, for `POST /pulls`.
@@ -133,7 +232,9 @@ shipped git remote helper prints.
 - The builtin tool Installable reseeds on boot (`seed-builtin-tools`), so
   `github.commit_files` becomes grantable after the deploy.
 
-Code: `services/prWriteScope.ts`, `services/seatGithubCommit.ts`,
+Code: `services/githubAppNames.ts` and `services/githubAppService.ts` (per-App
+signing), `services/githubConnectProof.ts` (self-serve proof),
+`services/prWriteScope.ts`, `services/seatGithubCommit.ts`,
 `services/toolBrokerService.ts` (`prWriteRefusal`, `requiresApproval`), and
 `services/grantBrokerProjectionService.ts` (`HOSTED_PR_WRITE_TOOLS`).
 
