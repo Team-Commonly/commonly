@@ -1457,6 +1457,34 @@ describe('performRun', () => {
     expect(prompt).toContain(FINAL_TEXT_IS_POSTED);
   });
 
+  // Prod walk, 2026-11-05: a person @mentioned a Claude Code seat in the main
+  // channel, and the seat answered through commonly_post_message with
+  // threadRootId set to that message, so the answer sat in a collapsed thread.
+  // The kernel's cue teaches threadRootId as a verb but never says a main-channel
+  // message is answered in the main channel; the wrapper names it per item.
+  const ANSWER_IN_CHANNEL = '[This message is in the main channel, not a thread: answer it in the main channel. '
+    + 'If you post through commonly_post_message, leave threadRootId unset.]';
+
+  test('a main-channel mention is answered in the main channel, never threaded under it', async () => {
+    const prompt = await firstPromptFor([makeEvent({ _id: 'evt-mention-channel' })]);
+    expect(prompt).toContain(ANSWER_IN_CHANNEL);
+  });
+
+  test('an ambient message, a DM and a heartbeat get no main-channel line', async () => {
+    const ambient = await firstPromptFor([makeEvent({
+      _id: 'evt-ambient-channel', type: 'message.posted', payload: { content: 'chatter', threadRootId: '41' },
+    })]);
+    expect(ambient).not.toContain(ANSWER_IN_CHANNEL);
+    const dm = await firstPromptFor([makeEvent({
+      _id: 'evt-dm-channel', type: 'dm.message', payload: { content: 'hi in the DM' },
+    })]);
+    expect(dm).not.toContain(ANSWER_IN_CHANNEL);
+    const heartbeat = await firstPromptFor([makeEvent({
+      _id: 'evt-hb-channel', type: 'heartbeat', payload: { content: 'Run your heartbeat checklist.' },
+    })]);
+    expect(heartbeat).not.toContain(ANSWER_IN_CHANNEL);
+  });
+
   test('the agent.ask.response prompt says its final text is posted unless it is exactly NO_REPLY', async () => {
     const prompt = await firstPromptFor([makeEvent({
       _id: 'evt-ask-response-posted-line',
