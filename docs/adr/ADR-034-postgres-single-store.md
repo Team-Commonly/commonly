@@ -224,16 +224,12 @@ missing collection errors. The rest of what Commonly leans on behaves the same: 
 operator) in a partial index filter, and every check for a lost race goes through
 `isDuplicateKeyError`. A known gap: existing refusals that read `keyPattern` (signup, username
 change and a few others) still surface a code-1 refusal as a 500 on FerretDB (#3495 lists them). The
-FerretDB workflow (`backend-ferretdb.yml`, #3492) runs the suite on both stores nightly and on
-dispatch. It stays off pull requests while FerretDB is red: a failing job marks every backend PR
-UNSTABLE even under `continue-on-error`, and the press takes only CLEAN PRs. It moves to pull
-requests, as a required check, once it is green. A nightly walk of the self-host path itself, on
-both stores, is #3516.
+The FerretDB CI workflow (#3492) was removed when D7 was not adopted.
 
 **Constraints.** The DocumentDB extension needs a superuser and `shared_preload_libraries`
 (`pg_cron`, `documentdb`), so it runs on a Postgres the instance owns, not on a managed one. The
 `ferretdb/postgres-documentdb` image also bundles PostGIS (GPL-2.0-or-later). Commonly references
-that image by tag only in CI (`backend-ferretdb.yml`) and does not redistribute it. Compose and Helm
+that image by tag only in that CI workflow and did not redistribute it. Compose and Helm
 support is not built yet; when it lands it references the image the same way, and a self-hoster
 pulls it from its publisher.
 

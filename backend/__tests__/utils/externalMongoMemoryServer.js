@@ -1,6 +1,6 @@
 /**
  * Stands in for `mongodb-memory-server` when JEST_EXTERNAL_MONGO_URI is set (the
- * FerretDB CI leg, .github/workflows/backend-ferretdb.yml). jest.config.js maps
+ * the removed FerretDB CI leg, ADR-034 D7). jest.config.js maps
  * the package here only then, so a suite that starts its own server with
  * `MongoMemoryServer.create()` runs against the store under test instead of an
  * in-memory mongod that would answer the same on both legs.
