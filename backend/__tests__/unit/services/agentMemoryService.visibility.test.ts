@@ -217,4 +217,94 @@ describe('filterSectionsByVisibility', () => {
     );
     expect(out.shared.content).toBe('pod bio');
   });
+
+  describe('the shared view carries no version history', () => {
+    const withHistory = (content, visibility) => ({
+      ...sec(content, visibility),
+      source: { via: 'runtime', writtenAt: new Date('2026-04-15T00:00:00Z') },
+      history: [{ content: 'earlier-version-text', replacedAt: new Date('2026-04-14T00:00:00Z') }],
+    });
+
+    it.each(['soul', 'long_term', 'dedup_state', 'shared', 'runtime_meta'])(
+      'omits history from a returned %s section',
+      (key) => {
+        const sections = { [key]: withHistory('current text', 'public') };
+        const out = filterSectionsByVisibility(sections, [POD_A], [POD_A]);
+        expect(out[key].content).toBe('current text');
+        expect(out[key]).not.toHaveProperty('history');
+        expect(JSON.stringify(out)).not.toContain('earlier-version-text');
+      },
+    );
+
+    it('omits history from a pod section returned on pod overlap', () => {
+      const sections = { long_term: withHistory('current pod text', 'pod') };
+      const out = filterSectionsByVisibility(sections, [POD_A], [POD_A]);
+      expect(out.long_term.content).toBe('current pod text');
+      expect(JSON.stringify(out)).not.toContain('earlier-version-text');
+    });
+
+    it('omits history from daily and relationships entries', () => {
+      const history = [{ content: 'earlier-version-text', replacedAt: new Date() }];
+      const sections = {
+        daily: [{ date: '2026-04-12', content: 'today', visibility: 'public', history }],
+        relationships: [{ otherInstanceId: 'x', notes: 'n', visibility: 'public', history }],
+      };
+      const out = filterSectionsByVisibility(sections, [POD_A], [POD_A]);
+      expect(out.daily[0].content).toBe('today');
+      expect(out.relationships[0].notes).toBe('n');
+      expect(JSON.stringify(out)).not.toContain('earlier-version-text');
+    });
+
+    it('leaves the stored sections untouched', () => {
+      const sections = { shared: withHistory('current text', 'public') };
+      filterSectionsByVisibility(sections, [POD_A], [POD_A]);
+      expect(sections.shared.history).toHaveLength(1);
+    });
+  });
+
+  describe('the shared view carries only the declared fields', () => {
+    it('returns a section with exactly content, visibility, updatedAt, byteSize and source', () => {
+      const sections = {
+        shared: {
+          ...sec('current text', 'public'),
+          source: {
+            runtime: 'claude-code',
+            via: 'memory-put',
+            writtenAt: new Date('2026-04-15T00:00:00Z'),
+            host: 'source-extra-7f3a',
+          },
+          draftNotes: 'undeclared-field-7f3a',
+        },
+      };
+      const out = filterSectionsByVisibility(sections, [POD_A], [POD_A]);
+      expect(Object.keys(out.shared).sort()).toEqual(['byteSize', 'content', 'source', 'updatedAt', 'visibility']);
+      expect(Object.keys(out.shared.source).sort()).toEqual(['runtime', 'via', 'writtenAt']);
+      expect(JSON.stringify(out)).not.toContain('7f3a');
+    });
+
+    it('returns daily and relationships entries with only their declared fields', () => {
+      const updatedAt = new Date('2026-04-15T00:00:00Z');
+      const sections = {
+        daily: [{
+          date: '2026-04-12', content: 'today', visibility: 'public', updatedAt, draftNotes: 'undeclared-field-7f3a',
+        }],
+        relationships: [{
+          otherInstanceId: 'x', notes: 'n', visibility: 'public', updatedAt, draftNotes: 'undeclared-field-7f3a',
+        }],
+      };
+      const out = filterSectionsByVisibility(sections, [POD_A], [POD_A]);
+      expect(Object.keys(out.daily[0]).sort()).toEqual(['content', 'date', 'updatedAt', 'visibility']);
+      expect(Object.keys(out.relationships[0]).sort()).toEqual(['notes', 'otherInstanceId', 'updatedAt', 'visibility']);
+      expect(JSON.stringify(out)).not.toContain('7f3a');
+    });
+
+    it('omits declared fields the stored entry does not have', () => {
+      const out = filterSectionsByVisibility(
+        { shared: { content: 'bare', visibility: 'public' } },
+        [POD_A],
+        [POD_A],
+      );
+      expect(out.shared).toEqual({ content: 'bare', visibility: 'public' });
+    });
+  });
 });
