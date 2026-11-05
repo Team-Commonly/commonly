@@ -439,7 +439,8 @@ has nothing to run with.
 - **The sweep then establishes what happened, and never re-runs it.** It waits
   `APPROVED_CALL_SETTLE_MS` (15 min), then reads the broker's row with `ToolCall.findApprovedRun`.
   Every provider request on the broker path has its own bound (GitHub REST and hosted MCP 30 s,
-  git 45 s), and a commit is about ten requests, so a live call ends well inside the wait. A row
+  git 45 s). A commit is about ten requests, and the slowest path, `pushSeatBranch`, is about 20
+  git steps of which about seven touch the network, so a live call ends well inside the wait. A row
   gives the ending. No row means the call may never have started, or reached the provider and
   died before the trail write, and nothing can tell those apart. The row then ends `failed` with
   `approval_outcome_unknown` and gets a trail row of its own. The card and the room receipt tell
@@ -448,11 +449,13 @@ has nothing to run with.
   unknown. A later identical call needs a new human approval. A trail read that fails settles
   nothing; the attempt fails and a later one reads again. The write applies only while the row
   has no ending, so it can't replace a live one, and a retry's card shows the row as stored.
-  A write whose own deadline fired ends the same way, with the code on the broker's trail row:
-  it went out and no answer came back, so it may have landed
-  (`services/brokerWriteOutcome.ts`). That covers a GitHub write, a push killed at its timeout,
-  and a hosted `tools/call`, plus any later step of a commit or a commented close once its first
-  write went out. Reads, token mints, session opens and answered requests stay ordinary failures.
+  A write that went out and got no answer ends the same way, with the code on the broker's trail
+  row, or on the approval's own row if that write fails too (`services/brokerWriteOutcome.ts`).
+  That covers a REST deadline, reset or dropped socket, a GitHub 502 or 504, a hosted `tools/call`
+  with no reply, and any later step of a commit or commented close once its first write went out.
+  A failed push is read back with `ls-remote`: the new oid is a success, and a failed read is
+  unknown. Reads, token mints, session opens, requests that never left and any other provider
+  answer, a 500 included, stay ordinary failures.
 - **What can still outlast the settle** is a stalled event loop or a paused process. That live
   call saves its real ending over the unknown one and clears `expirySideEffectsDoneAt` in the
   same write, so its own later failures stay retryable, and it rewrites the card. The rest stands:

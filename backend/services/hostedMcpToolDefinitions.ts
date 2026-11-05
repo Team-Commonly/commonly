@@ -652,13 +652,13 @@ const callHostedTool = async (
   } catch (error) {
     // The deadline covers the body too: a vendor that sends headers and then
     // trickles the reply would otherwise hold the turn open past it (TASK-254).
-    const vendorAnswered = error instanceof RoomGrantError && error.code !== 'provider_unreachable';
-    if (controller.signal.aborted && !vendorAnswered) {
-      const timedOut = new RoomGrantError('provider_unreachable', 'hosted-MCP vendor reply did not finish in time', 502);
-      // tools/call goes out once a session is open, so the vendor may have run
-      // it. Timing out while opening the session sent no call.
-      throw session ? markWriteUnknown(timedOut) : timedOut;
-    }
+    const unreachable = error instanceof RoomGrantError
+      ? error.code === 'provider_unreachable' && error
+      : controller.signal.aborted
+        && new RoomGrantError('provider_unreachable', 'hosted-MCP vendor reply did not finish in time', 502);
+    // tools/call goes out once a session is open, so with no answer the vendor
+    // may have run it. Failing to open the session sent no call.
+    if (unreachable) throw session ? markWriteUnknown(unreachable) : unreachable;
     throw error;
   } finally {
     await session?.close();

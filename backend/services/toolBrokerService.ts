@@ -1544,7 +1544,7 @@ const refusedCredentialOwner = (
     : resolved
 );
 
-/** The grant's and call's facts on a trail row. The ref is shape-checked, so a URL or token can't be stored as one. */
+/** The grant's and call's facts on a trail row. The ref is shape-checked, so it can't be a URL: it's the seat's own branch name. */
 const trailFacts = (
   input: BrokerCallInput,
   grant: IRoomGrant | Record<string, unknown> | undefined,
@@ -2147,26 +2147,34 @@ export const executeApprovedToolCall = async (
       ? safeReason(error) : 'broker_error';
     // A write whose deadline fired may have landed, so it ends under the code
     // the approval path reads as unknown.
-    const reason = isWriteUnknown(error) && definition?.requiredWriteMode !== 'read'
-      ? APPROVAL_OUTCOME_UNKNOWN : known;
+    const unknown = isWriteUnknown(error) && definition?.requiredWriteMode !== 'read';
+    const reason = unknown ? APPROVAL_OUTCOME_UNKNOWN : known;
     const outcome = executionErrorOutcome(error);
-    await recordCall(
-      { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
-      grant,
-      outcome,
-      startedAt,
-      reason,
-      {
-        callId,
-        approvalId: input.approvalId,
-        args: input.args,
-        credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
-        vendorStatus: error instanceof RoomGrantError && typeof error.details?.vendorStatus === 'number'
-          ? error.details.vendorStatus : undefined,
-        vendorError: error instanceof RoomGrantError && typeof error.details?.vendorError === 'string'
-          ? error.details.vendorError : undefined,
-      },
-    );
+    try {
+      await recordCall(
+        { grantId: input.grantId, agentUserId: input.agentUserId, tool: input.tool, args: input.args },
+        grant,
+        outcome,
+        startedAt,
+        reason,
+        {
+          callId,
+          approvalId: input.approvalId,
+          args: input.args,
+          credentialOwnerId: refusedCredentialOwner(error, credentialOwnerId),
+          vendorStatus: error instanceof RoomGrantError && typeof error.details?.vendorStatus === 'number'
+            ? error.details.vendorStatus : undefined,
+          vendorError: error instanceof RoomGrantError && typeof error.details?.vendorError === 'string'
+            ? error.details.vendorError : undefined,
+        },
+      );
+    } catch (trailError) {
+      if (!unknown) throw trailError;
+      // The store error must not replace the unknown code. The approval writes
+      // the trail row itself.
+      console.error(`[broker] unknown-outcome trail not written call=${callId}:`, (trailError as Error).message);
+      throw new RoomGrantError(reason, 'approved tool call did not run', 502, { callId, outcome, recorded: false });
+    }
     // The caller needs the trail identity and classification, never the
     // provider's message. This is the approved path only; its resolver turns
     // these facts into the card and the seat's event.

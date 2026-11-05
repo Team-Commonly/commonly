@@ -182,8 +182,13 @@ export const pushWithLease = async (options: {
   } catch (error) {
     // Reading the ref now can't settle it: the push may land after the read.
     if (isWriteUnknown(error)) throw error;
-    const latest = await git(['ls-remote', url, ref], repo);
+    const latest = await git(['ls-remote', url, ref], repo).catch(() => {
+      // The push may have landed and nothing here can read whether it did.
+      throw markWriteUnknown(new SeatPushError('provider_git_failed', 502));
+    });
     const latestOid = latest ? latest.split(/\s+/, 1)[0] : ZERO_OID;
+    // Git lost the answer, not the write.
+    if (latestOid === newOid) return;
     if (latestOid !== oldOid) throw new SeatPushError('stale_ref', 409);
     throw new SeatPushError('provider_git_failed', 502);
   }
@@ -236,7 +241,9 @@ export const pushSeatBranch = async (
   try {
     // A push runs several remote git commands and validates the bundle in
     // between, so it never starts on a cached token: it mints its own, and a
-    // fresh one again before the write (pushWithLease) below.
+    // fresh one again before the write (pushWithLease) below. This is the
+    // broker's slowest path: about 20 git steps bounded at 45 seconds each,
+    // about seven of them on the network.
     const authHeader = async () => {
       const { token } = await GitHubAppService.getInstallationToken(
         connection.installationId, connection.app, connection.repositoryId, { fresh: true },

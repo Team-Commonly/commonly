@@ -179,6 +179,22 @@ describe('an approved call whose deadline fired', () => {
     }));
   });
 
+  test('with the trail write failing too, the unknown code still reaches the approval', async () => {
+    github.createIssue.mockRejectedValueOnce(markWriteUnknown(new Error('reset')));
+    mockToolCall.create.mockRejectedValueOnce(new Error('store down'));
+    const quiet = jest.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(broker.executeApprovedToolCall(input)).rejects.toMatchObject({
+      code: 'approval_outcome_unknown', details: { recorded: false },
+    });
+    quiet.mockRestore();
+  });
+
+  test('an ordinary failure with a failing trail write keeps the store error', async () => {
+    github.createIssue.mockRejectedValueOnce(new Error('boom'));
+    mockToolCall.create.mockRejectedValueOnce(new Error('store down'));
+    await expect(broker.executeApprovedToolCall(input)).rejects.toThrow('store down');
+  });
+
   test('before any write, it stays an ordinary failure', async () => {
     github.createIssue.mockRejectedValueOnce(Object.assign(new Error('timeout'), { code: 'ECONNABORTED' }));
     await expect(broker.executeApprovedToolCall(input)).rejects.toMatchObject({ code: 'broker_error' });
@@ -191,7 +207,9 @@ describe('an approved call whose deadline fired', () => {
     await expect(broker.executeApprovedToolCall({
       ...input, tool: 'github.list_issues', args: { owner: 'Team-Commonly', repo: 'commonly' },
       expectedArgsDigest: 'digest:{"owner":"Team-Commonly","repo":"commonly"}',
-    })).rejects.not.toMatchObject({ code: 'approval_outcome_unknown' });
+    })).rejects.toMatchObject({ code: 'broker_error', details: { outcome: 'failed', recorded: true } });
+    expect(github.listOpenIssues).toHaveBeenCalledTimes(1);
+    expect(mockToolCall.create).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failed', reason: 'broker_error' }));
   });
 });
 

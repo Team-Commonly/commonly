@@ -90,6 +90,47 @@ describe('GitHub REST calls on the broker path', () => {
     });
   });
 
+  describe('a write that went out with no answer', () => {
+    const lost = (code) => Object.assign(new Error('socket'), { code, request: {} });
+    const answered = (status) => Object.assign(new Error('gateway'), { request: {}, response: { status } });
+    const createIssue = () => GitHubAppService.createIssue(optionsOf('createIssue')).catch((e) => e);
+
+    it.each(['ECONNRESET', 'EPIPE', 'ERR_NETWORK', undefined])('%s may have landed', async (code) => {
+      failWith(lost(code));
+      expect(isWriteUnknown(await createIssue())).toBe(true);
+    });
+
+    it.each(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ERR_TLS_CERT_ALTNAME_INVALID',
+      'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'EPROTO'])(
+      '%s never left, so it is ordinary', async (code) => {
+        failWith(lost(code));
+        expect(isWriteUnknown(await createIssue())).toBe(false);
+      },
+    );
+
+    it.each([502, 504])('a gateway %s does not say whether it landed', async (status) => {
+      failWith(answered(status));
+      expect(isWriteUnknown(await createIssue())).toBe(true);
+    });
+
+    it.each([500, 503, 422, 404])('a %s is GitHub\'s answer, so it is ordinary', async (status) => {
+      failWith(answered(status));
+      expect(isWriteUnknown(await createIssue())).toBe(false);
+    });
+
+    it('an error that never reached a request is ordinary', async () => {
+      failWith(new TypeError('bad call'));
+      expect(isWriteUnknown(await createIssue())).toBe(false);
+    });
+
+    it('a read with no answer sent no write', async () => {
+      failWith(lost('ECONNRESET'));
+      const error = await GitHubAppService.getIssue(optionsOf('getIssue')).catch((e) => e);
+      expect(error.code).toBe('ECONNRESET');
+      expect(isWriteUnknown(error)).toBe(false);
+    });
+  });
+
   it('a write GitHub answered with an error is an ordinary failure', async () => {
     failWith(Object.assign(new Error('500'), { response: { status: 500 } }));
     const error = await GitHubAppService.createIssue(optionsOf('createIssue')).catch((e) => e);

@@ -170,7 +170,8 @@ const repositoryIdNumber = (value: unknown): number | null => {
 /**
  * The most one GitHub REST request on the broker path may take. An approved
  * call must end well inside APPROVED_CALL_SETTLE_MS in approvalActionService,
- * and a commit is about ten of these in sequence.
+ * and a commit is about ten of these in sequence. The slowest path is
+ * `pushSeatBranch`, about 20 git steps bounded at 45 seconds each.
  */
 export const GITHUB_REST_TIMEOUT_MS = 30 * 1000;
 
@@ -453,8 +454,8 @@ class GitHubAppService {
       ));
       return res.data;
     };
-    // With a comment already posted, a deadline on any later step leaves the
-    // issue changed, so even the token mint counts.
+    // With a comment already posted, a later step that gets no answer leaves
+    // the issue changed, so even the token mint counts.
     return comment ? sendWrite(close) : close();
   }
 

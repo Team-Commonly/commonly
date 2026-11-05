@@ -123,8 +123,8 @@ export interface IApprovalAction extends Document {
    * tool_call only: the provider ran but the broker could not write its trail
    * row. These are the facts only the broker had, kept so the approval's retry
    * can write the row under `toolCallTrailId`; cleared once it lands. Server-only,
-   * never on a card. The ref is shape-checked to `refs/heads/...`, so it holds
-   * no credential.
+   * never on a card. The ref is shape-checked to `refs/heads/...`, so it can't
+   * be a URL: it's the seat's own branch name.
    */
   toolCallTrailUnwritten?: {
     podId?: string;

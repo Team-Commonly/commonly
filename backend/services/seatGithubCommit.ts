@@ -277,8 +277,8 @@ export const commitSeatFiles = async (
   const baseTree = await GitHubAppService.getCommitTree({ ...gitData(connection), sha: parentSha });
   await assertProtectedFilesMatchDefault(connection, parentSha, baseTree, defaultBranch);
   const tree = await GitHubAppService.createTextTree({ ...gitData(connection), baseTree, files: args.files });
-  // From here the provider holds something of ours, so a deadline on any
-  // remaining step, token mint included, leaves the outcome unknown.
+  // From here the provider holds something of ours, so a remaining step that
+  // gets no answer, token mint included, leaves the outcome unknown.
   return sendWrite(async () => {
     const commitSha = await GitHubAppService.createCommit({
       ...gitData(connection), message: args.message, tree, parents: [parentSha],

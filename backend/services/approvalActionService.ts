@@ -1390,11 +1390,14 @@ export const resolveApproval = async (options: ResolveOptions): Promise<ResolveR
       if (parkedCall) {
         const failure = err as { code?: string; details?: { callId?: string; outcome?: string; recorded?: boolean } };
         const brokerRecord = failure.details?.recorded === true;
+        // With no trail row from the broker, the one code it can still hand
+        // over is that the call may have run.
+        const unrecorded = failure.code === APPROVAL_OUTCOME_UNKNOWN ? APPROVAL_OUTCOME_UNKNOWN : 'broker_error';
         transitioned.toolCallEnding = brokerRecord && failure.details?.outcome === 'refused' ? 'refused' : 'failed';
-        transitioned.toolCallCode = brokerRecord ? safeToolCallCode(failure.code) : 'broker_error';
+        transitioned.toolCallCode = brokerRecord ? safeToolCallCode(failure.code) : unrecorded;
         // The trail step writes the derived row (`selfTrailedReason`).
         transitioned.toolCallTrailId = (brokerRecord && failure.details?.callId)
-          || decisionCallId(String(transitioned._id), 'broker_error');
+          || decisionCallId(String(transitioned._id), unrecorded);
       } else {
         transitioned.executionError = (err as Error).message?.slice(0, 500) || 'execution failed';
       }
@@ -1480,8 +1483,9 @@ export const EXPIRY_RETRY_MAX_DELAY_MS = 60 * 60 * 1000;
 /**
  * How long an approved call with no ending may take before the sweep treats its
  * process as dead. Every provider request on the broker path has its own bound
- * (GitHub REST and hosted MCP 30 seconds, git 45), and a commit is about ten
- * of them, so a live call ends well inside this. What can outlast it is a stalled
+ * (GitHub REST and hosted MCP 30 seconds, git 45). A commit is about ten of
+ * them; the slowest path is `pushSeatBranch`, about 20 git steps of which about
+ * seven touch the network, so a live call ends well inside this. What can outlast it is a stalled
  * event loop or a paused process; that call still saves its real ending over
  * the unknown one, but the wake, the receipt, the Record line and the sweep's
  * trail row stay as they were.
@@ -1682,7 +1686,12 @@ const completeToolCallClosure = async (
     throw new AggregateError(failures.map((f) => f.error), `${closure} steps failed: ${failures
       .map((f) => `${f.step} (${(f.error as Error)?.message || String(f.error)})`).join('; ')}`);
   }
-  await ApprovalAction.updateOne({ _id: row._id }, { $set: { expirySideEffectsDoneAt: new Date() } });
+  // A live save clears the stamp to keep its own closure retryable, so a stamp
+  // only lands on the ending this attempt closed on.
+  await ApprovalAction.updateOne(
+    { _id: row._id, toolCallEnding: row.toolCallEnding },
+    { $set: { expirySideEffectsDoneAt: new Date() } },
+  );
 };
 
 /**

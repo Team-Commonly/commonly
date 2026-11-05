@@ -239,8 +239,8 @@ shipped git remote helper prints.
 - The trail records each call (`tool_calls`): parked (`pending_approval`), then
   `ok`/`failed`/`refused` with the `approvalId`, or `approval_declined` /
   `approval_expired`. `approval_outcome_unknown` means no answer came back for an
-  approved call: a write hit its deadline after it went out, or the process died
-  and left no record. Either way it may have run. Check the branch or PR before
+  approved call: a write went out and the connection or a gateway lost the reply,
+  or the process died and left no record. Either way it may have run. Check the branch or PR before
   approving it again.
 
 ## What the owner should know

@@ -275,6 +275,40 @@ describe('seat push proof against the default branch', () => {
     expect(seen).toEqual(['push']);
   });
 
+  describe('a push git reported as failed', () => {
+    const OLD = '0'.repeat(39) + '1';
+    const NEW = '0'.repeat(39) + '2';
+    const lease = (ls) => pushWithLease({
+      git: async (args) => {
+        if (args[0] === 'push') throw new SeatPushError('provider_git_failed', 502);
+        return ls();
+      },
+      repo: 'r', url: 'u', ref: 'refs/heads/seat/x', oldOid: OLD, newOid: NEW,
+    });
+
+    it('that landed anyway is a success', async () => {
+      await expect(lease(async () => `${NEW}\trefs/heads/seat/x`)).resolves.toBeUndefined();
+    });
+
+    it('cannot be settled when ls-remote fails, so it is unknown', async () => {
+      const failed = await lease(async () => { throw new SeatPushError('provider_git_failed', 502); }).catch((e) => e);
+      expect(failed).toMatchObject({ code: 'provider_git_failed' });
+      expect(isWriteUnknown(failed)).toBe(true);
+    });
+
+    it('with the ref unmoved is an ordinary failure', async () => {
+      const failed = await lease(async () => `${OLD}\trefs/heads/seat/x`).catch((e) => e);
+      expect(failed).toMatchObject({ code: 'provider_git_failed' });
+      expect(isWriteUnknown(failed)).toBe(false);
+    });
+
+    it('with the ref on a third commit is a stale ref', async () => {
+      const failed = await lease(async () => `${'3'.repeat(40)}\trefs/heads/seat/x`).catch((e) => e);
+      expect(failed).toMatchObject({ code: 'stale_ref' });
+      expect(isWriteUnknown(failed)).toBe(false);
+    });
+  });
+
   it('a real git push killed at its timeout comes back marked', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'seat-push-hang-'));
     const options = {

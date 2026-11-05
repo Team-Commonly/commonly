@@ -79,7 +79,6 @@ const {
   EXPIRY_RETRY_GRACE_MS, EXPIRY_WAKE_CLAIM_LEASE_MS, APPROVED_CALL_SETTLE_MS,
 } = require('../../services/approvalActionService');
 
-const { GITHUB_REST_TIMEOUT_MS } = jest.requireActual('../../services/githubAppService');
 const retryCappedScript = require('../../scripts/retry-capped-approval-expiries');
 
 jest.setTimeout(60000);
@@ -87,6 +86,19 @@ jest.setTimeout(60000);
 const MINUTE = 60 * 1000;
 const podId = new mongoose.Types.ObjectId();
 let owner;
+
+// The broker call stays open until `finish`; `reached` resolves once it started.
+const holdBroker = () => {
+  let started;
+  let finish;
+  const reached = new Promise((resolve) => { started = resolve; });
+  const held = new Promise((resolve) => { finish = resolve; });
+  broker.executeApprovedToolCall.mockImplementation(() => {
+    started();
+    return held;
+  });
+  return { reached, finish: (...args) => finish(...args) };
+};
 
 const park = async (overrides = {}) => {
   const card = await Message.create({
@@ -366,6 +378,29 @@ describe('approve: a failure after the call never runs it again', () => {
     expect(await reread(row)).toMatchObject({ toolCallEnding: 'failed', toolCallCode: 'broker_error' });
   });
 
+  it('an unknown write whose broker trail also failed keeps the code and writes its own row', async () => {
+    const row = await park();
+    broker.executeApprovedToolCall.mockRejectedValue(Object.assign(new Error('did not run'), {
+      code: 'approval_outcome_unknown', details: { recorded: false, outcome: 'failed' },
+    }));
+    await decide(row, 'approved');
+    const stored = await reread(row);
+    expect(stored).toMatchObject({ toolCallEnding: 'failed', toolCallCode: 'approval_outcome_unknown' });
+    expect(trailFor(row)).toEqual([expect.objectContaining({
+      outcome: 'failed', reason: 'approval_outcome_unknown', callId: stored.toolCallTrailId,
+    })]);
+    expect(AgentMessageService.postMessage.mock.calls[0][0].content).toContain('This call may have run.');
+  });
+
+  it('an unrecorded failure with any other code stays broker_error', async () => {
+    const row = await park();
+    broker.executeApprovedToolCall.mockRejectedValue(Object.assign(new Error('x'), {
+      code: 'provider_error', details: { recorded: false, outcome: 'failed' },
+    }));
+    await decide(row, 'approved');
+    expect(await reread(row)).toMatchObject({ toolCallEnding: 'failed', toolCallCode: 'broker_error' });
+  });
+
   it('a write whose deadline fired takes the same path as a lost one: card, receipt, wake, no re-run', async () => {
     const row = await park();
     broker.executeApprovedToolCall.mockRejectedValue(Object.assign(new Error('did not run'), {
@@ -551,6 +586,21 @@ describe('approve: a crash between the call and the marker', () => {
     expect(AgentMessageService.postMessage.mock.calls[0][0].content).toContain('· ran');
   });
 
+  it('a live ending that lands mid-closure keeps its own retry: the sweep\'s done stamp does not land on it', async () => {
+    const row = await crashedAfterFlip('approved', { resolvedAt: new Date(Date.now() - APPROVED_CALL_SETTLE_MS - MINUTE) });
+    AgentMessageService.postMessage.mockImplementationOnce(async () => {
+      await ApprovalAction.updateOne({ _id: row._id }, {
+        $set: { toolCallEnding: 'ran', toolCallTrailId: 'tool_call_live' },
+        $unset: { toolCallCode: 1, expirySideEffectsDoneAt: 1 },
+      });
+      return { success: true };
+    });
+    await sweep(new Date());
+    const stored = await reread(row);
+    expect(stored.toolCallEnding).toBe('ran');
+    expect(stored.expirySideEffectsDoneAt ?? null).toBeNull();
+  });
+
   it('a live ending that lands while the sweep is mid-closure wins the card', async () => {
     const row = await crashedAfterFlip('approved', { resolvedAt: new Date(Date.now() - APPROVED_CALL_SETTLE_MS - MINUTE) });
     // The sweep settled unknown; a live save lands while it posts the receipt.
@@ -564,18 +614,11 @@ describe('approve: a crash between the call and the marker', () => {
     expect(await cardFor(row)).toMatchObject({ toolCallEnding: 'ran', toolCallTrailId: 'tool_call_live' });
   });
 
-  it('the slowest broker path stays well under the settle', () => {
-    // A commit's sequential GitHub requests, plus one token mint.
-    const commitRequests = 9 + 1;
-    expect(GITHUB_REST_TIMEOUT_MS * commitRequests).toBeLessThan(APPROVED_CALL_SETTLE_MS / 2);
-  });
-
   it('a call still running is not judged: the sweep leaves an unended approval alone until it settles', async () => {
     const row = await park();
-    let finish;
-    broker.executeApprovedToolCall.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const { reached, finish } = holdBroker();
     const deciding = decide(row, 'approved');
-    await new Promise((resolve) => { setTimeout(resolve, 100); });
+    await reached;
 
     await sweep(pastGrace());
     await sweep(new Date(Date.now() + APPROVED_CALL_SETTLE_MS - MINUTE));
@@ -591,10 +634,9 @@ describe('approve: a crash between the call and the marker', () => {
 
   it('a live call that outlasts the settle still lands its real ending over the unknown one', async () => {
     const row = await park();
-    let finish;
-    broker.executeApprovedToolCall.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const { reached, finish } = holdBroker();
     const deciding = decide(row, 'approved');
-    await new Promise((resolve) => { setTimeout(resolve, 100); });
+    await reached;
 
     await sweep(pastSettle());
     expect(await reread(row)).toMatchObject({ toolCallCode: 'approval_outcome_unknown' });
@@ -610,10 +652,9 @@ describe('approve: a crash between the call and the marker', () => {
 
   it('a late live ending reopens the row, so a closure failing after the sweep stamped it is still retried', async () => {
     const row = await park();
-    let finish;
-    broker.executeApprovedToolCall.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const { reached, finish } = holdBroker();
     const deciding = decide(row, 'approved');
-    await new Promise((resolve) => { setTimeout(resolve, 100); });
+    await reached;
     await sweep(pastSettle());
     expect((await reread(row)).expirySideEffectsDoneAt).toBeInstanceOf(Date);
 

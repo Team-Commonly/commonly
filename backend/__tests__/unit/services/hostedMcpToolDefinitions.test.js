@@ -825,6 +825,28 @@ describe('hosted-MCP results are bounded', () => {
       expect(isWriteUnknown(error)).toBe(false);
     });
 
+    it('a reset during tools/call, with no deadline, may have landed too', async () => {
+      const deps = makeDeps({ fetcher: jest.fn(async () => { throw new Error('socket hang up'); }) });
+      const error = await definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((e) => e);
+      expect(error).toMatchObject({ code: 'provider_unreachable' });
+      expect(isWriteUnknown(error)).toBe(true);
+    });
+
+    it('a reset during initialize sent no call', async () => {
+      const deps = makeDeps();
+      deps.fetcher = jest.fn(async () => { throw new Error('socket hang up'); });
+      const error = await definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((e) => e);
+      expect(error).toMatchObject({ code: 'provider_unreachable' });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
+
+    it('a vendor error reply during tools/call is an answer', async () => {
+      const deps = makeDeps({ fetcher: jest.fn(async () => new Response(null, { status: 500 })) });
+      const error = await definitionFor('linear.list_issues', deps).call({}, CONNECTION).catch((e) => e);
+      expect(error).toMatchObject({ code: 'provider_error' });
+      expect(isWriteUnknown(error)).toBe(false);
+    });
+
     it('during initialize: no call went out, so it is an ordinary failure', async () => {
       const error = await settle(hangingOn('initialize'));
       expect(error).toMatchObject({ code: 'provider_unreachable' });
