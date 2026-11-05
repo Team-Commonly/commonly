@@ -19,19 +19,27 @@ const WebhookDelivery = require('../../../models/WebhookDelivery');
 const { seedBuiltinConnectors } = require('../../../scripts/seed-builtin-connectors');
 
 describe('builtin connector seed when an index build fails', () => {
-  it('still seeds both connectors and builds the other models\' indexes', async () => {
-    InstallableInstallation.syncIndexes.mockRejectedValueOnce(
-      new Error('E11000 duplicate key error collection: commonly.installableinstallations'),
-    );
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it.each([
+    ['installation', InstallableInstallation],
+    ['connector secret', ConnectorSecret],
+    ['webhook delivery', WebhookDelivery],
+  ])('still seeds both connectors and every other index when the %s sync fails', async (what, failing) => {
+    failing.syncIndexes.mockRejectedValueOnce(new Error('E11000 duplicate key error'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const error = jest.spyOn(console, 'error').mockImplementation(() => {});
     try {
       await seedBuiltinConnectors();
 
-      expect(ConnectorSecret.syncIndexes).toHaveBeenCalled();
-      expect(WebhookDelivery.syncIndexes).toHaveBeenCalled();
+      expect(InstallableInstallation.syncIndexes).toHaveBeenCalledTimes(1);
+      expect(ConnectorSecret.syncIndexes).toHaveBeenCalledTimes(1);
+      expect(WebhookDelivery.syncIndexes).toHaveBeenCalledTimes(1);
       expect(Installable.findOneAndUpdate).toHaveBeenCalledTimes(2);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('[builtin-connectors]'), expect.any(String));
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`${what} index sync`), expect.any(String));
       expect(error).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
