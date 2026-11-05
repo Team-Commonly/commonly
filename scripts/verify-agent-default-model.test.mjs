@@ -11,21 +11,22 @@ const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'verify-agent-defau
 const CLAUDE = { model_name: 'claude-haiku-5-5', litellm_params: { model: 'anthropic/claude-haiku-5-5' } };
 const DEEPSEEK = { model_name: 'deepseek-v4-flash', litellm_params: { model: 'deepseek/deepseek-v4-flash' } };
 
-const manifest = ({ modelList = [CLAUDE, DEEPSEEK], routerSettings = {}, litellmSettings = {}, primary = 'openrouter/claude-haiku-5-5' } = {}) => {
+const manifest = ({ modelList = [CLAUDE, DEEPSEEK], routerSettings = {}, litellmSettings = {}, primary = 'openrouter/claude-haiku-5-5', backendEnv = [], extraDocs = [] } = {}) => {
   const docs = [
     { kind: 'ConfigMap', metadata: { name: 'litellm-config' }, data: { 'config.yaml': JSON.stringify({ model_list: modelList, router_settings: routerSettings, litellm_settings: litellmSettings }) } },
-    { kind: 'Deployment', metadata: { name: 'backend' }, spec: { template: { spec: { containers: [{ env: [{ name: 'AGENT_DEFAULT_MODEL', value: 'claude-haiku-5-5' }] }] } } } },
+    { kind: 'Deployment', metadata: { name: 'backend' }, spec: { template: { spec: { containers: [{ env: [{ name: 'AGENT_DEFAULT_MODEL', value: 'claude-haiku-5-5' }, ...backendEnv] }] } } } },
     { kind: 'ConfigMap', metadata: { name: 'clawdbot-config' }, data: { 'moltbot.json': JSON.stringify({
       models: { providers: { openrouter: { baseUrl: 'http://litellm.ns.svc.cluster.local:4000', models: [{ id: 'claude-haiku-5-5' }] } } },
       agents: { defaults: { model: { primary, fallbacks: ['google/gemini-2.5-flash'] } } },
     }) } },
+    ...extraDocs,
   ];
   return docs.map((d) => JSON.stringify(d)).join('\n---\n');
 };
 const verify = (input, args = ['--no-deepseek']) => spawnSync(process.execPath, [SCRIPT, ...args], { input, encoding: 'utf8' });
 
 test('a Claude-only render passes', () => {
-  const result = verify(manifest());
+  const result = verify(manifest({ modelList: [CLAUDE] }));
   assert.equal(result.status, 0, result.stderr);
 });
 
@@ -81,7 +82,7 @@ test('a model_group_alias from the default to DeepSeek fails, whether or not the
 
 test('a default served only through a Claude alias passes', () => {
   const result = verify(manifest({
-    modelList: [{ model_name: 'claude-haiku-latest', litellm_params: { model: 'anthropic/claude-haiku-5-5' } }, DEEPSEEK],
+    modelList: [{ model_name: 'claude-haiku-latest', litellm_params: { model: 'anthropic/claude-haiku-5-5' } }],
     routerSettings: { model_group_alias: { 'claude-haiku-5-5': 'claude-haiku-latest' } },
   }));
   assert.equal(result.status, 0, result.stderr);
@@ -116,10 +117,53 @@ test('a google/* primary fails; a google/* fallback is listed but not resolved',
   const result = verify(manifest({ primary: 'google/gemini-2.5-flash' }));
   assert.equal(result.status, 1);
   assert.match(result.stderr, /goes straight to Google/);
-  assert.match(verify(manifest()).stdout, /google\/gemini-2\.5-flash \(direct to Google, not resolved\)/);
+  assert.match(verify(manifest({ modelList: [CLAUDE] })).stdout, /google\/gemini-2\.5-flash \(direct to Google, not resolved\)/);
 });
 
 test('without --no-deepseek, a DeepSeek fallback is allowed (base)', () => {
   const result = verify(manifest({ routerSettings: { fallbacks: [{ 'claude-haiku-5-5': ['deepseek-v4-flash'] }] } }), []);
   assert.equal(result.status, 0, result.stderr);
+});
+
+// F159: with --no-deepseek (dev), DeepSeek is deleted, not only unused: no
+// route, no key on any workload or in any ExternalSecret, and no chat-model
+// default naming it.
+const litellmDeployment = (env) => ({ kind: 'Deployment', metadata: { name: 'litellm' }, spec: { template: { spec: { containers: [{ env }] } } } });
+const keyEnv = { name: 'DEEPSEEK_API_KEY', valueFrom: { secretKeyRef: { name: 'api-keys', key: 'deepseek-api-key' } } };
+const externalSecret = (secretKey) => ({ kind: 'ExternalSecret', metadata: { name: 'api-keys' }, spec: { data: [{ secretKey: 'jwt-secret' }, { secretKey }] } });
+
+test('a DeepSeek route no default names still fails with --no-deepseek, and passes without', () => {
+  const input = manifest({ modelList: [CLAUDE, { model_name: 'deepseek-flash-1017', litellm_params: { model: 'deepseek/deepseek-flash' } }] });
+  const result = verify(input);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /litellm-config routes "deepseek-flash-1017" to DeepSeek \(deepseek\/deepseek-flash\)/);
+  assert.equal(verify(input, []).status, 0);
+});
+
+test('a DeepSeek key on a workload or in an ExternalSecret fails with --no-deepseek, and passes without', () => {
+  for (const [extraDocs, message] of [
+    [[litellmDeployment([keyEnv])], /litellm: env DEEPSEEK_API_KEY is set/],
+    [[litellmDeployment([{ name: 'X', valueFrom: { secretKeyRef: { name: 'api-keys', key: 'deepseek-api-key' } } }])], /litellm: env X reads secret key deepseek-api-key/],
+    [[externalSecret('deepseek-api-key')], /ExternalSecret api-keys maps deepseek-api-key/],
+  ]) {
+    const input = manifest({ modelList: [CLAUDE], extraDocs });
+    const result = verify(input);
+    assert.equal(result.status, 1, String(message));
+    assert.match(result.stderr, message);
+    assert.equal(verify(input, []).status, 0, String(message));
+  }
+});
+
+test('the chat-model defaults are resolved: DeepSeek fails with --no-deepseek, an unrouted one always', () => {
+  for (const name of ['LITELLM_CHAT_MODEL', 'NATIVE_RUNTIME_MODEL', 'LLM_SERVICE_MODEL']) {
+    const deepseek = manifest({ backendEnv: [{ name, value: 'deepseek-v4-flash' }] });
+    failsOnDeepseek(verify(deepseek), name);
+    assert.equal(verify(deepseek, []).status, 0, name);
+    const unrouted = verify(manifest({ modelList: [CLAUDE], backendEnv: [{ name, value: 'deepseek-v4-flash' }] }), []);
+    assert.equal(unrouted.status, 1, name);
+    assert.match(unrouted.stderr, new RegExp(`backend ${name}: "deepseek-v4-flash" is not a LiteLLM model_name`));
+  }
+  const bot = { kind: 'Deployment', metadata: { name: 'commonly-bot' }, spec: { template: { spec: { containers: [{ env: [{ name: 'AGENT_MODEL', value: 'deepseek-v4-flash' }] }] } } } };
+  failsOnDeepseek(verify(manifest({ extraDocs: [bot] })), 'commonly-bot AGENT_MODEL');
+  assert.equal(verify(manifest({ modelList: [CLAUDE], backendEnv: [{ name: 'LITELLM_CHAT_MODEL', value: 'claude-haiku-5-5' }] })).status, 0);
 });

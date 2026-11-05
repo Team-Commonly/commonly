@@ -634,8 +634,13 @@ spec:
         - name: LITELLM_CHAT_MODEL
           # deepseek-v4-flash (Sam, 2026-09-01): summary quality on
           # gpt-5.4-mini was "no good info at all"; the DeepSeek flash
-          # entry already exists in LiteLLM with a live key.
+          # entry already exists in LiteLLM with a live key. With DeepSeek
+          # off (F159, dev), the configured agent default instead.
+          {{- if .Values.aiProviders.deepseek.enabled }}
           value: "deepseek-v4-flash"
+          {{- else }}
+          value: {{ .Values.litellm.agentDefaultModel | quote }}
+          {{- end }}
         # F103: the model every agent driver default names (the K8s provisioner's
         # primaries and key allowlists, the global policy's community default).
         - name: AGENT_DEFAULT_MODEL
