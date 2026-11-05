@@ -141,14 +141,14 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
         {savedAbout !== null && <div className="lrow v2-agent-settings-page__stack">
           <label className="lb" htmlFor="agent-identity-about"><V2AgentSettingsIcon name="smile" />{t('agentSettings.about')}</label>
           <span className="vl">
-            <span className="field field--area">
+            <span className="field field--area v2-agent-settings-page__name v2-agent-settings-page__about">
               <textarea id="agent-identity-about" value={about} rows={2} maxLength={ABOUT_MAX}
                 aria-invalid={aboutError || undefined}
                 aria-describedby={aboutError ? 'agent-identity-about-hint agent-identity-about-error' : 'agent-identity-about-hint'}
                 onChange={(event) => setAbout(event.target.value)} />
               <span className="mu" aria-hidden="true">{about.length} / {ABOUT_MAX}</span>
             </span>
-            <span id="agent-identity-about-hint" className="mu">{t('agentSettings.aboutHint')}</span>
+            <span id="agent-identity-about-hint" className="v2-agent-settings-page__abouthint">{t('agentSettings.aboutHint')}</span>
             {aboutError && <span id="agent-identity-about-error" role="alert" className="v2-agent-settings-page__fielderror">{t('agentSettings.aboutError')}</span>}
           </span>
           <span className="ac" />
