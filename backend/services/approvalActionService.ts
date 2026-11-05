@@ -446,6 +446,166 @@ export const proposeActionForRuntime = async (input: {
   return { status: 200, body: { ...result } };
 };
 
+type OpenToolCallRow = {
+  _id: unknown;
+  messageId?: string;
+  status?: string;
+  expiresAt?: Date;
+  toolCall?: { callId?: string };
+};
+type WaitingRun = { runId: string; runPodId?: string };
+
+/**
+ * A lost race on a unique index. MongoDB answers E11000; FerretDB can answer a
+ * code-1 constraint error instead (ADR-034 group 3), which carries no
+ * keyPattern, so neither this nor its caller reads one.
+ */
+const isDuplicateKeyError = (error: unknown): boolean => {
+  const e = error as { code?: unknown; message?: unknown } | null;
+  if (e?.code === 11000) return true;
+  return e?.code === 1 && /duplicate key|unique constraint/i.test(String(e?.message || ''));
+};
+
+const queueFull = (waiting: number): ProposeResult => ({
+  ok: false,
+  code: 'approval_queue_full',
+  pending: waiting,
+  error: `The owner has ${waiting} approvals waiting from this agent here, and a new one can't be added `
+    + 'until they act on one. Nothing ran.',
+});
+
+/**
+ * Park a later run on an approval that is already waiting (F180), and record
+ * that run on it (F184) so the decision event names every run whose call it
+ * decides, not only the run that happened to post the card.
+ */
+const reuseOpenToolCall = async (same: OpenToolCallRow, waitingRun: WaitingRun | null): Promise<ProposeResult> => {
+  if (waitingRun) {
+    await ApprovalAction.updateOne(
+      { _id: same._id, status: 'flagged', runId: { $ne: waitingRun.runId } },
+      { $addToSet: { waitingRuns: waitingRun } },
+    );
+  }
+  return {
+    ok: true,
+    reused: true,
+    approvalId: String(same._id),
+    messageId: String(same.messageId || ''),
+    callId: String(same.toolCall?.callId || ''),
+  };
+};
+
+/** How long a racing identical call waits for the winner's card (F184). */
+const TWIN_CARD_WAIT_MS = 2000;
+const TWIN_CARD_POLL_MS = 50;
+/** Create attempts per proposal before giving up as unavailable (F184). */
+const MAX_SLOT_ATTEMPTS = MAX_OPEN_TOOL_CALL_APPROVALS * 3;
+
+/**
+ * The open identical row that won a race: once its card is posted, this call
+ * parks on it. `retry` means the twin closed (its card failed, it was decided
+ * or it lapsed) and the slot it held may be free; `unavailable` means its card
+ * is still not posted after a short wait.
+ */
+const settleOnTwin = async (
+  twinId: unknown,
+  waitingRun: WaitingRun | null,
+): Promise<{ result: ProposeResult } | 'retry' | 'unavailable'> => {
+  const deadline = Date.now() + TWIN_CARD_WAIT_MS;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop
+    const twin = await ApprovalAction.findById(twinId).lean() as (OpenToolCallRow
+      & { toolCall?: ApprovalToolCall }) | null;
+    if (!twin || twin.status !== 'flagged') return 'retry';
+    if (twin.expiresAt && new Date(twin.expiresAt).getTime() <= Date.now()) {
+      // An unswept lapsed row still holds the identity; close it the way the
+      // sweeper would, then take its place.
+      // eslint-disable-next-line no-await-in-loop
+      await expireToolCallApproval(twin, new Date());
+      return 'retry';
+    }
+    if (twin.messageId) {
+      // eslint-disable-next-line no-await-in-loop
+      return { result: await reuseOpenToolCall(twin, waitingRun) };
+    }
+    if (Date.now() >= deadline) return 'unavailable';
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => { setTimeout(resolve, TWIN_CARD_POLL_MS); });
+  }
+};
+
+/**
+ * F184: create a broker approval in one of the seat's open-card slots, with
+ * the two partial unique indexes on ApprovalAction as the arbiter. A lost race
+ * on the identity index means an identical call is already open, so this call
+ * parks on it; a lost race on a slot means another call took that slot, so the
+ * next is tried. When every slot is taken, lapsed rows that still hold one are
+ * expired and the slots tried again once; otherwise the queue is full.
+ *
+ * Why slots and not a counter document: a counter has to be decremented on
+ * every path that closes an approval (decide, expire in the decide path, the
+ * sweeper, a failed card, the cardless sweep), and one missed decrement leaks
+ * a slot for good. A slot is held by the open row itself and is freed by the
+ * same write that closes the row, so there is nothing to release.
+ */
+const claimToolCallSlot = async (
+  doc: Record<string, unknown>,
+  identity: Record<string, unknown>,
+  open: Record<string, unknown>,
+  waitingRun: WaitingRun | null,
+): Promise<{ row: IApprovalAction } | { result: ProposeResult }> => {
+  let attempts = 0;
+  let swept = false;
+  let slot = 0;
+  while (attempts < MAX_SLOT_ATTEMPTS) {
+    if (slot >= MAX_OPEN_TOOL_CALL_APPROVALS) {
+      if (swept) break;
+      swept = true;
+      // eslint-disable-next-line no-await-in-loop
+      const lapsed = await ApprovalAction.find({
+        podId: open.podId, agentUserId: open.agentUserId, actionType: 'tool_call',
+        status: 'flagged', expiresAt: { $lte: new Date() },
+      }).select('_id toolCall').lean() as Array<{ _id: unknown; toolCall?: ApprovalToolCall }>;
+      if (!lapsed.length) break;
+      for (const one of lapsed) {
+        // eslint-disable-next-line no-await-in-loop
+        await expireToolCallApproval(one, new Date());
+      }
+      slot = 0;
+    }
+    attempts += 1;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      return { row: await ApprovalAction.create({ ...doc, toolCallSlot: slot }) };
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) throw error;
+    }
+    // Which index refused is read from the data, not the error: FerretDB's
+    // form names no key.
+    // eslint-disable-next-line no-await-in-loop
+    const twin = await ApprovalAction.findOne({ ...identity, toolCallSlot: { $exists: true } })
+      .select('_id').lean() as { _id: unknown } | null;
+    if (twin) {
+      // eslint-disable-next-line no-await-in-loop
+      const settled = await settleOnTwin(twin._id, waitingRun);
+      if (settled === 'unavailable') {
+        return {
+          result: {
+            ok: false,
+            code: 'approval_unavailable',
+            error: 'an identical call is already waiting for its approval card to post',
+          },
+        };
+      }
+      if (settled !== 'retry') return settled;
+      continue;
+    }
+    slot += 1;
+  }
+  // eslint-disable-next-line no-await-in-loop
+  return { result: queueFull(Math.max(await ApprovalAction.countDocuments(open), MAX_OPEN_TOOL_CALL_APPROVALS)) };
+};
+
 export const proposeAction = async (options: ProposeOptions): Promise<ProposeResult> => {
   const {
     podId, agentName, instanceId, displayName, actionType, params, summary, installationConfig,
@@ -552,45 +712,42 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
   // F180: the broker's cards skip the posting guards, so they get their own
   // bounds. An identical call already waiting is that call, not a new one; and
   // a seat may keep only so many waiting in one pod before the owner acts.
-  if (actionType === 'tool_call' && toolCall && agentUserId) {
-    const open = {
-      podId,
-      agentUserId: String(agentUserId),
-      actionType: 'tool_call',
-      status: 'flagged',
-      expiresAt: { $gt: new Date() },
-    };
+  // These reads are the fast path; the store enforces both (F184, below).
+  const isBrokerCall = actionType === 'tool_call' && !!toolCall && !!agentUserId;
+  const identity = isBrokerCall && toolCall ? {
+    podId,
+    agentUserId: String(agentUserId),
+    ownerUserId,
+    actionType: 'tool_call',
+    status: 'flagged',
+    'toolCall.grantId': toolCall.grantId,
+    'toolCall.tool': toolCall.tool,
+    'toolCall.argsDigest': toolCall.argsDigest,
+    // null matches a missing digest as well as a stored null, as the index does.
+    'toolCall.definitionDigest': toolCall.definitionDigest ?? null,
+  } : null;
+  const open = isBrokerCall ? {
+    podId,
+    agentUserId: String(agentUserId),
+    actionType: 'tool_call',
+    status: 'flagged',
+    expiresAt: { $gt: new Date() },
+  } : null;
+  const waitingRun = options.runId
+    ? { runId: options.runId, ...(options.runPodId ? { runPodId: options.runPodId } : {}) }
+    : null;
+  if (identity && open) {
     const same = await ApprovalAction.findOne({
-      ...open,
-      ownerUserId,
-      'toolCall.grantId': toolCall.grantId,
-      'toolCall.tool': toolCall.tool,
-      'toolCall.argsDigest': toolCall.argsDigest,
-      'toolCall.definitionDigest': toolCall.definitionDigest ?? { $exists: false },
+      ...identity,
+      expiresAt: { $gt: new Date() },
       messageId: { $exists: true, $ne: '' },
-    }).sort({ createdAt: -1 }).lean() as { _id: unknown; messageId?: string; toolCall?: { callId?: string } } | null;
-    if (same) {
-      return {
-        ok: true,
-        reused: true,
-        approvalId: String(same._id),
-        messageId: String(same.messageId || ''),
-        callId: String(same.toolCall?.callId || ''),
-      };
-    }
+    }).sort({ createdAt: -1 }).lean() as OpenToolCallRow | null;
+    if (same) return reuseOpenToolCall(same, waitingRun);
     const waiting = await ApprovalAction.countDocuments(open);
-    if (waiting >= MAX_OPEN_TOOL_CALL_APPROVALS) {
-      return {
-        ok: false,
-        code: 'approval_queue_full',
-        pending: waiting,
-        error: `The owner has ${waiting} approvals waiting from this agent here, and a new one can't be added `
-          + 'until they act on one. Nothing ran.',
-      };
-    }
+    if (waiting >= MAX_OPEN_TOOL_CALL_APPROVALS) return queueFull(waiting);
   }
 
-  const row = await ApprovalAction.create({
+  const doc = {
     ...(options.runId ? { runId: options.runId,
       ...(options.runPodId ? { runPodId: options.runPodId } : {}) } : {}),
     podId,
@@ -605,7 +762,15 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
       ? { expiresAt: new Date(Math.min(Date.now() + 24 * 60 * 60 * 1000, approvalExpiresAt.getTime())) }
       : {}),
     summary: cardSummary.slice(0, 500),
-  });
+  };
+  let row: IApprovalAction;
+  if (identity && open) {
+    const claim = await claimToolCallSlot(doc, identity, open, waitingRun);
+    if ('result' in claim) return claim.result;
+    row = claim.row;
+  } else {
+    row = await ApprovalAction.create(doc);
+  }
 
   // The card message. `content` is the plain-text fallback so legacy
   // surfaces (v1, digests, notifications) still show something meaningful.
@@ -882,6 +1047,10 @@ const enqueueToolCallResolvedEvent = async (
     // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
     const AgentEventService = require('./agentEventService');
     const tool = String(row.toolCall?.tool || 'the parked tool');
+    const runIds = Array.from(new Set([
+      ...(row.runId ? [String(row.runId)] : []),
+      ...(row.waitingRuns || []).map((run) => String(run.runId)),
+    ]));
     const content = [
       '[Parked tool call resolved]',
       `${tool}: ${row.toolCallEnding}${row.toolCallCode ? ` (${row.toolCallCode})` : ''}.`,
@@ -900,6 +1069,9 @@ const enqueueToolCallResolvedEvent = async (
         ending: row.toolCallEnding,
         code: row.toolCallCode,
         callId: row.toolCallTrailId,
+        // Every run whose call this decides (F184): the run that posted the
+        // card and any later run an identical call parked on it.
+        ...(runIds.length ? { runIds } : {}),
         ...(approver ? { approvedBy: approver } : {}),
         ...(receipt ? { receipt } : {}),
         resolvedAt: (row.resolvedAt ? new Date(row.resolvedAt) : new Date()).toISOString(),
@@ -1163,6 +1335,41 @@ const executeApprovedToolCall = async (
   return response;
 };
 
+/**
+ * Close one lapsed broker approval as `expired` (scrub, trail, outcome, card,
+ * wake). False when it was no longer open: someone else closed it first.
+ */
+const expireToolCallApproval = async (
+  row: { _id: unknown; toolCall?: ApprovalToolCall },
+  now: Date,
+): Promise<boolean> => {
+  const result = await ApprovalAction.findOneAndUpdate(
+    { _id: row._id, status: 'flagged' },
+    {
+      $set: {
+        status: 'expired', resolvedAt: now,
+        decidedBy: 'policy', decidedByRole: 'policy',
+        toolCallEnding: 'expired', toolCallCode: 'approval_expired',
+      },
+      $unset: { 'toolCall.canonicalArgs': 1 },
+    },
+    { new: true },
+  );
+  if (!result) return false;
+  if (result.toolCall) result.toolCall.canonicalArgs = undefined;
+  // eslint-disable-next-line global-require
+  const { resolve: resolveExpiredAttention } = require('./attentionItemService');
+  await resolveExpiredAttention('approval_action', row._id);
+  result.toolCallEnding = 'expired';
+  result.toolCallCode = 'approval_expired';
+  result.toolCallTrailId = await recordToolCallDecision(result, 'refused', 'approval_expired', row.toolCall);
+  await result.save();
+  recordApprovalOutcome(result, row.toolCall, { kind: 'expired' });
+  await updateCardEverywhere(result);
+  await enqueueToolCallResolvedEvent(result);
+  return true;
+};
+
 /** First-sweep hook for abandoned broker approvals. */
 export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<number> => {
   const rows = await ApprovalAction.find({
@@ -1173,34 +1380,47 @@ export const sweepExpiredToolCallApprovals = async (now = new Date()): Promise<n
   let expired = 0;
   for (const row of rows) {
     // eslint-disable-next-line no-await-in-loop
-    const result = await ApprovalAction.findOneAndUpdate(
-      { _id: row._id, status: 'flagged' },
-      {
-        $set: {
-          status: 'expired', resolvedAt: now,
-          decidedBy: 'policy', decidedByRole: 'policy',
-          toolCallEnding: 'expired', toolCallCode: 'approval_expired',
-        },
-        $unset: { 'toolCall.canonicalArgs': 1 },
-      },
-      { new: true },
-    );
-    if (result) {
-      expired += 1;
-      if (result.toolCall) result.toolCall.canonicalArgs = undefined;
-      // eslint-disable-next-line global-require
-      const { resolve: resolveExpiredAttention } = require('./attentionItemService');
-      await resolveExpiredAttention('approval_action', row._id);
-      result.toolCallEnding = 'expired';
-      result.toolCallCode = 'approval_expired';
-      result.toolCallTrailId = await recordToolCallDecision(result, 'refused', 'approval_expired', row.toolCall);
-      await result.save();
-      recordApprovalOutcome(result, row.toolCall, { kind: 'expired' });
-      await updateCardEverywhere(result);
-      await enqueueToolCallResolvedEvent(result);
-    }
+    if (await expireToolCallApproval(row, now)) expired += 1;
   }
   return expired;
+};
+
+/**
+ * How long an open broker approval may go without its card before the sweep
+ * treats it as a crash between create and post (F184). proposeAction posts the
+ * card right after the create, so minutes is far past any live post.
+ */
+export const CARDLESS_TOOL_CALL_GRACE_MS = 5 * 60 * 1000;
+
+/**
+ * F184: an open broker approval with no card is one whose process died between
+ * the create and the post. Nobody can see or decide it, yet it holds one of
+ * the seat's open-card slots and its call's identity for its whole deadline.
+ * Mark it moot, as proposeAction does for a card that fails to post, which
+ * frees both. No one is waiting on it: a later identical call parks on an open
+ * row only once its card exists, and is told to retry until then.
+ */
+export const sweepCardlessToolCallApprovals = async (
+  now = new Date(),
+  graceMs = CARDLESS_TOOL_CALL_GRACE_MS,
+): Promise<number> => {
+  const cardless = { $in: [null, ''] };
+  const rows = await ApprovalAction.find({
+    actionType: 'tool_call',
+    status: 'flagged',
+    messageId: cardless,
+    createdAt: { $lte: new Date(now.getTime() - graceMs) },
+  }).select('_id').lean() as Array<{ _id: unknown }>;
+  let mooted = 0;
+  for (const row of rows) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await ApprovalAction.updateOne(
+      { _id: row._id, status: 'flagged', messageId: cardless },
+      { $set: { status: 'moot' }, $unset: { 'toolCall.canonicalArgs': 1 } },
+    );
+    if (result.modifiedCount) mooted += 1;
+  }
+  return mooted;
 };
 
 // ── executors (D2: user authority owns the result) ──────────────────────────

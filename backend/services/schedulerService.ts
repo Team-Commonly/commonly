@@ -566,9 +566,14 @@ class SchedulerService {
       async () => {
         try {
           // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
-          const { sweepExpiredToolCallApprovals } = require('./approvalActionService');
+          const {
+            sweepExpiredToolCallApprovals, sweepCardlessToolCallApprovals,
+          } = require('./approvalActionService');
           const expired = await sweepExpiredToolCallApprovals();
           if (expired) console.log(`[approval] expired tool calls=${expired}`);
+          // F184: a row whose card never posted holds a seat's open slot.
+          const mooted = await sweepCardlessToolCallApprovals();
+          if (mooted) console.log(`[approval] mooted cardless tool calls=${mooted}`);
         } catch (error) {
           console.error('[approval] tool-call expiry sweep failed:', error);
         }
