@@ -1501,6 +1501,15 @@ describe('claude adapter — a workspace seat', () => {
     expect(text).not.toContain('You cannot edit');
   });
 
+  // #3504 (CodeRabbit): the git clause appears exactly when the tool is mounted.
+  test('a read-only workspace seat hears about the read-only git tool only when it is mounted', () => {
+    const withGit = seatPermissionsText({ trust: 'workspace', allow: [], gitTool: true });
+    const withoutGit = seatPermissionsText({ trust: 'workspace', allow: [], gitTool: false });
+    expect(withGit).toContain('You can read the files in your working folder, and read its history through the read-only git tool.');
+    expect(withoutGit).toContain('You can read the files in your working folder.');
+    expect(withoutGit).not.toContain('git');
+  });
+
   test('a write seat on a host with no jail is told it can edit but has no shell, and never told .git is held', () => {
     const text = seatPermissionsText({ trust: 'workspace', allow: ['write'], noShell: true, gitTool: true });
     expect(text).toContain('You can read and edit the files in your working folder. You cannot run shell commands.');
