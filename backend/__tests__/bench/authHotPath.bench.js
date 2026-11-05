@@ -84,7 +84,8 @@ jest.setTimeout(30 * 60 * 1000);
   const label = process.env.BENCH_LABEL || 'store';
   const table = [`### Auth hot path on ${label} (ms, ${RUNS} runs, ${USERS} users)`, '', '| | p50 | p95 | p99 |', '|---|---|---|---|',
     ...rows.map((r) => `| ${r.label} | ${r.p50} | ${r.p95} | ${r.p99} |`), ''].join('\n');
-  console.log(`BENCH ${label} ${JSON.stringify(rows)}`); // eslint-disable-line no-console
+  // stderr, not console: __tests__/setup.js silences console in every worker.
+  process.stderr.write(`BENCH ${label} ${JSON.stringify(rows)}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${table}\n`);
   expect(rows).toHaveLength(4);
 });
