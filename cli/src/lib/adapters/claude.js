@@ -1529,6 +1529,10 @@ const prepareArgv = async (innerArgv, ctx) => {
     const { statePath } = ctx.publicClaudeState;
     const wrapped = wrapArgvWithBwrap([claudeBin, ...innerArgv], env, {
       workspacePath: ctx.cwd,
+      // F200: bwrap resolves a bind source when the jail starts, after the
+      // check, so the checked realpath is the source, mounted at the path the
+      // seat was given.
+      workspaceSource: ctx.workspaceRealpath || ctx.cwd,
       workspaceReadOnly: !grants.includes('write'),
       readOnlyWorkspaceEntries: ['.git'],
       homePath: statePath,

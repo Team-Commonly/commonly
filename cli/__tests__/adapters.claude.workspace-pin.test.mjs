@@ -108,6 +108,23 @@ describe('a Seatbelt workspace seat\'s folder is held to the realpath it was fir
     expect(fs.statSync(workspacePinFile(state)).mode & 0o777).toBe(0o600);
   });
 
+  // An existing seat is recorded on its first turn after the update, so the
+  // operator gets one line to check that it recorded the folder they expect.
+  test('the first record is logged once, naming the path and its realpath', async () => {
+    const link = path.join(root, 'project-link');
+    fs.symlinkSync(cwd, link);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { impl } = recorder();
+      await turn(impl, { dir: link });
+      await turn(impl, { dir: link });
+      const lines = warn.mock.calls.map((args) => args.join(' ')).filter((line) => line.includes('recorded '));
+      expect(lines).toEqual([expect.stringContaining(`recorded ${link} → ${cwd}`)]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('a folder whose realpath is unchanged runs on every turn', async () => {
     const { impl, calls } = recorder();
     await turn(impl);
@@ -228,6 +245,33 @@ describe('a Seatbelt workspace seat\'s folder is held to the realpath it was fir
     expect(calls).toHaveLength(0);
   });
 
+  test.each([
+    ['corrupt JSON', '{"workspaces": {'],
+    ['workspaces as an array', JSON.stringify({ workspaces: [] })],
+    ['workspaces missing', JSON.stringify({ other: {} })],
+    ['a bare array', JSON.stringify([])],
+  ])('a record holding %s is refused before spawn, and left as it was', async (_label, content) => {
+    fs.mkdirSync(workspacePinDir(state), { recursive: true });
+    fs.writeFileSync(workspacePinFile(state), content);
+    const { impl, calls } = recorder();
+    const error = await turn(impl).catch((err) => err);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/cannot be read/);
+    expect(calls).toHaveLength(0);
+    expect(fs.readFileSync(workspacePinFile(state), 'utf8')).toBe(content);
+  });
+
+  // Removing the record trusts whatever the folder resolves to now, so the
+  // operator is asked to look first.
+  test('an unreadable record\'s recovery text asks the operator to confirm the folder before removing it', async () => {
+    fs.mkdirSync(workspacePinDir(state), { recursive: true });
+    fs.writeFileSync(workspacePinFile(state), 'not json');
+    const error = await turn(recorder().impl).catch((err) => err);
+    const confirm = error.message.search(/confirm .* resolves where you expect/);
+    expect(confirm).toBeGreaterThan(-1);
+    expect(error.message.indexOf('remove')).toBeGreaterThan(confirm);
+  });
+
   test('a recorded file that is a link is refused, not read through', async () => {
     fs.mkdirSync(workspacePinDir(state), { recursive: true });
     const elsewhere = path.join(decoy, 'pins.json');
@@ -289,16 +333,34 @@ describe('a bwrap workspace seat\'s folder is held to the realpath it was first 
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  const turn = (impl) => claude.spawn('hi', {
+  const turn = (impl, dir = cwd) => claude.spawn('hi', {
     agentName: 'f200-bwrap-seat',
     sessionId: null,
-    cwd,
+    cwd: dir,
     env: { PATH: process.env.PATH, CLAUDE_CONFIG_DIR: operatorClaude },
     environment: { model: 'test-model', sandbox: { mode: 'bwrap', trust: 'workspace', allow: ['write'] } },
     memoryLongTerm: '',
     _publicClaudeState: state,
     _detectBwrap: () => ({ available: true, path: 'bwrap' }),
     _spawnImpl: impl,
+  });
+
+  // bwrap resolves a bind source when the jail starts, after the check. The
+  // checked realpath is the source, mounted at the path the seat was given,
+  // so a swap after the check cannot move the mount.
+  test('binds the checked realpath at the given path, with .git held read-only from it', async () => {
+    const link = path.join(root, 'project-link');
+    fs.symlinkSync(cwd, link);
+    const { impl, calls } = recorder();
+    await turn(impl, link);
+    expect(calls).toHaveLength(1);
+    const { args } = calls[0];
+    const triples = args.flatMap((arg, i) => (
+      ['--bind', '--ro-bind'].includes(arg) ? [[arg, args[i + 1], args[i + 2]]] : []));
+    expect(triples).toContainEqual(['--bind', cwd, link]);
+    expect(triples).toContainEqual(['--ro-bind', path.join(cwd, '.git'), path.join(link, '.git')]);
+    expect(triples.filter(([, src]) => src === link)).toEqual([]);
+    expect(args[args.indexOf('--chdir') + 1]).toBe(link);
   });
 
   test('records on the first turn, runs while unchanged, and refuses a folder replaced by a link', async () => {

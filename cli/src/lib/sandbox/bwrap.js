@@ -178,7 +178,14 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     flags.push('--bind', p, p);
   }
 
-  flags.push(opts.workspaceReadOnly ? '--ro-bind' : '--bind', opts.workspacePath, opts.workspacePath);
+  // The folder mounted at workspacePath: workspaceSource when the caller has
+  // already resolved and checked it, so the mount cannot follow a link that
+  // replaced the folder after that check.
+  const workspaceSource = opts.workspaceSource || opts.workspacePath;
+  if (!isAbsolute(workspaceSource)) {
+    throw new Error('wrapArgvWithBwrap opts.workspaceSource must be an absolute path');
+  }
+  flags.push(opts.workspaceReadOnly ? '--ro-bind' : '--bind', workspaceSource, opts.workspacePath);
   // Entries held read-only inside a writable workspace (its .git). Bound after
   // the workspace so they land on top of it. In a writable workspace a missing
   // entry cannot be protected — the child could create it, and a planted
@@ -188,8 +195,8 @@ export const wrapArgvWithBwrap = (innerArgv, env, opts = {}) => {
     if (!entry || isAbsolute(entry) || entry.split(/[\\/]/).includes('..')) {
       throw new Error('wrapArgvWithBwrap opts.readOnlyWorkspaceEntries entries must be relative names inside the workspace');
     }
-    const p = join(opts.workspacePath, entry);
-    flags.push(opts.workspaceReadOnly ? '--ro-bind-try' : '--ro-bind', p, p);
+    flags.push(opts.workspaceReadOnly ? '--ro-bind-try' : '--ro-bind',
+      join(workspaceSource, entry), join(opts.workspacePath, entry));
   }
   flags.push('--chdir', opts.workspacePath);
   flags.push('--setenv', 'HOME', opts.homePath || opts.workspacePath);

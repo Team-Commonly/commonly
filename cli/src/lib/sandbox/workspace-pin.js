@@ -48,12 +48,14 @@ const readRecord = async (file) => {
   }
   const unreadable = (why) => new Error(
     `refusing a workspace turn: this agent's workspace record ${file} ${why}. `
-    + 'Remove it, and the next turn records the folder again.',
+    + 'First confirm the agent\'s folder resolves where you expect (for example with `realpath`), '
+    + 'then remove the record; the next turn records the folder as it resolves then.',
   );
   if (!stat.isFile()) throw unreadable('is not a regular file');
   try {
     const parsed = JSON.parse(await readFile(file, 'utf8'));
-    if (!parsed || typeof parsed !== 'object' || typeof parsed.workspaces !== 'object' || !parsed.workspaces) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)
+      || typeof parsed.workspaces !== 'object' || !parsed.workspaces || Array.isArray(parsed.workspaces)) {
       throw new Error('bad shape');
     }
     return parsed;
@@ -88,7 +90,7 @@ const changed = ({ given, current, recorded, file }) => new Error(
  * with no record does not exist (nothing to resolve; the grant then names the
  * path as given).
  */
-export const holdWorkspaceRealpath = async ({ cwd, statePath }) => {
+export const holdWorkspaceRealpath = async ({ cwd, statePath, log = (line) => console.warn(line) }) => {
   const given = resolve(cwd);
   const file = workspacePinFile(statePath);
   let current;
@@ -128,6 +130,9 @@ export const holdWorkspaceRealpath = async ({ cwd, statePath }) => {
     ...record,
     workspaces: { ...record.workspaces, [given]: { realpath: current, recordedAt: new Date().toISOString() } },
   });
+  // Once per folder: a seat that ran before this check is recorded as its
+  // folder resolves now, which the operator should confirm.
+  log(`[claude] workspace: recorded ${given} → ${current}`);
   return current;
 };
 
