@@ -176,12 +176,28 @@ interface ProposeResult {
    * (the message service declined it; asking again will not help) or
    * `approval_unavailable` (the message store failed; a retry may work).
    */
-  code?: 'approval_card_refused' | 'approval_unavailable';
+  code?: 'approval_card_refused' | 'approval_unavailable' | 'approval_queue_full';
   /** The message service's own reason for a refused card. */
   reason?: string;
   approvalId?: string;
   messageId?: string;
+  /**
+   * A `tool_call` identical to one already waiting (F180): the existing
+   * approval is returned, with the call id it parked under, and no new card
+   * is posted.
+   */
+  reused?: boolean;
+  callId?: string;
+  /** For `approval_queue_full`: how many of this seat's cards are waiting here. */
+  pending?: number;
 }
+
+/**
+ * Open `tool_call` cards one seat may have waiting in one pod (F180). Parking
+ * spends no grant budget, so without this the only bound on a seat's cards
+ * is the message rate limit.
+ */
+export const MAX_OPEN_TOOL_CALL_APPROVALS = 3;
 
 const validateParams = (actionType: ApprovalActionType, params: Record<string, unknown>): string | null => {
   if (actionType === 'create_pod') {
@@ -533,6 +549,47 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     }
   }
 
+  // F180: the broker's cards skip the posting guards, so they get their own
+  // bounds. An identical call already waiting is that call, not a new one; and
+  // a seat may keep only so many waiting in one pod before the owner acts.
+  if (actionType === 'tool_call' && toolCall && agentUserId) {
+    const open = {
+      podId,
+      agentUserId: String(agentUserId),
+      actionType: 'tool_call',
+      status: 'flagged',
+      expiresAt: { $gt: new Date() },
+    };
+    const same = await ApprovalAction.findOne({
+      ...open,
+      ownerUserId,
+      'toolCall.grantId': toolCall.grantId,
+      'toolCall.tool': toolCall.tool,
+      'toolCall.argsDigest': toolCall.argsDigest,
+      'toolCall.definitionDigest': toolCall.definitionDigest ?? { $exists: false },
+      messageId: { $exists: true, $ne: '' },
+    }).sort({ createdAt: -1 }).lean() as { _id: unknown; messageId?: string; toolCall?: { callId?: string } } | null;
+    if (same) {
+      return {
+        ok: true,
+        reused: true,
+        approvalId: String(same._id),
+        messageId: String(same.messageId || ''),
+        callId: String(same.toolCall?.callId || ''),
+      };
+    }
+    const waiting = await ApprovalAction.countDocuments(open);
+    if (waiting >= MAX_OPEN_TOOL_CALL_APPROVALS) {
+      return {
+        ok: false,
+        code: 'approval_queue_full',
+        pending: waiting,
+        error: `The owner has ${waiting} approvals waiting from this agent here, and a new one can't be added `
+          + 'until they act on one. Nothing ran.',
+      };
+    }
+  }
+
   const row = await ApprovalAction.create({
     ...(options.runId ? { runId: options.runId,
       ...(options.runPodId ? { runPodId: options.runPodId } : {}) } : {}),
@@ -556,6 +613,7 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
   const AgentMessageService = require('./agentMessageService');
   let posted: { success?: boolean; message?: { _id?: unknown; id?: unknown }; reason?: string } | null = null;
   let postThrew = false;
+  let thrownRefusal: string | null = null;
   try {
     posted = await AgentMessageService.postMessage({
     agentName,
@@ -563,9 +621,13 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     displayName,
     podId: String(podId),
     messageType: 'card',
-    // Server-set (F180): the card is exempt from the duplicate guard and the
-    // consecutive-run cap. Only this call site sets it.
-    approvalCard: true,
+    // Server-set (F180): the broker's card is exempt from the duplicate guard
+    // and the consecutive-run cap. Only a `tool_call` gets it: agents reach
+    // proposeAction directly (propose-action route, commonly_propose_action,
+    // connect auto-propose) with their own summary text, and cannot build a
+    // tool_call (the envelope check above refuses one without `toolCall` and
+    // `agentUserId`, which none of those paths pass).
+    approvalCard: actionType === 'tool_call',
     payload: buildCardPayload(row),
     runId: options.runId,
     runPodId: options.runPodId,
@@ -590,7 +652,12 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     });
   } catch (error) {
     postThrew = true;
-    console.warn('[approval] card post failed:', (error as Error).message);
+    // A thrown 4xx (pod_not_found, dm_membership_refused) is a refusal that
+    // will repeat, not a store failure (F180).
+    const thrown = error as Error & { code?: string; statusCode?: number };
+    const status = Number(thrown?.statusCode);
+    if (status >= 400 && status < 500) thrownRefusal = String(thrown.code || `http_${status}`);
+    console.warn('[approval] card post failed:', thrown?.message);
   }
 
   if (!posted?.success || !posted?.message) {
@@ -610,10 +677,11 @@ export const proposeAction = async (options: ProposeOptions): Promise<ProposeRes
     }
     // A store failure may clear on retry; a refusal (or a skip) will not, so
     // it gets its own code and the message service's reason (F180).
-    if (postThrew) {
+    if (postThrew && !thrownRefusal) {
       return { ok: false, error: 'card message could not be posted', code: 'approval_unavailable' };
     }
-    const reason = String(posted?.reason || (posted?.success ? 'not_posted' : 'refused'));
+    const reason = thrownRefusal
+      || String(posted?.reason || (posted?.success ? 'not_posted' : 'refused'));
     return {
       ok: false,
       error: `approval card was not posted (${reason})`,

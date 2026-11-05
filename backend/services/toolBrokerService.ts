@@ -1769,7 +1769,10 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
       // No guard on `prepareApproval`: the helper answers for both members, and
       // a hosted tool's arguments are simply its own.
       const canonicalArgs = await prepareApprovalFor(definition, parsedArgs, connection, input.agentUserId);
-      let proposal: { ok: boolean; approvalId?: string; code?: string; reason?: string } | undefined;
+      let proposal: {
+        ok: boolean; approvalId?: string; code?: string; reason?: string;
+        reused?: boolean; callId?: string; pending?: number; error?: string;
+      } | undefined;
       try {
         const approvalPodId = await resolveApprovalPodId(
           grant,
@@ -1833,6 +1836,32 @@ export const callTool = async (input: BrokerCallInput): Promise<BrokerCallResult
         throw new RoomGrantError(cause.code, cause.message, cause.statusCode, {
           recorded: true,
           callId: refusedCallId,
+        });
+      }
+      if (proposal && !proposal.ok && proposal.code === 'approval_queue_full') {
+        // F180: the owner already has this seat's cards waiting here. Asking
+        // again will not help until they act, so it is not retryable.
+        await recordCall(input, grant, 'refused', startedAt, 'approval_queue_full', {
+          callId,
+          args: canonicalArgs,
+          credentialOwnerId,
+          callerConfinement,
+        });
+        throw new RoomGrantError(
+          'approval_queue_full',
+          proposal.error || 'too many approvals are waiting for the owner',
+          429,
+          { recorded: true, callId, retryable: false, pending: proposal.pending },
+        );
+      }
+      if (proposal?.ok && proposal.reused && proposal.callId) {
+        // F180: the same call is already waiting on the owner. Park again on
+        // that approval and its call id; no new card and no new trail row,
+        // because there is still only one call to decide.
+        throw new RoomGrantError('approval_required', 'tool call requires approval', 403, {
+          approvalId: proposal.approvalId,
+          callId: proposal.callId,
+          recorded: true,
         });
       }
       if (proposal && !proposal.ok) {
