@@ -78,14 +78,21 @@ to `ALLOWED` with the reason the mirror may lag.
   cannot be read, no ghost is deleted. If more than 20% of all `pod_members`
   rows (and more than 10) classify as ghosts, none is deleted and SRE is paged:
   that many ghosts means a Mongo read or classifier fault, not a night's drift.
-- **Works against a minutes-old snapshot, so it re-reads before each write.**
-  A pod field fix re-reads the Mongo pod and skips a field that changed since
-  (a rename in between is not reverted). A user sync re-reads the Mongo user and
-  the PG row: an account deleted since is not written, and a row already
-  anonymized (`Deleted user`, no picture) is never overwritten. A tombstone
-  beside a live Mongo user is a deletion in flight, counted as `users_deleting`.
-- A value PG cannot hold (a pod name over `VARCHAR(100)`, a label over 100) is
-  counted as `unrepairable` and left alone. It is neither a failed repair nor a
+- **Works against a minutes-old snapshot; some writes re-read first.** A pod
+  field fix re-reads the Mongo pod and skips a field that changed since (a
+  rename in between is not reverted). A missing pod's insert checks column
+  limits on the pod as Mongo holds it then. A ghost delete re-reads the pod's
+  Mongo members and skips a user who joined since. A user sync re-reads the
+  Mongo user and the PG row: an account deleted since is not written, and its
+  UPDATE (`syncUserToPostgreSQL(user, { keepTombstone: true })`) never
+  overwrites an anonymized row (`Deleted user`, no picture), even one written
+  a millisecond earlier. A tombstone beside a live Mongo user is a deletion in
+  flight, counted as `users_deleting`. **Missing-member adds do not re-read**:
+  they write from the snapshot, so a user who left mid-run can come back as a
+  ghost, which the next run removes.
+- A value PG cannot hold (a pod name over `VARCHAR(100)`, a label over 100),
+  on a drifted row or a missing one, is counted as `unrepairable` and left
+  alone. It is neither a failed repair nor a
   repeat; it needs a data or schema decision.
 - One `[pg-mirror-repair] repair …` line per change with the before-value. Pod
   fields are logged verbatim so a bad run can be undone; user labels and
@@ -108,5 +115,8 @@ SRE's alerts pod (`spendAlarmService.pageSre`, `SPEND_ALARM_POD_ID`) when a
 category grows by more than 20 over the previous run, there is any repeat, the
 ghost floor trips, or the run fails, including a failure before the run row
 exists (connection, lock, previous-run read, run-row insert), which then
-rethrows. With no pod configured the log line
+rethrows. A page that takes longer than 10 s (`PAGE_TIMEOUT_MS`) is abandoned
+so it cannot hold the advisory lock; the log line stands. Stored keys are
+capped at 5,000 per run, but `created_by` keys are never cut, so a cap cannot
+make a standing mismatch look new. With no pod configured the log line
 stands alone.

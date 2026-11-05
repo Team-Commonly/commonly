@@ -31,6 +31,8 @@ const TOMBSTONE_USER = 'cccccccccccccccccccccccc';
 real('pgMirrorRepairService on real PostgreSQL and MongoDB', () => {
   let pg;
   let runPgMirrorRepair;
+  let repairModule;
+  let AgentIdentityService;
   let owner;
   let alice;
   let bob;
@@ -42,11 +44,11 @@ real('pgMirrorRepairService on real PostgreSQL and MongoDB', () => {
   let page;
 
   const snapshot = async () => Promise.all(TABLE_SNAPSHOT.map(async (sql) => (await pg.query(sql)).rows));
-  const run = (env = {}) => {
+  const run = (env = {}, extra = {}) => {
     const saved = process.env.PG_MIRROR_REPAIR_APPLY;
     if (env.apply) process.env.PG_MIRROR_REPAIR_APPLY = '1';
     else delete process.env.PG_MIRROR_REPAIR_APPLY;
-    return runPgMirrorRepair({ logger, page }).finally(() => {
+    return runPgMirrorRepair({ logger, page, ...extra }).finally(() => {
       if (saved === undefined) delete process.env.PG_MIRROR_REPAIR_APPLY;
       else process.env.PG_MIRROR_REPAIR_APPLY = saved;
     });
@@ -58,7 +60,10 @@ real('pgMirrorRepairService on real PostgreSQL and MongoDB', () => {
   beforeAll(async () => {
     await setupMongoDb();
     pg = await setupPgDb();
-    ({ runPgMirrorRepair } = require('../../services/pgMirrorRepairService'));
+    repairModule = require('../../services/pgMirrorRepairService');
+    ({ runPgMirrorRepair } = repairModule);
+    // eslint-disable-next-line global-require -- loaded after the PG env is set, like the service above
+    AgentIdentityService = require('../../services/agentIdentityService');
   });
 
   afterAll(async () => {
@@ -448,6 +453,106 @@ real('pgMirrorRepairService on real PostgreSQL and MongoDB', () => {
     } finally {
       await pg.query('ALTER TABLE pg_mirror_repair_runs_away RENAME TO pg_mirror_repair_runs');
     }
+  });
+
+  // CodeRabbit on #3500: the classifier judged each ghost at the start of the
+  // run. A user who joins in between has a real membership by delete time.
+  it('does not delete a ghost row whose user joined the pod in Mongo after the classifier read', async () => {
+    const id = (x) => String(x._id);
+    const realFind = Pod.findById.bind(Pod);
+    let classified = false;
+    let joined = false;
+    jest.spyOn(Pod, 'findById').mockImplementation((podId) => {
+      if (String(podId) !== id(podA)) return realFind(podId);
+      if ((new Error().stack || '').includes('podMemberClassifier')) {
+        classified = true;
+        return realFind(podId);
+      }
+      // The first read of podA after the classifier judged it: bob joins in Mongo now.
+      if (classified && !joined) {
+        joined = true;
+        const join = () => Pod.updateOne({ _id: podA._id }, { $addToSet: { members: bob._id } });
+        return {
+          select: (f) => ({ lean: async () => { await join(); return realFind(podId).select(f).lean(); } }),
+          lean: async () => { await join(); return realFind(podId).lean(); },
+        };
+      }
+      return realFind(podId);
+    });
+    const report = await run({ apply: true });
+    expect(report.counts.members_ghost).toBe(1);
+    const { rows } = await pg.query('SELECT 1 FROM pod_members WHERE pod_id = $1 AND user_id = $2', [id(podA), id(bob)]);
+    expect(rows).toHaveLength(1);
+    expect(lines.some(([, l]) => l.includes(`skip pod_members pod=${id(podA)} user=${id(bob)} delete`))).toBe(true);
+  });
+
+  // CodeRabbit on #3500: a missing pod with an over-limit value would fail its
+  // insert and count as a failed repair; it is unrepairable, like a drifted one.
+  it('counts a missing pod whose name PG cannot hold as unrepairable and does not try to insert it', async () => {
+    const id = (x) => String(x._id);
+    await Pod.updateOne({ _id: podB._id }, { $set: { name: 'N'.repeat(101) } });
+    const report = await run({ apply: true });
+    expect(report.counts.unrepairable).toBe(1);
+    expect(report.counts.repairs_failed).toBe(0);
+    expect(report.counts.pods_missing).toBe(0);
+    expect((await pg.query('SELECT 1 FROM pods WHERE id = $1', [id(podB)])).rows).toEqual([]);
+    expect(lines.some(([, l]) => l.includes(`unrepairable pods id=${id(podB)} field=name`))).toBe(true);
+  });
+
+  it('checks the limits on what Mongo holds at insert time, not on the snapshot', async () => {
+    const id = (x) => String(x._id);
+    const stale = await Pod.find({}).select('_id name description type createdBy members').lean();
+    await Pod.updateOne({ _id: podB._id }, { $set: { name: 'N'.repeat(101) } });
+    jest.spyOn(Pod, 'find').mockImplementationOnce(() => ({ select: () => ({ lean: async () => stale }) }));
+    const report = await run({ apply: true });
+    expect(report.counts.unrepairable).toBe(1);
+    expect(report.counts.repairs_failed).toBe(0);
+    expect((await pg.query('SELECT 1 FROM pods WHERE id = $1', [id(podB)])).rows).toEqual([]);
+  });
+
+  // F191 (Opus re-review Low): the PG re-check and the sync's UPDATE are two
+  // statements. The repair's write itself refuses to touch a tombstone.
+  it('syncUserToPostgreSQL with keepTombstone leaves a tombstone row, and without it keeps today\'s overwrite', async () => {
+    const id = (x) => String(x._id);
+    const tomb = () => pg.query("UPDATE users SET username = 'Deleted user', profile_picture = NULL WHERE _id = $1", [id(owner)]);
+    const row = async () => (await pg.query('SELECT username FROM users WHERE _id = $1', [id(owner)])).rows[0].username;
+    await tomb();
+    await expect(AgentIdentityService.syncUserToPostgreSQL(owner, { keepTombstone: true })).resolves.toBe(true);
+    expect(await row()).toBe('Deleted user');
+    await expect(AgentIdentityService.syncUserToPostgreSQL(owner)).resolves.toBe(true);
+    expect(await row()).toBe('owner');
+  });
+
+  it('the repair\'s user sync is the tombstone-safe write', async () => {
+    const spy = jest.spyOn(AgentIdentityService, 'syncUserToPostgreSQL');
+    await run({ apply: true });
+    expect(spy).toHaveBeenCalled();
+    spy.mock.calls.forEach((call) => expect(call[1]).toEqual({ keepTombstone: true }));
+  });
+
+  // F191: a hung SRE page must not hold the advisory lock.
+  it('gives up on a hung SRE page after the page timeout and releases the lock', async () => {
+    const hung = jest.fn(() => new Promise(() => {}));
+    const report = await run({}, { page: hung, pageTimeoutMs: 50 });
+    expect(hung).toHaveBeenCalled();
+    expect(report.alerts.length).toBeGreaterThan(0);
+    expect(lines.some(([, l]) => l.includes('SRE page failed') && l.includes('timed out'))).toBe(true);
+    expect((await run()).skipped).toBeUndefined();
+  });
+
+  it('pages with a 10 s timeout by default', () => {
+    expect(repairModule.PAGE_TIMEOUT_MS).toBe(10000);
+  });
+
+  // F191: stored keys are capped. A created_by key cut from the stored list
+  // would read as "new" the next night and page again.
+  it('never cuts a created_by key from the stored list', () => {
+    const { selectStoredKeys } = repairModule;
+    const keys = ['pods:a:name', 'pods:b:name', 'pods:c:name', 'pods:x:created_by', 'pods:y:created_by'];
+    const stored = selectStoredKeys(keys, 3);
+    expect(stored).toEqual(expect.arrayContaining(['pods:x:created_by', 'pods:y:created_by']));
+    expect(stored).toHaveLength(3);
+    expect(selectStoredKeys(['pods:x:created_by', 'pods:y:created_by'], 1)).toHaveLength(2);
   });
 
   it('does not call it a repeat when the previous run only reported', async () => {

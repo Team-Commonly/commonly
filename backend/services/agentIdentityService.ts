@@ -834,7 +834,16 @@ class AgentIdentityService {
     return user.displayName || user.username || '';
   }
 
-  static async syncUserToPostgreSQL(user: InstanceType<typeof User>): Promise<boolean> {
+  /**
+   * `keepTombstone` (the nightly mirror repair only): the UPDATE leaves an
+   * anonymized row ("Deleted user", no picture) alone, in the same statement,
+   * so an account deletion landing mid-repair is never un-anonymized. The app's
+   * lazy sync keeps the default and overwrites as before.
+   */
+  static async syncUserToPostgreSQL(
+    user: InstanceType<typeof User>,
+    options: { keepTombstone?: boolean } = {},
+  ): Promise<boolean> {
     // `!PG_HOST` is the unconfigured-mirror case: config/db-pg.ts:75 builds a
     // Pool only when PG_HOST is set, so there is nothing to sync into. A test
     // harness that stored the literal string "undefined" made that guard truthy
@@ -854,7 +863,8 @@ class AgentIdentityService {
         const updateQuery = `
           UPDATE users
           SET username = $2, profile_picture = $3, is_bot = $4, updated_at = $5
-          WHERE _id = $1
+          WHERE _id = $1${options.keepTombstone
+    ? " AND NOT (username = 'Deleted user' AND profile_picture IS NULL)" : ''}
         `;
         await pool.query(updateQuery, [
           user._id.toString(),

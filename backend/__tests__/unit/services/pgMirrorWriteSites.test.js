@@ -33,7 +33,7 @@ const MEMBER_MUTATION = [
 const POD_CREATE = [/\bPod\.create\(/, /\bnew Pod\(/];
 const USER_CREATE = [/\bUser\.create\(/, /\bnew User\(/, /\bUser\.insertMany\(/];
 const USER_WINDOW = 40;
-const FUNCTION_START = /^(\s{2}(static\s+)?(async\s+)?[a-zA-Z_]+\s*\([^)]*\)[^;]*\{\s*$|(export\s+)?(async\s+)?function\b|(export\s+)?const\s+\w+\s*=\s*async\b|exports\.\w+\s*=|router\.(get|post|put|patch|delete)\()/;
+const FUNCTION_START = /^(\s{2}(static\s+)?(async\s+)?[a-zA-Z_]+\s*\([^)]*\)[^;]*\{\s*$|(export\s+)?(async\s+)?function\b|(export\s+)?const\s+\w+\s*=\s*async\b|^\s*(export\s+)?(const|let)\s+\w+\s*=\s*(async\s+)?(\([^)]*\)|\w+)\s*(:[^=]*)?=>|exports\.\w+\s*=|router\.(get|post|put|patch|delete)\()/;
 const MIRROR = /mirrorMember(Added|Removed)|mirrorPodCreated|syncPgDmMembers|syncPodFromMongo|PGPod\.(addMember|removeMember|create)|pod_members|ensureGlobalPodPostgresSync/;
 const USER_MIRROR = /mirrorUser\(|syncUserToPostgreSQL\(/;
 
@@ -143,6 +143,25 @@ describe('PG mirror write-site detector', () => {
       '  /* await Pod.updateOne({}, { $pull: { members: u } }); */',
       '}',
     ].join('\n'))).toEqual([]);
+  });
+
+  // CodeRabbit on #3500: an ordinary arrow function is a boundary too, or a
+  // neighbour's mirror call vouches for this function's write.
+  it('does not let a mirror call in the next arrow function vouch for a mutation', () => {
+    expect(flagged([
+      'const leave = async (pod, userId) => {',
+      '  pod.members.push(userId);',
+      '};',
+      'const join = (podId, userId) => {',
+      '  return mirrorMemberAdded(podId, userId);',
+      '};',
+    ].join('\n'))).toHaveLength(1);
+    expect(flagged([
+      'export const leave = async (pod: Pod, userId: string): Promise<void> => {',
+      '  pod.members.push(userId);',
+      '};',
+      'export const join = async (podId: string): Promise<boolean> => mirrorMemberAdded(podId, u);',
+    ].join('\n'))).toHaveLength(1);
   });
 
   it('accepts a real mirror call after the mutation', () => {

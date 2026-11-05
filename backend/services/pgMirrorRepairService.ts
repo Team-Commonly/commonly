@@ -23,8 +23,10 @@
  *     in services/podMemberClassifier (shared with scripts/cleanup-ghost-pod-members);
  *     if any pod cannot be read, or ghosts exceed GHOST_FLOOR_RATIO of all
  *     rows, no ghost is deleted.
- *   - The snapshot is minutes old by write time: each pod field fix and user
- *     sync re-reads Mongo first, and a PG tombstone is never overwritten.
+ *   - The snapshot is minutes old by write time. Pod field fixes, missing-pod
+ *     inserts, ghost deletes and user syncs re-read Mongo first, and a user
+ *     sync never overwrites a PG tombstone. Missing-member adds write from the
+ *     snapshot (a member who left mid-run is a ghost the next run removes).
  *   - Every change logs one line with the before-value. Pod fields are logged
  *     verbatim (needed to undo a bad run); user labels and pictures are
  *     fingerprinted, and no email is ever read.
@@ -51,6 +53,8 @@ const AgentIdentityService = require('./agentIdentityService');
 const { syncPodFromMongo } = require('./pgPodSyncService');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { classifyMemberRows } = require('./podMemberClassifier');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { isListedPodMember } = require('../utils/isPodMember');
 
 interface QueryResult { rows: Record<string, unknown>[]; rowCount?: number | null }
 interface PgClient {
@@ -72,6 +76,8 @@ export interface RepairOptions {
   logger?: RepairLogger;
   /** Delivers an alert to SRE. Defaults to spendAlarmService.pageSre. */
   page?: (content: string) => Promise<void>;
+  /** How long a page may take before the run gives up on it. Defaults to PAGE_TIMEOUT_MS. */
+  pageTimeoutMs?: number;
 }
 
 export interface RepairReport {
@@ -92,6 +98,8 @@ export const JUMP_THRESHOLD = 20;
 const TOMBSTONE_USERNAME = 'Deleted user';
 const USER_FIELDS = '_id username displayName isBot botMetadata profilePicture createdAt';
 const MAX_STORED_KEYS = 5000;
+/** A page runs while the advisory lock is held; a hung one must not keep it. */
+export const PAGE_TIMEOUT_MS = 10000;
 const MAX_DETAIL_LINES = 200;
 /** Ghost deletes stop when more than this share of all pod_members rows are ghosts... */
 export const GHOST_FLOOR_RATIO = 0.2;
@@ -143,11 +151,39 @@ const fingerprint = (value: unknown): string => {
   return `sha256:${createHash('sha256').update(text).digest('hex').slice(0, 12)}(len=${text.length})`;
 };
 
+/**
+ * The keys a run stores, capped at `max`. created_by keys are never cut: the
+ * next run pages for any created_by key missing from this list, so a cut key
+ * would page again every night.
+ */
+export const selectStoredKeys = (keys: string[], max: number): string[] => {
+  const unique = [...new Set(keys)];
+  const createdBy = unique.filter((k) => k.endsWith(':created_by'));
+  const rest = unique.filter((k) => !k.endsWith(':created_by'));
+  return [...createdBy, ...rest.slice(0, Math.max(0, max - createdBy.length))];
+};
+
+const withTimeout = async (work: Promise<void>, ms: number): Promise<void> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([work, new Promise<void>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`timed out after ${ms} ms`)), ms);
+      timer.unref?.();
+    })]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
 const str = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
 
 export async function runPgMirrorRepair(options: RepairOptions = {}): Promise<RepairReport> {
   const logger = options.logger || defaultLogger;
-  const page = options.page || defaultPage;
+  const rawPage = options.page || defaultPage;
+  const pageTimeoutMs = options.pageTimeoutMs ?? PAGE_TIMEOUT_MS;
+  const page = (content: string): Promise<void> => withTimeout(
+    Promise.resolve().then(() => rawPage(content)), pageTimeoutMs,
+  );
   const applied = process.env.PG_MIRROR_REPAIR_APPLY === '1';
   const counts: Record<string, number> = Object.fromEntries(COUNT_KEYS.map((k) => [k, 0]));
   const report: RepairReport = {
@@ -266,17 +302,34 @@ async function runLocked(
     const mongoPodById = new Map(mongoPods.map((p) => [String(p._id), p]));
     const pgPodById = new Map(pgPods.map((p) => [String(p.id), p]));
 
+    // A pod row PG cannot hold is unrepairable, not a failed insert.
+    const overLimit = (podId: string, pod: typeof mongoPods[0]): boolean => {
+      const values: Record<string, string> = {
+        name: str(pod.name), type: str(pod.type) || 'chat', created_by: str(pod.createdBy),
+      };
+      const field = Object.keys(values).find((f) => values[f].length > POD_FIELD_LIMITS[f]);
+      if (!field) return false;
+      unrepairable(`pods id=${podId} field=${field} len=${values[field].length} limit=${POD_FIELD_LIMITS[field]}`);
+      return true;
+    };
+
     // ── pods: missing in PG
     for (const mp of mongoPods) {
       const podId = String(mp._id);
       if (pgPodById.has(podId)) continue;
+      if (overLimit(podId, mp)) continue;
       counts.pods_missing += 1;
       keys.push(`pods:${podId}:row`);
       repairLine(`pods id=${podId} field=row before=absent after=present created_by=${str(mp.createdBy)}`);
       if (!applied) continue;
       try {
+        // syncPodFromMongo inserts what Mongo holds now: check the limits on
+        // that, not on the snapshot.
+        const current = await MongoPod.findById(podId).select('_id name type createdBy').lean() as
+          typeof mongoPods[0] | null;
+        if (current && overLimit(podId, current)) continue;
         // syncPodFromMongo takes the owner from Mongo and copies every member.
-        if (!(await syncPodFromMongo(podId, str(mp.createdBy)))) {
+        if (!current || !(await syncPodFromMongo(podId, str(mp.createdBy)))) {
           skippedChanged(`pods id=${podId} insert (deleted from Mongo)`);
           continue;
         }
@@ -411,6 +464,13 @@ async function runLocked(
       repairLine(`pod_members pod=${row.podId} user=${row.userId} field=row before=present after=absent`);
       if (!applied || refuseGhostDeletes) continue;
       try {
+        // The classifier judged this row at the start of the run; a user who
+        // joined since is a real member now.
+        const current = await MongoPod.findById(row.podId).select('members').lean();
+        if (!current || isListedPodMember(current, row.userId)) {
+          skippedChanged(`pod_members pod=${row.podId} user=${row.userId} delete`);
+          continue;
+        }
         await pool.query('DELETE FROM pod_members WHERE pod_id = $1 AND user_id = $2', [row.podId, row.userId]);
         repaired.push(`pod_members:${row.podId}:${row.userId}:ghost`);
       } catch (error) {
@@ -484,7 +544,9 @@ async function runLocked(
           skippedChanged(`users id=${userId} (account deletion in flight)`);
           continue;
         }
-        const ok = await AgentIdentityService.syncUserToPostgreSQL(current);
+        // keepTombstone: the UPDATE itself skips an anonymized row, which
+        // closes the gap between the re-check above and this write.
+        const ok = await AgentIdentityService.syncUserToPostgreSQL(current, { keepTombstone: true });
         if (!ok) throw new Error('syncUserToPostgreSQL returned false');
         repaired.push(...changeKeys);
       } catch (error) {
@@ -537,7 +599,7 @@ async function runLocked(
               repaired_keys = $5::jsonb
         WHERE id = $1`,
       [runId, JSON.stringify(counts), report.unexplained,
-        JSON.stringify([...new Set(keys)].slice(0, MAX_STORED_KEYS)),
+        JSON.stringify(selectStoredKeys(keys, MAX_STORED_KEYS)),
         JSON.stringify([...new Set(repaired)].slice(0, MAX_STORED_KEYS))],
     );
   } catch (error) {
@@ -574,5 +636,6 @@ async function runLocked(
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 module.exports = {
-  runPgMirrorRepair, LOCK_KEYS, JUMP_THRESHOLD, GHOST_FLOOR_RATIO, GHOST_FLOOR_MIN,
+  runPgMirrorRepair, LOCK_KEYS, JUMP_THRESHOLD, GHOST_FLOOR_RATIO, GHOST_FLOOR_MIN, PAGE_TIMEOUT_MS,
+  selectStoredKeys,
 };
