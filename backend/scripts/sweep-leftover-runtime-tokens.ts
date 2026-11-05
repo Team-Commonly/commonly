@@ -234,7 +234,7 @@ export const sweepLeftoverRuntimeTokens = async (
             },
           },
         },
-      ).collation({ locale: 'en', strength: 2 });
+      );
       installationRowsChanged += modifiedCount(pulled);
     }
     if (plan.candidateHashes) {

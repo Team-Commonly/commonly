@@ -28,7 +28,6 @@ export type OwnershipCheck =
   | { owned: true }
   | { owned: false; failure: OwnershipFailure };
 
-const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
 type RuntimeInstallation = { installedBy?: unknown; podId?: unknown };
 
@@ -39,7 +38,7 @@ const ownershipInstallations = async (agentName: string, instanceId: string): Pr
   const Pod = require('../models/Pod');
   const installations: RuntimeInstallation[] = await AgentInstallation.find({
     agentName, instanceId, status: 'active',
-  }).collation(RUNTIME_INSTALLATION_COLLATION).select('installedBy podId').lean();
+  }).select('installedBy podId').lean();
   const dmPods = await Pod.find({
     _id: { $in: installations.map((installation) => installation.podId).filter(Boolean) }, type: 'agent-dm',
   }).select('_id').lean();

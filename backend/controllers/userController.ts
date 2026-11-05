@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { accountLabelClause } = require('../models/accountLabelKeys');
 const Activity = require('../models/Activity');
 const Post = require('../models/Post');
 const Pod = require('../models/Pod');
@@ -69,7 +70,6 @@ const isValidAccountLabel = (value: unknown) => typeof value === 'string'
 // with an indexed, case-insensitive lookup so two accounts cannot save labels
 // that appear identical there. `strength: 2` keeps accent distinctions while
 // folding case (for example, `Lily` and `lIlY`).
-const ACCOUNT_LABEL_COLLATION = { locale: 'en', strength: 2 };
 
 /**
  * Serialize a user for a response.
@@ -157,12 +157,11 @@ exports.updateProfile = async (req: any, res: any) => {
       const nameOwner = await User.findOne({
         _id: { $ne: req.user.id },
         $or: [
-          { username: normalizedDisplayName },
-          { displayName: normalizedDisplayName },
-          { 'botMetadata.displayName': normalizedDisplayName },
+          accountLabelClause('username', normalizedDisplayName),
+          accountLabelClause('displayName', normalizedDisplayName),
+          accountLabelClause('botMetadata.displayName', normalizedDisplayName),
         ],
       })
-        .collation(ACCOUNT_LABEL_COLLATION)
         .select('_id');
 
       if (nameOwner) {

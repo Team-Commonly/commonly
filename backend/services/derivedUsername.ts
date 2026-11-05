@@ -8,18 +8,15 @@
 //
 // Free means: no other account holds the name in any case ("Sam" holds "sam"),
 // and it isn't reserved for an agent install (TASK-133 b), the check register
-// runs on a typed name. The case-insensitive match is done by the query's
-// collation, not by an index: the unique index on username is case-sensitive,
-// and the User model's collation index on the same key has never built beside
-// it (same auto-generated name; production has only the unique one, checked
-// 2026-10-17). The Google path names its own accounts (oauthController
+// runs on a typed name. The case-insensitive match uses the lowercase label
+// keys (models/accountLabelKeys.ts), not collation, which FerretDB ignores on
+// reads. The Google path names its own accounts (oauthController
 // generateUsername) and is not changed here.
 const crypto = require('crypto');
 const User = require('../models/User');
+const { accountLabelClause } = require('../models/accountLabelKeys');
 const AgentIdentityService = require('./agentIdentityService');
 
-// The account-label comparison userController uses.
-const ACCOUNT_LABEL_COLLATION = { locale: 'en', strength: 2 };
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,39}$/;
 // Leaves room for the "-xxxx" suffix under the 40-character mention limit.
 const MAX_BASE_LENGTH = 30;
@@ -42,8 +39,8 @@ const isFreeUsername = async (candidate: string, excludeUserId?: unknown): Promi
   if (await AgentIdentityService.resolveAccountNameConflict({ username: candidate })) return false;
   return !await User.exists({
     ...(excludeUserId ? { _id: { $ne: excludeUserId } } : {}),
-    $or: [{ username: candidate }, { previousUsernames: candidate }],
-  }).collation(ACCOUNT_LABEL_COLLATION);
+    $or: [accountLabelClause('username', candidate), accountLabelClause('previousUsernames', candidate)],
+  });
 };
 
 /** A free username from the email: its local part, or that plus a short suffix when taken or too short. */
@@ -65,7 +62,6 @@ module.exports = {
   deriveUsernameFromEmail,
   isValidUsername,
   isFreeUsername,
-  ACCOUNT_LABEL_COLLATION,
 };
 
 export {};

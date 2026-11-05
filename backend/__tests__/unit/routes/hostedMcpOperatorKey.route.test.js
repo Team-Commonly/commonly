@@ -95,7 +95,7 @@ beforeEach(() => {
   installations = [{ installedBy: OWNER, podId: POD }];
   dmPods = [];
   AgentInstallation.find.mockImplementation(() => ({
-    collation: () => ({ select: () => ({ lean: async () => installations }) }),
+    select: () => ({ lean: async () => installations }),
   }));
   Pod.find.mockImplementation(() => ({ select: () => ({ lean: async () => dmPods }) }));
   listHostedMcpTools.mockResolvedValue([{ name: 'list_jobs' }]);

@@ -1,6 +1,7 @@
 // eslint-disable-next-line no-unused-vars
 const mongoose = require('mongoose');
 const User = require('../../../models/User');
+const { accountLabelClause } = require('../../../models/accountLabelKeys');
 const {
   setupMongoDb,
   closeMongoDb,
@@ -12,8 +13,7 @@ describe('User Model Tests', () => {
   beforeAll(async () => {
     await setupMongoDb();
     // These duplicate-write assertions require the indexes to exist first.
-    // Use explicit indexes: User.syncIndexes() conflicts with the model's
-    // separate collation index on username.
+    // Explicit indexes keep this setup independent of the model's index list.
     await User.collection.createIndex({ username: 1 }, { unique: true });
     await User.collection.createIndex({ email: 1 }, { unique: true });
   });
@@ -111,17 +111,17 @@ describe('User Model Tests', () => {
     await expect(secondUser.save()).rejects.toThrow();
   });
 
-  it('indexes account labels for case-insensitive display-name collision checks', () => {
-    const matchingIndexes = User.schema.indexes().filter(([, options]) => (
-      options.collation?.locale === 'en' && options.collation?.strength === 2
-    ));
-
-    const indexedFields = matchingIndexes.map(([keys]) => Object.keys(keys)[0]);
+  it('indexes the lowercase label keys the collision checks match, with no collation', () => {
+    const indexes = User.schema.indexes();
+    const indexedFields = indexes.map(([keys]) => Object.keys(keys)[0]);
     expect(indexedFields).toEqual(expect.arrayContaining([
-      'username',
-      'displayName',
-      'botMetadata.displayName',
+      'labelKeys.username',
+      'labelKeys.previousUsernames',
+      'labelKeys.displayName',
+      'labelKeys.botDisplayName',
     ]));
+    // FerretDB refuses a collation index and ignores a read's collation.
+    expect(indexes.filter(([, options]) => options.collation)).toEqual([]);
   });
 
   it('matches account labels case-insensitively while excluding the current user', async () => {
@@ -138,20 +138,20 @@ describe('User Model Tests', () => {
     });
     const collisionQuery = {
       $or: [
-        { username: 'lilyhandle' },
-        { displayName: 'lilyhandle' },
-        { 'botMetadata.displayName': 'lilyhandle' },
+        accountLabelClause('username', 'lilyhandle'),
+        accountLabelClause('displayName', 'lilyhandle'),
+        accountLabelClause('botMetadata.displayName', 'lilyhandle'),
       ],
     };
 
     const selfExcluded = await User.findOne({
       _id: { $ne: owner._id },
       ...collisionQuery,
-    }).collation({ locale: 'en', strength: 2 });
+    });
     const otherExcluded = await User.findOne({
       _id: { $ne: other._id },
       ...collisionQuery,
-    }).collation({ locale: 'en', strength: 2 });
+    });
 
     expect(selfExcluded).toBeNull();
     expect(otherExcluded?._id.toString()).toBe(owner._id.toString());

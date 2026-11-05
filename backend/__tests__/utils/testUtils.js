@@ -77,6 +77,14 @@ const setupMongoDb = async () => {
       return;
     }
 
+    // TEST_MONGO_URI runs the unit tier against another server, for the
+    // FerretDB CI leg (self-host stores Mongo data in Postgres through
+    // FerretDB). Each suite gets its own database and drops it on close.
+    if (process.env.TEST_MONGO_URI) {
+      const db = `t${require('crypto').randomBytes(6).toString('hex')}`; // eslint-disable-line global-require
+      await mongoose.connect(`${process.env.TEST_MONGO_URI.replace(/\/+$/, '')}/${db}`);
+      return;
+    }
     mongoServer = await createMongoServer();
 
     await mongoose.connect(mongoServer.getUri());
@@ -90,6 +98,9 @@ const setupMongoDb = async () => {
 
 const closeMongoDb = async () => {
   try {
+    if (process.env.TEST_MONGO_URI && !useRealServices() && mongoose.connection.db) {
+      await mongoose.connection.dropDatabase().catch(() => {});
+    }
     await mongoose.disconnect();
     if (mongoServer) {
       await mongoServer.stop({ doCleanup: true, force: true });

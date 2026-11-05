@@ -24,7 +24,7 @@ jest.mock('../../../middleware/auth', () => (req, res, next) => {
 });
 jest.mock('../../../middleware/adminAuth', () => (req, res, next) => next());
 
-// The ownership rule queries with `installedBy` (and a collation chain); every
+// The ownership rule queries with `installedBy` (and a select chain); every
 // other lookup in the two routes is answered by `mockPrimary`. The result is
 // awaitable directly, as the routes use it, and as a chain, as the rule does.
 const matches = (doc, filter) => Object.entries(filter).every(([key, want]) => {
@@ -214,11 +214,11 @@ describe('POST /install — supplying a webhook URL', () => {
       manifest: { context: { required: [] }, runtime: { type: 'standalone' } },
     });
     AgentRegistry.incrementInstalls.mockResolvedValue({ acknowledged: true });
+    // The ownership read is the one that selects installedBy and podId.
     AgentInstallation.find.mockImplementation(() => {
       let ownershipRead = false;
       const chain = {
-        collation: () => { ownershipRead = true; return chain; },
-        select: () => chain,
+        select: (fields) => { ownershipRead = fields === 'installedBy podId'; return chain; },
         lean: () => Promise.resolve(ownershipRead ? mockInstalls : []),
       };
       return chain;

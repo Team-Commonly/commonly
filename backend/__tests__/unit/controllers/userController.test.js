@@ -4,6 +4,7 @@ jest.mock('../../../services/agentIdentityService', () => ({
 }));
 
 const User = require('../../../models/User');
+const { accountLabelClause } = require('../../../models/accountLabelKeys');
 const userController = require('../../../controllers/userController');
 const { resolveAgentDisplayLabel, syncUserToPostgreSQL } = require('../../../services/agentIdentityService');
 
@@ -17,9 +18,8 @@ const mockUserDoc = (fields) => ({
 
 const mockDisplayNameLookup = (result) => {
   const select = jest.fn().mockResolvedValue(result);
-  const collation = jest.fn().mockReturnValue({ select });
-  User.findOne = jest.fn().mockReturnValue({ collation });
-  return { select, collation };
+  User.findOne = jest.fn().mockReturnValue({ select });
+  return { select };
 };
 
 describe('User Controller', () => {
@@ -120,12 +120,11 @@ describe('User Controller', () => {
       expect(User.findOne).toHaveBeenCalledWith({
         _id: { $ne: 'u1' },
         $or: [
-          { username: 'LiLy' },
-          { displayName: 'LiLy' },
-          { 'botMetadata.displayName': 'LiLy' },
+          accountLabelClause('username', 'LiLy'),
+          accountLabelClause('displayName', 'LiLy'),
+          accountLabelClause('botMetadata.displayName', 'LiLy'),
         ],
       });
-      expect(collision.collation).toHaveBeenCalledWith({ locale: 'en', strength: 2 });
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({ error: 'That name belongs to someone else here' });
       expect(User.findByIdAndUpdate).not.toHaveBeenCalled();

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../../../models/User');
+const { accountLabelClause } = require('../../../models/accountLabelKeys');
 const originalUserFindOne = User.findOne;
 const originalUserSave = User.prototype.save;
 const WaitlistRequest = require('../../../models/WaitlistRequest');
@@ -151,8 +152,8 @@ describe('Auth Controller Tests', () => {
       expect(User.findOne).toHaveBeenCalledWith({
         $or: [
           { email: 'test@example.com' },
-          { username: 'testuser' },
-          { previousUsernames: 'testuser' },
+          accountLabelClause('username', 'testuser'),
+          accountLabelClause('previousUsernames', 'testuser'),
         ],
       });
       expect(saveMock).toHaveBeenCalled();

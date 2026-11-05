@@ -27,7 +27,7 @@ const matches = (doc, filter) => Object.entries(filter).every(([key, want]) => {
 jest.mock('../../../models/AgentRegistry', () => ({
   AgentInstallation: {
     find: jest.fn((filter) => ({
-      collation: () => ({ select: () => ({ lean: () => Promise.resolve(mockInstalls.filter((doc) => matches(doc, filter))) }) }),
+      select: () => ({ lean: () => Promise.resolve(mockInstalls.filter((doc) => matches(doc, filter))) }),
     })),
     findOne: jest.fn((filter) => {
       const hit = mockInstalls.find((doc) => matches(doc, filter)) || null;

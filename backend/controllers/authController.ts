@@ -11,7 +11,8 @@ const { ensureUserInCommunityPod } = require('../services/communityPodService');
 const { normalizeAvatarUrl } = require('../services/avatarService');
 const { signupSourceFields } = require('../utils/signupSource');
 const { loginEmailOf } = require('../utils/loginEmail');
-const { deriveUsernameFromEmail, ACCOUNT_LABEL_COLLATION } = require('../services/derivedUsername');
+const { deriveUsernameFromEmail } = require('../services/derivedUsername');
+const { accountLabelClause } = require('../models/accountLabelKeys');
 const { issueSessionToken } = require('../services/sessionTokenService');
 const {
   issueEmailVerificationToken,
@@ -457,19 +458,15 @@ exports.register = async (req: any, res: any) => {
     }
 
     // Check if email or username already exists
-    const existingUserQuery = User.findOne({
+    // Case-insensitive on every label ("Sam" holds "sam"), by the lowercase
+    // label keys rather than collation (models/accountLabelKeys.ts).
+    const existingUser = await User.findOne({
       $or: [
         { email: normalizedEmail },
-        { username: normalizedUsername },
-        { previousUsernames: normalizedUsername },
+        accountLabelClause('username', normalizedUsername),
+        accountLabelClause('previousUsernames', normalizedUsername),
       ],
     });
-    // The production query is collation-aware; keeping the guard makes the
-    // controller's lightweight unit doubles behave like the real query.
-    if (existingUserQuery && typeof existingUserQuery.collation === 'function') {
-      existingUserQuery.collation(ACCOUNT_LABEL_COLLATION);
-    }
-    const existingUser = await existingUserQuery;
     if (existingUser) {
       if (String(existingUser.email || '').toLowerCase() === normalizedEmail) {
         return res.status(400).json({ error: 'User already exists' });

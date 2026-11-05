@@ -251,7 +251,12 @@ const AgentInstallationSchema = new Schema<IAgentInstallationRegistry>(
   {
     agentName: { type: String, required: true, lowercase: true },
     podId: { type: Schema.Types.ObjectId, ref: 'Pod', required: true },
-    instanceId: { type: String, default: 'default' },
+    // Lowercase like agentName, so a runtime identity matches in any case:
+    // Mongoose lowercases the stored value and every filter value (including
+    // $in), which replaced a case-insensitive collation FerretDB ignores on
+    // reads. Prod held no non-lowercase instanceId when this was set (959 rows,
+    // 2026-11-05).
+    instanceId: { type: String, default: 'default', lowercase: true },
     displayName: { type: String },
     version: { type: String, required: true },
     config: { type: Map, of: Schema.Types.Mixed },

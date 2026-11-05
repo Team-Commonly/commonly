@@ -77,7 +77,7 @@ const recordLegacyKeys = async (
 ) => {
   const { AgentInstallation } = require('../../models/AgentRegistry');
   const installations = await AgentInstallation.find({ agentName, instanceId })
-    .collation({ locale: 'en', strength: 2 }).select('runtimeTokens').lean();
+    .select('runtimeTokens').lean();
   const records = [...(agentUser.agentRuntimeTokens || []),
     ...(installations || []).flatMap((entry: any) => entry.runtimeTokens || [])];
   const seen = new Set<string>();

@@ -59,7 +59,6 @@ const normalizeRuntimeIdentity = (agentName: any, instanceId: any) => ({
 // AgentInstallation.instanceId predates the normalized intake path and may
 // still be stored with mixed casing. Keep identity normalization for callers,
 // but match legacy rows case-insensitively during a rotation.
-const RUNTIME_INSTALLATION_COLLATION = { locale: 'en', strength: 2 };
 
 /** Revoke selected runtime ledger rows, optionally guarded by a freshness filter. */
 export const revokeRuntimeCredentials = async (
@@ -128,7 +127,7 @@ const getRuntimeTokenHashesForAgent = async ({
   const installations = await AgentInstallation.find({
     agentName: identity.agentName,
     instanceId: identity.instanceId,
-  }).collation(RUNTIME_INSTALLATION_COLLATION).select('runtimeTokens').lean();
+  }).select('runtimeTokens').lean();
   const persistedInstallationTokens = (installations || []).flatMap((row: any) => row.runtimeTokens || []);
   return Array.from(new Set([
     ...userTokens,
@@ -173,7 +172,7 @@ const revokeRuntimeTokensForAgent = async (owner: RuntimeTokenOwner): Promise<st
   await AgentInstallation.updateMany(
     { agentName: identity.agentName, instanceId: identity.instanceId },
     { $set: { runtimeTokens: [] } },
-  ).collation(RUNTIME_INSTALLATION_COLLATION);
+  );
 
   // A route may hold a hydrated installation that is not represented by the
   // mocked query above (or has a pending in-memory mutation). Keep that
@@ -195,7 +194,7 @@ export const revokeRuntimeTokensAfterLastUninstall = async (agentName: string, i
   const names = Array.from(new Set([agentName.toLowerCase(), resolvedType]));
   const activeCount = await AgentInstallation.countDocuments({
     agentName: { $in: names }, instanceId, status: 'active',
-  }).collation(RUNTIME_INSTALLATION_COLLATION);
+  });
   if (activeCount) return;
 
   // eslint-disable-next-line global-require, @typescript-eslint/no-require-imports
@@ -301,7 +300,7 @@ const issueRuntimeTokenForAgent = async (agentUser: any, label: any, installatio
       agentName: installation.agentName,
       instanceId: installation.instanceId || 'default',
       'runtimeTokens.0': { $exists: true },
-    }).collation({ locale: 'en', strength: 2 }).select('runtimeTokens installedBy').lean();
+    }).select('runtimeTokens installedBy').lean();
     const sibling = (siblings || []).find((entry: any) => entry.runtimeTokens?.length);
     return sibling ? { token: sibling.runtimeTokens[0], installedBy: sibling.installedBy } : null;
   };

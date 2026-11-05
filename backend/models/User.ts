@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema, Types, Model } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { accountLabelKeysPlugin } from './accountLabelKeys';
 
 export type UserRole = 'user' | 'admin';
 export type BotType = 'system' | 'agent' | 'bridge' | null;
@@ -81,6 +82,10 @@ export interface IUser extends Document {
   // Previous human handles remain reserved after a rename. They are kept for
   // historical identity only: mention routing always uses `username`.
   previousUsernames: string[];
+  // Lowercase copies of the account labels for case-insensitive checks
+  // (accountLabelKeys.ts). Written by the plugin, never by hand.
+  labelKeys?: { username?: string | null; previousUsernames?: string[]; displayName?: string | null;
+    botDisplayName?: string | null };
   // Human-facing identity label. Usernames remain the stable, routable handle;
   // bots continue to own their display label under botMetadata.
   displayName?: string;
@@ -521,13 +526,11 @@ const userSchema = new Schema<IUser>({
 // OAuth callback looks users up by (provider, providerId) on every social login.
 userSchema.index({ 'authProviders.provider': 1, 'authProviders.providerId': 1 });
 // Settings lets humans choose a display label, while chat renders one label
-// per author. These collation indexes back the self-excluding collision check
-// in userController without making the labels themselves globally unique.
-const accountLabelCollation = { locale: 'en', strength: 2 };
-userSchema.index({ username: 1 }, { collation: accountLabelCollation });
-userSchema.index({ previousUsernames: 1 }, { collation: accountLabelCollation });
-userSchema.index({ displayName: 1 }, { collation: accountLabelCollation });
-userSchema.index({ 'botMetadata.displayName': 1 }, { collation: accountLabelCollation });
+// per author. The self-excluding collision checks (userController, register,
+// derivedUsername) match lowercase copies of the labels, indexed here, without
+// making the labels themselves globally unique. No collation: FerretDB ignores
+// it on reads (accountLabelKeys.ts).
+accountLabelKeysPlugin(userSchema);
 // A single index supports authentication by digest and the account's device
 // list. Existing users simply have no array entries, so this is additive.
 userSchema.index({ 'deviceTokens.tokenHash': 1 });
