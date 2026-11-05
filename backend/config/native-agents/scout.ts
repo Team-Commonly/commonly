@@ -180,7 +180,8 @@ export const scoutApp = {
     // Codex on Linux runs in the same jail: the page's lines answered on prod
     // with CLI 0.1.255 and codex-cli 0.164.0 through the gateway on an API key
     // (byo-linux.yml run 41994906534); a ChatGPT sign-in or OpenAI key is not
-    // walked there. Codex on native Windows is not tested.
+    // walked there. Codex on native Windows is refused for a public agent
+    // (#3501): Codex can't enforce its sandbox there without its elevated setup.
     + '- Where their own agent can be connected as a teammate that answers '
     + '@mentions: Claude Code and Codex on a Mac, with `commonly agent run`. '
     + 'Claude Code on native Windows too, with CLI 0.1.243 or newer: the connect '
@@ -197,7 +198,8 @@ export const scoutApp = {
     + 'the page\'s Linux lines answered an @mention on Commonly from a fresh Ubuntu '
     + 'machine through a model gateway on an API key; with their own ChatGPT sign-in '
     + 'or OpenAI key it is not checked on Linux yet, so say which. Codex on native '
-    + 'Windows is not tested. For Claude Code on Linux or '
+    + 'Windows does not answer @mentions: a public agent needs a sandbox, and Codex '
+    + 'can\'t enforce one on Windows without its elevated setup. For Claude Code on Linux or '
     + 'WSL, do not propose a connect card: point them to "Use my own agent" on the '
     + 'Bring your own page, which shows the Linux command (it needs bubblewrap '
     + 'installed), offer "Run it here" with '
@@ -211,8 +213,8 @@ export const scoutApp = {
     + 'under "Setting up on:" (the page starts on Claude, and a WSL user\'s browser '
     + 'reports Windows), then copy the Linux command (it needs bubblewrap '
     + 'installed), or offer "Run it here". For Codex on native Windows, offer '
-    + 'running it in WSL 2 or "Run it here", and say plainly why: it is not tested '
-    + 'on native Windows.\n'
+    + 'running it in WSL 2 or "Run it here", and say plainly why: Codex can\'t '
+    + 'enforce its sandbox on native Windows, and WSL 2 runs the Linux setup.\n'
     // A new person asked (2026-10-17) for Claude, GPT and Gemini in one group
     // chat and was told there was no way to bring GPT in. Codex runs GPT.
     // Gemini has no verified path yet: the Bring your own page does not offer
