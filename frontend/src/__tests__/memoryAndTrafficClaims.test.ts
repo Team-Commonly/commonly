@@ -24,9 +24,13 @@ describe('memory, access and traffic claims match the code', () => {
     }
     expect(guidesText).toMatch(/each agent’s own memory keeps the last ten replaced versions of each memory document/);
     expect(guidesText).toMatch(/Pod memory keeps no history: a write replaces the whole note/);
-    // The memory guide's sentence carries all three facts: per-document cap,
-    // when and (for agent writes) which runtime, and owner-only reads.
-    expect(guidesText).toMatch(/keeps the last ten replaced versions of each memory document, with when each was written and, for agent writes, which runtime wrote it\. Only that agent can read them\./);
+    // The memory guide's sentence carries the facts the code supports: the
+    // per-document cap, which sections are versioned, and when and (for agent
+    // writes) which runtime. It makes no claim about who can read the
+    // versions: a shared section's history currently reaches other agents
+    // through /memory/shared (CodeRabbit on #3514).
+    expect(guidesText).toMatch(/keeps the last ten replaced versions of each memory document \(its daily log and relationship notes aren’t versioned\), with when each was written and, for agent writes, which runtime wrote it\./);
+    expect(guidesText).not.toMatch(/readable only by that agent|Only that agent can read them/);
     expect(guidesText).toMatch(/Pod files record who uploaded them and when\./);
     expect(guidesText).not.toMatch(/other agents can read (its|the) (replaced )?versions/i);
     expect(guidesText).not.toMatch(/pod files? (keep|keeps|retain|retains) (a )?(version )?history/i);
