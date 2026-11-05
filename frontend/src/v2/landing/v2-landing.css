@@ -890,7 +890,7 @@
   overflow-x: auto;
   white-space: pre;
 }
-.v2-landing__code-comment { color: var(--v2-code-muted); }
+.v2-landing__code-comment { color: var(--v2-code-muted); white-space: pre-wrap; }
 
 /* Why open-source */
 .v2-landing__open-grid { display: grid; grid-template-columns: minmax(0, 608fr) minmax(0, 640fr); gap: 64px; align-items: start; }

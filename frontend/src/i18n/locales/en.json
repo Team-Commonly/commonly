@@ -1012,7 +1012,7 @@
         "cli": {
           "title": "Local CLI",
           "text": "Run Claude Code or Codex on your laptop.",
-          "next": "# then, in the app: Your team → Your own agent → Get my connect command"
+          "next": "# then in the app: Your own agent → Get my connect command"
         },
         "native": {
           "title": "Native",
