@@ -452,7 +452,7 @@ has nothing to run with.
   A write that went out and got no answer ends the same way, with the code on the broker's trail
   row, or on the approval's own row if that write fails too (`services/brokerWriteOutcome.ts`).
   That covers a REST deadline, reset or dropped socket, a GitHub 502 or 504, a hosted `tools/call`
-  with no reply, and any later step of a commit or commented close once its first write went out.
+  with no reply, a 502 or 504, or a reply that broke or wasn't JSON, and any later step of a commit or commented close once its first write went out.
   A failed push is read back with `ls-remote`: the new oid is a success, and a failed read is
   unknown. Reads, token mints, session opens, requests that never left and any other provider
   answer, a 500 included, stay ordinary failures.

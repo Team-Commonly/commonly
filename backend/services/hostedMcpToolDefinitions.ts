@@ -32,7 +32,7 @@ import {
   type HostedMcpUpstreamTool,
   withoutWithheldArgs,
 } from './hostedMcpEntryService';
-import { markWriteUnknown } from './brokerWriteOutcome';
+import { GATEWAY_STATUSES, markWriteUnknown } from './brokerWriteOutcome';
 import { HostedMcpCredentialError } from './hostedMcpCredentialError';
 import type { HostedMcpRow } from './hostedMcpCredentialService';
 import type { ToolConnection, ToolDefinition } from './toolBrokerService';
@@ -595,6 +595,15 @@ export const assertHostedToolUnchanged = async (
   }
 };
 
+// A reply that started and broke, or a gateway in front of the vendor, doesn't
+// say whether the call ran.
+const replyLost = (error: unknown): boolean => {
+  if (!(error instanceof RoomGrantError)) return false;
+  const { vendorStatus, failure } = error.details || {};
+  return GATEWAY_STATUSES.has(Number(vendorStatus))
+    || failure === 'missing_rpc_reply' || failure === 'invalid_json';
+};
+
 const callHostedTool = async (
   entry: HostedMcpEntry,
   tool: HostedMcpPinnedTool,
@@ -659,6 +668,7 @@ const callHostedTool = async (
     // tools/call goes out once a session is open, so with no answer the vendor
     // may have run it. Failing to open the session sent no call.
     if (unreachable) throw session ? markWriteUnknown(unreachable) : unreachable;
+    if (session && replyLost(error)) throw markWriteUnknown(error);
     throw error;
   } finally {
     await session?.close();

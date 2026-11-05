@@ -4,7 +4,8 @@
 //
 // The line sits at what the provider told us. No response at all means unknown:
 // a deadline, a reset, a dropped socket. A 502 or 504 is unknown too, because a
-// gateway answered and the write behind it may have landed. Anything else from
+// gateway answered and the write behind it may have landed. So is a hosted reply
+// that broke or wasn't JSON once its session was open. Anything else from
 // the provider is its answer, so a 500, a 503 and a 4xx stay ordinary failures,
 // as does an error that shows the request never left.
 //
@@ -15,7 +16,7 @@ export const APPROVAL_OUTCOME_UNKNOWN = 'approval_outcome_unknown';
 const WRITE_UNKNOWN = Symbol.for('commonly.broker.writeUnknown');
 const DEADLINE_CODES = new Set(['ECONNABORTED', 'ETIMEDOUT', 'ERR_CANCELED']);
 const DEADLINE_NAMES = new Set(['AbortError', 'TimeoutError', 'CanceledError']);
-const GATEWAY_STATUSES = new Set([502, 504]);
+export const GATEWAY_STATUSES = new Set([502, 504]);
 // Failed before any request bytes could reach the provider.
 const NEVER_SENT_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH']);
 const TLS_CODE = /^(ERR_TLS_|ERR_SSL_|CERT_|EPROTO$|DEPTH_ZERO_SELF_SIGNED_CERT$|SELF_SIGNED_CERT_IN_CHAIN$|UNABLE_TO_)/;

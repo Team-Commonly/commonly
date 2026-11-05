@@ -590,7 +590,7 @@ describe('approve: a crash between the call and the marker', () => {
     const row = await crashedAfterFlip('approved', { resolvedAt: new Date(Date.now() - APPROVED_CALL_SETTLE_MS - MINUTE) });
     AgentMessageService.postMessage.mockImplementationOnce(async () => {
       await ApprovalAction.updateOne({ _id: row._id }, {
-        $set: { toolCallEnding: 'ran', toolCallTrailId: 'tool_call_live' },
+        $set: { toolCallEnding: 'ran' },
         $unset: { toolCallCode: 1, expirySideEffectsDoneAt: 1 },
       });
       return { success: true };
@@ -598,6 +598,21 @@ describe('approve: a crash between the call and the marker', () => {
     await sweep(new Date());
     const stored = await reread(row);
     expect(stored.toolCallEnding).toBe('ran');
+    expect(stored.expirySideEffectsDoneAt ?? null).toBeNull();
+  });
+
+  it('the done stamp tells two endings of the same word apart', async () => {
+    const row = await crashedAfterFlip('approved', { resolvedAt: new Date(Date.now() - APPROVED_CALL_SETTLE_MS - MINUTE) });
+    AgentMessageService.postMessage.mockImplementationOnce(async () => {
+      await ApprovalAction.updateOne({ _id: row._id }, {
+        $set: { toolCallEnding: 'failed', toolCallTrailId: 'tool_call_live', toolCallCode: 'provider_error' },
+        $unset: { expirySideEffectsDoneAt: 1 },
+      });
+      return { success: true };
+    });
+    await sweep(new Date());
+    const stored = await reread(row);
+    expect(stored).toMatchObject({ toolCallEnding: 'failed', toolCallTrailId: 'tool_call_live' });
     expect(stored.expirySideEffectsDoneAt ?? null).toBeNull();
   });
 

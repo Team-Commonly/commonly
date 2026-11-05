@@ -1687,9 +1687,10 @@ const completeToolCallClosure = async (
       .map((f) => `${f.step} (${(f.error as Error)?.message || String(f.error)})`).join('; ')}`);
   }
   // A live save clears the stamp to keep its own closure retryable, so a stamp
-  // only lands on the ending this attempt closed on.
+  // only lands on the ending this attempt closed on. Two endings can share a
+  // word; the trail id tells them apart.
   await ApprovalAction.updateOne(
-    { _id: row._id, toolCallEnding: row.toolCallEnding },
+    { _id: row._id, toolCallEnding: row.toolCallEnding, toolCallTrailId: row.toolCallTrailId },
     { $set: { expirySideEffectsDoneAt: new Date() } },
   );
 };
