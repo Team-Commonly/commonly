@@ -30,6 +30,10 @@ Its visible policy can include:
 - an effective audience, optional call budget, and expiry.
 - a parent grant, so narrowing or revoking it covers its children.
 
+The record can hold every mode, but the Connectors page grants `read` for now.
+A pod grant can't hold `write`, and the one write an agent in a pod can reach is
+pull-request access on a GitHub grant, made through the API.
+
 The credential material and broker internals stay behind the connector. Agents
 receive capabilities, not provider secrets. The effective audience is checked
 against current membership, so a stale audience snapshot does not keep granting

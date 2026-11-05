@@ -13,6 +13,7 @@ import {
   USED_RECENTLY_MS,
   MODE_RANK,
   WRITE_MODES,
+  FORM_OFFERS_WRITES,
   isDead,
   entryCovers,
   boundAgentOf,
@@ -258,7 +259,7 @@ export const useToolConnectors = (
     .filter((tool) => tool.irreversible && tools.includes(tool.name)).map((tool) => tool.name);
   const asksFirst = (grant: ToolGrant): string => {
     if (grant.writeMode === 'read') return t('tools.asksNothing', { defaultValue: 'nothing asks first' });
-    if (grant.writeMode === 'write-with-confirm') return t('tools.asksEveryWrite', { defaultValue: 'every write asks first' });
+    if (grant.writeMode === 'write-with-confirm') return t('tools.asksEveryWrite', { defaultValue: 'a write would ask first' });
     // Under `write` the floor is the tool's own irreversible flag (piece 2b): the list is the catalogue's.
     const entry = entryFor(grant);
     if (!entry) return t('tools.unknownWritePolicy', { defaultValue: 'write policy unavailable' });
@@ -339,6 +340,7 @@ export const useToolConnectors = (
   })[mode];
 
   const entryGrantModes = (entry: ToolCatalogEntry): GrantWriteMode[] => {
+    if (!FORM_OFFERS_WRITES) return ['read'];
     if (entry.connectionType !== 'hosted-mcp') return WRITE_MODES;
     return entry.tools.some((tool) => tool.requiredWriteMode !== 'read')
       ? ['read', 'write-with-confirm']
