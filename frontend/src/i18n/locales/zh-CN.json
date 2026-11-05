@@ -2216,6 +2216,23 @@
         "returnedD1": "D1 回访",
         "returnedD7": "D7 回访"
       }
+    },
+    "machines": {
+      "title": "运行守护进程的电脑",
+      "summary": "运行守护进程的电脑共{{total}}台。“已回复”是电脑上的智能体回复过真人（@提及或私信）的台数，只统计电脑开始记录回复之后的回复。在前台运行 commonly agent run 不会注册电脑，所以不计入。",
+      "table": {
+        "platform": "平台",
+        "machines": "电脑数",
+        "answered": "已回复",
+        "cliVersion": "CLI 版本"
+      },
+      "platforms": {
+        "win32": "Windows",
+        "darwin": "macOS",
+        "linux": "Linux"
+      },
+      "notReported": "未报告",
+      "loadFailed": "无法加载电脑统计。"
     }
   },
   "podsSidebar": {

@@ -108,6 +108,49 @@ describe('V2AdminAnalytics', () => {
     expect(screen.getByText(/Of 0 signups/)).toBeInTheDocument();
   });
 
+  // TASK-784 (D164): daemon machines by platform, with how many answered a
+  // person, and by CLI version.
+  const machinesPayload = {
+    total: 5,
+    byPlatform: [
+      { platform: 'win32', machines: 3, answered: 1 },
+      { platform: 'darwin', machines: 1, answered: 1 },
+      { platform: null, machines: 1, answered: 0 },
+    ],
+    byCliVersion: [
+      { cliVersion: '0.1.245', machines: 3 },
+      { cliVersion: '0.1.243', machines: 1 },
+      { cliVersion: null, machines: 1 },
+    ],
+  };
+  const withMachines = (machines) => (url) => {
+    if (url.includes('/usage')) return Promise.resolve({ data: usagePayload });
+    if (url.includes('/funnel')) return Promise.resolve({ data: funnelPayload });
+    if (url.includes('/machines')) return machines;
+    return Promise.reject(new Error(`unexpected ${url}`));
+  };
+
+  it('shows daemon machines by platform, with the answered view, and by CLI version', async () => {
+    axios.get.mockImplementation(withMachines(Promise.resolve({ data: machinesPayload })));
+    renderPage();
+    const heading = await screen.findByRole('heading', { name: 'Daemon machines' });
+    const section = heading.closest('section');
+    expect(section).toHaveTextContent('Machines running the daemon: 5.');
+    const [platforms, versions] = section.querySelectorAll('table');
+    const rows = (table) => [...table.querySelectorAll('tbody tr')]
+      .map((tr) => [...tr.querySelectorAll('td')].map((td) => td.textContent));
+    expect(rows(platforms)).toEqual([['Windows', '3', '1'], ['macOS', '1', '1'], ['Not reported', '1', '0']]);
+    expect(rows(versions)).toEqual([['0.1.245', '3'], ['0.1.243', '1'], ['Not reported', '1']]);
+  });
+
+  it('keeps the rest of the page when the machine counts fail, and says so without a second alert', async () => {
+    axios.get.mockImplementation(withMachines(Promise.reject(new Error('boom'))));
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Activation funnel')).toBeInTheDocument());
+    expect(await screen.findByText('boom')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('surfaces an error message when the API fails', async () => {
     axios.get.mockRejectedValue({ response: { data: { message: 'Failed to compute usage' } } });
     renderPage();

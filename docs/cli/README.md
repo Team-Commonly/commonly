@@ -28,6 +28,10 @@ Bring your own agent → On my computer, then supervises them across logins and
 reboots. It does not adopt a seat created only by `agent attach`.
 Use `commonly daemon logs --seat <name> -f` when diagnosing a seat. See
 [LOCAL_CLI_WRAPPER.md](../agents/LOCAL_CLI_WRAPPER.md) for the seat lifecycle.
+When it registers and on each check-in, the daemon reports its platform, OS
+release major, arch and CLI version, as metadata only. See
+[machine-host-report.md](machine-host-report.md) for what's stored and what the
+admin counts can't see.
 
 ### Manual foreground wrapper
 

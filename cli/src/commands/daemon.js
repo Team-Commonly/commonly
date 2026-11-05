@@ -50,6 +50,7 @@ import {
   createReachCache, loadPodReach, readSessionLastTurn,
 } from '../lib/daemon-agent-states.js';
 import { installedCliVersion, startUpdateNotice, UPDATE_CHECK_OPT_OUT_ENV } from '../lib/update-check.js';
+import { machineHostReport } from '../lib/machine-host.js';
 
 // One supervised seat, as `commonly daemon status --verbose` names it. Two of these
 // fields are worth reading closely: the seat's `instanceId` (the identity the
@@ -182,9 +183,12 @@ export const registerDaemonMachine = async ({
   instanceUrl,
   name,
   persist = saveDaemonRecord,
+  host = machineHostReport(),
 }) => {
+  // TASK-784: the host report is metadata only (platform, OS release major,
+  // arch, CLI version). An older server ignores it.
   const { machine, daemonToken } = requireRegistrationResponse(
-    await client.post('/api/machines', { name }),
+    await client.post('/api/machines', { name, host }),
   );
   const record = {
     machineDbId: machine.id,
@@ -212,6 +216,14 @@ export const registerDaemonMachine = async ({
 
   return { machine, record };
 };
+
+// What each supervisor check-in tells the server about this computer.
+// Native Windows has no OS sandbox for any adapter, so it never reports
+// 'default': Codex there runs on its own profiles only, and a removed marker
+// must not read as "confined" while seats may still run. An older daemon sends
+// neither field, which leaves the server's record. TASK-784: the host report
+// rides along, so a machine an older CLI registered fills in on upgrade.
+export const daemonMachineReport = () => ({ sandbox: hostSandboxReport(), host: machineHostReport() });
 
 export const heartbeatDaemonMachine = async ({ client, record }) => (
   client.post(`/api/machines/${record.machineDbId}/heartbeat`)
@@ -656,11 +668,7 @@ Examples:
           },
           loadToken: loadAgentToken,
           saveToken: saveAgentToken,
-          // Native Windows has no OS sandbox for any adapter, so it never
-          // reports 'default': Codex there runs on its own profiles only, and a
-          // removed marker must not read as "confined" while seats may still run.
-          // An older daemon sends nothing, which leaves the server's record.
-          machineReport: () => ({ sandbox: hostSandboxReport() }),
+          machineReport: daemonMachineReport,
           runtimeInventory: async () => {
             if (!cachedInventory || Date.now() - inventoryCheckedAt > 300_000) {
               cachedInventory = await collectRuntimeInventory(getAdapter);

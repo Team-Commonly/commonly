@@ -2227,6 +2227,23 @@
         "returnedD1": "Returned D1",
         "returnedD7": "Returned D7"
       }
+    },
+    "machines": {
+      "title": "Daemon machines",
+      "summary": "Machines running the daemon: {{total}}. Answered counts the machines where an agent has replied to a person, through an @mention or a DM, since machines began recording replies. A foreground commonly agent run registers no machine, so it isn’t counted.",
+      "table": {
+        "platform": "Platform",
+        "machines": "Machines",
+        "answered": "Answered",
+        "cliVersion": "CLI version"
+      },
+      "platforms": {
+        "win32": "Windows",
+        "darwin": "macOS",
+        "linux": "Linux"
+      },
+      "notReported": "Not reported",
+      "loadFailed": "Couldn’t load the machine counts."
     }
   },
   "podsSidebar": {
