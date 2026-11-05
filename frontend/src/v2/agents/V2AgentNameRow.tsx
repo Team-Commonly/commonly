@@ -15,6 +15,9 @@ interface PersonaFields {
   customInstructions: string;
 }
 
+// The same bound the server applies to a hosted description (TASK-780).
+const ABOUT_MAX = 160;
+
 const commaList = (value: string): string[] => value.split(',').map((part) => part.trim()).filter(Boolean);
 
 const asPersona = (value: unknown): PersonaFields => {
@@ -33,6 +36,10 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
   const { t } = useTranslation();
   const profile = installation.profile;
   const supportsPersona = installation.name.toLowerCase() === 'openclaw';
+  // Only a hosted agent's payload carries `about`; nothing else has one to edit.
+  const savedAbout = typeof installation.about === 'string' ? installation.about : null;
+  const [about, setAbout] = useState(savedAbout ?? '');
+  const aboutChanged = savedAbout !== null && about.trim().replace(/\s+/g, ' ') !== savedAbout;
   const [open, setOpen] = useState(false);
   const [displayName, setDisplayName] = useState(installation.displayName || '');
   const [persona, setPersona] = useState<PersonaFields>(() => asPersona(profile?.persona));
@@ -44,6 +51,7 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
 
   useEffect(() => {
     setDisplayName(installation.displayName || '');
+    setAbout(typeof installation.about === 'string' ? installation.about : '');
     setPersona(asPersona(profile?.persona));
     setError(null);
     setSaved(false);
@@ -56,12 +64,17 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
       setError('agentSettings.identityNameError');
       return;
     }
+    if (aboutChanged && about.trim().replace(/\s+/g, ' ').length > ABOUT_MAX) {
+      setError('agentSettings.aboutError');
+      return;
+    }
     setBusy(true);
     setError(null);
     setSaved(false);
     try {
       await update({
         ...(name !== installation.displayName ? { displayName: name } : {}),
+        ...(aboutChanged ? { about: about.trim().replace(/\s+/g, ' ') } : {}),
         ...(personaChanged ? { persona: {
           tone: persona.tone,
           specialties: commaList(persona.specialties),
@@ -80,7 +93,7 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
         503: 'agentSettings.identityMirrorError',
       };
       const code = response?.data?.code;
-      setError(code === 'agent_display_name_taken'
+      setError(code === 'invalid_about' ? 'agentSettings.aboutError' : code === 'agent_display_name_taken'
         ? 'agentSettings.identityNameTakenError'
         : code === 'identity_projection_retryable'
           ? 'agentSettings.identityProjectionError'
@@ -92,6 +105,7 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
 
   // Errors are stored as keys so the name refusals can sit under the field and the rest beside Save.
   const nameError = error === 'agentSettings.identityNameError' || error === 'agentSettings.identityNameTakenError';
+  const aboutError = error === 'agentSettings.aboutError';
   const alertRow = (text: string) => <span role="alert" className="v2-agent-settings-page__note">
     <V2AgentSettingsIcon name="alert" />{text}
   </span>;
@@ -124,6 +138,20 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
           </span>
           <span className="ac" />
         </div>
+        {savedAbout !== null && <div className="lrow v2-agent-settings-page__stack">
+          <label className="lb" htmlFor="agent-identity-about"><V2AgentSettingsIcon name="smile" />{t('agentSettings.about')}</label>
+          <span className="vl">
+            <span className="field field--area">
+              <textarea id="agent-identity-about" value={about} rows={2} maxLength={ABOUT_MAX}
+                aria-invalid={aboutError || undefined} aria-describedby="agent-identity-about-hint"
+                onChange={(event) => setAbout(event.target.value)} />
+              <span className="mu" aria-hidden="true">{about.length} / {ABOUT_MAX}</span>
+            </span>
+            <span id="agent-identity-about-hint" className="mu">{t('agentSettings.aboutHint')}</span>
+            {aboutError && <span role="alert" className="v2-agent-settings-page__fielderror">{t('agentSettings.aboutError')}</span>}
+          </span>
+          <span className="ac" />
+        </div>}
         {supportsPersona && <details className="disc">
           <summary>
             <span className="lb" id="agent-identity-persona"><V2AgentSettingsIcon name="smile" />{t('agentSettings.persona')}</span>
@@ -166,9 +194,9 @@ const V2AgentNameRow: React.FC<Props> = ({ installation, update }) => {
         <div className="lrow v2-agent-settings-page__stack">
           <span className="lb" />
           <span className="vl">
-            <button type="submit" className="b b-p b-sm" disabled={busy || (!personaChanged && displayName.trim() === installation.displayName)}>{busy ? t('agentSettings.saving') : t('agentSettings.saveIdentity')}</button>
+            <button type="submit" className="b b-p b-sm" disabled={busy || (!personaChanged && !aboutChanged && displayName.trim() === installation.displayName)}>{busy ? t('agentSettings.saving') : t('agentSettings.saveIdentity')}</button>
             {saved && <span role="status" className="v2-agent-settings-page__note"><V2AgentSettingsIcon name="check" />{t('agentSettings.identitySaved')}</span>}
-            {error && !nameError && alertRow(t(error))}
+            {error && !nameError && !aboutError && alertRow(t(error))}
           </span>
           <span className="ac" />
         </div>

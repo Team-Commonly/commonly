@@ -63,6 +63,12 @@ const resolveUsername = (req: any): string | null => (
   req.user?.username || req.agentUser?.username || null
 );
 
+// `config.hosted` may still be a Mongoose Map when read off a document.
+const readHostedAbout = (hosted: any): string => {
+  const value = hosted instanceof Map ? hosted.get('about') : hosted?.about;
+  return typeof value === 'string' ? value : '';
+};
+
 const normalizeConfigMap = (config: any) => {
   if (!config) return null;
   if (config instanceof Map) {
@@ -527,6 +533,11 @@ const buildAgentInstallationPayload = (installation: any, {
       ? user.botMetadata.description.trim()
       : null,
     runtime: runtimeConfig,
+    // TASK-780: a hosted agent's editable description (config.hosted.about);
+    // absent for every other runtime, which has no such field to edit.
+    ...(String(normalizedConfig?.runtime?.runtimeType || '').trim().toLowerCase() === 'hosted' ? {
+      about: readHostedAbout(normalizedConfig?.hosted),
+    } : {}),
     // Resolved at the boundary so the frontend doesn't need to know
     // about presets — `category` is the human-readable role family
     // (Development, Design, Strategy, …) used by the V2 inspector role
