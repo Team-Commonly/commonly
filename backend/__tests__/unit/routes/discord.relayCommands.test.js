@@ -8,7 +8,7 @@ const nacl = require('tweetnacl');
 
 const keyPair = nacl.sign.keyPair();
 process.env.DISCORD_PUBLIC_KEY = Buffer.from(keyPair.publicKey).toString('hex');
-process.env.DISCORD_APPLICATION_ID = '123456789012345678';
+process.env.DISCORD_APPLICATION_ID = '345678901234567890';
 
 // A Mongo stand-in that honours the query it is given: equality on dotted
 // paths and `$exists: false`. The binding check is then tested against a
@@ -94,7 +94,7 @@ const send = (body, { secretKey = keyPair.secretKey } = {}) => {
 
 const command = (name, {
   actor = INSTALLER, channel = CHANNEL, guild = GUILD, options,
-  token = 'interaction-token', applicationId = '123456789012345678',
+  token = 'interaction-token', applicationId = '345678901234567890',
 } = {}) => send({
   type: 2,
   id: 'interaction-1',
@@ -261,7 +261,7 @@ test('/summary defers, then edits the reply with the result', async () => {
   await new Promise((resolve) => { setImmediate(resolve); });
   expect(runCommandForIntegration).toHaveBeenCalledWith(expect.objectContaining({ commandName: 'discord-push' }));
   expect(axios.patch).toHaveBeenCalledWith(
-    'https://discord.com/api/v10/webhooks/123456789012345678/interaction-token/messages/@original',
+    'https://discord.com/api/v10/webhooks/345678901234567890/interaction-token/messages/@original',
     { content: '✅ Queued 4 Discord message(s).', allowed_mentions: { parse: [] } },
     expect.any(Object),
   );
